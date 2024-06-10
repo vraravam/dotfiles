@@ -1,0 +1,11 @@
+--color
+--order random
+--profile
+--backtrace
+# --require rspec/instafail
+# --format RSpec::Instafail
+# --require fuubar
+# --format Fuubar
+# --format documentation
+# --require rails_helper
+

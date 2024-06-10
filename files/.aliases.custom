@@ -1,0 +1,185 @@
+#!/usr/bin/env zsh
+
+# vim:syntax=zsh
+# vim:filetype=zsh
+
+# file location: ${HOME}/.aliases.custom
+# load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
+[ -n "${FIRST_INSTALL+1}" ] && echo "loading .aliases.custom"
+
+# opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
+alias code-gist='code ${PERSONAL_CONFIGS_DIR} ${PERSONAL_BIN_DIR} ${DOTFILES_DIR} ${HOME}/.gitconfig-* ${HOME}/.tool-versions ${HOME}/.envrc'
+
+# installs all languages that mise can handle for all repos that are checked out
+install_mise_versions() {
+  find "${HOME}" -name ".tool-versions" -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
+  find "${PROJECTS_BASE_DIR}" -type d -maxdepth 3 -exec echo "===> Installing for {}" \; -execdir mise install \;
+}
+
+# runs 'direnv allow' on all code repositories that are checked out
+allow_all_direnv_configs() {
+  find "${HOME}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  find "${PERSONAL_PROFILES_DIR}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 4 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+}
+
+# updates the specified repo (handles either the home repo or the profiles repo - one at a time)
+# internal function: not to be called separately
+update_repo() {
+  if [ $# -ne 1 ]; then
+    echo "Usage: ${0} <repo folder>"
+    echo "    eg: ${HOME} "
+    echo "    eg: ${PERSONAL_PROFILES_DIR}"
+    return 1
+  fi
+
+  # Remove trailing slash if present
+  folder="${1%\/}"
+
+  # crontab -r
+
+  # shellcheck disable=SC2005
+  echo "$(green "==> Updating '${folder}'")"
+  rm -rfv "${folder}/.git/index.lock" "${folder}/.git/hooks"
+  local git_cmd="git -C ${folder}"
+
+  case ${folder} in
+    "${HOME}" )
+      default_contents=".bin/macos/defaults/"
+      ;;
+    "${PERSONAL_PROFILES_DIR}" )
+      default_contents="ArcProfile BraveProfile FirefoxProfile KeePassXCProfile SyncthingProfile ThunderbirdProfile"
+      ;;
+    * )
+      echo "Unknown value entered: ${folder}"
+      usage
+      ;;
+  esac
+
+  # shellcheck disable=SC2086
+  eval "${git_cmd} add ${default_contents}" && eval "${git_cmd} sci \"Incremental commit: $(date)\"" && eval "${git_cmd} siu"
+
+  # Note: With the latest version of macOs, running this command within a cron job seems to fail silently
+  # crontab ${PERSONAL_BIN_DIR}/macos/crontab.txt
+}
+
+# updates the home and profiles repos
+update_all_repos() {
+  update_repo "${PERSONAL_PROFILES_DIR}"; update_repo "${HOME}"
+}
+
+# internal function: not to be called separately
+_push_it() {
+  # shellcheck disable=SC2005
+  echo "$(green "*** Pushing ${1}")" && git -C "${1}" push --force-with-lease && echo "$(green "*** Pushed ${1}")"
+}
+
+# pushes the home and profiles repos to their respective remotes (disables and re-enables cron while doing this operation)
+push_all_repos() {
+  crontab -r
+
+  _push_it "${HOME}"
+  # shellcheck disable=SC2005
+  echo "$(red "---------------------------------------------------------------------------")"
+  _push_it "${PERSONAL_PROFILES_DIR}"
+
+  crontab "${PERSONAL_BIN_DIR}/macos/crontab.txt"
+}
+
+# resurrects the cron entries based on the '${PERSONAL_BIN_DIR}/macos/crontab.txt' file
+recron() {
+  # shellcheck disable=SC2005
+  echo "$(green "Old cron listing")"
+  crontab -l
+
+  # shellcheck disable=SC2005
+  echo "$(red "---------------------------------------------------------------------------")"
+  crontab -r
+  local cron_file="${PERSONAL_BIN_DIR}/macos/crontab.txt"
+  test -f "${cron_file}" && crontab "${cron_file}"
+
+  # shellcheck disable=SC2005
+  echo "$(green "New cron listing")"
+  crontab -l
+}
+
+# runs git gc on the keybase repo (not sure if this actually compresses the remote repo or not)
+alias kbgc="keybase git gc --force home; keybase git gc --force profiles"
+
+# deletes the zsh compiled files so that they can be recompiled whenever the new session is next started
+delete_zsh_compilations() {
+  find ${HOME} -maxdepth 4 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
+}
+
+# common build, debug and launch aliases for any folder - converted to functions for lazy evaluation
+# these will use the current folder name to find the shell script to run
+launch_me() {
+  "${PERSONAL_CONFIGS_DIR}/launch-${PWD##*/}.sh"
+}
+debug_me() {
+  "${PERSONAL_CONFIGS_DIR}/debug-${PWD##*/}.sh"
+}
+build_me() {
+  "${PERSONAL_CONFIGS_DIR}/build-${PWD##*/}.sh"
+}
+
+if [[ is_darwin ]]; then
+  # brew cask contribution
+  check_cask() {
+    # shasum -a 256 <fileName>
+    # cd $(brew --repository homebrew/cask-versions) &&
+    brew audit --online --cask "${1}" && brew style --fix --cask "${1}"
+    # cd -
+    # brew fetch --cask "${1}"
+  }
+
+  # brew contribution
+  check_formula() {
+    brew install --build-from-source "${1}"
+    brew test "${1}"
+    brew audit --strict "${1}"
+  }
+fi
+
+# implode
+alias implode="cd && rm -rf .aws .bin .bin-oss Brewfile .config .docker .git* .gnupg .psql* .ssh .s3cfg dev Brewfile personal"
+
+# findrb() {
+#   find . -iname "*.rb" -print0 | xargs -0 egrep -in --color "$@"
+# }
+
+# findyml() {
+#   find . -iname "*.yml" -print0 | xargs -0 egrep -in --color "$@"
+# }
+
+# findrake() {
+#   find . -iname "*.rake" -print0 | xargs -0 egrep -in --color "$@"
+# }
+
+# findhtmlerb() {
+#   find . -iname "*.html.erb" -print0 | xargs -0 egrep -in --color "$@"
+# }
+
+# findjs() {
+#   find . -iname "*.js*" -print0 | xargs -0 egrep -in --color "$@"
+# }
+
+# rails
+# alias rs="rails s -b 0.0.0.0"
+# alias rc="rails c"
+# alias rdb="rails db"
+# alias sp="RAILS_ENV=test be rake spec"
+# alias clean_bundles_from_git="rm -rfv $GEM_HOME/bundler/gems $GEM_HOME/cache/bundler/git"
+# alias rdm="be rake db:drop db:create db:migrate db:seed"
+# alias be='bundle exec'
+# alias rubo='be rake rubocop:auto_correct'
+# alias brake='be rake brakeman:run\[brakeman-report.html\]'
+
+# phoenix
+# alias mc='iex -S mix'
+# alias mes='mix ecto.setup'
+# alias mer='mix ecto.reset'
+# alias mch='MIX_ENV=test mix coveralls.html'
+# alias mcd='MIX_ENV=test mix coveralls.detail'
+# alias sps='mix phx.server'
+# alias spsd='iex -S mix phx.server'

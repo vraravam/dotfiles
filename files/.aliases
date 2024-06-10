@@ -1,0 +1,143 @@
+#!/usr/bin/env zsh
+
+# vim:syntax=zsh
+# vim:filetype=zsh
+
+# file location: ${HOME}/.aliases
+# load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
+[ -n "${FIRST_INSTALL+1}" ] && echo "loading .aliases"
+
+# DUPLICATE! Copied over since we get an error if the .zprofile was not loaded (which loads this script)
+type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+
+# Add flags to existing aliases.
+alias less="${aliases[less]:-less} -RF"
+alias ls="${aliases[ls]:-ls} -G"
+alias ll='ls -la'
+alias cp="${aliases[cp]:-cp} -p"
+alias grep="${aliases[grep]:-grep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.zsh-evalcache,.zsh_evalcache,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
+
+# Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
+alias reinstall-xcode='rm -rf $(xcode-select -p) && xcode-select --install && xcodebuild -license accept'
+alias reinstall-cmdline-tools='touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress && softwareupdate -ia && rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress && sudo xcodebuild -license accept'
+
+alias path='echo -e ${PATH//:/\\n}'
+alias vi='vim'
+alias ping='prettyping --nolegend'
+alias cat='bat'
+alias top='btop'
+alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'
+
+# Git commands
+alias gco='git co'
+# Note: Changed to a function so that it can accept parameters
+st() {
+  target="${1:-.}"
+  echo "$(green "==> Processing ${target} <==")"
+  git -C "${target}" st
+}
+
+# shortcuts to handle multiple git repos bypassing the omx auto-correct prompt
+alias rug='run_all.sh git'
+alias all="FOLDER='${HOME}' MAXDEPTH=5 rug"
+alias home="FOLDER='${HOME}' FILTER=\".bin|zsh|mise|tmux|vscod|rakshita\" MAXDEPTH=5 rug"
+alias oss="FOLDER='${PROJECTS_BASE_DIR}/oss' MAXDEPTH=2 rug"
+alias tw="FOLDER='${PROJECTS_BASE_DIR}/tw' MAXDEPTH=2 rug"
+alias jd="FOLDER='${PROJECTS_BASE_DIR}/jd' MAXDEPTH=3 rug"
+alias upreb="FOLDER='${PROJECTS_BASE_DIR}/oss' rug upreb"
+
+if [[ is_darwin ]]; then
+  # TODO: Remove later (kept here for reference): brew outdated --cask | xargs brew cask reinstall
+  alias bcg='brew outdated --greedy'
+  alias bcug='brew upgrade --greedy'
+  alias bupc='brew bundle check || brew bundle --all --cleanup; brew bundle cleanup -f; brew cleanup --prune=all; brew autoremove; brew upgrade'
+fi
+
+# list the contents of the folder in order of modified time (latest first)
+alias lstime='ls -Fhalts'
+alias lstop='ls -Fhalts | head'
+
+alias findbrokenlinks='find . -type l | (while read FN ; do test -e "$FN" || ls -ld "$FN"; done)'
+alias clearlogs='rm -vrf */log/*.log'
+alias clearcoverage='rm -vrf */coverage */coverage.data'
+alias killds="sudo find . -name .DS_Store -exec rm -- {} +"
+alias killloc="sudo find . -name .localized -exec rm -- {} +"
+
+# Remove trailing spaces
+if [[ is_linux ]]; then
+  alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i 's/[ ]*$//' {} \;"
+elif [[ is_windows ]]; then
+  alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i 's/[ ]*$//' {} \;"
+elif [[ is_darwin ]]; then
+  alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i '' 's/[ ]*$//' {} \;"
+fi
+
+# generate mac addr to escape some free wifi mac addr restrictions
+if [[ is_linux ]]; then
+  alias free-wifi="(ifconfig eth0 | grep ether) && (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig eth0 ether) && (ifconfig eth0 | grep ether)"
+elif [[ is_darwin ]]; then
+  alias free-wifi="(ifconfig en0 | grep ether) && (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig en0 ether) && (ifconfig en0 | grep ether)"
+  alias flush-dns="sudo killall -HUP mDNSResponder;sudo killall mDNSResponderHelper;sudo dscacheutil -flushcache;say MacOS DNS cache has been cleared"
+fi
+
+# MacOS: Remove apps from quarantine
+if [[ is_darwin ]]; then
+  alias unquarantine='sudo xattr -rd com.apple.quarantine'
+fi
+
+# Added to view the shell startup time
+time_shell_startup() {
+  shell="${1-${SHELL}}"
+  for i in $(seq 1 10); do /usr/bin/time "${shell}" -i -c exit; done
+}
+
+reals() {
+  ls -la "$(print `which $1`)"
+}
+
+# npm
+alias npm_cleanup='npm cache clear --force'
+
+# docker (TODO: Not sure why this is not done automatically by rancher when it starts up)
+# alias start_docker="sudo ln -sf ${HOME}/.rd/docker.sock /var/run/docker.sock"
+# alias stop_docker="sudo rm -rf /var/run/docker.sock"
+alias docker_cleanup='docker system prune -a --volumes -f'
+alias docker_list='docker ps -a && docker images'
+
+# docker compose
+alias dcup='docker-compose up --build --remove-orphans'
+alias dcdn='docker-compose stop'
+alias dcps='docker-compose ps'
+
+show_docker_context_contents() {
+  # Based on BMitch's answer from: https://stackoverflow.com/questions/38946683/how-to-test-dockerignore-file
+  # Note: this will create and delete temporary file called 'Dockerfile.build-context'
+  # Usage:
+  # 1. Run this function in the project folder
+  # 2. You should see list of files in build context
+  # 3. If unwanted files are present, adjust the '.dockerignore' file and go back to step 1
+
+  cat <<EOF > Dockerfile.build-context
+  FROM busybox
+  COPY . /build-context
+  WORKDIR /build-context
+  CMD ["find", "."]
+EOF
+
+  docker build -f Dockerfile.build-context -t build-context .
+  docker run --rm build-context
+
+  rm Dockerfile.build-context
+}
+
+# tmux
+# alias tmn="tmux new-session -A -s"
+
+# if running zsh shell
+if [[ "$(ps -o comm= -p $$)" =~ "zsh" ]]; then
+  # associate file extensions with applications for the 'open' command
+  alias -s txt=code
+  alias -s log=code
+fi
+
+load_file_if_exists "${HOME}/.aliases.custom"
