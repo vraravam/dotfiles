@@ -14,15 +14,9 @@
 # 4. Turn off battery from showing in the Control Center (nice to have especially if you end up with the Stats app)
 # 5. Change the built-in clock to show as analog to save horizontal space in the Control Center via System Preferences
 
-# TODO: Need to figure out the settings for the following:
-#    1) Dock: Items with order (not capturing binary data - since that is dependent on installed apps)
-#    2) Security & Privacy Preferences: Full Disk Access, Camera, Microphone
-#    3) Retina displays scaling / screen resolution
-#    4) Finder sidebar with order of items
-#    5) Auto-adjust Brightness
-#    6) Brightness on battery
-#    7) Default web browser
-#    8) Turn off "Close windows when quitting an application"
+# TODO: Need to figure out the scriptable commands for the following settings:
+# 1. Auto-adjust Brightness
+# 2. Brightness on battery
 
 # These env vars are defined by (duplicated intentionally) since this script would bootstrap the installation
 USERNAME="${USERNAME:-$(whoami)}"
@@ -256,3 +250,10 @@ echo "$(red "3. Go to iTerm2 > Preferences > Profiles > Default > Text > Change 
 echo "$(red "4. Go to iTerm2 > Preferences > Profiles > Default > Keys > Key Mappings > Presets (and choose 'Natural Text Editing')")"
 echo "$(red "5. Turn on 'Tap to click' in Trackpad prefs")"
 echo "$(red "6. IF you want to have your own customization of the softwares installed, you will have to fork the git repo in '${HOME}/.bin-oss' and commit your changes into the 'fresh-install-of-osx.sh' script and other dotfiles. Remember to change the curl command as well if you do this - for a seamless experience")"
+echo "$(red "7. System Preferences > Privacy & Security: Full Disk Access > Add 'iTerm', 'Terminal', 'zoom.us'")"
+echo "$(red "8. System Preferences > Privacy & Security: Camera > Add 'Arc', 'zoom.us'")"
+echo "$(red "9. System Preferences > Privacy & Security: Microphone > Add 'Arc', 'zoom.us'")"
+echo "$(red "10. System Preferences > Displays > Set scaling / screen resolution")"
+echo "$(red "11. System Preferences > Displays > Turn off "Automatically adjust brightness"")"
+echo "$(red "12. Manually adjust the Finder sidebar preferences")"
+echo "$(red "13. System Preferences > Desktop & Dock > Set the default web browser")"

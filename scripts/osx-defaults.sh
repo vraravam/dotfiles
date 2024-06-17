@@ -144,6 +144,22 @@ if ask "Show remaining battery percentage" Y; then
   defaults write com.apple.menuextra.battery ShowPercent -string "YES"
 fi
 
+if ask "Turn off Battery in menubar" Y; then
+  defaults -currentHost write com.apple.controlcenter Battery 8
+fi
+
+if ask "Show remaining battery percentage" Y; then
+  defaults -currentHost write com.apple.controlcenter BatteryShowPercentage -bool true
+fi
+
+if ask "Show bluetooth in menubar" Y; then
+  defaults -currentHost write com.apple.controlcenter Bluetooth 2
+fi
+
+if ask "Keep keyboard brightness at max value" Y; then
+  defaults -currentHost write com.apple.controlcenter KeyboardBrightness 8
+fi
+
 ###############################################################################
 # General UI/UX                                                               #
 ###############################################################################
@@ -194,6 +210,13 @@ defaults write com.apple.systemuiserver "NSStatusItem Visible com.apple.menuextr
 defaults write com.apple.menuextra.clock DateFormat -string "EEE d MMM  h:mm:ss a"
 defaults write com.apple.menuextra.clock FlashDateSeparators -bool true
 defaults write com.apple.menuextra.clock IsAnalog -bool true  # Since I am using `The Clocker` app, turning this to analog
+defaults write com.apple.menuextra.clock IsAnalog -bool true
+defaults write com.apple.menuextra.clock Show24Hour -bool false
+defaults write com.apple.menuextra.clock ShowAMPM -bool true
+defaults write com.apple.menuextra.clock ShowDate -bool false
+defaults write com.apple.menuextra.clock ShowDayOfMonth -bool true
+defaults write com.apple.menuextra.clock ShowDayOfWeek -bool false
+defaults write com.apple.menuextra.clock ShowSeconds -bool true
 
 if ask "Remove duplicates in the 'Open With' menu (also see 'lscleanup' alias)" Y; then
   /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
@@ -397,6 +420,18 @@ fi
 if ask "Show preview pane" Y; then
   defaults write com.apple.finder ShowPreviewPane -bool false
 fi
+
+defaults write com.apple.finder ShowExternalHardDrivesOnDesktop -bool true
+defaults write com.apple.finder ShowRecentTags -bool false
+defaults write com.apple.finder ShowRemovableMediaOnDesktop -bool true
+defaults write com.apple.finder ShowSidebar -bool true
+defaults write com.apple.finder SidebarDevicesSectionDisclosedState -bool true
+defaults write com.apple.finder SidebarPlacesSectionDisclosedState -bool true
+defaults write com.apple.finder SidebarShowingSignedIntoiCloud -bool true
+defaults write com.apple.finder SidebarShowingiCloudDesktop -bool true
+defaults write com.apple.finder SidebarTagsSctionDisclosedState -bool true
+defaults write com.apple.finder SidebarWidth 172
+defaults write com.apple.finder SidebariCloudDriveSectionDisclosedState -bool true
 
 if ask "Allowing text selection in Quick Look/Preview in Finder by default" Y; then
   defaults write com.apple.finder QLEnableTextSelection -bool true
