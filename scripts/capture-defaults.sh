@@ -99,6 +99,7 @@ app_array=(
   'com.knollsoft.Rectangle'
   'com.macpaw.site.theunarchiver'
   'com.microsoft.VSCodeInsiders'
+  'com.mothersruin.Apparency'
   'com.mowglii.ItsycalApp'
   'com.piriform.ccleaner'
   'com.runningwithcrayons.Alfred-Preferences'
