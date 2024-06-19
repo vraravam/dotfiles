@@ -14,6 +14,7 @@ PERSONAL_PROFILES_DIR="${PERSONAL_PROFILES_DIR:-"${HOME}/personal/${USERNAME}/pr
 PERSONAL_BIN_DIR="${PERSONAL_BIN_DIR:-"${HOME}/.bin"}"
 PERSONAL_CONFIGS_DIR="${PERSONAL_CONFIGS_DIR:-"${HOME}/personal/dev"}"
 
+source "${HOME}/.shellrc"
 # Load all zsh config files for PATH and other env vars to take effect
 # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
 load_zsh_configs
