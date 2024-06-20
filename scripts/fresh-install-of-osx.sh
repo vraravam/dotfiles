@@ -254,6 +254,6 @@ echo "$(red "7. System Preferences > Privacy & Security: Full Disk Access > Add 
 echo "$(red "8. System Preferences > Privacy & Security: Camera > Add 'Arc', 'zoom.us'")"
 echo "$(red "9. System Preferences > Privacy & Security: Microphone > Add 'Arc', 'zoom.us'")"
 echo "$(red "10. System Preferences > Displays > Set scaling / screen resolution")"
-echo "$(red "11. System Preferences > Displays > Turn off "Automatically adjust brightness"")"
+echo "$(red "11. System Preferences > Displays > Turn off 'Automatically adjust brightness'")"
 echo "$(red "12. Manually adjust the Finder sidebar preferences")"
 echo "$(red "13. System Preferences > Desktop & Dock > Set the default web browser")"
