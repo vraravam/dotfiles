@@ -12,7 +12,13 @@ type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 # Add flags to existing aliases.
 alias less="${aliases[less]:-less} -RF"
-alias ls="${aliases[ls]:-ls} -G"
+command_exists eza
+if [ $? -eq 0 ]; then
+  alias ls='eza --icons'
+else
+  # -G has a different meaning for eza, so add it only if eza is not present
+  alias ls="${aliases[ls]:-ls} -G"
+fi
 alias ll='ls -la'
 alias cp="${aliases[cp]:-cp} -p"
 alias grep="${aliases[grep]:-grep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.zsh-evalcache,.zsh_evalcache,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""

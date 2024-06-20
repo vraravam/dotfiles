@@ -39,6 +39,7 @@ brew 'direnv'   # Note: If you get an error (for eg after upgrading direnv or if
 # brew 'dive'   # docker layers inspection on steroids
 # brew 'docker-diff'
 # brew 'docker-slim'  # TODO: investigate if the http-probe is a deal-breaker
+brew 'eza'
 # brew 'fzy'
 # brew 'git-crypt'
 brew 'git-extras'
