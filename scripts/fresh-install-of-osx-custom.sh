@@ -65,9 +65,9 @@ done
 # post-clone operations for installing system dependencies #
 ############################################################
 echo "$(green "==> Running post-clone operations")"
-all restore-mtime -c
-allow_all_direnv_configs
-install_mise_versions
+command_exists all && all restore-mtime -c
+command_exists allow_all_direnv_configs && allow_all_direnv_configs
+command_exists install_mise_versions && install_mise_versions
 rm -rf "${HOME}/.ssh/known_hosts.old"
 
 ##################
@@ -81,6 +81,14 @@ rm -rf "${HOME}/.ssh/known_hosts.old"
 ##############################################
 cd ..
 cd -
+
+##################################################
+# Load the direnv config for the profiles folder #
+##################################################
+if [ -d "${PERSONAL_PROFILES_DIR}" ]; then
+  cd "${PERSONAL_PROFILES_DIR}"
+  cd -
+fi
 
 ###################################################################
 # Restore the preferences from the older machine into the new one #
@@ -96,10 +104,7 @@ rm -rf "${HOME}"/.zcompdump*; compinit
 ###################
 # Setup cron jobs #
 ###################
-command_exists recron
-if [ $? -eq 0 ]; then
-  recron
-fi
+command_exists recron && recron
 
 # To install the latest versions of the hex, rebar and phoenix packages
 # mix local.hex --force && mix local.rebar --force
