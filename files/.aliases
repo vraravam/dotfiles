@@ -46,7 +46,7 @@ st() {
 # shortcuts to handle multiple git repos bypassing the omx auto-correct prompt
 alias rug='run_all.sh git'
 alias all="FOLDER='${HOME}' MAXDEPTH=5 rug"
-alias home="FOLDER='${HOME}' FILTER=\".bin|zsh|mise|tmux|vscod|rakshita\" MAXDEPTH=5 rug"
+alias home="FOLDER='${HOME}' FILTER=\".bin|zsh|mise|tmux|vscod\" MAXDEPTH=5 rug"
 alias oss="FOLDER='${PROJECTS_BASE_DIR}/oss' MAXDEPTH=2 rug"
 alias tw="FOLDER='${PROJECTS_BASE_DIR}/tw' MAXDEPTH=2 rug"
 alias jd="FOLDER='${PROJECTS_BASE_DIR}/jd' MAXDEPTH=3 rug"
