@@ -59,10 +59,6 @@ if [[ is_darwin ]]; then
   alias bupc='brew bundle check || brew bundle --all --cleanup; brew bundle cleanup -f; brew cleanup --prune=all; brew autoremove; brew upgrade'
 fi
 
-# list the contents of the folder in order of modified time (latest first)
-alias lstime='ls -Fhalts'
-alias lstop='ls -Fhalts | head'
-
 alias findbrokenlinks='find . -type l | (while read FN ; do test -e "$FN" || ls -ld "$FN"; done)'
 alias clearlogs='rm -vrf */log/*.log'
 alias clearcoverage='rm -vrf */coverage */coverage.data'
