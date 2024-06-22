@@ -226,15 +226,14 @@ setup_login_item() {
 
 app_list=(
   'AlDente.app'
-  'Bitwarden.app'
   'Clocker.app'
   'Cloudflare WARP.app'
   'Command X.app'
-  'Flycut.app'
   'iBar.app'
   'Itsycal.app'
   'KeepingYouAwake.app'
   'Keybase.app'
+  'Maccy.app'
   'Rectangle.app'
   'Stats.app'
 )

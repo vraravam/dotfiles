@@ -1402,6 +1402,18 @@ if ask "Flycut settings" Y; then
 fi
 
 ###############################################################################
+# Maccy                                                                       #
+###############################################################################
+if ask "Maccy settings" Y; then
+  defaults write org.p0deje.Maccy historySize -int 300
+  defaults write org.p0deje.Maccy ignoredApps -array "org.keepassxc.keepassxc"
+  defaults write org.p0deje.Maccy pasteByDefault -bool true
+  defaults write org.p0deje.Maccy removeFormattingByDefault -bool true
+  defaults write org.p0deje.Maccy showRecentCopyInMenuBar -bool false
+  defaults write org.p0deje.Maccy searchMode -string "mixed"
+fi
+
+###############################################################################
 # Google Chrome & Google Chrome Canary                                        #
 ###############################################################################
 if ask "Chrome settings" Y; then
@@ -1765,10 +1777,10 @@ for app in "Activity Monitor" \
   "Contacts" \
   "Dock" \
   "Finder" \
-  "Flycut" \
   "Google Chrome Beta" \
   "Google Chrome Canary" \
   "Google Chrome" \
+  "Maccy" \
   "Mail" \
   "Rectangle" \
   "Safari" \
