@@ -60,7 +60,7 @@ fi
 echo "$(green "==> Verifying FileVault status")"
 FILEVAULT_STATUS=$(fdesetup status)
 if [[ ${FILEVAULT_STATUS} != "FileVault is On." ]]; then
-  echo "FileVault is not turned on. Please encrypt your hard disk!"
+  echo "$(red "FileVault is not turned on. Please encrypt your hard disk!")"
   exit 1
 fi
 
@@ -233,8 +233,7 @@ app_list=(
   'Itsycal.app'
   'KeepingYouAwake.app'
   'Keybase.app'
-  'Maccy.app'
-  'Rectangle.app'
+  'Raycast.app'
   'Stats.app'
 )
 for app in "${app_list[@]}"; do

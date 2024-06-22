@@ -78,11 +78,9 @@ brew 'zsh'
 # ----------------------------------------------------------------------------------------------------------
 brew 'mas'
 mas 'iBar-Menubar icon control tool', id: 6443843900
-mas 'Velja', id: 1607635845
 
 # ----------------------------------------------------------------------------------------------------------
 cask 'aldente'
-# cask 'alfred'
 cask 'apparency'
 cask 'appcleaner'
 cask 'arc'
@@ -106,7 +104,6 @@ cask 'keybase'
 cask 'libreoffice'
 # cask 'licecap'
 # cask 'lulu'
-cask 'maccy'
 cask 'monolingual'
 # cask 'netspot'
 # cask 'ngrok'
@@ -114,7 +111,7 @@ cask 'notunes'
 # cask 'onyx'  # Commented out since I'm on the beta version of macos
 cask 'protonvpn'
 cask 'rancher'
-cask 'rectangle'
+cask 'raycast'
 cask 'silicon' if is_arm
 cask 'stats'
 # cask 'tempbox'

@@ -1780,9 +1780,7 @@ for app in "Activity Monitor" \
   "Google Chrome Beta" \
   "Google Chrome Canary" \
   "Google Chrome" \
-  "Maccy" \
   "Mail" \
-  "Rectangle" \
   "Safari" \
   "SizeUp" \
   "SystemUIServer" \
