@@ -21,15 +21,15 @@
 # These env vars are defined by (duplicated intentionally) since this script would bootstrap the installation
 USERNAME="${USERNAME:-$(whoami)}"
 
-# download and source this utility script - so that the functions are available for this script
-FIRST_INSTALL=true
-[ ! -f "${HOME}/.shellrc" ] && curl -fsSL https://raw.githubusercontent.com/vraravam/dotfiles/master/files/.shellrc -o "${HOME}/.shellrc"
-type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
-
 ######################################################################################################################
 # Set DNS of 8.8.8.8 before proceeding (in some cases, for eg Jio Wifi, github doesn't resolve at all and times out) #
 ######################################################################################################################
 sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
+
+# download and source this utility script - so that the functions are available for this script
+FIRST_INSTALL=true
+[ ! -f "${HOME}/.shellrc" ] && curl -fsSL https://raw.githubusercontent.com/vraravam/dotfiles/master/files/.shellrc -o "${HOME}/.shellrc"
+type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 ##################################
 # Install command line dev tools #
