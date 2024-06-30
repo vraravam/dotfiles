@@ -141,7 +141,7 @@
 
   # compress disk-space-usage by deleting dangling commits
   # Note: Do not use '--all' switch for reflog expire - since that also destroys stashes
-  cc = "!echo \"==> Size of repository at $(pwd) before: $(du -sh .git | cut -f1)\"; git remote prune origin; git repack; git prune-packed; git reflog expire --all --expire=1.week.ago; git maintenance run --task=gc; echo \"==> Size of repository at $(pwd) after: $(du -sh .git | cut -f1)\";"
+  cc = "!echo \"==> Size of repository at $(pwd) before: $(du -sh .git | cut -f1)\"; git remote prune origin; git repack -a -d -f --depth=250 --window=250; git reflog expire --all --expire=1.week.ago; git maintenance run --task=gc; echo \"==> Size of repository at $(pwd) after: $(du -sh .git | cut -f1)\";"
 
   # show the biggest files in the disk (this is not technically specific to git-tracked files)
   big = "!git rev-list --objects --all | grep \"$(git verify-pack -v .git/objects/pack/*.idx | sort -k 3 -n | tail -100 | awk '{print $1}')\""

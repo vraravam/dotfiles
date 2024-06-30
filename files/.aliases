@@ -42,6 +42,11 @@ st() {
   echo "$(green "==> Processing ${target} <==")"
   git -C "${target}" st
 }
+cc() {
+  target="${1:-.}"
+  echo "$(green "==> Processing ${target} <==")"
+  git -C "${target}" cc
+}
 
 # shortcuts to handle multiple git repos bypassing the omx auto-correct prompt
 alias rug='run_all.sh git'
