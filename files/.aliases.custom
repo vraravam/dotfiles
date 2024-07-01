@@ -25,7 +25,7 @@ allow_all_direnv_configs() {
 
 # updates the specified repo (handles either the home repo or the profiles repo - one at a time)
 # internal function: not to be called separately
-update_repo() {
+_update_repo() {
   if [ $# -ne 1 ]; then
     echo "Usage: ${0} <repo folder>"
     echo "    eg: ${HOME} "
@@ -35,8 +35,6 @@ update_repo() {
 
   # Remove trailing slash if present
   folder="${1%\/}"
-
-  # crontab -r
 
   # shellcheck disable=SC2005
   echo "$(green "==> Updating '${folder}'")"
@@ -58,18 +56,15 @@ update_repo() {
 
   # shellcheck disable=SC2086
   eval "${git_cmd} add ${default_contents}" && eval "${git_cmd} sci \"Incremental commit: $(date)\"" && eval "${git_cmd} siu"
-
-  # Note: With the latest version of macOs, running this command within a cron job seems to fail silently
-  # crontab ${PERSONAL_BIN_DIR}/macos/crontab.txt
 }
 
 # updates the home and profiles repos
 update_all_repos() {
-  update_repo "${PERSONAL_PROFILES_DIR}"; update_repo "${HOME}"
+  _update_repo "${PERSONAL_PROFILES_DIR}"; _update_repo "${HOME}"
 }
 
 # internal function: not to be called separately
-_push_it() {
+_push_repo() {
   # shellcheck disable=SC2005
   echo "$(green "*** Pushing ${1}")" && git -C "${1}" push --force-with-lease && echo "$(green "*** Pushed ${1}")"
 }
@@ -78,12 +73,12 @@ _push_it() {
 push_all_repos() {
   crontab -r
 
-  _push_it "${HOME}"
+  _push_repo "${HOME}"
   # shellcheck disable=SC2005
   echo "$(red "---------------------------------------------------------------------------")"
-  _push_it "${PERSONAL_PROFILES_DIR}"
+  _push_repo "${PERSONAL_PROFILES_DIR}"
 
-  crontab "${PERSONAL_BIN_DIR}/macos/crontab.txt"
+  recron
 }
 
 # resurrects the cron entries based on the '${PERSONAL_BIN_DIR}/macos/crontab.txt' file
@@ -123,7 +118,7 @@ build_me() {
   "${PERSONAL_CONFIGS_DIR}/build-${PWD##*/}.sh"
 }
 
-if [[ is_darwin ]]; then
+if [[ is_macos ]]; then
   # brew cask contribution
   check_cask() {
     # shasum -a 256 <fileName>

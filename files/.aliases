@@ -57,7 +57,7 @@ alias tw="FOLDER='${PROJECTS_BASE_DIR}/tw' MAXDEPTH=2 rug"
 alias jd="FOLDER='${PROJECTS_BASE_DIR}/jd' MAXDEPTH=3 rug"
 alias upreb="FOLDER='${PROJECTS_BASE_DIR}/oss' rug upreb"
 
-if [[ is_darwin ]]; then
+if [[ is_macos ]]; then
   # TODO: Remove later (kept here for reference): brew outdated --cask | xargs brew cask reinstall
   alias bcg='brew outdated --greedy'
   alias bcug='brew upgrade --greedy'
@@ -75,20 +75,20 @@ if [[ is_linux ]]; then
   alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i 's/[ ]*$//' {} \;"
 elif [[ is_windows ]]; then
   alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i 's/[ ]*$//' {} \;"
-elif [[ is_darwin ]]; then
+elif [[ is_macos ]]; then
   alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i '' 's/[ ]*$//' {} \;"
 fi
 
 # generate mac addr to escape some free wifi mac addr restrictions
 if [[ is_linux ]]; then
   alias free-wifi="(ifconfig eth0 | grep ether) && (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig eth0 ether) && (ifconfig eth0 | grep ether)"
-elif [[ is_darwin ]]; then
+elif [[ is_macos ]]; then
   alias free-wifi="(ifconfig en0 | grep ether) && (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig en0 ether) && (ifconfig en0 | grep ether)"
   alias flush-dns="sudo killall -HUP mDNSResponder;sudo killall mDNSResponderHelper;sudo dscacheutil -flushcache;say MacOS DNS cache has been cleared"
 fi
 
 # MacOS: Remove apps from quarantine
-if [[ is_darwin ]]; then
+if [[ is_macos ]]; then
   alias unquarantine='sudo xattr -rd com.apple.quarantine'
 fi
 

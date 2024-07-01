@@ -70,32 +70,20 @@ warn() (
   echo "$(yellow "**WARN** ${1}")"
 )
 
-is_darwin() {
-  if [[ "${OSTYPE}" =~ 'darwin' ]]; then
-    # 0 = true
-    return 0
-  else
-    # 1 = false
-    return 1
-  fi
+is_macos() {
+  # 0 -> true; 1 -> false
+  [[ "${OSTYPE}" =~ 'darwin' ]] && return 0
+  return 1
 }
 
 is_linux() {
-  if [[ "$(uname)" =~ 'Linux' ]]; then
-    # 0 = true
-    return 0
-  else
-    # 1 = false
-    return 1
-  fi
+  # 0 -> true; 1 -> false
+  [[ "${OSTYPE}" =~ 'Linux' ]] && return 0
+  return 1
 }
 
 is_windows() {
-  if [[ "$(uname)" =~ 'MINGW' ]]; then
-    # 0 = true
-    return 0
-  else
-    # 1 = false
-    return 1
-  fi
+  # 0 -> true; 1 -> false
+  [[ "${OSTYPE}" =~ 'MINGW' ]] && return 0
+  return 1
 }

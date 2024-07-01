@@ -29,8 +29,8 @@ load_file_if_exists "${XDG_CACHE_HOME}/p10k-instant-prompt-${USERNAME}.zsh"
 # To customize prompt, run `p10k configure` or edit ${HOME}/.p10k.zsh.
 load_file_if_exists "${HOME}/.p10k.zsh"
 # TODO: the path didn't exist in a newly imaged machine - need to revisit at a later time
-load_file_if_exists "${HOMEBREW_PREFIX}/opt/powerlevel10k/powerlevel10k.zsh-theme"  # To be used if installing using brew
-load_file_if_exists "${HOMEBREW_PREFIX}/share/powerlevel10k/powerlevel10k.zsh-theme"  # To be used if installing using brew
+load_file_if_exists "${HOMEBREW_PREFIX}/opt/powerlevel10k/powerlevel10k.zsh-theme"
+load_file_if_exists "${HOMEBREW_PREFIX}/share/powerlevel10k/powerlevel10k.zsh-theme"
 
 # Path to your oh-my-zsh installation.
 export ZSH="${HOME}/.oh-my-zsh"

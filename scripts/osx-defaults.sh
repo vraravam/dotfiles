@@ -31,11 +31,7 @@ case "${1}" in
     ;;
 esac
 
-GREEN='\033[0;32m'
-NC='\033[0m' # No Color
-green() {
-  printf "${GREEN}${1}${NC}"
-}
+type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 ask() {
   while true

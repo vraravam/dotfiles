@@ -30,9 +30,7 @@ else
 fi
 
 # For the profiles repo alone, I don't care about retaining the history
-if [[ "${folder}" =~ "profiles" ]]; then
-  force=Y
-fi
+[[ "${folder}" =~ "profiles" ]] && force=Y
 
 echo "Processing folder: '${folder}'"
 echo "force: ${force}"

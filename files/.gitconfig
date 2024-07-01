@@ -22,7 +22,7 @@
   # find files/folders with the parameter as part of the name
   f = "!git ls-files | grep -i"
 
-  # if a local commit exists, then amend it, else create a new commit with the specified message. Aborts if diverged or nothing to commit
+  # if a local commit exists, then amend it, else create a new commit with the specified message. Aborts if diverged (with non-zero error code) or nothing to commit
   sci = "!sh -c '\
     if $(git st | grep -q \"have diverged\"); then \
       echo \"Diverged branches: aborting\"; \

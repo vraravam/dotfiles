@@ -25,7 +25,7 @@ export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
 # Erlang history in iex
 export ERL_AFLAGS="-kernel shell_history enabled -kernel shell_history_file_bytes 1024000"
 
-if [[ is_darwin ]]; then
+if [[ is_macos ]]; then
   # setopt glob_dots                # no special treatment for file names with a leading dot
   # # setopt no_auto_menu             # require an extra TAB press to open the completion menu
   # setopt auto_menu                # automatically use menu completion
@@ -174,7 +174,7 @@ command_exists mise && _evalcache mise activate zsh
 [ -d "${PERSONAL_CONFIGS_DIR}" ] && export PATH="${PATH+:${PATH}}:${PERSONAL_CONFIGS_DIR}"
 
 # If brew exists, put homebrew in the beginning of the PATH as the final step so that other configs don't mess this up
-command_exists brew && eval "$(${HOMEBREW_PREFIX}/bin/brew shellenv)"
+command_exists brew && _evalcache "${HOMEBREW_PREFIX}/bin/brew" shellenv
 
 # Make VSCodium use the VS Code marketplace
 command_exists codium
