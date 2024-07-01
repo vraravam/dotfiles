@@ -1,6 +1,6 @@
 # Background
 
-This repo was created from the gists that I was using to help others adopt my machine setup. It contains the common dotfiles as well as the scripts that I use to share the machine setup. These scripts are idempotent and can run on a vanilla OS as well as once the whole setup has been completed. Each script will warn the users if its skipping a step, and if you want to rerun the script but force that stap, you just need to delete the control `if` condition (you should have a basic understanding of shell programming to figure out what to delete/how to force without bypass).
+This repo was created from the gists that I was using to help others adopt my machine setup. It contains the common dotfiles as well as the scripts that I use to share the machine setup. These scripts are idempotent and can run on a vanilla OS as well as once the whole setup has been completed. Each script will warn the users if its skipping a step, and if you want to rerun the script but force that step, you just need to delete the control `if` condition (you should have a basic understanding of shell programming to figure out what to delete/how to force without bypass).
 
 # Generic/Common Getting started
 
