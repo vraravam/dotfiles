@@ -5,7 +5,7 @@
 
 # file location: ${HOME}/.zshrc
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-[ -n "${FIRST_INSTALL+1}" ] && echo "loading .zshrc"
+test -n "${FIRST_INSTALL+1}" && echo "loading .zshrc"
 
 # Optimizing zsh:
 # https://htr3n.github.io/2018/07/faster-zsh/
@@ -36,7 +36,7 @@ load_file_if_exists "${HOMEBREW_PREFIX}/share/powerlevel10k/powerlevel10k.zsh-th
 export ZSH="${HOME}/.oh-my-zsh"
 
 # Set name of the theme to load --- if set to "random", it will
-# load a random theme each time oh-my-zsh is loaded, in which case,
+# load a random theme each time Oh My Zsh is loaded, in which case,
 # to know which specific one was loaded, run: echo $RANDOM_THEME
 # See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
 # ZSH_THEME="robbyrussell"
@@ -117,19 +117,25 @@ command_exists direnv && _evalcache direnv hook zsh
 # export LANG=en_US.UTF-8
 
 # Preferred editor for remote sessions
-[[ -n ${SSH_CONNECTION} ]] && export EDITOR="vim"
-# Use code if its installed (both Mac OSX and Linux)
-command_exists code
-[[ "${EDITOR}" == "" && $? -eq 0 ]] && export EDITOR="code --wait"
-# If neither of the above works, then fall back to vi
-[[ "${EDITOR}" == "" ]] && export EDITOR="vi"
+if [[ -n $SSH_CONNECTION ]]; then
+  export EDITOR='vim'
+elif [[ $(command_exists code) -eq 0 ]]; then
+  # Use code if its installed (both Mac OSX and Linux)
+  export EDITOR="code --wait"
+else
+  # If neither of the above works, then fall back to vi
+  export EDITOR='vi'
+fi
 
 # Compilation flags
-[[ "${arch}" =~ "x86" ]] && export ARCHFLAGS="-arch x86_64"
+[[ "${ARCH}" =~ "x86" ]] && export ARCHFLAGS="-arch x86_64"
 
-# Set personal aliases, overriding those provided by oh-my-zsh libs,
-# plugins, and themes. Aliases can be placed here, though oh-my-zsh
-# users are encouraged to define aliases within the ZSH_CUSTOM folder.
+# Set personal aliases, overriding those provided by Oh My Zsh libs,
+# plugins, and themes. Aliases can be placed here, though Oh My Zsh
+# users are encouraged to define aliases within a top-level file in
+# the $ZSH_CUSTOM folder, with .zsh extension. Examples:
+# - $ZSH_CUSTOM/aliases.zsh
+# - $ZSH_CUSTOM/macos.zsh
 # For a full list of active aliases, run `alias`.
 #
 # Example aliases
@@ -137,6 +143,15 @@ command_exists code
 # alias ohmyzsh="${EDITOR} ${ZSH}"
 
 load_file_if_exists "${HOME}/.zshrc.custom"
+
+# remove duplicates from some env vars
+typeset -U cdpath
+typeset -U cppflags
+typeset -U fpath
+typeset -U infopath
+typeset -U ldflags
+typeset -U manpath
+typeset -U path
 
 ### MANAGED BY RANCHER DESKTOP START (DO NOT EDIT)
 export PATH="${HOME}/.rd/bin:${PATH+:${PATH}}"

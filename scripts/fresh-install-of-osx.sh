@@ -35,8 +35,7 @@ type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 # Install command line dev tools #
 ##################################
 echo "$(green "==> Installing xcode command-line tools")"
-xcode-select -p > /dev/null 2>&1
-if [ $? != 0 ]; then
+if [[ $(xcode-select -p > /dev/null 2>&1) -ne 0 ]]; then
   # install using the non-gui cmd-line alone
   touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
   softwareupdate -ia
@@ -79,7 +78,7 @@ sudo chmod -R 600 "${HOME}"/.ssh/* || true
 # Install oh-my-zsh #
 #####################
 echo "$(green "==> Installing oh-my-zsh")"
-if [ ! -d "${HOME}/.oh-my-zsh" ]; then
+if [[ $(folder_exists "${HOME}/.oh-my-zsh") -ne 0 ]]; then
   ZSH= curl -fsSL http://install.ohmyz.sh | sh
 else
   warn "skipping installation of oh-my-zsh since '${HOME}/.oh-my-zsh' is already present"
@@ -93,7 +92,7 @@ ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
 mkdir -p "${ZSH_CUSTOM}/plugins"
 clone_if_not_present() {
   target_folder="${ZSH_CUSTOM}/plugins/$(basename ${1})"
-  if [ ! -d "${target_folder}" ]; then
+  if [[ $(folder_exists "${target_folder}") -ne 0 ]]; then
     git clone "${1}" "${target_folder}"
   else
     warn "skipping cloning of '${1}' since '${target_folder}' is already present"
@@ -109,7 +108,7 @@ clone_if_not_present https://github.com/zsh-users/zsh-completions
 ####################
 echo "$(green "==> Installing dotfiles")"
 DOTFILES_DIR="${DOTFILES_DIR:-"${HOME}/.bin-oss"}"
-if [ ! -d "${DOTFILES_DIR}" ]; then
+if [[ $(folder_exists "${DOTFILES_DIR}") -ne 0 ]]; then
   # Delete the auto-generated .zshrc since that needs to be replaced by the one in the .bin-oss repo
   rm -rfv "${HOME}/.zshrc"
 
@@ -117,12 +116,13 @@ if [ ! -d "${DOTFILES_DIR}" ]; then
   git clone https://github.com/vraravam/dotfiles "${DOTFILES_DIR}"
 
   # Setup the .bin-oss repo's upstream if it doesn't already point to vraravam's repo
-  git -C "${DOTFILES_DIR}" remote -vv | grep vraravam
-  if [ $? != 0 ]; then
+  if [[ $(git -C "${DOTFILES_DIR}" remote -vv | grep vraravam | wc -l) -eq 0 ]] &&; then
     # TODO: Prompt for the GH username and put it into the clone url. warn the user that they will have to manually fork from the web ui
 
     git -C "${DOTFILES_DIR}" remote add upstream https://github.com/vraravam/dotfiles
     git -C "${DOTFILES_DIR}" fetch --all
+  else
+    warn "Skipping setting new upstream remote"
   fi
 
   # Use the https protocol for pull, but use ssh/git for push
@@ -145,8 +145,7 @@ fi
 # Install homebrew #
 ####################
 echo "$(green "==> Installing homebrew")"
-command_exists brew
-if [ $? -ne 0 ]; then
+if [[ $(command_exists brew) -ne 0 ]]; then
   # Prep for installing homebrew
   sudo mkdir -p "${HOMEBREW_PREFIX}/tmp" "${HOMEBREW_PREFIX}/repository" "${HOMEBREW_PREFIX}/plugins" "${HOMEBREW_PREFIX}/bin"
   sudo chown -fR "${USERNAME}":admin "${HOMEBREW_PREFIX}"
@@ -164,7 +163,7 @@ brew bundle check || brew bundle --all || true
 # Install iTerm shell integration #
 ###################################
 echo "$(green "==> Installing iTerm shell integration")"
-if [ -e "/Applications/iTerm.app" ]; then
+if [[ $(application_exists "iTerm.app") -eq 0 ]]; then
   curl -fsSL https://iterm2.com/shell_integration/install_shell_integration_and_utilities.sh | bash
 else
   warn "Skipping installation of iterm shell integration since iterm is not installed"
@@ -182,30 +181,38 @@ replace_executable_if_exists_and_is_not_symlinked() {
 }
 
 echo "$(green "==> Linking VSCode/VSCodium for command-line invocation")"
-if [ -d "/Applications/VSCodium - Insiders.app" ]; then
+if [[ $(application_exists "VSCodium - Insiders.app") -eq 0 ]]; then
   # Symlink from the embedded executable for codium-insiders
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCodium - Insiders.app/Contents/Resources/app/bin/codium-insiders" "${HOMEBREW_PREFIX}/bin/codium-insiders"
   # if we are using 'vscodium-insiders' only, symlink it to 'codium' for ease of typing
   replace_executable_if_exists_and_is_not_symlinked "${HOMEBREW_PREFIX}/bin/codium-insiders" "${HOMEBREW_PREFIX}/bin/codium"
   # extra: also symlink for 'code'
   replace_executable_if_exists_and_is_not_symlinked "${HOMEBREW_PREFIX}/bin/codium" "${HOMEBREW_PREFIX}/bin/code"
-elif [ -d "/Applications/VSCodium.app" ]; then
+elif [[ $(application_exists "VSCodium.app") -eq 0 ]]; then
   # Symlink from the embedded executable for codium
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCodium.app/Contents/Resources/app/bin/codium" "${HOMEBREW_PREFIX}/bin/codium"
   # extra: also symlink for 'code'
   replace_executable_if_exists_and_is_not_symlinked "${HOMEBREW_PREFIX}/bin/codium" "${HOMEBREW_PREFIX}/bin/code"
-elif [ -d "/Applications/VSCode.app" ]; then
+elif [[ $(application_exists "VSCode.app") -eq 0 ]]; then
   # Symlink from the embedded executable for code
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCode.app/Contents/Resources/app/bin/code" "${HOMEBREW_PREFIX}/bin/code"
 else
   warn "Skipping symlinking vscode/vscodium for command-line invocation"
 fi
 
-# Setup rider for use from the cmd-line
-# replace_executable_if_exists_and_is_not_symlinked "/Applications/Rider.app/Contents/MacOS/rider" "${HOMEBREW_PREFIX}/bin/rider"
+echo "$(green "==> Linking rider for command-line invocation")"
+if [[ $(application_exists "Rider.app") -eq 0 ]]; then
+  replace_executable_if_exists_and_is_not_symlinked "/Applications/Rider.app/Contents/MacOS/rider" "${HOMEBREW_PREFIX}/bin/rider"
+else
+  warn "Skipping symlinking rider for command-line invocation"
+fi
 
-# Setup idea for use from the cmd-line
-# replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
+echo "$(green "==> Linking idea-ce for command-line invocation")"
+if [[ $(application_exists "IntelliJ IDEA CE.app") -eq 0 ]]; then
+  replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
+else
+  warn "Skipping symlinking idea for command-line invocation"
+fi
 
 # defaults write -g NSFileViewer -string org.yanex.marta
 # To revert back to use Finder as default file manager you can enter
@@ -217,7 +224,7 @@ fi
 #####################
 echo "$(green "==> Setting up login items")"
 setup_login_item() {
-  if [ -d "/Applications/${1}" ]; then
+  if [[ $(application_exists "${1}") -eq 0 ]]; then
     echo "$(green "Setting up '${1}' as a login item")" && osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/${1}\", hidden:false}" 2>&1 > /dev/null
   else
     warn "Couldn't find application '/Applications/${1}' and so skipping setting up as a login item"

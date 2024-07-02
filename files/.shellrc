@@ -5,7 +5,7 @@
 
 # file location: ${HOME}/.shellrc
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-[ -n "${FIRST_INSTALL+1}" ] && echo "loading .shellrc"
+test -n "${FIRST_INSTALL+1}" && echo "loading .shellrc"
 
 # custom file to capture the bare minimum shell functions that I have written
 
@@ -17,6 +17,18 @@ load_file_if_exists() {
 
 command_exists() {
   type "${1}" &> /dev/null 2>&1
+}
+
+folder_exists() {
+  # 0 -> true; 1 -> false
+  test -d "${1}" && return 0
+  return 1
+}
+
+application_exists() {
+  # 0 -> true; 1 -> false
+  test -d "/Applications/${1}" && return 0
+  return 1
 }
 
 load_zsh_configs() {

@@ -5,7 +5,7 @@
 
 # file location: ${HOME}/.zshenv
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-[ -n "${FIRST_INSTALL+1}" ] && echo "loading .zshenv"
+test -n "${FIRST_INSTALL+1}" && echo "loading .zshenv"
 
 # invoked by all invocations of Zsh, so we should keep it small and merely initialise necessary variables.
 
@@ -14,8 +14,6 @@ skip_global_compinit=1
 
 # http://disq.us/p/f55b78
 # setopt noglobalrcs
-
-# export SYSTEM="$(uname -s)"
 
 export ARCH="$(uname -m)"
 if [[ "${ARCH}" =~ "arm" ]]; then
@@ -26,6 +24,4 @@ fi
 
 # https://github.com/sorin-ionescu/prezto/blob/master/runcoms/zshenv
 # Ensure that a non-login, non-interactive shell has a defined environment.
-if [[ ( "${SHLVL}" -eq 1 && ! -o LOGIN ) && -s "${ZDOTDIR:-${HOME}}/.zprofile" ]]; then
-  source "${ZDOTDIR:-${HOME}}/.zprofile"
-fi
+[[ ( "${SHLVL}" -eq 1 && ! -o LOGIN ) && -s "${ZDOTDIR:-${HOME}}/.zprofile" ]] && source "${ZDOTDIR:-${HOME}}/.zprofile"

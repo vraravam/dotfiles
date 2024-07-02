@@ -23,7 +23,7 @@ load_zsh_configs
 # Clone the home repo #
 #######################
 echo "$(green "==> Cloning home repo")"
-if [ ! -d "${HOME}/.git" ]; then
+if [[ $(folder_exists "${HOME}/.git") -ne 0 ]]; then
   rm -rf "${HOME}/tmp"
   mkdir -p "${HOME}/tmp"
   git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME} "${HOME}/tmp"
@@ -46,7 +46,7 @@ fi
 # Clone the profiles repo #
 ###########################
 echo "$(green "==> Cloning profiles repo")"
-if [ ! -d "${PERSONAL_PROFILES_DIR}/.git" ]; then
+if [[ $(folder_exists "${PERSONAL_PROFILES_DIR}/.git") -ne 0 ]]; then
   rm -rf "${PERSONAL_PROFILES_DIR}"
   git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME} "${PERSONAL_PROFILES_DIR}"
 else
@@ -85,7 +85,7 @@ cd -
 ##################################################
 # Load the direnv config for the profiles folder #
 ##################################################
-if [ -d "${PERSONAL_PROFILES_DIR}" ]; then
+if [[ $(folder_exists "${PERSONAL_PROFILES_DIR}") -eq 0 ]]; then
   cd "${PERSONAL_PROFILES_DIR}"
   cd -
 fi
