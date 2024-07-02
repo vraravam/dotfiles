@@ -5,23 +5,12 @@
 
 # file location: ${HOME}/.aliases.custom
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-[ -n "${FIRST_INSTALL+1}" ] && echo "loading .aliases.custom"
+test -n "${FIRST_INSTALL+1}" && echo "loading .aliases.custom"
+
+# This script is very customized to my local setup (and thus separated from the .aliases file). Sharing in the hope that its useful for others
 
 # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
 alias code-gist='code ${PERSONAL_CONFIGS_DIR} ${PERSONAL_BIN_DIR} ${DOTFILES_DIR} ${HOME}/.gitconfig-* ${HOME}/.tool-versions ${HOME}/.envrc'
-
-# installs all languages that mise can handle for all repos that are checked out
-install_mise_versions() {
-  find "${HOME}" -name ".tool-versions" -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
-  find "${PROJECTS_BASE_DIR}" -type d -maxdepth 3 -exec echo "===> Installing for {}" \; -execdir mise install \;
-}
-
-# runs 'direnv allow' on all code repositories that are checked out
-allow_all_direnv_configs() {
-  find "${HOME}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
-  find "${PERSONAL_PROFILES_DIR}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
-  find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 4 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
-}
 
 # updates the specified repo (handles either the home repo or the profiles repo - one at a time)
 # internal function: not to be called separately
@@ -100,11 +89,6 @@ recron() {
 
 # runs git gc on the keybase repo (not sure if this actually compresses the remote repo or not)
 alias kbgc="keybase git gc --force home; keybase git gc --force profiles"
-
-# deletes the zsh compiled files so that they can be recompiled whenever the new session is next started
-delete_zsh_compilations() {
-  find ${HOME} -maxdepth 4 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
-}
 
 # common build, debug and launch aliases for any folder - converted to functions for lazy evaluation
 # these will use the current folder name to find the shell script to run

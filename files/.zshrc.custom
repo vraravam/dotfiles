@@ -5,25 +5,14 @@
 
 # file location: ${HOME}/.zshrc.custom
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-[ -n "${FIRST_INSTALL+1}" ] && echo "loading .zshrc.custom"
+test -n "${FIRST_INSTALL+1}" && echo "loading .zshrc.custom"
+
+# This script is very customized to my local setup (and thus separated from the .zshrc file). Sharing in the hope that its useful for others
 
 load_file_if_exists "${HOME}/.aliases"
 
-# Homebrew (path has been setup in ${HOME}/.zprofile)
-export MANPATH="${HOMEBREW_PREFIX}/share/man${MANPATH+:$MANPATH}"
-export INFOPATH="${HOMEBREW_PREFIX}/share/info${INFOPATH+:$INFOPATH}"
-
-export HOMEBREW_NO_ANALYTICS=1
-export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
-export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
-export HOMEBREW_BAT=1
-export HOMEBREW_VERBOSE_USING_DOTS=1
-export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
-# TODO: Uncomment once this feature is stabilized
-# export HOMEBREW_VERIFY_ATTESTATIONS=1
-
-# Erlang history in iex
-export ERL_AFLAGS="-kernel shell_history enabled -kernel shell_history_file_bytes 1024000"
+# erlang history in iex
+# export ERL_AFLAGS="-kernel shell_history enabled -kernel shell_history_file_bytes 1024000"
 
 if [[ is_macos ]]; then
   # setopt glob_dots                # no special treatment for file names with a leading dot
@@ -136,11 +125,9 @@ zstyle :bracketed-paste-magic paste-finish pastefinish
 
 load_file_if_exists "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
 
-# override default curl and use from homebrew installation
-CURL_DIR="${HOMEBREW_PREFIX}/opt/curl"
-[ -d "${CURL_DIR}" ] && export PATH="${CURL_DIR}/bin:${PATH+:${PATH}}"
-
 use_homebrew_installation_for() {
+  [ ! -d "${1}" ] && return
+
   export PATH="${1}/bin:${PATH+:${PATH}}"
   # For compilers to find this installation you may need to set:
   export LDFLAGS="-L${1}/lib ${LDFLAGS+ ${LDFLAGS}}"
@@ -149,19 +136,19 @@ use_homebrew_installation_for() {
   export PKG_CONFIG_PATH="${1}/lib/pkgconfig${PKG_CONFIG_PATH+:${PKG_CONFIG_PATH}}"
 }
 
+# override default curl and use from homebrew installation
+use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/curl"
+
 # zlib - required for installing python via mise
-ZLIB_DIR="${HOMEBREW_PREFIX}/opt/zlib"
-[ -d "${ZLIB_DIR}" ] && use_homebrew_installation_for "${ZLIB_DIR}"
+use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/zlib"
 
 # override default Sqlite3 and use from homebrew installation
-SQLITE_DIR="${HOMEBREW_PREFIX}/opt/sqlite"
-[ -d "${SQLITE_DIR}" ] && use_homebrew_installation_for "${SQLITE_DIR}"
+use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/sqlite"
 
+# override default openssl and use from homebrew installation
 OPENSSL_DIR="${HOMEBREW_PREFIX}/opt/openssl@3"
-if [ -d "${OPENSSL_DIR}" ]; then
-  use_homebrew_installation_for "${OPENSSL_DIR}"
-  export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${OPENSSL_DIR}"
-fi
+use_homebrew_installation_for "${OPENSSL_DIR}"
+[ -d "${OPENSSL_DIR}" ] && export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${OPENSSL_DIR}"
 
 # Load mise path changes
 # eval "$(mise activate zsh)"
@@ -175,6 +162,18 @@ command_exists mise && _evalcache mise activate zsh
 
 # If brew exists, put homebrew in the beginning of the PATH as the final step so that other configs don't mess this up
 command_exists brew && _evalcache "${HOMEBREW_PREFIX}/bin/brew" shellenv
+
+export MANPATH="${HOMEBREW_PREFIX}/share/man${MANPATH+:$MANPATH}"
+export INFOPATH="${HOMEBREW_PREFIX}/share/info${INFOPATH+:$INFOPATH}"
+
+export HOMEBREW_NO_ANALYTICS=1
+export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
+export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
+export HOMEBREW_BAT=1
+export HOMEBREW_VERBOSE_USING_DOTS=1
+export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
+# TODO: Uncomment once this feature is stabilized
+# export HOMEBREW_VERIFY_ATTESTATIONS=1
 
 # Make VSCodium use the VS Code marketplace
 command_exists codium
@@ -191,12 +190,3 @@ fi
 
 # iTerm2 shell integrations
 load_file_if_exists "${HOME}/.iterm2_shell_integration.zsh"
-
-# remove duplicates from some env vars
-typeset -U cdpath
-typeset -U cppflags
-typeset -U fpath
-typeset -U infopath
-typeset -U ldflags
-typeset -U manpath
-typeset -U path

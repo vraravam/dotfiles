@@ -34,7 +34,7 @@ if [ ! -d "${HOME}/.git" ]; then
   git -C "${HOME}" checkout ".[a-zA-Z]*" personal
 
   # Reset ssh keys' permissions so that git doesn't complain when using them
-  sudo chmod -R 600 "${HOME}"/.ssh/*
+  sudo chmod -R 600 "${HOME}"/.ssh/* || true
 
   # Fix /etc/hosts file to block facebook #
   sudo cp "${PERSONAL_BIN_DIR}/macos/etc.hosts" /etc/hosts

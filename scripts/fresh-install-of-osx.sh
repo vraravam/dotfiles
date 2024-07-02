@@ -123,6 +123,8 @@ if [ ! -d "${DOTFILES_DIR}" ]; then
 
     git -C "${DOTFILES_DIR}" remote add upstream https://github.com/vraravam/dotfiles
     git -C "${DOTFILES_DIR}" fetch --all
+  else
+    warn "Skipping setting new upstream remote"
   fi
 
   # Use the https protocol for pull, but use ssh/git for push
@@ -164,7 +166,7 @@ brew bundle check || brew bundle --all || true
 # Install iTerm shell integration #
 ###################################
 echo "$(green "==> Installing iTerm shell integration")"
-if [ -e "/Applications/iTerm.app" ]; then
+if [ -d "/Applications/iTerm.app" ]; then
   curl -fsSL https://iterm2.com/shell_integration/install_shell_integration_and_utilities.sh | bash
 else
   warn "Skipping installation of iterm shell integration since iterm is not installed"
@@ -201,11 +203,19 @@ else
   warn "Skipping symlinking vscode/vscodium for command-line invocation"
 fi
 
-# Setup rider for use from the cmd-line
-# replace_executable_if_exists_and_is_not_symlinked "/Applications/Rider.app/Contents/MacOS/rider" "${HOMEBREW_PREFIX}/bin/rider"
+echo "$(green "==> Linking rider for command-line invocation")"
+if [ -d "/Applications/Rider.app" ]; then
+  replace_executable_if_exists_and_is_not_symlinked "/Applications/Rider.app/Contents/MacOS/rider" "${HOMEBREW_PREFIX}/bin/rider"
+else
+  warn "Skipping symlinking rider for command-line invocation"
+fi
 
-# Setup idea for use from the cmd-line
-# replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
+echo "$(green "==> Linking idea-ce for command-line invocation")"
+if [ -d "/Applications/IntelliJ IDEA CE.app" ]; then
+  replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
+else
+  warn "Skipping symlinking idea for command-line invocation"
+fi
 
 # defaults write -g NSFileViewer -string org.yanex.marta
 # To revert back to use Finder as default file manager you can enter

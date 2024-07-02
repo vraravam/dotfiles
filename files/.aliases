@@ -5,9 +5,9 @@
 
 # file location: ${HOME}/.aliases
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-[ -n "${FIRST_INSTALL+1}" ] && echo "loading .aliases"
+test -n "${FIRST_INSTALL+1}" && echo "loading .aliases"
 
-# DUPLICATE! Copied over since we get an error if the .zprofile was not loaded (which loads this script)
+# DUPLICATE! Copied over since we get an error if the .zprofile was not loaded
 type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 # Add flags to existing aliases.
@@ -56,6 +56,28 @@ alias oss="FOLDER='${PROJECTS_BASE_DIR}/oss' MAXDEPTH=2 rug"
 alias tw="FOLDER='${PROJECTS_BASE_DIR}/tw' MAXDEPTH=2 rug"
 alias jd="FOLDER='${PROJECTS_BASE_DIR}/jd' MAXDEPTH=3 rug"
 alias upreb="FOLDER='${PROJECTS_BASE_DIR}/oss' rug upreb"
+
+# deletes the zsh compiled files so that they can be recompiled whenever the new session is next started
+delete_zsh_compilations() {
+  find ${HOME} -maxdepth 4 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
+}
+
+# installs all languages that mise can handle for all repos that are checked out
+install_mise_versions() {
+  ! command_exists mise && return
+
+  find "${HOME}" -name ".tool-versions" -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
+  find "${PROJECTS_BASE_DIR}" -type d -maxdepth 3 -exec echo "===> Installing for {}" \; -execdir mise install \;
+}
+
+# runs 'direnv allow' on all code repositories that are checked out
+allow_all_direnv_configs() {
+  ! command_exists direnv && return
+
+  find "${HOME}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  find "${PERSONAL_PROFILES_DIR}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 4 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+}
 
 if [[ is_macos ]]; then
   # TODO: Remove later (kept here for reference): brew outdated --cask | xargs brew cask reinstall

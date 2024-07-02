@@ -5,7 +5,7 @@
 
 # file location: ${HOME}/.shellrc
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-[ -n "${FIRST_INSTALL+1}" ] && echo "loading .shellrc"
+test -n "${FIRST_INSTALL+1}" && echo "loading .shellrc"
 
 # custom file to capture the bare minimum shell functions that I have written
 

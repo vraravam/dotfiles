@@ -5,7 +5,7 @@
 
 # file location: ${HOME}/.zlogin
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-[ -n "${FIRST_INSTALL+1}" ] && echo "loading .zlogin"
+test -n "${FIRST_INSTALL+1}" && echo "loading .zlogin"
 
 recompile_zsh_scripts() {
   if [[ -s "${1}" && (! -s "${1}.zwc" || "${1}" -nt "${1}.zwc") ]]; then
@@ -45,7 +45,7 @@ find_in_folder_and_recompile() {
   find_in_folder_and_recompile "${HOME}/.bin"
   find_in_folder_and_recompile "${HOME}/dev/oss"
   find_in_folder_and_recompile "${HOME}/personal/dev"
-  find_in_folder_and_recompile "${ZDOTDIR:-${HOME}}/.oh-my-zsh}"
+  find_in_folder_and_recompile "${ZDOTDIR:-${HOME}}/.oh-my-zsh"
   find_in_folder_and_recompile /opt/homebrew
   find_in_folder_and_recompile /usr/local
 ) &!
