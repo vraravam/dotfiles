@@ -93,7 +93,8 @@ fi
 ###################################################################
 # Restore the preferences from the older machine into the new one #
 ###################################################################
-osx-defaults.sh -s
+# "Run within a separate bash shell to avoid quitting due to errors
+bash -c "osx-defaults.sh -s"
 capture-defaults.sh i
 
 ################################

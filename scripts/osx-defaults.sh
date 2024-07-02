@@ -258,9 +258,10 @@ if ask "Set the harddisk sleep time to 15 minutes" Y; then
   sudo systemsetup -setharddisksleep 15
 fi
 
-if ask "Set the remote login to off" Y; then
-  sudo systemsetup -setremotelogin off
-fi
+# TODO: This causes terminal.app to run in an interactive loop
+# if ask "Set the remote login to off" Y; then
+#   sudo systemsetup -setremotelogin off
+# fi
 
 # Disable Notification Center and remove the menu bar icon
 # launchctl unload -w /System/Library/LaunchAgents/com.apple.notificationcenterui.plist 2> /dev/null
