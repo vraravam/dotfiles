@@ -2,9 +2,6 @@
 
 # Note: This script is specific to my setup and might not be useful for others. This is being shared so as to be used as a reference if you want to mimic the same setup.
 
-# You can run this script using this command:
-# curl -fsSL https://raw.githubusercontent.com/vraravam/dotfiles/master/scripts/fresh-install-of-osx-custom.sh | zsh
-
 # Note: Change these as per your settings
 USERNAME="${USERNAME:-$(whoami)}"
 KEYBASE_USERNAME="${KEYBASE_USERNAME:-"avijayr"}"
@@ -14,7 +11,7 @@ PERSONAL_PROFILES_DIR="${PERSONAL_PROFILES_DIR:-"${HOME}/personal/${USERNAME}/pr
 PERSONAL_BIN_DIR="${PERSONAL_BIN_DIR:-"${HOME}/.bin"}"
 PERSONAL_CONFIGS_DIR="${PERSONAL_CONFIGS_DIR:-"${HOME}/personal/dev"}"
 
-source "${HOME}/.shellrc"
+type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.shellrc"
 # Load all zsh config files for PATH and other env vars to take effect
 # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
 load_zsh_configs

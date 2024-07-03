@@ -1,18 +1,16 @@
 #!/usr/bin/env zsh
 
-# This script can be used to setup a macos machine based on Vijay's configurations. As of now, this script is idempotent and will restore your local setup to the same state if run multiple times.
-# If you have the same files already present, it will prompt you whether to override or not
+# This script can be used to setup a macos machine based on Vijay's configurations. This script is idempotent and will restore your local setup to the same state even if run multiple times. In most cases, the script will provide warning messages if skipping certain steps. Each such message will be useful to hint to the user about what to do to force rerunning of that step.
+
 # file location: <anywhere> (just need to invoke it from that location)
 
-# You can run this script using this command:
-# curl -fsSL https://raw.githubusercontent.com/vraravam/dotfiles/master/scripts/fresh-install-of-osx.sh | zsh
-
-# BEFORE STARTING TO RUN THIS SCRIPT (for the first time on a new machine)
+# BEFORE STARTING TO RUN THIS SCRIPT (for the first time on a new machine), these steps are recommended
 # 1. Login into Apple App store
 # 2. Grant full disk access to Terminal app via System Preferences
 # 3. Turn on File Vault encryption via System Preferences (if not, then this script will exit in the beginning with an appropriate message)
 # 4. Turn off battery from showing in the Control Center (nice to have especially if you end up with the Stats app)
 # 5. Change the built-in clock to show as analog to save horizontal space in the Control Center via System Preferences
+# 6. If you are already on a system where you have installed some software using homebrew, please check out this instruction: https://github.com/vraravam/dotfiles/blob/master/files/Brewfile#L7
 
 # TODO: Need to figure out the scriptable commands for the following settings:
 # 1. Auto-adjust Brightness
@@ -26,10 +24,11 @@ USERNAME="${USERNAME:-$(whoami)}"
 ######################################################################################################################
 sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
 
-# download and source this utility script - so that the functions are available for this script
-FIRST_INSTALL=true
+#################################################################################################
+# Download and source this utility script - so that the functions are available for this script #
+#################################################################################################
 [ ! -f "${HOME}/.shellrc" ] && curl -fsSL https://raw.githubusercontent.com/vraravam/dotfiles/master/files/.shellrc -o "${HOME}/.shellrc"
-type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.shellrc"
 
 ##################################
 # Install command line dev tools #
@@ -116,16 +115,18 @@ if [ ! -d "${DOTFILES_DIR}" ]; then
   # Note: Cloning with https since the ssh keys will not be present at this time
   git clone https://github.com/vraravam/dotfiles "${DOTFILES_DIR}"
 
+  # --------------------------------------------------------------------------------
+  # Note: Do NOT change these references to vraravam (start)
   # Setup the .bin-oss repo's upstream if it doesn't already point to vraravam's repo
   git -C "${DOTFILES_DIR}" remote -vv | grep vraravam
   if [ $? != 0 ]; then
-    # TODO: Prompt for the GH username and put it into the clone url. warn the user that they will have to manually fork from the web ui
-
     git -C "${DOTFILES_DIR}" remote add upstream https://github.com/vraravam/dotfiles
     git -C "${DOTFILES_DIR}" fetch --all
   else
     warn "Skipping setting new upstream remote"
   fi
+  # Note: Do NOT change these references to vraravam (end)
+  # --------------------------------------------------------------------------------
 
   # Use the https protocol for pull, but use ssh/git for push
   git -C "${DOTFILES_DIR}" config url.ssh://git@github.com/.pushInsteadOf https://github.com/
@@ -257,11 +258,10 @@ echo "$(red "2. Go to Terminal > Preferences > Profiles > Basic > Text > Change 
 echo "$(red "3. Go to iTerm2 > Preferences > Profiles > Default > Text > Change Font to 'MesloLGS Nerd Font'")"
 echo "$(red "4. Go to iTerm2 > Preferences > Profiles > Default > Keys > Key Mappings > Presets (and choose 'Natural Text Editing')")"
 echo "$(red "5. Turn on 'Tap to click' in Trackpad prefs")"
-echo "$(red "6. IF you want to have your own customization of the softwares installed, you will have to fork the git repo in '${HOME}/.bin-oss' and commit your changes into the 'fresh-install-of-osx.sh' script and other dotfiles. Remember to change the curl command as well if you do this - for a seamless experience")"
-echo "$(red "7. System Preferences > Privacy & Security: Full Disk Access > Add 'iTerm', 'Terminal', 'zoom.us'")"
-echo "$(red "8. System Preferences > Privacy & Security: Camera > Add 'Arc', 'zoom.us'")"
-echo "$(red "9. System Preferences > Privacy & Security: Microphone > Add 'Arc', 'zoom.us'")"
-echo "$(red "10. System Preferences > Displays > Set scaling / screen resolution")"
-echo "$(red "11. System Preferences > Displays > Turn off 'Automatically adjust brightness'")"
-echo "$(red "12. Manually adjust the Finder sidebar preferences")"
-echo "$(red "13. System Preferences > Desktop & Dock > Set the default web browser")"
+echo "$(red "6. System Preferences > Privacy & Security: Full Disk Access > Add 'iTerm', 'Terminal', 'zoom.us'")"
+echo "$(red "7. System Preferences > Privacy & Security: Camera > Add 'Arc', 'zoom.us'")"
+echo "$(red "8. System Preferences > Privacy & Security: Microphone > Add 'Arc', 'zoom.us'")"
+echo "$(red "9. System Preferences > Displays > Set scaling / screen resolution")"
+echo "$(red "10. System Preferences > Displays > Turn off 'Automatically adjust brightness'")"
+echo "$(red "11. Manually adjust the Finder sidebar preferences")"
+echo "$(red "12. System Preferences > Desktop & Dock > Set the default web browser")"

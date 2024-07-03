@@ -1,20 +1,8 @@
 #!/usr/bin/env bash
 
-##
-# This is a script with useful tips taken from:
-#   https://gist.github.com/DAddYE/2108403
-#
-# Run in interactive mode with:
-#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/vraravam/dotfiles/master/scripts/osx-defaults.sh)"
-#
-# or run it without prompt questions:
-#   sh -c "$(curl -fsSL https://raw.githubusercontent.com/vraravam/dotfiles/master/scripts/osx-defaults.sh)" -s
-#
+# This is a script with useful tips taken from: https://gist.github.com/DAddYE/2108403
 # Please, share your tips by forking the repo and adding your customizations
-#
-# Author: @vraravam
 # Thanks to: @erikh, @DAddYE, @mathiasbynens
-#
 
 case "${1}" in
   "-s" | "--silent" )
