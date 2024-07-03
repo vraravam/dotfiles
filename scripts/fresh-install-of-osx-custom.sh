@@ -90,6 +90,7 @@ fi
 ###################################################################
 # Restore the preferences from the older machine into the new one #
 ###################################################################
+echo "$(green "==> Restore preferences")"
 # "Run within a separate bash shell to avoid quitting due to errors
 bash -c "osx-defaults.sh -s"
 capture-defaults.sh i
@@ -97,11 +98,13 @@ capture-defaults.sh i
 ################################
 # Recreate the zsh completions #
 ################################
+echo "$(green "==> Recreate zsh completions")"
 rm -rf "${HOME}"/.zcompdump*; compinit
 
 ###################
 # Setup cron jobs #
 ###################
+echo "$(green "==> Setup cron jobs")"
 command_exists recron && recron
 
 # To install the latest versions of the hex, rebar and phoenix packages

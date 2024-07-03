@@ -22,25 +22,34 @@ USERNAME="${USERNAME:-$(whoami)}"
 ######################################################################################################################
 # Set DNS of 8.8.8.8 before proceeding (in some cases, for eg Jio Wifi, github doesn't resolve at all and times out) #
 ######################################################################################################################
+echo "==> Setting DNS for WiFi"
 sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
 
 #################################################################################################
 # Download and source this utility script - so that the functions are available for this script #
 #################################################################################################
-[ ! -f "${HOME}/.shellrc" ] && curl -fsSL https://raw.githubusercontent.com/vraravam/dotfiles/master/files/.shellrc -o "${HOME}/.shellrc"
-type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.shellrc"
+echo "==> Download the ~/.shellrc for loading the utility functions"
+type load_zsh_configs &> /dev/null 2>&1
+if [ $? -ne 0 ]; then
+  [ ! -f "${HOME}/.shellrc" ] && curl -fsSL https://raw.githubusercontent.com/vraravam/dotfiles/master/files/.shellrc -o "${HOME}/.shellrc"
+  FIRST_INSTALL=true source "${HOME}/.shellrc"
+else
+  warn "skipping downloading and sourcing '${HOME}/.shellrc' since its already loaded"
+fi
 
 ##################################
 # Install command line dev tools #
 ##################################
 echo "$(green "==> Installing xcode command-line tools")"
 xcode-select -p > /dev/null 2>&1
-if [ $? != 0 ]; then
+if [ $? -ne 0 ]; then
   # install using the non-gui cmd-line alone
   touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
   softwareupdate -ia
   rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
   sudo xcodebuild -license accept || true
+else
+  warn "skipping installation of xcode command-line tools since its already present"
 fi
 
 ###############################
@@ -119,7 +128,7 @@ if [ ! -d "${DOTFILES_DIR}" ]; then
   # Note: Do NOT change these references to vraravam (start)
   # Setup the .bin-oss repo's upstream if it doesn't already point to vraravam's repo
   git -C "${DOTFILES_DIR}" remote -vv | grep vraravam
-  if [ $? != 0 ]; then
+  if [ $? -ne 0 ]; then
     git -C "${DOTFILES_DIR}" remote add upstream https://github.com/vraravam/dotfiles
     git -C "${DOTFILES_DIR}" fetch --all
   else
@@ -176,6 +185,7 @@ fi
 ###########################################
 # Link programs to open from the cmd-line #
 ###########################################
+echo "$(green "==> Linking VSCode/VSCodium for command-line invocation")"
 replace_executable_if_exists_and_is_not_symlinked() {
   if [ -e "${1}" ]; then
     rm -fv "${2}" && ln -sf "${1}" "${2}"
@@ -184,7 +194,6 @@ replace_executable_if_exists_and_is_not_symlinked() {
   fi
 }
 
-echo "$(green "==> Linking VSCode/VSCodium for command-line invocation")"
 if [ -d "/Applications/VSCodium - Insiders.app" ]; then
   # Symlink from the embedded executable for codium-insiders
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCodium - Insiders.app/Contents/Resources/app/bin/codium-insiders" "${HOMEBREW_PREFIX}/bin/codium-insiders"

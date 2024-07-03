@@ -123,7 +123,7 @@ if [[ is_macos && $? -eq 0 ]]; then
   }
 fi
 
-# implode
+# delete all personal data before re-imaging the laptop
 implode() {
   folders=(
     '.aws'
