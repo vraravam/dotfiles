@@ -157,7 +157,8 @@ if is_vscode_installed
   vscode 'vscjava.vscode-java-debug'
   vscode 'vscjava.vscode-java-pack'
   vscode 'vscjava.vscode-java-test'
-  vscode 'vscjava.vscode-lombok'
+  # This is failing on different machines
+  # vscode 'vscjava.vscode-lombok'
   vscode 'vscode-icons-team.vscode-icons'
   vscode 'wayou.vscode-todo-highlight'
   vscode 'wholroyd.jinja'
