@@ -12,7 +12,6 @@ __pycache__
 .cocoapods/
 .cordova
 .dartServer/
-.default-gems
 .docker/
 .dotnet/
 .DS_Store
@@ -240,7 +239,7 @@ temp/
 Thumbs.db
 tmp/
 
-# files that are symlinked from the oss repo
+# files that are symlinked from the dotfiles repo
 /.aliases
 /.aliases.custom
 /.angular-config.json

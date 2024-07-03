@@ -10,7 +10,7 @@ test -n "${FIRST_INSTALL+1}" && echo "loading .aliases.custom"
 # This script is very customized to my local setup (and thus separated from the .aliases file). Sharing in the hope that its useful for others
 
 # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
-alias code-gist='code ${PERSONAL_CONFIGS_DIR} ${PERSONAL_BIN_DIR} ${DOTFILES_DIR} ${HOME}/.gitconfig-* ${HOME}/.tool-versions ${HOME}/.envrc'
+command_exists code && alias code-gist='code ${PERSONAL_CONFIGS_DIR} ${PERSONAL_BIN_DIR} ${DOTFILES_DIR} ${HOME}/.gitconfig-* ${HOME}/.tool-versions ${HOME}/.envrc'
 
 # updates the specified repo (handles either the home repo or the profiles repo - one at a time)
 # internal function: not to be called separately
@@ -76,11 +76,13 @@ recron() {
   echo "$(green "Old cron listing")"
   crontab -l
 
+  local cron_file="${PERSONAL_BIN_DIR}/macos/crontab.txt"
+  ! test -f "${cron_file}" && warn "No '${cron_file} found; returning without any processing" && return
+
   # shellcheck disable=SC2005
   echo "$(red "---------------------------------------------------------------------------")"
   crontab -r
-  local cron_file="${PERSONAL_BIN_DIR}/macos/crontab.txt"
-  test -f "${cron_file}" && crontab "${cron_file}"
+  crontab "${cron_file}"
 
   # shellcheck disable=SC2005
   echo "$(green "New cron listing")"
@@ -88,7 +90,7 @@ recron() {
 }
 
 # runs git gc on the keybase repo (not sure if this actually compresses the remote repo or not)
-alias kbgc="keybase git gc --force home; keybase git gc --force profiles"
+command_exists keybase && alias kbgc="keybase git gc --force home; keybase git gc --force profiles"
 
 # common build, debug and launch aliases for any folder - converted to functions for lazy evaluation
 # these will use the current folder name to find the shell script to run
@@ -102,7 +104,8 @@ build_me() {
   "${PERSONAL_CONFIGS_DIR}/build-${PWD##*/}.sh"
 }
 
-if [[ is_macos ]]; then
+command_exists brew
+if [[ is_macos && $? -eq 0 ]]; then
   # brew cask contribution
   check_cask() {
     # shasum -a 256 <fileName>
@@ -121,7 +124,26 @@ if [[ is_macos ]]; then
 fi
 
 # implode
-alias implode="cd && rm -rf .aws .bin .bin-oss Brewfile .config .docker .git* .gnupg .psql* .ssh .s3cfg dev Brewfile personal"
+implode() {
+  folders=(
+    '.aws'
+    '.bin-oss'
+    '.bin'
+    '.config'
+    '.docker'
+    '.git*'
+    '.gnupg'
+    '.psql*'
+    '.s3cfg'
+    '.ssh'
+    'Brewfile'
+    'dev'
+    'personal'
+  )
+  for f in "${folders[@]}"; do
+    bash -c "rm -rf '${HOME}/${f}'"
+  done
+}
 
 # findrb() {
 #   find . -iname "*.rb" -print0 | xargs -0 egrep -in --color "$@"

@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/usr/bin/env zsh
 
 # file location: Put this anywhere in the path.
 
@@ -7,6 +7,7 @@
 # A trick to find the name of the app:
 # Run `defaults read` in an empty window of a terminal app, then use the search functionality to search for a known word related to that app (like eg app visible name, author, some setting that's unique to that app, etc). Once you find this, trace back to the parent in the printed JSON to then get the real unique name of the app where its settings are stored.
 
+type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 usage() {
   echo "Usage: ${0} <e/i>"
@@ -29,9 +30,9 @@ case "${1}" in
   "i" )
     operation="import"
     # shellcheck disable=SC2089
-    git_cleanup="echo 'Skipping git cleanup'"
+    git_cleanup="warn 'Skipping git cleanup'"
     # shellcheck disable=SC2089
-    git_stage="echo 'Skipping git staging'"
+    git_stage="warn 'Skipping git staging'"
     ;;
   * )
     echo "Unknown value entered: ${1}"
@@ -40,7 +41,7 @@ case "${1}" in
 esac
 
 # shellcheck disable=SC2090
-$git_cleanup
+eval "${git_cleanup}"
 mkdir -p "${TARGET_DIR}"
 
 app_array=(
@@ -117,13 +118,13 @@ app_array=(
   'ZoomChat'
 )
 
-for app_pref in "${app_array[@]}"
-do
-  echo "Processing ${app_pref} for ${operation}"
+echo "Running operation: $(green ${operation})"
+for app_pref in "${app_array[@]}"; do
+  echo "Processing $(cyan ${app_pref})"
   TARGET_FILE="${TARGET_DIR}/${app_pref}.defaults"
   test -f "${TARGET_FILE}" || touch "${TARGET_FILE}"
   /usr/bin/defaults "${operation}" "${app_pref}" "${TARGET_FILE}"
 done
 
 # shellcheck disable=SC2090
-$git_stage
+eval "${git_stage}"

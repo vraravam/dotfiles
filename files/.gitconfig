@@ -135,8 +135,10 @@
   # show outgoing change commits with content changes
   outp = log -p --reverse @{u}..
 
+  # show more info while grepping commits
   g = grep --break --heading --line-number
 
+  # expire the reflog as of this moment (so as to maximize cleanup using the 'cc' alias)
   rfc = "reflog expire --expire=now"
 
   # compress disk-space-usage by deleting dangling commits

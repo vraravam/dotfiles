@@ -22,8 +22,7 @@ esac
 type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 ask() {
-  while true
-  do
+  while true; do
     if [ "${2}" == "Y" ]; then
       prompt="$(green 'Y')/n"
       default=Y
@@ -1175,8 +1174,7 @@ fi
 # Note: To print the values, use this:
 # /usr/libexec/PlistBuddy -c "Print :'Window Settings':Basic" ${HOME}/Library/Preferences/com.apple.Terminal.plist
 profile_array=(Basic Pro)
-for profile in ${profile_array[*]}
-do
+for profile in "${profile_array[@]}"; do
   # Close the window if the shell exited cleanly - TODO: These error out and stop the whole file from being executed - need to fix
   # /usr/libexec/PlistBuddy -c "Delete :'Window Settings':$profile:shellExitAction" ${HOME}/Library/Preferences/com.apple.Terminal.plist
   # /usr/libexec/PlistBuddy -c "Add :'Window Settings':$profile:shellExitAction integer 1" ${HOME}/Library/Preferences/com.apple.Terminal.plist
@@ -1750,27 +1748,28 @@ defaults write com.apple.AddressBook ABDefaultAddressCountryCode -string in
 # When switching applications, switch to respective space
 defaults write -g AppleSpacesSwitchOnActivate -bool true
 
-
 ###############################################################################
 # Kill affected applications                                                  #
 ###############################################################################
 
-for app in "Activity Monitor" \
-  "Address Book" \
-  "Calendar" \
-  "cfprefsd" \
-  "Contacts" \
-  "Dock" \
-  "Finder" \
-  "Google Chrome Beta" \
-  "Google Chrome Canary" \
-  "Google Chrome" \
-  "Mail" \
-  "Safari" \
-  "SizeUp" \
-  "SystemUIServer" \
-  "iCal"
-do
+app_array=(
+  'Activity Monitor'
+  'Address Book'
+  'Calendar'
+  'cfprefsd'
+  'Contacts'
+  'Dock'
+  'Finder'
+  'Google Chrome Beta'
+  'Google Chrome Canary'
+  'Google Chrome'
+  'iCal'
+  'Mail'
+  'Safari'
+  'SizeUp'
+  'SystemUIServer'
+)
+for app in "${app_array[@]}"; do
   killall "${app}" &> /dev/null
 done
 

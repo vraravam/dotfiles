@@ -185,6 +185,9 @@ if [ $? -eq 0 ]; then
   export VSCODE_GALLERY_RECOMMENDATIONS_URL=''
 fi
 
+# Use bat to colorize man pages
+command_exists bat && export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+
 # fzy
 # load_file_if_exists "${HOME}/.fzy-key-bindings.zsh"
 
