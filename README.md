@@ -2,6 +2,13 @@
 
 This repo was created from the gists that I was using to help others adopt my machine setup. It contains the common dotfiles as well as the scripts that I use to share the machine setup. These scripts are idempotent and can run on a vanilla OS as well as once the whole setup has been completed. Each script will warn the users if its skipping a step, and if you want to rerun the script but force that step, you just need to delete the control `if` condition (you should have a basic understanding of shell programming to figure out what to delete/how to force without bypass).
 
+# Pre-requisite (if you want to capture data from your current mac)
+
+This section is important if you want to capture the installed softwares, etc from an existing setup.
+
+1. Use [this command](files/Brewfile#L7) to capture all libraries and softwares that you have already installed
+2. Use [this script](scripts/capture-defaults.sh) with the `-e` (export) option to export your application and system preferences. Please ensure that you edit the list of applications to what you have installed and would like to capture the preferences for.
+
 # Generic/Common Getting started
 
 The meta script to setup the macos machine from a vanilla OS can be run using the following command:
@@ -25,9 +32,13 @@ This can also be run in an idempotent manner, and will setup the home folder rep
 
 # Finally...
 
+Once the above is done, and if you have setup the [keybase](https://keybase.io)-based home repo, profile repo, etc - you can then re-import your exported preferences from the [pre-requisites section](#pre-requisite-if-you-want-to-capture-data-from-your-current-mac).
+
+# Finally (No...really!)
+
 Once the scripts are run, if you want to be able to re-image a new machine, but do not want to repeat the manual steps, you would want to fork my repo, and read through ALL the scripts in the `scripts` folder, and change the pointers that reference my username to your equivalent ones (for eg, you can search for `vraravam`, `avijayr`, `vijay`, `KEYBASE_USERNAME`, `KEYBASE_HOME_REPO_NAME` and `KEYBASE_PROFILES_REPO_NAME` and replace them with your values). Similarly, do the same for the configuration files in the `files` folder as well. Once this is done, and committed into your fork, then the next time you setup, you can run the `curl` command that points to your fork, which should contain your changes on top of mine.
 
-# Extras
+# Extras/Details
 
 ## install-dotfiles.rb
 
