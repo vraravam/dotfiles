@@ -42,8 +42,11 @@
 
   what = show -s --pretty='tformat:%h (%s, %ad)' --date=short
 
-  # show commit info summary (count and name)
-  who = shortlog -s --
+  # show all committers' info summary (count and name)
+  committers = shortlog -s --
+
+  # print the current user's name and email
+  who = !git config --get user.name && git config --get user.email
 
   # show username/email of the specified author
   whois = log -i -1 --pretty=format:'%an <%ae>' --author
@@ -111,7 +114,7 @@
   # print the current branch name
   br = branch --show-current
 
-  # rebase from corresponding upstream branch
+  # rebase from corresponding upstream branch if a remote named 'upstream' is present, silently quit if a remote is not present
   upreb = !git branch -u origin/`git br` && git fo && ( git remote | grep upstream 2>&1 >/dev/null ) && git rebase upstream/`git br` --no-verify && git fetch upstream --tags && git push --no-verify && git push --tags --no-verify && git siu && git dlb
 
   # prune local copy-of-remote to remove deleted branches
@@ -180,9 +183,6 @@
 
   # pull all submodules
   pullsub = sf "git pull"
-
-  # print the current user's name and email
-  who = !git config --get user.name && git config --get user.email
 [branch]
   autoSetupMerge = true
   autoSetupRebase = always
