@@ -2,6 +2,8 @@
 
 # Note: This script is specific to my setup and might not be useful for others. This is being shared so as to be used as a reference if you want to mimic the same setup.
 
+# TODO: Replace all occurrences of '-d' with 'var_exists_and_is_directory'
+
 type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.shellrc"
 # Load all zsh config files for PATH and other env vars to take effect
 # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
@@ -67,12 +69,14 @@ rm -rf "${HOME}/.ssh/known_hosts.old"
 ##############################################
 # Load the direnv config for the home folder #
 ##############################################
+# TODO: See how this can be combined into 'allow_all_direnv_configs'
 cd ..
 cd -
 
 ##################################################
 # Load the direnv config for the profiles folder #
 ##################################################
+# TODO: See how this can be combined into 'allow_all_direnv_configs'
 if [ -d "${PERSONAL_PROFILES_DIR}" ]; then
   cd "${PERSONAL_PROFILES_DIR}"
   cd -

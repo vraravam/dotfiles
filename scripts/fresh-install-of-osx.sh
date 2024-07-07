@@ -16,6 +16,8 @@
 # 1. Auto-adjust Brightness
 # 2. Brightness on battery
 
+# TODO: Replace all occurrences of '-d' with 'var_exists_and_is_directory'
+
 # These env vars are defined by (duplicated intentionally) since this script would bootstrap the installation
 USERNAME="${USERNAME:-$(whoami)}"
 DOTFILES_DIR="${DOTFILES_DIR:-"${HOME}/.bin-oss"}"
