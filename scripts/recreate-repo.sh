@@ -4,14 +4,11 @@
 # It assumes that a pre-existing repo on local is present - so that it can capture the relevant remote details.
 # It will force removal of history if the `-f` flag is given. (The history of the profiles repo will always get deleted).
 
-USERNAME="${USERNAME:-$(whoami)}"
-PERSONAL_BIN_DIR="${PERSONAL_BIN_DIR:-"${HOME}/.bin"}"
-
 usage() {
   echo "Usage: ${0} [-f] <repo folder>"
   echo " -f : force recreation (profiles repo will automatically/always be forced anyways)"
-  echo "    eg: -f ${HOME}                             (will push to keybase://private/avijayr/home)"
-  echo "    eg: ${HOME}/personal/${USERNAME}/profiles  (will push to keybase://private/avijayr/profiles)"
+  echo "    eg: -f ${HOME}                (will push to keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME})"
+  echo "    eg: ${PERSONAL_PROFILES_DIR}  (will push to keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME})"
   exit 1
 }
 
@@ -29,6 +26,8 @@ else
   usage
 fi
 
+[ ! -d "${folder}/.git" ] && echo "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!" && exit 1
+
 # For the profiles repo alone, I don't care about retaining the history
 [[ "${folder}" =~ "profiles" ]] && force=Y
 
@@ -38,7 +37,7 @@ echo "force: ${force}"
 git_cmd="git -C ${folder}"
 
 extract_git_config_value() {
-  ${git_cmd} config "${1}" || exit 1
+  ${git_cmd} config "${1}" || exit 1 # Most likely reason for exiting is if the required git configuration hasn't been set
 }
 
 # Remove crontab while this script is running

@@ -5,7 +5,9 @@
 
 # file location: ${HOME}/.aliases
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-test -n "${FIRST_INSTALL+1}" && echo "loading .aliases"
+test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
+
+# contributions to path, aliases, functions from this folder
 
 # DUPLICATE! Copied over since we get an error if the .zprofile was not loaded
 type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
@@ -13,20 +15,20 @@ type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 # Add flags to existing aliases.
 alias less="${aliases[less]:-less} -RF"
 command_exists eza
-if [ $? -eq 0 ]; then
-  alias ls='eza --icons'
-else
+if [ $? -ne 0 ]; then
   # -G has a different meaning for eza, so add it only if eza is not present
   alias ls="${aliases[ls]:-ls} -G"
+  alias ll='ls -la'
 fi
-alias ll='ls -la'
 alias cp="${aliases[cp]:-cp} -p"
-alias grep="${aliases[grep]:-grep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.zsh-evalcache,.zsh_evalcache,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
+alias grep="${aliases[grep]:-grep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
 command_exists tree && alias tree="${aliases[tree]:-tree} -Ch"
 
-# Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
-alias reinstall-xcode='rm -rf $(xcode-select -p) && xcode-select --install && xcodebuild -license accept'
-alias reinstall-cmdline-tools='touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress && softwareupdate -ia && rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress && sudo xcodebuild -license accept'
+if [[ is_macos ]]; then
+  # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
+  alias reinstall-xcode='rm -rf $(xcode-select -p) && xcode-select --install && xcodebuild -license accept'
+  alias reinstall-cmdline-tools='touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress && softwareupdate -ia && rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress && sudo xcodebuild -license accept'
+fi
 
 command_exists vim && alias vi='vim'
 command_exists prettyping && alias ping='prettyping --nolegend'
@@ -34,9 +36,8 @@ command_exists bat && alias cat='bat'
 command_exists btop && alias top='btop'
 command_exists ncdu && alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'
 
-# Git commands
-alias gco='git co'
-# Note: Changed to a function so that it can accept parameters
+# git commands
+# Note: Use a function so that it can accept parameters
 st() {
   target="${1:-.}"
   echo "$(green "==> Processing ${target} <==")"
@@ -48,26 +49,28 @@ cc() {
   git -C "${target}" cc
 }
 
-# shortcuts to handle multiple git repos bypassing the omx auto-correct prompt
-alias rug='run_all.sh git'
-alias all="FOLDER='${HOME}' MAXDEPTH=5 rug"
-alias home="FOLDER='${HOME}' FILTER=\".bin|zsh|mise|tmux|vscod\" MAXDEPTH=5 rug"
-alias oss="FOLDER='${PROJECTS_BASE_DIR}/oss' MAXDEPTH=2 rug"
-alias tw="FOLDER='${PROJECTS_BASE_DIR}/tw' MAXDEPTH=2 rug"
-alias jd="FOLDER='${PROJECTS_BASE_DIR}/jd' MAXDEPTH=3 rug"
-alias upreb="FOLDER='${PROJECTS_BASE_DIR}/oss' rug upreb"
+type run_all.sh &> /dev/null 2>&1
+if [ $? -ne 0 ]; then
+  # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
+  alias rug='run_all.sh git'
+  alias all="FOLDER='${HOME}' MAXDEPTH=5 rug"
+  alias home="FOLDER='${HOME}' FILTER=\".bin|zsh|mise|tmux|vscod\" MAXDEPTH=5 rug"
+  var_exists_and_is_directory "${PROJECTS_BASE_DIR}/oss" && alias oss="FOLDER='${PROJECTS_BASE_DIR}/oss' rug"
+  var_exists_and_is_directory "${PROJECTS_BASE_DIR}/tw" && alias tw="FOLDER='${PROJECTS_BASE_DIR}/tw' rug"
+  var_exists_and_is_directory "${PROJECTS_BASE_DIR}/jd" && alias jd="FOLDER='${PROJECTS_BASE_DIR}/jd' MAXDEPTH=3 rug"
+  var_exists_and_is_directory "${PROJECTS_BASE_DIR}" && alias upreb="FOLDER='${PROJECTS_BASE_DIR}' rug upreb"
+fi
 
 # deletes the zsh compiled files so that they can be recompiled whenever the new session is next started
 delete_zsh_compilations() {
-  find ${HOME} -maxdepth 4 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
+  find "${HOME}" -maxdepth 4 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
 }
 
-# installs all languages that mise can handle for all repos that are checked out
 install_mise_versions() {
   ! command_exists mise && return
 
-  find "${HOME}" -name ".tool-versions" -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
-  find "${PROJECTS_BASE_DIR}" -type d -maxdepth 3 -exec echo "===> Installing for {}" \; -execdir mise install \;
+  find "${HOME}" -name '.tool-versions' -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
+  var_exists_and_is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name '.git' -type d -maxdepth 4 -exec echo "===> Installing for {}" \; -execdir mise install \;
 }
 
 # runs 'direnv allow' on all code repositories that are checked out
@@ -75,8 +78,8 @@ allow_all_direnv_configs() {
   ! command_exists direnv && return
 
   find "${HOME}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
-  find "${PERSONAL_PROFILES_DIR}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
-  find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 4 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}" && find "${PERSONAL_PROFILES_DIR}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  var_exists_and_is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 4 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
 }
 
 command_exists brew
@@ -131,11 +134,6 @@ alias npm_cleanup='npm cache clear --force'
 # alias stop_docker="sudo rm -rf /var/run/docker.sock"
 alias docker_cleanup='docker system prune -a --volumes -f'
 alias docker_list='docker ps -a && docker images'
-
-# docker compose
-alias dcup='docker-compose up --build --remove-orphans'
-alias dcdn='docker-compose stop'
-alias dcps='docker-compose ps'
 
 show_docker_context_contents() {
   # Based on BMitch's answer from: https://stackoverflow.com/questions/38946683/how-to-test-dockerignore-file

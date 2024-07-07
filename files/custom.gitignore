@@ -121,8 +121,6 @@ __pycache__
 /.ideaLibSources/
 /.install4j
 /.IntelliJIdea*/restart/restarter
-/.iterm2_shell_integration.zsh
-/.iterm2/
 /.ivy2/
 /.java-caller/
 /.keepassx/
@@ -194,7 +192,6 @@ __pycache__
 /.zoomus
 /.zsh_history
 /.zsh_sessions/
-/.zsh-evalcache/
 /.zsh/
 /*.key
 /app.retry

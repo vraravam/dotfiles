@@ -5,7 +5,7 @@
 
 # file location: ${HOME}/.shellrc
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-test -n "${FIRST_INSTALL+1}" && echo "loading .shellrc"
+test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 # custom file to capture the bare minimum shell functions that I have written
 
@@ -69,6 +69,12 @@ yellow() {
 warn() (
   echo "$(yellow "**WARN** ${1}")"
 )
+
+var_exists_and_is_directory() {
+  # 0 -> true; 1 -> false
+  test ! -z "${1}" && test -d "${1}" && return 0
+  return 1
+}
 
 is_macos() {
   # 0 -> true; 1 -> false

@@ -5,7 +5,7 @@
 
 # file location: ${HOME}/.zshenv
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-test -n "${FIRST_INSTALL+1}" && echo "loading .zshenv"
+test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 # invoked by all invocations of Zsh, so we should keep it small and merely initialise necessary variables.
 

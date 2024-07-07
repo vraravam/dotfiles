@@ -36,7 +36,12 @@ Once the above is done, and if you have setup the [keybase](https://keybase.io)-
 
 # Finally (No...really!)
 
-Once the scripts are run, if you want to be able to re-image a new machine, but do not want to repeat the manual steps, you would want to fork my repo, and read through ALL the scripts in the `scripts` folder, and change the pointers that reference my username to your equivalent ones (for eg, you can search for `vraravam`, `avijayr`, `vijay`, `KEYBASE_USERNAME`, `KEYBASE_HOME_REPO_NAME` and `KEYBASE_PROFILES_REPO_NAME` and replace them with your values). Similarly, do the same for the configuration files in the `files` folder as well. Once this is done, and committed into your fork, then the next time you setup, you can run the `curl` command that points to your fork, which should contain your changes on top of mine.
+Once the scripts are run, if you want to be able to re-image a new machine, but do not want to repeat the manual steps, you would want to fork my repo, and do the following:
+
+1. Read through ALL the scripts in the `scripts` folder, and change the pointers that reference my username to your equivalent ones (for eg, you can search for `vraravam`, `avijayr`, `vijay`, `KEYBASE_USERNAME`, `KEYBASE_HOME_REPO_NAME` and `KEYBASE_PROFILES_REPO_NAME` and replace them with your values).
+2. Similarly, do the same for the configuration files in the `files` folder as well. Note that the nested folder names that you choose for your setup (as referred to by `PROJECTS_BASE_DIR`, `PERSONAL_CONFIGS_DIR`, `PERSONAL_PROFILES_DIR`, `PERSONAL_BIN_DIR`, and `DOTFILES_DIR`) should be reflected in the folder structure of the nested folders in the `files` directory. For eg, I have `PROJECTS_BASE_DIR="${HOME}/dev"`, and if your setup uses `workspace` instead of `dev`, then, in your fork, `files/dev` should be renamed to `files/workspace` and so on.
+
+Once this is done, and committed into your fork, then the next time you setup, you can run the `curl` commands that points to your fork, which should contain your changes on top of mine.
 
 # Extras/Details
 
@@ -46,9 +51,9 @@ Basically, to get started with the dotfiles, you just need to run the `<pwd>/scr
 
 * If you already have any of the dotfiles that are managed via this repo, *DON'T WORRY!* Your files will be moved to the cloned folder - so that you can then commit and push them to your fork!
 * This script will also handle nested config files - as long as they are already present in this repo.
-* Special handling (rename + copy instead of symlink) for `.gitattributes` and `.gitignore`
-* If you do not want any file from the home folder to be overridden, simply delete it from this repo's `files` folder - and it will not be processed.
-* If you wish to add a new file to be tracked and managed via this backup mechanism, simply add it into the `files` folder with the requisite relative path - and it will be processed.
+* Special handling (rename + copy instead of symlink) for `.gitattributes` and `.gitignore` - which means that, *for those files alone*, you will have to **keep them manually in sync**.
+* If you do not want a specific file from the home folder to be overridden, simply delete it from this repo's `files` folder - and it will not be processed.
+* If you wish to add a new file to be tracked and managed via this backup mechanism, simply add it into the `files` folder with the requisite relative path (relative to your `HOME` folder) - and it will be processed.
 
 ## approve-fingerprint-sudo.sh
 

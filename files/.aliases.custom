@@ -5,22 +5,17 @@
 
 # file location: ${HOME}/.aliases.custom
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-test -n "${FIRST_INSTALL+1}" && echo "loading .aliases.custom"
+test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 # This script is very customized to my local setup (and thus separated from the .aliases file). Sharing in the hope that its useful for others
 
 # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
 command_exists code && alias code-gist='code ${PERSONAL_CONFIGS_DIR} ${PERSONAL_BIN_DIR} ${DOTFILES_DIR} ${HOME}/.gitconfig-* ${HOME}/.tool-versions ${HOME}/.envrc'
 
-# updates the specified repo (handles either the home repo or the profiles repo - one at a time)
+# updates the specified repo
 # internal function: not to be called separately
 _update_repo() {
-  if [ $# -ne 1 ]; then
-    echo "Usage: ${0} <repo folder>"
-    echo "    eg: ${HOME} "
-    echo "    eg: ${PERSONAL_PROFILES_DIR}"
-    return 1
-  fi
+  ! var_exists_and_is_directory "${1}" && warn "skipping updating the repo since '${1}' doesn't exist" && return
 
   # Remove trailing slash if present
   folder="${1%\/}"
@@ -30,30 +25,21 @@ _update_repo() {
   rm -rfv "${folder}/.git/index.lock" "${folder}/.git/hooks"
   local git_cmd="git -C ${folder}"
 
-  case ${folder} in
-    "${HOME}" )
-      default_contents=".bin/macos/defaults/"
-      ;;
-    "${PERSONAL_PROFILES_DIR}" )
-      default_contents="ArcProfile BraveProfile FirefoxProfile KeePassXCProfile SyncthingProfile ThunderbirdProfile"
-      ;;
-    * )
-      echo "Unknown value entered: ${folder}"
-      usage
-      ;;
-  esac
-
   # shellcheck disable=SC2086
-  eval "${git_cmd} add ${default_contents}" && eval "${git_cmd} sci \"Incremental commit: $(date)\"" && eval "${git_cmd} siu"
+  eval "${git_cmd} add ${2}" && eval "${git_cmd} sci \"Incremental commit: $(date)\""
 }
 
 # updates the home and profiles repos
 update_all_repos() {
-  _update_repo "${PERSONAL_PROFILES_DIR}"; _update_repo "${HOME}"
+  _update_repo "${HOME}" '.bin/macos/defaults/'
+  var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}" && _update_repo "${PERSONAL_PROFILES_DIR}" 'ArcProfile BraveProfile FirefoxProfile KeePassXCProfile SyncthingProfile ThunderbirdProfile'
 }
 
+# pushes the specified repo (disables and re-enables cron while doing this operation)
 # internal function: not to be called separately
 _push_repo() {
+  ! var_exists_and_is_directory "${1}" && warn "skipping pushing the repo since '${1}' doesn't exist" && return
+
   # shellcheck disable=SC2005
   echo "$(green "*** Pushing ${1}")" && git -C "${1}" push --force-with-lease && echo "$(green "*** Pushed ${1}")"
 }
@@ -63,9 +49,7 @@ push_all_repos() {
   crontab -r
 
   _push_repo "${HOME}"
-  # shellcheck disable=SC2005
-  echo "$(red "---------------------------------------------------------------------------")"
-  _push_repo "${PERSONAL_PROFILES_DIR}"
+  var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}" && _push_repo "${PERSONAL_PROFILES_DIR}"
 
   recron
 }
@@ -91,18 +75,6 @@ recron() {
 
 # runs git gc on the keybase repo (not sure if this actually compresses the remote repo or not)
 command_exists keybase && alias kbgc="keybase git gc --force home; keybase git gc --force profiles"
-
-# common build, debug and launch aliases for any folder - converted to functions for lazy evaluation
-# these will use the current folder name to find the shell script to run
-launch_me() {
-  "${PERSONAL_CONFIGS_DIR}/launch-${PWD##*/}.sh"
-}
-debug_me() {
-  "${PERSONAL_CONFIGS_DIR}/debug-${PWD##*/}.sh"
-}
-build_me() {
-  "${PERSONAL_CONFIGS_DIR}/build-${PWD##*/}.sh"
-}
 
 command_exists brew
 if [[ is_macos && $? -eq 0 ]]; then
@@ -143,6 +115,24 @@ implode() {
   for f in "${folders[@]}"; do
     bash -c "rm -rf '${HOME}/${f}'"
   done
+}
+
+var_exists_and_is_directory "${PERSONAL_CONFIGS_DIR}" && path+="${PERSONAL_CONFIGS_DIR}"
+var_exists_and_is_directory "${PERSONAL_BIN_DIR}" && path+="${PERSONAL_BIN_DIR}"
+var_exists_and_is_directory "${PERSONAL_BIN_DIR}/macos" && path+="${PERSONAL_BIN_DIR}/macos"
+var_exists_and_is_directory "${DOTFILES_DIR}" && path+="${DOTFILES_DIR}/scripts"
+var_exists_and_is_directory "${PROJECTS_BASE_DIR}/oss/git_scripts" && path+="${PROJECTS_BASE_DIR}/oss/git_scripts"
+
+# common build, debug and launch aliases for any folder - converted to functions for lazy evaluation
+# these will use the current folder name to find the shell script to run
+launch_me() {
+  "${PERSONAL_CONFIGS_DIR}/launch-${PWD##*/}.sh"
+}
+debug_me() {
+  "${PERSONAL_CONFIGS_DIR}/debug-${PWD##*/}.sh"
+}
+build_me() {
+  "${PERSONAL_CONFIGS_DIR}/build-${PWD##*/}.sh"
 }
 
 # findrb() {

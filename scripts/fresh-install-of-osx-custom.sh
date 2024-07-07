@@ -2,15 +2,6 @@
 
 # Note: This script is specific to my setup and might not be useful for others. This is being shared so as to be used as a reference if you want to mimic the same setup.
 
-# Note: Change these as per your settings
-USERNAME="${USERNAME:-$(whoami)}"
-KEYBASE_USERNAME="${KEYBASE_USERNAME:-"avijayr"}"
-KEYBASE_HOME_REPO_NAME="${KEYBASE_HOME_REPO_NAME:-"home"}"
-KEYBASE_PROFILES_REPO_NAME="${KEYBASE_PROFILES_REPO_NAME:-"profiles"}"
-PERSONAL_PROFILES_DIR="${PERSONAL_PROFILES_DIR:-"${HOME}/personal/${USERNAME}/profiles"}"
-PERSONAL_BIN_DIR="${PERSONAL_BIN_DIR:-"${HOME}/.bin"}"
-PERSONAL_CONFIGS_DIR="${PERSONAL_CONFIGS_DIR:-"${HOME}/personal/dev"}"
-
 type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.shellrc"
 # Load all zsh config files for PATH and other env vars to take effect
 # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
@@ -20,7 +11,7 @@ load_zsh_configs
 # Clone the home repo #
 #######################
 echo "$(green "==> Cloning home repo")"
-if [ ! -d "${HOME}/.git" ]; then
+if [ ! -z "${KEYBASE_USERNAME}" ] && [ ! -z "${KEYBASE_HOME_REPO_NAME}" ] && [ ! -d "${HOME}/.git" ]; then
   rm -rf "${HOME}/tmp"
   mkdir -p "${HOME}/tmp"
   git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME} "${HOME}/tmp"
@@ -36,18 +27,18 @@ if [ ! -d "${HOME}/.git" ]; then
   # Fix /etc/hosts file to block facebook #
   sudo cp "${PERSONAL_BIN_DIR}/macos/etc.hosts" /etc/hosts
 else
-  warn "skipping cloning of home repo since a git repo is already present in '${HOME}'"
+  warn "skipping cloning of home repo since either the 'KEYBASE_USERNAME' and/or the 'KEYBASE_HOME_REPO_NAME' env vars haven't been set or a git repo is already present in '${HOME}'"
 fi
 
 ###########################
 # Clone the profiles repo #
 ###########################
 echo "$(green "==> Cloning profiles repo")"
-if [ ! -d "${PERSONAL_PROFILES_DIR}/.git" ]; then
+if [ ! -z "${KEYBASE_USERNAME}" ] && [ ! -z "${KEYBASE_PROFILES_REPO_NAME}" ] && [ ! -d "${PERSONAL_PROFILES_DIR}/.git" ]; then
   rm -rf "${PERSONAL_PROFILES_DIR}"
   git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME} "${PERSONAL_PROFILES_DIR}"
 else
-  warn "skipping cloning of profiles repo since a git repo is already present in '${PERSONAL_PROFILES_DIR}'"
+  warn "skipping cloning of profiles repo since  either the 'KEYBASE_USERNAME' and/or the 'KEYBASE_PROFILES_REPO_NAME' env vars haven't been set or a git repo is already present in '${PERSONAL_PROFILES_DIR}'"
 fi
 
 ##################################################

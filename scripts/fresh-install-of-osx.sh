@@ -18,6 +18,7 @@
 
 # These env vars are defined by (duplicated intentionally) since this script would bootstrap the installation
 USERNAME="${USERNAME:-$(whoami)}"
+DOTFILES_DIR="${DOTFILES_DIR:-"${HOME}/.bin-oss"}"
 
 ######################################################################################################################
 # Set DNS of 8.8.8.8 before proceeding (in some cases, for eg Jio Wifi, github doesn't resolve at all and times out) #
@@ -107,7 +108,7 @@ clone_if_not_present() {
     warn "skipping cloning of '${1}' since '${target_folder}' is already present"
   fi
 }
-clone_if_not_present https://github.com/mroth/evalcache
+# clone_if_not_present https://github.com/mroth/evalcache # Commented out since I'm going to try using it via omz's built-in plugin system
 clone_if_not_present https://github.com/zdharma-continuum/fast-syntax-highlighting
 clone_if_not_present https://github.com/zsh-users/zsh-autosuggestions
 clone_if_not_present https://github.com/zsh-users/zsh-completions
@@ -116,8 +117,7 @@ clone_if_not_present https://github.com/zsh-users/zsh-completions
 # Install dotfiles #
 ####################
 echo "$(green "==> Installing dotfiles")"
-DOTFILES_DIR="${DOTFILES_DIR:-"${HOME}/.bin-oss"}"
-if [ ! -d "${DOTFILES_DIR}" ]; then
+if [[ ! -z "${DOTFILES_DIR}" && ! -d "${DOTFILES_DIR}" ]]; then
   # Delete the auto-generated .zshrc since that needs to be replaced by the one in the .bin-oss repo
   rm -rfv "${HOME}/.zshrc"
 
@@ -150,7 +150,9 @@ if [ ! -d "${DOTFILES_DIR}" ]; then
   # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
   load_zsh_configs
 else
-  warn "skipping cloning the dotfiles repo since '${DOTFILES_DIR}' is already present"
+  # Load all zsh config files for PATH and other env vars to take effect
+  load_zsh_configs
+  warn "skipping cloning the dotfiles repo since '${DOTFILES_DIR}' is not defined or already present"
 fi
 
 ####################
@@ -171,16 +173,6 @@ else
   warn "Skipping installation of homebrew since it's already installed"
 fi
 brew bundle check || brew bundle --all || true
-
-###################################
-# Install iTerm shell integration #
-###################################
-echo "$(green "==> Installing iTerm shell integration")"
-if [ -d "/Applications/iTerm.app" ]; then
-  curl -fsSL https://iterm2.com/shell_integration/install_shell_integration_and_utilities.sh | bash
-else
-  warn "Skipping installation of iterm shell integration since iterm is not installed"
-fi
 
 ###########################################
 # Link programs to open from the cmd-line #

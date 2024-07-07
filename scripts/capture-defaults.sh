@@ -18,7 +18,6 @@ usage() {
 
 [ $# -ne 1 ] && usage
 
-PERSONAL_BIN_DIR="${PERSONAL_BIN_DIR:-"${HOME}/.bin"}"
 TARGET_DIR="${PERSONAL_BIN_DIR}/macos/defaults"
 
 case "${1}" in

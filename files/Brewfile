@@ -35,7 +35,7 @@ brew 'bat'
 brew 'btop'
 brew 'curl'
 brew 'diff-so-fancy'
-brew 'direnv'   # Note: If you get an error (for eg after upgrading direnv or if moving to a different ARM machine), you will need to delete '${HOME}/.zsh-evalcache' folder
+brew 'direnv'
 # brew 'dive'   # docker layers inspection on steroids
 # brew 'docker-diff'
 # brew 'docker-slim'  # TODO: investigate if the http-probe is a deal-breaker
@@ -170,6 +170,8 @@ end
 
 # ----------------------------------------------------------------------------------------------------------
 # TODO: This doesn't solve the issue about performing a custom action when a specific formula/cask is (re)installed - keeping for future reference
-# at_exit do
+at_exit do
 #   system "echo WOAH!!!!!!! && code-gist"
-# end
+  # This is required for completions from other plugins to work (for eg git-extras)
+  system "rm -rfv \"$HOMEBREW_REPOSITORY/share/zsh/site-functions/_git\""
+end

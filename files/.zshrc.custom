@@ -5,7 +5,7 @@
 
 # file location: ${HOME}/.zshrc.custom
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-test -n "${FIRST_INSTALL+1}" && echo "loading .zshrc.custom"
+test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 # This script is very customized to my local setup (and thus separated from the .zshrc file). Sharing in the hope that its useful for others
 
@@ -64,7 +64,8 @@ if [[ is_macos ]]; then
   compctl -k hosts ftp lftp ncftp ssh w3m lynx links elinks nc telnet rlogin host
   compctl -k hosts -P '@' finger
 
-  fpath+="${ZSH_CUSTOM}/plugins/zsh-completions/src"
+  # according to the documentation, this can't be added as a plugin to omz for the fpath to work correctly
+  var_exists_and_is_directory "${ZSH_CUSTOM}/plugins/zsh-completions/src" && fpath+="${ZSH_CUSTOM}/plugins/zsh-completions/src"
 
   # manpage completion
   man_glob () {
@@ -123,10 +124,8 @@ zstyle :bracketed-paste-magic paste-init pasteinit
 zstyle :bracketed-paste-magic paste-finish pastefinish
 ### Fix slowness of pastes
 
-load_file_if_exists "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
-
 use_homebrew_installation_for() {
-  [ ! -d "${1}" ] && return
+  ! var_exists_and_is_directory "${1}" && return
 
   export PATH="${1}/bin:${PATH+:${PATH}}"
   # For compilers to find this installation you may need to set:
@@ -148,23 +147,10 @@ use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/sqlite"
 # override default openssl and use from homebrew installation
 OPENSSL_DIR="${HOMEBREW_PREFIX}/opt/openssl@3"
 use_homebrew_installation_for "${OPENSSL_DIR}"
-[ -d "${OPENSSL_DIR}" ] && export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${OPENSSL_DIR}"
-
-# Load mise path changes
-# eval "$(mise activate zsh)"
-command_exists mise && _evalcache mise activate zsh
+var_exists_and_is_directory "${OPENSSL_DIR}" && export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${OPENSSL_DIR}"
 
 # Load devbox completion config
-# load_file_if_exists ${HOME}/.config/devbox/lib/use_devbox.sh
-
-# Add the custom scripts folder to the PATH if its available
-[ -d "${PERSONAL_CONFIGS_DIR}" ] && export PATH="${PATH+:${PATH}}:${PERSONAL_CONFIGS_DIR}"
-
-# If brew exists, put homebrew in the beginning of the PATH as the final step so that other configs don't mess this up
-command_exists brew && _evalcache "${HOMEBREW_PREFIX}/bin/brew" shellenv
-
-export MANPATH="${HOMEBREW_PREFIX}/share/man${MANPATH+:$MANPATH}"
-export INFOPATH="${HOMEBREW_PREFIX}/share/info${INFOPATH+:$INFOPATH}"
+# load_file_if_exists "${HOME}/.config/devbox/lib/use_devbox.sh"
 
 export HOMEBREW_NO_ANALYTICS=1
 export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
@@ -190,6 +176,3 @@ command_exists bat && export MANPAGER="sh -c 'col -bx | bat -l man -p'"
 
 # fzy
 # load_file_if_exists "${HOME}/.fzy-key-bindings.zsh"
-
-# iTerm2 shell integrations
-load_file_if_exists "${HOME}/.iterm2_shell_integration.zsh"

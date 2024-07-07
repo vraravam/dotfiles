@@ -5,7 +5,7 @@
 
 # file location: ${HOME}/.zlogin
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-test -n "${FIRST_INSTALL+1}" && echo "loading .zlogin"
+test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 recompile_zsh_scripts() {
   if [[ -s "${1}" && (! -s "${1}.zwc" || "${1}" -nt "${1}.zwc") ]]; then
@@ -15,7 +15,7 @@ recompile_zsh_scripts() {
 }
 
 find_in_folder_and_recompile() {
-  [ ! -d "${1}" ] && return
+  ! var_exists_and_is_directory "${1}" && return
 
   # TODO: This still doesn't handle '.pnpm' folders - need to investigate later
   for f in $(find "${1}" -maxdepth 4 -name "*.sh" -o -name "*.zsh" ! -path "**/node_modules/**"); do
@@ -33,7 +33,6 @@ find_in_folder_and_recompile() {
   # Based from: https://github.com/romkatv/zsh-bench/blob/master/configs/ohmyzsh%2B/setup
   recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.aliases.custom"
   recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.aliases"
-  recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.iterm2_shell_integration.zsh"
   recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.p10k.zsh"
   recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.shellrc"
   recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.zprofile"

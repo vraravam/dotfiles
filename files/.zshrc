@@ -5,7 +5,7 @@
 
 # file location: ${HOME}/.zshrc
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-test -n "${FIRST_INSTALL+1}" && echo "loading .zshrc"
+test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 # Optimizing zsh:
 # https://htr3n.github.io/2018/07/faster-zsh/
@@ -103,12 +103,17 @@ ENABLE_CORRECTION="true"
 # Custom plugins may be added to ${ZSH_CUSTOM}/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(evalcache colored-man-pages brew sudo zsh-autosuggestions fast-syntax-highlighting git)
+plugins=(brew colored-man-pages direnv docker docker-compose eza fast-syntax-highlighting git git-extras iterm2 mise sudo zbell zsh-autosuggestions)
+
+# Set plugin options that are needed before each plugin is loaded
+zstyle ':omz:plugins:eza' 'icons' yes
+# zstyle ':omz:plugins:eza' 'git-status' yes
+# zstyle ':omz:plugins:eza' 'header' yes
+zstyle :omz:plugins:iterm2 shell-integration yes
+zstyle ':completion:*:*:docker:*' option-stacking yes
+zstyle ':completion:*:*:docker-*:*' option-stacking yes
 
 load_file_if_exists "${ZSH}/oh-my-zsh.sh"
-
-# eval "$(direnv hook zsh)"
-command_exists direnv && _evalcache direnv hook zsh
 
 # User configuration
 # export MANPATH="/usr/local/man${MANPATH+:$MANPATH}"
