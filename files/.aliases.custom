@@ -46,7 +46,7 @@ _push_repo() {
 
 # pushes the home and profiles repos to their respective remotes (disables and re-enables cron while doing this operation)
 push_all_repos() {
-  crontab -r
+  crontab -r &> /dev/null 2>&1
 
   _push_repo "${HOME}"
   var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}" && _push_repo "${PERSONAL_PROFILES_DIR}"
@@ -65,7 +65,7 @@ recron() {
 
   # shellcheck disable=SC2005
   echo "$(red "---------------------------------------------------------------------------")"
-  crontab -r
+  crontab -r &> /dev/null 2>&1
   crontab "${cron_file}"
 
   # shellcheck disable=SC2005
@@ -73,8 +73,8 @@ recron() {
   crontab -l
 }
 
-# runs git gc on the keybase repo (not sure if this actually compresses the remote repo or not)
-command_exists keybase && alias kbgc="keybase git gc --force home; keybase git gc --force profiles"
+# runs git gc on the keybase remote repos (not sure if this actually compresses the remote repo or not)
+command_exists keybase && alias kbgc="keybase git gc --force ${KEYBASE_HOME_REPO_NAME}; keybase git gc --force ${KEYBASE_PROFILES_REPO_NAME}"
 
 command_exists brew
 if [[ is_macos && $? -eq 0 ]]; then
@@ -122,6 +122,8 @@ var_exists_and_is_directory "${PERSONAL_BIN_DIR}" && path+="${PERSONAL_BIN_DIR}"
 var_exists_and_is_directory "${PERSONAL_BIN_DIR}/macos" && path+="${PERSONAL_BIN_DIR}/macos"
 var_exists_and_is_directory "${DOTFILES_DIR}" && path+="${DOTFILES_DIR}/scripts"
 var_exists_and_is_directory "${PROJECTS_BASE_DIR}/oss/git_scripts" && path+="${PROJECTS_BASE_DIR}/oss/git_scripts"
+# Note: Not sure if its a bug, but the first iterm tab alone has all the paths, but these are missing in subsequent tabs and new windows
+var_exists_and_is_directory "/usr/local/bin" && path+="/usr/local/bin"
 
 # common build, debug and launch aliases for any folder - converted to functions for lazy evaluation
 # these will use the current folder name to find the shell script to run

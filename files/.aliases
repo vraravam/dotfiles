@@ -49,7 +49,7 @@ cc() {
   git -C "${target}" cc
 }
 
-type run_all.sh &> /dev/null 2>&1
+command_exists run_all.sh
 if [ $? -ne 0 ]; then
   # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
   alias rug='run_all.sh git'

@@ -9,6 +9,18 @@ type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.s
 # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
 load_zsh_configs
 
+! command_exists keybase && echo "Keybase not found in the PATH. Aborting!!!" && exit -1
+
+######################
+# Login into keybase #
+######################
+echo "$(green "==> Logging into keybase")"
+keybase login
+if [ $? -ne 0 ]; then
+  echo "Could not login into keybase. Retry again."
+  exit -1
+fi
+
 #######################
 # Clone the home repo #
 #######################

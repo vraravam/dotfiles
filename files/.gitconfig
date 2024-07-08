@@ -13,14 +13,17 @@
 [includeIf "gitdir/i:~/dev/tw/"]      # Personal
   path = ~/.gitconfig-tw.inc          # Personal
 [alias]
+  # print the current directory from the context
+  currentDir = rev-parse --show-toplevel
+
   # find dangling commits
   dangling = fsck --no-reflog
 
   # edit global git configuration
   ec = config --global -e
 
-  # find files/folders with the parameter as part of the name
-  f = "!git ls-files | grep -i"
+  # find files/folders with the specified parameter as part of the name
+  f = !git ls-files | grep -i
 
   # if a local commit exists, then amend it, else create a new commit with the specified message. Aborts if diverged (with non-zero error code) or nothing to commit
   sci = "!sh -c '\
@@ -142,11 +145,15 @@
   g = grep --break --heading --line-number
 
   # expire the reflog as of this moment (so as to maximize cleanup using the 'cc' alias)
-  rfc = "reflog expire --expire=now"
+  rfc = reflog expire --expire=now
 
-  # compress disk-space-usage by deleting dangling commits
+  # TODO: Find a way to parameterize the 'before' and 'after' strings
+  # prints the size of the current repo
+  size = !echo \"==> Size of repository at '$(pwd)': $(du -sh .git | cut -f1)\"
+
+  # compress disk-space-usage by deleting dangling commits (use SKIP_SIZE_BEFORE=1 to skip printing the size before the operation)
   # Note: Do not use '--all' switch for reflog expire - since that also destroys stashes
-  cc = "!echo \"==> Size of repository at $(pwd) before: $(du -sh .git | cut -f1)\"; git remote prune origin; git repack -a -d -f --depth=250 --window=250; git reflog expire --all --expire=1.week.ago; git maintenance run --task=gc; echo \"==> Size of repository at $(pwd) after: $(du -sh .git | cut -f1)\";"
+  cc = "![[ $SKIP_SIZE_BEFORE -ne 0 ]] || git size; git remote prune origin; git repack -a -d -f --depth=250 --window=250; git reflog expire --all --expire=1.week.ago; git maintenance run --task=gc; git size;"
 
   # show the biggest files in the disk (this is not technically specific to git-tracked files)
   big = "!git rev-list --objects --all | grep \"$(git verify-pack -v .git/objects/pack/*.idx | sort -k 3 -n | tail -100 | awk '{print $1}')\""
@@ -155,8 +162,8 @@
   dlb = "!git branch -vv | GREP_OPTIONS= grep ': gone]' | awk '{print $1}' | xargs -I {} git branch -D {}"
 
   # check if the specified branch has had a commit in the past 10 days and if so, report
-  # old = "!sh -c '[[ \"`git log $0/$1 --since 10.days -1 | wc -l`\" -eq 0 ]] && echo \"Will need to delete $0/$1\" && git push $0 --delete $1'"
-  old = "!sh -c '[[ \"`git log $0/$1 --since 10.days -1 | wc -l`\" -eq 0 ]] && echo \"Will need to delete $0/$1\"'"
+  # old = "!sh -c '[[ \"$(git log $0/$1 --since 10.days -1 | wc -l)\" -eq 0 ]] && echo \"Will need to delete $0/$1\" && git push $0 --delete $1'"
+  old = "!sh -c '[[ \"$(git log $0/$1 --since 10.days -1 | wc -l)\" -eq 0 ]] && echo \"Will need to delete $0/$1\"'"
 
   # Show most recent and oldest remote branches by committerdate
   # Copied from https://github.com/rsanheim/dotfiles/pull/34/files
@@ -174,7 +181,7 @@
   se = "!git rev-list --all | xargs git grep -F"
 
   # [siu = submodule init update] Runs submodule-initialisation and update after a fresh checkout RECURSIVE!
-  siu = "!git submodule update --init --recursive --remote --rebase --force"
+  siu = submodule update --init --recursive --remote --rebase --force
 
   sf = submodule foreach
 

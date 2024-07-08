@@ -31,7 +31,7 @@ sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
 #################################################################################################
 # Download and source this utility script - so that the functions are available for this script #
 #################################################################################################
-echo "==> Download the ~/.shellrc for loading the utility functions"
+echo "==> Download the '${HOME}/.shellrc' for loading the utility functions"
 type load_zsh_configs &> /dev/null 2>&1
 if [ $? -ne 0 ]; then
   [ ! -f "${HOME}/.shellrc" ] && curl -fsSL https://raw.githubusercontent.com/vraravam/dotfiles/master/files/.shellrc -o "${HOME}/.shellrc"
