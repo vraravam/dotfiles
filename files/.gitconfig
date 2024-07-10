@@ -2,10 +2,10 @@
 
 # Note:
 # [Windows users] If you are on windows, please search for the word 'windows' - and fix those lines - they seem to cause some trouble
-# [General] Since some of the settings are specific to my setup (ie presence of fles), I have marked those lines with comments 'Personal' - you can go ahead and change those to your equivalents or delete them altogether
+# [General] Since some of the settings are specific to my setup (ie presence of certain files), I have marked those lines with comments 'Personal' - you can go ahead and change those to your equivalents or delete them altogether
 # [General] Since I use 'diff-so-fancy' as the diffing tool, it's absence on your system will cause some errors. If you are able to, I would sincerely urge you to install and use it for a much better experience. If not, please replace all such occurrences back to use 'diff'
 
-# Note: Even though this will show up twice in `git config -l` - it will still be overridden based on the order of the includeIf lines below
+# Note: Even though this will show up twice in `git config -l` - it will still be overridden based on the order of the includeIf lines below (last matching configuration wins)
 [includeIf "gitdir/i:~/"]             # Personal
   path = ~/.gitconfig-oss.inc         # Personal
 [includeIf "gitdir/i:~/dev/jd/"]      # Personal

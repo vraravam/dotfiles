@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 
-# file location: <anywhere>
+# file location: <anywhere; but advisable in the PATH>
 
 # This script is used to install the dotfiles from this repo/folder structure to the user's home folder
 # It can be invoked from any location as long as its in the PATH (and you don't need to specify the fully qualified name while invoking it).

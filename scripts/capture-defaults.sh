@@ -1,11 +1,11 @@
 #!/usr/bin/env zsh
 
-# file location: Put this anywhere in the path.
+# file location: <anywhere; but advisable in the PATH>
 
 # This script will capture (export) the settings or import the settings from the location specified in the $TARGET_DIR env var defined down below. You can back the files up to any cloud storage and retrieve into the new laptop to then get back all settings as per the original machine. The only word of caution is to use it with the same OS version (I haven't tried in any situations where the old and new machines had different OS versions - so I cannot guarantee if that might break the system in any way)
 
 # A trick to find the name of the app:
-# Run `defaults read` in an empty window of a terminal app, then use the search functionality to search for a known word related to that app (like eg app visible name, author, some setting that's unique to that app, etc). Once you find this, trace back to the parent in the printed JSON to then get the real unique name of the app where its settings are stored.
+# Run `defaults read` in an empty window of a terminal app, then use the search functionality to search for a known word related to that app (like eg app visible name, author, some setting that's unique to that app, etc). Once you find this, trace back to the left-most child (1st of the top-level parent) in the printed JSON to then get the real unique name of the app where its settings are stored.
 
 type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
@@ -96,7 +96,7 @@ app_array=(
   'com.googlecode.iterm2'
   'com.macpaw.site.theunarchiver'
   'com.microsoft.VSCodeInsiders'
-  'com.mothersruin.Apparency'
+  # 'com.mothersruin.Apparency'
   'com.mowglii.ItsycalApp'
   'com.piriform.ccleaner'
   'com.raycast.macos'

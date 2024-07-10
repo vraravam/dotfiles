@@ -1,22 +1,15 @@
 #!/usr/bin/env zsh
 
-# This script can be used to setup a macos machine based on Vijay's configurations. This script is idempotent and will restore your local setup to the same state even if run multiple times. In most cases, the script will provide warning messages if skipping certain steps. Each such message will be useful to hint to the user about what to do to force rerunning of that step.
+# This script is idempotent and will restore your local setup to the same state even if run multiple times.
+# In most cases, the script will provide warning messages if skipping certain steps. Each such message will be useful to give you a hint about what to do to force rerunning of that step.
 
-# file location: <anywhere> (just need to invoke it from that location)
-
-# BEFORE STARTING TO RUN THIS SCRIPT (for the first time on a new machine), these steps are recommended
-# 1. Login into Apple App store
-# 2. Grant full disk access to Terminal app via System Preferences
-# 3. Turn on File Vault encryption via System Preferences (if not, then this script will exit in the beginning with an appropriate message)
-# 4. Turn off battery from showing in the Control Center (nice to have especially if you end up with the Stats app)
-# 5. Change the built-in clock to show as analog to save horizontal space in the Control Center via System Preferences
-# 6. If you are already on a system where you have installed some software using homebrew, please check out this instruction: https://github.com/vraravam/dotfiles/blob/master/files/Brewfile#L7
+# file location: <anywhere; but advisable in the PATH>
 
 # TODO: Need to figure out the scriptable commands for the following settings:
 # 1. Auto-adjust Brightness
 # 2. Brightness on battery
-
-# TODO: Replace all occurrences of '-d' with 'var_exists_and_is_directory'
+# 3. Keyboard brightness
+# 4. Replace all occurrences of '-d' with 'var_exists_and_is_directory'
 
 # These env vars are defined by (duplicated intentionally) since this script would bootstrap the installation
 USERNAME="${USERNAME:-$(whoami)}"
@@ -34,7 +27,7 @@ sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
 echo "==> Download the '${HOME}/.shellrc' for loading the utility functions"
 type load_zsh_configs &> /dev/null 2>&1
 if [ $? -ne 0 ]; then
-  [ ! -f "${HOME}/.shellrc" ] && curl -fsSL https://raw.githubusercontent.com/vraravam/dotfiles/master/files/.shellrc -o "${HOME}/.shellrc"
+  [ ! -f "${HOME}/.shellrc" ] && curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/files/.shellrc" -o "${HOME}/.shellrc"
   FIRST_INSTALL=true source "${HOME}/.shellrc"
 else
   warn "skipping downloading and sourcing '${HOME}/.shellrc' since its already loaded"
@@ -124,19 +117,18 @@ if [[ ! -z "${DOTFILES_DIR}" && ! -d "${DOTFILES_DIR}" ]]; then
   rm -rfv "${HOME}/.zshrc"
 
   # Note: Cloning with https since the ssh keys will not be present at this time
-  git clone https://github.com/vraravam/dotfiles "${DOTFILES_DIR}"
+  git clone "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}"
 
   # --------------------------------------------------------------------------------
-  # Note: Do NOT change these references to vraravam (start)
   # Setup the .bin-oss repo's upstream if it doesn't already point to vraravam's repo
-  git -C "${DOTFILES_DIR}" remote -vv | grep vraravam
+  UPSTREAM_GH_USERNAME="vraravam" # Note: Do NOT change these references to vraravam
+  git -C "${DOTFILES_DIR}" remote -vv | grep "${UPSTREAM_GH_USERNAME}"
   if [ $? -ne 0 ]; then
-    git -C "${DOTFILES_DIR}" remote add upstream https://github.com/vraravam/dotfiles
+    git -C "${DOTFILES_DIR}" remote add upstream "https://github.com/${UPSTREAM_GH_USERNAME}/dotfiles"
     git -C "${DOTFILES_DIR}" fetch --all
   else
     warn "Skipping setting new upstream remote"
   fi
-  # Note: Do NOT change these references to vraravam (end)
   # --------------------------------------------------------------------------------
 
   # Use the https protocol for pull, but use ssh/git for push
@@ -232,7 +224,7 @@ fi
 echo "$(green "==> Setting up login items")"
 setup_login_item() {
   if [ -d "/Applications/${1}" ]; then
-    echo "$(green "Setting up '${1}' as a login item")" && osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/${1}\", hidden:false}" 2>&1 > /dev/null
+    echo "Setting up '${1}' as a login item" && osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/${1}\", hidden:false}" 2>&1 > /dev/null
   else
     warn "Couldn't find application '/Applications/${1}' and so skipping setting up as a login item"
   fi
@@ -256,15 +248,3 @@ done
 
 echo "\n"
 echo "$(green "********** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **********")"
-echo "$(red "1. Use https://gist.github.com/vraravam/e9676759db46950e1fd817e49e513394 as a template to create equivalent configuration files with your logins and make corresponding changes in ${HOME}/.gitconfig to reflect the same")"
-echo "$(red "2. Go to Terminal > Preferences > Profiles > Basic > Text > Change Font to 'MesloLGS Nerd Font'")"
-echo "$(red "3. Go to iTerm2 > Preferences > Profiles > Default > Text > Change Font to 'MesloLGS Nerd Font'")"
-echo "$(red "4. Go to iTerm2 > Preferences > Profiles > Default > Keys > Key Mappings > Presets (and choose 'Natural Text Editing')")"
-echo "$(red "5. Turn on 'Tap to click' in Trackpad prefs")"
-echo "$(red "6. System Preferences > Privacy & Security: Full Disk Access > Add 'iTerm', 'Terminal', 'zoom.us'")"
-echo "$(red "7. System Preferences > Privacy & Security: Camera > Add 'Arc', 'zoom.us'")"
-echo "$(red "8. System Preferences > Privacy & Security: Microphone > Add 'Arc', 'zoom.us'")"
-echo "$(red "9. System Preferences > Displays > Set scaling / screen resolution")"
-echo "$(red "10. System Preferences > Displays > Turn off 'Automatically adjust brightness'")"
-echo "$(red "11. Manually adjust the Finder sidebar preferences")"
-echo "$(red "12. System Preferences > Desktop & Dock > Set the default web browser")"

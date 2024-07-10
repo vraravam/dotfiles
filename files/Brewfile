@@ -4,17 +4,12 @@
 # Also can be used to ensure that any package/apps that were installed as experimentation are uninstalled from the system.
 # For a more detailed explanation of the philosophy/reasoning behind this file, please see https://openfolder.sh/macos-migrations-with-brewfile
 
-# If you are starting such a file on a machine where you have already installed some apps using brew, then use `brew bundle dump` to create this file and avoid starting from scratch. Remember though that this is a 1-time run of this command. In the future, if you regenerate the Brewfile using this command, any custom comments/formatting that you might have done - would be lost.
-
-# If you have also installed some vscode plugins already (manually), then you can use the following command to export that list:
-# code --list-extensions
-
-# These are the common shell aliases that I have setup in the `${HOME}/.aliases` file for ease of running/typing (and also don't need to remember all these commands by-heart!)
+# These are the common shell aliases that I have setup in the `${HOME}/.aliases` file for ease of running/typing (and also don't need to remember all these commands by-heart!). If you are using my `${HOME}/.aliases`, they will already be present for you. If not, you can then set these up in the respective dotfile of your choice
 # alias bcg='brew outdated --greedy'  # List all casks that are outdated like a "dry-run" (and which have version marked as 'latest')
 # alias bcug='brew upgrade --greedy'  # Upgrades all casks that are outdated (and which have version marked as 'latest')
 # alias bupc='brew bundle check || brew bundle --all --cleanup; brew bundle cleanup -f; brew cleanup --prune=all; brew autoremove; brew upgrade'        # Upgrades and cleans up all regular outdated casks and libs (non-greedy)
 
-# TODO: Need to find brew/cask for:
+# TODO: Need to find cask for:
 #   Tinkertool
 
 # set global preferences for all 'brew install' commands
@@ -23,12 +18,7 @@ cask_args appdir: '/Applications', no_quarantine: true
 # java_present = system('/usr/libexec/java_home --failfast')
 is_arm = Hardware::CPU.arm?
 
-# Use my login id to selectively enable certain lines/blocks (kept for reference)
-# is_vijay = `whoami`.chomp == 'vijay'
-
-# tap 'buo/cask-upgrade'
 tap 'romkatv/powerlevel10k'
-# tap 'trailofbits/homebrew-brew-verify'
 
 brew 'bash'
 brew 'bat'
@@ -81,7 +71,7 @@ mas 'iBar-Menubar icon control tool', id: 6443843900
 
 # ----------------------------------------------------------------------------------------------------------
 cask 'aldente'
-cask 'apparency'
+# cask 'apparency'
 cask 'appcleaner'
 cask 'arc'
 cask 'brave-browser@nightly'
@@ -171,7 +161,6 @@ end
 # ----------------------------------------------------------------------------------------------------------
 # TODO: This doesn't solve the issue about performing a custom action when a specific formula/cask is (re)installed - keeping for future reference
 at_exit do
-#   system "echo WOAH!!!!!!! && code-gist"
   # This is required for completions from other plugins to work (for eg git-extras)
-  system "rm -rfv \"$HOMEBREW_REPOSITORY/share/zsh/site-functions/_git\""
+  system("rm -rfv \"$HOMEBREW_REPOSITORY/share/zsh/site-functions/_git\"") || true
 end

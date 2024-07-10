@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 
-# file location: <anywhere>
+# file location: <anywhere; but advisable in the PATH>
 
 # This script is useful to flag existing repositories that need to be backed up; and the reverse process ie resurrecting repo-configurations from backup
 # It assumes the following:

@@ -103,17 +103,19 @@ implode() {
     '.bin'
     '.config'
     '.docker'
+    '.envrc'
     '.git*'
     '.gnupg'
     '.psql*'
     '.s3cfg'
     '.ssh'
+    '.tldrc'
     'Brewfile'
     'dev'
     'personal'
   )
   for f in "${folders[@]}"; do
-    bash -c "rm -rf '${HOME}/${f}'"
+    bash -c "rm -rf \"${HOME}/${f}\""
   done
 }
 

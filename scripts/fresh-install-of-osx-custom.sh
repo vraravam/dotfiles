@@ -52,16 +52,20 @@ if [ ! -z "${KEYBASE_USERNAME}" ] && [ ! -z "${KEYBASE_PROFILES_REPO_NAME}" ] &&
   rm -rf "${PERSONAL_PROFILES_DIR}"
   git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME} "${PERSONAL_PROFILES_DIR}"
 else
-  warn "skipping cloning of profiles repo since  either the 'KEYBASE_USERNAME' and/or the 'KEYBASE_PROFILES_REPO_NAME' env vars haven't been set or a git repo is already present in '${PERSONAL_PROFILES_DIR}'"
+  warn "skipping cloning of profiles repo since either the 'KEYBASE_USERNAME' and/or the 'KEYBASE_PROFILES_REPO_NAME' env vars haven't been set or a git repo is already present in '${PERSONAL_PROFILES_DIR}'"
 fi
 
 ##################################################
 # Resurrect repositories that I am interested in #
 ##################################################
 echo "$(green "==> Resurrecting repos")"
-for file in $(ls "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml); do
-  resurrect-repositories.rb -r "${file}"
-done
+if var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}"; then
+  for file in $(ls "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml); do
+    resurrect-repositories.rb -r "${file}"
+  done
+else
+  warn "skipping resurrecting of repositories since '${PERSONAL_CONFIGS_DIR}' doesn't exist"
+fi
 
 ############################################################
 # post-clone operations for installing system dependencies #
@@ -99,8 +103,8 @@ fi
 ###################################################################
 echo "$(green "==> Restore preferences")"
 # "Run within a separate bash shell to avoid quitting due to errors
-bash -c "osx-defaults.sh -s"
-capture-defaults.sh i
+command_exists "osx-defaults.sh" && bash -c "osx-defaults.sh -s"
+command_exists "capture-defaults.sh" && capture-defaults.sh i
 
 ################################
 # Recreate the zsh completions #
@@ -147,7 +151,3 @@ command_exists recron && recron
 
 echo "\n"
 echo "$(green "********** Finished auto installation process: Please perform these manual steps **********")"
-echo "$(red "1. Go to VSCodium > Command Palette (Cmd+Shift+P) > Sync: Download Settings")"
-echo "$(red "2. Manually setup the Finder preferences for sidebar")"
-echo "$(red "3. Login into iCloud and setup Desktop sync")"
-echo "$(red "4. Login for Software Update to different ID (after iCloud login) for beta updates")"

@@ -48,10 +48,10 @@ extract_git_config_value() {
 crontab -r &> /dev/null 2>&1
 
 # Capture information from pre-existing git repo
-git_url="$(extract_git_config_value remote.origin.url)"       # "keybase://private/avijayr/home"
-git_user_name="$(extract_git_config_value user.name)"         # "Vijay A"
-git_user_email="$(extract_git_config_value user.email)"       # "vraravam@users.noreply.github.com"
-git_branch_name="$(eval "${git_cmd} branch --show-current")"  # "master"
+git_url="$(extract_git_config_value remote.origin.url)"
+git_user_name="$(extract_git_config_value user.name)"
+git_user_email="$(extract_git_config_value user.email)"
+git_branch_name="$(eval "${git_cmd} branch --show-current")"
 
 echo "$(yellow "Git url"): '${git_url}'"
 echo "$(yellow "User name"): '${git_user_name}'"
