@@ -24,7 +24,7 @@
 #     - git-crypt unlock XXX
 # ```
 #
-# 'folder' specifies the target folder where the repo should reside on local machine (relative to where the script is being run from). Will also do glob expansion of '~' to $HOME if ~ is used
+# 'folder' specifies the target folder where the repo should reside on local machine (relative to where the script is being run from). Will also do glob expansion of '~' to $HOME if ~ is used. It can also handle shell env vars if they are in the format '#{<env-key>}'
 # 'remote' specifies the remote url of the repository
 # 'other_remotes' specifies a hash of the other remotes keyed by the name with the value of the remote url
 # 'active' (optional; default: false) specifies whether to set this folder/repo up or not on local
@@ -51,7 +51,11 @@ def justify(num)
 end
 
 def resurrect(repo, idx, total)
-  folder = File.expand_path(repo['folder'].strip)
+  folder = repo['folder'].strip
+  env_var_name = folder[/.*\$\{(.*)}/, 1]
+  folder.gsub!("${#{env_var_name}}", ENV[env_var_name]) if !env_var_name.nil? && !env_var_name.empty?
+  folder = File.expand_path(folder)
+
   puts "***** Resurrecting [#{justify(idx + 1)} of #{justify(total)}]: #{folder} *****".green
   # Debugging with a different folder name
   # folder.sub!('dev/', 'dev2/')
@@ -81,13 +85,13 @@ puts "Using filter: #{filter.green}" if filter.length > 0
 yml_file = File.expand_path(ARGV[1])
 puts "Using config file: #{yml_file.green}"
 repositories = YAML.load_file(yml_file).select{ |repo| repo['active']}
-yml_repositories = apply_filter(repositories, filter)
+repositories = apply_filter(repositories, filter)
 if ARGV[0] == '-r'
   puts "Running operation: #{'resurrection'.green}"
-  yml_repositories.each_with_index { |repo, idx| resurrect(repo, idx, yml_repositories.length) }
+  repositories.each_with_index { |repo, idx| resurrect(repo, idx, repositories.length) }
 elsif ARGV[0] == '-c'
   puts "Running operation: #{'verification'.green}"
-  yml_folders = yml_repositories.map{ |repo| repo['folder']}.compact.sort
+  yml_folders = repositories.map{ |repo| repo['folder']}.compact.sort
 
   local_folders = Dir.glob('./**/.git').map{|r| r.sub('/.git', '')[2..-1]}.compact # remove the beginning './'
   local_folders = apply_filter(local_folders, filter).compact.sort

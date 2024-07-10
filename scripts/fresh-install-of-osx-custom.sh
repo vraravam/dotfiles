@@ -55,6 +55,27 @@ else
   warn "skipping cloning of profiles repo since either the 'KEYBASE_USERNAME' and/or the 'KEYBASE_PROFILES_REPO_NAME' env vars haven't been set or a git repo is already present in '${PERSONAL_PROFILES_DIR}'"
 fi
 
+########################################################
+# Generate the repositories-oss.yml fie if not present #
+########################################################
+file_name="${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
+echo "$(green "==> Generating ${file_name}")"
+if [[ ! -f "${file_name}" ]]; then
+  cat <<EOF > "${file_name}"
+# Explanation of the yml structure:
+#    'folder' specifies the target folder where the repo should reside on local machine (relative to where the script is being run from)
+#    'remote' specifies the remote url of the repository
+#    'other_remotes' (optional) specifies a hash of the other remotes keyed by the name with the value of the remote url
+#    'active' (optional; default: false) specifies whether to set this folder/repo up or not on local
+#    'post_clone' (optional; default: empty array) specifies other bash commands (in sequence) to be run once the resurrection is done - for eg, symlink the '.envrc' file if one exists
+- folder: "\${PROJECTS_BASE_DIR}/oss/git_scripts"
+  remote: git@github.com:vraravam/git_scripts
+  active: true
+EOF
+else
+  warn "skipping generation of '${file_name}' since it already exists"
+fi
+
 ##################################################
 # Resurrect repositories that I am interested in #
 ##################################################
