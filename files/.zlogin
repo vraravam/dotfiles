@@ -42,8 +42,8 @@ find_in_folder_and_recompile() {
 
   find_in_folder_and_recompile "${HOME}/.bin-oss"
   find_in_folder_and_recompile "${HOME}/.bin"
-  find_in_folder_and_recompile "${HOME}/dev/oss"
-  find_in_folder_and_recompile "${HOME}/personal/dev"
+  find_in_folder_and_recompile "${PROJECTS_BASE_DIR}/oss"
+  find_in_folder_and_recompile "${PERSONAL_CONFIGS_DIR}"
   find_in_folder_and_recompile "${ZDOTDIR:-${HOME}}/.oh-my-zsh"
   find_in_folder_and_recompile /opt/homebrew
   find_in_folder_and_recompile /usr/local

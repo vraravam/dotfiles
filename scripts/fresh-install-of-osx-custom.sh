@@ -97,12 +97,6 @@ command_exists allow_all_direnv_configs && allow_all_direnv_configs
 command_exists install_mise_versions && install_mise_versions
 rm -rf "${HOME}/.ssh/known_hosts.old"
 
-##################
-# Install devbox #
-##################
-# curl -fsSL https://get.jetpack.io/devbox | bash
-# mkdir -p ${HOME}/.config/devbox/lib/ && devbox completion zsh > ${HOME}/.config/devbox/lib/use_devbox.sh
-
 ##############################################
 # Load the direnv config for the home folder #
 ##############################################

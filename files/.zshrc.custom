@@ -149,9 +149,6 @@ OPENSSL_DIR="${HOMEBREW_PREFIX}/opt/openssl@3"
 use_homebrew_installation_for "${OPENSSL_DIR}"
 var_exists_and_is_directory "${OPENSSL_DIR}" && export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${OPENSSL_DIR}"
 
-# Load devbox completion config
-# load_file_if_exists "${HOME}/.config/devbox/lib/use_devbox.sh"
-
 export HOMEBREW_NO_ANALYTICS=1
 export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
 export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
