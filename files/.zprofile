@@ -33,5 +33,3 @@ export DOTFILES_DIR="${HOME}/.bin-oss"
 export KEYBASE_USERNAME="avijayr"
 export KEYBASE_HOME_REPO_NAME="home"
 export KEYBASE_PROFILES_REPO_NAME="profiles"
-
-type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"

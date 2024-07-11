@@ -4,7 +4,7 @@
 # It assumes that a pre-existing repo on local is present - so that it can capture the relevant remote details.
 # It will force removal of history if the `-f` flag is given. (The history of the profiles repo will always get deleted).
 
-type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+type command_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 ! command_exists keybase && echo "Keybase not found in the PATH. Aborting!!!" && exit -1
 

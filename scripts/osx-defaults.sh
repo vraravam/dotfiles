@@ -19,7 +19,7 @@ case "${1}" in
     ;;
 esac
 
-type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+type green &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 ask() {
   while true; do

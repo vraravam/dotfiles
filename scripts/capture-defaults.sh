@@ -7,7 +7,7 @@
 # A trick to find the name of the app:
 # Run `defaults read` in an empty window of a terminal app, then use the search functionality to search for a known word related to that app (like eg app visible name, author, some setting that's unique to that app, etc). Once you find this, trace back to the left-most child (1st of the top-level parent) in the printed JSON to then get the real unique name of the app where its settings are stored.
 
-type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+type warn &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 usage() {
   echo "Usage: ${0} <e/i>"

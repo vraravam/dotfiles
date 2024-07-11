@@ -14,7 +14,6 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
 # zmodload zsh/zprof
 
-# this file is being sourced in '.zprofile', but for some reason when running the 'time_shell_startup' function, we still get errors. so loading it explicitly once more
 type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 export NVM_LAZY_LOAD=true

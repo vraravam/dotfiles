@@ -10,7 +10,7 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 # contributions to path, aliases, functions from this folder
 
 # DUPLICATE! Copied over since we get an error if the .zprofile was not loaded
-type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+type command_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 # Add flags to existing aliases.
 alias less="${aliases[less]:-less} -RF"
