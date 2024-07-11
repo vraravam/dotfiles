@@ -104,6 +104,7 @@ implode() {
     '.config'
     '.docker'
     '.envrc'
+    '.git'
     '.git*'
     '.gnupg'
     '.psql*'
@@ -115,7 +116,7 @@ implode() {
     'personal'
   )
   for f in "${folders[@]}"; do
-    bash -c "rm -rf \"${HOME}/${f}\""
+    bash -c "rm -rfv \"${HOME}/${f}\""
   done
 }
 
