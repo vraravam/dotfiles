@@ -2,34 +2,6 @@
 
 # file location: <anywhere; but advisable in the PATH>
 
-# This script is useful to flag existing repositories that need to be backed up; and the reverse process ie resurrecting repo-configurations from backup
-# It assumes the following:
-#   1. The yaml config conforms to the structure as depicted down below
-#   2. Ruby language is present in the system prior to this script being run.
-
-# To run it, just invoke by `resurrect-repositories.rb` if this folder is already setup in the PATH
-# This will then print the usage by default and you can follow the required parameters.
-
-# The config file for this script is a yaml file that is passed into this script as a parameter
-# Sample contents of such a file are:
-#
-# ```
-# - folder: "${PROJECTS_BASE_DIR}/oss/git_scripts"
-#   remote: https://github.com/vraravam/git_scripts.git
-#   other_remotes:
-#     upstream: <upstream remote url>
-#   active: true
-#   post_clone:
-#     - ln -sf "${PERSONAL_CONFIGS_DIR}/XXX.gradle.properties" ~/.gradle/gradle.properties
-#     - git-crypt unlock XXX
-# ```
-#
-#    'folder' specifies the target folder where the repo should reside on local machine. If the folder name starts with '/', then its assumed that the string corresponds to the root folder, if not, then its assumed to be relative to where the script is being run from. Will also do glob expansion of '~' to '${HOME}' if ~ is used. It can also handle shell env vars if they are in the format '#{<env-key>}'
-# 'remote' specifies the remote url of the repository
-# 'other_remotes' specifies a hash of the other remotes keyed by the name with the value of the remote url
-# 'active' (optional; default: false) specifies whether to set this folder/repo up or not on local
-# 'post_clone' (optional; default: empty array) specifies other bash commands (in sequence) to be run once the resurrection is done - for eg, symlink the '.envrc' file if one exists
-
 require "#{__dir__}/utilities/string.rb"
 
 if ARGV.length != 2 || ARGV[0] == '--help' || !['-r', '-c'].include?(ARGV[0])

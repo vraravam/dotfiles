@@ -122,7 +122,7 @@ As a summary, these files will typically have changes between your setup and min
 
 ## install-dotfiles.rb
 
-Basically, to get started with the dotfiles, you just need to run the `<pwd>/scripts/install-dotfiles.rb` script. If you have that folder in the `PATH` env var, then you don't need the fully qualified or relative location (only file name is enough to run).
+Basically, to get started with the dotfiles, you just need to run the `<pwd>/scripts/install-dotfiles.rb` script. If you have that folder in the `PATH`, then you don't need the fully qualified or relative location (only file name is enough to run it).
 
 * If you already have any of the dotfiles that are managed via this repo, *DON'T WORRY!* Your files will be moved to the cloned folder - so that you can then commit and push them to your fork!
 * This script will also handle nested config files - as long as they are already present in this repo.
@@ -132,7 +132,7 @@ Basically, to get started with the dotfiles, you just need to run the `<pwd>/scr
 
 ## approve-fingerprint-sudo.sh
 
-This script is useful in macos to enable the touchId as an authentication mechanism even while running command-line tools. Before running this script, the usual mechanism is for a prompt to appear in the terminal window itself whre one has to type in the whole long password. After this script is run, the user is prompted by the touchId modal dialog instead of having to type a really long password.
+This script is useful in macos to enable TouchId as an authentication mechanism even while running command-line tools. Before running this script, the usual mechanism is for a prompt to appear in the terminal window itself where one has to type in the whole long password. After this script is run, the user is prompted by the touchId modal dialog instead of having to type a really long password.
 Note:
 
 * This script is idempotent ie it can be run any number of times safely, it will not corrrupt the system.
@@ -148,8 +148,30 @@ This script is the erstwhile script to codify the macos setup. It can be used to
 
 ## recreate-repo.sh
 
-Usually, over time, if a repo has lots of branches that were deleted or became stale, and constant rebases done - it can lead to the repo bloating in size. This is especially true of the profiles repo in my usage since I have a cron job setup to amend the repo with the new state files. To effectively reduce the size on the remote so that any future clone does not pull down dangling commits and other cruft, the simplest way that I have found is to recreate the remote (this does not mean that the history is lost!) after running the `git cc` command on the local.
+Usually, over time, if a repo has lots of branches that were deleted or became stale, and constant rebases done - it can lead to the repo bloating in size (both on local and remote). This is especially true of the profiles repo in my usage since I have a cron job setup to amend the repo with the new state files. To effectively reduce the size on the remote so that any future clone does not pull down dangling commits and other cruft, the simplest way that I have found is to recreate the remote (this does not mean that the history is lost!) after running the `git cc` command on the local.
 
 ## resurrect-repositories.rb
 
 I usually reimage my laptop once every couple of months. This script is useful as a catalog of all repos that I have ever worked on, and some/most which are marked `active: true` in the yaml to resurrect back into the new machine/image. The yaml (described in the comments at the beginning of the script) also allow to install the required languages and their versions in an automated manner so as to avoid having to read the `README.md` or the `CONTRIBUTING.md` file for each repo on each re-image!
+
+This script is useful to flag existing repositories that need to be backed up; and the reverse process (ie resurrecting repo-configurations from backup) is also supported by the same script!
+To run it, just invoke by `resurrect-repositories.rb` if this folder is already setup in the `PATH`. This will then print the usage by default and you can follow the required parameters.
+
+The config file for this script is a yaml file that is passed into this script as a parameter and the structure of this configuration file is:
+
+```yaml
+- folder: "${PROJECTS_BASE_DIR}/oss/git_scripts"
+  remote: https://github.com/vraravam/git_scripts.git
+  other_remotes:
+    upstream: <upstream remote url>
+  active: true
+  post_clone:
+    - ln -sf "${PERSONAL_CONFIGS_DIR}/XXX.gradle.properties" ~/.gradle/gradle.properties
+    - git-crypt unlock XXX
+```
+
+* `folder` specifies the target folder where the repo should reside on local machine. If the folder name starts with `/`, then its assumed that the path starts from the root folder; if not, then its assumed to be relative to where the script is being run from. The ruby script also supports glob expansion of `~` to `${HOME}` if `~` is used. It can also handle shell env vars if they are in the format `#{<env-key>}`
+* `remote` specifies the remote url of the repository
+* `other_remotes` specifies a hash of the other remotes keyed by the name with the value of the remote url
+* `active` (optional; default: false) specifies whether to set this folder/repo up or not on local
+* `post_clone` (optional; default: empty array) specifies other `bash` commands (in sequence) to be run once the resurrection is done - for eg, symlink a '.envrc' file if one exists

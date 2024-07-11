@@ -63,12 +63,6 @@ echo "$(green "==> Generating ${file_name}")"
 if [[ ! -f "${file_name}" ]]; then
   mkdir -p "$(dirname "${file_name}")"
   cat <<EOF > "${file_name}"
-# Explanation of the yml structure:
-#    'folder' specifies the target folder where the repo should reside on local machine. If the folder name starts with '/', then its assumed that the string corresponds to the root folder, if not, then its assumed to be relative to where the script is being run from. Will also do glob expansion of '~' to '${HOME}' if ~ is used. It can also handle shell env vars if they are in the format '#{<env-key>}'
-#    'remote' specifies the remote url of the repository
-#    'other_remotes' (optional) specifies a hash of the other remotes keyed by the name with the value of the remote url
-#    'active' (optional; default: false) specifies whether to set this folder/repo up or not on local
-#    'post_clone' (optional; default: empty array) specifies other bash commands (in sequence) to be run once the resurrection is done - for eg, symlink the '.envrc' file if one exists
 - folder: "\${PROJECTS_BASE_DIR}/oss/git_scripts"
   remote: git@github.com:vraravam/git_scripts
   active: true
