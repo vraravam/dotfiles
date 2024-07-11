@@ -61,6 +61,7 @@ fi
 file_name="${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
 echo "$(green "==> Generating ${file_name}")"
 if [[ ! -f "${file_name}" ]]; then
+  mkdir -p "$(dirname "${file_name}")"
   cat <<EOF > "${file_name}"
 # Explanation of the yml structure:
 #    'folder' specifies the target folder where the repo should reside on local machine (relative to where the script is being run from)
