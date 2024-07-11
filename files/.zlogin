@@ -31,20 +31,23 @@ find_in_folder_and_recompile() {
 
   # zsh config files can be compiled to improve performance
   # Based from: https://github.com/romkatv/zsh-bench/blob/master/configs/ohmyzsh%2B/setup
-  recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.aliases.custom"
-  recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.aliases"
-  recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.p10k.zsh"
-  recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.shellrc"
   recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.zprofile"
   recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.zshenv"
   recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.zshrc.custom"
   recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.zshrc"
 
+  # omz doesn't know about these files, and so we don't depend on 'ZDOTDIR'
+  recompile_zsh_scripts "${HOME}/.aliases.custom"
+  recompile_zsh_scripts "${HOME}/.aliases"
+  recompile_zsh_scripts "${HOME}/.p10k.zsh"
+  recompile_zsh_scripts "${HOME}/.shellrc"
+
   find_in_folder_and_recompile "${HOME}/.bin-oss"
   find_in_folder_and_recompile "${HOME}/.bin"
-  find_in_folder_and_recompile "${PROJECTS_BASE_DIR}/oss"
+  find_in_folder_and_recompile "${PROJECTS_BASE_DIR}"
   find_in_folder_and_recompile "${PERSONAL_CONFIGS_DIR}"
   find_in_folder_and_recompile "${ZDOTDIR:-${HOME}}/.oh-my-zsh"
+  # explicitly use both intel and m1 install locations of homebrew
   find_in_folder_and_recompile /opt/homebrew
   find_in_folder_and_recompile /usr/local
 ) &!
