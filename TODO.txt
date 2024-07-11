@@ -1,0 +1,2 @@
+- need to share profiles .envrc (this is useful since its a tried-and-tested method to capture pre-existing browser profile folders and then set them up for symlinks for capturing changes)
+- need to share profiles .gitignore (this is useful since it provides a known list of files that can be safely ignored from being tracked via git repo)
