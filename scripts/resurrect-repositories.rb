@@ -14,7 +14,7 @@
 # Sample contents of such a file are:
 #
 # ```
-# - folder: dev/oss/git_scripts
+# - folder: "${PROJECTS_BASE_DIR}/oss/git_scripts"
 #   remote: https://github.com/vraravam/git_scripts.git
 #   other_remotes:
 #     upstream: <upstream remote url>
@@ -24,7 +24,7 @@
 #     - git-crypt unlock XXX
 # ```
 #
-# 'folder' specifies the target folder where the repo should reside on local machine (relative to where the script is being run from). Will also do glob expansion of '~' to $HOME if ~ is used. It can also handle shell env vars if they are in the format '#{<env-key>}'
+#    'folder' specifies the target folder where the repo should reside on local machine. If the folder name starts with '/', then its assumed that the string corresponds to the root folder, if not, then its assumed to be relative to where the script is being run from. Will also do glob expansion of '~' to '${HOME}' if ~ is used. It can also handle shell env vars if they are in the format '#{<env-key>}'
 # 'remote' specifies the remote url of the repository
 # 'other_remotes' specifies a hash of the other remotes keyed by the name with the value of the remote url
 # 'active' (optional; default: false) specifies whether to set this folder/repo up or not on local

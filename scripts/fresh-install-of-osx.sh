@@ -119,18 +119,6 @@ if [[ ! -z "${DOTFILES_DIR}" && ! -d "${DOTFILES_DIR}" ]]; then
   # Note: Cloning with https since the ssh keys will not be present at this time
   git clone "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}"
 
-  # --------------------------------------------------------------------------------
-  # Setup the .bin-oss repo's upstream if it doesn't already point to vraravam's repo
-  UPSTREAM_GH_USERNAME="vraravam" # Note: Do NOT change these references to vraravam
-  git -C "${DOTFILES_DIR}" remote -vv | grep "${UPSTREAM_GH_USERNAME}"
-  if [ $? -ne 0 ]; then
-    git -C "${DOTFILES_DIR}" remote add upstream "https://github.com/${UPSTREAM_GH_USERNAME}/dotfiles"
-    git -C "${DOTFILES_DIR}" fetch --all
-  else
-    warn "Skipping setting new upstream remote"
-  fi
-  # --------------------------------------------------------------------------------
-
   # Use the https protocol for pull, but use ssh/git for push
   git -C "${DOTFILES_DIR}" config url.ssh://git@github.com/.pushInsteadOf https://github.com/
 
@@ -143,6 +131,15 @@ if [[ ! -z "${DOTFILES_DIR}" && ! -d "${DOTFILES_DIR}" ]]; then
   # Load all zsh config files for PATH and other env vars to take effect
   # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
   load_zsh_configs
+
+  # Setup the .bin-oss repo's upstream if it doesn't already point to vraravam's repo
+  git -C "${DOTFILES_DIR}" remote -vv | grep "${UPSTREAM_GH_USERNAME}"
+  if [ $? -ne 0 ]; then
+    git -C "${DOTFILES_DIR}" remote add upstream "https://github.com/${UPSTREAM_GH_USERNAME}/dotfiles"
+    git -C "${DOTFILES_DIR}" fetch --all
+  else
+    warn "skipping setting new upstream remote for the dotfiles repo"
+  fi
 else
   # Load all zsh config files for PATH and other env vars to take effect
   load_zsh_configs
@@ -164,7 +161,7 @@ if [ $? -ne 0 ]; then
 
   eval "$(${HOMEBREW_PREFIX}/bin/brew shellenv)"
 else
-  warn "Skipping installation of homebrew since it's already installed"
+  warn "skipping installation of homebrew since it's already installed"
 fi
 brew bundle check || brew bundle --all || true
 
@@ -196,21 +193,21 @@ elif [ -d "/Applications/VSCode.app" ]; then
   # Symlink from the embedded executable for code
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCode.app/Contents/Resources/app/bin/code" "${HOMEBREW_PREFIX}/bin/code"
 else
-  warn "Skipping symlinking vscode/vscodium for command-line invocation"
+  warn "skipping symlinking vscode/vscodium for command-line invocation"
 fi
 
 echo "$(green "==> Linking rider for command-line invocation")"
 if [ -d "/Applications/Rider.app" ]; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/Rider.app/Contents/MacOS/rider" "${HOMEBREW_PREFIX}/bin/rider"
 else
-  warn "Skipping symlinking rider for command-line invocation"
+  warn "skipping symlinking rider for command-line invocation"
 fi
 
 echo "$(green "==> Linking idea-ce for command-line invocation")"
 if [ -d "/Applications/IntelliJ IDEA CE.app" ]; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
 else
-  warn "Skipping symlinking idea for command-line invocation"
+  warn "skipping symlinking idea for command-line invocation"
 fi
 
 # defaults write -g NSFileViewer -string org.yanex.marta

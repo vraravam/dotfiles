@@ -7,6 +7,7 @@ Most of the folder structures are governed by the following environment variable
 | -------|---------|---------------|
 | `USERNAME` | The local username (which is also the home folder's last path segment) | Dynamically evaluated from the `whoami` command |
 | `GH_USERNAME` | The github username | "vraravam" |
+| `UPSTREAM_GH_USERNAME` | Vijay's github username for setting upstream remote **Do NOT change** | "vraravam" |
 | `PROJECTS_BASE_DIR` | All codebases are cloned into a subfolder of this folder | "${HOME}/dev" |
 | `PERSONAL_CONFIGS_DIR` | Many configuration files (eg `.envrc`, `.tool-versions`) for specific repos are stored here and symlinked to their target destination | "${HOME}/personal/dev" |
 | `PERSONAL_PROFILES_DIR` | All browser profiles are captured in this folder | "${HOME}/personal/${USERNAME}/profiles" |
