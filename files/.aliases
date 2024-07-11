@@ -91,8 +91,8 @@ if [[ is_macos && $? -eq 0 ]]; then
 fi
 
 alias findbrokenlinks='find . -type l | (while read FN ; do test -e "$FN" || ls -ld "$FN"; done)'
-alias clearlogs='rm -vrf */log/*.log'
-alias clearcoverage='rm -vrf */coverage */coverage.data'
+alias clearlogs='rm -rfv */log/*.log'
+alias clearcoverage='rm -rfv */coverage */coverage.data'
 alias killds="sudo find . -name .DS_Store -exec rm -- {} +"
 alias killloc="sudo find . -name .localized -exec rm -- {} +"
 

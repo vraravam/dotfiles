@@ -116,7 +116,7 @@ implode() {
     'personal'
   )
   for f in "${folders[@]}"; do
-    bash -c "rm -rfv \"${HOME}/${f}\""
+    rm -rfv "${HOME}/${f}"
   done
 }
 

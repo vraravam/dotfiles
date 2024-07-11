@@ -51,6 +51,9 @@ echo "$(green "==> Cloning profiles repo")"
 if [ ! -z "${KEYBASE_USERNAME}" ] && [ ! -z "${KEYBASE_PROFILES_REPO_NAME}" ] && [ ! -d "${PERSONAL_PROFILES_DIR}/.git" ]; then
   rm -rf "${PERSONAL_PROFILES_DIR}"
   git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME} "${PERSONAL_PROFILES_DIR}"
+
+  # since the above lines will delete the .envrc & .gitignore that were earlier copied into the profiles folder, we will re-run the install script
+  eval "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
 else
   warn "skipping cloning of profiles repo since either the 'KEYBASE_USERNAME' and/or the 'KEYBASE_PROFILES_REPO_NAME' env vars haven't been set or a git repo is already present in '${PERSONAL_PROFILES_DIR}'"
 fi
@@ -64,7 +67,7 @@ if [[ ! -f "${file_name}" ]]; then
   mkdir -p "$(dirname "${file_name}")"
   cat <<EOF > "${file_name}"
 - folder: "\${PROJECTS_BASE_DIR}/oss/git_scripts"
-  remote: git@github.com:vraravam/git_scripts
+  remote: git@github.com:${UPSTREAM_GH_USERNAME}/git_scripts
   active: true
 EOF
 else
@@ -103,7 +106,7 @@ cd -
 # Load the direnv config for the profiles folder #
 ##################################################
 # TODO: See how this can be combined into 'allow_all_direnv_configs'
-if [ -d "${PERSONAL_PROFILES_DIR}" ]; then
+if var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}"; then
   cd "${PERSONAL_PROFILES_DIR}"
   cd -
 fi

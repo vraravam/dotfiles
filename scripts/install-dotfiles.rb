@@ -16,8 +16,14 @@ require "#{__dir__}/utilities/string.rb"
 require 'fileutils'
 require 'find'
 
-def override_into_home_folder(file, dotfiles_dir_length, copy_instead_of_symlink)
-  target_file_name = File.join(ENV["HOME"], file[dotfiles_dir_length..-1])
+def override_into_home_folder(file, dotfiles_dir_length)
+  # git doesn't handle symlinks for its core configuration files, so files with 'custom.git' in their name have to be handled separately
+  relative_file_name = file[dotfiles_dir_length..-1].gsub('custom.git', '.git')
+
+  # rename the profiles folder path to pick up the current user's name dynamically
+  relative_file_name.gsub!('/template/', "/#{ENV['USERNAME']}/") if relative_file_name.match?(/\/template\//)
+
+  target_file_name = File.join(ENV['HOME'], relative_file_name)
 
   puts "Processing #{file.yellow} --> #{target_file_name.yellow}"
 
@@ -27,25 +33,16 @@ def override_into_home_folder(file, dotfiles_dir_length, copy_instead_of_symlink
   # move the real file into the repo folder
   FileUtils.mv(target_file_name, file, force: true, verbose: true) if File.exist?(target_file_name) && !File.symlink?(target_file_name)
 
-  if copy_instead_of_symlink
-    # copy from repo to target location
-    FileUtils.cp(file, target_file_name)
-  else
-    # symlink from repo to target location
-    FileUtils.ln_sf(file, target_file_name)
-  end
+  # copy/symlink from repo to target location
+  file.match?(/custom\.git/) ? FileUtils.cp(file, target_file_name) : FileUtils.ln_sf(file, target_file_name)
 end
 
-puts "Starting to install dotfiles".green
+puts 'Starting to install dotfiles'.green
 dotfiles_dir = File.expand_path(File.join(__dir__, '..', 'files'))
 dotfiles_dir_length = dotfiles_dir.length + 1
 Find.find(dotfiles_dir) do |file|
   next if File.directory?(file) || file.end_with?('.DS_Store') || file.match?(/\.zwc/)
-
-  # git doesn't handle symlinks, so these 2 files have to be handled separately
-  # remove 'custom' and the file path from the name of the file
-  custom_removal = ['custom.gitignore', 'custom.gitattributes'].include?(File.basename(file)) ? 'custom'.length : 0
-  override_into_home_folder(file, dotfiles_dir_length + custom_removal, custom_removal > 0)
+  override_into_home_folder(file, dotfiles_dir_length)
 end
 
-puts "Since the '.gitignore' and '.gitattributes' files are COPIED over, any new changes being pulled in (from a newer version of the upstream repo) need to be manually reconciled between this repo and your home folder".red
+puts "Since the '.gitignore' and '.gitattributes' files are COPIED over, any new changes being pulled in (from a newer version of the upstream repo) need to be manually reconciled between this repo and your home and profiles folders".red
