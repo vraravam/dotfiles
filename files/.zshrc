@@ -123,10 +123,9 @@ load_file_if_exists "${ZSH}/oh-my-zsh.sh"
 # Preferred editor for remote sessions
 [[ -n ${SSH_CONNECTION} ]] && export EDITOR="vim"
 # Use code if its installed (both Mac OSX and Linux)
-command_exists code
-[[ "${EDITOR}" == "" && $? -eq 0 ]] && export EDITOR="code --wait"
+command_exists code && [[ "${EDITOR}" == "" ]] && export EDITOR="code --wait"
 # If neither of the above works, then fall back to vi
-[[ "${EDITOR}" == "" ]] && export EDITOR="vi"
+command_exists vi && [[ "${EDITOR}" == "" ]] && export EDITOR="vi"
 
 # Compilation flags
 [[ "${ARCH}" =~ "x86" ]] && export ARCHFLAGS="-arch x86_64"

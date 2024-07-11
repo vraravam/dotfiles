@@ -76,8 +76,7 @@ recron() {
 # runs git gc on the keybase remote repos (not sure if this actually compresses the remote repo or not)
 command_exists keybase && alias kbgc="keybase git gc --force ${KEYBASE_HOME_REPO_NAME}; keybase git gc --force ${KEYBASE_PROFILES_REPO_NAME}"
 
-command_exists brew
-if [[ is_macos && $? -eq 0 ]]; then
+if is_macos && command_exists brew; then
   # brew cask contribution
   check_cask() {
     # shasum -a 256 <fileName>

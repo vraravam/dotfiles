@@ -15,8 +15,7 @@ load_zsh_configs
 # Login into keybase #
 ######################
 echo "$(green "==> Logging into keybase")"
-keybase login
-if [ $? -ne 0 ]; then
+if ! keybase login; then
   echo "Could not login into keybase. Retry again."
   exit -1
 fi

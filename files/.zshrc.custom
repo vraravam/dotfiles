@@ -14,7 +14,7 @@ load_file_if_exists "${HOME}/.aliases"
 # erlang history in iex
 # export ERL_AFLAGS="-kernel shell_history enabled -kernel shell_history_file_bytes 1024000"
 
-if [[ is_macos ]]; then
+if is_macos; then
   # setopt glob_dots                # no special treatment for file names with a leading dot
   # # setopt no_auto_menu             # require an extra TAB press to open the completion menu
   # setopt auto_menu                # automatically use menu completion
@@ -159,8 +159,7 @@ export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
 # export HOMEBREW_VERIFY_ATTESTATIONS=1
 
 # Make VSCodium use the VS Code marketplace
-command_exists codium
-if [ $? -eq 0 ]; then
+if command_exists codium; then
   export VSCODE_GALLERY_SERVICE_URL='https://marketplace.visualstudio.com/_apis/public/gallery'
   export VSCODE_GALLERY_CACHE_URL='https://vscode.blob.core.windows.net/gallery/index'
   export VSCODE_GALLERY_ITEM_URL='https://marketplace.visualstudio.com/items'

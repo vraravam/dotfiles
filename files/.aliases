@@ -14,17 +14,14 @@ type command_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 # Add flags to existing aliases.
 alias less="${aliases[less]:-less} -RF"
-command_exists eza
-if [ $? -ne 0 ]; then
-  # -G has a different meaning for eza, so add it only if eza is not present
-  alias ls="${aliases[ls]:-ls} -G"
-  alias ll='ls -la'
-fi
+
+# eza already defines 'll' - so skip if that's present
+! command_exists eza && alias ll='ls -la'
 alias cp="${aliases[cp]:-cp} -p"
 alias grep="${aliases[grep]:-grep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
 command_exists tree && alias tree="${aliases[tree]:-tree} -Ch"
 
-if [[ is_macos ]]; then
+if is_macos; then
   # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
   alias reinstall-xcode='rm -rf $(xcode-select -p) && xcode-select --install && xcodebuild -license accept'
   alias reinstall-cmdline-tools='touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress && softwareupdate -ia && rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress && sudo xcodebuild -license accept'
@@ -49,8 +46,7 @@ cc() {
   git -C "${target}" cc
 }
 
-command_exists run_all.sh
-if [ $? -ne 0 ]; then
+if command_exists run_all.sh; then
   # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
   alias rug='run_all.sh git'
   alias all="FOLDER='${HOME}' MAXDEPTH=5 rug"
@@ -82,8 +78,7 @@ allow_all_direnv_configs() {
   var_exists_and_is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 4 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
 }
 
-command_exists brew
-if [[ is_macos && $? -eq 0 ]]; then
+if is_macos && command_exists brew; then
   # TODO: Remove later (kept here for reference): brew outdated --cask | xargs brew cask reinstall
   alias bcg='brew outdated --greedy'
   alias bcug='brew upgrade --greedy'
@@ -97,24 +92,24 @@ alias killds="sudo find . -name .DS_Store -exec rm -- {} +"
 alias killloc="sudo find . -name .localized -exec rm -- {} +"
 
 # Remove trailing spaces
-if [[ is_linux ]]; then
+if is_linux; then
   alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i 's/[ ]*$//' {} \;"
-elif [[ is_windows ]]; then
+elif is_windows; then
   alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i 's/[ ]*$//' {} \;"
-elif [[ is_macos ]]; then
+elif is_macos; then
   alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i '' 's/[ ]*$//' {} \;"
 fi
 
 # generate mac addr to escape some free wifi mac addr restrictions
-if [[ is_linux ]]; then
+if is_linux; then
   alias free-wifi="(ifconfig eth0 | grep ether) && (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig eth0 ether) && (ifconfig eth0 | grep ether)"
-elif [[ is_macos ]]; then
+elif is_macos; then
   alias free-wifi="(ifconfig en0 | grep ether) && (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig en0 ether) && (ifconfig en0 | grep ether)"
   alias flush-dns="sudo killall -HUP mDNSResponder;sudo killall mDNSResponderHelper;sudo dscacheutil -flushcache;say MacOS DNS cache has been cleared"
 fi
 
 # MacOS: Remove apps from quarantine
-[[ is_macos ]] && alias unquarantine='sudo xattr -rd com.apple.quarantine'
+is_macos && alias unquarantine='sudo xattr -rd com.apple.quarantine'
 
 # Added to view the shell startup time
 time_shell_startup() {
@@ -157,8 +152,7 @@ EOF
 }
 
 # tmux
-command_exists tmux
-if [[ $? -eq 0 ]]; then
+if command_exists tmux; then
   alias tmuxn='tmux new-session -A -s'  # start a new tmux session and name it
   alias tmuxa='tmux attach -t'          # attach to a named tmux session
 fi

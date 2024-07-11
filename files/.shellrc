@@ -71,25 +71,17 @@ warn() (
 )
 
 var_exists_and_is_directory() {
-  # 0 -> true; 1 -> false
-  test ! -z "${1}" && test -d "${1}" && return 0
-  return 1
+  test ! -z "${1}" && test -d "${1}"
 }
 
 is_macos() {
-  # 0 -> true; 1 -> false
-  [[ "${OSTYPE}" =~ 'darwin' ]] && return 0
-  return 1
+  [[ "${OSTYPE}" =~ 'darwin' ]]
 }
 
 is_linux() {
-  # 0 -> true; 1 -> false
-  [[ "${OSTYPE}" =~ 'Linux' ]] && return 0
-  return 1
+  [[ "${OSTYPE}" =~ 'Linux' ]]
 }
 
 is_windows() {
-  # 0 -> true; 1 -> false
-  [[ "${OSTYPE}" =~ 'MINGW' ]] && return 0
-  return 1
+  [[ "${OSTYPE}" =~ 'MINGW' ]]
 }

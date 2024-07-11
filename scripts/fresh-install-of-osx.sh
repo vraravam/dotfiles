@@ -25,8 +25,7 @@ sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
 # Download and source this utility script - so that the functions are available for this script #
 #################################################################################################
 echo "==> Download the '${HOME}/.shellrc' for loading the utility functions"
-type load_zsh_configs &> /dev/null 2>&1
-if [ $? -ne 0 ]; then
+if ! type load_zsh_configs &> /dev/null 2>&1; then
   [ ! -f "${HOME}/.shellrc" ] && curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/files/.shellrc" -o "${HOME}/.shellrc"
   FIRST_INSTALL=true source "${HOME}/.shellrc"
 else
@@ -37,8 +36,7 @@ fi
 # Install command line dev tools #
 ##################################
 echo "$(green "==> Installing xcode command-line tools")"
-xcode-select -p > /dev/null 2>&1
-if [ $? -ne 0 ]; then
+if ! xcode-select -p > /dev/null 2>&1; then
   # install using the non-gui cmd-line alone
   touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
   softwareupdate -ia
@@ -150,8 +148,7 @@ fi
 # Install homebrew #
 ####################
 echo "$(green "==> Installing homebrew")"
-command_exists brew
-if [ $? -ne 0 ]; then
+if ! command_exists brew; then
   # Prep for installing homebrew
   sudo mkdir -p "${HOMEBREW_PREFIX}/tmp" "${HOMEBREW_PREFIX}/repository" "${HOMEBREW_PREFIX}/plugins" "${HOMEBREW_PREFIX}/bin"
   sudo chown -fR "${USERNAME}":admin "${HOMEBREW_PREFIX}"
