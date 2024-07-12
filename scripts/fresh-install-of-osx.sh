@@ -11,10 +11,6 @@
 # 3. Keyboard brightness
 # 4. Replace all occurrences of '-d' with 'var_exists_and_is_directory'
 
-# These env vars are defined by (duplicated intentionally) since this script would bootstrap the installation
-USERNAME="${USERNAME:-$(whoami)}"
-DOTFILES_DIR="${DOTFILES_DIR:-"${HOME}/.bin-oss"}"
-
 ######################################################################################################################
 # Set DNS of 8.8.8.8 before proceeding (in some cases, for eg Jio Wifi, github doesn't resolve at all and times out) #
 ######################################################################################################################
@@ -151,7 +147,7 @@ echo "$(green "==> Installing homebrew")"
 if ! command_exists brew; then
   # Prep for installing homebrew
   sudo mkdir -p "${HOMEBREW_PREFIX}/tmp" "${HOMEBREW_PREFIX}/repository" "${HOMEBREW_PREFIX}/plugins" "${HOMEBREW_PREFIX}/bin"
-  sudo chown -fR "${USERNAME}":admin "${HOMEBREW_PREFIX}"
+  sudo chown -fR "$(whoami)":admin "${HOMEBREW_PREFIX}"
   chmod u+w "${HOMEBREW_PREFIX}"
 
   bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"

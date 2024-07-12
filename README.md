@@ -5,12 +5,11 @@ Most of the folder structures are governed by the following environment variable
 
 | Env var| Meaning | Default Value |
 | -------|---------|---------------|
-| `USERNAME` | The local username (which is also the home folder's last path segment) | Dynamically evaluated from the `whoami` command |
 | `GH_USERNAME` | The github username | "vraravam" |
 | `UPSTREAM_GH_USERNAME` | Vijay's github username for setting upstream remote **Do NOT change** | "vraravam" |
 | `PROJECTS_BASE_DIR` | All codebases are cloned into a subfolder of this folder | "${HOME}/dev" |
 | `PERSONAL_CONFIGS_DIR` | Many configuration files (eg `.envrc`, `.tool-versions`) for specific repos are stored here and symlinked to their target destination | "${HOME}/personal/dev" |
-| `PERSONAL_PROFILES_DIR` | All browser profiles are captured in this folder | "${HOME}/personal/${USERNAME}/profiles" |
+| `PERSONAL_PROFILES_DIR` | All browser profiles are captured in this folder | "${HOME}/personal/$(whoami)/profiles" |
 | `PERSONAL_BIN_DIR` | Scripts that are not shared as part of this repo are present here | "${HOME}/.bin" |
 | `DOTFILES_DIR` | This repo is cloned here | "${HOME}/.bin-oss" |
 | `KEYBASE_USERNAME` | Keybase username | "avijayr" |
@@ -47,7 +46,7 @@ In your forked repo, make the following changes, commit and push (Once the above
 The meta script to setup the macos machine from a vanilla OS can be run using the following command:
 
 ```zsh
-export GH_USERNAME="vraravam"; curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/scripts/fresh-install-of-osx.sh" | zsh
+export GH_USERNAME="vraravam"; export DOTFILES_DIR="${HOME}/.bin-oss"; curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/scripts/fresh-install-of-osx.sh" | zsh
 ```
 
 This script can be run in an idempotent manner, and will setup [oh-my-zsh](https://ohmyz.sh/), [homebrew](https://brew.sh), the dotfiles (this repo), etc.
@@ -86,11 +85,12 @@ The "Advanced" setup is the set of final steps to capture your application prefe
 
 1. Open the `Keybase` application.
    * Login into keybase
+2. Quit and restart the `Terminal` application.
 
 The meta script to setup the macos machine AFTER the generic script has been run, can be invoked by using the following command:
 
 ```zsh
-export GH_USERNAME="vraravam"; curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/scripts/fresh-install-of-osx-custom.sh" | zsh
+curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/scripts/fresh-install-of-osx-custom.sh" | zsh
 ```
 
 This script can also be run in an idempotent manner, and will setup the home folder repo, the browser profiles, resurrect the repositories that you have created a registry for, install all the languages (each specific version of each language) using [mise](https://github.com/jdx/mise), apply some [OSX defaults](scripts/osx-defaults.sh) and finally re-import your preferences that were captured from the old machine using the [capture-defaults](scripts/capture-defaults.sh) script

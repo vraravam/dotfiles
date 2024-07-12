@@ -21,7 +21,7 @@ def override_into_home_folder(file, dotfiles_dir_length)
   relative_file_name = file[dotfiles_dir_length..-1].gsub('custom.git', '.git')
 
   # rename the profiles folder path to pick up the current user's name dynamically
-  relative_file_name.gsub!('/template/', "/#{ENV['USERNAME']}/") if relative_file_name.match?(/\/template\//)
+  relative_file_name.gsub!('/template/', "/#{`whoami`.chomp}/") if relative_file_name.match?(/\/template\//)
 
   target_file_name = File.join(ENV['HOME'], relative_file_name)
 

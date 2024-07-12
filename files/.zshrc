@@ -23,7 +23,7 @@ export NVM_COMPLETION=true
 # Initialization code that may require console input (password prompts, [y/n]
 # confirmations, etc.) must go above this block; everything else may go below.
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
-load_file_if_exists "${XDG_CACHE_HOME}/p10k-instant-prompt-${USERNAME}.zsh"
+load_file_if_exists "${XDG_CACHE_HOME}/p10k-instant-prompt-$(whoami).zsh"
 
 # To customize prompt, run `p10k configure` or edit ${HOME}/.p10k.zsh.
 load_file_if_exists "${HOME}/.p10k.zsh"

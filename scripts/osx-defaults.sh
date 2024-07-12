@@ -102,8 +102,6 @@ sudo softwareupdate --schedule OFF
 # defaults write NSGlobalDomain KeyRepeat -int 1
 # defaults write NSGlobalDomain InitialKeyRepeat -int 10
 
-USERNAME="${USERNAME:-$(whoami)}"
-
 ###############################################################################
 # Login Window                                                                #
 ###############################################################################
@@ -148,7 +146,7 @@ fi
 ###############################################################################
 
 if ask "Set computer name (as done via System Preferences → Sharing)" Y; then
-  userNameInCamelCase=$(echo "${USERNAME}" | awk '{$1=toupper(substr($1,0,1))substr($1,2)}1')
+  userNameInCamelCase=$(echo "$(whoami)" | awk '{$1=toupper(substr($1,0,1))substr($1,2)}1')
 
   sudo scutil --set ComputerName "IND-CHN-${userNameInCamelCase}'s MBP-$(date)"
   sudo scutil --set HostName "${userNameInCamelCase}"
@@ -1435,7 +1433,7 @@ fi
 # KeepassXC                                                                   #
 ###############################################################################
 if ask "KeepassXC settings" Y; then
-  defaults write org.keepassxc.keepassxc "NSNavLastRootDirectory" -string "${HOME}/personal/${USERNAME}"
+  defaults write org.keepassxc.keepassxc "NSNavLastRootDirectory" -string "${HOME}/personal/$(whoami)"
 fi
 
 ###############################################################################

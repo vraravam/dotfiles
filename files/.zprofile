@@ -22,12 +22,11 @@ export LC_ALL='en_US.UTF-8'
 export LESSCHARSET='utf-8'
 
 # Note: Change these as per your settings. Deleting them will essentially unset the var(s) and thus any aliases/paths/etc will not be processed for those deleted variable(s)
-export USERNAME="$(whoami)"
 export GH_USERNAME="vraravam"
 export UPSTREAM_GH_USERNAME="vraravam" # Note: Do NOT change this
 export PROJECTS_BASE_DIR="${HOME}/dev"
 export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev"
-export PERSONAL_PROFILES_DIR="${HOME}/personal/${USERNAME}/profiles"
+export PERSONAL_PROFILES_DIR="${HOME}/personal/$(whoami)/profiles"
 export PERSONAL_BIN_DIR="${HOME}/.bin"
 export DOTFILES_DIR="${HOME}/.bin-oss"
 export KEYBASE_USERNAME="avijayr"
