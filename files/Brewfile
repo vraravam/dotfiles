@@ -140,7 +140,7 @@ if is_vscode_installed
   vscode 'redhat.vscode-yaml'
   vscode 'richie5um2.vscode-sort-json'
   vscode 'shan.code-settings-sync'
-  vscode 'sonarsource.sonarlint-vscode'
+  # vscode 'sonarsource.sonarlint-vscode'
   vscode 'tchayen.markdown-links'
   vscode 'tyriar.sort-lines'
   vscode 'vscjava.vscode-java-debug'
