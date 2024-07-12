@@ -84,7 +84,7 @@ cask 'firefox@nightly' #, greedy: true
 cask 'font-meslo-lg-nerd-font'
 # cask 'git-credential-manager'  # https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git
 # cask 'intellij-idea-ce'
-cask 'iterm2@nightly'
+cask 'iterm2'
 cask 'itsycal'
 # cask 'kdiff3'
 cask 'keepassxc@beta'
