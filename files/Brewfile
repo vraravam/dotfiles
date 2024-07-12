@@ -131,7 +131,6 @@ if is_vscode_installed
   vscode 'mikestead.dotenv'
   vscode 'mkhl.direnv'
   vscode 'ms-azuretools.vscode-docker'
-  vscode 'ms-vscode.atom-keybindings'
   vscode 'ms-vscode.vscode-typescript-next'
   vscode 'nicolasvuillamy.vscode-groovy-lint'
   vscode 'oderwat.indent-rainbow'
