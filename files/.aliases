@@ -88,8 +88,8 @@ fi
 alias findbrokenlinks='find . -type l | (while read FN ; do test -e "$FN" || ls -ld "$FN"; done)'
 alias clearlogs='rm -rfv */log/*.log'
 alias clearcoverage='rm -rfv */coverage */coverage.data'
-alias killds="sudo find . -name .DS_Store -exec rm -- {} +"
-alias killloc="sudo find . -name .localized -exec rm -- {} +"
+alias killds="sudo find . -name .DS_Store -exec rm -rfv {} \;"
+alias killloc="sudo find . -name .localized -exec rm -rfv {} \;"
 
 # Remove trailing spaces
 if is_linux; then
@@ -122,34 +122,36 @@ reals() {
 }
 
 # npm
-alias npm_cleanup='npm cache clear --force'
+command_exists npm && alias npm_cleanup='npm cache clear --force'
 
-# docker (TODO: Not sure why this is not done automatically by rancher when it starts up)
-# alias start_docker="sudo ln -sf ${HOME}/.rd/docker.sock /var/run/docker.sock"
-# alias stop_docker="sudo rm -rf /var/run/docker.sock"
-alias docker_cleanup='docker system prune -a --volumes -f'
-alias docker_list='docker ps -a && docker images'
+if command_exists docker; then
+  # docker (TODO: Not sure why this is not done automatically by rancher when it starts up)
+  # alias start_docker="sudo ln -sf ${HOME}/.rd/docker.sock /var/run/docker.sock"
+  # alias stop_docker="sudo rm -rf /var/run/docker.sock"
+  alias docker_cleanup='docker system prune -a --volumes -f'
+  alias docker_list='docker ps -a && docker images'
 
-show_docker_context_contents() {
-  # Based on BMitch's answer from: https://stackoverflow.com/questions/38946683/how-to-test-dockerignore-file
-  # Note: this will create and delete temporary file called 'Dockerfile.build-context'
-  # Usage:
-  # 1. Run this function in the project folder
-  # 2. You should see list of files in build context
-  # 3. If unwanted files are present, adjust the '.dockerignore' file and go back to step 1
+  show_docker_context_contents() {
+    # Based on BMitch's answer from: https://stackoverflow.com/questions/38946683/how-to-test-dockerignore-file
+    # Note: this will create and delete temporary file called 'Dockerfile.build-context'
+    # Usage:
+    # 1. Run this function in the project folder
+    # 2. You should see list of files in build context
+    # 3. If unwanted files are present, adjust the '.dockerignore' file and go back to step 1
 
-  cat <<EOF > Dockerfile.build-context
+    cat <<EOF > Dockerfile.build-context
   FROM busybox
   COPY . /build-context
   WORKDIR /build-context
   CMD ["find", "."]
 EOF
 
-  docker build -f Dockerfile.build-context -t build-context .
-  docker run --rm build-context
+    docker build -f Dockerfile.build-context -t build-context .
+    docker run --rm build-context
 
-  rm Dockerfile.build-context
-}
+    rm Dockerfile.build-context
+  }
+fi
 
 # tmux
 if command_exists tmux; then
