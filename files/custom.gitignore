@@ -160,7 +160,7 @@ __pycache__
 /.scalarDiagnostics/
 /.Skype
 /.sonarlint/
-/.ssh/known_hosts
+/.ssh/known_hosts*
 /.sts4
 /.sts4-jandex
 /.subversion
