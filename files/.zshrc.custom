@@ -136,12 +136,12 @@ zstyle :bracketed-paste-magic paste-finish pastefinish
 use_homebrew_installation_for() {
   ! var_exists_and_is_directory "${1}" && return
 
-  export PATH="${1}/bin:${PATH+:${PATH}}"
+  var_exists_and_is_directory "${1}/bin" && export PATH="${1}/bin:${PATH+:${PATH}}"
   # For compilers to find this installation you may need to set:
-  export LDFLAGS="-L${1}/lib ${LDFLAGS+ ${LDFLAGS}}"
-  export CPPFLAGS="-I${1}/include ${CPPFLAGS+ ${CPPFLAGS}}"
+  var_exists_and_is_directory "${1}/lib" && export LDFLAGS="-L${1}/lib ${LDFLAGS+ ${LDFLAGS}}"
+  var_exists_and_is_directory "${1}/include" && export CPPFLAGS="-I${1}/include ${CPPFLAGS+ ${CPPFLAGS}}"
   # For pkg-config to find this installation you may need to set:
-  export PKG_CONFIG_PATH="${1}/lib/pkgconfig${PKG_CONFIG_PATH+:${PKG_CONFIG_PATH}}"
+  var_exists_and_is_directory "${1}/lib/pkgconfig" && export PKG_CONFIG_PATH="${1}/lib/pkgconfig${PKG_CONFIG_PATH+:${PKG_CONFIG_PATH}}"
 }
 
 # override default curl and use from homebrew installation
