@@ -27,8 +27,6 @@ load_file_if_exists "${XDG_CACHE_HOME}/p10k-instant-prompt-$(whoami).zsh"
 
 # To customize prompt, run `p10k configure` or edit ${HOME}/.p10k.zsh.
 load_file_if_exists "${HOME}/.p10k.zsh"
-# TODO: the path didn't exist in a newly imaged machine - need to revisit at a later time
-load_file_if_exists "${HOMEBREW_PREFIX}/opt/powerlevel10k/powerlevel10k.zsh-theme"
 load_file_if_exists "${HOMEBREW_PREFIX}/share/powerlevel10k/powerlevel10k.zsh-theme"
 
 # Path to your oh-my-zsh installation.
@@ -121,7 +119,7 @@ load_file_if_exists "${ZSH}/oh-my-zsh.sh"
 # export LANG=en_US.UTF-8
 
 # Preferred editor for remote sessions
-[[ -n ${SSH_CONNECTION} ]] && export EDITOR="vim"
+[[ -n ${SSH_CONNECTION} ]] && export EDITOR="vi"
 # Use code if its installed (both Mac OSX and Linux)
 command_exists code && [[ "${EDITOR}" == "" ]] && export EDITOR="code --wait"
 # If neither of the above works, then fall back to vi

@@ -7,6 +7,8 @@
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
 test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
+# This script is very customized to my local setup (and thus separated from the .zshrc file). Sharing in the hope that its useful for others
+
 # setup paths in the beginning so that all other conditions work correctly
 var_exists_and_is_directory "${PERSONAL_CONFIGS_DIR}" && path+="${PERSONAL_CONFIGS_DIR}"
 var_exists_and_is_directory "${PERSONAL_BIN_DIR}" && path+="${PERSONAL_BIN_DIR}"
@@ -15,8 +17,6 @@ var_exists_and_is_directory "${DOTFILES_DIR}" && path+="${DOTFILES_DIR}/scripts"
 var_exists_and_is_directory "${PROJECTS_BASE_DIR}/oss/git_scripts" && path+="${PROJECTS_BASE_DIR}/oss/git_scripts"
 # Note: Not sure if its a bug, but the first iterm tab alone has all the paths, but these are missing in subsequent tabs and new windows
 var_exists_and_is_directory "/usr/local/bin" && path+="/usr/local/bin"
-
-# This script is very customized to my local setup (and thus separated from the .zshrc file). Sharing in the hope that its useful for others
 
 load_file_if_exists "${HOME}/.aliases"
 
@@ -77,7 +77,7 @@ if is_macos; then
   var_exists_and_is_directory "${ZSH_CUSTOM}/plugins/zsh-completions/src" && fpath+="${ZSH_CUSTOM}/plugins/zsh-completions/src"
 
   # manpage completion
-  man_glob () {
+  man_glob() {
     local a
     read -cA a
     if [[ $a[2] = -s ]]; then
