@@ -35,12 +35,12 @@ fi
 # git commands
 # Note: Use a function so that it can accept parameters
 st() {
-  target="${1:-.}"
+  target="${1:-$(pwd)}"
   echo "$(green "==> Processing ${target} <==")"
   git -C "${target}" st
 }
 cc() {
-  target="${1:-.}"
+  target="${1:-$(pwd)}"
   echo "$(green "==> Processing ${target} <==")"
   git -C "${target}" cc
 }
