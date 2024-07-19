@@ -142,6 +142,7 @@ __pycache__
 /.nix-profile
 /.npm
 /.oh-my-zsh
+/.ollama/
 /.oracle_jre_usage/*.timestamp
 /.org.eclipse*
 /.p4tickets

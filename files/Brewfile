@@ -98,6 +98,7 @@ cask 'monolingual'
 # cask 'netspot'
 # cask 'ngrok'
 cask 'notunes'
+cask 'ollama'
 # cask 'onyx'  # Commented out since I'm on the beta version of macos
 cask 'protonvpn'
 cask 'rancher'
