@@ -11,6 +11,7 @@
 
 # TODO: Need to find cask for:
 #   Tinkertool
+#   ZoomHider
 
 # set global preferences for all 'brew install' commands
 cask_args appdir: '/Applications', no_quarantine: true

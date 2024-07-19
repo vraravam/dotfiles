@@ -231,6 +231,7 @@ app_list=(
   'Keybase.app'
   'Raycast.app'
   'Stats.app'
+  'ZoomHider.app'
 )
 for app in "${app_list[@]}"; do
   setup_login_item "${app}"
