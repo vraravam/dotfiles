@@ -36,6 +36,8 @@ find_in_folder_and_recompile() {
   recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.zshrc.custom"
   recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.zshrc"
 
+  find_in_folder_and_recompile "${ZDOTDIR:-${HOME}}/.oh-my-zsh"
+
   # omz doesn't know about these files, and so we don't depend on 'ZDOTDIR'
   recompile_zsh_scripts "${HOME}/.aliases.custom"
   recompile_zsh_scripts "${HOME}/.aliases"
@@ -46,7 +48,6 @@ find_in_folder_and_recompile() {
   find_in_folder_and_recompile "${HOME}/.bin"
   find_in_folder_and_recompile "${PROJECTS_BASE_DIR}"
   find_in_folder_and_recompile "${PERSONAL_CONFIGS_DIR}"
-  find_in_folder_and_recompile "${ZDOTDIR:-${HOME}}/.oh-my-zsh"
   # explicitly use both intel and m1 install locations of homebrew
   find_in_folder_and_recompile /opt/homebrew
   find_in_folder_and_recompile /usr/local
