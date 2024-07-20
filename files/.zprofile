@@ -21,6 +21,8 @@ export LC_TIME='en_US.UTF-8'
 export LC_ALL='en_US.UTF-8'
 export LESSCHARSET='utf-8'
 
+export XDG_CACHE_HOME="${HOME}/.cache"
+
 # Note: Change these as per your settings. Deleting them will essentially unset the var(s) and thus any aliases/paths/etc will not be processed for those deleted variable(s)
 export GH_USERNAME="vraravam"
 export UPSTREAM_GH_USERNAME="vraravam" # Note: Do NOT change this

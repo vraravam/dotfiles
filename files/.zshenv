@@ -24,4 +24,5 @@ fi
 
 # https://github.com/sorin-ionescu/prezto/blob/master/runcoms/zshenv
 # Ensure that a non-login, non-interactive shell has a defined environment.
-[[ ( "${SHLVL}" -eq 1 && ! -o LOGIN ) && -s "${ZDOTDIR:-${HOME}}/.zprofile" ]] && source "${ZDOTDIR:-${HOME}}/.zprofile"
+export ZDOTDIR="${HOME}"
+[[ ( "${SHLVL}" -eq 1 && ! -o LOGIN ) && -s "${ZDOTDIR}/.zprofile" ]] && source "${ZDOTDIR}/.zprofile"

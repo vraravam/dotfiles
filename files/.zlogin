@@ -31,12 +31,12 @@ find_in_folder_and_recompile() {
 
   # zsh config files can be compiled to improve performance
   # Based from: https://github.com/romkatv/zsh-bench/blob/master/configs/ohmyzsh%2B/setup
-  recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.zprofile"
-  recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.zshenv"
-  recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.zshrc.custom"
-  recompile_zsh_scripts "${ZDOTDIR:-${HOME}}/.zshrc"
+  recompile_zsh_scripts "${ZDOTDIR}/.zprofile"
+  recompile_zsh_scripts "${ZDOTDIR}/.zshenv"
+  recompile_zsh_scripts "${ZDOTDIR}/.zshrc.custom"
+  recompile_zsh_scripts "${ZDOTDIR}/.zshrc"
 
-  find_in_folder_and_recompile "${ZDOTDIR:-${HOME}}/.oh-my-zsh"
+  find_in_folder_and_recompile "${ZDOTDIR}/.oh-my-zsh"
 
   # omz doesn't know about these files, and so we don't depend on 'ZDOTDIR'
   recompile_zsh_scripts "${HOME}/.aliases.custom"

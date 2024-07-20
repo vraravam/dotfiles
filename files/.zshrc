@@ -22,7 +22,6 @@ export NVM_COMPLETION=true
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ${HOME}/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
 # confirmations, etc.) must go above this block; everything else may go below.
-export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
 load_file_if_exists "${XDG_CACHE_HOME}/p10k-instant-prompt-$(whoami).zsh"
 
 # To customize prompt, run `p10k configure` or edit ${HOME}/.p10k.zsh.
