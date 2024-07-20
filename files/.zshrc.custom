@@ -73,9 +73,6 @@ if is_macos; then
   compctl -k hosts ftp lftp ncftp ssh w3m lynx links elinks nc telnet rlogin host
   compctl -k hosts -P '@' finger
 
-  # according to the documentation, this can't be added as a plugin to omz for the fpath to work correctly
-  var_exists_and_is_directory "${ZSH_CUSTOM}/plugins/zsh-completions/src" && fpath+="${ZSH_CUSTOM}/plugins/zsh-completions/src"
-
   # manpage completion
   man_glob() {
     local a
