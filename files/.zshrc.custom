@@ -10,13 +10,16 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 # This script is very customized to my local setup (and thus separated from the .zshrc file). Sharing in the hope that its useful for others
 
 # setup paths in the beginning so that all other conditions work correctly
-var_exists_and_is_directory "${PERSONAL_CONFIGS_DIR}" && path+="${PERSONAL_CONFIGS_DIR}"
-var_exists_and_is_directory "${PERSONAL_BIN_DIR}" && path+="${PERSONAL_BIN_DIR}"
-var_exists_and_is_directory "${PERSONAL_BIN_DIR}/macos" && path+="${PERSONAL_BIN_DIR}/macos"
-var_exists_and_is_directory "${DOTFILES_DIR}" && path+="${DOTFILES_DIR}/scripts"
-var_exists_and_is_directory "${PROJECTS_BASE_DIR}/oss/git_scripts" && path+="${PROJECTS_BASE_DIR}/oss/git_scripts"
+append_to_path_if_dir_exists() {
+  var_exists_and_is_directory "${1}" && path+="${1}"
+}
+append_to_path_if_dir_exists "${PERSONAL_CONFIGS_DIR}"
+append_to_path_if_dir_exists "${PERSONAL_BIN_DIR}"
+append_to_path_if_dir_exists "${PERSONAL_BIN_DIR}/macos"
+append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
+append_to_path_if_dir_exists "${PROJECTS_BASE_DIR}/oss/git_scripts"
 # Note: Not sure if its a bug, but the first iterm tab alone has all the paths, but these are missing in subsequent tabs and new windows
-var_exists_and_is_directory "/usr/local/bin" && path+="/usr/local/bin"
+append_to_path_if_dir_exists "/usr/local/bin"
 
 load_file_if_exists "${HOME}/.aliases"
 
