@@ -26,7 +26,7 @@ _update_repo() {
   local git_cmd="git -C ${folder}"
 
   # shellcheck disable=SC2086
-  eval "${git_cmd} add ${2}" && eval "${git_cmd} sci \"Incremental commit: $(date)\""
+  eval "${git_cmd} add ${2} && ${git_cmd} sci \"Incremental commit: $(date)\""
 }
 
 # updates the home and profiles repos
