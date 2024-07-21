@@ -1,7 +1,6 @@
 #!/usr/bin/env zsh
 
-# vim:syntax=zsh
-# vim:filetype=zsh
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab fileencoding=utf-8
 
 # file location: ${HOME}/.shellrc
 # load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
