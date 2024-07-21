@@ -60,14 +60,18 @@ warn() (
   echo "$(yellow "**WARN** ${1}")"
 )
 
+non_zero_string() {
+  test ! -z "${1}"
+}
+
 load_file_if_exists() {
   # shellcheck disable=SC2015
   # shellcheck disable=SC1090
-  test ! -z "${1}" && test -e "${1}" && source "${1}" || true
+  non_zero_string "${1}" && test -e "${1}" && source "${1}" || true
 }
 
 var_exists_and_is_directory() {
-  test ! -z "${1}" && test -d "${1}"
+  non_zero_string "${1}" && test -d "${1}"
 }
 
 delete_directory_if_exists() {

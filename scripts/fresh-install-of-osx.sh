@@ -9,7 +9,6 @@
 # 1. Auto-adjust Brightness
 # 2. Brightness on battery
 # 3. Keyboard brightness
-# 4. Replace all occurrences of '-d' with 'var_exists_and_is_directory'
 
 ######################################################################################################################
 # Set DNS of 8.8.8.8 before proceeding (in some cases, for eg Jio Wifi, github doesn't resolve at all and times out) #
@@ -73,7 +72,7 @@ sudo chmod -R 600 "${HOME}"/.ssh/* || true
 # Install oh-my-zsh #
 #####################
 echo "$(green "==> Installing oh-my-zsh")"
-if [ ! -d "${HOME}/.oh-my-zsh" ]; then
+if ! var_exists_and_is_directory "${HOME}/.oh-my-zsh"; then
   ZSH= curl -fsSL http://install.ohmyz.sh | sh
 else
   warn "skipping installation of oh-my-zsh since '${HOME}/.oh-my-zsh' is already present"
@@ -87,10 +86,10 @@ ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
 mkdir -p "${ZSH_CUSTOM}/plugins"
 clone_if_not_present() {
   target_folder="${ZSH_CUSTOM}/plugins/$(basename ${1})"
-  if [ ! -d "${target_folder}" ]; then
+  if ! var_exists_and_is_directory "${target_folder}"; then
     git clone "${1}" "${target_folder}"
   else
-    warn "skipping cloning of '${1}' since '${target_folder}' is already present"
+    warn "skipping cloning of '$(basename "${1}")' since '${target_folder}' is already present"
   fi
 }
 # clone_if_not_present https://github.com/mroth/evalcache # Commented out since I'm going to try using it via omz's built-in plugin system
@@ -102,7 +101,7 @@ clone_if_not_present https://github.com/zsh-users/zsh-completions
 # Install dotfiles #
 ####################
 echo "$(green "==> Installing dotfiles")"
-if [[ ! -z "${DOTFILES_DIR}" && ! -d "${DOTFILES_DIR}" ]]; then
+if non_zero_string "${DOTFILES_DIR}" && ! var_exists_and_is_directory "${DOTFILES_DIR}"; then
   # Delete the auto-generated .zshrc since that needs to be replaced by the one in the .bin-oss repo
   rm -rfv "${HOME}/.zshrc"
 
@@ -166,19 +165,19 @@ replace_executable_if_exists_and_is_not_symlinked() {
   fi
 }
 
-if [ -d "/Applications/VSCodium - Insiders.app" ]; then
+if var_exists_and_is_directory "/Applications/VSCodium - Insiders.app"; then
   # Symlink from the embedded executable for codium-insiders
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCodium - Insiders.app/Contents/Resources/app/bin/codium-insiders" "${HOMEBREW_PREFIX}/bin/codium-insiders"
   # if we are using 'vscodium-insiders' only, symlink it to 'codium' for ease of typing
   replace_executable_if_exists_and_is_not_symlinked "${HOMEBREW_PREFIX}/bin/codium-insiders" "${HOMEBREW_PREFIX}/bin/codium"
   # extra: also symlink for 'code'
   replace_executable_if_exists_and_is_not_symlinked "${HOMEBREW_PREFIX}/bin/codium" "${HOMEBREW_PREFIX}/bin/code"
-elif [ -d "/Applications/VSCodium.app" ]; then
+elif var_exists_and_is_directory "/Applications/VSCodium.app"; then
   # Symlink from the embedded executable for codium
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCodium.app/Contents/Resources/app/bin/codium" "${HOMEBREW_PREFIX}/bin/codium"
   # extra: also symlink for 'code'
   replace_executable_if_exists_and_is_not_symlinked "${HOMEBREW_PREFIX}/bin/codium" "${HOMEBREW_PREFIX}/bin/code"
-elif [ -d "/Applications/VSCode.app" ]; then
+elif var_exists_and_is_directory "/Applications/VSCode.app"; then
   # Symlink from the embedded executable for code
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCode.app/Contents/Resources/app/bin/code" "${HOMEBREW_PREFIX}/bin/code"
 else
@@ -186,19 +185,19 @@ else
 fi
 
 echo "$(green "==> Linking rider for command-line invocation")"
-if [ -d "/Applications/Rider.app" ]; then
+if var_exists_and_is_directory "/Applications/Rider.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/Rider.app/Contents/MacOS/rider" "${HOMEBREW_PREFIX}/bin/rider"
 else
   warn "skipping symlinking rider for command-line invocation"
 fi
 
-echo "$(green "==> Linking idea-ce for command-line invocation")"
-if [ -d "/Applications/IntelliJ IDEA CE.app" ]; then
+echo "$(green "==> Linking idea/idea-ce for command-line invocation")"
+if var_exists_and_is_directory "/Applications/IntelliJ IDEA CE.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
-elif [ -d "/Applications/IntelliJ IDEA.app" ]; then
+elif var_exists_and_is_directory "/Applications/IntelliJ IDEA.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
 else
-  warn "skipping symlinking idea for command-line invocation"
+  warn "skipping symlinking idea/idea-ce for command-line invocation"
 fi
 
 #####################
@@ -206,7 +205,7 @@ fi
 #####################
 echo "$(green "==> Setting up login items")"
 setup_login_item() {
-  if [ -d "/Applications/${1}" ]; then
+  if var_exists_and_is_directory "/Applications/${1}"; then
     echo "Setting up '${1}' as a login item" && osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/${1}\", hidden:false}" 2>&1 > /dev/null
   else
     warn "Couldn't find application '/Applications/${1}' and so skipping setting up as a login item"

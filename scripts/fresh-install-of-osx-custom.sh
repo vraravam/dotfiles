@@ -2,8 +2,6 @@
 
 # Note: This script is specific to my setup and might not be useful for others. This is being shared so as to be used as a reference if you want to mimic the same setup.
 
-# TODO: Replace all occurrences of '-d' with 'var_exists_and_is_directory'
-
 type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.shellrc"
 # Load all zsh config files for PATH and other env vars to take effect
 # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
@@ -24,7 +22,7 @@ fi
 # Clone the home repo #
 #######################
 echo "$(green "==> Cloning home repo")"
-if [ ! -z "${KEYBASE_USERNAME}" ] && [ ! -z "${KEYBASE_HOME_REPO_NAME}" ] && [ ! -d "${HOME}/.git" ]; then
+if non_zero_string "${KEYBASE_USERNAME}" && non_zero_string "${KEYBASE_HOME_REPO_NAME}" && ! var_exists_and_is_directory "${HOME}/.git"; then
   rm -rf "${HOME}/tmp"
   mkdir -p "${HOME}/tmp"
   git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME} "${HOME}/tmp"
@@ -47,7 +45,7 @@ fi
 # Clone the profiles repo #
 ###########################
 echo "$(green "==> Cloning profiles repo")"
-if [ ! -z "${KEYBASE_USERNAME}" ] && [ ! -z "${KEYBASE_PROFILES_REPO_NAME}" ] && [ ! -d "${PERSONAL_PROFILES_DIR}/.git" ]; then
+if non_zero_string "${KEYBASE_USERNAME}" && non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && ! var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}/.git"; then
   rm -rf "${PERSONAL_PROFILES_DIR}"
   git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME} "${PERSONAL_PROFILES_DIR}"
 

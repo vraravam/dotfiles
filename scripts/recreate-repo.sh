@@ -30,7 +30,7 @@ else
   usage
 fi
 
-[ ! -d "${folder}/.git" ] && echo "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!" && exit 1
+! var_exists_and_is_directory "${folder}/.git" && echo "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!" && exit 1
 
 # For the profiles repo alone, I don't care about retaining the history
 [[ "${folder}" =~ "profiles" ]] && force=Y
