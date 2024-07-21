@@ -28,10 +28,10 @@ load_file_if_exists "${HOME}/.aliases"
 
 if is_macos; then
   # setopt glob_dots                # no special treatment for file names with a leading dot
-  # # setopt no_auto_menu             # require an extra TAB press to open the completion menu
+  # setopt no_auto_menu             # require an extra TAB press to open the completion menu
   # setopt auto_menu                # automatically use menu completion
   # setopt list_beep
-  # # setopt correct_all              # autocorrect commands
+  # setopt correct_all              # autocorrect commands
   # setopt always_to_end            # move cursor to end if word had one match
 
   setopt append_history
@@ -158,14 +158,16 @@ OPENSSL_DIR="${HOMEBREW_PREFIX}/opt/openssl@3"
 use_homebrew_installation_for "${OPENSSL_DIR}"
 var_exists_and_is_directory "${OPENSSL_DIR}" && export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${OPENSSL_DIR}"
 
-export HOMEBREW_NO_ANALYTICS=1
-export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
-export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
-export HOMEBREW_BAT=1
-export HOMEBREW_VERBOSE_USING_DOTS=1
-export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
-# TODO: Uncomment once this feature is stabilized
-# export HOMEBREW_VERIFY_ATTESTATIONS=1
+if is_macos && command_exists brew; then
+  export HOMEBREW_NO_ANALYTICS=1
+  export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
+  export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
+  export HOMEBREW_BAT=1
+  export HOMEBREW_VERBOSE_USING_DOTS=1
+  export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
+  # TODO: Uncomment once this feature is stabilized
+  # export HOMEBREW_VERIFY_ATTESTATIONS=1
+fi
 
 # Make VSCodium use the VS Code marketplace
 if command_exists codium; then

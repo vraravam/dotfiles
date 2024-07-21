@@ -45,7 +45,7 @@ cc() {
   git -C "${target}" cc
 }
 
-if command_exists run_all.sh; then
+if command_exists "run_all.sh"; then
   # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
   alias rug='run_all.sh git'
   alias all="FOLDER='${HOME}' MAXDEPTH=5 rug"

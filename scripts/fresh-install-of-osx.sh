@@ -199,14 +199,11 @@ fi
 echo "$(green "==> Linking idea-ce for command-line invocation")"
 if [ -d "/Applications/IntelliJ IDEA CE.app" ]; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
+elif [ -d "/Applications/IntelliJ IDEA.app" ]; then
+  replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
 else
   warn "skipping symlinking idea for command-line invocation"
 fi
-
-# defaults write -g NSFileViewer -string org.yanex.marta
-# To revert back to use Finder as default file manager you can enter
-# defaults delete -g NSFileViewer
-# ln -sf /Applications/Marta.app/Contents/Resources/launcher ${HOMEBREW_PREFIX}/bin/marta
 
 #####################
 # Setup login items #
