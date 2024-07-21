@@ -32,12 +32,8 @@ fi
 # Install command line dev tools #
 ##################################
 echo "$(green "==> Installing xcode command-line tools")"
-if ! xcode-select -p > /dev/null 2>&1; then
-  # install using the non-gui cmd-line alone
-  touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
-  softwareupdate -ia
-  rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
-  sudo xcodebuild -license accept || true
+if ! var_exists_and_is_directory "/Library/Developer/CommandLineTools"; then
+  reinstall_xcode_cmdline_tools
 else
   warn "skipping installation of xcode command-line tools since its already present"
 fi

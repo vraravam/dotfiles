@@ -7,16 +7,7 @@
 test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 # custom file to capture the bare minimum shell functions that I have written
-
-load_file_if_exists() {
-  # shellcheck disable=SC2015
-  # shellcheck disable=SC1090
-  test -e "${1}" && source "${1}" || true
-}
-
-command_exists() {
-  type "${1}" &> /dev/null 2>&1
-}
+# these are the minimum required on a vanilla OS to bootstrap installation of all other softwares
 
 load_zsh_configs() {
   # custom env var to enable logging only during the first installation process
@@ -69,8 +60,22 @@ warn() (
   echo "$(yellow "**WARN** ${1}")"
 )
 
+load_file_if_exists() {
+  # shellcheck disable=SC2015
+  # shellcheck disable=SC1090
+  test ! -z "${1}" && test -e "${1}" && source "${1}" || true
+}
+
 var_exists_and_is_directory() {
   test ! -z "${1}" && test -d "${1}"
+}
+
+delete_directory_if_exists() {
+  var_exists_and_is_directory "${1}" && echo "$(red "Deleting") '$(green "${1}")'" && sudo rm -rf "${1}"
+}
+
+command_exists() {
+  type "${1}" &> /dev/null 2>&1
 }
 
 is_macos() {
@@ -84,3 +89,25 @@ is_linux() {
 is_windows() {
   [[ "${OSTYPE}" =~ 'MINGW' ]]
 }
+
+if is_macos; then
+  # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
+  reinstall_xcode() {
+    # delete if already present
+    delete_directory_if_exists "/Applications/Xcode.app"
+
+    xcode-select --install
+    sudo xcodebuild -license accept || true
+  }
+
+  # Uninstall and reinstall xcode command line tools (useful immediately after upgrade or if reinstalling the OS)
+  reinstall_xcode_cmdline_tools() {
+    # delete if already present
+    delete_directory_if_exists "/Library/Developer/CommandLineTools"
+
+    # install using the non-gui cmd-line alone
+    touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+    softwareupdate -ia
+    rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+  }
+fi

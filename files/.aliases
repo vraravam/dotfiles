@@ -25,12 +25,6 @@ command_exists bat && alias cat='bat'
 command_exists btop && alias top='btop'
 command_exists ncdu && alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'
 
-if is_macos; then
-  # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
-  alias reinstall-xcode='rm -rf $(xcode-select -p) && xcode-select --install && xcodebuild -license accept'
-  alias reinstall-cmdline-tools='touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress && softwareupdate -ia && rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress && sudo xcodebuild -license accept'
-fi
-
 # git commands
 # Note: Use a function so that it can accept parameters
 st() {
