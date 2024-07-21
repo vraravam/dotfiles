@@ -9,15 +9,6 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 # custom file to capture the bare minimum shell functions that I have written
 # these are the minimum required on a vanilla OS to bootstrap installation of all other softwares
 
-load_zsh_configs() {
-  # custom env var to enable logging only during the first installation process
-  FIRST_INSTALL=true
-  file_list=('.zshenv' '.zprofile' '.zshrc' '.zlogin')
-  for file in "${file_list[@]}"; do
-    load_file_if_exists "${HOME}/${file}"
-  done
-}
-
 NC='\033[0m' # No Color
 BLACK='\033[0;30m'
 DARK_GRAY='\033[1;30m'
@@ -70,16 +61,26 @@ load_file_if_exists() {
   non_zero_string "${1}" && test -e "${1}" && source "${1}" || true
 }
 
+command_exists() {
+  type "${1}" &> /dev/null 2>&1
+}
+
+# Note: This function is kind of equivalent to 'omz reload', but that doesn't seem to work when installing on a vanilla OS
+load_zsh_configs() {
+  command_exists omz && omz reload && return
+
+  file_list=('.zshenv' '.zprofile' '.zshrc' '.zlogin')
+  for file in "${file_list[@]}"; do
+    FIRST_INSTALL=true load_file_if_exists "${HOME}/${file}"
+  done
+}
+
 var_exists_and_is_directory() {
   non_zero_string "${1}" && test -d "${1}"
 }
 
 delete_directory_if_exists() {
   var_exists_and_is_directory "${1}" && echo "$(red "Deleting") '$(green "${1}")'" && sudo rm -rf "${1}"
-}
-
-command_exists() {
-  type "${1}" &> /dev/null 2>&1
 }
 
 is_macos() {

@@ -20,7 +20,7 @@ sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
 # Download and source this utility script - so that the functions are available for this script #
 #################################################################################################
 echo "==> Download the '${HOME}/.shellrc' for loading the utility functions"
-if ! type load_zsh_configs &> /dev/null 2>&1; then
+if ! type warn &> /dev/null 2>&1; then
   [ ! -f "${HOME}/.shellrc" ] && curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/files/.shellrc" -o "${HOME}/.shellrc"
   FIRST_INSTALL=true source "${HOME}/.shellrc"
 else
@@ -92,7 +92,6 @@ clone_if_not_present() {
     warn "skipping cloning of '$(basename "${1}")' since '${target_folder}' is already present"
   fi
 }
-# clone_if_not_present https://github.com/mroth/evalcache # Commented out since I'm going to try using it via omz's built-in plugin system
 clone_if_not_present https://github.com/zdharma-continuum/fast-syntax-highlighting
 clone_if_not_present https://github.com/zsh-users/zsh-autosuggestions
 clone_if_not_present https://github.com/zsh-users/zsh-completions
