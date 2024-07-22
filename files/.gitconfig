@@ -207,14 +207,15 @@
   new = green bold
   whitespace = red reverse
 [core]
-  pager = diff-so-fancy | less --tabs=2 -RFX
-  editor = code --wait
-  # editor = vi
   autocrlf = input
-  excludesFile = ~/.gitignore_global   # Personal
   commentChar = *
-  whitespace = fix
+  editor = code --wait
+  excludesFile = ~/.gitignore_global   # Personal
+  fsMonitor = true
+  pager = diff-so-fancy | less --tabs=2 -RFX
   symlinks = false
+  untrackedCache = true
+  whitespace = fix
 [diff]
   compactionHeuristic = true
   renames = true
@@ -231,6 +232,7 @@
   pruneTags = true
   parallel = 0
   showForcedUpdates = true
+  writeCommitGraph = true
 [filter "lfs"]
   required = true
   clean = git-lfs clean -- %f
