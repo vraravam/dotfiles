@@ -99,13 +99,15 @@ implode() {
     '.aws'
     '.bin-oss'
     '.bin'
+    '.cache'
     '.config'
     '.docker'
     '.envrc'
     '.git'
-    '.git*'
     '.gnupg'
-    '.psql*'
+    '.local'
+    '.npm'
+    '.psql'
     '.s3cfg'
     '.ssh'
     '.tldrc'
@@ -114,7 +116,7 @@ implode() {
     'personal'
   )
   for f in "${folders[@]}"; do
-    rm -rfv "${HOME}/${f}"
+    rm -rfv "${HOME}"/${f}*
   done
 }
 
