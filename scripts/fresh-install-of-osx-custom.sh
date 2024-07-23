@@ -88,7 +88,11 @@ fi
 # post-clone operations for installing system dependencies #
 ############################################################
 echo "$(green "==> Running post-clone operations")"
-command_exists all && all restore-mtime -c
+if command_exists all; then
+  all restore-mtime -c
+  all maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
+  all maintenance start
+fi
 command_exists allow_all_direnv_configs && allow_all_direnv_configs
 command_exists install_mise_versions && install_mise_versions
 rm -rf "${HOME}/.ssh/known_hosts.old"
