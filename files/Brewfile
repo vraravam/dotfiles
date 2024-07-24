@@ -19,6 +19,7 @@ cask_args appdir: '/Applications', no_quarantine: true
 # java_present = system('/usr/libexec/java_home --failfast')
 is_arm = Hardware::CPU.arm?
 
+tap 'homebrew/services'
 tap 'romkatv/powerlevel10k'
 
 brew 'bash'
@@ -99,7 +100,7 @@ cask 'monolingual'
 # cask 'netspot'
 # cask 'ngrok'
 cask 'notunes'
-cask 'ollama'
+cask 'ollama', restart_service: :changed
 # cask 'onyx'  # Commented out since I'm on the beta version of macos
 cask 'protonvpn'
 cask 'rancher'
