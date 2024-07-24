@@ -31,7 +31,7 @@ _update_repo() {
 # updates the home and profiles repos
 update_all_repos() {
   _update_repo "${HOME}" '.bin/macos/defaults/'
-  var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}" && _update_repo "${PERSONAL_PROFILES_DIR}" 'ArcProfile BraveProfile FirefoxProfile KeePassXCProfile SyncthingProfile ThunderbirdProfile'
+  var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}" && _update_repo "${PERSONAL_PROFILES_DIR}" 'ArcProfile BraveProfile ChromeProfile FirefoxProfile KeePassXCProfile SyncthingProfile ThunderbirdProfile'
 }
 
 # pushes the specified repo (disables and re-enables cron while doing this operation)
