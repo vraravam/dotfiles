@@ -15,9 +15,6 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
-export NVM_LAZY_LOAD=true
-export NVM_COMPLETION=true
-
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ${HOME}/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
 # confirmations, etc.) must go above this block; everything else may go below.

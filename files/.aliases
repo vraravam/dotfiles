@@ -103,14 +103,10 @@ fi
 # MacOS: Remove apps from quarantine
 is_macos && alias unquarantine='sudo xattr -rd com.apple.quarantine'
 
-# Added to view the shell startup time
+# Added to view the shell startup time (modified from https://blog.jonlu.ca/posts/speeding-up-zsh)
 time_shell_startup() {
   shell="${1-${SHELL}}"
   for i in $(seq 1 10); do /usr/bin/time "${shell}" -i -c exit; done
-}
-
-reals() {
-  ls -la "$(print `which $1`)"
 }
 
 # npm
