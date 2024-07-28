@@ -28,39 +28,22 @@ brew 'btop'
 brew 'curl'
 brew 'diff-so-fancy'
 brew 'direnv'
-# brew 'dive'   # docker layers inspection on steroids
-# brew 'docker-diff'
-# brew 'docker-slim'  # TODO: investigate if the http-probe is a deal-breaker
 brew 'eza'
-# brew 'fzy'
-# brew 'git-crypt'
 brew 'git-extras'
 brew 'git-gui'
 brew 'git-tools'
 brew 'git'
-# brew 'gradle'
-# brew 'gradle-completion'
-# brew 'hadolint'     # lint Dockerfiles (similar to shellcheck for shell scripts)
 brew 'jq'
-# brew 'kubernetes-cli', link: true   # Note: Had to do this: rm /usr/local/bin/kubectl && brew link --overwrite kubernetes-cli
-# brew 'kubernetes-helm'
 brew 'less'
-# brew 'libressl', link: true
-# brew 'localstack'
-# brew 'make'
 brew 'mise'
 brew 'moreutils'
 brew 'ncdu'
-# brew 'pkgdiff'
 brew 'powerlevel10k'
 brew 'prettyping'
-# brew 'reattach-to-user-namespace' # Needed if using tmux (to be able to access the macos clipboard from within tmux)
 brew 'ripgrep'
 brew 'shellcheck'
-# brew 'speedtest-cli'
 brew 'syncthing'
 brew 'tldr'
-# brew 'tmux'
 brew 'vim'
 brew 'watch'
 brew 'wget'
@@ -74,40 +57,27 @@ mas 'iBar-Menubar icon control tool', id: 6443843900
 
 # ----------------------------------------------------------------------------------------------------------
 cask 'aldente'
-# cask 'apparency'
 cask 'appcleaner'
 cask 'arc'
 cask 'brave-browser@nightly'
 cask 'clocker'
 cask 'cloudflare-warp'
-# cask 'dbeaver-community'
-# cask 'dupeguru'
 cask 'firefox@nightly' #, greedy: true
 cask 'font-meslo-lg-nerd-font'
-# cask 'git-credential-manager'  # https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git
-# cask 'intellij-idea-ce'
 cask 'iterm2'
 cask 'itsycal'
-# cask 'kdiff3'
 cask 'keepassxc@beta'
 cask 'keepingyouawake'
 cask 'keybase'
-# cask 'keycastr'
 cask 'libreoffice'
-# cask 'licecap'
-# cask 'lulu'
 cask 'monolingual'
-# cask 'netspot'
-# cask 'ngrok'
 cask 'notunes'
 cask 'ollama', restart_service: :changed
-# cask 'onyx'  # Commented out since I'm on the beta version of macos
 cask 'protonvpn'
 cask 'rancher'
 cask 'raycast'
 cask 'silicon' if is_arm
 cask 'stats'
-# cask 'tempbox'
 cask 'the-unarchiver'
 cask 'thunderbird@daily'  # TODO: Commented out since I haven't opened TBird for the past 6 months - maybe its time to let go
 cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when comparing to VSCode
@@ -165,3 +135,46 @@ at_exit do
   # This is required for completions from other plugins to work (for eg git-extras)
   system("rm -rfv \"$HOMEBREW_REPOSITORY/share/zsh/site-functions/_git\"") || true
 end
+
+# ----------------------------------------------------------------------------------------------------------
+# Moved these brew and cask lines to clean up the noise from the above alphabetically sorted lists
+
+# ---- docker utilities
+# brew 'dive'   # docker layers inspection on steroids
+# brew 'docker-diff'
+# brew 'docker-slim'  # TODO: investigate if the http-probe is a deal-breaker
+# brew 'hadolint'     # lint Dockerfiles (similar to shellcheck for shell scripts)
+# brew 'kubernetes-cli', link: true   # Note: Had to do this: rm /usr/local/bin/kubectl && brew link --overwrite kubernetes-cli
+# brew 'kubernetes-helm'
+
+# ---- command-line utilities
+# brew 'fzy'
+
+# ---- git utilities
+# brew 'git-crypt'
+
+# ---- tmux utilities
+# brew 'tmux'
+# brew 'reattach-to-user-namespace' # Needed if using tmux (to be able to access the macos clipboard from within tmux)
+
+# ---- general utilities
+# brew 'gradle'
+# brew 'gradle-completion'
+# brew 'libressl', link: true
+# brew 'localstack'
+# brew 'speedtest-cli'
+
+# https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git
+# cask 'git-credential-manager'
+
+# ---- casks
+# cask 'dbeaver-community'
+# cask 'intellij-idea-ce'
+# cask 'kdiff3'
+# cask 'keycastr'
+# cask 'licecap'
+# cask 'lulu'
+# cask 'netspot'
+# cask 'ngrok'
+# cask 'onyx'  # Commented out since I'm on the beta version of macos
+# cask 'tempbox'
