@@ -10,9 +10,9 @@
 type warn &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 usage() {
-  echo "Usage: ${0} <e/i>"
-  echo "  e  --> Export from system"
-  echo "  i  --> Import into system"
+  echo "$(red "Usage"): $(yellow "${0} <e/i>")"
+  echo "  $(yellow "e")  --> Export from system"
+  echo "  $(yellow "i")  --> Import into system"
   exit 1
 }
 
@@ -166,10 +166,10 @@ app_array=(
   'org.ferdium.ferdium-app'
   'org.keepassxc.keepassxc'
   'org.libreoffice.script'
+  'org.mozilla.firefox'
   'org.mozilla.nightly'
   'org.mozilla.thunderbird-daily'
   'org.mozilla.thunderbird'
-  'org.videolan.vlc'
   'us.zoom.xos'
   'us.zoom.ZoomClips'
   'ZoomChat'
@@ -179,7 +179,7 @@ echo "Running operation: $(green ${operation})"
 for app_pref in "${app_array[@]}"; do
   echo "Processing $(cyan ${app_pref})"
   TARGET_FILE="${TARGET_DIR}/${app_pref}.defaults"
-  test -f "${TARGET_FILE}" || touch "${TARGET_FILE}"
+  is_file "${TARGET_FILE}" || touch "${TARGET_FILE}"
   /usr/bin/defaults "${operation}" "${app_pref}" "${TARGET_FILE}"
 done
 

@@ -52,13 +52,33 @@ warn() (
 )
 
 non_zero_string() {
-  test ! -z "${1}"
+  ! test -z "${1}"
+}
+
+is_file() {
+  non_zero_string "${1}" && test -f "${1}"
+}
+
+is_executable() {
+  is_file "${1}" && test -e "${1}"
+}
+
+is_directory() {
+  non_zero_string "${1}" && test -d "${1}"
+}
+
+is_git_repo() {
+  is_directory "${1}" && test -d "${1}/.git"
 }
 
 load_file_if_exists() {
   # shellcheck disable=SC2015
   # shellcheck disable=SC1090
-  non_zero_string "${1}" && test -e "${1}" && source "${1}" || true
+  is_executable "${1}" && source "${1}" || true
+}
+
+delete_directory_if_exists() {
+  is_directory "${1}" && echo "$(red "Deleting") '$(green "${1}")'" && sudo rm -rf "${1}"
 }
 
 command_exists() {
@@ -73,14 +93,6 @@ load_zsh_configs() {
   for file in "${file_list[@]}"; do
     FIRST_INSTALL=true load_file_if_exists "${HOME}/${file}"
   done
-}
-
-var_exists_and_is_directory() {
-  non_zero_string "${1}" && test -d "${1}"
-}
-
-delete_directory_if_exists() {
-  var_exists_and_is_directory "${1}" && echo "$(red "Deleting") '$(green "${1}")'" && sudo rm -rf "${1}"
 }
 
 is_macos() {

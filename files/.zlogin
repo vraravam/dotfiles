@@ -14,7 +14,7 @@ recompile_zsh_scripts() {
 }
 
 find_in_folder_and_recompile() {
-  ! var_exists_and_is_directory "${1}" && return
+  ! is_directory "${1}" && return
 
   # TODO: This still doesn't handle '.pnpm' folders - need to investigate later
   for f in $(find "${1}" -maxdepth 4 -name "*.sh" -o -name "*.zsh" ! -path "**/node_modules/**"); do

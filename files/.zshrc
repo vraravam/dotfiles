@@ -110,7 +110,7 @@ zstyle ':completion:*:*:docker-*:*' option-stacking yes
 
 # according to https://github.com/zsh-users/zsh-completions/issues/603#issue-373185486, this can't be added as a plugin to omz for the fpath to work correctly
 ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH:-"${HOME}/.oh-my-zsh"}/custom"}"
-var_exists_and_is_directory "${ZSH_CUSTOM}/plugins/zsh-completions/src" && fpath+="${ZSH_CUSTOM}/plugins/zsh-completions/src"
+is_directory "${ZSH_CUSTOM}/plugins/zsh-completions/src" && fpath+="${ZSH_CUSTOM}/plugins/zsh-completions/src"
 
 load_file_if_exists "${ZSH}/oh-my-zsh.sh"
 
@@ -121,11 +121,11 @@ load_file_if_exists "${ZSH}/oh-my-zsh.sh"
 # export LANG=en_US.UTF-8
 
 # Preferred editor for remote sessions
-[[ -n ${SSH_CONNECTION} ]] && export EDITOR="vi"
+test -n "${SSH_CONNECTION}" && export EDITOR="vi"
 # Use code if its installed (both Mac OSX and Linux)
-command_exists code && [[ "${EDITOR}" == "" ]] && export EDITOR="code --wait"
+command_exists code && test -z "${EDITOR}" && export EDITOR="code --wait"
 # If neither of the above works, then fall back to vi
-command_exists vi && [[ "${EDITOR}" == "" ]] && export EDITOR="vi"
+command_exists vi && test -z "${EDITOR}" && export EDITOR="vi"
 
 # Compilation flags
 [[ "${ARCH}" =~ "x86" ]] && export ARCHFLAGS="-arch x86_64"

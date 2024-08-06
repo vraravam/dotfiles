@@ -8,52 +8,53 @@ type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.s
 # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
 load_zsh_configs
 
-! command_exists keybase && echo "Keybase not found in the PATH. Aborting!!!" && exit -1
+if non_zero_string "${KEYBASE_USERNAME}"; then
+  ! command_exists keybase && echo "Keybase not found in the PATH. Aborting!!!" && exit -1
 
-######################
-# Login into keybase #
-######################
-echo "$(green "==> Logging into keybase")"
-if ! keybase login; then
-  echo "Could not login into keybase. Retry again."
-  exit -1
-fi
+  ######################
+  # Login into keybase #
+  ######################
+  echo "$(green "==> Logging into keybase")"
+  ! keybase login && warn "could not login into keybase. Retry again." && exit -1
 
-#######################
-# Clone the home repo #
-#######################
-echo "$(green "==> Cloning home repo")"
-if non_zero_string "${KEYBASE_USERNAME}" && non_zero_string "${KEYBASE_HOME_REPO_NAME}" && ! var_exists_and_is_directory "${HOME}/.git"; then
-  rm -rf "${HOME}/tmp"
-  mkdir -p "${HOME}/tmp"
-  git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME} "${HOME}/tmp"
-  mv "${HOME}/tmp/.git" "${HOME}/"
-  rm -rf "${HOME}/tmp"
+  #######################
+  # Clone the home repo #
+  #######################
+  echo "$(green "==> Cloning home repo")"
+  if non_zero_string "${KEYBASE_HOME_REPO_NAME}" && ! is_git_repo "${HOME}"; then
+    rm -rf "${HOME}/tmp"
+    mkdir -p "${HOME}/tmp"
+    git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME} "${HOME}/tmp"
+    mv "${HOME}/tmp/.git" "${HOME}/"
+    rm -rf "${HOME}/tmp"
 
-  # Checkout files (these should not have any modifications/conflicts with what is in the remote repo)
-  git -C "${HOME}" checkout ".[a-zA-Z]*" personal
+    # Checkout files (these should not have any modifications/conflicts with what is in the remote repo)
+    git -C "${HOME}" checkout ".[a-zA-Z]*" personal
 
-  # Reset ssh keys' permissions so that git doesn't complain when using them
-  sudo chmod -R 600 "${HOME}"/.ssh/* || true
+    # Reset ssh keys' permissions so that git doesn't complain when using them
+    sudo chmod -R 600 "${HOME}"/.ssh/* || true
 
-  # Fix /etc/hosts file to block facebook #
-  sudo cp "${PERSONAL_BIN_DIR}/macos/etc.hosts" /etc/hosts
+    # Fix /etc/hosts file to block facebook #
+    sudo cp "${PERSONAL_BIN_DIR}/macos/etc.hosts" /etc/hosts
+  else
+    warn "skipping cloning of home repo since the 'KEYBASE_HOME_REPO_NAME' env var hasn't been set or a git repo is already present in '${HOME}'"
+  fi
+
+  ###########################
+  # Clone the profiles repo #
+  ###########################
+  echo "$(green "==> Cloning profiles repo")"
+  if non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && ! is_git_repo "${PERSONAL_PROFILES_DIR}"; then
+    rm -rf "${PERSONAL_PROFILES_DIR}"
+    git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME} "${PERSONAL_PROFILES_DIR}"
+
+    # since the above lines will delete the .envrc & .gitignore that were earlier copied into the profiles folder, we will re-run the install script
+    eval "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
+  else
+    warn "skipping cloning of profiles repo since the 'KEYBASE_PROFILES_REPO_NAME' env var hasn't been set or a git repo is already present in '${PERSONAL_PROFILES_DIR}'"
+  fi
 else
-  warn "skipping cloning of home repo since either the 'KEYBASE_USERNAME' and/or the 'KEYBASE_HOME_REPO_NAME' env vars haven't been set or a git repo is already present in '${HOME}'"
-fi
-
-###########################
-# Clone the profiles repo #
-###########################
-echo "$(green "==> Cloning profiles repo")"
-if non_zero_string "${KEYBASE_USERNAME}" && non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && ! var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}/.git"; then
-  rm -rf "${PERSONAL_PROFILES_DIR}"
-  git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME} "${PERSONAL_PROFILES_DIR}"
-
-  # since the above lines will delete the .envrc & .gitignore that were earlier copied into the profiles folder, we will re-run the install script
-  eval "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
-else
-  warn "skipping cloning of profiles repo since either the 'KEYBASE_USERNAME' and/or the 'KEYBASE_PROFILES_REPO_NAME' env vars haven't been set or a git repo is already present in '${PERSONAL_PROFILES_DIR}'"
+  warn "skipping cloning of any keybase repo since 'KEYBASE_USERNAME' has not been set"
 fi
 
 ########################################################
@@ -61,7 +62,7 @@ fi
 ########################################################
 file_name="${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
 echo "$(green "==> Generating ${file_name}")"
-if [[ ! -f "${file_name}" ]]; then
+if ! is_file "${file_name}"; then
   mkdir -p "$(dirname "${file_name}")"
   cat <<EOF > "${file_name}"
 - folder: "\${PROJECTS_BASE_DIR}/oss/git_scripts"
@@ -76,7 +77,7 @@ fi
 # Resurrect repositories that I am interested in #
 ##################################################
 echo "$(green "==> Resurrecting repos")"
-if var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}"; then
+if is_directory "${PERSONAL_PROFILES_DIR}"; then
   for file in $(ls "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml); do
     resurrect-repositories.rb -r "${file}"
   done
@@ -108,7 +109,7 @@ cd -
 # Load the direnv config for the profiles folder #
 ##################################################
 # TODO: See how this can be combined into 'allow_all_direnv_configs'
-if var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}"; then
+if is_directory "${PERSONAL_PROFILES_DIR}"; then
   cd "${PERSONAL_PROFILES_DIR}"
   cd -
 fi
@@ -117,7 +118,7 @@ fi
 # Restore the preferences from the older machine into the new one #
 ###################################################################
 echo "$(green "==> Restore preferences")"
-# "Run within a separate bash shell to avoid quitting due to errors
+# Run within a separate bash shell to avoid quitting due to errors
 command_exists "osx-defaults.sh" && bash -c "osx-defaults.sh -s"
 command_exists "capture-defaults.sh" && capture-defaults.sh i
 

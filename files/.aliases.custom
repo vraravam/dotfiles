@@ -14,7 +14,7 @@ command_exists code && alias code-gist='code ${PERSONAL_CONFIGS_DIR} ${PERSONAL_
 # updates the specified repo
 # internal function: not to be called separately
 _update_repo() {
-  ! var_exists_and_is_directory "${1}" && warn "skipping updating the repo since '${1}' doesn't exist" && return
+  ! is_directory "${1}" && warn "skipping updating the repo since '${1}' doesn't exist" && return
 
   # Remove trailing slash if present
   folder="${1%\/}"
@@ -31,13 +31,13 @@ _update_repo() {
 # updates the home and profiles repos
 update_all_repos() {
   _update_repo "${HOME}" '.bin/macos/defaults/'
-  var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}" && _update_repo "${PERSONAL_PROFILES_DIR}" 'ArcProfile BraveProfile ChromeProfile FirefoxProfile KeePassXCProfile SyncthingProfile ThunderbirdProfile'
+  is_directory "${PERSONAL_PROFILES_DIR}" && _update_repo "${PERSONAL_PROFILES_DIR}" 'ArcProfile BraveProfile ChromeProfile FirefoxProfile KeePassXCProfile SyncthingProfile ThunderbirdProfile'
 }
 
 # pushes the specified repo (disables and re-enables cron while doing this operation)
 # internal function: not to be called separately
 _push_repo() {
-  ! var_exists_and_is_directory "${1}" && warn "skipping pushing the repo since '${1}' doesn't exist" && return
+  ! is_directory "${1}" && warn "skipping pushing the repo since '${1}' doesn't exist" && return
 
   # shellcheck disable=SC2005
   echo "$(green "*** Pushing ${1}")" && git -C "${1}" push --force-with-lease && echo "$(green "*** Pushed ${1}")"
@@ -48,7 +48,7 @@ push_all_repos() {
   crontab -r &> /dev/null 2>&1
 
   _push_repo "${HOME}"
-  var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}" && _push_repo "${PERSONAL_PROFILES_DIR}"
+  is_directory "${PERSONAL_PROFILES_DIR}" && _push_repo "${PERSONAL_PROFILES_DIR}"
 
   recron
 }
@@ -60,7 +60,7 @@ recron() {
   crontab -l
 
   local cron_file="${PERSONAL_BIN_DIR}/macos/crontab.txt"
-  ! test -f "${cron_file}" && warn "No '${cron_file} found; returning without any processing" && return
+  ! is_file "${cron_file}" && warn "No '${cron_file} found; returning without any processing" && return
 
   # shellcheck disable=SC2005
   echo "$(red "---------------------------------------------------------------------------")"

@@ -43,10 +43,10 @@ if command_exists "run_all.sh"; then
   alias rug='run_all.sh git'
   alias all="FOLDER='${HOME}' MAXDEPTH=5 rug"
   alias home="FOLDER='${HOME}' FILTER=\".bin|zsh|mise|tmux|vscod\" MAXDEPTH=5 rug"
-  var_exists_and_is_directory "${PROJECTS_BASE_DIR}/oss" && alias oss="FOLDER='${PROJECTS_BASE_DIR}/oss' rug"
-  var_exists_and_is_directory "${PROJECTS_BASE_DIR}/tw" && alias tw="FOLDER='${PROJECTS_BASE_DIR}/tw' rug"
-  var_exists_and_is_directory "${PROJECTS_BASE_DIR}/jd" && alias jd="FOLDER='${PROJECTS_BASE_DIR}/jd' MAXDEPTH=3 rug"
-  var_exists_and_is_directory "${PROJECTS_BASE_DIR}" && alias upreb="FOLDER='${PROJECTS_BASE_DIR}' rug upreb"
+  is_directory "${PROJECTS_BASE_DIR}/oss" && alias oss="FOLDER='${PROJECTS_BASE_DIR}/oss' rug"
+  is_directory "${PROJECTS_BASE_DIR}/tw" && alias tw="FOLDER='${PROJECTS_BASE_DIR}/tw' rug"
+  is_directory "${PROJECTS_BASE_DIR}/jd" && alias jd="FOLDER='${PROJECTS_BASE_DIR}/jd' MAXDEPTH=3 rug"
+  is_directory "${PROJECTS_BASE_DIR}" && alias upreb="FOLDER='${PROJECTS_BASE_DIR}' rug upreb"
 fi
 
 # deletes the zsh compiled files so that they can be recompiled whenever the new session is next started
@@ -58,7 +58,7 @@ install_mise_versions() {
   ! command_exists mise && return
 
   find "${HOME}" -name '.tool-versions' -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
-  var_exists_and_is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name '.git' -type d -maxdepth 4 -exec echo "===> Installing for {}" \; -execdir mise install \;
+  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name '.git' -type d -maxdepth 4 -exec echo "===> Installing for {}" \; -execdir mise install \;
 }
 
 # runs 'direnv allow' on all code repositories that are checked out
@@ -66,8 +66,8 @@ allow_all_direnv_configs() {
   ! command_exists direnv && return
 
   find "${HOME}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
-  var_exists_and_is_directory "${PERSONAL_PROFILES_DIR}" && find "${PERSONAL_PROFILES_DIR}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
-  var_exists_and_is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 4 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  is_directory "${PERSONAL_PROFILES_DIR}" && find "${PERSONAL_PROFILES_DIR}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 4 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
 }
 
 if is_macos && command_exists brew; then

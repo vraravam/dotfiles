@@ -21,7 +21,7 @@ sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
 #################################################################################################
 echo "==> Download the '${HOME}/.shellrc' for loading the utility functions"
 if ! type warn &> /dev/null 2>&1; then
-  [ ! -f "${HOME}/.shellrc" ] && curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/files/.shellrc" -o "${HOME}/.shellrc"
+  ! test -f "${HOME}/.shellrc" && curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/files/.shellrc" -o "${HOME}/.shellrc"
   FIRST_INSTALL=true source "${HOME}/.shellrc"
 else
   warn "skipping downloading and sourcing '${HOME}/.shellrc' since its already loaded"
@@ -31,7 +31,7 @@ fi
 # Install command line dev tools #
 ##################################
 echo "$(green "==> Installing xcode command-line tools")"
-if ! var_exists_and_is_directory "/Library/Developer/CommandLineTools"; then
+if ! is_directory "/Library/Developer/CommandLineTools"; then
   reinstall_xcode_cmdline_tools
 else
   warn "skipping installation of xcode command-line tools since its already present"
@@ -72,7 +72,7 @@ sudo chmod -R 600 "${HOME}"/.ssh/* || true
 # Install oh-my-zsh #
 #####################
 echo "$(green "==> Installing oh-my-zsh")"
-if ! var_exists_and_is_directory "${HOME}/.oh-my-zsh"; then
+if ! is_directory "${HOME}/.oh-my-zsh"; then
   ZSH= curl -fsSL http://install.ohmyz.sh | sh
 else
   warn "skipping installation of oh-my-zsh since '${HOME}/.oh-my-zsh' is already present"
@@ -86,7 +86,7 @@ ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
 mkdir -p "${ZSH_CUSTOM}/plugins"
 clone_if_not_present() {
   target_folder="${ZSH_CUSTOM}/plugins/$(basename ${1})"
-  if ! var_exists_and_is_directory "${target_folder}"; then
+  if ! is_directory "${target_folder}"; then
     git clone "${1}" "${target_folder}"
   else
     warn "skipping cloning of '$(basename "${1}")' since '${target_folder}' is already present"
@@ -100,7 +100,7 @@ clone_if_not_present https://github.com/zsh-users/zsh-completions
 # Install dotfiles #
 ####################
 echo "$(green "==> Installing dotfiles")"
-if non_zero_string "${DOTFILES_DIR}" && ! var_exists_and_is_directory "${DOTFILES_DIR}"; then
+if non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; then
   # Delete the auto-generated .zshrc since that needs to be replaced by the one in the .bin-oss repo
   rm -rfv "${HOME}/.zshrc"
 
@@ -157,26 +157,27 @@ sh -c "brew bundle check --file '${HOME}/Brewfile' || brew bundle --file '${HOME
 ###########################################
 echo "$(green "==> Linking VSCode/VSCodium for command-line invocation")"
 replace_executable_if_exists_and_is_not_symlinked() {
-  if [ -e "${1}" ]; then
-    rm -fv "${2}" && ln -sf "${1}" "${2}"
+  if is_executable "${1}"; then
+    rm -fv "${2}"
+    ln -sf "${1}" "${2}"
   else
     warn "executable '${1}' not found and so skipping symlinking"
   fi
 }
 
-if var_exists_and_is_directory "/Applications/VSCodium - Insiders.app"; then
+if is_directory "/Applications/VSCodium - Insiders.app"; then
   # Symlink from the embedded executable for codium-insiders
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCodium - Insiders.app/Contents/Resources/app/bin/codium-insiders" "${HOMEBREW_PREFIX}/bin/codium-insiders"
   # if we are using 'vscodium-insiders' only, symlink it to 'codium' for ease of typing
   replace_executable_if_exists_and_is_not_symlinked "${HOMEBREW_PREFIX}/bin/codium-insiders" "${HOMEBREW_PREFIX}/bin/codium"
   # extra: also symlink for 'code'
   replace_executable_if_exists_and_is_not_symlinked "${HOMEBREW_PREFIX}/bin/codium" "${HOMEBREW_PREFIX}/bin/code"
-elif var_exists_and_is_directory "/Applications/VSCodium.app"; then
+elif is_directory "/Applications/VSCodium.app"; then
   # Symlink from the embedded executable for codium
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCodium.app/Contents/Resources/app/bin/codium" "${HOMEBREW_PREFIX}/bin/codium"
   # extra: also symlink for 'code'
   replace_executable_if_exists_and_is_not_symlinked "${HOMEBREW_PREFIX}/bin/codium" "${HOMEBREW_PREFIX}/bin/code"
-elif var_exists_and_is_directory "/Applications/VSCode.app"; then
+elif is_directory "/Applications/VSCode.app"; then
   # Symlink from the embedded executable for code
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCode.app/Contents/Resources/app/bin/code" "${HOMEBREW_PREFIX}/bin/code"
 else
@@ -184,16 +185,16 @@ else
 fi
 
 echo "$(green "==> Linking rider for command-line invocation")"
-if var_exists_and_is_directory "/Applications/Rider.app"; then
+if is_directory "/Applications/Rider.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/Rider.app/Contents/MacOS/rider" "${HOMEBREW_PREFIX}/bin/rider"
 else
   warn "skipping symlinking rider for command-line invocation"
 fi
 
 echo "$(green "==> Linking idea/idea-ce for command-line invocation")"
-if var_exists_and_is_directory "/Applications/IntelliJ IDEA CE.app"; then
+if is_directory "/Applications/IntelliJ IDEA CE.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
-elif var_exists_and_is_directory "/Applications/IntelliJ IDEA.app"; then
+elif is_directory "/Applications/IntelliJ IDEA.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
 else
   warn "skipping symlinking idea/idea-ce for command-line invocation"
@@ -204,7 +205,7 @@ fi
 #####################
 echo "$(green "==> Setting up login items")"
 setup_login_item() {
-  if var_exists_and_is_directory "/Applications/${1}"; then
+  if is_directory "/Applications/${1}"; then
     echo "Setting up '${1}' as a login item" && osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/${1}\", hidden:false}" 2>&1 > /dev/null
   else
     warn "Couldn't find application '/Applications/${1}' and so skipping setting up as a login item"

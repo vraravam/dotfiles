@@ -30,7 +30,7 @@ else
   usage
 fi
 
-! var_exists_and_is_directory "${folder}/.git" && echo "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!" && exit 1
+! is_git_repo "${folder}" && echo "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!" && exit 1
 
 # For the profiles repo alone, I don't care about retaining the history
 [[ "${folder}" =~ "profiles" ]] && force=Y
@@ -98,4 +98,4 @@ eval "${git_cmd} size"
 
 # Resurrect crontab after this script finishes
 cron_file="${PERSONAL_BIN_DIR}/macos/crontab.txt"
-test -f "${cron_file}" && crontab "${cron_file}"
+is_file "${cron_file}" && crontab "${cron_file}"
