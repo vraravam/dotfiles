@@ -175,3 +175,7 @@ The config file for this script is a yaml file that is passed into this script a
 * `other_remotes` specifies a hash of the other remotes keyed by the name with the value of the remote url
 * `active` (optional; default: false) specifies whether to set this folder/repo up or not on local
 * `post_clone` (optional; default: empty array) specifies other `bash` commands (in sequence) to be run once the resurrection is done - for eg, symlink a '.envrc' file if one exists
+
+## software-updates-cron.sh
+
+There are so many tools installed, and some of them require their local caches/dbs/configs/etc to be updated from time to time. Rather than remembering each tool and its invocation (for updates), this script is a single place where any new tooling is added so that I don't need to remember the incantation for each separately.
