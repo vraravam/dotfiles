@@ -164,6 +164,7 @@ if is_macos && command_exists brew; then
   export HOMEBREW_BAT=1
   export HOMEBREW_VERBOSE_USING_DOTS=1
   export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
+  export HOMEBREW_CASK_OPTS="--no-quarantine"
   # TODO: Uncomment once this feature is stabilized
   # export HOMEBREW_VERIFY_ATTESTATIONS=1
 fi
