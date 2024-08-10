@@ -43,8 +43,8 @@ find_in_folder_and_recompile() {
   recompile_zsh_scripts "${HOME}/.p10k.zsh"
   recompile_zsh_scripts "${HOME}/.shellrc"
 
-  find_in_folder_and_recompile "${HOME}/.bin-oss"
-  find_in_folder_and_recompile "${HOME}/.bin"
+  find_in_folder_and_recompile "${DOTFILES_DIR}"
+  find_in_folder_and_recompile "${PERSONAL_BIN_DIR}"
   find_in_folder_and_recompile "${PROJECTS_BASE_DIR}"
   find_in_folder_and_recompile "${PERSONAL_CONFIGS_DIR}"
   # explicitly use both intel and m1 install locations of homebrew

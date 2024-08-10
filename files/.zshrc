@@ -145,13 +145,7 @@ command_exists vi && test -z "${EDITOR}" && export EDITOR="vi"
 load_file_if_exists "${HOME}/.zshrc.custom"
 
 # remove duplicates from some env vars
-typeset -U cdpath
-typeset -U cppflags
-typeset -U fpath
-typeset -U infopath
-typeset -U ldflags
-typeset -U manpath
-typeset -U path
+typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPATH manpath PATH path PKG_CONFIG_PATH
 
 ### MANAGED BY RANCHER DESKTOP START (DO NOT EDIT)
 export PATH="${HOME}/.rd/bin:${PATH+:${PATH}}"

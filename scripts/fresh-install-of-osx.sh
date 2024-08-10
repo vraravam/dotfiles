@@ -101,7 +101,7 @@ clone_if_not_present https://github.com/zsh-users/zsh-completions
 ####################
 echo "$(green "==> Installing dotfiles")"
 if non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; then
-  # Delete the auto-generated .zshrc since that needs to be replaced by the one in the .bin-oss repo
+  # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
   rm -rfv "${HOME}/.zshrc"
 
   # Note: Cloning with https since the ssh keys will not be present at this time
@@ -120,7 +120,7 @@ if non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; then
   # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
   load_zsh_configs
 
-  # Setup the .bin-oss repo's upstream if it doesn't already point to vraravam's repo
+  # Setup the DOTFILES_DIR repo's upstream if it doesn't already point to vraravam's repo
   git -C "${DOTFILES_DIR}" remote -vv | grep "${UPSTREAM_GH_USERNAME}"
   if [ $? -ne 0 ]; then
     git -C "${DOTFILES_DIR}" remote add upstream "https://github.com/${UPSTREAM_GH_USERNAME}/dotfiles"
