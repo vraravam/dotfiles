@@ -98,7 +98,7 @@ ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 # Custom plugins may be added to ${ZSH_CUSTOM}/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(brew colored-man-pages direnv docker docker-compose eza fast-syntax-highlighting git git-extras iterm2 mise sudo zbell zsh-autosuggestions)
+plugins=(brew direnv eza fast-syntax-highlighting git git-extras iterm2 mise sudo zbell zsh-autosuggestions)
 
 # Set plugin options that are needed before each plugin is loaded
 zstyle ':omz:plugins:eza' 'icons' yes
