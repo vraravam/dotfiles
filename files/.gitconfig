@@ -219,7 +219,7 @@
   colorMoved = default
   submodule = diff
 [diff-so-fancy]
-  markEmptyLines = false
+  # markEmptyLines = false
   # changeHunkIndicators = false
   # stripLeadingSymbols = false
   # useUnicodeRuler = false
