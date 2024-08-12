@@ -56,7 +56,7 @@ if is_macos; then
 
   # Use modern completion system
   mkdir -p ${XDG_CACHE_HOME}
-  autoload -Uz compinit && compinit -d ${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}
+  autoload -Uz compinit && compinit -C -d ${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}
   # colorize completion
   # zstyle ':completion:*:*:kill:*:processes' list-colors "=(#b) #([0-9]#)*=$color[cyan]=$color[red]"
   # zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}

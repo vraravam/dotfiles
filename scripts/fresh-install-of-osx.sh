@@ -87,7 +87,7 @@ mkdir -p "${ZSH_CUSTOM}/plugins"
 clone_if_not_present() {
   target_folder="${ZSH_CUSTOM}/plugins/$(basename ${1})"
   if ! is_directory "${target_folder}"; then
-    git clone "${1}" "${target_folder}"
+    git clone -q --depth=1 "${1}" "${target_folder}"
   else
     warn "skipping cloning of '$(basename "${1}")' since '${target_folder}' is already present"
   fi
@@ -105,7 +105,7 @@ if non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; then
   rm -rfv "${HOME}/.zshrc"
 
   # Note: Cloning with https since the ssh keys will not be present at this time
-  git clone "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}"
+  git clone -q "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}"
 
   # Use the https protocol for pull, but use ssh/git for push
   git -C "${DOTFILES_DIR}" config url.ssh://git@github.com/.pushInsteadOf https://github.com/
