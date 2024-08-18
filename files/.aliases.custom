@@ -9,7 +9,7 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 # This script is very customized to my local setup (and thus separated from the .aliases file). Sharing in the hope that its useful for others
 
 # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
-command_exists code && alias code-gist='code ${PERSONAL_CONFIGS_DIR} ${PERSONAL_PROFILES_DIR}/.envrc ${PERSONAL_PROFILES_DIR}/.gitignore ${PERSONAL_BIN_DIR} ${DOTFILES_DIR} ${HOME}/.gitconfig-* ${HOME}/.tool-versions ${HOME}/.envrc'
+command_exists code && alias code-gist='code ${PERSONAL_CONFIGS_DIR} ${PERSONAL_BIN_DIR} ${PERSONAL_PROFILES_DIR}/.envrc ${PERSONAL_PROFILES_DIR}/.gitignore ${DOTFILES_DIR} ${HOME}/.gitconfig-* ${HOME}/.tool-versions ${HOME}/.envrc'
 
 # updates the specified repo (ie creates a local commit of changed files that I am not interested in verifying, but which need to be committed into that repo)
 # internal function: not to be called separately
@@ -30,7 +30,8 @@ _update_repo() {
 
 # updates the home and profiles repos
 update_all_repos() {
-  _update_repo "${HOME}" 'personal/dev/defaults/'
+  # TODO: Make this work with 'git relative-path' alias
+  _update_repo "${HOME}" 'personal/dev/configs/defaults/'
   is_directory "${PERSONAL_PROFILES_DIR}" && _update_repo "${PERSONAL_PROFILES_DIR}" '.'
 }
 
@@ -98,7 +99,6 @@ implode() {
   folders=(
     '.aws'
     '.bin-oss'
-    '.bin'
     '.cache'
     '.config'
     '.docker'

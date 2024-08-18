@@ -21,6 +21,9 @@
   # find files/folders with the specified parameter as part of the name
   f = !git ls-files | grep -i
 
+  # accepts a full (ie not-relative) path, and prints the relative path of that entry from the repo's root folder
+  relative-path = "!sh -c 'echo ${0/$(git rev-parse --show-toplevel)/} | tail -c+2'"
+
   # if a local commit exists, then amend it, else create a new commit with the specified message. Aborts if diverged (with non-zero error code) or nothing to commit
   sci = "!sh -c '\
     if $(git st | grep -q \"have diverged\"); then \
