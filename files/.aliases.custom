@@ -11,7 +11,7 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
 command_exists code && alias code-gist='code ${PERSONAL_CONFIGS_DIR} ${PERSONAL_PROFILES_DIR}/.envrc ${PERSONAL_PROFILES_DIR}/.gitignore ${PERSONAL_BIN_DIR} ${DOTFILES_DIR} ${HOME}/.gitconfig-* ${HOME}/.tool-versions ${HOME}/.envrc'
 
-# updates the specified repo
+# updates the specified repo (ie creates a local commit of changed files that I am not interested in verifying, but which need to be committed into that repo)
 # internal function: not to be called separately
 _update_repo() {
   ! is_directory "${1}" && warn "skipping updating the repo since '${1}' doesn't exist" && return
@@ -30,8 +30,8 @@ _update_repo() {
 
 # updates the home and profiles repos
 update_all_repos() {
-  _update_repo "${HOME}" '.bin/macos/defaults/'
-  is_directory "${PERSONAL_PROFILES_DIR}" && _update_repo "${PERSONAL_PROFILES_DIR}" 'ArcProfile BraveProfile ChromeProfile FirefoxProfile KeePassXCProfile SyncthingProfile ThunderbirdProfile'
+  _update_repo "${HOME}" 'personal/dev/defaults/'
+  is_directory "${PERSONAL_PROFILES_DIR}" && _update_repo "${PERSONAL_PROFILES_DIR}" '.'
 }
 
 # pushes the specified repo (disables and re-enables cron while doing this operation)
@@ -53,13 +53,13 @@ push_all_repos() {
   recron
 }
 
-# resurrects the cron entries based on the '${PERSONAL_BIN_DIR}/macos/crontab.txt' file
+# resurrects the cron entries based on the '${PERSONAL_CONFIGS_DIR}/crontab.txt' file
 recron() {
   # shellcheck disable=SC2005
   echo "$(green "Old cron listing")"
   crontab -l
 
-  local cron_file="${PERSONAL_BIN_DIR}/macos/crontab.txt"
+  local cron_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
   ! is_file "${cron_file}" && warn "No '${cron_file} found; returning without any processing" && return
 
   # shellcheck disable=SC2005
@@ -123,13 +123,13 @@ implode() {
 # common build, debug and launch aliases for any folder - converted to functions for lazy evaluation
 # these will use the current folder name to find the shell script to run
 launch_me() {
-  "${PERSONAL_CONFIGS_DIR}/launch-${PWD##*/}.sh"
+  "${PERSONAL_BIN_DIR}/launch-${PWD##*/}.sh"
 }
 debug_me() {
-  "${PERSONAL_CONFIGS_DIR}/debug-${PWD##*/}.sh"
+  "${PERSONAL_BIN_DIR}/debug-${PWD##*/}.sh"
 }
 build_me() {
-  "${PERSONAL_CONFIGS_DIR}/build-${PWD##*/}.sh"
+  "${PERSONAL_BIN_DIR}/build-${PWD##*/}.sh"
 }
 
 # findrb() {

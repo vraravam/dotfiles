@@ -12,9 +12,7 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 append_to_path_if_dir_exists() {
   is_directory "${1}" && path+="${1}"
 }
-append_to_path_if_dir_exists "${PERSONAL_CONFIGS_DIR}"
 append_to_path_if_dir_exists "${PERSONAL_BIN_DIR}"
-append_to_path_if_dir_exists "${PERSONAL_BIN_DIR}/macos"
 append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
 append_to_path_if_dir_exists "${PROJECTS_BASE_DIR}/oss/git_scripts"
 # Note: Not sure if its a bug, but the first iterm tab alone has all the paths, but these are missing in subsequent tabs and new windows

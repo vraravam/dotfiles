@@ -46,7 +46,6 @@ find_in_folder_and_recompile() {
   find_in_folder_and_recompile "${DOTFILES_DIR}"
   find_in_folder_and_recompile "${PERSONAL_BIN_DIR}"
   find_in_folder_and_recompile "${PROJECTS_BASE_DIR}"
-  find_in_folder_and_recompile "${PERSONAL_CONFIGS_DIR}"
   # explicitly use both intel and m1 install locations of homebrew
   find_in_folder_and_recompile /opt/homebrew
   find_in_folder_and_recompile /usr/local

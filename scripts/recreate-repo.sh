@@ -97,5 +97,5 @@ rm -fv "${folder}/.git/index.lock"
 eval "${git_cmd} size"
 
 # Resurrect crontab after this script finishes
-cron_file="${PERSONAL_BIN_DIR}/macos/crontab.txt"
+cron_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
 is_file "${cron_file}" && crontab "${cron_file}"

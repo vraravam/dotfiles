@@ -34,8 +34,8 @@ if non_zero_string "${KEYBASE_USERNAME}"; then
     # Reset ssh keys' permissions so that git doesn't complain when using them
     sudo chmod -R 600 "${HOME}"/.ssh/* || true
 
-    # Fix /etc/hosts file to block facebook #
-    sudo cp "${PERSONAL_BIN_DIR}/macos/etc.hosts" /etc/hosts
+    # Fix /etc/hosts file to block facebook
+    is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts" && sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts
   else
     warn "skipping cloning of home repo since the 'KEYBASE_HOME_REPO_NAME' env var hasn't been set or a git repo is already present in '${HOME}'"
   fi
