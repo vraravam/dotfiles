@@ -73,7 +73,7 @@ sudo chmod -R 600 "${HOME}"/.ssh/* || true
 #####################
 echo "$(green "==> Installing oh-my-zsh")"
 if ! is_directory "${HOME}/.oh-my-zsh"; then
-  ZSH= curl -fsSL http://install.ohmyz.sh | sh
+  sh -c "$(ZSH= curl -fsSL https://install.ohmyz.sh/)" "" --unattended
 else
   warn "skipping installation of oh-my-zsh since '${HOME}/.oh-my-zsh' is already present"
 fi
@@ -144,7 +144,7 @@ if ! command_exists brew; then
   sudo chown -fR "$(whoami)":admin "${HOMEBREW_PREFIX}"
   chmod u+w "${HOMEBREW_PREFIX}"
 
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
+  NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 
   eval "$(${HOMEBREW_PREFIX}/bin/brew shellenv)"
 else
