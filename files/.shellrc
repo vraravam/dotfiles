@@ -1,13 +1,18 @@
 #!/usr/bin/env zsh
 
-# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab fileencoding=utf-8
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
+################################################################################
+# This file is sourced only for login shells. It is used to define the bare
+# minimum shell functions that are needed during bootstrap of a vanilla OS to
+# bootstrap installation of all other config files.
+#
 # file location: ${HOME}/.shellrc
-# load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
-test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
+# load order: .zshenv, .zprofile [.shellrc], .zshrc [.zshrc.custom [.aliases [.aliases.custom]]], .zlogin
+################################################################################
 
-# custom file to capture the bare minimum shell functions that I have written
-# these are the minimum required on a vanilla OS to bootstrap installation of all other softwares
+# execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
+test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 NC='\033[0m' # No Color
 BLACK='\033[0;30m'

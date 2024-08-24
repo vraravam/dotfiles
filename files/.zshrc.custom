@@ -1,9 +1,16 @@
 #!/usr/bin/env zsh
 
-# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab fileencoding=utf-8
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
+################################################################################
+# This file is sourced at the end of the custom .zshrc and in turn sources the
+# .aliases file to load aliases and functions
+#
 # file location: ${HOME}/.zshrc.custom
-# load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
+# load order: .zshenv, .zprofile [.shellrc], .zshrc [.zshrc.custom [.aliases [.aliases.custom]]], .zlogin
+################################################################################
+
+# execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
 test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 # This script is very customized to my local setup (and thus separated from the .zshrc file). Sharing in the hope that its useful for others
@@ -31,23 +38,24 @@ if is_macos; then
   # setopt correct_all              # autocorrect commands
   # setopt always_to_end            # move cursor to end if word had one match
 
-  setopt append_history
+  setopt append_history           # append history list to the history file
   setopt share_history            # share history between different instances of the shell
   setopt inc_append_history       # append command to history file immediately after execution
+  setopt extended_history         # save each command's beginning timestamp and the duration to the history file
   setopt hist_ignore_all_dups     # do not put duplicated command into history list
   setopt hist_ignore_dups
   setopt hist_allow_clobber
   setopt hist_reduce_blanks       # remove unnecessary blanks
   setopt hist_save_no_dups        # do not save duplicated command
   setopt auto_cd                  # cd into directory if the name is not an alias or function, but matches a directory
-  setopt auto_pushd               # Make cd push the old directory onto the directory stack.
-  setopt pushd_silent             # Do not print the directory stack after pushd or popd.
-  setopt pushd_ignore_dups        # Don’t push multiple copies of the same directo
+  setopt auto_pushd               # make cd push the old directory onto the directory stack
+  setopt pushd_silent             # do not print the directory stack after pushd or popd
+  setopt pushd_ignore_dups        # don’t push multiple copies of the same directory
   setopt beep
   setopt extended_glob
-  setopt auto_list                # Automatically list choices on an ambiguous completion.
+  setopt auto_list                # automatically list choices on an ambiguous completion.
   setopt list_ambiguous
-  setopt list_types               # If the file being listed is a directory, show a trailing slash
+  setopt list_types               # if the file being listed is a directory, show a trailing slash
 
   # console colors
   autoload -U colors && colors
@@ -114,7 +122,7 @@ fi
 export WORDCHARS="${WORDCHARS:s#/#}"
 export WORDCHARS="${WORDCHARS:s#.#}"
 
-# Rspec and cucumber
+# rspec and cucumber
 export CUCUMBER_COLORS="pending_param=magenta:failed_param=magenta:passed_param=magenta:skipped_param=magenta"
 export RSPEC="true"
 
@@ -181,3 +189,8 @@ command_exists bat && export MANPAGER="sh -c 'col -bx | bat -l man -p'"
 
 # fzy
 # load_file_if_exists "${HOME}/.fzy-key-bindings.zsh"
+
+# remove empty components to avoid '::' ending up + resulting in './' being in $PATH, etc
+path=( "${path[@]:#}" )
+fpath=( "${fpath[@]:#}" )
+infopath=( "${infopath[@]:#}" )

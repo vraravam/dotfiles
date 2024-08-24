@@ -1,9 +1,17 @@
 #!/usr/bin/env zsh
 
-# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab fileencoding=utf-8
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
+################################################################################
+# This file is sourced only for login shells (i.e. shells invoked with "-" as
+# the first character of argv[0], and shells invoked with the -l flag). It's
+# read after zshenv.
+#
 # file location: ${HOME}/.zprofile
-# load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
+# load order: .zshenv, .zprofile [.shellrc], .zshrc [.zshrc.custom [.aliases [.aliases.custom]]], .zlogin
+################################################################################
+
+# execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
 test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 # CAUTION! This file is NOT loaded when running only 'exec zsh'! So beware of expecting the exported variables inside this to be defined!

@@ -1,9 +1,16 @@
 #!/usr/bin/env zsh
 
-# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab fileencoding=utf-8
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
+################################################################################
+# This file is sourced only for interactive shells. It should contain commands
+# to set up aliases, functions, options, key bindings, etc.
+#
 # file location: ${HOME}/.zshrc
-# load order: .zshenv, .zprofile, .shellrc, .zshrc, .zshrc.custom, .aliases, .aliases.custom, .zlogin
+# load order: .zshenv, .zprofile [.shellrc], .zshrc [.zshrc.custom [.aliases [.aliases.custom]]], .zlogin
+################################################################################
+
+# execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
 test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 # Optimizing zsh:
@@ -11,7 +18,8 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 # https://blog.mattclemente.com/2020/06/26/oh-my-zsh-slow-to-load/
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
-# zmodload zsh/zprof
+# execute 'ZSH_PROFILE_RC=true zsh' and run 'zprof' to get the details
+test -n "${ZSH_PROFILE_RC+1}" && zmodload zsh/zprof
 
 type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
