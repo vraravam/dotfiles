@@ -109,14 +109,18 @@ Once the above is done, and if you have setup the [keybase](https://keybase.io)-
 
 As a summary, these files will typically have changes between your setup and mine:
 
-* `README.md` (references to your usernames instead of mine)
-* `files/.aliases` (aliases based on `PROJECTS_BASE_DIR` - lines 58-61)
-* `files/.aliases.custom` (folders of browser profiles that you track inside of the `PERSONAL_PROFILES_DIR` folder on your local machine)
-* `files/.gitconfig` (all the `IncludeIf` lines to match your folder structure where you clone git repos and the configurations for each group of them)
+* `README.md` (references to your usernames instead of mine, and typically any other changes that you introduce in the `files/.zprofile` - look below)
+* `files/.gitconfig` (the `IncludeIf` line to match your global/base configuration filename)
 * `files/.zprofile` (`GH_USERNAME`, `KEYBASE_USERNAME`, etc)
 * `files/Brewfile` (the list of applications and command-line utilities that you choose to install in your local machine)
 * `scripts/capture-defaults.sh` (what application preferences that you choose to backup - based on the entries in the `Brewfile`)
-* `scripts/fresh-install-of-osx.sh` (what applications you choose to set a login items on every reboot)
+* `scripts/fresh-install-of-osx.sh` (what applications you choose to set as login items on every reboot)
+
+# Ongoing tasks to keep your backup up-to-date
+
+* Ensure that the software catalogs (`files/Brewfile`, `scripts/fresh-install-of-osx.sh`, `scripts/capture-defaults.sh`, `${HOME}/.tool-versions`) are always kept in sync with the actual applications that you install and use
+* Ensure that the git repo catalogs that you are "tracking" in the `${PERSONAL_CONFIGS_DIR}/repositories-*.yml` files are kept up-to-date so that resurrection in your new machine will be seamless
+* Ensure to run the `scripts/capture-defaults.sh` (with the export switch) to export and capture/backup your preferences for all installed applications from your current machine
 
 # Extras/Details
 

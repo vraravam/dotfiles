@@ -70,6 +70,7 @@ cask 'keepassxc@beta'
 cask 'keepingyouawake'
 cask 'keybase'
 cask 'libreoffice'
+cask 'microsoft-remote-desktop'
 cask 'monolingual'
 cask 'notunes'
 cask 'ollama', restart_service: :changed
