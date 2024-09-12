@@ -1,0 +1,3 @@
+align_chained_calls true
+trailing_commas false
+quote_style :single

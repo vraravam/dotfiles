@@ -4,78 +4,104 @@
 
 require "#{__dir__}/utilities/string.rb"
 
-if ARGV.length != 2 || ARGV[0] == '--help' || !['-r', '-c'].include?(ARGV[0])
-  puts "This script resurrects or flags for backup all known repositories in the 'dev' folder"
-  puts "#{'Usage:'.pink} #{__FILE__} -<r/c> <config-filename>".yellow
+def usage(exit_code = -1)
+  puts 'This script resurrects or flags for backup all known repositories in the current machine'
+  puts "#{'Usage:'.pink} #{__FILE__} [-g <folder-to-generate-config-for>] [-r <config-filename>] [-c <config-filename>]".yellow
   puts "  #{'-r'.green} resurrects 'known' codebases (usually on fresh laptop)"
   puts "  #{'-c'.green} verifies 'known' codebases"
   puts 'Environment variables:'.yellow
-  puts "  #{"FILTER".light_blue} can be used to apply the operation to a subset of codebases (will match on folder or repo name)"
+  puts "  #{'FILTER'.light_blue} can be used to apply the operation to a subset of codebases (will match on folder or repo name)"
   puts "  #{'REF_FOLDER'.light_blue} can be used to apply a filter when verifying against a specific yaml file that might not contain all the repos in your system"
-  exit(0)
+  exit(exit_code)
 end
+
+usage(0) if ARGV[0] == '--help'
+usage if ARGV.length != 2 || !['-r', '-c'].include?(ARGV[0])
 
 require 'fileutils'
 require 'yaml'
+
+# frozen string constants (defined for performance)
+ORIGIN_NAME = 'origin'.freeze
+FOLDER_KEY_NAME = 'folder'.freeze
+OTHER_REMOTES_KEY_NAME = 'other_remotes'.freeze
+POST_CLONE_KEY_NAME = 'post_clone'.freeze
+
+# utility functions
+def nil_or_empty?(val)
+  val.nil? || val.empty?
+end
 
 def justify(num)
   num.to_s.rjust(2, ' ')
 end
 
-def resurrect(repo, idx, total)
-  folder = repo['folder'].strip
+def find_and_replace_env_var(folder)
   env_var_name = folder[/.*\$\{(.*)}/, 1]
-  folder.gsub!("${#{env_var_name}}", ENV[env_var_name]) if !env_var_name.nil? && !env_var_name.empty?
-  folder = File.expand_path(folder)
+  nil_or_empty?(env_var_name) ? folder : folder.gsub("${#{env_var_name}}", ENV[env_var_name])
+end
 
-  puts "***** Resurrecting [#{justify(idx + 1)} of #{justify(total)}]: #{folder} *****".green
-  # Debugging with a different folder name
-  # folder.sub!('dev/', 'dev2/')
-  FileUtils.mkdir_p(folder)
-  Dir.chdir(folder) do
-    puts "Cloning from: #{repo['remote'].yellow} into #{Dir.pwd.yellow}"
-    if Dir.exist?('.git')
-      puts 'Already an existing git repo with the following remotes: '
-      system('git remote -vv')
-    else
-      system("git clone -q '#{repo['remote']}' .") || abort("Couldn't clone the repo since the folder is not empty; aborting")
-    end
-    Array(repo['other_remotes']).each do |name, remote|
-      system("git remote add #{name} '#{remote}'") unless system("git remote | grep #{name} 2>&1 >/dev/null")
-    end if repo['other_remotes']
-    system('git fetch -q --all --tags')
-    Array(repo['post_clone']).each { |step| system(step) } if repo['post_clone']
+def git_repo?(folder)
+  Dir.exist?("#{folder}/.git")
+end
+
+def find_git_remote_url(git_cmd, remote_name)
+  `#{git_cmd} config remote.#{remote_name}.url`.strip
+end
+
+def find_git_repos_from_disk(path)
+  Dir.glob("#{path}/**/.git").map { |d| d.sub('/.git', '') }.compact.sort.uniq
+end
+
+def read_git_repos_from_file(filename)
+  yml_file = File.expand_path(filename)
+  puts "Using config file: #{yml_file.green}"
+  repositories = YAML.load_file(yml_file).select { |repo| repo['active'] }
+  repositories.each do |repo|
+    repo[FOLDER_KEY_NAME] = find_and_replace_env_var(repo[FOLDER_KEY_NAME].strip)
   end
+  repositories
 end
 
 def apply_filter(repos, filter)
-  filter.empty? ? repos : repos = repos.select{ |repo| (repo.is_a?(String) ? repo : repo['folder']) =~ /#{filter}/i}
+  return repos if nil_or_empty?(filter)
+
+  repos.select { |repo| find_and_replace_env_var(repo.is_a?(String) ? repo : repo[FOLDER_KEY_NAME]).strip =~ /#{filter}/i }
 end
 
-filter = (ENV['FILTER'] || '').strip
-puts "Using filter: #{filter.green}" if filter.length > 0
-yml_file = File.expand_path(ARGV[1])
-puts "Using config file: #{yml_file.green}"
-repositories = YAML.load_file(yml_file).select{ |repo| repo['active']}
-repositories = apply_filter(repositories, filter)
-if ARGV[0] == '-r'
-  puts "Running operation: #{'resurrection'.green}"
-  repositories.each_with_index { |repo, idx| resurrect(repo, idx, repositories.length) }
-elsif ARGV[0] == '-c'
-  puts "Running operation: #{'verification'.green}"
-  yml_folders = repositories.map{ |repo| repo['folder']}.compact.sort
+# main functions
+def resurrect_each(repo, idx, total)
+  folder = repo[FOLDER_KEY_NAME]
+  FileUtils.mkdir_p(folder)
 
-  local_folders = Dir.glob('./**/.git').map{|r| r.sub('/.git', '')[2..-1]}.compact # remove the beginning './'
-  local_folders = apply_filter(local_folders, filter).compact.sort
-
-  # Note: Since I always use relative path from the home folder
-  local_folders = local_folders.map {|folder| "#{ENV["HOME"]}/#{folder}"}
-
-  if (ENV['REF_FOLDER'])
-    reference_folder = ENV['REF_FOLDER']
-    yml_folders = apply_filter(yml_folders, reference_folder)
-    local_folders = apply_filter(local_folders, reference_folder)
+  puts "***** Resurrecting [#{justify(idx + 1)} of #{justify(total)}]: #{folder} *****".green
+  git_cmd = "git -C #{folder}"
+  if git_repo?(folder)
+    puts 'Already an existing git repo with the following remotes:'.yellow
+    system("#{git_cmd} remote -vv")
+  else
+    puts "Cloning from: #{repo['remote'].yellow} into #{folder.yellow}"
+    system("#{git_cmd} clone -q '#{repo['remote']}' .") || abort("Couldn't clone the repo since the folder is not empty; aborting")
   end
+
+  Array(repo[OTHER_REMOTES_KEY_NAME]).each do |name, remote|
+    system("#{git_cmd} remote add #{name} #{remote}") if find_git_remote_url(git_cmd, name).empty?
+  end if repo[OTHER_REMOTES_KEY_NAME]
+
+  system("#{git_cmd} fetch -q --all --tags")
+
+  Array(repo[POST_CLONE_KEY_NAME]).each do |step|
+    Dir.chdir(folder) { system(step) }
+  end if repo[POST_CLONE_KEY_NAME]
+end
+
+def verify_all(repositories, filter)
+  ref_folder = File.expand_path(ENV['REF_FOLDER']) if ENV['REF_FOLDER']
+  yml_folders = repositories.map { |repo| repo[FOLDER_KEY_NAME] }.compact.sort.uniq
+  yml_folders = apply_filter(yml_folders, ref_folder) if ref_folder
+
+  local_folders = find_git_repos_from_disk(ref_folder || ENV['HOME'])
+  local_folders = apply_filter(local_folders, filter).compact.sort.uniq
 
   diff_repos = local_folders - yml_folders | yml_folders - local_folders
   if diff_repos.any?
@@ -84,4 +110,25 @@ elsif ARGV[0] == '-c'
   else
     puts 'Everything is kosher!'.green
   end
+end
+
+# main program
+filter = (ENV['FILTER'] || '').strip
+puts "Using filter: #{filter.green}" unless filter.empty?
+
+case ARGV[0]
+when '-r'
+  puts "Running operation: #{'resurrection'.green}"
+  repositories = read_git_repos_from_file(ARGV[1])
+  repositories = apply_filter(repositories, filter)
+  repositories.each_with_index do |repo, idx|
+    resurrect_each(repo, idx, repositories.length)
+  end
+when '-c'
+  puts "Running operation: #{'verification'.green}"
+  repositories = read_git_repos_from_file(ARGV[1])
+  repositories = apply_filter(repositories, filter)
+  verify_all(repositories, filter)
+else
+  usage
 end

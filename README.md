@@ -77,7 +77,7 @@ All these scripts are optimized for fast loading of the shell so that the user c
    * Search for 'iCloud' and login setup Desktop sync
 2. Open the `Finder` application and manually adjust the Finder sidebar preferences
 
-# Advanced setup
+# Advanced setup (in addition to the common setup if you want to capture other files in an encrypted private git repo)
 
 The "Advanced" setup is the set of final steps to capture your application preferences (both system apps as well as custom apps) and back them up into an encrypted remote repository. Currently this kind of a service is offered by [keybase](https://keybase.io/) where you can get private, fully-encrypted repos for free.
 
@@ -174,9 +174,9 @@ The config file for this script is a yaml file that is passed into this script a
     - git-crypt unlock XXX
 ```
 
-* `folder` specifies the target folder where the repo should reside on local machine. If the folder name starts with `/`, then its assumed that the path starts from the root folder; if not, then its assumed to be relative to where the script is being run from. The ruby script also supports glob expansion of `~` to `${HOME}` if `~` is used. It can also handle shell env vars if they are in the format `#{<env-key>}`
-* `remote` specifies the remote url of the repository
-* `other_remotes` specifies a hash of the other remotes keyed by the name with the value of the remote url
+* `folder` (mandatory) specifies the target folder where the repo should reside on local machine. If the folder name starts with `/`, then its assumed that the path starts from the root folder; if not, then its assumed to be relative to where the script is being run from. The ruby script also supports glob expansion of `~` to `${HOME}` if `~` is used. It can also handle shell env vars if they are in the format `#{<env-key>}`
+* `remote` (mandatory) specifies the remote url of the repository
+* `other_remotes` (optional) specifies a hash of the other remotes keyed by the name with the value of the remote url
 * `active` (optional; default: false) specifies whether to set this folder/repo up or not on local
 * `post_clone` (optional; default: empty array) specifies other `bash` commands (in sequence) to be run once the resurrection is done - for eg, symlink a '.envrc' file if one exists
 
