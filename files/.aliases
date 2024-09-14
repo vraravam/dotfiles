@@ -52,7 +52,7 @@ if command_exists "run_all.sh"; then
   alias home="FOLDER='${HOME}' FILTER=\".bin|zsh|mise\" MAXDEPTH=5 rug"
   is_directory "${PROJECTS_BASE_DIR}" && alias upreb="FOLDER='${PROJECTS_BASE_DIR}' rug upreb"
   for folder in $(ls "${PROJECTS_BASE_DIR}"); do
-    is_directory "${PROJECTS_BASE_DIR}/${folder}" && alias "${folder}"="FOLDER='${PROJECTS_BASE_DIR}/${folder}' MAXDEPTH=3 rug"
+    is_directory "${PROJECTS_BASE_DIR}/${folder}" && alias "${folder}"="FOLDER='${PROJECTS_BASE_DIR}/${folder}' MAXDEPTH=4 rug"
   done
 fi
 
@@ -65,7 +65,7 @@ install_mise_versions() {
   ! command_exists mise && return
 
   find "${HOME}" -name '.tool-versions' -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
-  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name '.git' -type d -maxdepth 4 -exec echo "===> Installing for {}" \; -execdir mise install \;
+  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name '.git' -type d -maxdepth 5 -exec echo "===> Installing for {}" \; -execdir mise install \;
 }
 
 # runs 'direnv allow' on all code repositories that are checked out
@@ -74,7 +74,7 @@ allow_all_direnv_configs() {
 
   find "${HOME}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
   is_directory "${PERSONAL_PROFILES_DIR}" && find "${PERSONAL_PROFILES_DIR}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
-  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 4 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 5 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
 }
 
 if is_macos && command_exists brew; then
