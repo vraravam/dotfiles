@@ -24,6 +24,7 @@ This section is important if you want to capture the installed softwares, etc fr
 
 1. If you are starting this process on a machine where you have already installed some apps using brew, then use `brew bundle dump` to create the `${HOME}/Brewfile` file and avoid starting from scratch. Remember though that this is a *1-time* run of this command. In the future, if you regenerate the Brewfile using this command, any custom comments/formatting that you might have written into that file - would be lost.
 2. Use the `scripts/capture-defaults.sh` script with the `-e` (export) option to export your application and system preferences. Please ensure that you edit the list of applications to what you have installed and would like to capture the preferences for.
+3. Use the `scripts/resurrect-repositories.rb` script with the `-g` (generate) option to generate the yaml for all git repos that you might have on your current machine. Please see the usage to provide the appropriate cmd-line arguments to generate and capture the appropriate yaml structure. *Note: The output of this generation step is printed onto the console stdout, you will have to capture and store it in an appropriate file for backup.*
 
 # Generic/Common Getting started
 
@@ -156,10 +157,12 @@ Usually, over time, if a repo has lots of branches that were deleted or became s
 
 ## resurrect-repositories.rb
 
-I usually reimage my laptop once every couple of months. This script is useful as a catalog of all repos that I have ever worked on, and some/most which are marked `active: true` in the yaml to resurrect back into the new machine/image. The yaml (described in the comments at the beginning of the script) also allow to install the required languages and their versions in an automated manner so as to avoid having to read the `README.md` or the `CONTRIBUTING.md` file for each repo on each re-image!
+I usually reimage my laptop once every couple of months. This script is useful as a catalog of all repos that I have ever worked on, and some/most which are marked `active: true` in the yaml to resurrect back into the new machine/image. The yaml (described below) also allows to install the required languages and their versions in an automated manner so as to avoid having to read the `README.md` or the `CONTRIBUTING.md` file for each repo on each re-image!
 
 This script is useful to flag existing repositories that need to be backed up; and the reverse process (ie resurrecting repo-configurations from backup) is also supported by the same script!
 To run it, just invoke by `resurrect-repositories.rb` if this folder is already setup in the `PATH`. This will then print the usage by default and you can follow the required parameters.
+
+This script can also be used to generate the basic version of the below yaml (onto the console stdout). See the `-g` option in the usage on how to use this feature.
 
 The config file for this script is a yaml file that is passed into this script as a parameter and the structure of this configuration file is:
 
@@ -167,14 +170,16 @@ The config file for this script is a yaml file that is passed into this script a
 - folder: "${PROJECTS_BASE_DIR}/oss/git_scripts"
   remote: https://github.com/vraravam/git_scripts.git
   other_remotes:
-    upstream: <upstream remote url>
+    upstream1: <upstream remote url1>
+    upstream2: <upstream remote url2>
   active: true
   post_clone:
-    - ln -sf "${PERSONAL_CONFIGS_DIR}/XXX.gradle.properties" ~/.gradle/gradle.properties
+    - ln -sf "${PERSONAL_CONFIGS_DIR}/XXX.gradle.properties" ./gradle.properties
     - git-crypt unlock XXX
+    - echo "java 21" > ./.tool-versions
 ```
 
-* `folder` (mandatory) specifies the target folder where the repo should reside on local machine. If the folder name starts with `/`, then its assumed that the path starts from the root folder; if not, then its assumed to be relative to where the script is being run from. The ruby script also supports glob expansion of `~` to `${HOME}` if `~` is used. It can also handle shell env vars if they are in the format `#{<env-key>}`
+* `folder` (mandatory) specifies the target folder where the repo should reside on local machine. If the folder name starts with `/`, then its assumed that the path starts from the root folder; if not, then its assumed to be relative to where the script is being run from. The ruby script also supports glob expansion of `~` to `${HOME}` if `~` is used. It can also handle shell env vars if they are in the format `${<env-key>}`
 * `remote` (mandatory) specifies the remote url of the repository
 * `other_remotes` (optional) specifies a hash of the other remotes keyed by the name with the value of the remote url
 * `active` (optional; default: false) specifies whether to set this folder/repo up or not on local

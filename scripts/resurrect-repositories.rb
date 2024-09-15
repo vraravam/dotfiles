@@ -7,6 +7,7 @@ require "#{__dir__}/utilities/string.rb"
 def usage(exit_code = -1)
   puts 'This script resurrects or flags for backup all known repositories in the current machine'
   puts "#{'Usage:'.pink} #{__FILE__} [-g <folder-to-generate-config-for>] [-r <config-filename>] [-c <config-filename>]".yellow
+  puts "  #{'-g'.green} generates the configuration contents onto the stdout for codebases (usually on current laptop). #{"Please note that this option will not handle 'post_clone' commands in the generated yaml structure".red}"
   puts "  #{'-r'.green} resurrects 'known' codebases (usually on fresh laptop)"
   puts "  #{'-c'.green} verifies 'known' codebases"
   puts 'Environment variables:'.yellow
@@ -16,7 +17,7 @@ def usage(exit_code = -1)
 end
 
 usage(0) if ARGV[0] == '--help'
-usage if ARGV.length != 2 || !['-r', '-c'].include?(ARGV[0])
+usage if ARGV.length != 2 || !['-g', '-r', '-c'].include?(ARGV[0])
 
 require 'fileutils'
 require 'yaml'
@@ -30,6 +31,10 @@ POST_CLONE_KEY_NAME = 'post_clone'.freeze
 # utility functions
 def nil_or_empty?(val)
   val.nil? || val.empty?
+end
+
+def stringify(hash)
+  hash.map { |k, v| [k.to_s, v.is_a?(Hash) ? stringify(v) : v] }.to_h
 end
 
 def justify(num)
@@ -70,6 +75,23 @@ def apply_filter(repos, filter)
 end
 
 # main functions
+def generate_each(git_dir)
+  git_cmd = "git -C #{git_dir}"
+  remotes = `#{git_cmd} remote`
+  hash = { folder: git_dir, remote: find_git_remote_url(git_cmd, ORIGIN_NAME), active: true }
+  remotes.split.compact.each do |remote|
+    next if nil_or_empty?(remote) || nil_or_empty?(remote.strip)
+
+    remote.strip!
+    next if remote == ORIGIN_NAME
+
+    hash[OTHER_REMOTES_KEY_NAME] ||= {}
+    hash[OTHER_REMOTES_KEY_NAME][remote] = find_git_remote_url(git_cmd, remote)
+  end
+  hash.delete(OTHER_REMOTES_KEY_NAME) if nil_or_empty?(hash[OTHER_REMOTES_KEY_NAME])
+  stringify(hash)
+end
+
 def resurrect_each(repo, idx, total)
   folder = repo[FOLDER_KEY_NAME]
   FileUtils.mkdir_p(folder)
@@ -117,6 +139,13 @@ filter = (ENV['FILTER'] || '').strip
 puts "Using filter: #{filter.green}" unless filter.empty?
 
 case ARGV[0]
+when '-g'
+  puts "Running operation: #{'generation'.green}"
+  discovery_dir = File.expand_path(ARGV[1])
+  puts "Discovering repos under: #{discovery_dir.green}"
+  repositories = find_git_repos_from_disk(discovery_dir)
+  repositories = apply_filter(repositories, filter)
+  puts repositories.map { |dir| generate_each(dir) }.to_yaml
 when '-r'
   puts "Running operation: #{'resurrection'.green}"
   repositories = read_git_repos_from_file(ARGV[1])
