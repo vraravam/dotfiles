@@ -77,7 +77,7 @@ fi
 # Resurrect repositories that I am interested in #
 ##################################################
 echo "$(green "==> Resurrecting repos")"
-if is_directory "${PERSONAL_PROFILES_DIR}"; then
+if non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
   for file in $(ls "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml); do
     resurrect-repositories.rb -r "${file}"
   done

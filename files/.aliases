@@ -48,7 +48,7 @@ cc() {
 if command_exists "run_all.sh"; then
   # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
   alias rug='run_all.sh git'
-  alias all="FOLDER='${HOME}' MAXDEPTH=5 rug"
+  alias all="FOLDER='${HOME}' MAXDEPTH=6 rug"
   alias home="FOLDER='${HOME}' FILTER=\".bin|zsh|mise\" MAXDEPTH=5 rug"
   is_directory "${PROJECTS_BASE_DIR}" && alias upreb="FOLDER='${PROJECTS_BASE_DIR}' rug upreb"
   for folder in $(ls "${PROJECTS_BASE_DIR}"); do
