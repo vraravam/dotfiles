@@ -53,6 +53,7 @@ if is_macos; then
   setopt pushd_ignore_dups        # don’t push multiple copies of the same directory
   setopt beep
   setopt extended_glob
+  setopt local_options
   setopt auto_list                # automatically list choices on an ambiguous completion.
   setopt list_ambiguous
   setopt list_types               # if the file being listed is a directory, show a trailing slash

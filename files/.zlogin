@@ -27,7 +27,7 @@ find_in_folder_and_recompile() {
   ! is_directory "${1}" && return
 
   # TODO: This still doesn't handle '.pnpm' folders - need to investigate later
-  for f in $(find "${1}" -maxdepth 4 -name "*.sh" -o -name "*.zsh" ! -path "**/node_modules/**"); do
+  for f in $(find "${1}" -maxdepth 5 -name "*.sh" -o -name "*.zsh" ! -path "**/node_modules/**"); do
     recompile_zsh_scripts "${f}"
   done
 }
@@ -35,11 +35,11 @@ find_in_folder_and_recompile() {
 # Execute code in the background to not affect the current session
 (
   # <https://github.com/zimfw/zimfw/blob/master/login_init.zsh>
-  setopt LOCAL_OPTIONS EXTENDED_GLOB
   autoload -U zrecompile
 
   # zsh config files can be compiled to improve performance
   # Based from: https://github.com/romkatv/zsh-bench/blob/master/configs/ohmyzsh%2B/setup
+  recompile_zsh_scripts "${ZDOTDIR}/.p10k.zsh"
   recompile_zsh_scripts "${ZDOTDIR}/.zprofile"
   recompile_zsh_scripts "${ZDOTDIR}/.zshenv"
   recompile_zsh_scripts "${ZDOTDIR}/.zshrc.custom"
@@ -50,7 +50,6 @@ find_in_folder_and_recompile() {
   # omz doesn't know about these files, and so we don't depend on 'ZDOTDIR'
   recompile_zsh_scripts "${HOME}/.aliases.custom"
   recompile_zsh_scripts "${HOME}/.aliases"
-  recompile_zsh_scripts "${HOME}/.p10k.zsh"
   recompile_zsh_scripts "${HOME}/.shellrc"
 
   find_in_folder_and_recompile "${DOTFILES_DIR}"

@@ -58,7 +58,7 @@ fi
 
 # deletes the zsh compiled files so that they can be recompiled whenever the new session is next started
 delete_zsh_compilations() {
-  find "${HOME}" -maxdepth 4 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
+  find "${HOME}" -maxdepth 6 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
 }
 
 install_mise_versions() {
