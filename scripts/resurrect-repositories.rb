@@ -55,7 +55,13 @@ def find_git_remote_url(git_cmd, remote_name)
 end
 
 def find_git_repos_from_disk(path)
-  Dir.glob("#{path}/**/.git").map { |d| d.sub('/.git', '') }.compact.sort.uniq
+  stderr = "/tmp/#{File.basename(__FILE__)}-stderr"
+  paths = `find '#{path}' -name .git -type d -exec dirname {} \\; 2>#{stderr}`
+  File.read(stderr).split("\n").each_with_index do |line, i|
+    i.zero? && puts("WARNING: Following errors occurred when traversing directories for git repositories:".yellow)
+    puts line.yellow
+  end
+  paths.split("\n").sort
 end
 
 def read_git_repos_from_file(filename)
