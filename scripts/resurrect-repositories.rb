@@ -58,7 +58,7 @@ end
 def find_git_repos_from_disk(path)
   stderr = Tempfile.new
   begin
-    paths = `find '#{path}' -name .git -type d -exec dirname {} \\; 2>#{stderr.path}`
+    paths = `find '#{path}' -name .git -type d -not -regex '.*/\\..*/\\.git' -exec dirname {} \\; 2>#{stderr.path}`
     unless File.zero?(stderr.path)
       puts "WARNING: Following errors occurred when traversing directories for git repositories:".yellow
       puts `cat #{stderr.path}`.yellow
