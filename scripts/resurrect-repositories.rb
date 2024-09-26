@@ -2,6 +2,7 @@
 
 # file location: <anywhere; but advisable in the PATH>
 
+require 'tempfile'
 require "#{__dir__}/utilities/string.rb"
 
 def usage(exit_code = -1)
@@ -55,7 +56,18 @@ def find_git_remote_url(git_cmd, remote_name)
 end
 
 def find_git_repos_from_disk(path)
-  Dir.glob("#{path}/**/.git").map { |d| d.sub('/.git', '') }.compact.sort.uniq
+  stderr = Tempfile.new
+  begin
+    paths = `find '#{path}' -name .git -type d -exec dirname {} \\; 2>#{stderr.path}`
+    unless File.zero?(stderr.path)
+      puts "WARNING: Following errors occurred when traversing directories for git repositories:".yellow
+      puts `cat #{stderr.path}`.yellow
+    end
+    return paths.split("\n").sort
+  ensure
+    stderr.close
+    stderr.unlink
+  end
 end
 
 def read_git_repos_from_file(filename)
