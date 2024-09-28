@@ -61,7 +61,7 @@ cask 'appcleaner'
 cask 'arc'
 cask 'brave-browser@nightly'
 cask 'clocker'
-cask 'cloudflare-warp'
+# cask 'cloudflare-warp'
 cask 'firefox@nightly' #, greedy: true
 cask 'font-meslo-lg-nerd-font'
 cask 'iterm2'
