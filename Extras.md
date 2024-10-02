@@ -1,3 +1,6 @@
+Some utility scripts have been provided in this repo - which you can use to manage the backup strategy in a better fashion.
+
+
 ## install-dotfiles.rb
 
 Basically, to get started with the dotfiles, you just need to run the `<pwd>/scripts/install-dotfiles.rb` script. If you have that folder in the `PATH`, then you don't need the fully qualified or relative location (only file name is enough to run it).

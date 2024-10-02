@@ -26,20 +26,5 @@ All these scripts are optimized for fast loading of the shell so that the user c
    * Goto Preferences > Profiles > Default > Text (and change the font to 'MesloLGS Nerd Font')
    * Goto Preferences > Profiles > Default > Keys > Key Mappings > Presets (and choose 'Natural Text Editing')
 
-*These are optional based on your preferences:*
-
-1. Open the `System Preferences` application.
-   * Search for 'Trackpad' and turn on 'Tap to click' (Trackpads are notorious to breakdown if using via hard-click)
-   * Search for 'Displays' and set scaling / screen resolution as per your preference
-   * Search for 'Displays' and turn off 'Automatically adjust brightness'
-   * Search for 'Control Centre" and turn off battery from showing in the Control Center (nice to have especially if you use the Stats app)
-   * Search for 'Control Centre" and scroll down to 'Clock options' and change the built-in clock to show as analog to save horizontal space in the top menu bar
-   * Search for 'Full Disk Access' and add `iTerm', 'Terminal', 'zoom.us'
-   * Search for 'Camera' and add 'Arc', 'Brave', 'Firefox', 'zoom.us'
-   * Search for 'Microphone' and add 'Arc', 'Brave', 'Firefox', 'zoom.us'
-   * Search for 'Close and restore windows', and uncheck 'Close windows when quitting an application' (this will ensure that iTerm, Terminal, all browsers, etc - whichever have multiple windows open while quitting that application, will restore the same windows and tabs the next time you start that application.)
-   * Search for 'Default web browser' and set as per your preferences
-   * Search for 'iCloud' and login setup Desktop sync
-2. Open the `Finder` application and manually adjust the Finder sidebar preferences
-
-Back to [Readme](README.md#basic-setup) | Continue with the [advanced setup](GettingStarted-Advanced.md)
+To continue with advanced setup [click here](GettingStarted-Advanced.md)
+Back to [Readme](README.md#basic-setup)

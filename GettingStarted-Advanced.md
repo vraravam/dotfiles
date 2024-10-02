@@ -1,3 +1,21 @@
+The "Advanced" setup is the set of final steps to capture your application preferences (both system apps as well as custom apps) and back them up into an *encrypted remote repository*. Currently this kind of a service is offered by [keybase](https://keybase.io/) where you can get private, fully-encrypted repos for free.
+*Before getting started with the advanced setup these steps are optional based on your preferences:*
+
+1. Open the `System Preferences` application.
+   * Search for 'Trackpad' and turn on 'Tap to click' (Trackpads are notorious to breakdown if using via hard-click)
+   * Search for 'Displays' and set scaling / screen resolution as per your preference
+   * Search for 'Displays' and turn off 'Automatically adjust brightness'
+   * Search for 'Control Centre" and turn off battery from showing in the Control Center (nice to have especially if you use the Stats app)
+   * Search for 'Control Centre" and scroll down to 'Clock options' and change the built-in clock to show as analog to save horizontal space in the top menu bar
+   * Search for 'Full Disk Access' and add `iTerm', 'Terminal', 'zoom.us'
+   * Search for 'Camera' and add 'Arc', 'Brave', 'Firefox', 'zoom.us'
+   * Search for 'Microphone' and add 'Arc', 'Brave', 'Firefox', 'zoom.us'
+   * Search for 'Close and restore windows', and uncheck 'Close windows when quitting an application' (this will ensure that iTerm, Terminal, all browsers, etc - whichever have multiple windows open while quitting that application, will restore the same windows and tabs the next time you start that application.)
+   * Search for 'Default web browser' and set as per your preferences
+   * Search for 'iCloud' and login setup Desktop sync
+2. Open the `Finder` application and manually adjust the Finder sidebar preferences
+
+
 **Before starting to run this script** (for the first time on a new machine), these steps are *recommended*
 
 1. Open the `Keybase` application.
