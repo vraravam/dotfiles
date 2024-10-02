@@ -29,67 +29,53 @@ brew 'curl'
 brew 'diff-so-fancy'
 brew 'direnv'
 brew 'eza'
+brew 'fzy'
 brew 'git-extras'
 brew 'git-gui'
 brew 'git-tools'
 brew 'git'
-brew 'jq'
-brew 'less'
+brew 'gradle'
+brew 'jhipster' # Note: downloads node latest version as depenency
 brew 'mise'
-brew 'moreutils'
-brew 'ncdu'
 brew 'powerlevel10k'
 brew 'prettyping'
-brew 'ripgrep'
-brew 'shellcheck'
-brew 'syncthing'
-brew 'tldr'
+brew 'sonar-scanner'
 brew 'vim'
-brew 'watch'
+brew 'watchman'
 brew 'wget'
-brew 'wifi-password'
 brew 'zsh'
 
-# ----------------------------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------------------------
+# mas is to download apps from app store [regester/login to app store for mas commands to work]---------------------------------------------------------------------------------------------------------
 brew 'mas'
-mas 'iBar-Menubar icon control tool', id: 6443843900
-# mas 'Command X', id: 6448461551
+# mas 'iBar-Menubar icon control tool', id: 6443843900
+# mas 'Velja', id: 1607635845
 
-# ----------------------------------------------------------------------------------------------------------
-cask 'aldente'
+# cask 'clocker'
+# cask 'flycut'
+# cask 'keepingyouawake'
+cask 'android-studio'
 cask 'appcleaner'
-cask 'arc'
-cask 'brave-browser@nightly'
-cask 'clocker'
-# cask 'cloudflare-warp'
-cask 'firefox@nightly' #, greedy: true
+cask 'firefox'
+cask 'flutter' # Note: downloads dart latest version as depenency
 cask 'font-meslo-lg-nerd-font'
+cask 'google-chrome'
+cask 'intellij-idea-ce'
 cask 'iterm2'
-cask 'itsycal'
-cask 'keepassxc@beta'
-cask 'keepingyouawake'
 cask 'keybase'
-cask 'libreoffice'
-cask 'microsoft-remote-desktop'
-cask 'monolingual'
-cask 'notunes'
-cask 'ollama', restart_service: :changed
-cask 'protonvpn'
 cask 'rancher'
 cask 'raycast'
-cask 'silicon' if is_arm
 cask 'stats'
-cask 'the-unarchiver'
-cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when comparing to VSCode
+cask 'vscodium'
+cask 'whatsapp'
 cask 'zoom'
 
-# VSCode extensions
-# Note: I don't want brew to silently install VS Code (which is what it does currently if the following lines are present but it doesn't find code!)
 is_vscode_installed = !`which code`.chomp.empty?
 if is_vscode_installed
   vscode 'brandonkirbyson.vscode-animations'
   vscode 'britesnow.vscode-toggle-quotes'
-  vscode 'codezombiech.gitignore'
+  vscode 'dart-code.dart-code'
+  vscode 'dart-code.flutter'
   vscode 'davidanson.vscode-markdownlint'
   vscode 'dbaeumer.vscode-eslint'
   vscode 'digitalbrainstem.javascript-ejs-support'
@@ -98,8 +84,12 @@ if is_vscode_installed
   vscode 'editorconfig.editorconfig'
   vscode 'esbenp.prettier-vscode'
   # vscode 'formulahendry.code-runner'
+  vscode 'esbenp.prettier-vscode'
+  vscode 'formulahendry.code-runner'
   vscode 'genuitecllc.codetogether'
+  vscode 'golang.go'
   vscode 'ibm.output-colorizer'
+  vscode 'markosth09.color-picker'
   vscode 'mechatroner.rainbow-csv'
   vscode 'mikestead.dotenv'
   vscode 'mkhl.direnv'
@@ -132,6 +122,7 @@ end
 # ----------------------------------------------------------------------------------------------------------
 # TODO: This doesn't solve the issue about performing a custom action when a specific formula/cask is (re)installed - keeping for future reference
 at_exit do
+#   system "echo WOAH!!!!!!! && code-gist"
   # This is required for completions from other plugins to work (for eg git-extras)
   system("rm -rfv \"$HOMEBREW_REPOSITORY/share/zsh/site-functions/_git\"") || true
 end

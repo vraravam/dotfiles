@@ -163,6 +163,8 @@ app_array=(
   'net.freemacsoft.AppCleaner'
   'net.pornel.ImageOptim'
   'net.sourceforge.Monolingual'
+  'net.whatsapp.WhatsApp.ServiceExtension'
+  'net.whatsapp.WhatsApp'
   'NSGlobalDomain'
   'org.cups.PrintingPrefs'
   'org.ferdium.ferdium-app'
