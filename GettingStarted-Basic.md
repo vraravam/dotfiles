@@ -8,12 +8,6 @@ On your local machine:
    * Search for 'Full Disk Access' and add 'Terminal' (if not, the setup script will error out in between)
    * Search for 'File Vault' and turn it on (if not, then the setup script will exit in the beginning itself)
 
-In your forked repo, make the following changes, commit and push (Once the above steps are done, and committed into your fork, then everytime you need to run the setup, you can run the `curl` commands that point to your fork instead of mine so as to avoid manual effort.):
-
-1. **_Only in this README file and `files/.zprofile` files (and nowhere else):_** Find and replace the strings that reference my usernames to your equivalent ones (for eg, you can search for `vraravam` and `avijayr` and replace them with your values).
-2. The nested folder names that you choose for your setup (as referred to by `PROJECTS_BASE_DIR`, `PERSONAL_CONFIGS_DIR`, `PERSONAL_PROFILES_DIR`, `PERSONAL_BIN_DIR`, and `DOTFILES_DIR` in the `files/.zprofile` file) **should be reflected** in the folder structure of the nested folders in the `files` directory of the committed github repo itself. For eg, I have `PROJECTS_BASE_DIR="${HOME}/dev"`, and if your setup uses `workspace` instead of `dev`, then, in your forked repository, the folder name `files/dev` should be renamed to `files/workspace` and so on.
-3. Review all entries in the `${HOME}/Brewfile`, and ensure that there are no unwanted libraries/files. If you have any doubts (if comparing with my Brewfile), you will need to search the internet for the uses of those libraries/applications.
-
 The meta script to setup the macos machine from a vanilla OS can be run using the following command:
 
 ```zsh
