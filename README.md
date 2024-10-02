@@ -1,4 +1,5 @@
 - [Background](#background)
+- [How to adopt/customize the scripts to your own settings](#how-to-adoptcustomize-the-scripts-to-your-own-settings)
 - [Pre-requisites](#pre-requisites)
 - [Basic setup](#basic-setup)
 - [Advanced setup (in addition to the basic setup if you want to capture other files in an encrypted private git repo)](#advanced-setup-in-addition-to-the-basic-setup-if-you-want-to-capture-other-files-in-an-encrypted-private-git-repo)
@@ -14,22 +15,17 @@ These scripts are idempotent and can run on a vanilla OS as well as once the who
 
 Each script will warn the users if its skipping a step, and if you want to rerun the script but force that step, you just need to delete the control `if` condition (you should have a basic understanding of shell programming to figure out what to delete/how to force without bypass).
 
-Most of the folder structures are governed by the following environment variables [defined here](files/.zprofile). If you do not wish to configure a specific folder, just delete it from the `.zprofile` and all other setup steps should adhere to that decision.
+All of the folder structures and the setup/backup operations are governed by the environment variables [defined here](files/.zprofile). Please read the explanation of each variable in the same and edit appropriately.
 
-| Env var| Meaning | Default Value |
-| -------|---------|---------------|
-| `GH_USERNAME` | The github username | "vraravam" |
-| `UPSTREAM_GH_USERNAME` | Vijay's github username for setting upstream remote **Do NOT change** | "vraravam" |
-| `PROJECTS_BASE_DIR` | All codebases are cloned into a subfolder of this folder | "${HOME}/dev" |
-| `PERSONAL_CONFIGS_DIR` | Many configuration files (eg `.envrc`, `.tool-versions`), that might contain sensitive info and so cannot be committed into those repos are stored here and symlinked to their target destination | "${HOME}/personal/dev/configs" |
-| `PERSONAL_BIN_DIR` | Executable scripts that are not shared as part of this repo are present here | "${HOME}/personal/dev/bin" |
-| `PERSONAL_PROFILES_DIR` | All browser profiles are captured in this folder | "${HOME}/personal/$(whoami)/profiles" |
-| `DOTFILES_DIR` | This repo is cloned here | "${HOME}/.bin-oss" |
-| `KEYBASE_USERNAME` | Keybase username | "avijayr" |
-| `KEYBASE_HOME_REPO_NAME` | Keybase home repo name | "home" |
-| `KEYBASE_PROFILES_REPO_NAME` | Keybase profiles repo name | "profiles" |
+# How to adopt/customize the scripts to your own settings
 
-**If you want to be able to re-image a new machine with your settings (and overridden choices), and do not want to repeat the steps  manually, you would want to fork my repo and make appropriate changes.**
+If you want to be able to re-image a new machine with your own settings (and overridden choices), and you do not want to repeat these steps manually, you would want to fork my repo and make appropriate changes into your fork.
+
+In your forked repo, make the following changes, commit and push. Once the above steps are done, and committed into your fork, then everytime you need to run the setup, you can run the `curl` commands that point to *your* fork:
+
+1. **_Only in this file, `GettingStarted-Basic.md` and `files/.zprofile` files (and nowhere else):_** Find and replace the strings that reference my usernames to your equivalent ones (for eg, you can search for `vraravam` and `avijayr` and replace them with your values).
+2. The nested folder names that you choose for your setup (as referred to by `PROJECTS_BASE_DIR`, `PERSONAL_CONFIGS_DIR`, `PERSONAL_PROFILES_DIR`, `PERSONAL_BIN_DIR`, and `DOTFILES_DIR` in the `files/.zprofile` file) **should be reflected** in the folder structure of the nested folders in the `files` directory of the committed github repo itself. For eg, I have `PROJECTS_BASE_DIR="${HOME}/dev"`, and if your setup uses `workspace` instead of `dev`, then, in your forked repository, the folder name `files/dev` should be renamed to `files/workspace` and so on.
+3. Review all entries in the `${HOME}/Brewfile`, and ensure that there are no unwanted libraries/applications. If you have any doubts (if comparing with my Brewfile), you will need to search the internet for the uses of those libraries/applications.
 
 # Pre-requisites
 
