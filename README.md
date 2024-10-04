@@ -9,7 +9,7 @@
 
 # Background
 
-This repo was created from the gists that I was using to help others adopt my machine setup. It contains the common dotfiles as well as the scripts that I use to share the machine setup.
+This repo is used to backup and easily reimage a new macos system. It contains the common dotfiles as well as the scripts that I use as the backup/restore strategy.
 
 These scripts are idempotent and can run on a vanilla OS as well as once the whole setup has been completed.
 
@@ -45,9 +45,9 @@ Once the above is done, and if you have setup the [keybase](https://keybase.io)-
 
 As a summary, these files will typically have changes between your setup and mine:
 
-* `README.md` & `GettingStarted-Basic.md` (references to your usernames instead of mine, and typically any other changes that you introduce in the `files/.zprofile` - look below)
+* `GettingStarted-Basic.md` (references to your usernames instead of mine, and typically any other changes that you introduce in the `files/.zprofile` - look below)
 * `files/.gitconfig` (the `IncludeIf` line to match your global/base configuration filename)
-* `files/.zprofile` (`GH_USERNAME`, `KEYBASE_USERNAME`, and other changeable env vars from the above table)
+* `files/.zprofile` (`GH_USERNAME`, `KEYBASE_USERNAME`, and other changeable env vars to control which steps to perform vs which to bypass)
 * `files/Brewfile` (the list of applications and command-line utilities that you choose to install in your local machine)
 * `scripts/capture-defaults.sh` (what application preferences that you choose to backup - based on the entries in the `Brewfile`)
 * `scripts/fresh-install-of-osx.sh` (what applications you choose to set as login items on every reboot)
@@ -56,7 +56,7 @@ As a summary, these files will typically have changes between your setup and min
 
 The backup strategy is **not a one-off activity**. It will require you to take snapshots from time-to-time. Similarly, adherance to maintainence of the "catalogs" will need to be strictly upheld for the backup strategy to be effective.
 
-* Ensure that the software catalogs (`files/Brewfile`, `scripts/fresh-install-of-osx.sh`, `scripts/capture-defaults.sh`, `${HOME}/.tool-versions`) are always kept in sync with the actual applications that you install and use
+* Ensure that the software catalogs (`files/Brewfile`, `scripts/fresh-install-of-osx.sh`, `scripts/capture-defaults.sh`) are always kept in sync with the actual applications that you install and use
 * Ensure that the git repo catalogs that you are "tracking" in the `${PERSONAL_CONFIGS_DIR}/repositories-*.yml` files are kept up-to-date so that resurrection in your new machine will be seamless
 * Ensure to run the `scripts/capture-defaults.sh` (with the export switch) to export and capture/backup your preferences for all installed applications from your current machine
 

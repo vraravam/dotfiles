@@ -42,4 +42,4 @@ All these scripts are optimized for fast loading of the shell so that the user c
    * Search for 'iCloud' and login setup Desktop sync
 2. Open the `Finder` application and manually adjust the Finder sidebar preferences
 
-Back to [Readme](README.md#basic-setup)
+Back to [Readme](README.md#basic-setup) | Continue with the [advanced setup](GettingStarted-Advanced.md)
