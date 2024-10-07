@@ -100,7 +100,7 @@ clone_if_not_present https://github.com/zsh-users/zsh-completions
 # Install dotfiles #
 ####################
 echo "$(green "==> Installing dotfiles")"
-if non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; then
+if is_non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; then
   # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
   rm -rfv "${HOME}/.zshrc"
 

@@ -8,7 +8,7 @@ type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.s
 # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
 load_zsh_configs
 
-if non_zero_string "${KEYBASE_USERNAME}"; then
+if is_non_zero_string "${KEYBASE_USERNAME}"; then
   ! command_exists keybase && echo "Keybase not found in the PATH. Aborting!!!" && exit -1
 
   ######################
@@ -21,7 +21,7 @@ if non_zero_string "${KEYBASE_USERNAME}"; then
   # Clone the home repo #
   #######################
   echo "$(green "==> Cloning home repo")"
-  if non_zero_string "${KEYBASE_HOME_REPO_NAME}" && ! is_git_repo "${HOME}"; then
+  if is_non_zero_string "${KEYBASE_HOME_REPO_NAME}" && ! is_git_repo "${HOME}"; then
     rm -rf "${HOME}/tmp"
     mkdir -p "${HOME}/tmp"
     git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME} "${HOME}/tmp"
@@ -44,7 +44,7 @@ if non_zero_string "${KEYBASE_USERNAME}"; then
   # Clone the profiles repo #
   ###########################
   echo "$(green "==> Cloning profiles repo")"
-  if non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && ! is_git_repo "${PERSONAL_PROFILES_DIR}"; then
+  if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && ! is_git_repo "${PERSONAL_PROFILES_DIR}"; then
     rm -rf "${PERSONAL_PROFILES_DIR}"
     git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME} "${PERSONAL_PROFILES_DIR}"
 
@@ -77,7 +77,7 @@ fi
 # Resurrect repositories that I am interested in #
 ##################################################
 echo "$(green "==> Resurrecting repos")"
-if non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
+if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
   for file in $(ls "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml); do
     resurrect-repositories.rb -r "${file}"
   done

@@ -9,7 +9,7 @@ type command_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 ! command_exists keybase && echo "Keybase not found in the PATH. Aborting!!!" && exit -1
 
 usage() {
-  echo "$(red "Usage"): $(yellow "${0} [-f] <repo folder>")"
+  echo "$(red "Usage"): $(yellow "${1} [-f] <repo folder>")"
   echo " $(yellow "-f") : force recreation (profiles repo will automatically/always be forced anyways)"
   echo "    eg: $(cyan "-f ${HOME}")                (will push to $(yellow "keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME}"))"
   echo "    eg: $(cyan "${PERSONAL_PROFILES_DIR}")  (will push to $(yellow "keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME}"))"
@@ -24,10 +24,10 @@ elif [ $# -eq 2 ]; then
     force=Y
     folder="${2}"
   else
-    usage
+    usage ${0}
   fi
 else
-  usage
+  usage ${0}
 fi
 
 ! is_git_repo "${folder}" && echo "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!" && exit 1

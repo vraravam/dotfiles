@@ -1,7 +1,7 @@
 class String
   # colorization
   def colorize(color_code)
-    "\e[#{color_code}m#{self}\e[0m"
+    "\x1b[#{color_code}m#{self}\x1b[0m"
   end
 
   def red

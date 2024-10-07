@@ -10,13 +10,13 @@
 type warn &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 usage() {
-  echo "$(red "Usage"): $(yellow "${0} <e/i>")"
+  echo "$(red "Usage"): $(yellow "${1} <e/i>")"
   echo "  $(yellow "e")  --> Export from system"
   echo "  $(yellow "i")  --> Import into system"
   exit 1
 }
 
-[ $# -ne 1 ] && usage
+[ $# -ne 1 ] && usage ${0}
 
 TARGET_DIR="${PERSONAL_CONFIGS_DIR}/defaults"
 
@@ -35,7 +35,7 @@ case "${1}" in
     ;;
   * )
     echo "Unknown value entered: ${1}"
-    usage
+    usage ${0}
     ;;
 esac
 
