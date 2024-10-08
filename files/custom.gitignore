@@ -271,7 +271,6 @@ tmp/
 /.pryrc
 /.psqlrc
 /.railsrc
-/.rufo
 /.ripgreprc
 /.rspec
 /.rvmrc
