@@ -59,7 +59,7 @@ mas 'iBar-Menubar icon control tool', id: 6443843900
 cask 'aldente'
 cask 'appcleaner'
 cask 'arc'
-cask 'brave-browser@nightly'
+cask 'brave-browser'
 cask 'clocker'
 # cask 'cloudflare-warp'
 cask 'firefox@nightly' #, greedy: true

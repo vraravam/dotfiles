@@ -111,6 +111,7 @@ __pycache__
 /.gem/
 /.Genymobile
 /.gi_list
+/.gk/repoMapping.json
 /.gradle
 /.gstreamer*
 /.helm
