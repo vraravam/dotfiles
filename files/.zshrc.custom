@@ -195,3 +195,4 @@ command_exists bat && export MANPAGER="sh -c 'col -bx | bat -l man -p'"
 path=( "${path[@]:#}" )
 fpath=( "${fpath[@]:#}" )
 infopath=( "${infopath[@]:#}" )
+manpath=( "${manpath[@]:#}" )

@@ -155,16 +155,24 @@ sh -c "brew bundle check --file '${HOME}/Brewfile' || brew bundle --file '${HOME
 ###########################################
 # Link programs to open from the cmd-line #
 ###########################################
-echo "$(green "==> Linking VSCode/VSCodium for command-line invocation")"
 replace_executable_if_exists_and_is_not_symlinked() {
   if is_executable "${1}"; then
-    rm -fv "${2}"
+    rm -f "${2}"
     ln -sf "${1}" "${2}"
   else
     warn "executable '${1}' not found and so skipping symlinking"
   fi
 }
 
+echo "$(green "==> Linking keybase for command-line invocation")"
+if is_directory "/Applications/Keybase.app"; then
+  replace_executable_if_exists_and_is_not_symlinked "/Applications/Keybase.app/Contents/SharedSupport/bin/keybase" "${HOMEBREW_PREFIX}/bin/keybase"
+  replace_executable_if_exists_and_is_not_symlinked "/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase" "${HOMEBREW_PREFIX}/bin/git-remote-keybase"
+else
+  warn "skipping symlinking keybase for command-line invocation"
+fi
+
+echo "$(green "==> Linking VSCode/VSCodium for command-line invocation")"
 if is_directory "/Applications/VSCodium - Insiders.app"; then
   # Symlink from the embedded executable for codium-insiders
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCodium - Insiders.app/Contents/Resources/app/bin/codium-insiders" "${HOMEBREW_PREFIX}/bin/codium-insiders"
