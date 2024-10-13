@@ -12,6 +12,7 @@
 # It assumes the following:
 #   1. Ruby language is present in the system prior to this script being run.
 
+require "#{__dir__}/utilities/file.rb"
 require "#{__dir__}/utilities/string.rb"
 require 'fileutils'
 require 'find'
@@ -43,6 +44,18 @@ dotfiles_dir_length = dotfiles_dir.length + 1
 Find.find(dotfiles_dir) do |file|
   next if File.directory?(file) || file.end_with?('.DS_Store') || file.match?(/\.zwc/)
   override_into_home_folder(file, dotfiles_dir_length)
+end
+
+ssh_folder = File.join(ENV['HOME'], '.ssh')
+if File.exist?(File.join(ssh_folder, 'global_config'))
+  default_ssh_config = File.join(ssh_folder, 'config')
+
+  FileUtils.touch(default_ssh_config) unless File.exist?(default_ssh_config)
+
+  last_two_lines = IO.readlines(default_ssh_config, chomp: true)[-2..-1] || []
+  include_line = 'Include ~/.ssh/global_config'
+
+  File.append(default_ssh_config, "\n#{include_line}\n") unless last_two_lines.include?(include_line)
 end
 
 puts "Since the '.gitignore' and '.gitattributes' files are COPIED over, any new changes being pulled in (from a newer version of the upstream repo) need to be manually reconciled between this repo and your home and profiles folders".red
