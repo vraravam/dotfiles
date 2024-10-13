@@ -34,7 +34,6 @@ __pycache__
 .psqlrc
 .pub-cache/
 .pylint.d/
-.rd/
 .swiftpm/
 .talisman/bin/
 .talisman/talisman_html_report
@@ -145,6 +144,9 @@ __pycache__
 /.oh-my-zsh
 /.ollama/
 /.oracle_jre_usage/*.timestamp
+/.orbstack/.installid
+/.orbstack/bin/
+/.orbstack/data/
 /.org.eclipse*
 /.p4tickets
 /.packer.d/
@@ -214,6 +216,7 @@ __pycache__
 /mbox
 /Movies/
 /Music/
+/OrbStack/
 /OWASP-Dependency-Check/data
 /Parallels
 /personal/*/profiles/
@@ -279,6 +282,7 @@ tmp/
 /.shellcheckrc
 /.shellrc
 /.sqliterc
+/.ssh/global_config
 /.tcshrc
 /.vim/autoload/plug.vim
 /.vimrc

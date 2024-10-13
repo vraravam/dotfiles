@@ -64,3 +64,7 @@ export KEYBASE_HOME_REPO_NAME="home"
 
 # Keybase profiles repo name
 export KEYBASE_PROFILES_REPO_NAME="profiles"
+
+# Added by OrbStack: command-line tools and integration
+# This won't be added again if you remove it.
+source "${HOME}/.orbstack/shell/init.zsh" 2>/dev/null || :
