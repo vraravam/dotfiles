@@ -7,7 +7,7 @@
 # the .aliases.custom file to load aliases and functions
 #
 # file location: ${HOME}/.aliases
-# load order: .zshenv, .zprofile [.shellrc], .zshrc [.zshrc.custom [.aliases [.aliases.custom]]], .zlogin
+# load order: .zshenv, .zprofile, .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
 ################################################################################
 
 # execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
@@ -15,7 +15,7 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
 # contributions to path, aliases, functions from this folder
 
-# DUPLICATE! Copied over since we get an error if the .zprofile was not loaded
+# DUPLICATE! Copied over since we get an error if the .shellrc was not loaded
 type command_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 # Add flags to existing aliases.
