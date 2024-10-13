@@ -1,5 +1,7 @@
 #!/usr/bin/env zsh
 
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
 # This script is used to recreate the git repos in the home and profiles folders. This is useful to remove dangling & orphaned commits from the remote git repo so that fresh cloning is fast.
 # It assumes that a pre-existing repo on local is present - so that it can capture the relevant remote details.
 # It will force removal of history if the `-f` flag is given. (The history of the profiles repo will always get deleted).

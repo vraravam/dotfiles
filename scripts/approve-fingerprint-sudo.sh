@@ -1,5 +1,7 @@
 #!/usr/bin/env zsh
 
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
 # To be able to use the mac touchbar for sudo command auth:
 # edit the following file: /etc/pam.d/sudo
 # and add the following line after the initial comment line:

@@ -1,5 +1,7 @@
 #!/usr/bin/env zsh
 
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
 # file location: <anywhere; but advisable in the PATH>
 
 # This script will capture (export) the settings or import the settings from the location specified in the $TARGET_DIR env var defined down below. You can back the files up to any cloud storage and retrieve into the new laptop to then get back all settings as per the original machine. The only word of caution is to use it with the same OS version (I haven't tried in any situations where the old and new machines had different OS versions - so I cannot guarantee if that might break the system in any way)

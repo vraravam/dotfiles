@@ -1,5 +1,7 @@
 #!/usr/bin/env zsh
 
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
 # This script is idempotent and will restore your local setup to the same state even if run multiple times.
 # In most cases, the script will provide warning messages if skipping certain steps. Each such message will be useful to give you a hint about what to do to force rerunning of that step.
 
