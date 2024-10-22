@@ -1,12 +1,3 @@
-- [Background](#background)
-- [How to adopt/customize the scripts to your own settings](#how-to-adoptcustomize-the-scripts-to-your-own-settings)
-- [Pre-requisites](#pre-requisites)
-- [Basic setup](#basic-setup)
-- [Advanced setup (in addition to the basic setup if you want to capture other files in an encrypted private git repo)](#advanced-setup-in-addition-to-the-basic-setup-if-you-want-to-capture-other-files-in-an-encrypted-private-git-repo)
-- [Finally...](#finally)
-- [Ongoing tasks to keep your backup up-to-date](#ongoing-tasks-to-keep-your-backup-up-to-date)
-- [Extras/Details](#extrasdetails)
-
 # Background
 
 This repo is used to backup and easily reimage a new macos system. It contains the common dotfiles as well as the scripts that I use as the backup/restore strategy.
@@ -31,19 +22,14 @@ In your forked repo, make the following changes, commit and push. Once the above
 
 if you want to capture data from your current mac, please follow the instructions [here](Prerequisites.md)
 
+# Script discriptors
+Some utility scripts have been provided in this repo - which you can use to manage the backup strategy in a better fashion. [click here](Extras.md)
+
 # Basic setup
 
 The backup strategy is split into 2 stages. The [basic "getting started"](GettingStarted-Basic.md) provides the instructions for the most common/basic setup. This covers everything that a typical user might need - without the need to backup other parts of the existing laptop.
 
-# Advanced setup (in addition to the basic setup if you want to capture other files in an encrypted private git repo)
-
-The "Advanced" setup is the set of final steps to capture your application preferences (both system apps as well as custom apps) and back them up into an *encrypted remote repository*. Currently this kind of a service is offered by [keybase](https://keybase.io/) where you can get private, fully-encrypted repos for free. Instructions for this setup can be found [here](GettingStarted-Advanced.md)
-
-# Finally...
-
-Once the above is done, and if you have setup the [keybase](https://keybase.io)-based home repo, profile repo, etc - you can then re-import your exported preferences from the [pre-requisites section](#pre-requisite-if-you-want-to-capture-data-from-your-current-mac). Of course, you will have to manually take snapshots of your machine for backup. This can be done using the `scripts/capture-defaults.sh` script and pushing into the remote repo of your home folder.
-
-As a summary, these files will typically have changes between your setup and mine:
+These files will typically have changes between your setup and mine:
 
 * `GettingStarted-Basic.md` (references to your usernames instead of mine, and typically any other changes that you introduce in the `files/.zprofile` - look below)
 * `files/.gitconfig` (the `IncludeIf` line to match your global/base configuration filename)
@@ -60,6 +46,4 @@ The backup strategy is **not a one-off activity**. It will require you to take s
 * Ensure that the git repo catalogs that you are "tracking" in the `${PERSONAL_CONFIGS_DIR}/repositories-*.yml` files are kept up-to-date so that resurrection in your new machine will be seamless
 * Ensure to run the `scripts/capture-defaults.sh` (with the export switch) to export and capture/backup your preferences for all installed applications from your current machine
 
-# Extras/Details
-
-Some utility scripts have been provided in this repo - which you can use to manage the backup strategy in a better fashion. Details can be found [here](Extras.md)
+# [Click here](GettingStarted-Basic.md) to get started with the basic setup

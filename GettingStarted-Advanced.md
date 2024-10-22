@@ -1,3 +1,4 @@
+The "Advanced" setup is the set of final steps to capture your application preferences (both system apps as well as custom apps) and back them up into an *encrypted remote repository*. Currently this kind of a service is offered by [keybase](https://keybase.io/) where you can get private, fully-encrypted repos for free.
 **Before starting to run this script** (for the first time on a new machine), these steps are *recommended*
 
 1. Open the `Keybase` application.
