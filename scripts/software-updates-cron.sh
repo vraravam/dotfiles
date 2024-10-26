@@ -9,7 +9,8 @@ load_zsh_configs
 if command_exists mise; then
   echo "---- Updating all mise plugins"
   mise plugins update
-  mise upgrade
+  mise upgrade --bump
+  mise prune -y
 fi
 
 if command_exists tldr; then
@@ -30,4 +31,4 @@ fi
 
 # TODO: Need to load an omz shell (which cannot be done in cron), and only then can upgrade
 # echo "---- Updating omz"
-# omz update
+omz update

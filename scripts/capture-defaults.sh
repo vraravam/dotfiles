@@ -135,6 +135,7 @@ app_array=(
   'com.apple.wifi.WiFiAgent'
   'com.brave.Browser.beta'
   'com.brave.Browser.nightly'
+  'com.brave.Browser'
   'com.cloudflare.1dot1dot1dot1.macos'
   'com.docker.docker'
   'com.github.Electron'

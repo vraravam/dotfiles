@@ -69,7 +69,7 @@ is_file() {
 }
 
 is_executable() {
-  is_file "${1}" && test -e "${1}"
+  is_non_zero_string "${1}" && test -e "${1}"
 }
 
 is_directory() {
@@ -83,7 +83,7 @@ is_git_repo() {
 load_file_if_exists() {
   # shellcheck disable=SC2015
   # shellcheck disable=SC1090
-  is_executable "${1}" && source "${1}" || true
+  is_file "${1}" && source "${1}"
 }
 
 delete_directory_if_exists() {

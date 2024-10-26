@@ -154,3 +154,7 @@ load_file_if_exists "${HOME}/.zshrc.custom"
 
 # remove duplicates from some env vars
 typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPATH manpath PATH path PKG_CONFIG_PATH
+
+# for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
+# execute 'ZSH_PROFILE_RC=true zsh' and run 'zprof' to get the details
+test -n "${ZSH_PROFILE_RC+1}" && zprof
