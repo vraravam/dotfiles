@@ -74,8 +74,8 @@ cask 'microsoft-remote-desktop'
 cask 'monolingual'
 cask 'notunes'
 cask 'ollama', restart_service: :changed
-cask 'orbstack'
 cask 'protonvpn'
+cask 'rancher'
 cask 'raycast'
 cask 'silicon' if is_arm
 cask 'stats'

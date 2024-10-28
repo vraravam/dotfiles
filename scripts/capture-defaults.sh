@@ -160,6 +160,7 @@ app_array=(
   'eu.exelban.Stats'
   'info.marcel-dierkes.KeepingYouAwake'
   'io.github.keycastr'
+  'io.rancherdesktop.app'
   'keybase.Electron'
   'loginwindow'
   'net.freemacsoft.AppCleaner'

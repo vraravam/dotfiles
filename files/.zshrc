@@ -158,3 +158,7 @@ typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPAT
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
 # execute 'ZSH_PROFILE_RC=true zsh' and run 'zprof' to get the details
 test -n "${ZSH_PROFILE_RC+1}" && zprof
+
+### MANAGED BY RANCHER DESKTOP START (DO NOT EDIT)
+export PATH="${HOME}/.rd/bin:${PATH+:${PATH}}"
+### MANAGED BY RANCHER DESKTOP END (DO NOT EDIT)

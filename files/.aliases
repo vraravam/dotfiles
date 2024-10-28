@@ -22,6 +22,8 @@ type command_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 alias less="${aliases[less]:-less} -RF"
 alias cp="${aliases[cp]:-cp} -p"
 alias grep="${aliases[grep]:-grep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
+alias fgrep="${aliases[fgrep]:-fgrep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
+alias egrep="${aliases[egrep]:-egrep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
 
 # eza already defines 'll' - so skip if that's present
 ! command_exists eza && alias ll='ls -la'
@@ -87,8 +89,8 @@ fi
 alias findbrokenlinks='find . -type l | (while read FN ; do test -e "$FN" || ls -ld "$FN"; done)'
 alias clearlogs='rm -rfv */log/*.log'
 alias clearcoverage='rm -rfv */coverage */coverage.data'
-alias killds="sudo find . -name .DS_Store -exec rm -rfv {} \;"
-alias killloc="sudo find . -name .localized -exec rm -rfv {} \;"
+alias killds="sudo find . -type f -name .DS_Store -exec rm -rfv {} \;"
+alias killloc="sudo find . -type f -name .localized -exec rm -rfv {} \;"
 
 # Remove trailing spaces
 if is_linux; then
@@ -107,8 +109,21 @@ elif is_macos; then
   alias flush-dns="sudo killall -HUP mDNSResponder;sudo killall mDNSResponderHelper;sudo dscacheutil -flushcache;say MacOS DNS cache has been cleared"
 fi
 
-# MacOS: Remove apps from quarantine
-is_macos && alias unquarantine='sudo xattr -rd com.apple.quarantine'
+if is_macos; then
+  # MacOS: Remove apps from quarantine
+  alias unquarantine='sudo xattr -rd com.apple.quarantine'
+
+  # MacOS: Clean up LaunchServices to remove duplicates in the “Open With” menu
+  alias lscleanup="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user && killall Finder"
+
+  # Show/hide hidden files in Finder
+  alias show="defaults write com.apple.finder AppleShowAllFiles -bool true && killall Finder"
+  alias hide="defaults write com.apple.finder AppleShowAllFiles -bool false && killall Finder"
+
+  # Hide/show all desktop icons (useful when presenting)
+  alias hidedesktop="defaults write com.apple.finder CreateDesktop -bool false && killall Finder"
+  alias showdesktop="defaults write com.apple.finder CreateDesktop -bool true && killall Finder"
+fi
 
 # Added to view the shell startup time (modified from https://blog.jonlu.ca/posts/speeding-up-zsh)
 time_shell_startup() {
