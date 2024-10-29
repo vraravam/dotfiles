@@ -32,7 +32,7 @@ load_file_if_exists "${XDG_CACHE_HOME}/p10k-instant-prompt-$(whoami).zsh"
 load_file_if_exists "${HOME}/.p10k.zsh"
 load_file_if_exists "${HOMEBREW_PREFIX}/share/powerlevel10k/powerlevel10k.zsh-theme"
 
-# Path to your oh-my-zsh installation.
+# Path to your Oh My Zsh installation.
 export ZSH="${HOME}/.oh-my-zsh"
 
 # Set name of the theme to load --- if set to "random", it will
@@ -136,14 +136,14 @@ command_exists code && test -z "${EDITOR}" && export EDITOR="code --wait"
 command_exists vi && test -z "${EDITOR}" && export EDITOR="vi"
 
 # Compilation flags
-[[ "${ARCH}" =~ "x86" ]] && export ARCHFLAGS="-arch x86_64"
+export ARCHFLAGS="-arch $(uname -m)"
 
 # Set personal aliases, overriding those provided by Oh My Zsh libs,
 # plugins, and themes. Aliases can be placed here, though Oh My Zsh
 # users are encouraged to define aliases within a top-level file in
-# the $ZSH_CUSTOM folder, with .zsh extension. Examples:
-# - $ZSH_CUSTOM/aliases.zsh
-# - $ZSH_CUSTOM/macos.zsh
+# the ${ZSH_CUSTOM} folder, with .zsh extension. Examples:
+# - ${ZSH_CUSTOM}/aliases.zsh
+# - ${ZSH_CUSTOM}/macos.zsh
 # For a full list of active aliases, run `alias`.
 #
 # Example aliases
