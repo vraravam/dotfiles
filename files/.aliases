@@ -1,0 +1,187 @@
+#!/usr/bin/env zsh
+
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
+################################################################################
+# This file is sourced at the end of the .zshrc.custom file and in turn sources
+# the .aliases.custom file to load aliases and functions
+#
+# file location: ${HOME}/.aliases
+# load order: .zshenv, .zprofile, .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
+################################################################################
+
+# execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
+test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
+
+# DUPLICATE! Copied over since we get an error if the .shellrc was not loaded
+type command_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+
+# add flags to existing aliases
+alias less="${aliases[less]:-less} -RF"
+alias cp="${aliases[cp]:-cp} -p"
+alias grep="${aliases[grep]:-grep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
+alias fgrep="${aliases[fgrep]:-fgrep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
+alias egrep="${aliases[egrep]:-egrep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
+
+# eza already defines 'll' - so skip if that's present
+! command_exists eza && alias ll='ls -la'
+command_exists tree && alias tree="${aliases[tree]:-tree} -Ch"
+command_exists vim && alias vi='vim'
+command_exists prettyping && alias ping='prettyping --nolegend'
+command_exists bat && alias cat='bat'
+command_exists btop && alias top='btop'
+command_exists ncdu && alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'
+
+# git commands
+# Note: Use a function so that it can accept parameters
+st() {
+  target="${1:-$(pwd)}"
+  echo "$(green "==> Processing ${target} <==")"
+  git -C "${target}" st
+}
+cc() {
+  target="${1:-$(pwd)}"
+  echo "$(green "==> Processing ${target} <==")"
+  git -C "${target}" cc
+}
+
+if command_exists 'run_all.sh'; then
+  # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
+  alias rug='run_all.sh git'
+  alias all="FOLDER='${HOME}' MAXDEPTH=6 rug"
+  alias home="FOLDER='${HOME}' FILTER=\".bin|zsh|mise\" MAXDEPTH=5 rug"
+  is_directory "${PROJECTS_BASE_DIR}" && alias upreb="FOLDER='${PROJECTS_BASE_DIR}' rug upreb"
+  for folder in $(ls "${PROJECTS_BASE_DIR}"); do
+    is_directory "${PROJECTS_BASE_DIR}/${folder}" && alias "${folder}"="FOLDER='${PROJECTS_BASE_DIR}/${folder}' MAXDEPTH=4 rug"
+  done
+fi
+
+# deletes the zsh compiled files so that they can be recompiled whenever the new session is next started
+delete_zsh_compilations() {
+  find "${HOME}" -maxdepth 6 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
+}
+
+install_mise_versions() {
+  ! command_exists mise && return
+
+  find "${HOME}" -name '.tool-versions' -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
+  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name '.git' -type d -maxdepth 5 -exec echo "===> Installing for {}" \; -execdir mise install \;
+}
+
+# runs 'direnv allow' on all code repositories that are checked out
+allow_all_direnv_configs() {
+  ! command_exists direnv && return
+
+  find "${HOME}" -name '.envrc' -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  is_directory "${PERSONAL_PROFILES_DIR}" && find "${PERSONAL_PROFILES_DIR}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 5 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+}
+
+if is_macos && command_exists brew; then
+  # TODO: Remove later (kept here for reference): brew outdated --cask | xargs brew cask reinstall
+  alias bcg='brew outdated --greedy'
+  alias bcug='brew upgrade --greedy'
+  alias bupc='brew bundle check || brew bundle --all --cleanup; brew bundle cleanup -f; brew cleanup --prune=all; brew autoremove; brew upgrade'
+fi
+
+alias findbrokenlinks='find . -type l | (while read FN ; do test -e "$FN" || ls -ld "$FN"; done)'
+alias clearlogs='rm -rfv */log/*.log'
+alias clearcoverage='rm -rfv */coverage */coverage.data'
+alias killds="sudo find . -type f -name .DS_Store -exec rm -rfv {} \;"
+alias killloc="sudo find . -type f -name .localized -exec rm -rfv {} \;"
+
+# Remove trailing spaces
+if is_linux; then
+  alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i 's/[ ]*$//' {} \;"
+elif is_windows; then
+  alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i 's/[ ]*$//' {} \;"
+elif is_macos; then
+  alias remove_trailing="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -exec sed -i '' 's/[ ]*$//' {} \;"
+fi
+
+# generate mac addr to escape some free wifi mac addr restrictions
+if is_linux; then
+  alias free-wifi="(ifconfig eth0 | grep ether) && (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig eth0 ether) && (ifconfig eth0 | grep ether)"
+elif is_macos; then
+  alias free-wifi="(ifconfig en0 | grep ether) && (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig en0 ether) && (ifconfig en0 | grep ether)"
+  alias flush-dns="sudo killall -HUP mDNSResponder;sudo killall mDNSResponderHelper;sudo dscacheutil -flushcache;say MacOS DNS cache has been cleared"
+fi
+
+if is_macos; then
+  # MacOS: Remove apps from quarantine
+  alias unquarantine='sudo xattr -rd com.apple.quarantine'
+
+  # MacOS: Clean up LaunchServices to remove duplicates in the “Open With” menu
+  alias lscleanup='/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user && killall Finder'
+
+  # Show/hide hidden files in Finder
+  alias show_hidden_files='defaults write com.apple.finder AppleShowAllFiles -bool true && killall Finder'
+  alias hide_hidden_files='defaults write com.apple.finder AppleShowAllFiles -bool false && killall Finder'
+
+  # Hide/show all desktop icons (useful when presenting)
+  alias hide_desktop='defaults write com.apple.finder CreateDesktop -bool false && killall Finder'
+  alias show_desktop='defaults write com.apple.finder CreateDesktop -bool true && killall Finder'
+fi
+
+# Added to view the shell startup time (modified from https://blog.jonlu.ca/posts/speeding-up-zsh)
+time_shell_startup() {
+  local shell="${1-${SHELL}}"
+  for i in $(seq 1 10); do /usr/bin/time "${shell}" -i -c exit; done
+}
+
+# npm
+command_exists npm && alias npm_cleanup='npm cache clear --force'
+
+if command_exists docker; then
+  # docker (TODO: Not sure why this is not done automatically by rancher when it starts up)
+  # alias start_docker="sudo ln -sf ${HOME}/.rd/docker.sock /var/run/docker.sock"
+  # alias stop_docker="sudo rm -rf /var/run/docker.sock"
+  alias docker_cleanup='docker system prune -a --volumes -f'
+  alias docker_list='docker ps -a && docker images'
+
+  show_docker_context_contents() {
+    # Based on BMitch's answer from: https://stackoverflow.com/questions/38946683/how-to-test-dockerignore-file
+    # Note: this will create and delete temporary file called 'Dockerfile.build-context'
+    # Usage:
+    # 1. Run this function in the project folder
+    # 2. You should see list of files in build context
+    # 3. If unwanted files are present, adjust the '.dockerignore' file and go back to step 1
+
+    cat <<EOF > Dockerfile.build-context
+  FROM busybox
+  COPY . /build-context
+  WORKDIR /build-context
+  CMD ["find", "."]
+EOF
+
+    docker build -f Dockerfile.build-context -t build-context .
+    docker run --rm build-context
+
+    rm Dockerfile.build-context
+  }
+fi
+
+# tmux
+if command_exists tmux; then
+  alias tmuxn='tmux new-session -A -s'  # start a new tmux session and name it
+  alias tmuxa='tmux attach -t'          # attach to a named tmux session
+fi
+
+# convert from pdf to png without losing quality
+pdf_to_png() {
+  ! command_exists magick && warn "Install imagemagick first!" && return
+
+  local pdf="${1}"
+  local png="${pdf%.*}.png"
+
+  magick -density 800 "${pdf}" -quality 100 "${png}"
+}
+
+# if running zsh shell
+if [[ "$(ps -o comm= -p $$)" =~ "zsh" ]]; then
+  # associate file extensions with applications for the 'open' command
+  alias -s txt=code
+  alias -s log=code
+fi
+
+load_file_if_exists "${HOME}/.aliases.custom"

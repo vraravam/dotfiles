@@ -1,0 +1,182 @@
+# file location: ${HOME}/Brewfile
+
+# This file is used along with the `brew bundle` command to ensure that required packages and apps are installed.
+# Also can be used to ensure that any package/apps that were installed as experimentation are uninstalled from the system.
+# For a more detailed explanation of the philosophy/reasoning behind this file, please see https://openfolder.sh/macos-migrations-with-brewfile
+
+# These are the common shell aliases that I have setup in the `${HOME}/.aliases` file for ease of running/typing (and also don't need to remember all these commands by-heart!). If you are using my `${HOME}/.aliases`, they will already be present for you. If not, you can then set these up in the respective dotfile of your choice
+# alias bcg='brew outdated --greedy'  # List all casks that are outdated like a "dry-run" (and which have version marked as 'latest')
+# alias bcug='brew upgrade --greedy'  # Upgrades all casks that are outdated (and which have version marked as 'latest')
+# alias bupc='brew bundle check || brew bundle --all --cleanup; brew bundle cleanup -f; brew cleanup --prune=all; brew autoremove; brew upgrade'        # Upgrades and cleans up all regular outdated casks and libs (non-greedy)
+
+# TODO: Need to find cask for:
+#   Tinkertool
+#   ZoomHider
+
+# set global preferences for all 'brew install' commands
+cask_args appdir: '/Applications', no_quarantine: true
+
+# java_present = system('/usr/libexec/java_home --failfast')
+is_arm = Hardware::CPU.arm?
+
+tap 'homebrew/services'
+tap 'romkatv/powerlevel10k'
+
+brew 'bash'
+brew 'bat'
+brew 'btop'
+brew 'curl'
+brew 'diff-so-fancy'
+brew 'direnv'
+brew 'eza'
+brew 'git-extras'
+brew 'git-gui'
+brew 'git-tools'
+brew 'git'
+brew 'jq'
+brew 'less'
+brew 'mise'
+brew 'moreutils'
+brew 'ncdu'
+brew 'powerlevel10k'
+brew 'prettyping'
+brew 'ripgrep'
+brew 'shellcheck'
+brew 'syncthing'
+brew 'tldr'
+brew 'vim'
+brew 'watch'
+brew 'wget'
+brew 'wifi-password'
+brew 'zsh'
+
+# ----------------------------------------------------------------------------------------------------------
+brew 'mas'
+mas 'iBar-Menubar icon control tool', id: 6443843900
+# mas 'Command X', id: 6448461551
+
+# ----------------------------------------------------------------------------------------------------------
+cask 'aldente'
+cask 'appcleaner'
+cask 'arc'
+cask 'brave-browser'
+cask 'clocker'
+# cask 'cloudflare-warp'
+cask 'firefox@nightly' #, greedy: true
+cask 'font-meslo-lg-nerd-font'
+cask 'iterm2'
+cask 'itsycal'
+cask 'keepassxc@beta'
+cask 'keepingyouawake'
+cask 'keybase'
+cask 'libreoffice'
+cask 'microsoft-remote-desktop'
+cask 'microsoft-teams'
+cask 'monolingual'
+cask 'notunes'
+cask 'ollama', restart_service: :changed
+cask 'onyx'
+cask 'protonvpn'
+cask 'rancher'
+cask 'raycast'
+cask 'silicon' if is_arm
+cask 'stats'
+cask 'the-unarchiver'
+cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when comparing to VSCode
+cask 'zen-browser'
+cask 'zoom'
+
+# VSCode extensions
+# Note: I don't want brew to silently install VS Code (which is what it does currently if the following lines are present but it doesn't find code!)
+is_vscode_installed = !`which code`.chomp.empty?
+if is_vscode_installed
+  vscode 'brandonkirbyson.vscode-animations'
+  vscode 'britesnow.vscode-toggle-quotes'
+  vscode 'codezombiech.gitignore'
+  vscode 'davidanson.vscode-markdownlint'
+  vscode 'dbaeumer.vscode-eslint'
+  vscode 'digitalbrainstem.javascript-ejs-support'
+  vscode 'drcika.apc-extension'
+  vscode 'eamodio.gitlens'
+  vscode 'editorconfig.editorconfig'
+  vscode 'esbenp.prettier-vscode'
+  # vscode 'formulahendry.code-runner'
+  vscode 'genuitecllc.codetogether'
+  vscode 'ibm.output-colorizer'
+  vscode 'mechatroner.rainbow-csv'
+  vscode 'mikestead.dotenv'
+  vscode 'mkhl.direnv'
+  vscode 'ms-azuretools.vscode-docker'
+  vscode 'ms-vscode.vscode-typescript-next'
+  # vscode 'nicolasvuillamy.vscode-groovy-lint'
+  vscode 'oderwat.indent-rainbow'
+  vscode 'orta.vscode-jest'
+  vscode 'rebornix.ruby'
+  # vscode 'redhat.java'
+  vscode 'redhat.vscode-yaml'
+  vscode 'richie5um2.vscode-sort-json'
+  vscode 'shan.code-settings-sync'
+  # vscode 'sonarsource.sonarlint-vscode'
+  vscode 'tchayen.markdown-links'
+  vscode 'tyriar.sort-lines'
+  # vscode 'vscjava.vscode-java-debug'
+  # vscode 'vscjava.vscode-java-pack'
+  # vscode 'vscjava.vscode-java-test'
+  # This is failing on different machines
+  # vscode 'vscjava.vscode-lombok'
+  vscode 'vscode-icons-team.vscode-icons'
+  vscode 'wayou.vscode-todo-highlight'
+  vscode 'wholroyd.jinja'
+  vscode 'wingrunr21.vscode-ruby'
+  vscode 'wmaurer.change-case'
+  vscode 'yzhang.markdown-all-in-one'
+end
+
+# ----------------------------------------------------------------------------------------------------------
+# TODO: This doesn't solve the issue about performing a custom action when a specific formula/cask is (re)installed - keeping for future reference
+at_exit do
+  # This is required for completions from other plugins to work (for eg git-extras)
+  system("rm -rfv \"${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git\"") || true
+end
+
+# ----------------------------------------------------------------------------------------------------------
+# Moved these brew and cask lines to clean up the noise from the above alphabetically sorted lists
+
+# ---- docker utilities
+# brew 'dive'   # docker layers inspection on steroids
+# brew 'docker-diff'
+# brew 'docker-slim'  # TODO: investigate if the http-probe is a deal-breaker
+# brew 'hadolint'     # lint Dockerfiles (similar to shellcheck for shell scripts)
+# brew 'kubernetes-cli', link: true   # Note: Had to do this: rm /usr/local/bin/kubectl && brew link --overwrite kubernetes-cli
+# brew 'kubernetes-helm'
+
+# ---- command-line utilities
+# brew 'fzy'
+
+# ---- git utilities
+# brew 'git-crypt'
+
+# ---- tmux utilities
+# brew 'tmux'
+# brew 'reattach-to-user-namespace' # Needed if using tmux (to be able to access the macos clipboard from within tmux)
+
+# ---- general utilities
+# brew 'gradle'
+# brew 'gradle-completion'
+# brew 'libressl', link: true
+# brew 'localstack'
+# brew 'speedtest-cli'
+
+# https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git
+# cask 'git-credential-manager'
+
+# ---- casks
+# cask 'dbeaver-community'
+# cask 'intellij-idea-ce'
+# cask 'kdiff3'
+# cask 'keycastr'
+# cask 'licecap'
+# cask 'lulu'
+# cask 'netspot'
+# cask 'ngrok'
+# cask 'tempbox'

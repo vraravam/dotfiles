@@ -1,0 +1,101 @@
+# file location: ${PERSONAL_PROFILES_DIR}/.gitignore
+
+!.bundle/config
+!.keep
+!/*Profile/Profiles/bookmarks.html
+!/*Profile/Profiles/cert8.db
+!/*Profile/Profiles/cookies.sqlite
+!/*Profile/Profiles/key3.db
+!/*Profile/Profiles/search.rdf
+!/*Profile/Profiles/searchplugins
+!/*Profile/Profiles/secmod.db
+!/*Profile/Profiles/signons.txt
+
+.~lock*#
+.DS_Store
+*-journal
+*.iso
+*.log
+*.sqlite-shm
+*.sqlite-wal
+*.sw[nop]
+*.zwc
+*db-shm
+*db-wal
+/.local
+/.thumbnails
+/.Trash
+Cache/
+CachedData/
+GPUCache/
+log/*.log
+logs/
+Thumbs.db
+
+# Browser profiles
+/*Profile.tgz
+/*Profile/.parentlock
+/*Profile/.startup-incomplete
+/*Profile/**/*.bak
+/*Profile/**/*.baklz4
+/*Profile/**/*.ldb
+/*Profile/**/*.leveldb/*
+/*Profile/**/*Cache*
+/*Profile/**/*cache*
+/*Profile/**/*datareporting*
+/*Profile/**/*download*
+/*Profile/**/*jetpack*
+/*Profile/**/*saved-telemetry-pings*
+/*Profile/**/*thumbnails*
+/*Profile/**/bookmarkbackups
+/*Profile/**/cert-revocations/*.stash
+/*Profile/**/Code\ Cache
+/*Profile/**/Crash\ Reports
+/*Profile/**/crashes/
+/*Profile/**/Crashpad*
+/*Profile/**/cur
+/*Profile/**/gcontactsync_log*.txt
+/*Profile/**/Local\ Folders
+/*Profile/**/Local\ Storage
+/*Profile/**/LOCK
+/*Profile/**/LOG*
+/*Profile/**/minidumps
+/*Profile/**/msgFilterRules.dat
+/*Profile/**/Network\ Action\ Predictor
+/*Profile/**/Network\ Persistent\ State
+/*Profile/**/panacea.dat
+/*Profile/**/Partitions/**
+/*Profile/**/photos
+/*Profile/**/Photos
+/*Profile/**/QuotaManager
+/*Profile/**/Reporting\ and\ NEL
+/*Profile/**/safebrowsing-failedupdate
+/*Profile/**/Service\ Worker/**
+/*Profile/**/Session\ Storage
+/*Profile/**/sessionstore-logs
+/*Profile/**/SingletonCookie
+/*Profile/**/SingletonLock
+/*Profile/**/SingletonSocket
+/*Profile/**/SiteSecurityServiceState.txt
+/*Profile/**/SS
+/*Profile/**/storage/temporary
+/*Profile/**/Telemetry.ShutdownTime.txt
+/*Profile/**/tmp
+/*Profile/**/TransportSecurity
+/*Profile/**/weave
+/*Profile/*backup.json
+/*Profile/*ShutdownDuration*
+/*Profile/AlternateServices.txt
+/*Profile/compatibility.ini
+
+/FerdiumProfile/.*.ferdium.*
+/FerdiumProfile/.has-app-requested-screen-capture-permissions
+/FerdiumProfile/.updaterId
+/FerdiumProfile/File\ System/**
+/FerdiumProfile/icons/
+/FerdiumProfile/recipes/
+/FerdiumProfile/sentry/
+
+# files that are symlinked from the dotfiles repo
+/.envrc
+/.gitignore

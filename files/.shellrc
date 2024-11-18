@@ -1,0 +1,139 @@
+#!/usr/bin/env zsh
+
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
+################################################################################
+# This file is sourced only for login shells. It is used to define the bare
+# minimum shell functions that are needed during bootstrap of a vanilla OS to
+# bootstrap installation of all other config files.
+#
+# file location: ${HOME}/.shellrc
+# load order: .zshenv, .zprofile, .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
+################################################################################
+
+# execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
+test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
+
+colorize() {
+  printf "\x1b[${1}m"
+}
+
+NC=$(colorize '0') # No Color
+BLACK=$(colorize '0;30')
+DARK_GRAY=$(colorize '1;30')
+RED=$(colorize '0;31')
+LIGHT_RED=$(colorize '1;31')
+GREEN=$(colorize '0;32')
+LIGHT_GREEN=$(colorize '1;32')
+ORANGE=$(colorize '0;33')
+YELLOW=$(colorize '1;33')
+BLUE=$(colorize '0;34')
+LIGHT_BLUE=$(colorize '1;34')
+PURPLE=$(colorize '0;35')
+LIGHT_PURPLE=$(colorize '1;35')
+CYAN=$(colorize '0;36')
+LIGHT_CYAN=$(colorize '1;36')
+LIGHT_GRAY=$(colorize '0;37')
+WHITE=$(colorize '1;37')
+
+blue() {
+  printf "${LIGHT_BLUE}${1}${NC}"
+}
+
+cyan() {
+  printf "${LIGHT_CYAN}${1}${NC}"
+}
+
+green() {
+  printf "${GREEN}${1}${NC}"
+}
+
+red() {
+  printf "${RED}${1}${NC}"
+}
+
+yellow() {
+  printf "${YELLOW}${1}${NC}"
+}
+
+warn() (
+  echo "$(yellow "**WARN** ${1}")"
+)
+
+is_non_zero_string() {
+  ! test -z "${1}"
+}
+
+is_file() {
+  is_non_zero_string "${1}" && test -f "${1}"
+}
+
+is_executable() {
+  is_non_zero_string "${1}" && test -e "${1}"
+}
+
+is_directory() {
+  is_non_zero_string "${1}" && test -d "${1}"
+}
+
+is_git_repo() {
+  is_directory "${1}/.git"
+}
+
+load_file_if_exists() {
+  # shellcheck disable=SC2015
+  # shellcheck disable=SC1090
+  is_file "${1}" && source "${1}"
+}
+
+delete_directory_if_exists() {
+  is_directory "${1}" && echo "$(red "Deleting") '$(green "${1}")'" && sudo rm -rf "${1}"
+}
+
+command_exists() {
+  type "${1}" &> /dev/null 2>&1
+}
+
+# Note: This function is kind of equivalent to 'omz reload', but that doesn't seem to work when installing on a vanilla OS
+load_zsh_configs() {
+  command_exists omz && omz reload && return
+
+  file_list=('.zshenv' '.zprofile' '.zshrc' '.zlogin')
+  for file in "${file_list[@]}"; do
+    FIRST_INSTALL=true load_file_if_exists "${ZDOTDIR}/${file}"
+  done
+}
+
+is_macos() {
+  [[ "${OSTYPE}" =~ 'darwin' ]]
+}
+
+is_linux() {
+  [[ "${OSTYPE}" =~ 'Linux' ]]
+}
+
+is_windows() {
+  [[ "${OSTYPE}" =~ 'MINGW' ]]
+}
+
+if is_macos; then
+  # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
+  reinstall_xcode() {
+    # delete if already present
+    delete_directory_if_exists "/Applications/Xcode.app"
+
+    xcode-select --install
+    sudo xcodebuild -license accept || true
+  }
+
+  # Uninstall and reinstall xcode command line tools (useful immediately after upgrade or if reinstalling the OS)
+  reinstall_xcode_cmdline_tools() {
+    # delete if already present
+    delete_directory_if_exists "/Library/Developer/CommandLineTools"
+
+    # install using the non-gui cmd-line alone
+    touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+    softwareupdate -ia
+    rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+  }
+fi

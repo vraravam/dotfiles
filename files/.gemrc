@@ -1,0 +1,8 @@
+---
+gem: --no-ri --no-rdoc --no-document --clear-sources
+:backtrace: true
+:benchmark: true
+:ssl_verify_mode: 0
+:update_sources: true
+:bulk_threshold: 1000
+:verbose: true
