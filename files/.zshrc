@@ -64,6 +64,9 @@ zstyle ':omz:update' mode auto      # update automatically without asking
 # Uncomment the following line to change how often to auto-update (in days).
 zstyle ':omz:update' frequency 1
 
+# needed for zsh-sweep
+export zs_set_path=1
+
 # Uncomment the following line if pasting URLs and other text is messed up.
 # DISABLE_MAGIC_FUNCTIONS="true"
 
@@ -106,7 +109,7 @@ ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 # Custom plugins may be added to ${ZSH_CUSTOM}/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(brew direnv eza fast-syntax-highlighting git git-extras iterm2 mise sudo zbell zsh-autosuggestions)
+plugins=(brew direnv eza fast-syntax-highlighting git git-extras iterm2 mise sudo zbell zsh-autosuggestions zsh-sweep)
 
 # Set plugin options that are needed before each plugin is loaded
 zstyle ':omz:plugins:eza' 'icons' yes
