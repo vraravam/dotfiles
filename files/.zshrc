@@ -64,6 +64,14 @@ zstyle ':omz:update' mode auto      # update automatically without asking
 # Uncomment the following line to change how often to auto-update (in days).
 zstyle ':omz:update' frequency 1
 
+# Set plugin options that are needed before each plugin is loaded
+zstyle ':omz:plugins:eza' 'icons' yes
+# zstyle ':omz:plugins:eza' 'git-status' yes
+# zstyle ':omz:plugins:eza' 'header' yes
+zstyle :omz:plugins:iterm2 shell-integration yes
+zstyle ':completion:*:*:docker:*' option-stacking yes
+zstyle ':completion:*:*:docker-*:*' option-stacking yes
+
 # needed for zsh-sweep
 export zs_set_path=1
 
@@ -77,7 +85,7 @@ export zs_set_path=1
 # DISABLE_AUTO_TITLE="true"
 
 # Uncomment the following line to enable command auto-correction.
-ENABLE_CORRECTION="true"
+export ENABLE_CORRECTION="true"
 
 # Uncomment the following line to display red dots whilst waiting for completion.
 # You can also set it to another string to have that shown instead of the default red dots.
@@ -102,7 +110,7 @@ ENABLE_CORRECTION="true"
 # ZSH_CUSTOM=/path/to/new-custom-folder
 
 # https://github.com/zsh-users/zsh-autosuggestions?tab=readme-ov-file#suggestion-strategy
-ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 
 # Which plugins would you like to load?
 # Standard plugins can be found in ${ZSH}/plugins/
@@ -111,16 +119,8 @@ ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 # Add wisely, as too many plugins slow down shell startup.
 plugins=(brew direnv eza fast-syntax-highlighting git git-extras iterm2 mise sudo zbell zsh-autosuggestions zsh-sweep)
 
-# Set plugin options that are needed before each plugin is loaded
-zstyle ':omz:plugins:eza' 'icons' yes
-# zstyle ':omz:plugins:eza' 'git-status' yes
-# zstyle ':omz:plugins:eza' 'header' yes
-zstyle :omz:plugins:iterm2 shell-integration yes
-zstyle ':completion:*:*:docker:*' option-stacking yes
-zstyle ':completion:*:*:docker-*:*' option-stacking yes
-
 # according to https://github.com/zsh-users/zsh-completions/issues/603#issue-373185486, this can't be added as a plugin to omz for the fpath to work correctly
-ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH:-"${HOME}/.oh-my-zsh"}/custom"}"
+export ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH:-"${HOME}/.oh-my-zsh"}/custom"}"
 is_directory "${ZSH_CUSTOM}/plugins/zsh-completions/src" && fpath+="${ZSH_CUSTOM}/plugins/zsh-completions/src"
 
 load_file_if_exists "${ZSH}/oh-my-zsh.sh"

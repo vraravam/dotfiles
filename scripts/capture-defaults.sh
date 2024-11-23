@@ -4,10 +4,10 @@
 
 # file location: <anywhere; but advisable in the PATH>
 
-# This script will capture (export) the settings or import the settings from the location specified in the $TARGET_DIR env var defined down below. You can back the files up to any cloud storage and retrieve into the new laptop to then get back all settings as per the original machine. The only word of caution is to use it with the same OS version (I haven't tried in any situations where the old and new machines had different OS versions - so I cannot guarantee if that might break the system in any way)
+# This script will export or import the settings from the location specified in the target directory defined down below. You can backup the files to any cloud storage and retrieve into the new laptop to then get back all settings as per the original machine. The only word of caution is to use it with the same OS version (I haven't tried in any situations where the old and new machines had different OS versions - so I cannot guarantee if that might break the system in any way)
 
 # A trick to find the name of the app:
-# Run `defaults read` in an empty window of a terminal app, then use the search functionality to search for a known word related to that app (like eg app visible name, author, some setting that's unique to that app, etc). Once you find this, trace back to the left-most child (1st of the top-level parent) in the printed JSON to then get the real unique name of the app where its settings are stored.
+# Run `defaults read` in an empty window of a terminal app, then use the search functionality to search for a known word related to that app (like eg app visible name, author, some setting that's unique to that app, etc). Once you find this, trace back to the left-most child (1st of the top-level parent) in the printed JSON to then get the real unique name of the app where its settings are stored. Please note that one app might have multiple such groups / names at the top-level (for eg zoom). If this is the case, you will need to capture each name individually.
 
 type warn &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
@@ -20,16 +20,16 @@ usage() {
 
 [ $# -ne 1 ] && usage ${0}
 
-TARGET_DIR="${PERSONAL_CONFIGS_DIR}/defaults"
+local target_dir="${PERSONAL_CONFIGS_DIR}/defaults"
 
 case "${1}" in
   "e" )
-    operation="export"
-    git_cleanup="git -C ${HOME} rm -rf ${TARGET_DIR}/*"
-    git_stage="git -C ${HOME} add ${TARGET_DIR}"
+    operation='export'
+    git_cleanup="git -C ${HOME} rm -rf ${target_dir}/*"
+    git_stage="git -C ${HOME} add ${target_dir}"
     ;;
   "i" )
-    operation="import"
+    operation='import'
     # shellcheck disable=SC2089
     git_cleanup="warn 'Skipping git cleanup'"
     # shellcheck disable=SC2089
@@ -43,7 +43,7 @@ esac
 
 # shellcheck disable=SC2090
 eval "${git_cleanup}"
-mkdir -p "${TARGET_DIR}"
+mkdir -p "${target_dir}"
 
 app_array=(
   'ch.protonvpn.mac'
@@ -184,9 +184,9 @@ app_array=(
 echo "Running operation: $(green ${operation})"
 for app_pref in "${app_array[@]}"; do
   echo "Processing $(cyan ${app_pref})"
-  TARGET_FILE="${TARGET_DIR}/${app_pref}.defaults"
-  is_file "${TARGET_FILE}" || touch "${TARGET_FILE}"
-  /usr/bin/defaults "${operation}" "${app_pref}" "${TARGET_FILE}"
+  local target_file="${target_dir}/${app_pref}.defaults"
+  is_file "${target_file}" || touch "${target_file}"
+  /usr/bin/defaults "${operation}" "${app_pref}" "${target_file}"
 done
 
 # shellcheck disable=SC2090

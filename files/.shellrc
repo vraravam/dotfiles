@@ -98,7 +98,7 @@ command_exists() {
 load_zsh_configs() {
   command_exists omz && omz reload && return
 
-  file_list=('.zshenv' '.zprofile' '.zshrc' '.zlogin')
+  local file_list=('.zshenv' '.zprofile' '.zshrc' '.zlogin')
   for file in "${file_list[@]}"; do
     FIRST_INSTALL=true load_file_if_exists "${ZDOTDIR}/${file}"
   done

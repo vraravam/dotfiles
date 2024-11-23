@@ -128,18 +128,6 @@ export WORDCHARS="${WORDCHARS:s#.#}"
 export CUCUMBER_COLORS="pending_param=magenta:failed_param=magenta:passed_param=magenta:skipped_param=magenta"
 export RSPEC="true"
 
-### Fix slowness of pastes with zsh-syntax-highlighting.zsh
-pasteinit() {
-  OLD_SELF_INSERT="${${(s.:.)widgets[self-insert]}[2,3]}"
-  zle -N self-insert url-quote-magic # I wonder if you'd need `.url-quote-magic`?
-}
-pastefinish() {
-  zle -N self-insert "${OLD_SELF_INSERT}"
-}
-zstyle :bracketed-paste-magic paste-init pasteinit
-zstyle :bracketed-paste-magic paste-finish pastefinish
-### Fix slowness of pastes
-
 use_homebrew_installation_for() {
   ! is_directory "${1}" && return
 
@@ -161,9 +149,8 @@ use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/zlib"
 use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/sqlite"
 
 # override default openssl and use from homebrew installation
-OPENSSL_DIR="${HOMEBREW_PREFIX}/opt/openssl@3"
-use_homebrew_installation_for "${OPENSSL_DIR}"
-is_directory "${OPENSSL_DIR}" && export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${OPENSSL_DIR}"
+local openssl_dir="${HOMEBREW_PREFIX}/opt/openssl@3"
+is_directory "${openssl_dir}" && use_homebrew_installation_for "${openssl_dir}" && export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${openssl_dir}"
 
 if is_macos && command_exists brew; then
   export HOMEBREW_NO_ANALYTICS=1

@@ -41,7 +41,6 @@ brew 'ncdu'
 brew 'powerlevel10k'
 brew 'prettyping'
 brew 'ripgrep'
-brew 'shellcheck'
 brew 'syncthing'
 brew 'tldr'
 brew 'vim'
@@ -61,7 +60,6 @@ cask 'appcleaner'
 cask 'arc'
 cask 'brave-browser'
 cask 'clocker'
-# cask 'cloudflare-warp'
 cask 'firefox@nightly' #, greedy: true
 cask 'font-meslo-lg-nerd-font'
 cask 'iterm2'
@@ -152,6 +150,7 @@ end
 
 # ---- command-line utilities
 # brew 'fzy'
+# brew 'shellcheck'
 
 # ---- git utilities
 # brew 'git-crypt'
@@ -171,6 +170,7 @@ end
 # cask 'git-credential-manager'
 
 # ---- casks
+# cask 'cloudflare-warp'
 # cask 'dbeaver-community'
 # cask 'intellij-idea-ce'
 # cask 'kdiff3'
