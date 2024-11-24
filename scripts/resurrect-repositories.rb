@@ -115,7 +115,7 @@ def resurrect_each(repo, idx, total)
     system("#{git_cmd} remote -vv")
   else
     puts "Cloning from: #{repo['remote'].yellow} into #{folder.yellow}"
-    system("#{git_cmd} clone -q '#{repo['remote']}' .") || abort("Couldn't clone the repo since the folder is not empty; aborting")
+    system("#{git_cmd} clone -q '#{repo['remote']}' . --recurse-submodules") || abort("Couldn't clone the repo since the folder is not empty; aborting")
   end
 
   Array(repo[OTHER_REMOTES_KEY_NAME]).each do |name, remote|
