@@ -53,8 +53,7 @@ fi
 # Turn on FileVault #
 #####################
 echo "$(green "==> Verifying FileVault status")"
-FILEVAULT_STATUS=$(fdesetup status)
-if [[ ${FILEVAULT_STATUS} != "FileVault is On." ]]; then
+if [[ "$(fdesetup isactive)" != "true" ]]; then
   echo "$(red "FileVault is not turned on. Please encrypt your hard disk!")"
   exit 1
 fi
@@ -120,7 +119,6 @@ if is_non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; the
   eval "${DOTFILES_DIR}/scripts/approve-fingerprint-sudo.sh"
 
   # Load all zsh config files for PATH and other env vars to take effect
-  # Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
   load_zsh_configs
 
   # Setup the DOTFILES_DIR repo's upstream if it doesn't already point to vraravam's repo

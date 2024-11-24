@@ -191,18 +191,17 @@
 [branch]
   autoSetupMerge = true
   autoSetupRebase = always
-  # sort branches by last commit date
-  sort = committerdate
+  sort = committerdate # sort branches by last commit date
 [checkout]
   defaultRemote = origin
   workers = 0
 [color "diff"]
-  meta = yellow
+  commit = yellow bold
   frag = magenta bold
   func = 146 bold
-  commit = yellow bold
-  old = red bold
+  meta = yellow
   new = green bold
+  old = red bold
   whitespace = red reverse
 [core]
   autocrlf = input
@@ -215,44 +214,44 @@
   untrackedCache = true
   whitespace = fix
 [diff]
-  compactionHeuristic = true
-  renames = true
-  renameLimit = 1000
   colorMoved = default
+  compactionHeuristic = true
+  renameLimit = 1000
+  renames = true
   submodule = diff
 [diff-so-fancy]
-  # markEmptyLines = false
   # changeHunkIndicators = false
+  # markEmptyLines = false
   # stripLeadingSymbols = false
   # useUnicodeRuler = false
 [fetch]
+  parallel = 0
   prune = true
   pruneTags = true
-  parallel = 0
   showForcedUpdates = true
   writeCommitGraph = true
 [filter "lfs"]
-  required = true
   clean = git-lfs clean -- %f
-  smudge = git-lfs smudge -- %f
   process = git-lfs filter-process
+  required = true
+  smudge = git-lfs smudge -- %f
 [gc]
   auto = 2000
   pruneExpire = now
-  worktreePruneExpire = 1.weeks.ago
   reflogExpire = 2.weeks.ago
   reflogExpireUnreachable = 2.weeks.ago
   rerereResolved = 1.weeks.ago
+  worktreePruneExpire = 1.weeks.ago
 [grep]
   column = true
   extendedRegexp = true
-  lineNumber = true
   fullName = true
+  lineNumber = true
 [gui]
-  pruneduringfetch = true
   matchtrackingbranch = true
-  warndetachedcommit = true
+  pruneduringfetch = true
   tabsize = 2
+  warndetachedcommit = true
 [help]
   autocorrect = 1
 [http]
@@ -265,11 +264,11 @@
   auto = false
   strategy = incremental
 [merge]
+  autoStash = true
+  # conflictstyle = diff3
   defaultToUpstream = true
   ff = only
   renamelimit = 15000
-  # conflictstyle = diff3
-  autoStash = true
 [pack]
   threads = 0
   writeReverseIndex = true
@@ -277,29 +276,30 @@
   # Note: The '--pattern' switch sets some pre-search terms, but also scrolls to fill the whole console for single line change - which I dont like.
   diff = diff-so-fancy | less --tabs=2 -RFX  # --pattern '^(Date|added|deleted|modified|renamed): '    # windows
 [pull]
-  rebase = true
   autoStash = true
+  rebase = true
 [push]
+  autoSetupRemote = true
   default = upstream
   followTags = true
   recurseSubmodules = check
 [rebase]
+  abbreviateCommands = true
   autoSquash = true
   autoStash = true
   missingCommitsCheck = error
-  abbreviateCommands = true
 [rerere]
-  enabled = true
   autoUpdate = true
+  enabled = true
 [stash]
-  untracked = true
   showIncludeUntracked = true
   showPatch = true
+  untracked = true
 [status]
+  showStash = true
   showUntrackedFiles = all
   # Convert to 'true' in case you work with submodules - but, will have visible perf slowdown
   submoduleSummary = false     # windows
-  showStash = true
 [submodule]
   fetchJobs = 0
   # recurse = true

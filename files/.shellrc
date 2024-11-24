@@ -123,7 +123,7 @@ if is_macos; then
     delete_directory_if_exists "/Applications/Xcode.app"
 
     xcode-select --install
-    sudo xcodebuild -license accept || true
+    sudo xcodebuild -license accept -quiet || true
   }
 
   # Uninstall and reinstall xcode command line tools (useful immediately after upgrade or if reinstalling the OS)
@@ -133,7 +133,7 @@ if is_macos; then
 
     # install using the non-gui cmd-line alone
     touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
-    softwareupdate -ia
+    sudo softwareupdate -ia --agree-to-license --force
     rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
   }
 fi

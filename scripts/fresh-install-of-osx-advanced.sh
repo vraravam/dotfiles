@@ -7,7 +7,6 @@
 type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.shellrc"
 
 # Load all zsh config files for PATH and other env vars to take effect
-# Note: Can't run 'exec zsh' here - since the previous function definitions and PATH, etc will be lost in the sub-shell
 load_zsh_configs
 
 if is_non_zero_string "${KEYBASE_USERNAME}"; then
@@ -103,18 +102,14 @@ rm -rf "${HOME}/.ssh/known_hosts.old"
 ##############################################
 # Load the direnv config for the home folder #
 ##############################################
-# TODO: See how this can be combined into 'allow_all_direnv_configs'
-cd ..
-cd -
+# TODO: Check if this is still needed (since we are invoking 'allow_all_direnv_configs' up above)
+# direnv allow "${HOME}"
 
 ##################################################
 # Load the direnv config for the profiles folder #
 ##################################################
-# TODO: See how this can be combined into 'allow_all_direnv_configs'
-if is_directory "${PERSONAL_PROFILES_DIR}"; then
-  cd "${PERSONAL_PROFILES_DIR}"
-  cd -
-fi
+# TODO: Check if this is still needed (since we are invoking 'allow_all_direnv_configs' up above)
+# is_directory "${PERSONAL_PROFILES_DIR}" && direnv allow "${PERSONAL_PROFILES_DIR}"
 
 ###################################################################
 # Restore the preferences from the older machine into the new one #
@@ -128,7 +123,7 @@ command_exists "capture-defaults.sh" && capture-defaults.sh i
 # Recreate the zsh completions #
 ################################
 echo "$(green "==> Recreate zsh completions")"
-rm -rf "${HOME}"/.zcompdump*; compinit -C
+rm -rf "${ZDOTDIR}"/.zcompdump*; compinit -C
 
 ###################
 # Setup cron jobs #
@@ -168,4 +163,4 @@ command_exists recron && recron
 # dotnet tool install -g dotnet-format
 
 echo "\n"
-echo "$(green "********** Finished auto installation process: Please perform these manual steps **********")"
+echo "$(green "********** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **********")"

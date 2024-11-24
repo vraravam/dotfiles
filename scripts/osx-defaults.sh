@@ -78,6 +78,9 @@ sudo softwareupdate --schedule OFF
 # defaults write -g PMPrintingExpandedStateForPrint -bool true
 # defaults write -g PMPrintingExpandedStateForPrint2 -bool true
 
+# Automatically quit printer app once the print jobs complete
+# defaults write com.apple.print.PrintingPrefs "Quit When Finished" -bool true
+
 # Restore the 'Save As' menu item (Equivalent to adding a Keyboard shortcut in the System Preferences.app )
 # defaults write -g NSUserKeyEquivalents -dict-add 'Save As...' '@$S'
 
@@ -538,6 +541,9 @@ fi
 # if ask "Disable window animations" N; then
   # defaults write -g NSAutomaticWindowAnimationsEnabled -bool false && killall Finder
 # fi
+
+# Avoiding the creation of .DS_Store files on network volumes
+defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
 
 ###############################################################################
 # Energy saving                                                               #
@@ -1122,7 +1128,7 @@ fi
 # Apple Multitouch Trackpad                                                   #
 ###############################################################################
 if ask "Apple Multitouch trackpad features" Y; then
-  defaults write com.apple.AppleMultitouchTrackpad Clicking -int 1
+  defaults write com.apple.AppleMultitouchTrackpad Clicking -bool true
   defaults write com.apple.AppleMultitouchTrackpad DragLock -int 0
   defaults write com.apple.AppleMultitouchTrackpad Dragging -int 0
   defaults write com.apple.AppleMultitouchTrackpad FirstClickThreshold -int 1
