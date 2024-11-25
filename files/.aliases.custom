@@ -44,6 +44,10 @@ update_all_repos() {
   is_directory "${PERSONAL_PROFILES_DIR}" && _update_repo "${PERSONAL_PROFILES_DIR}" '.'
 }
 
+status_all_repos() {
+  st "${HOME}"; st "${DOTFILES_DIR}"; st "${PERSONAL_PROFILES_DIR}"
+}
+
 # pushes the specified repo (disables and re-enables cron while doing this operation)
 # internal function: not to be called separately
 _push_repo() {
