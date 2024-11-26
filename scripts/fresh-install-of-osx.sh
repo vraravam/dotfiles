@@ -33,7 +33,7 @@ fi
 # Install command line dev tools #
 ##################################
 echo "$(green "==> Installing xcode command-line tools")"
-if ! is_directory "/Library/Developer/CommandLineTools"; then
+if ! is_directory "/Library/Developer/CommandLineTools/usr/bin"; then
   reinstall_xcode_cmdline_tools
 else
   warn "skipping installation of xcode command-line tools since its already present"
