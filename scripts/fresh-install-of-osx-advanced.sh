@@ -99,17 +99,19 @@ command_exists allow_all_direnv_configs && allow_all_direnv_configs
 command_exists install_mise_versions && install_mise_versions
 rm -rf "${HOME}/.ssh/known_hosts.old"
 
-##############################################
-# Load the direnv config for the home folder #
-##############################################
-# TODO: Check if this is still needed (since we are invoking 'allow_all_direnv_configs' up above)
-# direnv allow "${HOME}"
+#####################################################################################
+# Load the direnv config for the home folder so that it creates necessary sym-links #
+#####################################################################################
+if [[ "$(pwd)" == "${HOME}" ]]; then
+  pushd ..; popd
+else
+  pushd "${HOME}"; pushd ..; popd; popd
+fi
 
-##################################################
-# Load the direnv config for the profiles folder #
-##################################################
-# TODO: Check if this is still needed (since we are invoking 'allow_all_direnv_configs' up above)
-# is_directory "${PERSONAL_PROFILES_DIR}" && direnv allow "${PERSONAL_PROFILES_DIR}"
+#########################################################################################
+# Load the direnv config for the profiles folder so that it creates necessary sym-links #
+#########################################################################################
+pushd "${PERSONAL_PROFILES_DIR}"; popd
 
 ###################################################################
 # Restore the preferences from the older machine into the new one #
