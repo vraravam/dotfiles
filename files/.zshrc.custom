@@ -132,11 +132,14 @@ use_homebrew_installation_for() {
   ! is_directory "${1}" && return
 
   is_directory "${1}/bin" && export PATH="${1}/bin:${PATH+:${PATH}}"
+  is_directory "${1}/libexec/bin" && export PATH="${1}/libexec/bin:${PATH+:${PATH}}"
+  is_directory "${1}/libexec/gnubin" && export PATH="${1}/libexec/gnubin:${PATH+:${PATH}}"
   # For compilers to find this installation you may need to set:
   is_directory "${1}/lib" && export LDFLAGS="-L${1}/lib ${LDFLAGS+ ${LDFLAGS}}"
   is_directory "${1}/include" && export CPPFLAGS="-I${1}/include ${CPPFLAGS+ ${CPPFLAGS}}"
   # For pkg-config to find this installation you may need to set:
   is_directory "${1}/lib/pkgconfig" && export PKG_CONFIG_PATH="${1}/lib/pkgconfig${PKG_CONFIG_PATH+:${PKG_CONFIG_PATH}}"
+  is_directory "${1}/libexec/gnuman" && export MANPATH="${1}/libexec/gnuman:${MANPATH+:${MANPATH}}"
 }
 
 # override default curl and use from homebrew installation
@@ -147,6 +150,9 @@ use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/zlib"
 
 # override default Sqlite3 and use from homebrew installation
 use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/sqlite"
+
+# override default gnu-tar and use from homebrew installation
+use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/gnu-tar"
 
 # override default openssl and use from homebrew installation
 local openssl_dir="${HOMEBREW_PREFIX}/opt/openssl@3"
