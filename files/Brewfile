@@ -33,6 +33,8 @@ brew 'git-extras'
 brew 'git-gui'
 brew 'git-tools'
 brew 'git'
+brew 'gnu-tar'  # used for zen-browser development
+brew 'gs'   # used for compressing PDFs
 brew 'jq'
 brew 'less'
 brew 'mise'
