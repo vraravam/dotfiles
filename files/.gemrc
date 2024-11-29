@@ -1,5 +1,5 @@
 ---
-gem: --no-ri --no-rdoc --no-document --clear-sources
+gem: --no-document --clear-sources
 :backtrace: true
 :benchmark: true
 :ssl_verify_mode: 0
