@@ -14,12 +14,9 @@
 # execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
 test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 
-type is_directory &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+type append_to_path_if_dir_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 # setup paths in the beginning so that all other conditions work correctly
-append_to_path_if_dir_exists() {
-  is_directory "${1}" && path+="${1}"
-}
 append_to_path_if_dir_exists "${PERSONAL_BIN_DIR}"
 append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
 append_to_path_if_dir_exists "${PROJECTS_BASE_DIR}/oss/git_scripts"
@@ -118,56 +115,49 @@ if is_macos; then
   bindkey '^Xi' incremental-complete-word
   bindkey '^Xp' predict-on
   bindkey '^X^P' predict-off
-fi
 
-# defines word-boundaries: ensures that deleting word on /path/to/file deletes only 'file' and not the directory, this removes the '/' from $WORDCHARS
-export WORDCHARS="${WORDCHARS:s#/#}"
-export WORDCHARS="${WORDCHARS:s#.#}"
+  if command_exists brew; then
+    export HOMEBREW_NO_ANALYTICS=1
+    export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
+    export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
+    export HOMEBREW_BAT=1
+    export HOMEBREW_VERBOSE_USING_DOTS=1
+    export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
+    # TODO: Uncomment once this feature is stabilized
+    # export HOMEBREW_VERIFY_ATTESTATIONS=1
 
-# rspec and cucumber
-export CUCUMBER_COLORS="pending_param=magenta:failed_param=magenta:passed_param=magenta:skipped_param=magenta"
-export RSPEC="true"
+    prepend_to_manpath_if_dir_exists "${HOMEBREW_PREFIX}/share/man"
 
-use_homebrew_installation_for() {
-  ! is_directory "${1}" && return
+    use_homebrew_installation_for() {
+      ! is_directory "${1}" && return
 
-  is_directory "${1}/bin" && export PATH="${1}/bin:${PATH+:${PATH}}"
-  is_directory "${1}/libexec/bin" && export PATH="${1}/libexec/bin:${PATH+:${PATH}}"
-  is_directory "${1}/libexec/gnubin" && export PATH="${1}/libexec/gnubin:${PATH+:${PATH}}"
-  # For compilers to find this installation you may need to set:
-  is_directory "${1}/lib" && export LDFLAGS="-L${1}/lib ${LDFLAGS+ ${LDFLAGS}}"
-  is_directory "${1}/include" && export CPPFLAGS="-I${1}/include ${CPPFLAGS+ ${CPPFLAGS}}"
-  # For pkg-config to find this installation you may need to set:
-  is_directory "${1}/lib/pkgconfig" && export PKG_CONFIG_PATH="${1}/lib/pkgconfig${PKG_CONFIG_PATH+:${PKG_CONFIG_PATH}}"
-  is_directory "${1}/libexec/gnuman" && export MANPATH="${1}/libexec/gnuman:${MANPATH+:${MANPATH}}"
-}
+      prepend_to_path_if_dir_exists "${1}/bin"
+      prepend_to_path_if_dir_exists "${1}/libexec/bin"
+      prepend_to_path_if_dir_exists "${1}/libexec/gnubin"
+      # For compilers to find this installation you may need to set:
+      prepend_to_ldflags_if_dir_exists "${1}/lib"
+      prepend_to_cppflags_if_dir_exists "${1}/include"
+      # For pkg-config to find this installation you may need to set:
+      prepend_to_pkg_config_path_if_dir_exists "${1}/lib/pkgconfig"
+      prepend_to_manpath_if_dir_exists "${1}/libexec/gnuman"
+    }
 
-# override default curl and use from homebrew installation
-use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/curl"
+    # override default curl and use from homebrew installation
+    use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/curl"
 
-# zlib - required for installing python via mise
-use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/zlib"
+    # zlib - required for installing python via mise
+    use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/zlib"
 
-# override default Sqlite3 and use from homebrew installation
-use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/sqlite"
+    # override default Sqlite3 and use from homebrew installation
+    use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/sqlite"
 
-# override default gnu-tar and use from homebrew installation
-use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/gnu-tar"
+    # override default gnu-tar and use from homebrew installation
+    use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/gnu-tar"
 
-# override default openssl and use from homebrew installation
-local openssl_dir="${HOMEBREW_PREFIX}/opt/openssl@3"
-is_directory "${openssl_dir}" && use_homebrew_installation_for "${openssl_dir}" && export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${openssl_dir}"
-
-if is_macos && command_exists brew; then
-  export HOMEBREW_NO_ANALYTICS=1
-  export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
-  export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
-  export HOMEBREW_BAT=1
-  export HOMEBREW_VERBOSE_USING_DOTS=1
-  export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
-  export HOMEBREW_CASK_OPTS="--no-quarantine"
-  # TODO: Uncomment once this feature is stabilized
-  # export HOMEBREW_VERIFY_ATTESTATIONS=1
+    # override default openssl and use from homebrew installation
+    local openssl_dir="${HOMEBREW_PREFIX}/opt/openssl@3"
+    is_directory "${openssl_dir}" && use_homebrew_installation_for "${openssl_dir}" && export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${openssl_dir}"
+  fi
 fi
 
 # Make VSCodium use the VS Code marketplace
@@ -181,6 +171,14 @@ fi
 
 # Use bat to colorize man pages
 command_exists bat && export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+
+# defines word-boundaries: ensures that deleting word on /path/to/file deletes only 'file' and not the directory, this removes the '/' from $WORDCHARS
+export WORDCHARS="${WORDCHARS:s#/#}"
+export WORDCHARS="${WORDCHARS:s#.#}"
+
+# rspec and cucumber
+export CUCUMBER_COLORS="pending_param=magenta:failed_param=magenta:passed_param=magenta:skipped_param=magenta"
+export RSPEC="true"
 
 # fzy
 # load_file_if_exists "${HOME}/.fzy-key-bindings.zsh"

@@ -104,6 +104,30 @@ load_zsh_configs() {
   done
 }
 
+append_to_path_if_dir_exists() {
+  is_directory "${1}" && path+="${1}"
+}
+
+append_to_fpath_if_dir_exists() {
+  is_directory "${1}" && fpath+="${1}"
+}
+
+prepend_to_path_if_dir_exists() {
+  is_directory "${1}" && export PATH="${1}:${PATH+:${PATH}}"
+}
+prepend_to_manpath_if_dir_exists() {
+  is_directory "${1}" && export MANPATH="${1}:${MANPATH+:${MANPATH}}"
+}
+prepend_to_ldflags_if_dir_exists() {
+  is_directory "${1}" && export LDFLAGS="-L${1} ${LDFLAGS+ ${LDFLAGS}}"
+}
+prepend_to_cppflags_if_dir_exists() {
+  is_directory "${1}" && export CPPFLAGS="-I${1} ${CPPFLAGS+ ${CPPFLAGS}}"
+}
+prepend_to_pkg_config_path_if_dir_exists() {
+  is_directory "${1}" && export PKG_CONFIG_PATH="${1}${PKG_CONFIG_PATH+:${PKG_CONFIG_PATH}}"
+}
+
 is_macos() {
   [[ "${OSTYPE}" =~ 'darwin' ]]
 }

@@ -14,7 +14,7 @@
 #   ZoomHider
 
 # set global preferences for all 'brew install' commands
-cask_args appdir: '/Applications', no_quarantine: true, adopt: true
+cask_args appdir: '/Applications', fontdir: '/Library/Fonts', no_quarantine: true, adopt: true
 
 # java_present = system('/usr/libexec/java_home --failfast')
 is_arm = Hardware::CPU.arm?

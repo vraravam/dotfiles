@@ -121,7 +121,7 @@ plugins=(brew direnv eza fast-syntax-highlighting git git-extras iterm2 mise sud
 
 # according to https://github.com/zsh-users/zsh-completions/issues/603#issue-373185486, this can't be added as a plugin to omz for the fpath to work correctly
 export ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH:-"${HOME}/.oh-my-zsh"}/custom"}"
-is_directory "${ZSH_CUSTOM}/plugins/zsh-completions/src" && fpath+="${ZSH_CUSTOM}/plugins/zsh-completions/src"
+append_to_fpath_if_dir_exists "${ZSH_CUSTOM}/plugins/zsh-completions/src"
 
 load_file_if_exists "${ZSH}/oh-my-zsh.sh"
 
