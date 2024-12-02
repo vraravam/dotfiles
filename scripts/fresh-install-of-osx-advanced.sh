@@ -26,7 +26,7 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
     rm -rf "${HOME}/tmp"
     mkdir -p "${HOME}/tmp"
     git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME} "${HOME}/tmp"
-    mv "${HOME}/tmp/.git" "${HOME}/"
+    mv -fv "${HOME}/tmp/.git" "${HOME}/"
     rm -rf "${HOME}/tmp"
 
     # Checkout files (these should not have any modifications/conflicts with what is in the remote repo)

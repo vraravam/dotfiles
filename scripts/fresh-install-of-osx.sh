@@ -89,6 +89,7 @@ clone_if_not_present() {
   target_folder="${ZSH_CUSTOM}/plugins/$(basename ${1})"
   if ! is_directory "${target_folder}"; then
     git clone -q --depth=1 "${1}" "${target_folder}"
+    echo "$(green "Successfully cloned ${1} into ${target_folder}")"
   else
     warn "skipping cloning of '$(basename "${1}")' since '${target_folder}' is already present"
   fi
@@ -132,7 +133,7 @@ if is_non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; the
 else
   # Load all zsh config files for PATH and other env vars to take effect
   load_zsh_configs
-  warn "skipping cloning the dotfiles repo since '${DOTFILES_DIR}' is not defined or already present"
+  warn "skipping cloning the dotfiles repo since '${DOTFILES_DIR}' is either not defined or is already present"
 fi
 
 ####################
@@ -158,7 +159,7 @@ sh -c "brew bundle check --file '${HOME}/Brewfile' || brew bundle --file '${HOME
 ###########################################
 replace_executable_if_exists_and_is_not_symlinked() {
   if is_executable "${1}"; then
-    rm -f "${2}"
+    rm -rf "${2}"
     ln -sf "${1}" "${2}"
   else
     warn "executable '${1}' not found and so skipping symlinking"

@@ -520,7 +520,7 @@ fi
 
 # Remove Dropbox's green checkmark icons in Finder
 # file=/Applications/Dropbox.app/Contents/Resources/emblem-dropbox-uptodate.icns
-# [ -e "${file}" ] && mv -f "${file}" "${file}.bak"
+# [ -e "${file}" ] && mv -fv "${file}" "${file}.bak"
 
 if ask "Expand the following File Info panes: 'General', 'Open with', and 'Sharing & Permissions'" Y; then
   defaults write com.apple.finder FXInfoPanesExpanded -dict-add "General" -bool true
