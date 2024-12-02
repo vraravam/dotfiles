@@ -3,6 +3,9 @@
 source-path=SCRIPTDIR
 source-path=/mnt/chroot
 
+# Allow opening any 'source'd file, even if not specified as input
+external-sources=true
+
 # Turn on warnings for unquoted variables with safe values
 enable=quote-safe-variables
 
@@ -11,3 +14,6 @@ enable=check-unassigned-uppercase
 
 # Allow using `which` since it gives full paths and is common enough
 disable=SC2230
+
+# Allow [ ! -z foo ] instead of suggesting -n
+disable=SC2236
