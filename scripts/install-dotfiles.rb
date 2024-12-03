@@ -21,10 +21,11 @@ def override_into_home_folder(file, dotfiles_dir_length)
   # git doesn't handle symlinks for its core configuration files, so files with 'custom.git' in their name have to be handled separately
   relative_file_name = file[dotfiles_dir_length..-1].gsub('custom.git', '.git')
 
-  # rename the profiles folder path to pick up the current user's name dynamically
-  relative_file_name.gsub!('/template/', "/#{`whoami`.chomp}/") if relative_file_name.match?(/\/template\//)
+  # process folder names having '--' in their name (strings within two pairs of '--' will refer to env variables)
+  relative_file_name = relative_file_name.split('--').map { |entry| ENV.has_key?(entry) ? ENV[entry] : entry }.join if relative_file_name.include?('--')
 
-  target_file_name = File.join(ENV['HOME'], relative_file_name)
+  # since some env var might already contain the full path from the root...
+  target_file_name = relative_file_name.start_with?(ENV['HOME']) ? relative_file_name : File.join(ENV['HOME'], relative_file_name)
 
   puts "Processing #{file.yellow} --> #{target_file_name.yellow}"
 
