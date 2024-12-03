@@ -9,12 +9,14 @@
 # Note that using zprofile and zlogin, you are able to run commands for login
 # shells before and after zshrc.
 #
-# file location: ${HOME}/.zlogin
+# file location: ${ZDOTDIR}/.zlogin
 # load order: .zshenv, .zprofile, .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
 ################################################################################
 
 # execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
 test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
+
+type is_directory &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 recompile_zsh_scripts() {
   if [[ -s "${1}" && (! -s "${1}.zwc" || "${1}" -nt "${1}.zwc") ]]; then

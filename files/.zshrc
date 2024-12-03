@@ -6,7 +6,7 @@
 # This file is sourced only for interactive shells. It should contain commands
 # to set up aliases, functions, options, key bindings, etc.
 #
-# file location: ${HOME}/.zshrc
+# file location: ${ZDOTDIR}/.zshrc
 # load order: .zshenv, .zprofile, .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
 ################################################################################
 

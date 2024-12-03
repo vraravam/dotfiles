@@ -7,7 +7,7 @@
 # the first character of argv[0], and shells invoked with the -l flag). It's
 # read after zshenv.
 #
-# file location: ${HOME}/.zprofile
+# file location: ${ZDOTDIR}/.zprofile
 # load order: .zshenv, .zprofile, .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
 ################################################################################
 

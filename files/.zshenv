@@ -13,7 +13,7 @@
 #
 # Notice: .zshenv is the same, except that it's not read if zsh is started with -f
 #
-# file location: ${HOME}/.zshenv
+# file location: ${ZDOTDIR}/.zshenv
 # load order: .zshenv, .zprofile, .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
 ################################################################################
 
