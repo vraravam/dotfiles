@@ -4,6 +4,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ### 1.0-2
 * *[install-dotfiles.rb]* Refactored the logic to handle ssh global configuration file for ease of readability and maintainability.
+* *[README.md]* Added new contributor @jotheeswaran-dev.
 
 ### 1.0-1
 
