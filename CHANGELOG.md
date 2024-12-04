@@ -3,7 +3,7 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 ### 1.0-2
-* *[install-dotfiles.rb]* Refactored the override_into_home_folder function to improve readability and maintainability.
+* *[install-dotfiles.rb]* Refactored the logic to handle ssh global configuration file foe ease of readability and maintainability.
 
 ### 1.0-1
 
