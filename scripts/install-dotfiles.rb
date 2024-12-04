@@ -26,7 +26,7 @@ def override_into_home_folder(file, dotfiles_dir_length)
   relative_file_name = relative_file_name.split('--').map { |entry| ENV.has_key?(entry) ? ENV[entry] : entry }.join if relative_file_name.include?('--')
 
   # since some env var might already contain the full path from the root...
-  target_file_name = relative_file_name.start_with?(ENV['HOME']) ? relative_file_name : File.join(ENV['HOME'], relative_file_name)
+  target_file_name = relative_file_name.start_with?(HOME) ? relative_file_name : File.join(HOME, relative_file_name)
 
   puts "Processing #{file.yellow} --> #{target_file_name.yellow}"
 
@@ -41,6 +41,7 @@ def override_into_home_folder(file, dotfiles_dir_length)
 end
 
 puts 'Starting to install dotfiles'.green
+HOME = ENV['HOME']
 dotfiles_dir = File.expand_path(File.join(__dir__, '..', 'files'))
 dotfiles_dir_length = dotfiles_dir.length + 1
 Find.find(dotfiles_dir) do |file|
@@ -48,16 +49,15 @@ Find.find(dotfiles_dir) do |file|
   override_into_home_folder(file, dotfiles_dir_length)
 end
 
-DEFAULT_SSH_CONFIG = Pathname.new(ENV['HOME']) + '.ssh' + 'config'
-GLOBAL_SSH_CONFIG = Pathname.new(ENV['HOME']) + '.ssh' + 'global_config'
-
-if GLOBAL_SSH_CONFIG.exist?
-  DEFAULT_SSH_CONFIG.touch unless DEFAULT_SSH_CONFIG.exist?
+ssh_folder = Pathname.new(HOME) + '.ssh'
+default_ssh_config = ssh_folder + 'config'
+if (ssh_folder + 'global_config').exist?
+  default_ssh_config.touch unless default_ssh_config.exist?
 
   include_line = 'Include ~/.ssh/global_config'
-  last_two_lines = DEFAULT_SSH_CONFIG.readlines(chomp: true)[-2..-1] || []
+  last_two_lines = default_ssh_config.readlines(chomp: true)[-2..-1] || []
 
-  DEFAULT_SSH_CONFIG.append("\n#{include_line}\n") unless last_two_lines.include?(include_line)
+  default_ssh_config.append("\n#{include_line}\n") unless last_two_lines.include?(include_line)
 end
 
 puts "Since the '.gitignore' and '.gitattributes' files are COPIED over, any new changes being pulled in (from a newer version of the upstream repo) need to be manually reconciled between this repo and your home and profiles folders".red
