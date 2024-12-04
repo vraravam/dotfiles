@@ -23,7 +23,7 @@ def override_into_home_folder(file, dotfiles_dir_length)
   relative_file_name = file[dotfiles_dir_length..-1].gsub('custom.git', '.git')
 
   # process folder names having '--' in their name (strings within two pairs of '--' will refer to env variables)
-  relative_file_name = relative_file_name.split('--').map { |entry| ENV.has_key?(entry) ? ENV[entry] : entry }.join if relative_file_name.include?('--')
+  relative_file_name.gsub!(/--(.*?)--/) { ENV[$1] || $1 }
 
   # since some env var might already contain the full path from the root...
   target_file_name = relative_file_name.start_with?(HOME) ? relative_file_name : File.join(HOME, relative_file_name)
