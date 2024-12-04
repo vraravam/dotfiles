@@ -15,13 +15,13 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
   ######################
   # Login into keybase #
   ######################
-  echo "$(green "==> Logging into keybase")"
+  echo "$(blue "==> Logging into keybase")"
   ! keybase login && echo "$(red "could not login into keybase. Retry again.")" && exit -1
 
   #######################
   # Clone the home repo #
   #######################
-  echo "$(green "==> Cloning home repo")"
+  echo "$(blue "==> Cloning home repo")"
   if is_non_zero_string "${KEYBASE_HOME_REPO_NAME}" && ! is_git_repo "${HOME}"; then
     rm -rf "${HOME}/tmp"
     mkdir -p "${HOME}/tmp"
@@ -44,7 +44,7 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
   ###########################
   # Clone the profiles repo #
   ###########################
-  echo "$(green "==> Cloning profiles repo")"
+  echo "$(blue "==> Cloning profiles repo")"
   if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && ! is_git_repo "${PERSONAL_PROFILES_DIR}"; then
     rm -rf "${PERSONAL_PROFILES_DIR}"
     git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME} "${PERSONAL_PROFILES_DIR}"
@@ -62,7 +62,7 @@ fi
 # Generate the repositories-oss.yml fie if not present #
 ########################################################
 file_name="${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
-echo "$(green "==> Generating ${file_name}")"
+echo "$(blue "==> Generating ${file_name}")"
 if ! is_file "${file_name}"; then
   mkdir -p "$(dirname "${file_name}")"
   cat <<EOF > "${file_name}"
@@ -77,7 +77,7 @@ fi
 ##################################################
 # Resurrect repositories that I am interested in #
 ##################################################
-echo "$(green "==> Resurrecting repos")"
+echo "$(blue "==> Resurrecting repos")"
 if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
   for file in $(ls "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml); do
     resurrect-repositories.rb -r "${file}"
@@ -89,7 +89,7 @@ fi
 ############################################################
 # post-clone operations for installing system dependencies #
 ############################################################
-echo "$(green "==> Running post-clone operations")"
+echo "$(blue "==> Running post-clone operations")"
 if command_exists all; then
   all restore-mtime -c
   all maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
@@ -116,7 +116,7 @@ pushd "${PERSONAL_PROFILES_DIR}"; popd
 ###################################################################
 # Restore the preferences from the older machine into the new one #
 ###################################################################
-echo "$(green "==> Restore preferences")"
+echo "$(blue "==> Restore preferences")"
 # Run within a separate bash shell to avoid quitting due to errors
 command_exists "osx-defaults.sh" && bash -c "osx-defaults.sh -s"
 command_exists "capture-defaults.sh" && capture-defaults.sh i
@@ -124,13 +124,13 @@ command_exists "capture-defaults.sh" && capture-defaults.sh i
 ################################
 # Recreate the zsh completions #
 ################################
-echo "$(green "==> Recreate zsh completions")"
+echo "$(blue "==> Recreate zsh completions")"
 rm -rf "${ZDOTDIR}"/.zcompdump*; compinit -C
 
 ###################
 # Setup cron jobs #
 ###################
-echo "$(green "==> Setup cron jobs")"
+echo "$(blue "==> Setup cron jobs")"
 command_exists recron && recron
 
 # To install the latest versions of the hex, rebar and phoenix packages
@@ -165,4 +165,4 @@ command_exists recron && recron
 # dotnet tool install -g dotnet-format
 
 echo "\n"
-echo "$(green "********** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **********")"
+success "** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **"

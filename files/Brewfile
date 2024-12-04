@@ -82,6 +82,7 @@ cask 'raycast'
 cask 'silicon' if is_arm
 cask 'stats'
 cask 'the-unarchiver'
+cask 'virtualbox'
 cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when comparing to VSCode
 cask 'zen-browser@twilight'
 cask 'zoom'

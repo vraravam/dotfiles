@@ -60,6 +60,10 @@ warn() (
   echo "$(yellow "**WARN** ${1}")"
 )
 
+success() (
+  echo "$(green "**SUCCESS** ${1}")"
+)
+
 is_non_zero_string() {
   ! test -z "${1}"
 }

@@ -85,13 +85,13 @@ eval "${git_cmd} rfc"
 eval "SKIP_SIZE_BEFORE=1 ${git_cmd} cc"
 
 if [[ "${git_url}" =~ "keybase" ]]; then
-  echo "$(green "Recreating") '${git_url}'"
+  echo "$(blue "Recreating") '${git_url}'"
   git_remote_name="$(echo "${git_url}" | cut -d'/' -f5)"
   keybase git delete -f "${git_remote_name}"
   keybase git create "${git_remote_name}"
 fi
 
-echo "$(green "Pushing") from $(yellow "${folder}") to $(yellow "${git_url}")"
+echo "$(blue "Pushing") from $(yellow "${folder}") to $(yellow "${git_url}")"
 eval "${git_cmd} push -fuq origin '${git_branch_name}'"
 
 rm -fv "${folder}/.git/index.lock"

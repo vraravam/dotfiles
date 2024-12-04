@@ -1,5 +1,6 @@
 - [Background](#background)
 - [How to adopt/customize the scripts to your own settings](#how-to-adoptcustomize-the-scripts-to-your-own-settings)
+  - [How to upgrade / catch-up to new changes](#how-to-upgrade--catch-up-to-new-changes)
 - [Pre-requisites](#pre-requisites)
 - [Basic setup](#basic-setup)
 - [Advanced setup (in addition to the basic setup if you want to capture other files in an encrypted private git repo)](#advanced-setup-in-addition-to-the-basic-setup-if-you-want-to-capture-other-files-in-an-encrypted-private-git-repo)
@@ -27,6 +28,23 @@ In your forked repo, make the following changes, commit and push *via the Github
 1. **_Only in this file, `GettingStarted-Basic.md` and `files/.zprofile` files (and nowhere else):_** Find and replace the strings that reference my usernames to your equivalent ones (for eg, you can search for `vraravam` and `avijayr` and replace them with your values).
 2. ***Optional:*** The nested folder names that you choose for your setup (as referred to by `PROJECTS_BASE_DIR`, `PERSONAL_CONFIGS_DIR`, `PERSONAL_PROFILES_DIR`, `PERSONAL_BIN_DIR`, and `DOTFILES_DIR` in the `files/.zprofile` file) **should be reflected** in the folder structure of the nested folders in the `files` directory of the committed github repo itself. For eg, I have `PROJECTS_BASE_DIR="${HOME}/dev"`, and if your setup uses `workspace` instead of `dev`, then, in your forked repository, the folder name `files/dev` should be renamed to `files/workspace` and so on.
 3. Review all entries in the `${HOME}/Brewfile`, and ensure that there are no unwanted libraries/applications. If you have any doubts (if comparing with my [Brewfile](files/Brewfile)), you will need to search the internet for the uses of those libraries/applications and decide whether to keep it or not.
+
+## How to upgrade / catch-up to new changes
+
+1. My recommendation is to always have all your customizations as a single commit on top of the upstream. This allows to easily rebase to adopt new changes in the future.
+2. Run the `git upreb` command when in this repo's folder (`${HOME}/.bin-oss`). Most of the times, this should simply rebase your changes on top of the latest upstream master
+   1. *Hint:* Before pushing your changes to your remote, if you want to ensure (diff) to ensure that your old changes are retained (for eg in `Brewfile`) and no new/unnecessary changes are present, you can run the following 2 commands and review the diffs manually
+
+   ```bash
+    git diff @{u}  # will diff your local HEAD against the remote HEAD of your own fork. Please remember that this diff will show new changes that I have made in my repo, and which are now going-to-be-adopted into yours. It's a good idea to remove entries in Brewfile that you won't need
+
+    git diff upstream/`git br`  # will diff your local HEAD against the remote HEAD of MY repo. These changes should be exactly the changes that you had done previously (most likely only in GettingStarted-Basic.md, files/.zprofile and files/Brewfile)
+   ```
+
+3. You will have to force-push to your fork's remote after the above step. To accomplish this, I recommend using `git push --force-with-lease`
+4. After the above step, it is always recommended to run the `install-dotfiles.rb` script once to ensure all (non symlinked) changes are setup on your machine correctly.
+5. In case there are any other changes that might be needed after updating, these steps will be detailed in the [changelog](./CHANGELOG.md). In such rare cases, you might have to run the appropriate steps in sequence as detailed out in that section.
+6. After updating/catching-up, it is recommended to quit and restart the terminal so that all "in session memory" aliases, etc are up-to-date so that the files are sourced correctly.
 
 # Pre-requisites
 

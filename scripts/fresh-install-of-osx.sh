@@ -32,7 +32,7 @@ fi
 ##################################
 # Install command line dev tools #
 ##################################
-echo "$(green "==> Installing xcode command-line tools")"
+echo "$(blue "==> Installing xcode command-line tools")"
 if ! is_directory "/Library/Developer/CommandLineTools/usr/bin"; then
   reinstall_xcode_cmdline_tools
 else
@@ -52,7 +52,7 @@ fi
 #####################
 # Turn on FileVault #
 #####################
-echo "$(green "==> Verifying FileVault status")"
+echo "$(blue "==> Verifying FileVault status")"
 if [[ "$(fdesetup isactive)" != "true" ]]; then
   echo "$(red "FileVault is not turned on. Please encrypt your hard disk!")"
   exit 1
@@ -72,7 +72,7 @@ sudo chmod -R 600 "${HOME}"/.ssh/* || true
 #####################
 # Install oh-my-zsh #
 #####################
-echo "$(green "==> Installing oh-my-zsh")"
+echo "$(blue "==> Installing oh-my-zsh")"
 if ! is_directory "${HOME}/.oh-my-zsh"; then
   sh -c "$(ZSH= curl -fsSL https://install.ohmyz.sh/)" "" --unattended
 else
@@ -82,14 +82,14 @@ fi
 ##############################
 # Install custom omz plugins #
 ##############################
-echo "$(green "==> Installing custom omz plugins")"
+echo "$(blue "==> Installing custom omz plugins")"
 ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
 mkdir -p "${ZSH_CUSTOM}/plugins"
 clone_if_not_present() {
   target_folder="${ZSH_CUSTOM}/plugins/$(basename ${1})"
   if ! is_directory "${target_folder}"; then
     git clone -q --depth=1 "${1}" "${target_folder}"
-    echo "$(green "Successfully cloned ${1} into ${target_folder}")"
+    success "Successfully cloned ${1} into ${target_folder}"
   else
     warn "skipping cloning of '$(basename "${1}")' since '${target_folder}' is already present"
   fi
@@ -97,12 +97,11 @@ clone_if_not_present() {
 clone_if_not_present https://github.com/zdharma-continuum/fast-syntax-highlighting
 clone_if_not_present https://github.com/zsh-users/zsh-autosuggestions
 clone_if_not_present https://github.com/zsh-users/zsh-completions
-clone_if_not_present https://github.com/psprint/zsh-sweep
 
 ####################
 # Install dotfiles #
 ####################
-echo "$(green "==> Installing dotfiles")"
+echo "$(blue "==> Installing dotfiles")"
 if is_non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; then
   # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
   rm -rfv "${HOME}/.zshrc"
@@ -139,7 +138,7 @@ fi
 ####################
 # Install homebrew #
 ####################
-echo "$(green "==> Installing homebrew")"
+echo "$(blue "==> Installing homebrew")"
 if ! command_exists brew; then
   # Prep for installing homebrew
   sudo mkdir -p "${HOMEBREW_PREFIX}/tmp" "${HOMEBREW_PREFIX}/repository" "${HOMEBREW_PREFIX}/plugins" "${HOMEBREW_PREFIX}/bin"
@@ -166,7 +165,7 @@ replace_executable_if_exists_and_is_not_symlinked() {
   fi
 }
 
-echo "$(green "==> Linking keybase for command-line invocation")"
+echo "$(blue "==> Linking keybase for command-line invocation")"
 if is_directory "/Applications/Keybase.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/Keybase.app/Contents/SharedSupport/bin/keybase" "${HOMEBREW_PREFIX}/bin/keybase"
   replace_executable_if_exists_and_is_not_symlinked "/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase" "${HOMEBREW_PREFIX}/bin/git-remote-keybase"
@@ -174,7 +173,7 @@ else
   warn "skipping symlinking keybase for command-line invocation"
 fi
 
-echo "$(green "==> Linking VSCode/VSCodium for command-line invocation")"
+echo "$(blue "==> Linking VSCode/VSCodium for command-line invocation")"
 if is_directory "/Applications/VSCodium - Insiders.app"; then
   # Symlink from the embedded executable for codium-insiders
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCodium - Insiders.app/Contents/Resources/app/bin/codium-insiders" "${HOMEBREW_PREFIX}/bin/codium-insiders"
@@ -194,14 +193,14 @@ else
   warn "skipping symlinking vscode/vscodium for command-line invocation"
 fi
 
-echo "$(green "==> Linking rider for command-line invocation")"
+echo "$(blue "==> Linking rider for command-line invocation")"
 if is_directory "/Applications/Rider.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/Rider.app/Contents/MacOS/rider" "${HOMEBREW_PREFIX}/bin/rider"
 else
   warn "skipping symlinking rider for command-line invocation"
 fi
 
-echo "$(green "==> Linking idea/idea-ce for command-line invocation")"
+echo "$(blue "==> Linking idea/idea-ce for command-line invocation")"
 if is_directory "/Applications/IntelliJ IDEA CE.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
 elif is_directory "/Applications/IntelliJ IDEA.app"; then
@@ -213,7 +212,7 @@ fi
 #####################
 # Setup login items #
 #####################
-echo "$(green "==> Setting up login items")"
+echo "$(blue "==> Setting up login items")"
 setup_login_item() {
   if is_directory "/Applications/${1}"; then
     echo "Setting up '${1}' as a login item" && osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/${1}\", hidden:false}" 2>&1 > /dev/null
@@ -238,4 +237,4 @@ for app in "${app_list[@]}"; do
 done
 
 echo "\n"
-echo "$(green "********** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **********")"
+success "** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **"

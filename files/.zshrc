@@ -72,9 +72,6 @@ zstyle :omz:plugins:iterm2 shell-integration yes
 zstyle ':completion:*:*:docker:*' option-stacking yes
 zstyle ':completion:*:*:docker-*:*' option-stacking yes
 
-# needed for zsh-sweep
-export zs_set_path=1
-
 # Uncomment the following line if pasting URLs and other text is messed up.
 # DISABLE_MAGIC_FUNCTIONS="true"
 
@@ -117,7 +114,7 @@ export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 # Custom plugins may be added to ${ZSH_CUSTOM}/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(brew direnv eza fast-syntax-highlighting git git-extras iterm2 mise sudo zbell zsh-autosuggestions zsh-sweep)
+plugins=(brew direnv eza fast-syntax-highlighting git git-extras iterm2 mise sudo zbell zsh-autosuggestions)
 
 # according to https://github.com/zsh-users/zsh-completions/issues/603#issue-373185486, this can't be added as a plugin to omz for the fpath to work correctly
 export ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH:-"${HOME}/.oh-my-zsh"}/custom"}"
