@@ -16,6 +16,7 @@ require "#{__dir__}/utilities/file.rb"
 require "#{__dir__}/utilities/string.rb"
 require 'fileutils'
 require 'find'
+require 'pathname'
 
 def override_into_home_folder(file, dotfiles_dir_length)
   # git doesn't handle symlinks for its core configuration files, so files with 'custom.git' in their name have to be handled separately
@@ -47,16 +48,16 @@ Find.find(dotfiles_dir) do |file|
   override_into_home_folder(file, dotfiles_dir_length)
 end
 
-ssh_folder = File.join(ENV['HOME'], '.ssh')
-if File.exist?(File.join(ssh_folder, 'global_config'))
-  default_ssh_config = File.join(ssh_folder, 'config')
+DEFAULT_SSH_CONFIG = Pathname.new(ENV['HOME']) + '.ssh' + 'config'
+GLOBAL_SSH_CONFIG = Pathname.new(ENV['HOME']) + '.ssh' + 'global_config'
 
-  FileUtils.touch(default_ssh_config) unless File.exist?(default_ssh_config)
+if GLOBAL_SSH_CONFIG.exist?
+  DEFAULT_SSH_CONFIG.touch unless DEFAULT_SSH_CONFIG.exist?
 
-  last_two_lines = IO.readlines(default_ssh_config, chomp: true)[-2..-1] || []
   include_line = 'Include ~/.ssh/global_config'
+  last_two_lines = DEFAULT_SSH_CONFIG.readlines(chomp: true)[-2..-1] || []
 
-  File.append(default_ssh_config, "\n#{include_line}\n") unless last_two_lines.include?(include_line)
+  DEFAULT_SSH_CONFIG.append("\n#{include_line}\n") unless last_two_lines.include?(include_line)
 end
 
 puts "Since the '.gitignore' and '.gitattributes' files are COPIED over, any new changes being pulled in (from a newer version of the upstream repo) need to be manually reconciled between this repo and your home and profiles folders".red
