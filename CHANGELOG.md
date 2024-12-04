@@ -4,7 +4,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ### 1.0-4
 
-* *[install-dotfiles.rb]* Refactored environment variable resolution logic to use gsub! on `relative_file_name` for improved readability and efficiency.
+* *[install-dotfiles.rb]* Refactored environment variable resolution logic to use `gsub!` for improved performance.
   
 ### 1.0-3
 
