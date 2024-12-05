@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-15
+
+* *[Brewfile]* Break up `Brewfile` such that the minimal installation can happen in a shorter duration of time. This is controlled by the env var `HOMEBREW_BASE_INSTALL` which is set in the `fresh-install-of-osx.sh` script when installing from scratch.
+
 ### 1.0-14
 
 * Use 'zsh-defer' to try to bring down shell startup time.
