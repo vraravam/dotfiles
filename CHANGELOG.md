@@ -2,6 +2,14 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-5
+
+* *[approve-fingerprint-sudo.sh]* Persists authorization config for triggering touchId when running sudo commands in terminal across software updates.
+
+#### Adopting these changes
+
+* Run `approve-fingerprint-sudo.sh`
+
 ### 1.0-4
 
 * *[install-dotfiles.rb]* Refactored environment variable resolution logic to use `gsub!` for improved performance.
