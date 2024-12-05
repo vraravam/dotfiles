@@ -23,7 +23,7 @@ sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
 #################################################################################################
 echo "==> Download the '${HOME}/.shellrc' for loading the utility functions"
 if ! type warn &> /dev/null 2>&1; then
-  ! test -f "${HOME}/.shellrc" && curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/files/.shellrc" -o "${HOME}/.shellrc"
+  ! test -f "${HOME}/.shellrc" && curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/files/--HOME--/.shellrc" -o "${HOME}/.shellrc"
   FIRST_INSTALL=true source "${HOME}/.shellrc"
 else
   warn "skipping downloading and sourcing '${HOME}/.shellrc' since its already loaded"
@@ -151,7 +151,7 @@ if ! command_exists brew; then
 else
   warn "skipping installation of homebrew since it's already installed"
 fi
-sh -c "brew bundle check --file '${HOME}/Brewfile' || brew bundle --file '${HOME}/Brewfile'"
+sh -c "${HOMEBREW_PREFIX}/bin/brew bundle check --file '${HOME}/Brewfile' || ${HOMEBREW_PREFIX}/bin/brew bundle --file '${HOME}/Brewfile'"
 
 ###########################################
 # Link programs to open from the cmd-line #
