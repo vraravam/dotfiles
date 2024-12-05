@@ -51,13 +51,14 @@ end
 
 ssh_folder = Pathname.new(HOME) + '.ssh'
 default_ssh_config = ssh_folder + 'config'
+# Note: '~/.ssh/global_config' symlink will exist from the above lines
 if (ssh_folder + 'global_config').exist?
-  default_ssh_config.touch unless default_ssh_config.exist?
+  FileUtils.touch(default_ssh_config) unless default_ssh_config.exist?
 
   include_line = 'Include ~/.ssh/global_config'
   last_two_lines = default_ssh_config.readlines(chomp: true)[-2..-1] || []
 
-  default_ssh_config.append("\n#{include_line}\n") unless last_two_lines.include?(include_line)
+  File.write(default_ssh_config, "\n#{include_line}\n", mode: 'a+') unless last_two_lines.include?(include_line)
 end
 
 puts "Since the '.gitignore' and '.gitattributes' files are COPIED over, any new changes being pulled in (from a newer version of the upstream repo) need to be manually reconciled between this repo and your home and profiles folders".red
