@@ -7,7 +7,7 @@
 # These are the common shell aliases that I have setup in the `${HOME}/.aliases` file for ease of running/typing (and also don't need to remember all these commands by-heart!). If you are using my `${HOME}/.aliases`, they will already be present for you. If not, you can then set these up in the respective dotfile of your choice
 # alias bcg='brew outdated --greedy'  # List all casks that are outdated like a "dry-run" (and which have version marked as 'latest')
 # alias bcug='brew upgrade --greedy'  # Upgrades all casks that are outdated (and which have version marked as 'latest')
-# alias bupc='brew bundle check || brew bundle --all --cleanup; brew bundle cleanup -f; brew cleanup --prune=all; brew autoremove; brew upgrade'        # Upgrades and cleans up all regular outdated casks and libs (non-greedy)
+# alias bupc='brew bundle check || brew bundle --all --cleanup; brew cleanup --prune=all; brew autoremove; brew upgrade'        # Upgrades and cleans up all regular outdated casks and libs (non-greedy)
 
 # TODO: Need to find cask for:
 #   Tinkertool
@@ -33,7 +33,7 @@ brew 'git-extras'
 brew 'git-gui'
 brew 'git-tools'
 brew 'git'
-brew 'gnu-tar'  # used for zen-browser development
+# brew 'gnu-tar'  # used for zen-browser development
 brew 'gs'   # used for compressing PDFs
 brew 'jq'
 brew 'less'
@@ -70,8 +70,6 @@ cask 'keepassxc@beta'
 cask 'keepingyouawake'
 cask 'keybase'
 cask 'libreoffice'
-cask 'microsoft-remote-desktop'
-cask 'microsoft-teams'
 cask 'monolingual'
 cask 'notunes'
 cask 'ollama', restart_service: :changed
@@ -180,6 +178,8 @@ end
 # cask 'keycastr'
 # cask 'licecap'
 # cask 'lulu'
+# cask 'microsoft-remote-desktop'
+# cask 'microsoft-teams'
 # cask 'netspot'
 # cask 'ngrok'
 # cask 'tempbox'

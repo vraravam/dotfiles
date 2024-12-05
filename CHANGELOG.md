@@ -2,6 +2,15 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-9
+
+* Remove redundant cleanup in 'bupc'
+* Removed MS Teams and MS Remote Desktop
+
+#### Adopting these changes
+
+* Restart terminal for the revised alias function to get loaded. (No harm in keeping the old session; just that it will an extra step unnecessarily)
+
 ### 1.0-7
 
 * *[fresh-install-of-osx.sh]* Fix issue when running in a fresh/vanilla machine since 'ZDOTDIR' was undefined.
