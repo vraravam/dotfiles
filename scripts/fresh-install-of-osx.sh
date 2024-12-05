@@ -102,6 +102,7 @@ clone_if_not_present https://github.com/zsh-users/zsh-completions
 # Install dotfiles #
 ####################
 echo "$(blue "==> Installing dotfiles")"
+ZDOTDIR="${ZDOTDIR:-${HOME}}"
 if is_non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; then
   # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
   rm -rfv "${HOME}/.zshrc"
@@ -121,6 +122,9 @@ if is_non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; the
   # Load all zsh config files for PATH and other env vars to take effect
   load_zsh_configs
 
+  # Note: Running the installation of the dotfiles for a 2nd time AFTER all the env vars have been defined and loaded into session memory
+  eval "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
+
   # Setup the DOTFILES_DIR repo's upstream if it doesn't already point to vraravam's repo
   git -C "${DOTFILES_DIR}" remote -vv | grep "${UPSTREAM_GH_USERNAME}"
   if [ $? -ne 0 ]; then
@@ -133,6 +137,11 @@ else
   # Load all zsh config files for PATH and other env vars to take effect
   load_zsh_configs
   warn "skipping cloning the dotfiles repo since '${DOTFILES_DIR}' is either not defined or is already present"
+fi
+
+if ! is_non_zero_string "${HOMEBREW_PREFIX}"; then
+  echo "$(red "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!")"
+  exit -1
 fi
 
 ####################

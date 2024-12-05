@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-7
+
+* *[fresh-install-of-osx.sh]* Fix issue when running in a fresh/vanilla machine since 'ZDOTDIR' was undefined.
+
 ### 1.0-6
 
 * *[install-dotfiles.rb]* Fix issue when creating the include line for `~/.ssh/config` if it was not present.
