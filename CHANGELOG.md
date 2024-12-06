@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-12
+
+* Use 'zsh-defer' to try to bring down shell startup time.
+
 ### 1.0-11
 
 * Converted from 'iBar' menubar app to 'Ice' since its open source and seems to have better features. This also removes the need to login into the App Store!
@@ -41,7 +45,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 ### 1.0-4
 
 * *[install-dotfiles.rb]* Refactored environment variable resolution logic to use `gsub!` for improved performance.
-  
+
 ### 1.0-3
 
 * Moved all files & nested folders inside the `files` directory into `files/--HOME--` to make that location explicit (earlier it was implied)
