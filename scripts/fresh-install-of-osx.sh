@@ -82,6 +82,7 @@ fi
 ##############################
 # Install custom omz plugins #
 ##############################
+# Note: Some of these are available via brew, but enabling them will take an additional step and the only other benefit (of keeping them up-to-date using brew can still be achieved by updating the git repos directly)
 echo "$(blue "==> Installing custom omz plugins")"
 ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
 mkdir -p "${ZSH_CUSTOM}/plugins"

@@ -2,6 +2,13 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-10
+
+* Fix zsh auto-completion since some of the options were set after the `compinit` invocation
+* *[.zprofile]* Ensure that directories are created for env vars defined in `.zprofile`
+* `setopt` paramters are case-insensitive and can handle underscore and so changed them for readability
+* *[.shellrc]* Introduced new utility function `ensure_dir_exists_if_var_defined` to help in cases where `code-gist` used to create unsaved files instead of directories for undefined env vars
+
 ### 1.0-9
 
 * Remove redundant cleanup in 'bupc'

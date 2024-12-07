@@ -125,7 +125,8 @@ command_exists "capture-defaults.sh" && capture-defaults.sh i
 # Recreate the zsh completions #
 ################################
 echo "$(blue "==> Recreate zsh completions")"
-rm -rf "${ZDOTDIR}"/.zcompdump*; compinit -C
+rm -rf "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}"
+autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}"
 
 ###################
 # Setup cron jobs #

@@ -4,7 +4,7 @@
 
 ################################################################################
 # This file is sourced on all invocations of the shell. It is the 1st file zsh
-# reads; it's read for every shell, even if started with -f (setopt NO_RCS),
+# reads; it's read for every shell, even if started with -f (setopt no_rcs),
 # all other initialization files are skipped.
 #
 # This file should contain commands to set the command search path, plus other
@@ -24,7 +24,7 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 skip_global_compinit=1
 
 # http://disq.us/p/f55b78
-# setopt noglobalrcs
+# setopt no_global_rcs
 
 export ARCH="$(uname -m)"
 if [[ "${ARCH}" =~ "arm" ]]; then

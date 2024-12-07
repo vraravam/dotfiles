@@ -41,7 +41,7 @@ if is_macos; then
   setopt inc_append_history       # append command to history file immediately after execution
   setopt extended_history         # save each command's beginning timestamp and the duration to the history file
   setopt hist_ignore_all_dups     # do not put duplicated command into history list
-  setopt hist_ignore_dups
+  setopt hist_ignore_dups         # do not store duplications
   setopt hist_allow_clobber
   setopt hist_reduce_blanks       # remove unnecessary blanks
   setopt hist_save_no_dups        # do not save duplicated command
@@ -49,23 +49,27 @@ if is_macos; then
   setopt auto_pushd               # make cd push the old directory onto the directory stack
   setopt pushd_silent             # do not print the directory stack after pushd or popd
   setopt pushd_ignore_dups        # don’t push multiple copies of the same directory
-  setopt beep
+  setopt beep                     # beep on error or on completion of long commands
   setopt extended_glob
   setopt local_options
   setopt auto_list                # automatically list choices on an ambiguous completion.
   setopt list_ambiguous
   setopt list_types               # if the file being listed is a directory, show a trailing slash
+  setopt no_case_glob             # case-insensitive globbing
+  setopt hist_expire_dups_first   # expire duplicates first
+  setopt hist_find_no_dups        # ignore duplicates when searching
 
   # console colors
   autoload -U colors && colors
 
-  # Use modern completion system
-  mkdir -p ${XDG_CACHE_HOME}
-  autoload -Uz compinit && compinit -C -d ${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}
   # colorize completion
   # zstyle ':completion:*:*:kill:*:processes' list-colors "=(#b) #([0-9]#)*=$color[cyan]=$color[red]"
   # zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
   # zstyle ':completion:*' select-prompt '%SScrolling active: current selection at %p%s'
+  # case insensitive path-completion
+  zstyle ':completion:*' matcher-list 'm:{[:lower:][:upper:]}={[:upper:][:lower:]}' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*'
+  # partial completion suggestions
+  zstyle ':completion:*' list-suffixeszstyle ':completion:*' expand prefix suffix
   # prevent CVS and SVN from being completed
   zstyle ':completion:*:(all-|)files' ignored-patterns '(|*/)CVS'
   zstyle ':completion:*:cd:*' ignored-patterns '(*/)#CVS'
@@ -74,9 +78,9 @@ if is_macos; then
   # ignore what's already selected on line
   zstyle ':completion:*:(rm|kill|diff):*' ignore-line yes
   # hosts completion for some commands
-  #local knownhosts
-  #knownhosts=( ${${${${(f)"$(<${HOME}/.ssh/known_hosts)"}:#[0-9]*}%%\ *}%%,*} )
-  #zstyle ':completion:*:(ssh|scp|sftp):*' hosts $knownhosts
+  # local knownhosts
+  # knownhosts=( ${${${${(f)"$(<${HOME}/.ssh/known_hosts)"}:#[0-9]*}%%\ *}%%,*} )
+  # zstyle ':completion:*:(ssh|scp|sftp):*' hosts $knownhosts
   compctl -k hosts ftp lftp ncftp ssh w3m lynx links elinks nc telnet rlogin host
   compctl -k hosts -P '@' finger
 
@@ -98,12 +102,15 @@ if is_macos; then
   zstyle ':completion:*:approximate:*' max-errors 1 numeric
   # completion cache
   zstyle ':completion:*' use-cache on
-  zstyle ':completion:*' cache-path ${XDG_CACHE_HOME}/zsh
+  zstyle ':completion:*' cache-path "${XDG_CACHE_HOME}/zsh"
   # remove trailing slash in directory names, useful for ln
   zstyle ':completion:*' squeeze-slashes true
   # docker completion
   zstyle ':completion:*:*:docker:*' option-stacking yes
   zstyle ':completion:*:*:docker-*:*' option-stacking yes
+
+  # Use modern completion system (needs to be run AFTER some zstyle defns; usually a good idea to do so after all of them)
+  autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}"
 
   autoload -U _git
 

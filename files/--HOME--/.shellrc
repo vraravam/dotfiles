@@ -8,7 +8,7 @@
 # bootstrap installation of all other config files.
 #
 # file location: ${HOME}/.shellrc
-# load order: .zshenv, .zprofile, .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
+# load order: .zshenv, .zprofile [.shellrc], .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
 ################################################################################
 
 # execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
@@ -78,6 +78,14 @@ is_executable() {
 
 is_directory() {
   is_non_zero_string "${1}" && test -d "${1}"
+}
+
+ensure_dir_exists_if_var_defined() {
+  if is_non_zero_string "${1}"; then
+    mkdir -p "${1}"
+  else
+    warn "Skipping creation of the directory since '${1}' is not defined"
+  fi
 }
 
 is_git_repo() {

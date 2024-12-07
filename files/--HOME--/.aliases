@@ -177,11 +177,8 @@ pdf_to_png() {
   magick -density 800 "${pdf}" -quality 100 "${png}"
 }
 
-# if running zsh shell
-if [[ "$(ps -o comm= -p $$)" =~ "zsh" ]]; then
-  # associate file extensions with applications for the 'open' command
-  alias -s txt=code
-  alias -s log=code
-fi
+# associate file extensions with applications for the 'open' command
+alias -s txt=code
+alias -s log=code
 
 load_file_if_exists "${HOME}/.aliases.custom"
