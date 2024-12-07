@@ -181,4 +181,4 @@ pdf_to_png() {
 alias -s txt=code
 alias -s log=code
 
-load_file_if_exists "${HOME}/.aliases.custom"
+zsh-defer load_file_if_exists "${HOME}/.aliases.custom"
