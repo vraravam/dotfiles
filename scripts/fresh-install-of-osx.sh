@@ -234,7 +234,7 @@ setup_login_item() {
 app_list=(
   'AlDente.app'
   'Clocker.app'
-  'iBar.app'
+  'Ice.app'
   'Itsycal.app'
   'KeepingYouAwake.app'
   'Keybase.app'

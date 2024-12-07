@@ -52,11 +52,6 @@ brew 'wifi-password'
 brew 'zsh'
 
 # ----------------------------------------------------------------------------------------------------------
-brew 'mas'
-mas 'iBar-Menubar icon control tool', id: 6443843900
-# mas 'Command X', id: 6448461551
-
-# ----------------------------------------------------------------------------------------------------------
 cask 'aldente'
 cask 'appcleaner'
 cask 'arc'
@@ -66,6 +61,7 @@ cask 'firefox@nightly' #, greedy: true
 cask 'font-meslo-lg-nerd-font'
 cask 'iterm2'
 cask 'itsycal'
+cask 'jordanbaird-ice'
 cask 'keepassxc@beta'
 cask 'keepingyouawake'
 cask 'keybase'

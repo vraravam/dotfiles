@@ -47,7 +47,6 @@ mkdir -p "${target_dir}"
 
 app_array=(
   'ch.protonvpn.mac'
-  'cn.better365.iBar'
   'com.abhishek.Clocker'
   'com.apphousekitchen.aldente-pro'
   'com.apple.Accessibility-Settings.extension'
@@ -143,6 +142,7 @@ app_array=(
   'com.google.Chrome.canary'
   'com.google.Chrome'
   'com.googlecode.iterm2'
+  'com.jordanbaird.Ice'
   'com.knollsoft.Rectangle'
   'com.lowtechguys.ZoomHider'
   'com.macpaw.site.theunarchiver'
