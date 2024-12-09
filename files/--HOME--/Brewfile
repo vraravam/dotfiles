@@ -20,37 +20,45 @@ cask_args appdir: '/Applications', fontdir: '/Library/Fonts', no_quarantine: tru
 # java_present = system('/usr/libexec/java_home --failfast')
 is_arm = Hardware::CPU.arm?
 
+is_base_install = ENV.has_key?('HOMEBREW_BASE_INSTALL')
+puts "Only performing base installation!" if is_base_install
+
 tap 'homebrew/services'
 tap 'romkatv/powerlevel10k'
 
+# formulae pulled in from homebrew to replace system equivalents to fix any security issues since the OS was released
 brew 'bash'
-brew 'bat'
-brew 'btop'
 brew 'curl'
+brew 'git'
+brew 'less'
+brew 'vim'
+brew 'wget'
+brew 'zsh'
+
+# formulae pulled in for base configs
 brew 'diff-so-fancy'
 brew 'direnv'
+brew 'mise'
+brew 'powerlevel10k'
+
+return if is_base_install
+
+# formulae pulled in for advanced configs (these are optional, but still recommended)
+brew 'bat'
+brew 'btop'
 brew 'eza'
 brew 'git-extras'
 brew 'git-gui'
 brew 'git-tools'
-brew 'git'
-# brew 'gnu-tar'  # used for zen-browser development
 brew 'gs'   # used for compressing PDFs
 brew 'jq'
-brew 'less'
-brew 'mise'
 brew 'moreutils'
 brew 'ncdu'
-brew 'powerlevel10k'
 brew 'prettyping'
 brew 'ripgrep'
 brew 'syncthing'
 brew 'tldr'
-brew 'vim'
-brew 'watch'
-brew 'wget'
 brew 'wifi-password'
-brew 'zsh'
 
 # ----------------------------------------------------------------------------------------------------------
 cask 'aldente'
@@ -163,6 +171,8 @@ end
 # brew 'libressl', link: true
 # brew 'localstack'
 # brew 'speedtest-cli'
+
+# brew 'gnu-tar'  # used for zen-browser development
 
 # https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git
 # cask 'git-credential-manager'
