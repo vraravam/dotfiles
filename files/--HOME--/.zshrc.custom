@@ -188,7 +188,7 @@ export CUCUMBER_COLORS="pending_param=magenta:failed_param=magenta:passed_param=
 export RSPEC="true"
 
 # fzy
-# load_file_if_exists "${HOME}/.fzy-key-bindings.zsh"
+# zsh-defer load_file_if_exists "${HOME}/.fzy-key-bindings.zsh"
 
 # remove empty components to avoid '::' ending up + resulting in './' being in $PATH, etc
 path=( "${path[@]:#}" )
