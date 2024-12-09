@@ -23,7 +23,7 @@ append_to_path_if_dir_exists "${PROJECTS_BASE_DIR}/oss/git_scripts"
 # Note: Not sure if its a bug, but the first iterm tab alone has all the paths, but these are missing in subsequent tabs and new windows
 append_to_path_if_dir_exists "/usr/local/bin"
 
-load_file_if_exists "${HOME}/.aliases"
+zsh-defer load_file_if_exists "${HOME}/.aliases"
 
 # erlang history in iex
 # export ERL_AFLAGS="-kernel shell_history enabled -kernel shell_history_file_bytes 1024000"
@@ -188,7 +188,7 @@ export CUCUMBER_COLORS="pending_param=magenta:failed_param=magenta:passed_param=
 export RSPEC="true"
 
 # fzy
-# load_file_if_exists "${HOME}/.fzy-key-bindings.zsh"
+# zsh-defer load_file_if_exists "${HOME}/.fzy-key-bindings.zsh"
 
 # remove empty components to avoid '::' ending up + resulting in './' being in $PATH, etc
 path=( "${path[@]:#}" )

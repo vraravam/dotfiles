@@ -98,6 +98,7 @@ clone_if_not_present() {
 clone_if_not_present https://github.com/zdharma-continuum/fast-syntax-highlighting
 clone_if_not_present https://github.com/zsh-users/zsh-autosuggestions
 clone_if_not_present https://github.com/zsh-users/zsh-completions
+clone_if_not_present https://github.com/romkatv/zsh-defer
 
 ####################
 # Install dotfiles #

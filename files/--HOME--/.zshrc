@@ -114,13 +114,19 @@ export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 # Custom plugins may be added to ${ZSH_CUSTOM}/plugins/
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
-plugins=(brew direnv eza fast-syntax-highlighting git git-extras iterm2 mise sudo zbell zsh-autosuggestions)
+plugins=(brew direnv eza git mise sudo zbell zsh-defer)
+deferred_plugins=(fast-syntax-highlighting git-extras iterm2 zsh-autosuggestions)
 
 # according to https://github.com/zsh-users/zsh-completions/issues/603#issue-373185486, this can't be added as a plugin to omz for the fpath to work correctly
 export ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH:-"${HOME}/.oh-my-zsh"}/custom"}"
 append_to_fpath_if_dir_exists "${ZSH_CUSTOM}/plugins/zsh-completions/src"
 
 load_file_if_exists "${ZSH}/oh-my-zsh.sh"
+
+# Defer the loading of these plugins since they are only needed in interactive mode
+for deferred_plugin in "${deferred_plugins[@]}"; do
+  zsh-defer load_file_if_exists "${ZSH_CUSTOM}/plugins/${deferred_plugin}/${deferred_plugin}.plugin.zsh"
+done
 
 # User configuration
 # export MANPATH="/usr/local/man${MANPATH+:$MANPATH}"
@@ -150,10 +156,10 @@ export ARCHFLAGS="-arch $(uname -m)"
 # alias zshconfig="${EDITOR} ${ZDOTDIR}/.zshrc"
 # alias ohmyzsh="${EDITOR} ${ZSH}"
 
-load_file_if_exists "${HOME}/.zshrc.custom"
+zsh-defer load_file_if_exists "${HOME}/.zshrc.custom"
 
 # remove duplicates from some env vars
-typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPATH manpath PATH path PKG_CONFIG_PATH
+zsh-defer typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPATH manpath PATH path PKG_CONFIG_PATH
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
 # execute 'ZSH_PROFILE_RC=true zsh' and run 'zprof' to get the details
