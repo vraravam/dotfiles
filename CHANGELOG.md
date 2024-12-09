@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-13
+
+* *[.shellrc]* Introduced new utility functions `section_header` and `debug` and standardized on usages.
+
 ### 1.0-12
 
 * Reverted changes from v1.0.9 related to 'bupc' since the 1st cleanup might be skipped due to the '||' condition status

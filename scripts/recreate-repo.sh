@@ -12,7 +12,7 @@ type command_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 usage() {
   echo "$(red "Usage"): $(yellow "${1} [-f] <repo folder>")"
-  echo " $(yellow "-f") : force recreation (profiles repo will automatically/always be forced anyways)"
+  echo " $(yellow "-f") : force squashing into a single commit (profiles repo will automatically/always be forced anyways)"
   echo "    eg: $(cyan "-f ${HOME}")                (will push to $(yellow "keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME}"))"
   echo "    eg: $(cyan "${PERSONAL_PROFILES_DIR}")  (will push to $(yellow "keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME}"))"
   exit 1
@@ -38,7 +38,7 @@ fi
 [[ "${folder}" =~ "profiles" ]] && force=Y
 
 echo "$(yellow "Processing folder"): '${folder}'"
-echo "$(yellow "force"): '${force}'"
+echo "$(yellow "squash commits (will lose history!)"): '${force}'"
 
 git_cmd="git -C ${folder}"
 
@@ -85,7 +85,7 @@ eval "${git_cmd} rfc"
 eval "SKIP_SIZE_BEFORE=1 ${git_cmd} cc"
 
 if [[ "${git_url}" =~ "keybase" ]]; then
-  echo "$(blue "Recreating") '${git_url}'"
+  echo "$(blue "Recreating") '$(yellow "${git_url}")'"
   git_remote_name="$(echo "${git_url}" | cut -d'/' -f5)"
   keybase git delete -f "${git_remote_name}"
   keybase git create "${git_remote_name}"

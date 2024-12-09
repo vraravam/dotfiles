@@ -32,7 +32,7 @@ fi
 ##################################
 # Install command line dev tools #
 ##################################
-echo "$(blue "==> Installing xcode command-line tools")"
+section_header "Installing xcode command-line tools"
 if ! is_directory "/Library/Developer/CommandLineTools/usr/bin"; then
   reinstall_xcode_cmdline_tools
 else
@@ -52,7 +52,7 @@ fi
 #####################
 # Turn on FileVault #
 #####################
-echo "$(blue "==> Verifying FileVault status")"
+section_header "Verifying FileVault status"
 if [[ "$(fdesetup isactive)" != "true" ]]; then
   echo "$(red "FileVault is not turned on. Please encrypt your hard disk!")"
   exit 1
@@ -72,7 +72,7 @@ sudo chmod -R 600 "${HOME}"/.ssh/* || true
 #####################
 # Install oh-my-zsh #
 #####################
-echo "$(blue "==> Installing oh-my-zsh")"
+section_header "Installing oh-my-zsh"
 if ! is_directory "${HOME}/.oh-my-zsh"; then
   sh -c "$(ZSH= curl -fsSL https://install.ohmyz.sh/)" "" --unattended
 else
@@ -83,7 +83,7 @@ fi
 # Install custom omz plugins #
 ##############################
 # Note: Some of these are available via brew, but enabling them will take an additional step and the only other benefit (of keeping them up-to-date using brew can still be achieved by updating the git repos directly)
-echo "$(blue "==> Installing custom omz plugins")"
+section_header "Installing custom omz plugins"
 ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
 mkdir -p "${ZSH_CUSTOM}/plugins"
 clone_if_not_present() {
@@ -102,7 +102,7 @@ clone_if_not_present https://github.com/zsh-users/zsh-completions
 ####################
 # Install dotfiles #
 ####################
-echo "$(blue "==> Installing dotfiles")"
+section_header "Installing dotfiles"
 ZDOTDIR="${ZDOTDIR:-${HOME}}"
 if is_non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; then
   # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
@@ -148,7 +148,7 @@ fi
 ####################
 # Install homebrew #
 ####################
-echo "$(blue "==> Installing homebrew")"
+section_header "Installing homebrew"
 if ! command_exists brew; then
   # Prep for installing homebrew
   sudo mkdir -p "${HOMEBREW_PREFIX}/tmp" "${HOMEBREW_PREFIX}/repository" "${HOMEBREW_PREFIX}/plugins" "${HOMEBREW_PREFIX}/bin"
@@ -175,7 +175,7 @@ replace_executable_if_exists_and_is_not_symlinked() {
   fi
 }
 
-echo "$(blue "==> Linking keybase for command-line invocation")"
+section_header "Linking keybase for command-line invocation"
 if is_directory "/Applications/Keybase.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/Keybase.app/Contents/SharedSupport/bin/keybase" "${HOMEBREW_PREFIX}/bin/keybase"
   replace_executable_if_exists_and_is_not_symlinked "/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase" "${HOMEBREW_PREFIX}/bin/git-remote-keybase"
@@ -183,7 +183,7 @@ else
   warn "skipping symlinking keybase for command-line invocation"
 fi
 
-echo "$(blue "==> Linking VSCode/VSCodium for command-line invocation")"
+section_header "Linking VSCode/VSCodium for command-line invocation"
 if is_directory "/Applications/VSCodium - Insiders.app"; then
   # Symlink from the embedded executable for codium-insiders
   replace_executable_if_exists_and_is_not_symlinked "/Applications/VSCodium - Insiders.app/Contents/Resources/app/bin/codium-insiders" "${HOMEBREW_PREFIX}/bin/codium-insiders"
@@ -203,14 +203,14 @@ else
   warn "skipping symlinking vscode/vscodium for command-line invocation"
 fi
 
-echo "$(blue "==> Linking rider for command-line invocation")"
+section_header "Linking rider for command-line invocation"
 if is_directory "/Applications/Rider.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/Rider.app/Contents/MacOS/rider" "${HOMEBREW_PREFIX}/bin/rider"
 else
   warn "skipping symlinking rider for command-line invocation"
 fi
 
-echo "$(blue "==> Linking idea/idea-ce for command-line invocation")"
+section_header "Linking idea/idea-ce for command-line invocation"
 if is_directory "/Applications/IntelliJ IDEA CE.app"; then
   replace_executable_if_exists_and_is_not_symlinked "/Applications/IntelliJ IDEA CE.app/Contents/MacOS/idea" "${HOMEBREW_PREFIX}/bin/idea"
 elif is_directory "/Applications/IntelliJ IDEA.app"; then
@@ -222,7 +222,7 @@ fi
 #####################
 # Setup login items #
 #####################
-echo "$(blue "==> Setting up login items")"
+section_header "Setting up login items"
 setup_login_item() {
   if is_directory "/Applications/${1}"; then
     echo "Setting up '${1}' as a login item" && osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/${1}\", hidden:false}" 2>&1 > /dev/null

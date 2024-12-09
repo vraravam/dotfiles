@@ -29,7 +29,7 @@ _update_repo() {
   local folder="${1%\/}"
 
   # shellcheck disable=SC2005
-  echo "$(blue "==> Updating '${folder}'")"
+  section_header "Updating '${folder}'"
   rm -rfv "${folder}/.git/index.lock" "${folder}/.git/hooks"
   local git_cmd="git -C ${folder}"
 
@@ -54,7 +54,7 @@ _push_repo() {
   ! is_directory "${1}" && warn "skipping pushing the repo since '${1}' doesn't exist" && return
 
   # shellcheck disable=SC2005
-  echo "$(blue "*** Pushing ${1}")" && git -C "${1}" push --force-with-lease && success "*** Pushed ${1}"
+  section_header "Pushing $(yellow "${1}")" && git -C "${1}" push --force-with-lease && success "*** Pushed $(yellow "${1}")"
 }
 
 # pushes the home and profiles repos to their respective remotes (disables and re-enables cron while doing this operation)
@@ -70,7 +70,7 @@ push_all_repos() {
 # resurrects the cron entries based on the '${PERSONAL_CONFIGS_DIR}/crontab.txt' file
 recron() {
   # shellcheck disable=SC2005
-  echo "$(blue "Old cron listing")"
+  section_header "Old cron listing"
   crontab -l
 
   local cron_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
@@ -82,7 +82,7 @@ recron() {
   crontab "${cron_file}"
 
   # shellcheck disable=SC2005
-  echo "$(blue "New cron listing")"
+  section_header "New cron listing"
   crontab -l
 }
 

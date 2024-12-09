@@ -37,7 +37,7 @@ LIGHT_GRAY=$(colorize '0;37')
 WHITE=$(colorize '1;37')
 
 blue() {
-  printf "${LIGHT_BLUE}${1}${NC}"
+  printf "${BLUE}${1}${NC}"
 }
 
 cyan() {
@@ -56,13 +56,22 @@ yellow() {
   printf "${YELLOW}${1}${NC}"
 }
 
-warn() (
+warn() {
   echo "$(yellow "**WARN** ${1}")"
-)
+}
 
-success() (
+success() {
   echo "$(green "**SUCCESS** ${1}")"
-)
+}
+
+debug() {
+  warn "${1}"
+  echo "${PATH}"
+}
+
+section_header() {
+  echo "$(blue "==> ${1} <==")"
+}
 
 is_non_zero_string() {
   ! test -z "${1}"
@@ -108,8 +117,6 @@ command_exists() {
 
 # Note: This function is kind of equivalent to 'omz reload', but that doesn't seem to work when installing on a vanilla OS
 load_zsh_configs() {
-  command_exists omz && omz reload && return
-
   local file_list=('.zshenv' '.zprofile' '.zshrc' '.zlogin')
   for file in "${file_list[@]}"; do
     FIRST_INSTALL=true load_file_if_exists "${ZDOTDIR}/${file}"
