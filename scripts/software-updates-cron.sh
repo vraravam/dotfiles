@@ -43,5 +43,10 @@ else
   debug "skipping updating omz"
 fi
 
-echo "---- Updating brews"
-bupc
+if command_exists brew; then
+  section_header "Updating brews"
+  # for some reason, with 'zsh-defer' the aliases are not loaded, and so can't use 'bupc' directly
+  brew bundle check || brew bundle --all --cleanup; brew bundle cleanup -f; brew cleanup --prune=all; brew autoremove
+else
+  debug "skipping updating brews & casks"
+fi
