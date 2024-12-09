@@ -81,7 +81,7 @@ if is_macos && command_exists brew; then
   # TODO: Remove later (kept here for reference): brew outdated --cask | xargs brew cask reinstall
   alias bcg='brew outdated --greedy'
   alias bcug='brew upgrade --greedy'
-  alias bupc='brew bundle check || brew bundle --all --cleanup; brew cleanup --prune=all; brew autoremove; brew upgrade'
+  alias bupc='brew bundle check || brew bundle --all --cleanup; brew bundle cleanup -f; brew cleanup --prune=all; brew autoremove; brew upgrade'
 fi
 
 alias findbrokenlinks='find . -type l | (while read FN ; do test -e "$FN" || ls -ld "$FN"; done)'
