@@ -175,6 +175,9 @@
   # [DUPLICATE - WIP] list all branches using the 'log' command which allows to set a particular start date
   lc2 = "!git branch -r --sort=-committerdate | egrep -v 'HEAD|master|main' | while read b; do git log --since 4.days --color --format=\"%ci _%C(magenta)%cr %C(bold cyan)$b%Creset %s %C(bold blue)<%an>%Creset\" $b | head -n 1; done | sort -r | cut -d_ -f2-"
 
+  # graphed log in single line
+  lt = log --color --graph --pretty=format:'%Cred%h%Creset %C(bold)%(trailers:key=Refs,valueonly,separator=%x2c)%Creset - %s %Cgreen(%cr)%C(bold blue) <%an>%C(nobold yellow)%d%Creset' --abbrev-commit
+
   # search for specific strings in your commits
   se = "!git rev-list --all | xargs git grep -F"
 

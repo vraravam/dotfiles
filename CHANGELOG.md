@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-15
+
+* *[README.md]* Fixed some grammatical errors in README.
+* *[.gitconfig]* Added new git alias for logs.
+
 ### 1.0-14
 
 * Use 'zsh-defer' to try to bring down shell startup time.
