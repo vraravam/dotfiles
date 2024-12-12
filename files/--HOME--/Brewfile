@@ -11,6 +11,7 @@
 # Upgrades and cleans up all regular outdated casks and libs (non-greedy)
 
 # TODO: Need to find cask for:
+#   Ghostty
 #   Tinkertool
 #   ZoomHider
 
@@ -23,36 +24,38 @@ is_arm = Hardware::CPU.arm?
 tap 'homebrew/services'
 tap 'romkatv/powerlevel10k'
 
+# formulae pulled in from homebrew to replace system equivalents to fix any security issues since the OS was released
 brew 'bash'
-brew 'bat'
-brew 'btop'
 brew 'curl'
+brew 'git'
+brew 'less'
+brew 'vim'
+brew 'wget'
+brew 'zsh'
+
+# formulae pulled in for base configs
 brew 'diff-so-fancy'
 brew 'direnv'
+brew 'mise'
+brew 'powerlevel10k'
+
+# formulae pulled in for advanced configs (these are optional, but still recommended)
+brew 'bat'
+brew 'btop'
 brew 'eza'
 brew 'git-extras'
 brew 'git-gui'
 brew 'git-tools'
-brew 'git'
-# brew 'gnu-tar'  # used for zen-browser development
 brew 'gs'   # used for compressing PDFs
 brew 'jq'
-brew 'less'
-brew 'mise'
 brew 'moreutils'
 brew 'ncdu'
-brew 'powerlevel10k'
 brew 'prettyping'
 brew 'ripgrep'
 brew 'syncthing'
 brew 'tldr'
-brew 'vim'
-brew 'watch'
-brew 'wget'
 brew 'wifi-password'
-brew 'zsh'
 
-# ----------------------------------------------------------------------------------------------------------
 cask 'aldente'
 cask 'appcleaner'
 cask 'arc'
@@ -78,7 +81,7 @@ cask 'silicon' if is_arm
 cask 'stats'
 cask 'the-unarchiver'
 cask 'virtualbox'
-cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when comparing to VSCode
+cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when compared to VSCode
 cask 'zen-browser@twilight'
 cask 'zoom'
 
@@ -86,6 +89,15 @@ cask 'zoom'
 # Note: I don't want brew to silently install VS Code (which is what it does currently if the following lines are present but it doesn't find code!)
 is_vscode_installed = !`which code`.chomp.empty?
 if is_vscode_installed
+  # This is failing on different machines
+  # vscode 'formulahendry.code-runner'
+  # vscode 'nicolasvuillamy.vscode-groovy-lint'
+  # vscode 'redhat.java'
+  # vscode 'sonarsource.sonarlint-vscode'
+  # vscode 'vscjava.vscode-java-debug'
+  # vscode 'vscjava.vscode-java-pack'
+  # vscode 'vscjava.vscode-java-test'
+  # vscode 'vscjava.vscode-lombok'
   vscode 'brandonkirbyson.vscode-animations'
   vscode 'britesnow.vscode-toggle-quotes'
   vscode 'codezombiech.gitignore'
@@ -96,7 +108,6 @@ if is_vscode_installed
   vscode 'eamodio.gitlens'
   vscode 'editorconfig.editorconfig'
   vscode 'esbenp.prettier-vscode'
-  # vscode 'formulahendry.code-runner'
   vscode 'genuitecllc.codetogether'
   vscode 'ibm.output-colorizer'
   vscode 'mechatroner.rainbow-csv'
@@ -104,22 +115,14 @@ if is_vscode_installed
   vscode 'mkhl.direnv'
   vscode 'ms-azuretools.vscode-docker'
   vscode 'ms-vscode.vscode-typescript-next'
-  # vscode 'nicolasvuillamy.vscode-groovy-lint'
   vscode 'oderwat.indent-rainbow'
   vscode 'orta.vscode-jest'
   vscode 'rebornix.ruby'
-  # vscode 'redhat.java'
   vscode 'redhat.vscode-yaml'
   vscode 'richie5um2.vscode-sort-json'
   vscode 'shan.code-settings-sync'
-  # vscode 'sonarsource.sonarlint-vscode'
   vscode 'tchayen.markdown-links'
   vscode 'tyriar.sort-lines'
-  # vscode 'vscjava.vscode-java-debug'
-  # vscode 'vscjava.vscode-java-pack'
-  # vscode 'vscjava.vscode-java-test'
-  # This is failing on different machines
-  # vscode 'vscjava.vscode-lombok'
   vscode 'vscode-icons-team.vscode-icons'
   vscode 'wayou.vscode-todo-highlight'
   vscode 'wholroyd.jinja'
@@ -129,14 +132,17 @@ if is_vscode_installed
 end
 
 # ----------------------------------------------------------------------------------------------------------
-# TODO: This doesn't solve the issue about performing a custom action when a specific formula/cask is (re)installed - keeping for future reference
+# TODO: This doesn't solve the issue about performing a custom action when a specific formula/cask is (re)installed
 at_exit do
-  # This is required for completions from other plugins to work (for eg git-extras)
+  # This removal is required for completions from other plugins to work (for eg git-extras)
   system("rm -rfv \"${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git\"") || true
 end
 
 # ----------------------------------------------------------------------------------------------------------
 # Moved these brew and cask lines to clean up the noise from the above alphabetically sorted lists
+
+# ---- zen-browser development
+# brew 'gnu-tar'
 
 # ---- docker utilities
 # brew 'dive'   # docker layers inspection on steroids
@@ -146,10 +152,6 @@ end
 # brew 'kubernetes-cli', link: true   # Note: Had to do this: rm /usr/local/bin/kubectl && brew link --overwrite kubernetes-cli
 # brew 'kubernetes-helm'
 
-# ---- command-line utilities
-# brew 'fzy'
-# brew 'shellcheck'
-
 # ---- git utilities
 # brew 'git-crypt'
 
@@ -158,18 +160,18 @@ end
 # brew 'reattach-to-user-namespace' # Needed if using tmux (to be able to access the macos clipboard from within tmux)
 
 # ---- general utilities
-# brew 'gradle'
+# brew 'fzy'
 # brew 'gradle-completion'
 # brew 'libressl', link: true
 # brew 'localstack'
+# brew 'shellcheck'
 # brew 'speedtest-cli'
-
-# https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git
-# cask 'git-credential-manager'
+# brew 'watch'
 
 # ---- casks
 # cask 'cloudflare-warp'
 # cask 'dbeaver-community'
+# cask 'git-credential-manager'   # https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git
 # cask 'intellij-idea-ce'
 # cask 'kdiff3'
 # cask 'keycastr'

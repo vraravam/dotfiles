@@ -2,6 +2,14 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-18
+
+* Restructured `Brewfile` to convey what are bare minimum formulae vs recommended vs optional ie left to the user's choice.
+
+#### Adopting these changes
+
+* The reason for this restructuring is explained up above. Since most of the adoptees have customized this file, it will probably result in conflicts. Please be diligent in resolving the conflicts.
+
 ### 1.0-17
 
 * All GH urls now also take into account the branch that's being tested for the setup scripts. Read the [new section](./README.md#how-to-test-changes-in-your-fork-before-raising-a-pull-request) in the README if you are making changes that you want to test against a PR branch before the PR is merged.
