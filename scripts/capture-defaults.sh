@@ -43,7 +43,7 @@ esac
 
 # shellcheck disable=SC2090
 eval "${git_cleanup}"
-mkdir -p "${target_dir}"
+ensure_dir_exists_if_var_defined "${target_dir}"
 
 app_array=(
   'ch.protonvpn.mac'

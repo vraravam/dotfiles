@@ -2,6 +2,16 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-16
+
+* Moved some of the core zsh config files from `files/--HOME--/` to `files/--ZDOTDIR--/` to accommodate custom location of `ZDOTDIR`.
+* *[.shellrc]* Merged all relevant lines from `files/--ZDOTDIR--/.zprofile` into `files/--HOME--/.shellrc` and deleted `files/--ZDOTDIR--/.zprofile` since that is the first file loaded during the fresh machine setup. This also avoids the defensive definition of `ZDOTDIR` in duplicate files.
+
+#### Adopting these changes
+
+* After rebasing, you will end up with conflicts. The env vars that were previously defined in `files/--ZDOTDIR--/.zprofile` have been moved into `files/--HOME--/.shellrc`. You might have to manually fix them. You can go ahead and delete the `${HOME}/.zprofile` since that is no longer needed.
+* Run `install-dotfiles.rb` so that the symlinked zsh config files in `$HOME` point to the correct locations (`files/--ZDOTDIR--/` instead of `files/--HOME--/`)
+
 ### 1.0-15
 
 * *[README.md]* Fixed some grammatical errors in README.
@@ -14,7 +24,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 #### Adopting these changes
 
 * Run `fresh-install-of-osx.sh` so that the `zsh-defer` plugin is cloned to the correct directory.
-* Restart terminal for the deferred-loading to take effect. (No harm in keeping the old session)
+* Restart terminal for the deferred-loading to take effect. (No harm in keeping the old session).
 
 ### 1.0-13
 

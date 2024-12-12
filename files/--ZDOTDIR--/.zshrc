@@ -7,7 +7,7 @@
 # to set up aliases, functions, options, key bindings, etc.
 #
 # file location: ${ZDOTDIR}/.zshrc
-# load order: .zshenv, .zprofile, .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
+# load order: .zshenv [.shellrc], .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
 ################################################################################
 
 # Optimizing zsh:

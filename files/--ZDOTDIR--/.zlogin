@@ -10,7 +10,7 @@
 # shells before and after zshrc.
 #
 # file location: ${ZDOTDIR}/.zlogin
-# load order: .zshenv, .zprofile, .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
+# load order: .zshenv [.shellrc], .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
 ################################################################################
 
 # execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
@@ -41,7 +41,6 @@ find_in_folder_and_recompile() {
 
   # zsh config files can be compiled to improve performance
   # Based from: https://github.com/romkatv/zsh-bench/blob/master/configs/ohmyzsh%2B/setup
-  recompile_zsh_scripts "${ZDOTDIR}/.zprofile"
   recompile_zsh_scripts "${ZDOTDIR}/.zshenv"
   recompile_zsh_scripts "${ZDOTDIR}/.zshrc"
   recompile_zsh_scripts "${ZDOTDIR}/.zlogin"

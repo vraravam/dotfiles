@@ -1,2 +1,2 @@
-source "${ZDOTDIR}/.zprofile"
+source "${ZDOTDIR}/.shellrc"
 source "${HOME}/.aliases"

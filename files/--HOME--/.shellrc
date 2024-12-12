@@ -4,15 +4,68 @@
 
 ################################################################################
 # This file is sourced only for login shells. It is used to define the bare
-# minimum shell functions that are needed during bootstrap of a vanilla OS to
-# bootstrap installation of all other config files.
+# minimum shell functions and env vars that are needed during bootstrap of a
+# vanilla OS to bootstrap installation of all other config files.
 #
 # file location: ${HOME}/.shellrc
-# load order: .zshenv, .zprofile [.shellrc], .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
+# load order: .zshenv [.shellrc], .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
 ################################################################################
 
 # execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
 test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
+
+export LANG='en_US.UTF-8'
+export LANGUAGE='en_US.UTF-8'
+export LC_COLLATE='en_US.UTF-8'
+export LC_CTYPE='en_US.UTF-8'
+export LC_MESSAGES='en_US.UTF-8'
+export LC_MONETARY='en_US.UTF-8'
+export LC_NUMERIC='en_US.UTF-8'
+export LC_TIME='en_US.UTF-8'
+export LC_ALL='en_US.UTF-8'
+export LESSCHARSET='utf-8'
+
+export ZDOTDIR="${ZDOTDIR:-${HOME}}"
+export XDG_CACHE_HOME="${HOME}/.cache"
+export XDG_CONFIG_HOME="${HOME}/.config"
+export XDG_DATA_HOME="${HOME}/.local/share"
+export XDG_STATE_HOME="$HOME/.local/state"
+
+# Note: Change these as per your settings. Deleting them will essentially unset the var(s) and thus any aliases/backup-operations/etc will not be processed for those deleted variable(s)
+
+# ------------ Env vars for basic/common setup ------------
+# The github username where the setup scripts are downloaded from
+export GH_USERNAME="vraravam"
+
+# Vijay's github username for setting upstream remote
+export UPSTREAM_GH_USERNAME="vraravam" # Note: Do NOT change this
+
+# This repo is cloned into this location
+export DOTFILES_DIR="${HOME}/.bin-oss"
+
+# All development codebases are cloned into a subfolder of this folder
+export PROJECTS_BASE_DIR="${HOME}/dev"
+
+# Executable scripts that are not shared as part of this public repo are present here
+export PERSONAL_BIN_DIR="${HOME}/personal/dev/bin"
+
+# Many configuration files (eg `.envrc`, `.tool-versions`), that might contain sensitive info and so cannot be committed into those repos are stored here and symlinked to their target destination
+export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev/configs"
+
+# ------------ Env vars for advanced setup ------------
+# All browser profiles are captured in this folder (might contain sensitive info like browsing history and so is considered private)
+export PERSONAL_PROFILES_DIR="${HOME}/personal/$(whoami)/profiles"
+
+# Keybase username
+export KEYBASE_USERNAME="avijayr"
+
+# Keybase home repo name
+export KEYBASE_HOME_REPO_NAME="home"
+
+# Keybase profiles repo name
+export KEYBASE_PROFILES_REPO_NAME="profiles"
+
+# -----------------------------------------------------
 
 colorize() {
   printf "\x1b[${1}m"
@@ -117,7 +170,7 @@ command_exists() {
 
 # Note: This function is kind of equivalent to 'omz reload', but that doesn't seem to work when installing on a vanilla OS
 load_zsh_configs() {
-  local file_list=('.zshenv' '.zprofile' '.zshrc' '.zlogin')
+  local file_list=('.zshenv' '.zshrc' '.zlogin')
   for file in "${file_list[@]}"; do
     FIRST_INSTALL=true load_file_if_exists "${ZDOTDIR}/${file}"
   done
@@ -134,15 +187,19 @@ append_to_fpath_if_dir_exists() {
 prepend_to_path_if_dir_exists() {
   is_directory "${1}" && export PATH="${1}:${PATH+:${PATH}}"
 }
+
 prepend_to_manpath_if_dir_exists() {
   is_directory "${1}" && export MANPATH="${1}:${MANPATH+:${MANPATH}}"
 }
+
 prepend_to_ldflags_if_dir_exists() {
   is_directory "${1}" && export LDFLAGS="-L${1} ${LDFLAGS+ ${LDFLAGS}}"
 }
+
 prepend_to_cppflags_if_dir_exists() {
   is_directory "${1}" && export CPPFLAGS="-I${1} ${CPPFLAGS+ ${CPPFLAGS}}"
 }
+
 prepend_to_pkg_config_path_if_dir_exists() {
   is_directory "${1}" && export PKG_CONFIG_PATH="${1}${PKG_CONFIG_PATH+:${PKG_CONFIG_PATH}}"
 }
