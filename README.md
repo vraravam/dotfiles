@@ -1,6 +1,7 @@
 - [Background](#background)
 - [How to adopt/customize the scripts to your own settings](#how-to-adoptcustomize-the-scripts-to-your-own-settings)
   - [How to upgrade / catch-up to new changes](#how-to-upgrade--catch-up-to-new-changes)
+  - [How to test changes in your fork before raising a Pull Request](#how-to-test-changes-in-your-fork-before-raising-a-pull-request)
 - [Pre-requisites](#pre-requisites)
 - [Basic setup](#basic-setup)
 - [Advanced setup (in addition to the basic setup if you want to capture other files in an encrypted private git repo)](#advanced-setup-in-addition-to-the-basic-setup-if-you-want-to-capture-other-files-in-an-encrypted-private-git-repo)
@@ -45,6 +46,10 @@ In your forked repo, make the following changes, commit and push *via the Github
 4. After the above step, it is always recommended to run the `install-dotfiles.rb` script once to ensure all (non symlinked) changes are setup on your machine correctly.
 5. In case there are any other changes that might be needed after updating, these steps will be detailed in the [changelog](./CHANGELOG.md). In such rare cases, you might have to run the appropriate steps in sequence as detailed out in that section.
 6. After updating/catching-up, it is recommended to quit and restart the terminal so that all "in session memory" aliases, etc are up-to-date so that the files are sourced correctly.
+
+## How to test changes in your fork before raising a Pull Request
+
+1. **Especially if you are making changes to the fresh-install scripts and want to test it out on a vanilla OS**, you can change the github urls to refer to your branch in these files `GettingStarted-Basic.md` and `files/--HOME--/.shellrc`. For eg, if your PR branch is called `zdotdir-fixes`, you can search for `master` in those lines that refer to the `githubusercontent`, and replace `master` with `zddotdir-fixes`. Once your PR is tested and approved, please remember to revert these changes alone back to `master` and then merge the PR into the main working branch.
 
 # Pre-requisites
 
