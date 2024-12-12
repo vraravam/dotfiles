@@ -23,7 +23,7 @@ sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
 #################################################################################################
 echo "==> Download the '${HOME}/.shellrc' for loading the utility functions"
 if ! type warn &> /dev/null 2>&1; then
-  ! test -f "${HOME}/.shellrc" && curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/master/files/--HOME--/.shellrc" -o "${HOME}/.shellrc"
+  ! test -f "${HOME}/.shellrc" && curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/files/--HOME--/.shellrc" -o "${HOME}/.shellrc"
   FIRST_INSTALL=true source "${HOME}/.shellrc"
 else
   warn "skipping downloading and sourcing '${HOME}/.shellrc' since its already loaded"
@@ -125,6 +125,11 @@ if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
 
   # Note: Cloning with https since the ssh keys will not be present at this time
   git clone -q "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}"
+  git -C "${DOTFILES_DIR}" switch "${DOTFILES_BRANCH}"
+  if [[ "$(git -C "${DOTFILES_DIR}" branch --show-current)" != "${DOTFILES_BRANCH}" ]]; then
+    echo "$(red "'DOTFILES_BRANCH' env var is not equal to the branch that was checked out; something is wrong. Please correct before retrying!")"
+    exit -1
+  fi
 
   # Use the https protocol for pull, but use ssh/git for push
   git -C "${DOTFILES_DIR}" config url.ssh://git@github.com/.pushInsteadOf https://github.com/
