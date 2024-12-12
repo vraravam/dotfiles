@@ -14,11 +14,13 @@
 # Notice: .zshenv is the same, except that it's not read if zsh is started with -f
 #
 # file location: ${ZDOTDIR}/.zshenv
-# load order: .zshenv, .zprofile, .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
+# load order: .zshenv [.shellrc], .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
 ################################################################################
 
 # execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
 test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
+
+type load_file_if_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 # https://blog.patshead.com/2011/04/improve-your-oh-my-zsh-startup-time-maybe.html
 skip_global_compinit=1
@@ -32,8 +34,3 @@ if [[ "${ARCH}" =~ "arm" ]]; then
 else
   export HOMEBREW_PREFIX="/usr/local"
 fi
-
-# https://github.com/sorin-ionescu/prezto/blob/master/runcoms/zshenv
-# Ensure that a non-login, non-interactive shell has a defined environment.
-export ZDOTDIR="${ZDOTDIR:-${HOME}}"
-[[ ( "${SHLVL}" -eq 1 && ! -o LOGIN ) && -s "${ZDOTDIR}/.zprofile" ]] && source "${ZDOTDIR}/.zprofile"

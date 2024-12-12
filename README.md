@@ -17,7 +17,7 @@ These scripts are idempotent and can run on a vanilla OS as well as once the who
 
 Each script will warn the users if its skipping a step, and if you want to rerun the script but force that step, you just need to delete the control `if` condition (you should have a basic understanding of shell programming to figure out what to delete/how to force without bypass).
 
-All of the folder structures and the setup/backup operations are governed by the environment variables [defined here](files/--HOME--/.zprofile). Please read the explanation of each variable in the same and edit appropriately.
+All of the folder structures and the setup/backup operations are governed by the environment variables [defined here](files/--HOME--/.shellrc). Please read the explanation of each variable in the same and edit appropriately.
 
 # How to adopt/customize the scripts to your own settings
 
@@ -25,20 +25,20 @@ If you want to be able to re-image a new machine with your own settings (and ove
 
 In your forked repo, make the following changes, commit and push *via the Github web-UI itself* (for the first time before running the scripts). Once the above steps are done, and committed into your fork, then everytime you need to run the setup, you can run the `curl` commands that point to *your* fork:
 
-1. **_Only in this file, `GettingStarted-Basic.md` and `files/--HOME--/.zprofile` files (and nowhere else):_** Find and replace the strings that reference my usernames to your equivalent ones (for eg, you can search for `vraravam` and `avijayr` and replace them with your values).
-2. ***Optional:*** The nested folder names that you choose for your setup (as referred to by `PROJECTS_BASE_DIR`, `PERSONAL_CONFIGS_DIR`, `PERSONAL_PROFILES_DIR`, `PERSONAL_BIN_DIR`, and `DOTFILES_DIR` in the `files/--HOME--/.zprofile` file) **should be reflected** in the folder structure of the nested folders in the `files` directory of the committed github repo itself. For eg, I have `PROJECTS_BASE_DIR="${HOME}/dev"`, and if your setup uses `workspace` instead of `dev`, then, in your forked repository, the folder name `files/dev` should be renamed to `files/workspace` and so on.
+1. **_Only in this file, `GettingStarted-Basic.md` and `files/--HOME--/.shellrc` files (and nowhere else):_** Find and replace the strings that reference my usernames to your equivalent ones (for eg, you can search for `vraravam` and `avijayr` and replace them with your values).
+2. ***Optional:*** The nested folder names that you choose for your setup (as referred to by `PROJECTS_BASE_DIR`, `PERSONAL_CONFIGS_DIR`, `PERSONAL_PROFILES_DIR`, `PERSONAL_BIN_DIR`, and `DOTFILES_DIR` in the `files/--HOME--/.shellrc` file) **should be reflected** in the folder structure of the nested folders in the `files` directory of the committed github repo itself. For eg, I have `PROJECTS_BASE_DIR="${HOME}/dev"`, and if your setup uses `workspace` instead of `dev`, then, in your forked repository, the folder name `files/dev` should be renamed to `files/workspace` and so on.
 3. Review all entries in the `${HOME}/Brewfile`, and ensure that there are no unwanted libraries/applications. If you have any doubts (if comparing with my [Brewfile](files/--HOME--/Brewfile)), you will need to search the internet for the uses of those libraries/applications and decide whether to keep it or not.
 
 ## How to upgrade / catch-up to new changes
 
 1. My recommendation is to *always* have all your customizations as a single commit on top of the upstream. This allows to easily rebase and adopt new changes in the future.
 2. Run the `git upreb` command when in this repo's folder (`${HOME}/.bin-oss`). Most of the times, this should simply rebase your changes on top of the latest upstream master
-   1. *Hint:* Before pushing your changes to your remote, if you want to ensure (diff) that your old changes are retained (for eg in `Brewfile`) and no new/unnecessary changes are present, you can run the following 2 commands and review the diffs manually
+   - *Hint:* Before pushing your changes to your remote, if you want to ensure (diff) that your old changes are retained (for eg in `Brewfile`) and no new/unnecessary changes are present, you can run the following 2 commands and review the diffs manually
 
    ```bash
     git diff @{u}  # will diff your local HEAD against the remote HEAD of your own fork. Please remember that this diff will show new changes that I have made in my repo, and which are now going-to-be-adopted into yours. It's a good idea to remove entries in Brewfile that you won't need
 
-    git diff upstream/`git br`  # will diff your local HEAD against the remote HEAD of MY repo. These changes should be exactly the changes that you had done previously (most likely only in GettingStarted-Basic.md, files/--HOME--/.zprofile and files/--HOME--/Brewfile)
+    git diff upstream/`git br`  # will diff your local HEAD against the remote HEAD of MY repo. These changes should be exactly the changes that you had done previously (most likely only in GettingStarted-Basic.md, files/--HOME--/.shellrc and files/--HOME--/Brewfile)
    ```
 
 3. You will have to force-push to your fork's remote after the above step. To accomplish this, I recommend using `git push --force-with-lease`
@@ -66,9 +66,9 @@ Of course, you will have to manually take snapshots of your machine for backup f
 
 As a summary, these files will typically have changes between your setup and mine:
 
-* `GettingStarted-Basic.md` (references to your usernames instead of mine, and typically any other changes that you introduce in the `files/--HOME--/.zprofile` - look below)
+* `GettingStarted-Basic.md` (references to your usernames instead of mine, and typically any other changes that you introduce in the `files/--HOME--/.shellrc` - look below)
 * `files/--HOME--/.gitconfig` (the `IncludeIf` line to match your global/base configuration filename)
-* `files/--HOME--/.zprofile` (`GH_USERNAME`, `KEYBASE_USERNAME`, and other changeable env vars to control which steps to perform vs which to bypass)
+* `files/--HOME--/.shellrc` (`GH_USERNAME`, `KEYBASE_USERNAME`, and other changeable env vars to control which steps to perform vs which to bypass)
 * `files/--HOME--/Brewfile` (the list of applications and command-line utilities that you choose to install in your local machine)
 * `scripts/capture-defaults.sh` (what application preferences that you choose to backup - based on the entries in the `Brewfile`)
 * `scripts/fresh-install-of-osx.sh` (what applications you choose to set as login items on every reboot)

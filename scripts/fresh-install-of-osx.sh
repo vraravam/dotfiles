@@ -61,8 +61,23 @@ fi
 #################################
 # Setup ssh scripts/directories #
 #################################
-mkdir -p "${HOME}/.ssh"
-sudo chmod -R 600 "${HOME}"/.ssh/* || true
+section_header "Setting ssh config file permissions"
+ensure_dir_exists_if_var_defined "${HOME}/.ssh"
+test -n "$(ls -A "${HOME}/.ssh")" && sudo chmod -R 600 "${HOME}"/.ssh/* || true
+
+#################################################################################
+# Ensure that some of the directories corresponding to the env vars are created #
+#################################################################################
+section_header "Creating directories defined by various env vars"
+ensure_dir_exists_if_var_defined "${DOTFILES_DIR}"
+ensure_dir_exists_if_var_defined "${PROJECTS_BASE_DIR}"
+ensure_dir_exists_if_var_defined "${PERSONAL_BIN_DIR}"
+ensure_dir_exists_if_var_defined "${PERSONAL_CONFIGS_DIR}"
+ensure_dir_exists_if_var_defined "${PERSONAL_PROFILES_DIR}"
+ensure_dir_exists_if_var_defined "${XDG_CACHE_HOME}"
+ensure_dir_exists_if_var_defined "${XDG_CONFIG_HOME}"
+ensure_dir_exists_if_var_defined "${XDG_DATA_HOME}"
+ensure_dir_exists_if_var_defined "${XDG_STATE_HOME}"
 
 ############################
 # Disable macos gatekeeper #
@@ -72,7 +87,7 @@ sudo chmod -R 600 "${HOME}"/.ssh/* || true
 #####################
 # Install oh-my-zsh #
 #####################
-section_header "Installing oh-my-zsh"
+section_header "Installing oh-my-zsh into '$(yellow "${HOME}/.oh-my-zsh")'"
 if ! is_directory "${HOME}/.oh-my-zsh"; then
   sh -c "$(ZSH= curl -fsSL https://install.ohmyz.sh/)" "" --unattended
 else
@@ -85,7 +100,7 @@ fi
 # Note: Some of these are available via brew, but enabling them will take an additional step and the only other benefit (of keeping them up-to-date using brew can still be achieved by updating the git repos directly)
 section_header "Installing custom omz plugins"
 ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
-mkdir -p "${ZSH_CUSTOM}/plugins"
+ensure_dir_exists_if_var_defined "${ZSH_CUSTOM}/plugins"
 clone_if_not_present() {
   target_folder="${ZSH_CUSTOM}/plugins/$(basename ${1})"
   if ! is_directory "${target_folder}"; then
@@ -103,9 +118,8 @@ clone_if_not_present https://github.com/romkatv/zsh-defer
 ####################
 # Install dotfiles #
 ####################
-section_header "Installing dotfiles"
-ZDOTDIR="${ZDOTDIR:-${HOME}}"
-if is_non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; then
+section_header "Installing dotfiles into '$(yellow "${DOTFILES_DIR}")'"
+if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
   # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
   rm -rfv "${HOME}/.zshrc"
 
@@ -123,9 +137,6 @@ if is_non_zero_string "${DOTFILES_DIR}" && ! is_directory "${DOTFILES_DIR}"; the
 
   # Load all zsh config files for PATH and other env vars to take effect
   load_zsh_configs
-
-  # Note: Running the installation of the dotfiles for a 2nd time AFTER all the env vars have been defined and loaded into session memory
-  eval "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
 
   # Setup the DOTFILES_DIR repo's upstream if it doesn't already point to vraravam's repo
   git -C "${DOTFILES_DIR}" remote -vv | grep "${UPSTREAM_GH_USERNAME}"
@@ -149,7 +160,7 @@ fi
 ####################
 # Install homebrew #
 ####################
-section_header "Installing homebrew"
+section_header "Installing homebrew into '$(yellow "${HOMEBREW_PREFIX}")'"
 if ! command_exists brew; then
   # Prep for installing homebrew
   sudo mkdir -p "${HOMEBREW_PREFIX}/tmp" "${HOMEBREW_PREFIX}/repository" "${HOMEBREW_PREFIX}/plugins" "${HOMEBREW_PREFIX}/bin"
