@@ -49,7 +49,7 @@ In your forked repo, make the following changes, commit and push *via the Github
 
 ## How to test changes in your fork before raising a Pull Request
 
-1. **Especially if you are making changes to the fresh-install scripts and want to test it out on a vanilla OS**, you can change the github urls to refer to your branch in these files `GettingStarted-Basic.md` and `files/--HOME--/.shellrc`. For eg, if your PR branch is called `zdotdir-fixes`, you can search for `master` in those lines that refer to the `githubusercontent`, and replace `master` with `zddotdir-fixes`. Once your PR is tested and approved, please remember to revert these changes alone back to `master` and then merge the PR into the main working branch.
+1. **Especially if you are making changes to the fresh-install scripts and want to test it out on a vanilla OS**, you can change the github urls to refer to your branch in these files `GettingStarted-Basic.md` and `files/--HOME--/.shellrc`. For eg, if your PR branch is called `zdotdir-fixes`, you can search for `DOTFILES_BRANCH=` in those files, and replace `master` with `zddotdir-fixes`. Once your PR is tested and approved, please remember to revert `zddotdir-fixes` back to `master` and then merge the PR into the main working branch.
 
 # Pre-requisites
 

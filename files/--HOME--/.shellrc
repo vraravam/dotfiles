@@ -227,6 +227,7 @@ if is_macos; then
 
     xcode-select --install
     sudo xcodebuild -license accept -quiet || true
+    success 'Successfully installed xcode'
   }
 
   # Uninstall and reinstall xcode command line tools (useful immediately after upgrade or if reinstalling the OS)
@@ -238,5 +239,6 @@ if is_macos; then
     touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
     sudo softwareupdate -ia --agree-to-license --force
     rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+    success 'Successfully installed xcode command-line tools'
   }
 fi

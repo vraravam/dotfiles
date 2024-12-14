@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-19
+
+* *[Brewfile]* Added `keycastr` to help with pairing and presentations of screen-grabs.
+* Added some more logging while running the fresh-install scripts.
+
 ### 1.0-18
 
 * Restructured `Brewfile` to convey what are bare minimum formulae vs recommended vs optional ie left to the user's choice.

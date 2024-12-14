@@ -10,24 +10,25 @@ type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.s
 load_zsh_configs
 
 if is_non_zero_string "${KEYBASE_USERNAME}"; then
-  ! command_exists keybase && echo "$(red "Keybase not found in the PATH. Aborting!!!")" && exit -1
+  ! command_exists keybase && echo "$(red 'Keybase not found in the PATH. Aborting!!!')" && exit -1
 
   ######################
   # Login into keybase #
   ######################
-  section_header "Logging into keybase"
-  ! keybase login && echo "$(red "could not login into keybase. Retry again.")" && exit -1
+  section_header 'Logging into keybase'
+  ! keybase login && echo "$(red 'could not login into keybase. Retry again.')" && exit -1
 
   #######################
   # Clone the home repo #
   #######################
-  section_header "Cloning home repo"
+  section_header 'Cloning home repo'
   if is_non_zero_string "${KEYBASE_HOME_REPO_NAME}" && ! is_git_repo "${HOME}"; then
     rm -rf "${HOME}/tmp"
     ensure_dir_exists_if_var_defined "${HOME}/tmp"
     git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME} "${HOME}/tmp"
     mv -fv "${HOME}/tmp/.git" "${HOME}/"
     rm -rf "${HOME}/tmp"
+    success "Successfully cloned the home repo into ${HOME}"
 
     # Checkout files (these should not have any modifications/conflicts with what is in the remote repo)
     git -C "${HOME}" checkout ".[a-zA-Z]*" personal
@@ -44,7 +45,7 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
   ###########################
   # Clone the profiles repo #
   ###########################
-  section_header "Cloning profiles repo"
+  section_header 'Cloning profiles repo'
   if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && ! is_git_repo "${PERSONAL_PROFILES_DIR}"; then
     rm -rf "${PERSONAL_PROFILES_DIR}"
     git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME} "${PERSONAL_PROFILES_DIR}"
@@ -70,6 +71,7 @@ if ! is_file "${file_name}"; then
   remote: git@github.com:${UPSTREAM_GH_USERNAME}/git_scripts
   active: true
 EOF
+  success "Successfully generated ${file_name}"
 else
   warn "skipping generation of '${file_name}' since it already exists"
 fi
@@ -77,7 +79,7 @@ fi
 ##################################################
 # Resurrect repositories that I am interested in #
 ##################################################
-section_header "Resurrecting repos"
+section_header 'Resurrecting repos'
 if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
   for file in $(ls "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml); do
     resurrect-repositories.rb -r "${file}"
@@ -89,7 +91,7 @@ fi
 ############################################################
 # post-clone operations for installing system dependencies #
 ############################################################
-section_header "Running post-clone operations"
+section_header 'Running post-clone operations'
 if command_exists all; then
   all restore-mtime -c
   all maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
@@ -116,23 +118,24 @@ pushd "${PERSONAL_PROFILES_DIR}"; popd
 ###################################################################
 # Restore the preferences from the older machine into the new one #
 ###################################################################
-section_header "Restore preferences"
+section_header 'Restore preferences'
 # Run within a separate bash shell to avoid quitting due to errors
 command_exists "osx-defaults.sh" && bash -c "osx-defaults.sh -s"
 command_exists "capture-defaults.sh" && capture-defaults.sh i
+success 'Successfully restored preferences'
 
 ################################
 # Recreate the zsh completions #
 ################################
-section_header "Recreate zsh completions"
+section_header 'Recreate zsh completions'
 rm -rf "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}"
 autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}"
 
 ###################
 # Setup cron jobs #
 ###################
-section_header "Setup cron jobs"
-command_exists recron && recron
+section_header 'Setup cron jobs'
+command_exists recron && recron && success 'Successfully setup cron jobs'
 
 # To install the latest versions of the hex, rebar and phoenix packages
 # mix local.hex --force && mix local.rebar --force
@@ -166,4 +169,4 @@ command_exists recron && recron
 # dotnet tool install -g dotnet-format
 
 echo "\n"
-success "** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **"
+success '** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **'
