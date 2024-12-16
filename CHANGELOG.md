@@ -4,10 +4,10 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ### 1.0-20
 
+* Removed necessity of quitting and restarting the Terminal application between executing the `fresh-install-of-osx.sh` and `fresh-install-of-osx-advanced.sh`.
 * *[.shellrc]* Extract some utility functions to remove duplication and invoke them in the setup scripts.
 * *[.shellrc]* Rename `ensure_dir_exists_if_var_defined` into `ensure_dir_exists`.
 * *[Brewfile]* Removed `gs`, `wifi-password` and `virtualbox`.
-* Removed necessity of quitting and restarting the Terminal application between executing the `fresh-install-of-osx.sh` and `fresh-install-of-osx-advanced.sh`.
 
 *Note*: This version has been successfully tested on a Macbook M1 on 16 Dec, 2024.
 
