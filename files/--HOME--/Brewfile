@@ -46,7 +46,6 @@ brew 'eza'
 brew 'git-extras'
 brew 'git-gui'
 brew 'git-tools'
-brew 'gs'   # used for compressing PDFs
 brew 'jq'
 brew 'moreutils'
 brew 'ncdu'
@@ -54,7 +53,6 @@ brew 'prettyping'
 brew 'ripgrep'
 brew 'syncthing'
 brew 'tldr'
-brew 'wifi-password'
 
 cask 'aldente'
 cask 'appcleaner'
@@ -81,7 +79,6 @@ cask 'raycast'
 cask 'silicon' if is_arm
 cask 'stats'
 cask 'the-unarchiver'
-cask 'virtualbox'
 cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when compared to VSCode
 cask 'zen-browser@twilight'
 cask 'zoom'
@@ -136,7 +133,7 @@ end
 # TODO: This doesn't solve the issue about performing a custom action when a specific formula/cask is (re)installed
 at_exit do
   # This removal is required for completions from other plugins to work (for eg git-extras)
-  system("rm -rfv \"${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git\"") || true
+  system("rm -rfv \"${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git\" &> /dev/null 2>&1 || true") || true
 end
 
 # ----------------------------------------------------------------------------------------------------------
@@ -163,11 +160,13 @@ end
 # ---- general utilities
 # brew 'fzy'
 # brew 'gradle-completion'
+# brew 'gs'   # used for compressing PDFs
 # brew 'libressl', link: true
 # brew 'localstack'
 # brew 'shellcheck'
 # brew 'speedtest-cli'
 # brew 'watch'
+# brew 'wifi-password'
 
 # ---- casks
 # cask 'cloudflare-warp'
@@ -182,3 +181,4 @@ end
 # cask 'netspot'
 # cask 'ngrok'
 # cask 'tempbox'
+# cask 'virtualbox'

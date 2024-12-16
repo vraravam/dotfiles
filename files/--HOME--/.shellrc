@@ -145,7 +145,11 @@ is_directory() {
   is_non_zero_string "${1}" && test -d "${1}"
 }
 
-ensure_dir_exists_if_var_defined() {
+dir_has_children() {
+  is_directory "${1}" && test -n "$(ls -A "${1}")"
+}
+
+ensure_dir_exists() {
   if is_non_zero_string "${1}"; then
     mkdir -p "${1}"
   else
@@ -217,6 +221,23 @@ is_linux() {
 
 is_windows() {
   [[ "${OSTYPE}" =~ 'MINGW' ]]
+}
+
+set_ssh_folder_permissions() {
+  local target_folder="${HOME}/.ssh"
+  ensure_dir_exists "${target_folder}"
+  if dir_has_children "${target_folder}"; then
+    sudo chmod -R 600 "${target_folder}"/*
+    success "Successfully set permissions for all files in '${target_folder}'"
+  else
+    warn "Couldn't find any files in '${target_folder}' to set permissions for"
+  fi
+}
+
+clone_repo_into() {
+  ensure_dir_exists "${2}"
+  dir_has_children "${2}" && rm -rf "${2}"/*
+  git -C "${2}" clone -q "${1}" . --recurse-submodules
 }
 
 if is_macos; then
