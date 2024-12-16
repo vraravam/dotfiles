@@ -46,7 +46,6 @@ brew 'eza'
 brew 'git-extras'
 brew 'git-gui'
 brew 'git-tools'
-brew 'gs'   # used for compressing PDFs
 brew 'jq'
 brew 'moreutils'
 brew 'ncdu'
@@ -54,7 +53,6 @@ brew 'prettyping'
 brew 'ripgrep'
 brew 'syncthing'
 brew 'tldr'
-brew 'wifi-password'
 
 cask 'aldente'
 cask 'appcleaner'
@@ -163,11 +161,13 @@ end
 # ---- general utilities
 # brew 'fzy'
 # brew 'gradle-completion'
+# brew 'gs'   # used for compressing PDFs
 # brew 'libressl', link: true
 # brew 'localstack'
 # brew 'shellcheck'
 # brew 'speedtest-cli'
 # brew 'watch'
+# brew 'wifi-password'
 
 # ---- casks
 # cask 'cloudflare-warp'
