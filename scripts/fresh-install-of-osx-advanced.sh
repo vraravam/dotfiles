@@ -80,7 +80,7 @@ fi
 section_header 'Resurrecting repos'
 if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
   for file in $(ls "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml); do
-    resurrect-repositories.rb -r "${file}"
+    ${DOTFILES_DIR}/scripts/resurrect-repositories.rb -r "${file}"
   done
 else
   warn "skipping resurrecting of repositories since '${PERSONAL_CONFIGS_DIR}' doesn't exist"
