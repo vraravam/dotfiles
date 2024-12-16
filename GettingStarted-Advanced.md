@@ -1,6 +1,6 @@
 **Before starting to run this script** (for the first time on a new machine), these steps are *mandatory if you are using my keybase-based advanced setup*
 
-1. Open the `Keybase` application and login into keybase.
+1. Make sure that you have logged into `Keybase` either via the application or the command-line. The script will error out with an appropriate message if you haven't done so.
 
 The meta script to setup the macos machine AFTER the generic script has been run, can be invoked by using the following command:
 
