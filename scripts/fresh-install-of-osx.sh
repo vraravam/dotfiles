@@ -183,7 +183,7 @@ if ! command_exists brew; then
 else
   warn "skipping installation of homebrew since it's already installed"
 fi
-sh -c "${HOMEBREW_PREFIX}/bin/brew bundle --file '${HOME}/Brewfile' || true"
+sh -c "${HOMEBREW_PREFIX}/bin/brew bundle check --file '${HOME}/Brewfile' || ${HOMEBREW_PREFIX}/bin/brew bundle --file '${HOME}/Brewfile' &> /dev/null 2>&1 || true"
 
 ###########################################
 # Link programs to open from the cmd-line #
