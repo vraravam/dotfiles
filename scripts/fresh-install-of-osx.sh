@@ -62,22 +62,21 @@ fi
 # Setup ssh scripts/directories #
 #################################
 section_header 'Setting ssh config file permissions'
-ensure_dir_exists_if_var_defined "${HOME}/.ssh"
-test -n "$(ls -A "${HOME}/.ssh")" && sudo chmod -R 600 "${HOME}"/.ssh/* || true
+set_ssh_folder_permissions
 
 #################################################################################
 # Ensure that some of the directories corresponding to the env vars are created #
 #################################################################################
 section_header 'Creating directories defined by various env vars'
-ensure_dir_exists_if_var_defined "${DOTFILES_DIR}"
-ensure_dir_exists_if_var_defined "${PROJECTS_BASE_DIR}"
-ensure_dir_exists_if_var_defined "${PERSONAL_BIN_DIR}"
-ensure_dir_exists_if_var_defined "${PERSONAL_CONFIGS_DIR}"
-ensure_dir_exists_if_var_defined "${PERSONAL_PROFILES_DIR}"
-ensure_dir_exists_if_var_defined "${XDG_CACHE_HOME}"
-ensure_dir_exists_if_var_defined "${XDG_CONFIG_HOME}"
-ensure_dir_exists_if_var_defined "${XDG_DATA_HOME}"
-ensure_dir_exists_if_var_defined "${XDG_STATE_HOME}"
+ensure_dir_exists "${DOTFILES_DIR}"
+ensure_dir_exists "${PROJECTS_BASE_DIR}"
+ensure_dir_exists "${PERSONAL_BIN_DIR}"
+ensure_dir_exists "${PERSONAL_CONFIGS_DIR}"
+ensure_dir_exists "${PERSONAL_PROFILES_DIR}"
+ensure_dir_exists "${XDG_CACHE_HOME}"
+ensure_dir_exists "${XDG_CONFIG_HOME}"
+ensure_dir_exists "${XDG_DATA_HOME}"
+ensure_dir_exists "${XDG_STATE_HOME}"
 
 ############################
 # Disable macos gatekeeper #
@@ -102,20 +101,20 @@ fi
 # Note: Some of these are available via brew, but enabling them will take an additional step and the only other benefit (of keeping them up-to-date using brew can still be achieved by updating the git repos directly)
 section_header 'Installing custom omz plugins'
 ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
-ensure_dir_exists_if_var_defined "${ZSH_CUSTOM}/plugins"
-clone_if_not_present() {
+ensure_dir_exists "${ZSH_CUSTOM}/plugins"
+clone_omz_plugin_if_not_present() {
   local target_folder="${ZSH_CUSTOM}/plugins/$(basename ${1})"
   if ! is_directory "${target_folder}"; then
-    git clone -q --depth=1 "${1}" "${target_folder}"
+    clone_repo_into "${1}" "${target_folder}"
     success "Successfully cloned oh-my-zsh plugin ${1} into ${target_folder}"
   else
     warn "skipping cloning of '$(basename "${1}")' since '${target_folder}' is already present"
   fi
 }
-clone_if_not_present https://github.com/zdharma-continuum/fast-syntax-highlighting
-clone_if_not_present https://github.com/zsh-users/zsh-autosuggestions
-clone_if_not_present https://github.com/zsh-users/zsh-completions
-clone_if_not_present https://github.com/romkatv/zsh-defer
+clone_omz_plugin_if_not_present https://github.com/zdharma-continuum/fast-syntax-highlighting
+clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-autosuggestions
+clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-completions
+clone_omz_plugin_if_not_present https://github.com/romkatv/zsh-defer
 
 ####################
 # Install dotfiles #
@@ -126,7 +125,7 @@ if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
   rm -rfv "${HOME}/.zshrc"
 
   # Note: Cloning with https since the ssh keys will not be present at this time
-  git clone -q "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}"
+  clone_repo_into "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}"
   success "Successfully cloned the dotfiles repo into ${DOTFILES_DIR}"
 
   git -C "${DOTFILES_DIR}" switch "${DOTFILES_BRANCH}"

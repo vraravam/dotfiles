@@ -2,6 +2,18 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-20
+
+* *[.shellrc]* Extract some utility functions to remove duplication and invoke them in the setup scripts.
+* *[.shellrc]* Rename `ensure_dir_exists_if_var_defined` into `ensure_dir_exists`.
+* Removed necessity of quitting and restarting the Terminal application between executing the `fresh-install-of-osx.sh` and `fresh-install-of-osx-advanced.sh`.
+
+*Note*: This version has been successfully tested on a Macbook M1 on 16 Dec, 2024.
+
+#### Adopting these changes
+
+* Run `git delete-tag success-tested-on-m1; git push origin :success-tested-on-m1` to cleanup the defunct tag.
+
 ### 1.0-19
 
 * *[Brewfile]* Added `keycastr` to help with pairing and presentations of screen-grabs.

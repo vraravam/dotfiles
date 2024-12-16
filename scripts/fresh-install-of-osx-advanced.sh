@@ -23,9 +23,7 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
   #######################
   section_header 'Cloning home repo'
   if is_non_zero_string "${KEYBASE_HOME_REPO_NAME}" && ! is_git_repo "${HOME}"; then
-    rm -rf "${HOME}/tmp"
-    ensure_dir_exists_if_var_defined "${HOME}/tmp"
-    git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME} "${HOME}/tmp"
+    clone_repo_into "keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME}" "${HOME}/tmp"
     mv -fv "${HOME}/tmp/.git" "${HOME}/"
     rm -rf "${HOME}/tmp"
     success "Successfully cloned the home repo into ${HOME}"
@@ -34,7 +32,7 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
     git -C "${HOME}" checkout ".[a-zA-Z]*" personal
 
     # Reset ssh keys' permissions so that git doesn't complain when using them
-    test -n "$(ls -A "${HOME}/.ssh")" && sudo chmod -R 600 "${HOME}"/.ssh/* || true
+    set_ssh_folder_permissions
 
     # Fix /etc/hosts file to block facebook
     is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts" && sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts
@@ -47,8 +45,8 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
   ###########################
   section_header 'Cloning profiles repo'
   if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && ! is_git_repo "${PERSONAL_PROFILES_DIR}"; then
-    rm -rf "${PERSONAL_PROFILES_DIR}"
-    git clone keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME} "${PERSONAL_PROFILES_DIR}"
+    clone_repo_into "keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME}" "${PERSONAL_PROFILES_DIR}"
+    success "Successfully cloned the profiles repo into ${PERSONAL_PROFILES_DIR}"
 
     # since the above lines will delete the .envrc & .gitignore that were earlier copied into the profiles folder, we will re-run the install script
     eval "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
@@ -65,7 +63,7 @@ fi
 file_name="${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
 section_header "Generating ${file_name}"
 if ! is_file "${file_name}"; then
-  ensure_dir_exists_if_var_defined "$(dirname "${file_name}")"
+  ensure_dir_exists "$(dirname "${file_name}")"
   cat <<EOF > "${file_name}"
 - folder: "\${PROJECTS_BASE_DIR}/oss/git_scripts"
   remote: git@github.com:${UPSTREAM_GH_USERNAME}/git_scripts
@@ -146,7 +144,7 @@ command_exists recron && recron && success 'Successfully setup cron jobs'
 
 # Enabling history for iex shell (might need to be done for each erl that is installed via mise)
 # rm -rf tmp
-# ensure_dir_exists_if_var_defined tmp
+# ensure_dir_exists tmp
 # cd tmp || exit
 # git clone https://github.com/ferd/erlang-history.git
 # cd erlang-history || exit
