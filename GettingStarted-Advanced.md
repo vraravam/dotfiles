@@ -5,7 +5,7 @@
 The meta script to setup the macos machine AFTER the generic script has been run, can be invoked by using the following command:
 
 ```zsh
-curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx-advanced.sh" | zsh
+source "${HOME}/.shellrc"; load_zsh_configs; "${DOTFILES_DIR}/scripts/fresh-install-of-osx-advanced.sh"
 ```
 
 This script can also be run in an idempotent manner, and will setup the home folder repo, the browser profiles, resurrect the repositories that you have created a registry for, install all the languages (each specific version of each language) using [mise](https://github.com/jdx/mise), apply some [OSX defaults](scripts/osx-defaults.sh) and finally re-import your preferences that were captured from the old machine using the [capture-defaults](scripts/capture-defaults.sh) script
