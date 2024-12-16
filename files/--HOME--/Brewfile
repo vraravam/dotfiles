@@ -133,7 +133,7 @@ end
 # TODO: This doesn't solve the issue about performing a custom action when a specific formula/cask is (re)installed
 at_exit do
   # This removal is required for completions from other plugins to work (for eg git-extras)
-  system("rm -rfv \"${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git\" &> /dev/null 2>&1") || true
+  system("rm -rfv \"${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git\" &> /dev/null 2>&1 || true") || true
 end
 
 # ----------------------------------------------------------------------------------------------------------
