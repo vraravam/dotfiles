@@ -18,7 +18,7 @@ test -n "${FIRST_INSTALL+1}" && echo "loading ${0}"
 type command_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
-command_exists code && alias code-gist='code ${PERSONAL_CONFIGS_DIR} ${PERSONAL_BIN_DIR} ${PERSONAL_PROFILES_DIR}/.envrc ${PERSONAL_PROFILES_DIR}/.gitignore ${DOTFILES_DIR} ${HOME}/.gitconfig-* ${HOME}/.tool-versions ${HOME}/.envrc'
+command_exists code && alias code-gist='code "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${HOME}/.tool-versions" "${PERSONAL_PROFILES_DIR}/.gitignore"'
 
 # updates the specified repo (ie creates a local commit of changed files that I am not interested in verifying, but which need to be committed into that repo)
 # internal function: not to be called separately

@@ -19,7 +19,12 @@ case "${1}" in
     ;;
 esac
 
-type green &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+type keep_sudo_alive &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+
+###############################################################################################
+# Ask for the administrator password upfront and keep it alive until this script has finished #
+###############################################################################################
+keep_sudo_alive
 
 ask() {
   while true; do
@@ -56,12 +61,6 @@ ask() {
 # Close any open System Preferences panes, to prevent them from overriding
 # settings we're about to change
 osascript -e 'tell application "System Preferences" to quit'
-
-# Ask for the administrator password upfront
-sudo -v
-
-# Keep-alive: update existing `sudo` time stamp until `.macos` has finished
-while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 
 # While applying any changes to SoftwareUpdate defaults, set software update to OFF to avoid any conflict with the defaults system cache. (Also close the System Preferences app)
 sudo softwareupdate --schedule OFF

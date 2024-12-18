@@ -52,11 +52,11 @@ end
 
 ssh_folder = Pathname.new(HOME) + '.ssh'
 default_ssh_config = ssh_folder + 'config'
-# Note: '~/.ssh/global_config' symlink will exist from the above lines
+# Note: '${HOME}/.ssh/global_config' symlink will exist from the above lines
 if (ssh_folder + 'global_config').exist?
   FileUtils.touch(default_ssh_config) unless default_ssh_config.exist?
 
-  include_line = 'Include ~/.ssh/global_config'
+  include_line = 'Include ${HOME}/.ssh/global_config'
   last_two_lines = default_ssh_config.readlines(chomp: true)[-2..-1] || []
 
   File.write(default_ssh_config, "\n#{include_line}\n", mode: 'a+') unless last_two_lines.include?(include_line)

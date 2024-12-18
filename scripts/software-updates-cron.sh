@@ -2,7 +2,7 @@
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
-type load_zsh_configs &> /dev/null 2>&1 || FIRST_INSTALL=true source "${HOME}/.shellrc"
+type load_zsh_configs &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 load_zsh_configs
 
 if command_exists mise; then

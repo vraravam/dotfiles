@@ -15,6 +15,7 @@
 ######################################################################################################################
 # Set DNS of 8.8.8.8 before proceeding (in some cases, for eg Jio Wifi, github doesn't resolve at all and times out) #
 ######################################################################################################################
+# TODO: Only needed for India/Jio networks, need to figure out a way to not have this for other global locations
 echo '==> Setting DNS for WiFi'
 sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
 
@@ -29,24 +30,23 @@ else
   warn "skipping downloading and sourcing '${HOME}/.shellrc' since its already loaded"
 fi
 
+###############################################################################################
+# Ask for the administrator password upfront and keep it alive until this script has finished #
+###############################################################################################
+keep_sudo_alive
+
 ###############################
 # Do not allow rootless login #
 ###############################
 # Note: Commented out since I am not sure if we need to do this on the office MBP or not
-# ROOTLESS_STATUS=$(/usr/bin/csrutil status | awk '/status/ {print $5}' | sed 's/\.$//')
-# if [[ ${ROOTLESS_STATUS} == "enabled" ]]; then
-#   echo "csrutil (\"rootless\") is enabled. please disable in boot screen and run again!"
-#   exit 1
-# fi
+# section_header 'Verifying rootless status'
+# [[ "$(/usr/bin/csrutil status | awk '/status/ {print $5}' | sed 's/\.$//')" == "enabled" ]] && error "csrutil ('rootless') is enabled. Please disable in boot screen and run again!"
 
 #####################
 # Turn on FileVault #
 #####################
 section_header 'Verifying FileVault status'
-if [[ "$(fdesetup isactive)" != "true" ]]; then
-  echo "$(red 'FileVault is not turned on. Please encrypt your hard disk!')"
-  exit 1
-fi
+[[ "$(fdesetup isactive)" != "true" ]] && error 'FileVault is not turned on. Please encrypt your hard disk!'
 
 ##################################
 # Install command line dev tools #
@@ -129,10 +129,8 @@ if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
   success "Successfully cloned the dotfiles repo into ${DOTFILES_DIR}"
 
   git -C "${DOTFILES_DIR}" switch "${DOTFILES_BRANCH}"
-  if [[ "$(git -C "${DOTFILES_DIR}" branch --show-current)" != "${DOTFILES_BRANCH}" ]]; then
-    echo "$(red "'DOTFILES_BRANCH' env var is not equal to the branch that was checked out; something is wrong. Please correct before retrying!")"
-    exit -1
-  fi
+  local_branch="$(git -C "${DOTFILES_DIR}" branch --show-current)"
+  [[ "${local_branch}" != "${DOTFILES_BRANCH}" ]] && error "'DOTFILES_BRANCH' env var is not equal to the branch that was checked out: '${local_branch}'; something is wrong. Please correct before retrying!"
 
   # Use the https protocol for pull, but use ssh/git for push
   git -C "${DOTFILES_DIR}" config url.ssh://git@github.com/.pushInsteadOf https://github.com/
@@ -161,10 +159,7 @@ else
   warn "skipping cloning the dotfiles repo since '${DOTFILES_DIR}' is either not defined or is already present"
 fi
 
-if ! is_non_zero_string "${HOMEBREW_PREFIX}"; then
-  echo "$(red "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!")"
-  exit -1
-fi
+! is_non_zero_string "${HOMEBREW_PREFIX}" && error "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!"
 
 ####################
 # Install homebrew #
@@ -254,7 +249,7 @@ fi
 section_header 'Setting up login items'
 setup_login_item() {
   if is_directory "/Applications/${1}"; then
-    osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/${1}\", hidden:false}" 2>&1 > /dev/null && success "Successfully setup '$(yellow "${1}")' $(green "as a login item")"
+    osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/${1}\", hidden:false}" 2>&1 > /dev/null && success "Successfully setup '$(yellow "${1}")' $(green 'as a login item')"
   else
     warn "Couldn't find application '/Applications/${1}' and so skipping setting up as a login item"
   fi

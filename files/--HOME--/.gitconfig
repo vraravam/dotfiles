@@ -1,4 +1,4 @@
-# file location: ~/.gitconfig
+# file location: ${HOME}/.gitconfig
 
 # Note:
 # [Windows users] If you are on windows, please search for the word 'windows' - and fix those lines - they seem to cause some trouble

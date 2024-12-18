@@ -125,6 +125,11 @@ debug() {
   echo "${PATH}"
 }
 
+error() {
+  echo "$(red "${1}")"
+  exit 1
+}
+
 section_header() {
   echo "$(blue "==> ${1} <==")"
 }
@@ -221,6 +226,13 @@ is_linux() {
 
 is_windows() {
   [[ "${OSTYPE}" =~ 'MINGW' ]]
+}
+
+# Note: The following functions are used only from the fresh-install scripts
+keep_sudo_alive() {
+  section_header 'Keeping sudo alive till this script has finished'
+  sudo -v
+  while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 }
 
 set_ssh_folder_permissions() {

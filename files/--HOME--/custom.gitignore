@@ -284,7 +284,6 @@ tmp/
 /.vim/autoload/plug.vim
 /.vimrc
 /.zlogin
-/.zprofile
 /.zshenv
 /.zshrc
 /.zshrc.custom

@@ -13,8 +13,8 @@ type warn &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 usage() {
   echo "$(red "Usage"): $(yellow "${1} <e/i>")"
-  echo "  $(yellow "e")  --> Export from system"
-  echo "  $(yellow "i")  --> Import into system"
+  echo "  $(yellow 'e')  --> Export from system"
+  echo "  $(yellow 'i')  --> Import into system"
   exit 1
 }
 

@@ -2,6 +2,15 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-21
+
+* *[fresh-install-of-osx-advanced.sh]* Nested conditions and print more specific warning message when skipping cloning of the home and profiles repos.
+* *[.shellrc]* Extracted some utility functions to remove duplication and invoke them in the setup scripts.
+
+#### Adopting these changes
+
+* Manually edit your `${HOME}/.ssh/config` file, and change all occurrences of `~` to `${HOME}`
+
 ### 1.0-20
 
 * Removed necessity of quitting and restarting the Terminal application between executing the `fresh-install-of-osx.sh` and `fresh-install-of-osx-advanced.sh`.
