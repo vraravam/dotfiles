@@ -2,6 +2,12 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-22
+
+* *[.shellrc]* Moved functions that are only needed in the basic fresh-install script into that so as to reduce shell startup time.
+
+*Note*: This version has been successfully tested on a Macbook M1 on 19 Dec, 2024.
+
 ### 1.0-21
 
 * *[fresh-install-of-osx-advanced.sh]* Nested conditions and print more specific warning message when skipping cloning of the home and profiles repos.

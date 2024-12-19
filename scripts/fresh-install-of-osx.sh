@@ -53,7 +53,11 @@ section_header 'Verifying FileVault status'
 ##################################
 section_header 'Installing xcode command-line tools'
 if ! is_directory '/Library/Developer/CommandLineTools/usr/bin'; then
-  reinstall_xcode_cmdline_tools
+  # install using the non-gui cmd-line alone
+  touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+  sudo softwareupdate -ia --agree-to-license --force
+  rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+  success 'Successfully installed xcode command-line tools'
 else
   warn 'skipping installation of xcode command-line tools since its already present'
 fi
@@ -122,7 +126,7 @@ clone_omz_plugin_if_not_present https://github.com/romkatv/zsh-defer
 section_header "Installing dotfiles into '$(yellow "${DOTFILES_DIR}")'"
 if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
   # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
-  rm -rfv "${HOME}/.zshrc"
+  rm -rf "${HOME}/.zshrc"
 
   # Note: Cloning with https since the ssh keys will not be present at this time
   clone_repo_into "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}"

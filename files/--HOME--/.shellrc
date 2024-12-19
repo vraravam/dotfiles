@@ -252,26 +252,15 @@ clone_repo_into() {
   git -C "${2}" clone -q "${1}" . --recurse-submodules
 }
 
-if is_macos; then
+# if is_macos; then
   # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
-  reinstall_xcode() {
-    # delete if already present
-    delete_directory_if_exists "/Applications/Xcode.app"
+  # TODO: Kept for reference purposes
+  # reinstall_xcode() {
+  #   # delete if already present
+  #   delete_directory_if_exists "/Applications/Xcode.app"
 
-    xcode-select --install
-    sudo xcodebuild -license accept -quiet || true
-    success 'Successfully installed xcode'
-  }
-
-  # Uninstall and reinstall xcode command line tools (useful immediately after upgrade or if reinstalling the OS)
-  reinstall_xcode_cmdline_tools() {
-    # delete if already present
-    delete_directory_if_exists "/Library/Developer/CommandLineTools"
-
-    # install using the non-gui cmd-line alone
-    touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
-    sudo softwareupdate -ia --agree-to-license --force
-    rm /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
-    success 'Successfully installed xcode command-line tools'
-  }
-fi
+  #   xcode-select --install
+  #   sudo xcodebuild -license accept -quiet || true
+  #   success 'Successfully installed xcode'
+  # }
+# fi
