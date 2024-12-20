@@ -84,6 +84,7 @@ __pycache__
 /.config/jgit/config
 /.config/nvim/autoload/plug.vim
 /.config/nvim/plugged/
+/.config/raycast/extensions/
 /.config/simple-update-notifier/electron-builder.json
 /.config/stetic/library-cache/
 /.config/xbuild/pkgconfig-cache-2.xml

@@ -100,6 +100,9 @@ Thumbs.db
 /FerdiumProfile/recipes/
 /FerdiumProfile/sentry/
 
+/Raycast/NodeJS/runtime/**
+/Raycast/extensions/**
+
 # files that are symlinked from the dotfiles repo
 /.envrc
 /.gitignore

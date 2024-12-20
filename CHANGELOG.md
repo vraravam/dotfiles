@@ -2,6 +2,15 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-24
+
+* Capture the Raycast configs/extensions/etc in the profiles repo
+
+#### Adopting these changes
+
+* Open Terminal and run the `install-dotfiles.rb` script
+* Change the current directory in terminal to the profiles repo (`direnv` will take care of the rest)
+
 ### 1.0-23
 
 * Incorporate the [natsumi-browser](https://github.com/greeeen-dev/natsumi-browser) into the Zen browser profile.
