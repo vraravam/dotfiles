@@ -89,6 +89,9 @@ Thumbs.db
 /*Profile/AlternateServices.txt
 /*Profile/compatibility.ini
 
+# ignore git repo present in the ZenProfile's chrome directory
+/ZenProfile/Profiles/chrome
+
 /FerdiumProfile/.*.ferdium.*
 /FerdiumProfile/.has-app-requested-screen-capture-permissions
 /FerdiumProfile/.updaterId

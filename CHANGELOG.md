@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-23
+
+* Incorporate the [natsumi-browser](https://github.com/greeeen-dev/natsumi-browser) into the Zen browser profile.
+
 ### 1.0-22
 
 * *[.shellrc]* Moved functions that are only needed in the basic fresh-install script into that so as to reduce shell startup time.
