@@ -20,6 +20,8 @@ usage() {
 
 [ $# -ne 1 ] && usage ${0}
 
+! is_non_zero_string "${PERSONAL_CONFIGS_DIR}" && warn "Env var 'PERSONAL_CONFIGS_DIR' is not defined; Aborting!!!" && return
+
 local target_dir="${PERSONAL_CONFIGS_DIR}/defaults"
 
 case "${1}" in

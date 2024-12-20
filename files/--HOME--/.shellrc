@@ -252,6 +252,14 @@ clone_repo_into() {
   git -C "${2}" clone -q "${1}" . --recurse-submodules
 }
 
+ensure_safe_load_direnv() {
+  if [[ "$(pwd)" == "${1}" ]]; then
+    pushd ..; popd
+  else
+    pushd "${1}"; pushd ..; popd; popd
+  fi
+}
+
 # if is_macos; then
   # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
   # TODO: Kept for reference purposes

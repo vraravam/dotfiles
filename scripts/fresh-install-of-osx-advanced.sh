@@ -86,7 +86,7 @@ fi
 section_header 'Resurrecting repos'
 if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
   for file in $(ls "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml); do
-    ${DOTFILES_DIR}/scripts/resurrect-repositories.rb -r "${file}"
+    "${DOTFILES_DIR}/scripts/resurrect-repositories.rb" -r "${file}"
   done
 else
   warn "skipping resurrecting of repositories since '${PERSONAL_CONFIGS_DIR}' doesn't exist"
@@ -108,24 +108,20 @@ rm -rf "${HOME}/.ssh/known_hosts.old"
 #####################################################################################
 # Load the direnv config for the home folder so that it creates necessary sym-links #
 #####################################################################################
-if [[ "$(pwd)" == "${HOME}" ]]; then
-  pushd ..; popd
-else
-  pushd "${HOME}"; pushd ..; popd; popd
-fi
+ensure_safe_load_direnv "${HOME}"
 
 #########################################################################################
 # Load the direnv config for the profiles folder so that it creates necessary sym-links #
 #########################################################################################
-pushd "${PERSONAL_PROFILES_DIR}"; popd
+ensure_safe_load_direnv "${PERSONAL_PROFILES_DIR}"
 
 ###################################################################
 # Restore the preferences from the older machine into the new one #
 ###################################################################
 section_header 'Restore preferences'
 # Run within a separate bash shell to avoid quitting due to errors
-command_exists "osx-defaults.sh" && bash -c "osx-defaults.sh -s"
-command_exists "capture-defaults.sh" && capture-defaults.sh i
+is_file "${DOTFILES_DIR}/scripts/osx-defaults.sh" && bash -c "${DOTFILES_DIR}/scripts/osx-defaults.sh -s"
+is_file "${DOTFILES_DIR}/scripts/capture-defaults.sh" && "${DOTFILES_DIR}/scripts/capture-defaults.sh" i
 success 'Successfully restored preferences'
 
 ################################

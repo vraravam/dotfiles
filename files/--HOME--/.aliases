@@ -50,6 +50,7 @@ if command_exists 'run_all.sh'; then
   alias rug='run_all.sh git'
   alias all="FOLDER='${HOME}' MAXDEPTH=6 rug"
   alias home="FOLDER='${HOME}' FILTER=\".bin|zsh|mise\" MAXDEPTH=5 rug"
+  is_directory "${PERSONAL_PROFILES_DIR}" && alias profiles="FOLDER='${PERSONAL_PROFILES_DIR}' MAXDEPTH=4 rug"
   is_directory "${PROJECTS_BASE_DIR}" && alias upreb="FOLDER='${PROJECTS_BASE_DIR}' rug upreb"
   for folder in $(ls "${PROJECTS_BASE_DIR}"); do
     is_directory "${PROJECTS_BASE_DIR}/${folder}" && alias "${folder}"="FOLDER='${PROJECTS_BASE_DIR}/${folder}' MAXDEPTH=4 rug"
