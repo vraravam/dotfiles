@@ -43,6 +43,11 @@ cc() {
   section_header "Processing ${target}"
   git -C "${target}" cc
 }
+count() {
+  local target="${1:-$(pwd)}"
+  section_header "Processing ${target}"
+  git -C "${target}" count
+}
 
 if command_exists 'run_all.sh'; then
   # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
@@ -182,7 +187,6 @@ pdf_to_png() {
 alias -s txt=code
 alias -s log=code
 
-
 # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
 command_exists code && alias code-gist='code "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${HOME}/.tool-versions" "${PERSONAL_PROFILES_DIR}/.gitignore"'
 
@@ -212,6 +216,10 @@ update_all_repos() {
 
 status_all_repos() {
   st "${HOME}"; st "${DOTFILES_DIR}"; st "${PERSONAL_PROFILES_DIR}"
+}
+
+count_all_repos() {
+  count "${HOME}"; count "${DOTFILES_DIR}"; count "${PERSONAL_PROFILES_DIR}"
 }
 
 # pushes the specified repo (disables and re-enables cron while doing this operation)
