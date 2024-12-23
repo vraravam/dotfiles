@@ -2,6 +2,38 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-26
+
+* Merged `fresh-install-of-osx-advanced.sh` into `fresh-install-of-osx.sh` to reduce complexity of loading different config files into the shell session.
+* *[.gitconfig]* Remove git sub-command `currentDir` in favor of [root](https://github.com/tj/git-extras/blob/main/Commands.md#git-root).
+* *[Brewfile]* Remove `git-tools` since `git-extras` has an equivalent git sub-command.
+* *[.gitignore_global]* Generate from [gitignore.io](https://gitignore.io) for common languages, OSes and editors.
+* *[fresh-install-of-osx.sh]* Minimize use of `eval` and sub-shells.
+* *[fresh-install-of-osx.sh]* Moved utility scripts (from `files/--HOME--/.aliases`) that are only loaded while running the `fresh-install-of-osx.sh` into that single script to optimize shell startup time.
+* *[fresh-install-of-osx.sh]* Removed cloning of `natsumi-browser` from `.envrc` and moved into fresh-install script. Updating the repo is now handled as part of `scripts/software-updates-cron.sh`.
+* *[.zshrc]* Removed `zsh-defer` since that was introducing more complexity in maintenance.
+* *[.shellrc]* Use `mktemp` to enhance implementation of `clone_repo_into` which reduces need to process the home-repo in a special manner while doing a fresh install.
+* *[.shellrc]* Moved homebrew env vars from `files/--HOME--/.zshenv` into `files/--HOME--/.shellrc`.
+* Merged `files/--HOME--/.zshrc.custom` into `files/--HOME--/.zshrc` and `files/--HOME--/.aliases.custom` into `files/--HOME--/.aliases` to reduce complexity of loading different config files into the shell session.
+
+#### Adopting these changes
+
+* After rebasing and resolving the conflicts
+* Manually reconcile the diffs between `files/--HOME--/custom.gitignore` & `${HOME}/.gitignore`, and `files/--PERSONAL_PROFILES_DIR--/custom.gitignore` & `${PERSONAL_PROFILES_DIR}/.gitignore`.
+* Open the Terminal application and run the following commands:
+
+    ```bash
+    rm -rf ${HOME}/.aliases.custom ${HOME}/.zshrc.custom ${HOME}/.oh-my-zsh/custom/plugins/zsh-defer
+    cp files/--HOME--/custom.gitignore ${HOME}/.gitignore
+    cp files/--PERSONAL_PROFILES_DIR--/custom.gitignore ${PERSONAL_PROFILES_DIR}/.gitignore
+    install-dotfiles.rb
+    ```
+
+* Quit and restart your Terminal application for the env vars, aliases & functions to be re-evaluated into the session memory.
+* Run `bupc` to cleanup brews and casks.
+
+*Note*: This version has been successfully tested on a Macbook M1 on 22 Dec, 2024.
+
 ### 1.0-25
 
 * *[capture-defaults.sh]* Capture defaults script now aborts when the `PERSONAL_CONFIGS_DIR` env var is not defined.
@@ -15,7 +47,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 #### Adopting these changes
 
-* Open Terminal and run the `install-dotfiles.rb` script
+* Open Terminal and run the `install-dotfiles.rb` script.
 * Change the current directory in terminal to the profiles repo (`direnv` will take care of the rest)
 
 ### 1.0-23
@@ -75,7 +107,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 #### Adopting these changes
 
 * After rebasing, you will end up with conflicts. The env vars that were previously defined in `files/--ZDOTDIR--/.zprofile` have been moved into `files/--HOME--/.shellrc`. You might have to manually fix them. You can go ahead and delete the `${HOME}/.zprofile` since that is no longer needed.
-* Run `install-dotfiles.rb` so that the symlinked zsh config files in `$HOME` point to the correct locations (`files/--ZDOTDIR--/` instead of `files/--HOME--/`)
+* Run `install-dotfiles.rb` so that the symlinked zsh config files in `${HOME}` point to the correct locations (`files/--ZDOTDIR--/` instead of `files/--HOME--/`)
 
 ### 1.0-15
 

@@ -18,7 +18,7 @@ usage() {
   exit 1
 }
 
-[ $# -ne 1 ] && usage ${0}
+[ $# -ne 1 ] && usage "${0}"
 
 ! is_non_zero_string "${PERSONAL_CONFIGS_DIR}" && warn "Env var 'PERSONAL_CONFIGS_DIR' is not defined; Aborting!!!" && return
 
@@ -27,8 +27,8 @@ local target_dir="${PERSONAL_CONFIGS_DIR}/defaults"
 case "${1}" in
   "e" )
     operation='export'
-    git_cleanup="git -C ${HOME} rm -rf ${target_dir}/*"
-    git_stage="git -C ${HOME} add ${target_dir}"
+    git_cleanup="git -C \"${HOME}\" rm -rf \"${target_dir}\"/*"
+    git_stage="git -C \"${HOME}\" add \"${target_dir}\""
     ;;
   "i" )
     operation='import'
@@ -38,10 +38,13 @@ case "${1}" in
     git_stage="warn 'Skipping git staging'"
     ;;
   * )
-    echo "Unknown value entered: ${1}"
-    usage ${0}
+    echo "Unknown value entered: '${1}'"
+    usage "${0}"
     ;;
 esac
+
+# echo "git_cleanup: '${git_cleanup}'"
+# echo "git_stage: '${git_stage}'"
 
 # shellcheck disable=SC2090
 eval "${git_cleanup}"
@@ -183,11 +186,11 @@ app_array=(
   'ZoomChat'
 )
 
-echo "Running operation: $(green ${operation})"
+echo "Running operation: $(green "${operation}")"
 for app_pref in "${app_array[@]}"; do
-  echo "Processing $(cyan ${app_pref})"
+  echo "Processing $(cyan "${app_pref}")"
   local target_file="${target_dir}/${app_pref}.defaults"
-  is_file "${target_file}" || touch "${target_file}"
+  touch "${target_file}"
   /usr/bin/defaults "${operation}" "${app_pref}" "${target_file}"
 done
 

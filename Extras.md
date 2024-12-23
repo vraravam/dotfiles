@@ -62,4 +62,4 @@ The config file for this script is a yaml file that is passed into this script a
 
 There are so many tools installed, and some of them require their local caches/dbs/configs/etc to be updated from time to time. Rather than remembering each tool and its invocation (for updates), this script is a single place where any new tooling is added so that I don't need to remember the incantation for each separately.
 
-Back to [Readme](README.md#extrasdetails)
+Back to the [readme](README.md#extrasdetails)

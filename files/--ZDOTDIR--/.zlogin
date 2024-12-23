@@ -10,7 +10,7 @@
 # shells before and after zshrc.
 #
 # file location: ${ZDOTDIR}/.zlogin
-# load order: .zshenv [.shellrc], .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
+# load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
 ################################################################################
 
 # execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
@@ -48,11 +48,9 @@ find_in_folder_and_recompile() {
   find_in_folder_and_recompile "${ZDOTDIR}/.oh-my-zsh"
 
   # omz doesn't know about these files, and so we don't depend on 'ZDOTDIR'
-  recompile_zsh_scripts "${HOME}/.aliases.custom"
   recompile_zsh_scripts "${HOME}/.aliases"
   recompile_zsh_scripts "${HOME}/.p10k.zsh"
   recompile_zsh_scripts "${HOME}/.shellrc"
-  recompile_zsh_scripts "${HOME}/.zshrc.custom"
 
   find_in_folder_and_recompile "${DOTFILES_DIR}"
   find_in_folder_and_recompile "${PERSONAL_BIN_DIR}"

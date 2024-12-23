@@ -22,7 +22,7 @@ if [ $# -eq 1 ]; then
   force=N
   folder="${1}"
 elif [ $# -eq 2 ]; then
-  if [[ "${1}" -eq "-f" ]]; then
+  if [[ "${1}" == "-f" ]]; then
     force=Y
     folder="${2}"
   else
@@ -38,7 +38,7 @@ fi
 [[ "${folder}" =~ "profiles" ]] && force=Y
 
 echo "$(yellow "Processing folder"): '${folder}'"
-echo "$(yellow "squash commits (will lose history!)"): '${force}'"
+echo "$(yellow "Squash commits (will lose history!)"): '${force}'"
 
 git_cmd="git -C ${folder}"
 

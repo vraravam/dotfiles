@@ -3,11 +3,10 @@
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
 ################################################################################
-# This file is sourced at the end of the .zshrc.custom file and in turn sources
-# the .aliases.custom file to load aliases and functions
+# This file is sourced at the end of the .zshrc file and loads aliases & functions
 #
 # file location: ${HOME}/.aliases
-# load order: .zshenv [.shellrc], .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
+# load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
 ################################################################################
 
 # execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
@@ -51,7 +50,7 @@ if command_exists 'run_all.sh'; then
   alias all="FOLDER='${HOME}' MAXDEPTH=6 rug"
   alias home="FOLDER='${HOME}' FILTER=\".bin|zsh|mise\" MAXDEPTH=5 rug"
   is_directory "${PERSONAL_PROFILES_DIR}" && alias profiles="FOLDER='${PERSONAL_PROFILES_DIR}' MAXDEPTH=4 rug"
-  is_directory "${PROJECTS_BASE_DIR}" && alias upreb="FOLDER='${PROJECTS_BASE_DIR}' rug upreb"
+  is_directory "${PROJECTS_BASE_DIR}" && alias upreb="FOLDER='${PROJECTS_BASE_DIR}' rug upreb; command_exists profiles && profiles upreb"
   for folder in $(ls "${PROJECTS_BASE_DIR}"); do
     is_directory "${PROJECTS_BASE_DIR}/${folder}" && alias "${folder}"="FOLDER='${PROJECTS_BASE_DIR}/${folder}' MAXDEPTH=4 rug"
   done
@@ -60,10 +59,11 @@ fi
 # deletes the zsh compiled files so that they can be recompiled whenever the new session is next started
 delete_zsh_compilations() {
   find "${HOME}" -maxdepth 6 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
+  find "${HOMEBREW_PREFIX}" -maxdepth 6 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
 }
 
 install_mise_versions() {
-  ! command_exists mise && return
+  ! command_exists mise && warn "Couldn't find 'mise' in the PATH; Skipping loading all mise configs" && return
 
   find "${HOME}" -name '.tool-versions' -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
   is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name '.git' -type d -maxdepth 5 -exec echo "===> Installing for {}" \; -execdir mise install \;
@@ -71,7 +71,7 @@ install_mise_versions() {
 
 # runs 'direnv allow' on all code repositories that are checked out
 allow_all_direnv_configs() {
-  ! command_exists direnv && return
+  ! command_exists direnv && warn "Couldn't find 'direnv' in the PATH; Skipping allowing all direnv configs" && return
 
   find "${HOME}" -name '.envrc' -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
   is_directory "${PERSONAL_PROFILES_DIR}" && find "${PERSONAL_PROFILES_DIR}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
@@ -82,10 +82,10 @@ if is_macos && command_exists brew; then
   # TODO: Remove later (kept here for reference): brew outdated --cask | xargs brew cask reinstall
   alias bcg='brew outdated --greedy'
   alias bcug='brew upgrade --greedy'
-  alias bupc='brew bundle check || brew bundle --all --cleanup; brew bundle cleanup -f; brew cleanup --prune=all; brew autoremove; brew upgrade'
+  alias bupc='brew bundle check || brew bundle --all --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true'
 fi
 
-alias findbrokenlinks='find . -type l | (while read FN ; do test -e "$FN" || ls -ld "$FN"; done)'
+alias findbrokenlinks='find . -type l | (while read FN ; do test -e "${FN}" || ls -ld "${FN}"; done)'
 alias clearlogs='rm -rfv */log/*.log'
 alias clearcoverage='rm -rfv */coverage */coverage.data'
 alias killds="sudo find . -type f -name .DS_Store -exec rm -rfv {} \;"
@@ -182,4 +182,160 @@ pdf_to_png() {
 alias -s txt=code
 alias -s log=code
 
-load_file_if_exists "${HOME}/.aliases.custom"
+
+# opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
+command_exists code && alias code-gist='code "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${HOME}/.tool-versions" "${PERSONAL_PROFILES_DIR}/.gitignore"'
+
+# updates the specified repo (ie creates a local commit of changed files that I am not interested in verifying, but which need to be committed into that repo)
+# internal function: not to be called separately
+_update_repo() {
+  ! is_directory "${1}" && warn "skipping updating the repo since '${1}' doesn't exist" && return
+
+  # Remove trailing slash if present
+  local folder="${1%\/}"
+
+  # shellcheck disable=SC2005
+  section_header "Updating '${folder}'"
+  rm -rfv "${folder}/.git/index.lock" "${folder}/.git/hooks"
+  local git_cmd="git -C ${folder}"
+
+  # shellcheck disable=SC2086
+  eval "${git_cmd} add ${2} && ${git_cmd} sci \"Incremental commit: $(date)\""
+}
+
+# updates the home and profiles repos
+update_all_repos() {
+  # TODO: Make this work with 'git relative-path' alias
+  _update_repo "${HOME}" 'personal/dev/configs/defaults/'
+  is_directory "${PERSONAL_PROFILES_DIR}" && _update_repo "${PERSONAL_PROFILES_DIR}" '.'
+}
+
+status_all_repos() {
+  st "${HOME}"; st "${DOTFILES_DIR}"; st "${PERSONAL_PROFILES_DIR}"
+}
+
+# pushes the specified repo (disables and re-enables cron while doing this operation)
+# internal function: not to be called separately
+_push_repo() {
+  ! is_directory "${1}" && warn "skipping pushing the repo since '${1}' doesn't exist" && return
+
+  # shellcheck disable=SC2005
+  section_header "Pushing $(yellow "${1}")" && git -C "${1}" push --force-with-lease && success "*** Pushed $(yellow "${1}")"
+}
+
+# pushes the home and profiles repos to their respective remotes (disables and re-enables cron while doing this operation)
+push_all_repos() {
+  crontab -r &> /dev/null 2>&1
+
+  _push_repo "${HOME}"
+  is_directory "${PERSONAL_PROFILES_DIR}" && _push_repo "${PERSONAL_PROFILES_DIR}"
+
+  recron
+}
+
+# resurrects the cron entries based on the '${PERSONAL_CONFIGS_DIR}/crontab.txt' file
+recron() {
+  # shellcheck disable=SC2005
+  section_header "Old cron listing"
+  crontab -l
+
+  local cron_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
+  ! is_file "${cron_file}" && warn "No '${cron_file} found; returning without any processing" && return
+
+  # shellcheck disable=SC2005
+  echo "$(red "---------------------------------------------------------------------------")"
+  crontab -r &> /dev/null 2>&1
+  crontab "${cron_file}"
+
+  # shellcheck disable=SC2005
+  section_header "New cron listing"
+  crontab -l
+}
+
+# runs git gc on the keybase remote repos (not sure if this actually compresses the remote repo or not)
+command_exists keybase && alias kbgc="keybase git gc --force ${KEYBASE_HOME_REPO_NAME}; keybase git gc --force ${KEYBASE_PROFILES_REPO_NAME}"
+
+if is_macos && command_exists brew; then
+  # brew cask contribution
+  check_cask() {
+    # shasum -a 256 <fileName>
+    # cd $(brew --repository homebrew/cask-versions) &&
+    brew audit --online --cask "${1}" && brew style --fix --cask "${1}"
+    # cd -
+    # brew fetch --cask "${1}"
+  }
+
+  # brew contribution
+  check_formula() {
+    brew install --build-from-source "${1}"
+    brew test "${1}"
+    brew audit --strict "${1}"
+  }
+fi
+
+# delete all personal data before re-imaging the laptop
+implode() {
+  sudo rm -rfv "${HOME}"/.[a-z]*
+
+  local folders=(
+    "${HOME}/personal"
+    "${HOMEBREW_BUNDLE_FILE}"
+    "${HOMEBREW_PREFIX}"
+    "${PROJECTS_BASE_DIR}"
+  )
+  for f in "${folders[@]}"; do
+    sudo rm -rfv "${f}"*
+  done
+}
+
+# common build, debug and launch aliases for any folder - converted to functions for lazy evaluation
+# these will use the current folder name to find the shell script to run
+launch_me() {
+  "${PERSONAL_BIN_DIR}/launch-${PWD##*/}.sh"
+}
+debug_me() {
+  "${PERSONAL_BIN_DIR}/debug-${PWD##*/}.sh"
+}
+build_me() {
+  "${PERSONAL_BIN_DIR}/build-${PWD##*/}.sh"
+}
+
+# findrb() {
+#   find . -iname "*.rb" -print0 | xargs -0 egrep -in --color "$@"
+# }
+
+# findyml() {
+#   find . -iname "*.yml" -print0 | xargs -0 egrep -in --color "$@"
+# }
+
+# findrake() {
+#   find . -iname "*.rake" -print0 | xargs -0 egrep -in --color "$@"
+# }
+
+# findhtmlerb() {
+#   find . -iname "*.html.erb" -print0 | xargs -0 egrep -in --color "$@"
+# }
+
+# findjs() {
+#   find . -iname "*.js*" -print0 | xargs -0 egrep -in --color "$@"
+# }
+
+# rails
+# alias rs="rails s -b 0.0.0.0"
+# alias rc="rails c"
+# alias rdb="rails db"
+# alias sp="RAILS_ENV=test be rake spec"
+# alias clean_bundles_from_git="rm -rfv ${GEM_HOME}/bundler/gems ${GEM_HOME}/cache/bundler/git"
+# alias rdm="be rake db:drop db:create db:migrate db:seed"
+# alias be='bundle exec'
+# alias rubo='be rake rubocop:auto_correct'
+# alias brake='be rake brakeman:run\[brakeman-report.html\]'
+
+# phoenix
+# alias mc='iex -S mix'
+# alias mes='mix ecto.setup'
+# alias mer='mix ecto.reset'
+# alias mch='MIX_ENV=test mix coveralls.html'
+# alias mcd='MIX_ENV=test mix coveralls.detail'
+# alias sps='mix phx.server'
+# alias spsd='iex -S mix phx.server'

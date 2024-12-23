@@ -57,11 +57,8 @@ If you want to capture data from your current mac, please follow the instruction
 
 # Basic setup
 
-The backup strategy is split into 2 stages. The [basic "getting started"](GettingStarted-Basic.md) provides the instructions for the most common/basic setup. This covers everything that a typical user might need - without the need to backup other parts of the existing laptop.
-
-# Advanced setup (in addition to the basic setup if you want to capture other files in an encrypted private git repo)
-
-The "Advanced" setup is the set of final steps to capture your application preferences (both system apps as well as custom apps) and back them up into an *encrypted remote repository*. Currently this kind of **_private, fully-encrypted and free_** service is offered only by [keybase](https://keybase.io/). Instructions for this setup can be found [here](GettingStarted-Advanced.md)
+The backup strategy is split into 2 stages - both of which are run by the [same script](scripts/fresh-install-of-osx.sh). The [basic "getting started"](GettingStarted-Basic.md) provides the instructions for the most common/basic setup. This covers everything that a typical user might need - without the need to backup other parts of the existing laptop.
+The "advanced" setup is the set of final steps to capture your application preferences (both system apps as well as custom apps) and back them up into an *encrypted remote repository*. Currently this kind of **_private, fully-encrypted and free_** service is offered only by [keybase](https://keybase.io/). Instructions for this setup can be found [here](GettingStarted-Advanced.md)
 
 # Finally...
 
