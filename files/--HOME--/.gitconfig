@@ -8,8 +8,7 @@
 [includeIf "gitdir/i:~/"]
   path = ~/.gitconfig-oss.inc
 [alias]
-  # print the current directory from the context
-  currentDir = rev-parse --show-toplevel
+  # TODO: Need to check if aliases starting with '!' work with 'git -C' context if pwd is different from context-dir
 
   # find dangling commits
   dangling = fsck --no-reflog
@@ -21,7 +20,7 @@
   f = !git ls-files | grep -i
 
   # accepts a full (ie not-relative) path, and prints the relative path of that entry from the repo's root folder
-  relative-path = "!sh -c 'echo ${0/$(git rev-parse --show-toplevel)/} | tail -c+2'"
+  relative-path = "!sh -c 'echo ${0/$(git root)/} | tail -c+2'"
 
   # if a local commit exists, then amend it, else create a new commit with the specified message. Aborts if diverged (with non-zero error code) or nothing to commit
   sci = "!sh -c '\

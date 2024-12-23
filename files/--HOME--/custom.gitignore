@@ -241,7 +241,6 @@ tmp/
 
 # files that are symlinked from the dotfiles repo
 /.aliases
-/.aliases.custom
 /.angular-config.json
 /.ansible.cfg
 /.bash_profile
@@ -287,5 +286,4 @@ tmp/
 /.zlogin
 /.zshenv
 /.zshrc
-/.zshrc.custom
 /Brewfile

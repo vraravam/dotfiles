@@ -12,6 +12,72 @@
 # 2. Brightness on battery
 # 3. Keyboard brightness
 
+#############################################################
+# Utility scripts and env vars used only within this script #
+#############################################################
+ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
+
+set_ssh_folder_permissions() {
+  local target_folder="${HOME}/.ssh"
+  ensure_dir_exists "${target_folder}"
+  if dir_has_children "${target_folder}"; then
+    sudo chmod -R 600 "${target_folder}"/*
+    success "Successfully set permissions for all files in '${target_folder}'"
+  else
+    warn "Couldn't find any files in '${target_folder}' to set permissions for"
+  fi
+}
+
+clone_repo_into() {
+  ensure_dir_exists "${2}"
+  if ! is_git_repo "${2}"; then
+    local tmp_folder="$(mktemp -d)"
+    git -C "${tmp_folder}" clone -q "${1}" . --recurse-submodules
+    mv "${tmp_folder}/.git" "${2}"
+    rm -rf "${tmp_folder}"
+    git -C "${2}" checkout .
+    # TODO: Not sure if the above will handle submodules
+    success "Successfully cloned '${1}' into '${2}'"
+  else
+    warn "Skipping cloning of '${1}' since '${2}' is already a git repo"
+  fi
+}
+
+clone_omz_plugin_if_not_present() {
+  clone_repo_into "${1}" "${ZSH_CUSTOM}/plugins/$(basename "${1}")"
+}
+
+replace_executable_if_exists_and_is_not_symlinked() {
+  if is_executable "${1}"; then
+    rm -rf "${2}"
+    ln -sf "${1}" "${2}"
+  else
+    warn "executable '${1}' not found and so skipping symlinking"
+  fi
+}
+
+setup_login_item() {
+  local app_path="/Applications/${1}"
+  if is_directory "${app_path}"; then
+    osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"${app_path}\", hidden:false}" 2>&1 > /dev/null && success "Successfully setup '$(yellow "${1}")' $(green 'as a login item')"
+  else
+    warn "Couldn't find application '${app_path}' and so skipping setting up as a login item"
+  fi
+}
+
+build_keybase_repo_url() {
+  echo "keybase://private/${KEYBASE_USERNAME}/${1}"
+}
+
+ensure_safe_load_direnv() {
+  if [[ "$(pwd)" == "${1}" ]]; then
+    pushd ..; popd
+  else
+    pushd "${1}"; pushd ..; popd; popd
+  fi
+  success "Successfully allowed 'direnv' config for '${1}'"
+}
+
 ######################################################################################################################
 # Set DNS of 8.8.8.8 before proceeding (in some cases, for eg Jio Wifi, github doesn't resolve at all and times out) #
 ######################################################################################################################
@@ -104,21 +170,9 @@ fi
 ##############################
 # Note: Some of these are available via brew, but enabling them will take an additional step and the only other benefit (of keeping them up-to-date using brew can still be achieved by updating the git repos directly)
 section_header 'Installing custom omz plugins'
-ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
-ensure_dir_exists "${ZSH_CUSTOM}/plugins"
-clone_omz_plugin_if_not_present() {
-  local target_folder="${ZSH_CUSTOM}/plugins/$(basename ${1})"
-  if ! is_directory "${target_folder}"; then
-    clone_repo_into "${1}" "${target_folder}"
-    success "Successfully cloned oh-my-zsh plugin ${1} into ${target_folder}"
-  else
-    warn "skipping cloning of '$(basename "${1}")' since '${target_folder}' is already present"
-  fi
-}
 clone_omz_plugin_if_not_present https://github.com/zdharma-continuum/fast-syntax-highlighting
 clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-autosuggestions
 clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-completions
-clone_omz_plugin_if_not_present https://github.com/romkatv/zsh-defer
 
 ####################
 # Install dotfiles #
@@ -126,27 +180,24 @@ clone_omz_plugin_if_not_present https://github.com/romkatv/zsh-defer
 section_header "Installing dotfiles into '$(yellow "${DOTFILES_DIR}")'"
 if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
   # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
-  rm -rf "${HOME}/.zshrc"
+  rm -rf "${ZDOTDIR}/.zshrc"
 
   # Note: Cloning with https since the ssh keys will not be present at this time
   clone_repo_into "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}"
-  success "Successfully cloned the dotfiles repo into ${DOTFILES_DIR}"
 
   git -C "${DOTFILES_DIR}" switch "${DOTFILES_BRANCH}"
   local_branch="$(git -C "${DOTFILES_DIR}" branch --show-current)"
   [[ "${local_branch}" != "${DOTFILES_BRANCH}" ]] && error "'DOTFILES_BRANCH' env var is not equal to the branch that was checked out: '${local_branch}'; something is wrong. Please correct before retrying!"
 
+  append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
+
   # Use the https protocol for pull, but use ssh/git for push
   git -C "${DOTFILES_DIR}" config url.ssh://git@github.com/.pushInsteadOf https://github.com/
 
-  # since this folder hasn't been added to the PATH yet, invoke with full name including the location
-  eval "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
+  install-dotfiles.rb
 
   # Setup any sudo access password from cmd-line to also invoke the gui touchId prompt
-  eval "${DOTFILES_DIR}/scripts/approve-fingerprint-sudo.sh"
-
-  # Load all zsh config files for PATH and other env vars to take effect
-  load_zsh_configs
+  approve-fingerprint-sudo.sh
 
   # Setup the DOTFILES_DIR repo's upstream if it doesn't already point to vraravam's repo
   git -C "${DOTFILES_DIR}" remote -vv | grep "${UPSTREAM_GH_USERNAME}"
@@ -158,12 +209,13 @@ if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
     warn 'skipping setting new upstream remote for the dotfiles repo'
   fi
 else
-  # Load all zsh config files for PATH and other env vars to take effect
-  load_zsh_configs
   warn "skipping cloning the dotfiles repo since '${DOTFILES_DIR}' is either not defined or is already present"
 fi
 
 ! is_non_zero_string "${HOMEBREW_PREFIX}" && error "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!"
+
+# Load all zsh config files for PATH and other env vars to take effect
+load_zsh_configs
 
 ####################
 # Install homebrew #
@@ -182,20 +234,16 @@ if ! command_exists brew; then
 else
   warn "skipping installation of homebrew since it's already installed"
 fi
-sh -c "${HOMEBREW_PREFIX}/bin/brew bundle check --file '${HOME}/Brewfile' || ${HOMEBREW_PREFIX}/bin/brew bundle --file '${HOME}/Brewfile' &> /dev/null 2>&1 || true"
+# TODO: Need to investigate why this step exits on a vanilla OS's first run of this script
+brew bundle check || brew bundle --all --cleanup || true
+success 'Successfully installed cmd-line and gui apps using homebrew'
+
+# Note: Load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)
+load_zsh_configs
 
 ###########################################
 # Link programs to open from the cmd-line #
 ###########################################
-replace_executable_if_exists_and_is_not_symlinked() {
-  if is_executable "${1}"; then
-    rm -rf "${2}"
-    ln -sf "${1}" "${2}"
-  else
-    warn "executable '${1}' not found and so skipping symlinking"
-  fi
-}
-
 section_header 'Linking keybase for command-line invocation'
 if is_directory '/Applications/Keybase.app'; then
   replace_executable_if_exists_and_is_not_symlinked '/Applications/Keybase.app/Contents/SharedSupport/bin/keybase' "${HOMEBREW_PREFIX}/bin/keybase"
@@ -251,14 +299,6 @@ fi
 # Setup login items #
 #####################
 section_header 'Setting up login items'
-setup_login_item() {
-  if is_directory "/Applications/${1}"; then
-    osascript -e "tell application \"System Events\" to make login item at end with properties {path:\"/Applications/${1}\", hidden:false}" 2>&1 > /dev/null && success "Successfully setup '$(yellow "${1}")' $(green 'as a login item')"
-  else
-    warn "Couldn't find application '/Applications/${1}' and so skipping setting up as a login item"
-  fi
-}
-
 app_list=(
   'AlDente.app'
   'Clocker.app'
@@ -274,6 +314,176 @@ app_list=(
 for app in "${app_list[@]}"; do
   setup_login_item "${app}"
 done
+
+if is_non_zero_string "${KEYBASE_USERNAME}"; then
+  ! command_exists keybase && error 'Keybase not found in the PATH. Aborting!!!'
+
+  ######################
+  # Login into keybase #
+  ######################
+  section_header 'Logging into keybase'
+  ! keybase login && error 'Could not login into keybase. Retry after logging in.'
+
+  #######################
+  # Clone the home repo #
+  #######################
+  section_header 'Cloning home repo'
+  if is_non_zero_string "${KEYBASE_HOME_REPO_NAME}"; then
+    clone_repo_into "$(build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME}")" "${HOME}"
+
+    # Reset ssh keys' permissions so that git doesn't complain when using them
+    set_ssh_folder_permissions
+
+    # Fix /etc/hosts file to block facebook
+    is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts" && sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts
+  else
+    warn "skipping cloning of home repo since the 'KEYBASE_HOME_REPO_NAME' env var hasn't been set"
+  fi
+
+  ###########################
+  # Clone the profiles repo #
+  ###########################
+  section_header 'Cloning profiles repo'
+  if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
+    clone_repo_into "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"
+
+    # Clone the natsumi-browser repo into the ZenProfile/Profiles/chrome folder
+    is_directory "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/" && clone_repo_into "git@github.com:greeeen-dev/natsumi-browser" "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/chrome"
+  else
+    warn "skipping cloning of profiles repo since either the 'KEYBASE_PROFILES_REPO_NAME' or the 'PERSONAL_PROFILES_DIR' env var hasn't been set"
+  fi
+else
+  warn "skipping cloning of any keybase repo since 'KEYBASE_USERNAME' has not been set"
+fi
+
+if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
+  ########################################################
+  # Generate the repositories-oss.yml fie if not present #
+  ########################################################
+  file_name="${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
+  section_header "Generating ${file_name}"
+  if ! is_file "${file_name}"; then
+    ensure_dir_exists "$(dirname "${file_name}")"
+    cat <<EOF > "${file_name}"
+- folder: "\${PROJECTS_BASE_DIR}/oss/git_scripts"
+  remote: git@github.com:${UPSTREAM_GH_USERNAME}/git_scripts
+  active: true
+EOF
+    success "Successfully generated ${file_name}"
+  else
+    warn "skipping generation of '${file_name}' since it already exists"
+  fi
+
+  ##################################################
+  # Resurrect repositories that I am interested in #
+  ##################################################
+  section_header 'Resurrecting repos'
+  for file in $(ls "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml); do
+    resurrect-repositories.rb -r "${file}"
+  done
+  success 'Successfully resurrected all tracked git repos'
+else
+  warn "skipping resurrecting of repositories since '${PERSONAL_CONFIGS_DIR}' doesn't exist"
+fi
+
+############################################################
+# post-clone operations for installing system dependencies #
+############################################################
+section_header 'Running post-clone operations'
+if command_exists all; then
+  all utimes
+  all maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
+  all maintenance start
+fi
+if command_exists allow_all_direnv_configs; then
+  allow_all_direnv_configs
+else
+  warn "skipping registering all direnv configs since 'allow_all_direnv_configs' couldn't be found in the PATH; Please run it manually"
+fi
+
+if command_exists install_mise_versions; then
+  install_mise_versions
+else
+  warn "skipping installation of languages since 'install_mise_versions' couldn't be found in the PATH; Please run it manually"
+fi
+rm -rf "${HOME}/.ssh/known_hosts.old"
+
+#####################################################################################
+# Load the direnv config for the home folder so that it creates necessary sym-links #
+#####################################################################################
+ensure_safe_load_direnv "${HOME}"
+
+#########################################################################################
+# Load the direnv config for the profiles folder so that it creates necessary sym-links #
+#########################################################################################
+ensure_safe_load_direnv "${PERSONAL_PROFILES_DIR}"
+
+###################################################################
+# Restore the preferences from the older machine into the new one #
+###################################################################
+section_header 'Restore preferences'
+if command_exists 'osx-defaults.sh'; then
+  osx-defaults.sh -s
+  success 'Successfully baselines preferences'
+else
+  warn "skipping baselining of preferences since 'osx-defaults.sh' couldn't be found in the PATH; Please baseline manually and follow it up with re-import of the backed-up preferences"
+fi
+
+if command_exists 'capture-defaults.sh'; then
+  capture-defaults.sh i
+  success 'Successfully restored preferences from backup'
+else
+  warn "skipping importing of preferences since 'capture-defaults.sh' couldn't be found in the PATH; Please set it up manually"
+fi
+
+################################
+# Recreate the zsh completions #
+################################
+section_header 'Recreate zsh completions'
+rm -rf "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}"
+autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}"
+
+###################
+# Setup cron jobs #
+###################
+section_header 'Setup cron jobs'
+if command_exists recron; then
+  recron
+  success 'Successfully setup cron jobs'
+else
+  warn "skipping setting up of cron jobs since 'recron' couldn't be found in the PATH; Please set it up manually"
+fi
+
+# To install the latest versions of the hex, rebar and phoenix packages
+# mix local.hex --force && mix local.rebar --force
+# mix archive.install hex phx_new 1.4.1
+
+# To install the native-image tool after graalvm is installed
+# gu install native-image
+
+# Enabling history for iex shell (might need to be done for each erl that is installed via mise)
+# rm -rf tmp
+# ensure_dir_exists tmp
+# cd tmp || exit
+# git clone https://github.com/ferd/erlang-history.git
+# cd erlang-history || exit
+# sudo make install
+# cd ../.. || exit
+# rm -rf tmp
+
+# vagrant plugin install vagrant-vbguest
+
+# if installing jhipster for dot-net-core
+# TODO: Use the next line since the released version is only for .net 2.2:
+# npm i -g generator-jhipster-dotnetcore
+# Note: '-g' didnt work. Had to do 'npm init' and then use '--save-dev' to install and link as a local dependency
+# npm i -g jhipster/jhipster-dotnetcore
+# npm link generator-jhipster-dotnetcore
+# jhipster -d --blueprints dotnetcore
+
+# Default tooling for dotnet projects
+# dotnet tool install -g dotnet-sonarscanner
+# dotnet tool install -g dotnet-format
 
 echo "\n"
 success '** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **'

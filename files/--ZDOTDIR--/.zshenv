@@ -14,7 +14,7 @@
 # Notice: .zshenv is the same, except that it's not read if zsh is started with -f
 #
 # file location: ${ZDOTDIR}/.zshenv
-# load order: .zshenv [.shellrc], .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
+# load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
 ################################################################################
 
 # execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
@@ -27,10 +27,3 @@ skip_global_compinit=1
 
 # http://disq.us/p/f55b78
 # setopt no_global_rcs
-
-export ARCH="$(uname -m)"
-if [[ "${ARCH}" =~ "arm" ]]; then
-  export HOMEBREW_PREFIX="/opt/homebrew"
-else
-  export HOMEBREW_PREFIX="/usr/local"
-fi

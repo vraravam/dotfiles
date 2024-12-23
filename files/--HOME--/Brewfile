@@ -7,7 +7,7 @@
 # These are the common shell aliases that I have setup in the `${HOME}/.aliases` file for ease of running/typing (and also don't need to remember all these commands by-heart!). If you are using my `${HOME}/.aliases`, they will already be present for you. If not, you can then set these up in the respective dotfile of your choice
 # alias bcg='brew outdated --greedy'  # List all casks that are outdated like a "dry-run" (and which have version marked as 'latest')
 # alias bcug='brew upgrade --greedy'  # Upgrades all casks that are outdated (and which have version marked as 'latest')
-# alias bupc='brew bundle check || brew bundle --all --cleanup; brew bundle cleanup -f; brew cleanup --prune=all; brew autoremove; brew upgrade'
+# alias bupc='brew bundle check || brew bundle --all --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true'
 # Upgrades and cleans up all regular outdated casks and libs (non-greedy)
 
 # TODO: Need to find cask for:
@@ -45,7 +45,6 @@ brew 'btop'
 brew 'eza'
 brew 'git-extras'
 brew 'git-gui'
-brew 'git-tools'
 brew 'jq'
 brew 'moreutils'
 brew 'ncdu'

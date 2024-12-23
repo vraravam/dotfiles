@@ -8,7 +8,7 @@
 # vanilla OS to bootstrap installation of all other config files.
 #
 # file location: ${HOME}/.shellrc
-# load order: .zshenv [.shellrc], .zshrc [.shellrc, .zshrc.custom [.aliases [.shellrc, .aliases.custom]]], .zlogin
+# load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
 ################################################################################
 
 # execute 'FIRST_INSTALL=true zsh' to debug the load order of the custom zsh configuration files
@@ -29,7 +29,24 @@ export ZDOTDIR="${ZDOTDIR:-${HOME}}"
 export XDG_CACHE_HOME="${HOME}/.cache"
 export XDG_CONFIG_HOME="${HOME}/.config"
 export XDG_DATA_HOME="${HOME}/.local/share"
-export XDG_STATE_HOME="$HOME/.local/state"
+export XDG_STATE_HOME="${HOME}/.local/state"
+
+# Moving homebrew env vars here itself so that the initial homebrew installation on a vanilla OS can be done/applied into memory immediately
+export ARCH="$(uname -m)"
+export ARCHFLAGS="-arch ${ARCH}"
+if [[ "${ARCH}" =~ "arm" ]]; then
+  export HOMEBREW_PREFIX="/opt/homebrew"
+else
+  export HOMEBREW_PREFIX="/usr/local"
+fi
+export HOMEBREW_NO_ANALYTICS=1
+export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
+export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
+export HOMEBREW_BAT=1
+export HOMEBREW_VERBOSE_USING_DOTS=1
+export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
+# TODO: Uncomment once this feature is stabilized
+# export HOMEBREW_VERIFY_ATTESTATIONS=1
 
 # Note: Change these as per your settings. Deleting them will essentially unset the var(s) and thus any aliases/backup-operations/etc will not be processed for those deleted variable(s)
 
@@ -44,7 +61,7 @@ export UPSTREAM_GH_USERNAME="vraravam" # Note: Do NOT change this
 export DOTFILES_DIR="${HOME}/.bin-oss"
 
 # Branch name of the dotfiles repo that's to be used for testing PR changes before merging
-export DOTFILES_BRANCH="master"
+export DOTFILES_BRANCH="refactor"
 
 # All development codebases are cloned into a subfolder of this folder
 export PROJECTS_BASE_DIR="${HOME}/dev"
@@ -233,31 +250,6 @@ keep_sudo_alive() {
   section_header 'Keeping sudo alive till this script has finished'
   sudo -v
   while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
-}
-
-set_ssh_folder_permissions() {
-  local target_folder="${HOME}/.ssh"
-  ensure_dir_exists "${target_folder}"
-  if dir_has_children "${target_folder}"; then
-    sudo chmod -R 600 "${target_folder}"/*
-    success "Successfully set permissions for all files in '${target_folder}'"
-  else
-    warn "Couldn't find any files in '${target_folder}' to set permissions for"
-  fi
-}
-
-clone_repo_into() {
-  ensure_dir_exists "${2}"
-  dir_has_children "${2}" && rm -rf "${2}"/*
-  git -C "${2}" clone -q "${1}" . --recurse-submodules
-}
-
-ensure_safe_load_direnv() {
-  if [[ "$(pwd)" == "${1}" ]]; then
-    pushd ..; popd
-  else
-    pushd "${1}"; pushd ..; popd; popd
-  fi
 }
 
 # if is_macos; then

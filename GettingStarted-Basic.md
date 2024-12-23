@@ -9,7 +9,7 @@ On your local machine:
 The meta script to setup the macos machine from a vanilla OS can be run using the following command:
 
 ```zsh
-export GH_USERNAME="vraravam"; export DOTFILES_BRANCH="master"; curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh" | zsh
+export GH_USERNAME="vraravam"; export DOTFILES_BRANCH="refactor"; curl -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh" | zsh
 ```
 
 This script can be run in an idempotent manner, and will setup [oh-my-zsh](https://ohmyz.sh/), [homebrew](https://brew.sh), the dotfiles (this repo), etc.
@@ -27,18 +27,18 @@ All these scripts are optimized for fast loading of the shell so that the user c
 *These are optional based on your preferences:*
 
 1. Open the `System Preferences` application.
-   * Search for 'Trackpad' and turn on 'Tap to click' (Trackpads are notorious to breakdown if using via hard-click)
+   * Search for 'Trackpad' and turn on 'Tap to click' (Note: Apple trackpads are notorious for breaking down if used via a hard-click)
    * Search for 'Displays' and set scaling / screen resolution as per your preference
    * Search for 'Displays' and turn off 'Automatically adjust brightness'
    * Search for 'Control Centre' and turn off battery from showing in the Control Center (nice to have especially if you use the Stats app)
    * Search for 'Control Centre' and scroll down to 'Clock options' and change the built-in clock to show as analog to save horizontal space in the top menu bar
    * Search for 'Full Disk Access' and add `iTerm', 'Terminal', 'zoom.us'
    * Search for 'Keyboard' and enable Keyboard Navigation
-   * Search for 'Camera' and add 'Arc', 'Brave', 'Firefox', 'zoom.us'
-   * Search for 'Microphone' and add 'Arc', 'Brave', 'Firefox', 'zoom.us'
-   * Search for 'Close and restore windows', and uncheck 'Close windows when quitting an application' (this will ensure that iTerm, Terminal, all browsers, etc - whichever have multiple windows open while quitting that application, will restore the same windows and tabs the next time you start that application.)
+   * Search for 'Camera' and add 'Arc', 'Brave', 'Firefox', 'Zen', 'zoom.us'
+   * Search for 'Microphone' and add 'Arc', 'Brave', 'Firefox', 'Zen', 'zoom.us'
+   * Search for 'Close and restore windows', and uncheck 'Close windows when quitting an application' (this will ensure that iTerm, Terminal, all browsers, etc (whichever have multiple windows open while quitting that application), will restore the same windows and tabs the next time you start that application.)
    * Search for 'Default web browser' and set as per your preferences
    * Search for 'iCloud' and login and setup Desktop sync
 2. Open the `Finder` application and manually adjust the Finder sidebar preferences
 
-Back to [Readme](README.md#basic-setup) | Continue with the [advanced setup](GettingStarted-Advanced.md)
+Back to the [readme](README.md#basic-setup) | Continue with the [advanced setup](GettingStarted-Advanced.md)
