@@ -170,6 +170,7 @@ fi
 ##############################
 # Note: Some of these are available via brew, but enabling them will take an additional step and the only other benefit (of keeping them up-to-date using brew can still be achieved by updating the git repos directly)
 section_header 'Installing custom omz plugins'
+# TODO: Need to check if these can be installed using homebrew instead of being treated as custom omz plugins. Need to verify in a vanilla OS installation
 clone_omz_plugin_if_not_present https://github.com/zdharma-continuum/fast-syntax-highlighting
 clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-autosuggestions
 clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-completions
@@ -235,7 +236,8 @@ else
   warn "skipping installation of homebrew since it's already installed"
 fi
 # TODO: Need to investigate why this step exits on a vanilla OS's first run of this script
-brew bundle check || brew bundle --all --cleanup || true
+# Note: Do not set the 'HOMEBREW_BASE_INSTALL' in this script - since its supposed to run idempotently. Also, don't run the cleanup of pre-installed brews/casks (for the same reason)
+brew bundle check || brew bundle || true
 success 'Successfully installed cmd-line and gui apps using homebrew'
 
 # Note: Load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)

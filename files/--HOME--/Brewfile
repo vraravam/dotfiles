@@ -21,6 +21,9 @@ cask_args appdir: '/Applications', fontdir: '/Library/Fonts', no_quarantine: tru
 # java_present = system('/usr/libexec/java_home --failfast')
 is_arm = Hardware::CPU.arm?
 
+is_base_install = ENV.has_key?('HOMEBREW_BASE_INSTALL')
+puts "Only performing base installation!" if is_base_install
+
 tap 'homebrew/services'
 tap 'romkatv/powerlevel10k'
 
@@ -36,14 +39,20 @@ brew 'zsh'
 # formulae pulled in for base configs
 brew 'diff-so-fancy'
 brew 'direnv'
+brew 'eza'
+brew 'git-extras'
 brew 'mise'
 brew 'powerlevel10k'
+
+# casks pulled in for base configs
+cask 'font-meslo-lg-nerd-font'
+cask 'iterm2'
+
+return if is_base_install
 
 # formulae pulled in for advanced configs (these are optional, but still recommended)
 brew 'bat'
 brew 'btop'
-brew 'eza'
-brew 'git-extras'
 brew 'git-gui'
 brew 'jq'
 brew 'moreutils'
@@ -59,8 +68,6 @@ cask 'arc'
 cask 'brave-browser'
 cask 'clocker'
 cask 'firefox@nightly' #, greedy: true
-cask 'font-meslo-lg-nerd-font'
-cask 'iterm2'
 cask 'itsycal'
 cask 'jordanbaird-ice'
 cask 'keepassxc@beta'
