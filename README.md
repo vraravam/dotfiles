@@ -62,6 +62,8 @@ The "advanced" setup is the set of final steps to capture your application prefe
 
 # Finally...
 
+With this latest version, the `files/--HOME--/Brewfile` will be run only with the bare minimum of formulae. Once the process completes, and you restart the Terminal app, you would want to run `bupc` so that all the other applications can be installed.
+
 Once the above is done, and if you have setup the [keybase](https://keybase.io)-based home repo, profile repo, etc - you can then re-import your exported preferences from the [pre-requisites section](#pre-requisite-if-you-want-to-capture-data-from-your-current-mac).
 
 Of course, you will have to manually take snapshots of your machine for backup from time-to-time as an *ongoing activity*. This can be done using the `scripts/capture-defaults.sh` script and pushing into the remote repo of your home folder. (More details can be found in the next section.)

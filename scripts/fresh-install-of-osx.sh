@@ -235,7 +235,7 @@ else
   warn "skipping installation of homebrew since it's already installed"
 fi
 # TODO: Need to investigate why this step exits on a vanilla OS's first run of this script
-brew bundle check || brew bundle --all --cleanup || true
+HOMEBREW_BASE_INSTALL=true brew bundle check || HOMEBREW_BASE_INSTALL=true brew bundle --all --cleanup || true
 success 'Successfully installed cmd-line and gui apps using homebrew'
 
 # Note: Load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)
