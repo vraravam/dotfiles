@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-29
+
+* *[capture-defaults.sh]* Removed some applications that I no longer use.
+* *[fresh-install-of-osx.sh]* Replaced `TODO` with explanation for future reference as to why we can't use `homebrew` to install omz custom plugins.
+
 ### 1.0-28
 
 * *[Brewfile]* Stop processing the `Brewfile` such that the minimal installation can happen in a shorter duration of time. This is controlled by the env var `HOMEBREW_BASE_INSTALL` which is set in the `fresh-install-of-osx.sh` script when installing from scratch.

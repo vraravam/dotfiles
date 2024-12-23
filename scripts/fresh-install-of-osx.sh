@@ -170,7 +170,8 @@ fi
 ##############################
 # Note: Some of these are available via brew, but enabling them will take an additional step and the only other benefit (of keeping them up-to-date using brew can still be achieved by updating the git repos directly)
 section_header 'Installing custom omz plugins'
-# TODO: Need to check if these can be installed using homebrew instead of being treated as custom omz plugins. Need to verify in a vanilla OS installation
+# Note: These are not installed using homebrew since sourcing of the files needs to be explicit in .zshrc
+# Also, the order of these being referenced in the zsh session startup (for vanilla OS) will cause a warning to be printed though the rest of the shell startup sequence is still performed. Ultimately, until they become included by default into omz, keep them here as custom plugins
 clone_omz_plugin_if_not_present https://github.com/zdharma-continuum/fast-syntax-highlighting
 clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-autosuggestions
 clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-completions
