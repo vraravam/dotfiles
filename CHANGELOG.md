@@ -2,6 +2,17 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-31
+
+* *[capture-raycast-configs.sh]* Added script to export/import raycast configs.
+  Usage:
+
+  ```bash
+  capture-raycast-configs.sh i "${PERSONAL_PROFILES_DIR}/extension-backups"
+  ```
+
+* TODO: Need to get it working and incorporate into the `fresh-install` script and associated documentation
+
 ### 1.0-30
 
 * *[resurrect-repositories.rb]* Handled the case where git wouldn't allow cloning a repo into a pre-existing, non-empty folder.
