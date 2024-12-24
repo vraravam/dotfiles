@@ -152,7 +152,8 @@ append_to_path_if_dir_exists "${PERSONAL_BIN_DIR}"
 append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
 append_to_path_if_dir_exists "${PROJECTS_BASE_DIR}/oss/git_scripts"
 # Note: Not sure if its a bug, but the first iterm tab alone has all the paths, but these are missing in subsequent tabs and new windows
-append_to_path_if_dir_exists "/usr/local/bin"
+append_to_path_if_dir_exists '/usr/local/bin'
+append_to_path_if_dir_exists "${HOME}/.rd/bin"
 
 # Note: can't defer this since the first time install fails
 load_file_if_exists "${HOME}/.aliases"

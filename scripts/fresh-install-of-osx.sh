@@ -32,11 +32,11 @@ clone_repo_into() {
   ensure_dir_exists "${2}"
   if ! is_git_repo "${2}"; then
     local tmp_folder="$(mktemp -d)"
-    git -C "${tmp_folder}" clone -q "${1}" . --recurse-submodules
+    git -C "${tmp_folder}" clone -q "${1}" .
     mv "${tmp_folder}/.git" "${2}"
-    rm -rf "${tmp_folder}"
     git -C "${2}" checkout .
-    # TODO: Not sure if the above will handle submodules
+    git -C "${2}" submodule update --init --recursive --remote --rebase --force
+    rm -rf "${tmp_folder}"
     success "Successfully cloned '${1}' into '${2}'"
   else
     warn "Skipping cloning of '${1}' since '${2}' is already a git repo"

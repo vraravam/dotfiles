@@ -84,7 +84,6 @@ allow_all_direnv_configs() {
 }
 
 if is_macos && command_exists brew; then
-  # TODO: Remove later (kept here for reference): brew outdated --cask | xargs brew cask reinstall
   alias bcg='brew outdated --greedy'
   alias bcug='brew upgrade --greedy'
   alias bupc='brew bundle check || brew bundle --all --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true'

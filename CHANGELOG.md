@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-30
+
+* *[resurrect-repositories.rb]* Handled the case where git wouldn't allow cloning a repo into a pre-existing, non-empty folder.
+* *[.zshrc]* Handled case where docker-related aliases were not setup since it was not in the `PATH` when `files/--HOME--/.aliases` was evaluated.
+
 ### 1.0-29
 
 * *[capture-defaults.sh]* Removed some applications that I no longer use.

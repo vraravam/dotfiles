@@ -3,6 +3,7 @@
 # file location: <anywhere; but advisable in the PATH>
 
 require 'tempfile'
+require 'tmpdir'
 require "#{__dir__}/utilities/string.rb"
 
 def usage(exit_code = -1)
@@ -115,7 +116,8 @@ def resurrect_each(repo, idx, total)
     system("#{git_cmd} remote -vv")
   else
     puts "Cloning from: #{repo['remote'].yellow} into #{folder.yellow}"
-    system("#{git_cmd} clone -q '#{repo['remote']}' . --recurse-submodules") || abort("Couldn't clone the repo since the folder is not empty; aborting")
+    tmp_dir = File.join(Dir.tmpdir, rand(1000).to_s)
+    system("mkdir -p #{tmp_dir}; git -C #{tmp_dir} clone -q '#{repo['remote']}' .; mv #{tmp_dir}/.git #{folder}; #{git_cmd} checkout .; #{git_cmd} submodule update --init --recursive --remote --rebase --force; rm -rf #{tmp_dir}") || abort("Couldn't clone the repo since the folder is not empty; aborting")
   end
 
   Array(repo[OTHER_REMOTES_KEY_NAME]).each do |name, remote|
