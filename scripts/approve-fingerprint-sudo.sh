@@ -10,7 +10,7 @@ type is_file &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 if ! ioreg -c AppleBiometricSensor | grep -q "AppleBiometricSensor"; then
   warn "Touch ID hardware is not detected. Skipping configuration."
-  exit 1
+  return
 fi
 
 if ! is_file /etc/pam.d/sudo_local; then
