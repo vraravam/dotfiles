@@ -8,14 +8,8 @@
 
 type is_file &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
-function check_touchid_hardware() {
-  ioreg -c AppleBiometricSensor | grep -q "AppleBiometricSensor"
-  return $? # Exit status 0 if found, non-zero otherwise
-}
-
-if ! check_touchid_hardware; then
-  echo "Touch ID hardware is not detected. Exiting script."
-  exit 1
+if ! ioreg -c AppleBiometricSensor | grep -q "AppleBiometricSensor"; then
+  warn "Touch ID hardware is not detected. Skipping configuration."
 fi
 
 if ! is_file /etc/pam.d/sudo_local; then
