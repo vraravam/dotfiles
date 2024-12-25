@@ -1,4 +1,6 @@
 #!/usr/bin/env zsh
+script_start_time=$(date +%s)
+echo "==> Script started at: $(date)"
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
@@ -490,3 +492,7 @@ fi
 
 echo "\n"
 success '** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **'
+
+script_end_time=$(date +%s)
+echo "==> Script completed at: $(date)"
+echo "==> Total execution time: $((script_end_time - script_start_time)) seconds"
