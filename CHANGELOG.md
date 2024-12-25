@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-32
+
+* *[fresh-install-of-osx]* Added date calculation in `fresh-install-of-osx.sh` to track total execution time.
+
 ### 1.0-31
 
 * *[approve-fingerprint-sudo.sh]* Handled case to execute `approve-fingerprint-sudo.sh` based on touchId hardware.
