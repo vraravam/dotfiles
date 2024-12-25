@@ -1,6 +1,4 @@
 #!/usr/bin/env zsh
-script_start_time=$(date +%s)
-echo "==> Script started at: $(date)"
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
@@ -13,6 +11,9 @@ echo "==> Script started at: $(date)"
 # 1. Auto-adjust Brightness
 # 2. Brightness on battery
 # 3. Keyboard brightness
+
+script_start_time=$(date +%s)
+echo "==> Script started at: $(date)"
 
 #############################################################
 # Utility scripts and env vars used only within this script #
