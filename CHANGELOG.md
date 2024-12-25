@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-31
+
+* *[approve-fingerprint-sudo.sh]* Handled case to execute `approve-fingerprint-sudo.sh` based on touchId hardware.
+
 ### 1.0-30
 
 * *[resurrect-repositories.rb]* Handled the case where git wouldn't allow cloning a repo into a pre-existing, non-empty folder.
