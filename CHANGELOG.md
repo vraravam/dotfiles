@@ -2,6 +2,12 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-34
+
+* Set the DNS server to '8.8.8.8' only if running in a Jio network.
+* Introduce PDFGear and KeyClu.
+* Fixed some old documentation.
+
 ### 1.0-33
 
 * Reuse utility functions defined in `.shellrc`.

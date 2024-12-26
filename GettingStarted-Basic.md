@@ -2,7 +2,8 @@
 
 On your local machine:
 
-1. Open the `System Preferences` application.
+1. **If you use `mas` to install apps from the App Store**, login into the `App Store` application.
+2. Open the `System Preferences` application.
    * Search for 'Full Disk Access' and add 'Terminal' (if not, the setup script will error out in between)
    * Search for 'File Vault' and turn it on (if not, then the setup script will exit in the beginning itself)
 

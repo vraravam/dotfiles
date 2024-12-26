@@ -84,9 +84,10 @@ ensure_safe_load_direnv() {
 ######################################################################################################################
 # Set DNS of 8.8.8.8 before proceeding (in some cases, for eg Jio Wifi, github doesn't resolve at all and times out) #
 ######################################################################################################################
-# TODO: Only needed for India/Jio networks, need to figure out a way to not have this for other global locations
-echo '==> Setting DNS for WiFi'
-sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
+if test -n "$(curl ipinfo.io | \grep -i jio)"; then
+  echo '==> Setting DNS for WiFi'
+  sudo networksetup -setdnsservers Wi-Fi 8.8.8.8
+fi
 
 #################################################################################################
 # Download and source this utility script - so that the functions are available for this script #
@@ -313,6 +314,7 @@ app_list=(
   'KeepingYouAwake.app'
   'Keybase.app'
   'KeyCastr.app'
+  'KeyClu.app'
   'Raycast.app'
   'Stats.app'
   'ZoomHider.app'

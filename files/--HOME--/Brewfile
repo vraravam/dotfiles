@@ -74,6 +74,7 @@ cask 'keepassxc@beta'
 cask 'keepingyouawake'
 cask 'keybase'
 cask 'keycastr'
+cask 'keyclu'
 cask 'libreoffice'
 cask 'monolingual'
 cask 'notunes'
@@ -88,6 +89,10 @@ cask 'the-unarchiver'
 cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when compared to VSCode
 cask 'zen-browser@twilight'
 cask 'zoom'
+
+
+brew 'mas'
+mas 'PDFgear', id: 6469021132
 
 # VSCode extensions
 # Note: I don't want brew to silently install VS Code (which is what it does currently if the following lines are present but it doesn't find code!)

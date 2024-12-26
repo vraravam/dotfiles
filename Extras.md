@@ -14,7 +14,6 @@ This script is useful in macos to enable TouchId as an authentication mechanism 
 Note:
 
 * This script is idempotent ie it can be run any number of times safely, it will not corrrupt the system.
-* The script needs to be run after each OS upgrade is applied.
 
 ## capture-defaults.sh
 
@@ -22,7 +21,7 @@ This script is useful to capture the preferences of the known applications (both
 
 ## osx-defaults.sh
 
-This script is the erstwhile script to codify the macos setup. It can be used to setup some options, but its not been maintained for newer versions of macos. Though the system will not get corrupted, there might be cruft introduced into the system preferences which might not be easy to identify and remove at a later point in time. Use caution and YMMV.
+This script is the erstwhile script to codify the macos setup. It can be used to setup some options, but it hasn't been maintained for newer versions of macos. Though the system will not get corrupted, there might be cruft introduced into the system preferences which might not be easy to identify and remove at a later point in time. Use caution and YMMV.
 
 ## recreate-repo.sh
 

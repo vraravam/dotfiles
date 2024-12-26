@@ -50,8 +50,12 @@ esac
 eval "${git_cleanup}"
 ensure_dir_exists "${target_dir}"
 
+# TODO: Need to add:
+# PDFgear
+
 app_array=(
   'ch.protonvpn.mac'
+  'com.0804Team.KeyClu'
   'com.abhishek.Clocker'
   'com.apphousekitchen.aldente-pro'
   'com.apple.Accessibility-Settings.extension'

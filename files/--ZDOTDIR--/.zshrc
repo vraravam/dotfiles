@@ -104,7 +104,7 @@ export ENABLE_CORRECTION="true"
 # HIST_STAMPS="mm/dd/yyyy"
 
 # Would you like to use another custom folder than ${ZSH}/custom?
-# ZSH_CUSTOM=/path/to/new-custom-folder
+export ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH:-"${HOME}/.oh-my-zsh"}/custom"}"
 
 # https://github.com/zsh-users/zsh-autosuggestions?tab=readme-ov-file#suggestion-strategy
 export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
@@ -117,7 +117,6 @@ export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 plugins=(brew direnv eza fast-syntax-highlighting git git-extras iterm2 mise sudo zbell zsh-autosuggestions)
 
 # according to https://github.com/zsh-users/zsh-completions/issues/603#issue-373185486, this can't be added as a plugin to omz for the fpath to work correctly
-export ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH:-"${HOME}/.oh-my-zsh"}/custom"}"
 append_to_fpath_if_dir_exists "${ZSH_CUSTOM}/plugins/zsh-completions/src"
 
 load_file_if_exists "${ZSH}/oh-my-zsh.sh"
