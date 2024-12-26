@@ -201,7 +201,7 @@ command_exists() {
 load_zsh_configs() {
   local file_list=('.zshenv' '.zshrc' '.zlogin')
   for file in "${file_list[@]}"; do
-    FIRST_INSTALL=true load_file_if_exists "${ZDOTDIR}/${file}"
+    load_file_if_exists "${ZDOTDIR}/${file}"
   done
 }
 
@@ -245,11 +245,14 @@ is_windows() {
   [[ "${OSTYPE}" =~ 'MINGW' ]]
 }
 
-# Note: The following functions are used only from the fresh-install scripts
 keep_sudo_alive() {
   section_header 'Keeping sudo alive till this script has finished'
   sudo -v
   while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+}
+
+build_keybase_repo_url() {
+  echo "keybase://private/${KEYBASE_USERNAME}/${1}"
 }
 
 # if is_macos; then

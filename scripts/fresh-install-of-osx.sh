@@ -220,7 +220,7 @@ fi
 ! is_non_zero_string "${HOMEBREW_PREFIX}" && error "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!"
 
 # Load all zsh config files for PATH and other env vars to take effect
-load_zsh_configs
+FIRST_INSTALL=true load_zsh_configs
 
 ####################
 # Install homebrew #

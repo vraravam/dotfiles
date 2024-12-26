@@ -8,13 +8,13 @@
 
 type command_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
-! command_exists keybase && echo "Keybase not found in the PATH. Aborting!!!" && exit -1
+! command_exists keybase && error 'Keybase not found in the PATH. Aborting!!!'
 
 usage() {
-  echo "$(red "Usage"): $(yellow "${1} [-f] <repo folder>")"
-  echo " $(yellow "-f") : force squashing into a single commit (profiles repo will automatically/always be forced anyways)"
-  echo "    eg: $(cyan "-f ${HOME}")                (will push to $(yellow "keybase://private/${KEYBASE_USERNAME}/${KEYBASE_HOME_REPO_NAME}"))"
-  echo "    eg: $(cyan "${PERSONAL_PROFILES_DIR}")  (will push to $(yellow "keybase://private/${KEYBASE_USERNAME}/${KEYBASE_PROFILES_REPO_NAME}"))"
+  echo "$(red 'Usage'): $(yellow "${1} [-f] <repo folder>")"
+  echo " $(yellow '-f'): force squashing into a single commit (profiles repo will automatically/always be forced anyways)"
+  echo "    eg: $(cyan "-f ${HOME}")                (will push to $(yellow "$(build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME}")")"
+  echo "    eg: $(cyan "${PERSONAL_PROFILES_DIR}")  (will push to $(yellow "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")")"
   exit 1
 }
 
@@ -22,7 +22,7 @@ if [ $# -eq 1 ]; then
   force=N
   folder="${1}"
 elif [ $# -eq 2 ]; then
-  if [[ "${1}" == "-f" ]]; then
+  if [[ "${1}" == '-f' ]]; then
     force=Y
     folder="${2}"
   else
@@ -32,12 +32,12 @@ else
   usage ${0}
 fi
 
-! is_git_repo "${folder}" && echo "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!" && exit 1
+! is_git_repo "${folder}" && error "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!"
 
 # For the profiles repo alone, I don't care about retaining the history
-[[ "${folder}" =~ "profiles" ]] && force=Y
+[[ "$(basename "${folder}")" == "${KEYBASE_PROFILES_REPO_NAME}" ]] && force=Y
 
-echo "$(yellow "Processing folder"): '${folder}'"
+echo "$(yellow 'Processing folder'): '${folder}'"
 echo "$(yellow "Squash commits (will lose history!)"): '${force}'"
 
 git_cmd="git -C ${folder}"
@@ -55,12 +55,12 @@ git_user_name="$(extract_git_config_value user.name)"
 git_user_email="$(extract_git_config_value user.email)"
 git_branch_name="$(eval "${git_cmd} branch --show-current")"
 
-echo "$(yellow "Git url"): '${git_url}'"
-echo "$(yellow "User name"): '${git_user_name}'"
-echo "$(yellow "User email"): '${git_user_email}'"
+echo "$(yellow 'Repo url'): '${git_url}'"
+echo "$(yellow 'User name'): '${git_user_name}'"
+echo "$(yellow 'User email'): '${git_user_email}'"
 
 eval "${git_cmd} size"
-if [[ "${force}" == "Y" ]]; then
+if [[ "${force}" == 'Y' ]]; then
   rm -rf "${folder}/.git"
 
   eval "${git_cmd} init ."
@@ -84,14 +84,14 @@ echo "Compressing '${folder}'"
 eval "${git_cmd} rfc"
 eval "SKIP_SIZE_BEFORE=1 ${git_cmd} cc"
 
-if [[ "${git_url}" =~ "keybase" ]]; then
-  echo "$(blue "Recreating") '$(yellow "${git_url}")'"
-  git_remote_name="$(echo "${git_url}" | cut -d'/' -f5)"
-  keybase git delete -f "${git_remote_name}"
-  keybase git create "${git_remote_name}"
+if [[ "${git_url}" =~ 'keybase' ]]; then
+  echo "$(blue 'Recreating') '$(yellow "${git_url}")'"
+  git_remote_repo_name="$(basename "${git_url}")"
+  keybase git delete -f "${git_remote_repo_name}"
+  keybase git create "${git_remote_repo_name}"
 fi
 
-echo "$(blue "Pushing") from $(yellow "${folder}") to $(yellow "${git_url}")"
+echo "$(blue 'Pushing') from $(yellow "${folder}") to $(yellow "${git_url}")"
 eval "${git_cmd} push -fuq origin '${git_branch_name}'"
 
 rm -fv "${folder}/.git/index.lock"
@@ -99,5 +99,5 @@ rm -fv "${folder}/.git/index.lock"
 eval "${git_cmd} size"
 
 # Resurrect crontab after this script finishes
-cron_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
-is_file "${cron_file}" && crontab "${cron_file}"
+load_zsh_configs
+recron
