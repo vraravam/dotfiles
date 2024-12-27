@@ -399,7 +399,7 @@ fi
 ############################################################
 section_header 'Running post-clone operations'
 if command_exists all; then
-  all utimes
+  all restore-mtime -c
   all maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
   all maintenance start
 fi

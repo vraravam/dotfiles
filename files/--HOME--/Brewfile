@@ -41,6 +41,7 @@ brew 'diff-so-fancy'
 brew 'direnv'
 brew 'eza'
 brew 'git-extras'
+brew 'git-tools'
 brew 'mise'
 brew 'powerlevel10k'
 

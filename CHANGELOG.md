@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-35
+
+* Use `git-restore-mtime` from `git-tools` (as opposed to `git-utimes` from `git-extras`) since its > 1x faster performance.
+
 ### 1.0-34
 
 * Set the DNS server to '8.8.8.8' only if running in a Jio network.
