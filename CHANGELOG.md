@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-36
+
+* Use `is_git_repo` instead of `is_directory` if the next command(s) expects it to be a git repo.
+* Remove Arc from `Brewfile` (since I moved to [Zen](https://zen-browser.app/)).
+
 ### 1.0-35
 
 * Use `git-restore-mtime` from `git-tools` (as opposed to `git-utimes` from `git-extras`) since its > 1x faster performance.

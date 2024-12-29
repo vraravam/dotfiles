@@ -116,7 +116,7 @@ keep_sudo_alive
 # Turn on FileVault #
 #####################
 section_header 'Verifying FileVault status'
-[[ "$(fdesetup isactive)" != "true" ]] && error 'FileVault is not turned on. Please encrypt your hard disk!'
+[[ "$(fdesetup isactive)" != 'true' ]] && error 'FileVault is not turned on. Please encrypt your hard disk!'
 
 ##################################
 # Install command line dev tools #

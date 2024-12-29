@@ -61,7 +61,7 @@ if command_exists 'run_all.sh'; then
   done
 fi
 
-# deletes the zsh compiled files so that they can be recompiled whenever the new session is next started
+# deletes the zsh compiled files so that they can be recompiled whenever a new terminal session is next started
 delete_zsh_compilations() {
   find "${HOME}" -maxdepth 6 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
   find "${HOMEBREW_PREFIX}" -maxdepth 6 -name "*.zwc*" ! -path "**/node_modules/**" -exec rm -rfv {} \;
@@ -79,8 +79,8 @@ allow_all_direnv_configs() {
   ! command_exists direnv && warn "Couldn't find 'direnv' in the PATH; Skipping allowing all direnv configs" && return
 
   find "${HOME}" -name '.envrc' -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
-  is_directory "${PERSONAL_PROFILES_DIR}" && find "${PERSONAL_PROFILES_DIR}" -name ".envrc" -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
-  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name ".envrc" -maxdepth 5 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  is_directory "${PERSONAL_PROFILES_DIR}" && find "${PERSONAL_PROFILES_DIR}" -name '.envrc' -maxdepth 1 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
+  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name '.envrc' -maxdepth 5 -exec echo "===> Registering for {}" \; -execdir direnv allow \;
 }
 
 if is_macos && command_exists brew; then
@@ -183,8 +183,8 @@ pdf_to_png() {
 }
 
 # associate file extensions with applications for the 'open' command
-alias -s txt=code
-alias -s log=code
+alias -s txt="${EDITOR}"
+alias -s log="${EDITOR}"
 
 # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
 command_exists code && alias code-gist='code "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${HOME}/.tool-versions" "${PERSONAL_PROFILES_DIR}/.gitignore"'
@@ -192,25 +192,30 @@ command_exists code && alias code-gist='code "${DOTFILES_DIR}" "${PERSONAL_BIN_D
 # updates the specified repo (ie creates a local commit of changed files that I am not interested in verifying, but which need to be committed into that repo)
 # internal function: not to be called separately
 _update_repo() {
-  ! is_directory "${1}" && warn "skipping updating the repo since '${1}' doesn't exist" && return
+  ! is_git_repo "${1}" && warn "skipping updating the repo since '${1}' doesn't exist or is not a git repo" && return
 
   # Remove trailing slash if present
   local folder="${1%\/}"
 
+  local git_cmd="git -C '${folder}'"
+  local relative_path=$(eval "${git_cmd} relative-path '${2}'")
+  relative_path="${relative_path:-.}"
+
   # shellcheck disable=SC2005
   section_header "Updating '${folder}'"
   rm -rfv "${folder}/.git/index.lock" "${folder}/.git/hooks"
-  local git_cmd="git -C ${folder}"
+
+  echo "${git_cmd} add ${relative_path}"
 
   # shellcheck disable=SC2086
-  eval "${git_cmd} add ${2} && ${git_cmd} sci \"Incremental commit: $(date)\""
+  eval "${git_cmd} add '${relative_path}' && ${git_cmd} sci 'Incremental commit: $(date)'"
 }
 
 # updates the home and profiles repos
 update_all_repos() {
-  # TODO: Make this work with 'git relative-path' alias
-  _update_repo "${HOME}" 'personal/dev/configs/defaults/'
-  is_directory "${PERSONAL_PROFILES_DIR}" && _update_repo "${PERSONAL_PROFILES_DIR}" '.'
+  # use full-fledged path (based on env vars for consistency and maintenance)
+  _update_repo "${HOME}" "${PERSONAL_CONFIGS_DIR}/defaults"
+  _update_repo "${PERSONAL_PROFILES_DIR}" "${PERSONAL_PROFILES_DIR}"
 }
 
 status_all_repos() {
@@ -224,7 +229,7 @@ count_all_repos() {
 # pushes the specified repo (disables and re-enables cron while doing this operation)
 # internal function: not to be called separately
 _push_repo() {
-  ! is_directory "${1}" && warn "skipping pushing the repo since '${1}' doesn't exist" && return
+  ! is_git_repo "${1}" && warn "skipping pushing the repo since '${1}' doesn't exist or is not a git repo" && return
 
   # shellcheck disable=SC2005
   section_header "Pushing $(yellow "${1}")" && git -C "${1}" push --force-with-lease && success "*** Pushed $(yellow "${1}")"
@@ -235,7 +240,7 @@ push_all_repos() {
   crontab -r &> /dev/null 2>&1
 
   _push_repo "${HOME}"
-  is_directory "${PERSONAL_PROFILES_DIR}" && _push_repo "${PERSONAL_PROFILES_DIR}"
+  _push_repo "${PERSONAL_PROFILES_DIR}"
 
   recron
 }

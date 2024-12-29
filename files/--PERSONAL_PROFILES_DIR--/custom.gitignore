@@ -34,22 +34,26 @@ Thumbs.db
 
 # Browser profiles
 /*Profile.tgz
-/*Profile/.parentlock
-/*Profile/.startup-incomplete
+/*Profile/**/.parentlock
+/*Profile/**/.startup-incomplete
 /*Profile/**/*.bak
 /*Profile/**/*.baklz4
 /*Profile/**/*.ldb
 /*Profile/**/*.leveldb/*
+/*Profile/**/*backup.json
 /*Profile/**/*Cache*
 /*Profile/**/*cache*
 /*Profile/**/*datareporting*
 /*Profile/**/*download*
 /*Profile/**/*jetpack*
 /*Profile/**/*saved-telemetry-pings*
+/*Profile/**/*ShutdownDuration*
 /*Profile/**/*thumbnails*
+/*Profile/**/AlternateServices.txt
 /*Profile/**/bookmarkbackups
 /*Profile/**/cert-revocations/*.stash
 /*Profile/**/Code\ Cache
+/*Profile/**/compatibility.ini
 /*Profile/**/Crash\ Reports
 /*Profile/**/crashes/
 /*Profile/**/Crashpad*
@@ -73,6 +77,7 @@ Thumbs.db
 /*Profile/**/safebrowsing-failedupdate
 /*Profile/**/Service\ Worker/**
 /*Profile/**/Session\ Storage
+/*Profile/**/sessionstore-backups
 /*Profile/**/sessionstore-logs
 /*Profile/**/SingletonCookie
 /*Profile/**/SingletonLock
@@ -84,10 +89,6 @@ Thumbs.db
 /*Profile/**/tmp
 /*Profile/**/TransportSecurity
 /*Profile/**/weave
-/*Profile/*backup.json
-/*Profile/*ShutdownDuration*
-/*Profile/AlternateServices.txt
-/*Profile/compatibility.ini
 
 # ignore git repo present in the ZenProfile's chrome directory
 /ZenProfile/Profiles/chrome
@@ -100,8 +101,9 @@ Thumbs.db
 /FerdiumProfile/recipes/
 /FerdiumProfile/sentry/
 
-/Raycast/NodeJS/runtime/**
-/Raycast/extensions/**
+/Raycast/NodeJS/runtime/
+/Raycast/extensions/
+/Raycast/posthog.queueFolder/
 
 # files that are symlinked from the dotfiles repo
 /.envrc

@@ -43,7 +43,7 @@ fi
 if command_exists omz; then
   section_header 'Updating omz'
   omz update
-  success 'Successfully updated oh-my-zshell'
+  success 'Successfully updated oh-my-zsh'
 else
   debug 'skipping updating omz'
 fi

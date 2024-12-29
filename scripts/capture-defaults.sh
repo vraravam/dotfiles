@@ -23,12 +23,13 @@ usage() {
 ! is_non_zero_string "${PERSONAL_CONFIGS_DIR}" && warn "Env var 'PERSONAL_CONFIGS_DIR' is not defined; Aborting!!!" && return
 
 local target_dir="${PERSONAL_CONFIGS_DIR}/defaults"
+mkdir -p "${target_dir}"
 
 case "${1}" in
   "e" )
     operation='export'
-    git_cleanup="git -C \"${HOME}\" rm -rf \"${target_dir}\"/*"
-    git_stage="git -C \"${HOME}\" add \"${target_dir}\""
+    git_cleanup="git -C '${HOME}' rm -rf '${target_dir}'/*"
+    git_stage="git -C '${HOME}' add '${target_dir}'"
     ;;
   "i" )
     operation='import'
