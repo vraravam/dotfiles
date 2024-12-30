@@ -218,12 +218,34 @@ update_all_repos() {
   _update_repo "${PERSONAL_PROFILES_DIR}" "${PERSONAL_PROFILES_DIR}"
 }
 
-status_all_repos() {
-  st "${HOME}"; st "${DOTFILES_DIR}"; st "${PERSONAL_PROFILES_DIR}"
+# reports the status for the specified repo
+# internal function: not to be called separately
+_status_repo() {
+  ! is_git_repo "${1}" && warn "skipping finding status of the repo since '${1}' doesn't exist or is not a git repo"
+  st "${1}"
 }
 
+# reports status of the following repos: HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, ZenProfile chrome folder
+status_all_repos() {
+  _status_repo "${HOME}"
+  _status_repo "${DOTFILES_DIR}"
+  _status_repo "${PERSONAL_PROFILES_DIR}"
+  _status_repo "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/chrome"
+}
+
+# counts the number of commits in the specified repo
+# internal function: not to be called separately
+_count_repo() {
+  ! is_git_repo "${1}" && warn "skipping finding count of the repo since '${1}' doesn't exist or is not a git repo"
+  count "${1}"
+}
+
+# reports count of the following repos: HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR
 count_all_repos() {
-  count "${HOME}"; count "${DOTFILES_DIR}"; count "${PERSONAL_PROFILES_DIR}"
+  _count_repo "${HOME}"
+  _count_repo "${DOTFILES_DIR}"
+  _count_repo "${PERSONAL_PROFILES_DIR}"
+  # Note: not interested in the count for the ZenProfile's chrome folder since that's an external repo
 }
 
 # pushes the specified repo (disables and re-enables cron while doing this operation)

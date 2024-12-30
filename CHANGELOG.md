@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-38
+
+* *[.aliases]* Added extra checks for the `status_all_repos` and `count_all_repos` utility functions.
+
 ### 1.0-37
 
 * Removed `Raycast` from being tracked via the profiles repo since that corrupts Raycast's internal db.
