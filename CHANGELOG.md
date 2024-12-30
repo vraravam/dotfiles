@@ -2,6 +2,32 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-37
+
+* Removed `Raycast` from being tracked via the profiles repo since that corrupts Raycast's internal db.
+
+#### Adopting these changes
+
+**These instructions are only necessary if you had previously adopted changes from v1.0-24**
+
+* In Raycast, use the `Export Settings & Data` option to export your current settings.
+* After successfully exporting the settings, quit Raycast and ensure that Raycast is completely shut down.
+* Rebase the dotfiles repo, fix any conflicts and run the `install-dotfiles.rb` script.
+* Manually reconcile the diffs / dirty state of `files/--PERSONAL_PROFILES_DIR--/custom.gitignore` with `$PERSONAL_PROFILES_DIR/.gitignore` on your local machine
+* Run the following commands in the terminal
+
+  ```bash
+  git -C "${DOTFILES_DIR}" checkout files/--PERSONAL_PROFILES_DIR--/custom.gitignore
+  cp "${DOTFILES_DIR}/files/--PERSONAL_PROFILES_DIR--/custom.gitignore" "${PERSONAL_PROFILES_DIR}/.gitignore"
+  rm -rf "${HOME}/Library/Application Support/com.raycast.macos"
+  mv "${PERSONAL_PROFILES_DIR}/Raycast" "${HOME}/Library/Application Support/com.raycast.macos"
+  git -C "${PERSONAL_PROFILES_DIR}" rm -rf Raycast
+  open /Applications/Raycast.app
+  ```
+
+* Once Raycast is restarted *AND if it shows an error about the database being corrupt*, then choose the `Reset` option, and use the `Import Settings & Data` option to import your previously exported settings back in.
+* Once the above steps are done, if you rerun the `install-dotfiles.rb` script, it should not show any dirty files (especially the 2 `custom.gitignore` files) - and if this is the case, your setup is now back to normal working state.
+
 ### 1.0-36
 
 * Use `is_git_repo` instead of `is_directory` if the next command(s) expects it to be a git repo.
