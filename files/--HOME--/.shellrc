@@ -255,6 +255,10 @@ build_keybase_repo_url() {
   echo "keybase://private/${KEYBASE_USERNAME}/${1}"
 }
 
+folder_size() {
+  echo $(cyan "$(\du -sh "${1}" | cut -f1)")
+}
+
 # if is_macos; then
   # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
   # TODO: Kept for reference purposes
