@@ -11,7 +11,6 @@
 # Upgrades and cleans up all regular outdated casks and libs (non-greedy)
 
 # TODO: Need to find cask for:
-#   Ghostty
 #   Tinkertool
 #   ZoomHider
 
@@ -89,7 +88,6 @@ cask 'the-unarchiver'
 cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when compared to VSCode
 cask 'zen-browser@twilight'
 cask 'zoom'
-
 
 brew 'mas'
 mas 'PDFgear', id: 6469021132
@@ -182,6 +180,7 @@ end
 # ---- casks
 # cask 'cloudflare-warp'
 # cask 'dbeaver-community'
+# cask 'ghostty'
 # cask 'git-credential-manager'   # https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git
 # cask 'intellij-idea-ce'
 # cask 'kdiff3'

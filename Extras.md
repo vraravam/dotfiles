@@ -19,6 +19,10 @@ Note:
 
 This script is useful to capture the preferences of the known applications (both system-installed and custom-installed applications) using the `defaults read` command. It can be used to both export the preferences/settings (from the old system) or import them (into the new system)
 
+## cleanup-browser-profiles.sh
+
+This script is used to cleanup browser profiles folders (delete cache, session and other files that will anyways be recreated when you restart that browser). It can be safely invoked even if that browser is running (in which case it will skip processing after printing a warning to quit that application)
+
 ## osx-defaults.sh
 
 This script is the erstwhile script to codify the macos setup. It can be used to setup some options, but it hasn't been maintained for newer versions of macos. Though the system will not get corrupted, there might be cruft introduced into the system preferences which might not be easy to identify and remove at a later point in time. Use caution and YMMV.

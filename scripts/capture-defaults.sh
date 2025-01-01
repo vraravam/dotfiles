@@ -55,6 +55,7 @@ ensure_dir_exists "${target_dir}"
 # PDFgear
 
 app_array=(
+  'app.zen-browser.zen'
   'ch.protonvpn.mac'
   'com.0804Team.KeyClu'
   'com.abhishek.Clocker'
@@ -158,6 +159,7 @@ app_array=(
   'com.macpaw.site.theunarchiver'
   'com.microsoft.rdc.macos'
   'com.microsoft.VSCodeInsiders'
+  'com.mitchellh.ghostty'
   'com.mowglii.ItsycalApp'
   'com.piriform.ccleaner'
   'com.raycast.macos'

@@ -113,7 +113,23 @@ blue() {
   printf "${BLUE}${1}${NC}"
 }
 
+light_blue() {
+  printf "${LIGHT_BLUE}${1}${NC}"
+}
+
+purple() {
+  printf "${PURPLE}${1}${NC}"
+}
+
+light_purple() {
+  printf "${LIGHT_PURPLE}${1}${NC}"
+}
+
 cyan() {
+  printf "${CYAN}${1}${NC}"
+}
+
+light_cyan() {
   printf "${LIGHT_CYAN}${1}${NC}"
 }
 
@@ -121,8 +137,16 @@ green() {
   printf "${GREEN}${1}${NC}"
 }
 
+light_green() {
+  printf "${LIGHT_GREEN}${1}${NC}"
+}
+
 red() {
   printf "${RED}${1}${NC}"
+}
+
+light_red() {
+  printf "${LIGHT_RED}${1}${NC}"
 }
 
 yellow() {
@@ -148,7 +172,7 @@ error() {
 }
 
 section_header() {
-  echo "$(blue "==> ${1} <==")"
+  echo "$(blue '==>') $(purple "${1}")"
 }
 
 is_non_zero_string() {
@@ -253,6 +277,10 @@ keep_sudo_alive() {
 
 build_keybase_repo_url() {
   echo "keybase://private/${KEYBASE_USERNAME}/${1}"
+}
+
+folder_size() {
+  echo $(cyan "$(\du -sh "${1}" | cut -f1)")
 }
 
 # if is_macos; then

@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-39
+
+* Introduced [a new script](scripts/cleanup-browser-profiles.sh) to cleanup browser profiles folders.
+* *[fresh-install-of-osx.sh]* Minor refactoring to enhance `clone_repo_into` to handle an optional target git branch which is also validated.
+
 ### 1.0-38
 
 * *[.aliases]* Added extra checks for the `status_all_repos` and `count_all_repos` utility functions.
@@ -53,7 +58,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ### 1.0-32
 
-* *[fresh-install-of-osx]* Added date calculation in `fresh-install-of-osx.sh` to track total execution time.
+* *[fresh-install-of-osx.sh]* Added date calculation in `fresh-install-of-osx.sh` to track total execution time.
 
 ### 1.0-31
 

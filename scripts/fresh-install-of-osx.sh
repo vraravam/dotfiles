@@ -32,22 +32,30 @@ set_ssh_folder_permissions() {
 }
 
 clone_repo_into() {
-  ensure_dir_exists "${2}"
-  if ! is_git_repo "${2}"; then
+  local target_folder="${2}"
+  ensure_dir_exists "${target_folder}"
+  if ! is_git_repo "${target_folder}"; then
     local tmp_folder="$(mktemp -d)"
     git -C "${tmp_folder}" clone -q "${1}" .
-    mv "${tmp_folder}/.git" "${2}"
-    git -C "${2}" checkout .
-    git -C "${2}" submodule update --init --recursive --remote --rebase --force
+    mv "${tmp_folder}/.git" "${target_folder}"
+    git -C "${target_folder}" checkout .
+    git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
     rm -rf "${tmp_folder}"
-    success "Successfully cloned '${1}' into '${2}'"
+    success "Successfully cloned '${1}' into '${target_folder}'"
+
+    local target_branch="${3}"
+    if is_non_zero_string "${target_branch}"; then
+      git -C "${target_folder}" switch "${target_branch}"
+      local checked_out_branch="$(git -C "${target_folder}" branch --show-current)"
+      [[ "${checked_out_branch}" != "${target_branch}" ]] && error "'${target_branch}' is not equal to the branch that was checked out: '${checked_out_branch}'; something is wrong. Please correct before retrying!"
+    fi
   else
-    warn "Skipping cloning of '${1}' since '${2}' is already a git repo"
+    warn "Skipping cloning of '${1}' since '${target_folder}' is already a git repo"
   fi
 }
 
 clone_omz_plugin_if_not_present() {
-  clone_repo_into "${1}" "${ZSH_CUSTOM}/plugins/$(basename "${1}")"
+  clone_repo_into "${1}" "${ZSH_CUSTOM}/plugins/${1##*/}"
 }
 
 replace_executable_if_exists_and_is_not_symlinked() {
@@ -189,11 +197,7 @@ if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
   rm -rf "${ZDOTDIR}/.zshrc"
 
   # Note: Cloning with https since the ssh keys will not be present at this time
-  clone_repo_into "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}"
-
-  git -C "${DOTFILES_DIR}" switch "${DOTFILES_BRANCH}"
-  local_branch="$(git -C "${DOTFILES_DIR}" branch --show-current)"
-  [[ "${local_branch}" != "${DOTFILES_BRANCH}" ]] && error "'DOTFILES_BRANCH' env var is not equal to the branch that was checked out: '${local_branch}'; something is wrong. Please correct before retrying!"
+  clone_repo_into "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}" "${DOTFILES_BRANCH}"
 
   append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
 
@@ -355,8 +359,8 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
   if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
     clone_repo_into "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"
 
-    # Clone the natsumi-browser repo into the ZenProfile/Profiles/chrome folder
-    is_directory "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/" && clone_repo_into "git@github.com:greeeen-dev/natsumi-browser" "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/chrome"
+    # Clone the natsumi-browser repo into the ZenProfile/Profiles/chrome folder and switch to the 'dev' branch
+    is_directory "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/" && clone_repo_into "git@github.com:vraravam/natsumi-browser" "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/chrome" dev
   else
     warn "skipping cloning of profiles repo since either the 'KEYBASE_PROFILES_REPO_NAME' or the 'PERSONAL_PROFILES_DIR' env var hasn't been set"
   fi

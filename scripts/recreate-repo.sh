@@ -35,7 +35,7 @@ fi
 ! is_git_repo "${folder}" && error "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!"
 
 # For the profiles repo alone, I don't care about retaining the history
-[[ "$(basename "${folder}")" == "${KEYBASE_PROFILES_REPO_NAME}" ]] && force=Y
+[[ "${folder##*/}" == "${KEYBASE_PROFILES_REPO_NAME}" ]] && force=Y
 
 echo "$(yellow 'Processing folder'): '${folder}'"
 echo "$(yellow "Squash commits (will lose history!)"): '${force}'"
@@ -86,7 +86,7 @@ eval "SKIP_SIZE_BEFORE=1 ${git_cmd} cc"
 
 if [[ "${git_url}" =~ 'keybase' ]]; then
   echo "$(blue 'Recreating') '$(yellow "${git_url}")'"
-  git_remote_repo_name="$(basename "${git_url}")"
+  local git_remote_repo_name="${git_url##*/}"
   keybase git delete -f "${git_remote_repo_name}"
   keybase git create "${git_remote_repo_name}"
 fi
