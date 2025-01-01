@@ -13,4 +13,4 @@ This portion of the script will setup the home folder repo, the browser profiles
    * Setup the preferences and keyboard shortcuts as per your preferences. (I have setup for Clipboard history, Window management and Import/Export of the Raycast settings.)
     *Hint:* If you had exported the configs into a file and had captured it as part of your home git repo, then simply re-importing will be sufficient on the new machine.
 
-Back to the [readme](README.md#advanced-setup-in-addition-to-the-basic-setup-if-you-want-to-capture-other-files-in-an-encrypted-private-git-repo)
+Back to the [readme](README.md#basic-setup)

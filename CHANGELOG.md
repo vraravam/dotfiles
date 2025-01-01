@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-40
+
+* Fixed documentation and reduced hardcoding of upstream repo-owner's name.
+
 ### 1.0-39
 
 * Introduced [a new script](scripts/cleanup-browser-profiles.sh) to cleanup browser profiles folders.

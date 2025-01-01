@@ -44,7 +44,7 @@ The config file for this script is a yaml file that is passed into this script a
 
 ```yaml
 - folder: "${PROJECTS_BASE_DIR}/oss/git_scripts"
-  remote: https://github.com/vraravam/git_scripts.git
+  remote: https://github.com/vraravam/git_scripts
   other_remotes:
     upstream1: <upstream remote url1>
     upstream2: <upstream remote url2>
