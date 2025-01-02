@@ -8,6 +8,10 @@ Basically, to get started with the dotfiles, you just need to run the `<pwd>/scr
 * If you do not want a specific file from the home folder to be overridden, simply delete it from this repo's `files` folder - and it will not be processed.
 * If you wish to add a new file to be tracked and managed via this backup mechanism, simply add it into the `files` folder with the requisite relative path (relative to your `HOME` folder) - and it will be processed.
 
+## add-upstream-git-config.sh
+
+This script can be used to quickly add a new upstream remote to the specified git repo. The name of the new remote is hardcoded to `upstream`. The rest of the url remains the same with just the username switched to the specified username.
+
 ## approve-fingerprint-sudo.sh
 
 This script is useful in macos to enable TouchId as an authentication mechanism even while running command-line tools. Before running this script, the usual mechanism is for a prompt to appear in the terminal window itself where one has to type in the whole long password. After this script is run, the user is prompted by the touchId modal dialog instead of having to type a really long password.
