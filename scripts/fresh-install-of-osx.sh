@@ -210,14 +210,7 @@ if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
   approve-fingerprint-sudo.sh
 
   # Setup the DOTFILES_DIR repo's upstream if it doesn't already point to UPSTREAM_GH_USERNAME's repo
-  git -C "${DOTFILES_DIR}" remote -vv | grep "${UPSTREAM_GH_USERNAME}"
-  if [ $? -ne 0 ]; then
-    git -C "${DOTFILES_DIR}" remote add upstream "https://github.com/${UPSTREAM_GH_USERNAME}/dotfiles"
-    git -C "${DOTFILES_DIR}" fetch --all
-    success 'Successfully set new upstream remote for the dotfiles repo'
-  else
-    warn 'skipping setting new upstream remote for the dotfiles repo'
-  fi
+  add-upstream-git-config.sh "${DOTFILES_DIR}" "${UPSTREAM_GH_USERNAME}"
 else
   warn "skipping cloning the dotfiles repo since '${DOTFILES_DIR}' is either not defined or is already a git repo"
 fi
@@ -360,7 +353,11 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
     clone_repo_into "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"
 
     # Clone the natsumi-browser repo into the ZenProfile/Profiles/chrome folder and switch to the 'dev' branch
-    is_directory "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/" && clone_repo_into "git@github.com:${UPSTREAM_GH_USERNAME}/natsumi-browser" "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/chrome" dev
+    if is_directory "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/"; then
+      clone_repo_into "git@github.com:${UPSTREAM_GH_USERNAME}/natsumi-browser" "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/chrome" dev
+      # Setup the zen chrome repo's upstream if it doesn't already point to UPSTREAM_GH_USERNAME's repo
+      add-upstream-git-config.sh "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/chrome" "${UPSTREAM_GH_USERNAME}"
+    fi
   else
     warn "skipping cloning of profiles repo since either the 'KEYBASE_PROFILES_REPO_NAME' or the 'PERSONAL_PROFILES_DIR' env var hasn't been set"
   fi
