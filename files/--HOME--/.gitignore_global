@@ -545,3 +545,6 @@ zsdoc/data
 !/tests/_output/.gitkeep
 
 # End of https://www.toptal.com/developers/gitignore/api/vim,zsh,java,emacs,linux,macos,eclipse,windows,intellij,visualstudiocode,node
+
+!/personal/**/bin/
+!/personal/**/*.tgz

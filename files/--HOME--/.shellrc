@@ -34,10 +34,10 @@ export XDG_STATE_HOME="${HOME}/.local/state"
 # Moving homebrew env vars here itself so that the initial homebrew installation on a vanilla OS can be done/applied into memory immediately
 export ARCH="$(uname -m)"
 export ARCHFLAGS="-arch ${ARCH}"
-if [[ "${ARCH}" =~ "arm" ]]; then
-  export HOMEBREW_PREFIX="/opt/homebrew"
+if [[ "${ARCH}" =~ 'arm' ]]; then
+  export HOMEBREW_PREFIX='/opt/homebrew'
 else
-  export HOMEBREW_PREFIX="/usr/local"
+  export HOMEBREW_PREFIX='/usr/local'
 fi
 export HOMEBREW_NO_ANALYTICS=1
 export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
@@ -52,16 +52,16 @@ export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
 
 # ------------ Env vars for basic/common setup ------------
 # The github username where the setup scripts are downloaded from
-export GH_USERNAME="vraravam"
+export GH_USERNAME='vraravam'
 
 # Vijay's github username for setting upstream remote
-export UPSTREAM_GH_USERNAME="vraravam" # Note: Do NOT change this
+export UPSTREAM_GH_USERNAME='vraravam' # Note: Do NOT change this
 
 # This repo is cloned into this location
 export DOTFILES_DIR="${HOME}/.bin-oss"
 
 # Branch name of the dotfiles repo that's to be used for testing PR changes before merging
-export DOTFILES_BRANCH="master"
+export DOTFILES_BRANCH='master'
 
 # All development codebases are cloned into a subfolder of this folder
 export PROJECTS_BASE_DIR="${HOME}/dev"
@@ -72,18 +72,17 @@ export PERSONAL_BIN_DIR="${HOME}/personal/dev/bin"
 # Many configuration files (eg `.envrc`, `.tool-versions`), that might contain sensitive info and so cannot be committed into those repos are stored here and symlinked to their target destination
 export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev/configs"
 
-# ------------ Env vars for advanced setup ------------
 # All browser profiles are captured in this folder (might contain sensitive info like browsing history and so is considered private)
 export PERSONAL_PROFILES_DIR="${HOME}/personal/$(whoami)/profiles"
 
 # Keybase username
-export KEYBASE_USERNAME="avijayr"
+export KEYBASE_USERNAME='avijayr'
 
 # Keybase home repo name
-export KEYBASE_HOME_REPO_NAME="home"
+export KEYBASE_HOME_REPO_NAME='home'
 
 # Keybase profiles repo name
-export KEYBASE_PROFILES_REPO_NAME="profiles"
+export KEYBASE_PROFILES_REPO_NAME='profiles'
 
 # -----------------------------------------------------
 
@@ -288,7 +287,7 @@ folder_size() {
   # TODO: Kept for reference purposes
   # reinstall_xcode() {
   #   # delete if already present
-  #   delete_directory_if_exists "/Applications/Xcode.app"
+  #   delete_directory_if_exists '/Applications/Xcode.app'
 
   #   xcode-select --install
   #   sudo xcodebuild -license accept -quiet || true

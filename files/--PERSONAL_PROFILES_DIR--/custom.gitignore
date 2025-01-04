@@ -2,14 +2,14 @@
 
 !.bundle/config
 !.keep
-!/*Profile/Profiles/bookmarks.html
-!/*Profile/Profiles/cert8.db
-!/*Profile/Profiles/cookies.sqlite
-!/*Profile/Profiles/key3.db
-!/*Profile/Profiles/search.rdf
-!/*Profile/Profiles/searchplugins
-!/*Profile/Profiles/secmod.db
-!/*Profile/Profiles/signons.txt
+!/*Profile/Profiles/**/bookmarks.html
+!/*Profile/Profiles/**/cert8.db
+!/*Profile/Profiles/**/cookies.sqlite
+!/*Profile/Profiles/**/key3.db
+!/*Profile/Profiles/**/search.rdf
+!/*Profile/Profiles/**/searchplugins
+!/*Profile/Profiles/**/secmod.db
+!/*Profile/Profiles/**/signons.txt
 
 .~lock*#
 .DS_Store
@@ -91,7 +91,7 @@ Thumbs.db
 /*Profile/**/weave
 
 # ignore git repo present in the ZenProfile's chrome directory
-/ZenProfile/Profiles/chrome
+/ZenProfile/Profiles/**/chrome
 
 /FerdiumProfile/.*.ferdium.*
 /FerdiumProfile/.has-app-requested-screen-capture-permissions
@@ -101,8 +101,8 @@ Thumbs.db
 /FerdiumProfile/recipes/
 /FerdiumProfile/sentry/
 
-/Raycast/NodeJS/runtime/
 /Raycast/extensions/
+/Raycast/NodeJS/runtime/
 /Raycast/posthog.queueFolder/
 
 # files that are symlinked from the dotfiles repo

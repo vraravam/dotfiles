@@ -149,7 +149,8 @@ end
 # Moved these brew and cask lines to clean up the noise from the above alphabetically sorted lists
 
 # ---- zen-browser development
-# brew 'gnu-tar'
+brew 'gnu-tar'
+brew 'mercurial'
 
 # ---- docker utilities
 # brew 'dive'   # docker layers inspection on steroids
