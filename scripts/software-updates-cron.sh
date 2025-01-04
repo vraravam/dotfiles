@@ -56,7 +56,7 @@ else
   debug 'skipping updating brews & casks'
 fi
 
-local zen_profile_chrome_folder="${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/chrome"
+local zen_profile_chrome_folder="${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/DefaultProfile/chrome"
 if is_git_repo "${zen_profile_chrome_folder}"; then
   git -C "${zen_profile_chrome_folder}" pull
   success 'Successfully updated natsumi-browser into the zen profile chrome folder'

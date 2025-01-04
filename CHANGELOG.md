@@ -2,6 +2,22 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-43
+
+* Nested all Firefox-based profiles one level deeper.
+
+#### Adopting these changes
+
+These changes are *optional*, but if you don't follow them, then the aliases/scripts pertaining to the browser profiles repo can be messed up..
+
+* Quit any FF-based browser before rebasing from my repo.
+* Run `git -C "${DOTFILES_DIR}" upreb`
+* Resolve all conflicts.
+* Open Finder on the `${PERSONAL_PROFILES_DIR}/`
+* Inside each of the FF-based profiles folders, create a new folder called `DefaultProfile` and move all other sibling files/folders into that one.
+* Edit the `profiles.ini` and `installs.ini` files at the root of the FF profile folder, and add `/DefaultProfile` to the lines referring to the profile folder (usually it'll be a relative path).
+* Restart your FF-based browser to verify that all functionality continues to work.
+
 ### 1.0-42
 
 * Added dev dependencies for zen-browser.

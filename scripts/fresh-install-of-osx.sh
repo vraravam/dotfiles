@@ -352,11 +352,11 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
   if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
     clone_repo_into "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"
 
-    # Clone the natsumi-browser repo into the ZenProfile/Profiles/chrome folder and switch to the 'dev' branch
+    # Clone the natsumi-browser repo into the ZenProfile/Profiles/DefaultProfile/chrome folder and switch to the 'dev' branch
     if is_directory "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/"; then
-      clone_repo_into "git@github.com:${UPSTREAM_GH_USERNAME}/natsumi-browser" "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/chrome" dev
+      clone_repo_into "git@github.com:${UPSTREAM_GH_USERNAME}/natsumi-browser" "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/DefaultProfile/chrome" dev
       # Setup the zen chrome repo's upstream if it doesn't already point to UPSTREAM_GH_USERNAME's repo
-      add-upstream-git-config.sh "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/chrome" "${UPSTREAM_GH_USERNAME}"
+      add-upstream-git-config.sh "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/DefaultProfile/chrome" "${UPSTREAM_GH_USERNAME}"
     fi
   else
     warn "skipping cloning of profiles repo since either the 'KEYBASE_PROFILES_REPO_NAME' or the 'PERSONAL_PROFILES_DIR' env var hasn't been set"

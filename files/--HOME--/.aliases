@@ -219,7 +219,8 @@ update_all_repos() {
 # reports the status for the specified repo
 # internal function: not to be called separately
 _status_repo() {
-  ! is_git_repo "${1}" && warn "skipping finding status of the repo since '${1}' doesn't exist or is not a git repo"
+  ! is_git_repo "${1}" && warn "skipping finding status of the repo since '${1}' doesn't exist or is not a git repo" && return
+
   st "${1}"
 }
 
@@ -228,13 +229,14 @@ status_all_repos() {
   _status_repo "${HOME}"
   _status_repo "${DOTFILES_DIR}"
   _status_repo "${PERSONAL_PROFILES_DIR}"
-  _status_repo "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/chrome"
+  _status_repo "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/DefaultProfile/chrome"
 }
 
 # counts the number of commits in the specified repo
 # internal function: not to be called separately
 _count_repo() {
-  ! is_git_repo "${1}" && warn "skipping finding count of the repo since '${1}' doesn't exist or is not a git repo"
+  ! is_git_repo "${1}" && warn "skipping finding count of the repo since '${1}' doesn't exist or is not a git repo" && return
+
   count "${1}"
 }
 

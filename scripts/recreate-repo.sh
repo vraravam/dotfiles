@@ -69,8 +69,8 @@ if [[ "${force}" == 'Y' ]]; then
   eval "${git_cmd} config user.email '${git_user_email}'"
 
   # touch .gitmodules
-  # rm -rf "${folder}/FirefoxProfile/Profiles/chrome"
-  # eval "${git_cmd} submodule -q add -f git@github.com:drannex42/FirefoxSidebar.git '${folder}/FirefoxProfile/Profiles/chrome'"
+  # rm -rf "${folder}/FirefoxProfile/Profiles/DefaultProfile/chrome"
+  # eval "${git_cmd} submodule -q add -f git@github.com:drannex42/FirefoxSidebar.git '${folder}/FirefoxProfile/Profiles/DefaultProfile/chrome'"
 
   eval "${git_cmd} add -A ."
   eval "${git_cmd} commit -qm 'Initial commit: $(date)'"
