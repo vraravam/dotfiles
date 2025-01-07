@@ -177,7 +177,6 @@ app_array=(
   'net.sourceforge.Monolingual'
   'NSGlobalDomain'
   'org.cups.PrintingPrefs'
-  'org.ferdium.ferdium-app'
   'org.keepassxc.keepassxc'
   'org.libreoffice.script'
   'org.mozilla.betterbird'

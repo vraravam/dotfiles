@@ -2,6 +2,19 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-44
+
+* *[recreate-repo.sh]* Fix an issue where a trailing slash would not properly process the repo in `${PERSONAL_PROFILES_DIR}` (ie would not force-squash)
+* Cleaned `files/--PERSONAL_PROFILES_DIR--/custom.gitignore`
+
+#### Adopting these changes
+
+* After rebasing, run the following command prior to running the `install-dotfiles.rb` script.
+
+  ```bash
+  cp "${DOTFILES_DIR}/files/--PERSONAL_PROFILES_DIR--/custom.gitignore" "${PERSONAL_PROFILES_DIR}/.gitignore"
+  ```
+
 ### 1.0-43
 
 * Nested all Firefox-based profiles one level deeper.

@@ -32,6 +32,9 @@ else
   usage ${0}
 fi
 
+# Remove trailing slash if present
+folder="${folder%\/}"
+
 ! is_git_repo "${folder}" && error "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!"
 
 # For the profiles repo alone, I don't care about retaining the history

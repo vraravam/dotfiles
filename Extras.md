@@ -1,6 +1,6 @@
 ## install-dotfiles.rb
 
-Basically, to get started with the dotfiles, you just need to run the `<pwd>/scripts/install-dotfiles.rb` script. If you have that folder in the `PATH`, then you don't need the fully qualified or relative location (only file name is enough to run it).
+Basically, to get started with the dotfiles, you just need to run the `${DOTFILES_DIR}/scripts/install-dotfiles.rb` script. If you have that folder in the `PATH`, then you don't need the fully qualified or relative location (only file name is enough to run it).
 
 * If you already have any of the dotfiles that are managed via this repo, *DON'T WORRY!* Your files will be moved to the cloned folder - so that you can then commit and push them to your fork!
 * This script will also handle nested config files - as long as they are already present in this repo.
