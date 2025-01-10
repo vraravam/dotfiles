@@ -496,6 +496,7 @@ fi
 
 echo "\n"
 success '** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **'
+yellow "Remember to set the 'RAYCAST_SETTINGS_PASSWORD' env var, and then run the 'capture-raycast-configs.sh' script to import your Raycast configuration into the new machine."
 
 script_end_time=$(date +%s)
 echo "==> Script completed at: $(date)"

@@ -9,7 +9,8 @@
 # A trick to find the name of the app:
 # Run `defaults read` in an empty window of a terminal app, then use the search functionality to search for a known word related to that app (like eg app visible name, author, some setting that's unique to that app, etc). Once you find this, trace back to the left-most child (1st of the top-level parent) in the printed JSON to then get the real unique name of the app where its settings are stored. Please note that one app might have multiple such groups / names at the top-level (for eg zoom). If this is the case, you will need to capture each name individually.
 
-type warn &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+type red &> /dev/null 2>&1 || source "${HOME}/.shellrc"
+type is_non_zero_string &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
 usage() {
   echo "$(red 'Usage'): $(yellow "${1} <e/i>")"
@@ -23,7 +24,7 @@ usage() {
 ! is_non_zero_string "${PERSONAL_CONFIGS_DIR}" && warn "Env var 'PERSONAL_CONFIGS_DIR' is not defined; Aborting!!!" && return
 
 local target_dir="${PERSONAL_CONFIGS_DIR}/defaults"
-mkdir -p "${target_dir}"
+ensure_dir_exists "${target_dir}"
 
 case "${1}" in
   "e" )
