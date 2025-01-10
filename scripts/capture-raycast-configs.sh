@@ -58,20 +58,41 @@ EOF
 elif [[ "${1}" == 'i' ]]; then
   ! is_file "${target_file}" && error "Couldn't find file: '$(yellow "${target_file}")' for import operation; Aborting!!!"
 
+  # TODO: Get this from password manager
+  password=$RAYCAST_SETTINGS_PASSWORD
+
   open raycast://extensions/raycast/raycast/import-settings-data
 
-  # TODO: Need to get import working
   osascript <<EOF
     tell application "System Events"
-      key code 36
-      delay 0.3
+    key code 36
+    delay 0.3
 
-      keystroke "${target_file}"
-      delay 0.3
+    key code 5 using {command down, shift down}
+    delay 0.3
 
-      key code 36
-      delay 0.3
-    end tell
+    keystroke "${target_dir}/Raycast.rayconfig"
+    delay 0.3
+
+    key code 36
+    delay 0.5
+
+    key code 36
+    delay 0.3
+
+    keystroke "$password"
+    key code 36
+    delay 0.3
+
+    key code 36
+    delay 0.3
+
+    key code 36
+    delay 1
+
+    key code 53
+    key code 53
+  end tell
 EOF
 
   success "Imported raycast configs from: $(yellow "${target_file}")"
