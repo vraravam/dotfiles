@@ -28,7 +28,7 @@ local target_file="${target_dir}/Raycast.rayconfig"
 ensure_dir_exists "${target_dir}"
 
 if [[ "${1}" == 'e' ]]; then
-  rm -rfv "${target_dir}"/Raycast*.rayconfig
+  [ -f "${target_dir}"/Raycast.rayconfig ] && rm -rfv "${target_dir}"/Raycast.rayconfig
 
   open raycast://extensions/raycast/raycast/export-settings-data
 
