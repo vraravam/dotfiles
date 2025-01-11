@@ -52,7 +52,7 @@ if [[ "${1}" == 'e' ]]; then
 EOF
 
   mv "${target_dir}"/Raycast*.rayconfig "${target_file}"
-  success "Exported raycast configs to: $(yellow "${target_file}")"
+  success "Successfully exported raycast configs to: $(yellow "${target_file}")"
 elif [[ "${1}" == 'i' ]]; then
   ! is_file "${target_file}" && error "Couldn't find file: '$(yellow "${target_file}")' for import operation; Aborting!!!"
 
@@ -92,5 +92,5 @@ elif [[ "${1}" == 'i' ]]; then
     end tell
 EOF
 
-  success "Imported raycast configs from: $(yellow "${target_file}")"
+  success "Successfully imported raycast configs from: $(yellow "${target_file}")"
 fi

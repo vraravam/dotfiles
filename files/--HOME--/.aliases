@@ -195,18 +195,17 @@ _update_repo() {
   # Remove trailing slash if present
   local folder="${1%\/}"
 
-  local git_cmd="git -C '${folder}'"
-  local relative_path=$(eval "${git_cmd} relative-path '${2}'")
+  local relative_path="$(git -C "${folder}" relative-path "${2}")"
   relative_path="${relative_path:-.}"
 
   # shellcheck disable=SC2005
   section_header "Updating '${folder}'"
   rm -rfv "${folder}/.git/index.lock" "${folder}/.git/hooks"
 
-  echo "${git_cmd} add ${relative_path}"
+  git -C "${folder}" add "${relative_path}"
 
   # shellcheck disable=SC2086
-  eval "${git_cmd} add '${relative_path}' && ${git_cmd} sci 'Incremental commit: $(date)'"
+  git -C "${folder}" add "${relative_path}" && git -C "${folder}" sci "Incremental commit: $(date)"
 }
 
 # updates the home and profiles repos
@@ -254,7 +253,13 @@ _push_repo() {
   ! is_git_repo "${1}" && warn "skipping pushing the repo since '${1}' doesn't exist or is not a git repo" && return
 
   # shellcheck disable=SC2005
-  section_header "Pushing $(yellow "${1}")" && git -C "${1}" push --force-with-lease && success "*** Pushed $(yellow "${1}")"
+  section_header "Pushing $(yellow "${1}")"
+  git -C "${1}" push --force-with-lease
+  if [ $? -eq 0 ]; then
+    success "Successfully pushed $(yellow "${1}")"
+  else
+    warn "Couldn't push $(yellow "${1}")"
+  fi
 }
 
 # pushes the home and profiles repos to their respective remotes (disables and re-enables cron while doing this operation)

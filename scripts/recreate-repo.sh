@@ -43,10 +43,8 @@ folder="${folder%\/}"
 echo "$(yellow 'Processing folder'): '${folder}'"
 echo "$(yellow "Squash commits (will lose history!)"): '${force}'"
 
-git_cmd="git -C ${folder}"
-
 extract_git_config_value() {
-  eval "${git_cmd} config '${1}'" || exit 1 # Most likely reason for exiting is if the required git configuration hasn't been set
+  git -C "${folder}" config "${1}" || exit 1 # Most likely reason for exiting is if the required git configuration hasn't been set
 }
 
 # Remove crontab while this script is running
@@ -56,36 +54,36 @@ crontab -r &> /dev/null 2>&1
 git_url="$(extract_git_config_value remote.origin.url)"
 git_user_name="$(extract_git_config_value user.name)"
 git_user_email="$(extract_git_config_value user.email)"
-git_branch_name="$(eval "${git_cmd} branch --show-current")"
+git_branch_name="$(git -C "${folder}" branch --show-current)"
 
 echo "$(yellow 'Repo url'): '${git_url}'"
 echo "$(yellow 'User name'): '${git_user_name}'"
 echo "$(yellow 'User email'): '${git_user_email}'"
 
-eval "${git_cmd} size"
+git -C "${folder}" size
 if [[ "${force}" == 'Y' ]]; then
   rm -rf "${folder}/.git"
 
-  eval "${git_cmd} init ."
-  eval "${git_cmd} remote add origin '${git_url}'"
-  eval "${git_cmd} config user.name '${git_user_name}'"
-  eval "${git_cmd} config user.email '${git_user_email}'"
+  git -C "${folder}" init .
+  git -C "${folder}" remote add origin "${git_url}"
+  git -C "${folder}" config user.name "${git_user_name}"
+  git -C "${folder}" config user.email "${git_user_email}"
 
   # touch .gitmodules
   # rm -rf "${folder}/FirefoxProfile/Profiles/DefaultProfile/chrome"
-  # eval "${git_cmd} submodule -q add -f git@github.com:drannex42/FirefoxSidebar.git '${folder}/FirefoxProfile/Profiles/DefaultProfile/chrome'"
+  git -C "${folder}" submodule -q add -f git@github.com:drannex42/FirefoxSidebar.git '${folder}/FirefoxProfile/Profiles/DefaultProfile/chrome'
 
-  eval "${git_cmd} add -A ."
-  eval "${git_cmd} commit -qm 'Initial commit: $(date)'"
+  git -C "${folder}" add -A .
+  git -C "${folder}" commit -qm "Initial commit: $(date)"
 fi
 
 # Retry the commit in case it failed the first time
-eval "${git_cmd} add -A ."
-eval "${git_cmd} amq"
+git -C "${folder}" add -A .
+git -C "${folder}" amq
 
 echo "Compressing '${folder}'"
-eval "${git_cmd} rfc"
-eval "SKIP_SIZE_BEFORE=1 ${git_cmd} cc"
+git -C "${folder}" rfc
+SKIP_SIZE_BEFORE=1 git -C "${folder}" cc
 
 if [[ "${git_url}" =~ 'keybase' ]]; then
   echo "$(blue 'Recreating') '$(yellow "${git_url}")'"
@@ -95,11 +93,11 @@ if [[ "${git_url}" =~ 'keybase' ]]; then
 fi
 
 echo "$(blue 'Pushing') from $(yellow "${folder}") to $(yellow "${git_url}")"
-eval "${git_cmd} push -fuq origin '${git_branch_name}'"
+git -C "${folder}" push -fuq origin "${git_branch_name}"
 
 rm -fv "${folder}/.git/index.lock"
 
-eval "${git_cmd} size"
+git -C "${folder}" size
 
 # Resurrect crontab after this script finishes
 load_zsh_configs
