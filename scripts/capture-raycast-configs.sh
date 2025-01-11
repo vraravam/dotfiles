@@ -85,7 +85,7 @@ elif [[ "${1}" == 'i' ]]; then
       delay 0.3
 
       key code 36
-      delay 1
+      delay 2
 
       key code 53
       key code 53
