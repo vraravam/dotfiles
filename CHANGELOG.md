@@ -2,6 +2,15 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-46
+
+* Removed duplication (now `scripts/resurrect-repositories.rb` invokes the common function defined in the `.shellrc`).
+* Removed usage of `eval` to simplify running of shell commands.
+
+#### Adopting these changes
+
+* After rebasing, just quit and restart the terminal emulator so that the `.shellrc` is loaded into memory.
+
 ### 1.0-45
 
 * *[capture-raycast-configs.sh]* Added script to export/import raycast configs. More details can be found [here](Extras.md#capture-raycast-configssh). Code contributed by/adapted from @arunvelsriram's gist.

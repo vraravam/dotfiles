@@ -31,29 +31,6 @@ set_ssh_folder_permissions() {
   fi
 }
 
-clone_repo_into() {
-  local target_folder="${2}"
-  ensure_dir_exists "${target_folder}"
-  if ! is_git_repo "${target_folder}"; then
-    local tmp_folder="$(mktemp -d)"
-    git -C "${tmp_folder}" clone -q "${1}" .
-    mv "${tmp_folder}/.git" "${target_folder}"
-    git -C "${target_folder}" checkout .
-    git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
-    rm -rf "${tmp_folder}"
-    success "Successfully cloned '${1}' into '${target_folder}'"
-
-    local target_branch="${3}"
-    if is_non_zero_string "${target_branch}"; then
-      git -C "${target_folder}" switch "${target_branch}"
-      local checked_out_branch="$(git -C "${target_folder}" branch --show-current)"
-      [[ "${checked_out_branch}" != "${target_branch}" ]] && error "'${target_branch}' is not equal to the branch that was checked out: '${checked_out_branch}'; something is wrong. Please correct before retrying!"
-    fi
-  else
-    warn "Skipping cloning of '${1}' since '${target_folder}' is already a git repo"
-  fi
-}
-
 clone_omz_plugin_if_not_present() {
   clone_repo_into "${1}" "${ZSH_CUSTOM}/plugins/${1##*/}"
 }
