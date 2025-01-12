@@ -67,7 +67,6 @@ cask 'appcleaner'
 cask 'brave-browser'
 cask 'clocker'
 cask 'firefox@nightly' #, greedy: true
-cask 'itsycal'
 cask 'jordanbaird-ice'
 cask 'keepassxc@beta'
 cask 'keepingyouawake'

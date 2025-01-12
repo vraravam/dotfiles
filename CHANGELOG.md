@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-47
+
+* *[capture-defaults.sh]* Added more macos preferences to be exported/imported for backup.
+* Removed `Itsycal` since raycast and/or a desktop widget can be used instead of a dedicated application.
+
 ### 1.0-46
 
 * Removed duplication (now `scripts/resurrect-repositories.rb` invokes the common function defined in the `.shellrc`).
