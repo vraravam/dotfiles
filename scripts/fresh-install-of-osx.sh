@@ -29,10 +29,12 @@ set_ssh_folder_permissions() {
   else
     warn "Couldn't find any files in '${target_folder}' to set permissions for"
   fi
+  unset target_folder
 }
 
+# These repos can be alternatively tracked using git submodules, but by doing so, any new change in the submodule, will show up as a new commit in the main (home) repo. To avoid this "noise", I prefer to decouple them
 clone_omz_plugin_if_not_present() {
-  clone_repo_into "${1}" "${ZSH_CUSTOM}/plugins/${1##*/}"
+  clone_repo_into "${1}" "${ZSH_CUSTOM}/plugins/$(extract_last_segment "${1}")"
 }
 
 replace_executable_if_exists_and_is_not_symlinked() {
@@ -51,6 +53,7 @@ setup_login_item() {
   else
     warn "Couldn't find application '${app_path}' and so skipping setting up as a login item"
   fi
+  unset app_path
 }
 
 build_keybase_repo_url() {
@@ -293,6 +296,7 @@ app_list=(
 for app in "${app_list[@]}"; do
   setup_login_item "${app}"
 done
+unset app_list
 
 if is_non_zero_string "${KEYBASE_USERNAME}"; then
   ! command_exists keybase && error 'Keybase not found in the PATH. Aborting!!!'
@@ -356,6 +360,7 @@ EOF
   else
     warn "skipping generation of '${file_name}' since it already exists"
   fi
+  unset file_name
 
   ##################################################
   # Resurrect repositories that I am interested in #
@@ -364,6 +369,7 @@ EOF
   for file in $(ls "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml); do
     resurrect-repositories.rb -r "${file}"
   done
+  unset file
   success 'Successfully resurrected all tracked git repos'
 else
   warn "skipping resurrecting of repositories since '${PERSONAL_CONFIGS_DIR}' doesn't exist"
@@ -470,7 +476,7 @@ fi
 
 echo "\n"
 success '** Finished auto installation process: MANUALLY QUIT AND RESTART iTerm2 and Terminal apps **'
-yellow "Remember to set the 'RAYCAST_SETTINGS_PASSWORD' env var, and then run the 'capture-raycast-configs.sh' script to import your Raycast configuration into the new machine."
+echo "$(yellow "Remember to set the 'RAYCAST_SETTINGS_PASSWORD' env var, and then run the 'capture-raycast-configs.sh' script to import your Raycast configuration into the new machine.")"
 
 script_end_time=$(date +%s)
 echo "==> Script completed at: $(date)"

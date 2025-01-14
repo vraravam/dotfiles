@@ -192,8 +192,7 @@ command_exists code && alias code-gist='code "${DOTFILES_DIR}" "${PERSONAL_BIN_D
 _update_repo() {
   ! is_git_repo "${1}" && warn "skipping updating the repo since '${1}' doesn't exist or is not a git repo" && return
 
-  # Remove trailing slash if present
-  local folder="${1%\/}"
+  local folder="$(strip_trailing_slash "${1}")"
 
   local relative_path="$(git -C "${folder}" relative-path "${2}")"
   relative_path="${relative_path:-.}"

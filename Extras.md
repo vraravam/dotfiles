@@ -28,7 +28,7 @@ This script is useful to capture the preferences of the known applications (both
 This script is useful to capture the raycast preferences/configurations. It can be used to both export the preferences/settings (from the old system) or import them (into the new system)
 
   ```bash
-  export RAYCAST_SETTINGS_PASSWORD='my-passoword'
+  export RAYCAST_SETTINGS_PASSWORD='my-password'
   capture-raycast-configs.sh e "${PERSONAL_PROFILES_DIR}/extension-backups"
   capture-raycast-configs.sh i "${PERSONAL_PROFILES_DIR}/extension-backups"
   ```

@@ -32,6 +32,7 @@ find_in_folder_and_recompile() {
   for f in $(find "${1}" -maxdepth 5 -name "*.sh" -o -name "*.zsh" ! -path "**/node_modules/**"); do
     recompile_zsh_scripts "${f}"
   done
+  unset f
 }
 
 # Execute code in the background to not affect the current session

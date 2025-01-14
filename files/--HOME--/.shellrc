@@ -26,10 +26,10 @@ export LC_ALL='en_US.UTF-8'
 export LESSCHARSET='utf-8'
 
 export ZDOTDIR="${ZDOTDIR:-${HOME}}"
-export XDG_CACHE_HOME="${HOME}/.cache"
-export XDG_CONFIG_HOME="${HOME}/.config"
-export XDG_DATA_HOME="${HOME}/.local/share"
-export XDG_STATE_HOME="${HOME}/.local/state"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-${HOME}/.cache}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-${HOME}/.config}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-${HOME}/.local/share}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-${HOME}/.local/state}"
 
 # Moving homebrew env vars here itself so that the initial homebrew installation on a vanilla OS can be done/applied into memory immediately
 export ARCH="$(uname -m)"
@@ -178,6 +178,17 @@ is_non_zero_string() {
   ! test -z "${1}"
 }
 
+# Remove trailing slash if present
+strip_trailing_slash() {
+  echo "${1%\/}"
+}
+
+extract_last_segment() {
+  local without_trailing_slash="$(strip_trailing_slash "${1}")"
+  echo "${without_trailing_slash##*/}"
+  unset without_trailing_slash
+}
+
 is_file() {
   is_non_zero_string "${1}" && test -f "${1}"
 }
@@ -213,7 +224,7 @@ load_file_if_exists() {
 }
 
 delete_directory_if_exists() {
-  is_directory "${1}" && echo "$(red "Deleting") '$(green "${1}")'" && sudo rm -rf "${1}"
+  is_directory "${1}" && echo "$(red 'Deleting') '$(green "${1}")'" && sudo rm -rf "${1}"
 }
 
 command_exists() {
@@ -226,6 +237,8 @@ load_zsh_configs() {
   for file in "${file_list[@]}"; do
     load_file_if_exists "${ZDOTDIR}/${file}"
   done
+  unset file
+  unset file_list
 }
 
 append_to_path_if_dir_exists() {
@@ -299,10 +312,14 @@ clone_repo_into() {
       git -C "${target_folder}" switch "${target_branch}"
       local checked_out_branch="$(git -C "${target_folder}" branch --show-current)"
       [[ "${checked_out_branch}" != "${target_branch}" ]] && error "'${target_branch}' is not equal to the branch that was checked out: '${checked_out_branch}'; something is wrong. Please correct before retrying!"
+      unset checked_out_branch
     fi
+    unset tmp_folder
+    unset target_branch
   else
     warn "Skipping cloning of '${1}' since '${target_folder}' is already a git repo"
   fi
+  unset target_folder
 }
 
 # if is_macos; then

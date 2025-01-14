@@ -380,3 +380,10 @@ done
 
 # shellcheck disable=SC2090
 eval "${git_stage}"
+
+unset target_dir
+unset target_file
+unset app_pref
+unset git_stage
+unset git_cleanup
+unset operation

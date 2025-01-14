@@ -46,3 +46,7 @@ local new_repo_url="$(echo "${origin_remote_url}" | sed "s/${cloned_repo_owner}/
 git -C "${target_folder}" remote add upstream "${new_repo_url}"
 git -C "${target_folder}" fetch --all
 success "Successfully set new upstream remote for the repo in '$(yellow "${target_folder}")'"
+
+unset target_folder
+unset upstream_repo_owner
+unset cloned_repo_owner

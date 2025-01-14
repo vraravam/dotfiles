@@ -2,6 +2,15 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-48
+
+* *[.shellrc]* Extract common functions `strip_trailing_slash` and `extract_last_segment`.
+* Use `unset` to jettison local variables once they are no longer needed.
+
+#### Adopting these changes
+
+* After rebasing, just quit and restart the terminal emulator so that the `.shellrc` is loaded into memory.
+
 ### 1.0-47
 
 * *[capture-defaults.sh]* Added more macos preferences to be exported/imported for backup.

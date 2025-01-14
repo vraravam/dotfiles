@@ -33,12 +33,12 @@ else
 fi
 
 # Remove trailing slash if present
-folder="${folder%\/}"
+folder="$(strip_trailing_slash "${folder}")"
 
 ! is_git_repo "${folder}" && error "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!"
 
 # For the profiles repo alone, I don't care about retaining the history
-[[ "${folder##*/}" == "${KEYBASE_PROFILES_REPO_NAME}" ]] && force=Y
+[[ "$(extract_last_segment "${folder}")" == "${KEYBASE_PROFILES_REPO_NAME}" ]] && force=Y
 
 echo "$(yellow 'Processing folder'): '${folder}'"
 echo "$(yellow "Squash commits (will lose history!)"): '${force}'"
@@ -71,7 +71,7 @@ if [[ "${force}" == 'Y' ]]; then
 
   # touch .gitmodules
   # rm -rf "${folder}/FirefoxProfile/Profiles/DefaultProfile/chrome"
-  git -C "${folder}" submodule -q add -f git@github.com:drannex42/FirefoxSidebar.git '${folder}/FirefoxProfile/Profiles/DefaultProfile/chrome'
+  # git -C "${folder}" submodule -q add -f git@github.com:drannex42/FirefoxSidebar.git "${folder}/FirefoxProfile/Profiles/DefaultProfile/chrome"
 
   git -C "${folder}" add -A .
   git -C "${folder}" commit -qm "Initial commit: $(date)"
@@ -87,9 +87,10 @@ SKIP_SIZE_BEFORE=1 git -C "${folder}" cc
 
 if [[ "${git_url}" =~ 'keybase' ]]; then
   echo "$(blue 'Recreating') '$(yellow "${git_url}")'"
-  local git_remote_repo_name="${git_url##*/}"
+  local git_remote_repo_name="$(extract_last_segment "${git_url}")"
   keybase git delete -f "${git_remote_repo_name}"
   keybase git create "${git_remote_repo_name}"
+  unset git_remote_repo_name
 fi
 
 echo "$(blue 'Pushing') from $(yellow "${folder}") to $(yellow "${git_url}")"
@@ -102,3 +103,9 @@ git -C "${folder}" size
 # Resurrect crontab after this script finishes
 load_zsh_configs
 recron
+
+unset git_url
+unset git_user_name
+unset git_user_email
+unset git_branch_name
+unset folder

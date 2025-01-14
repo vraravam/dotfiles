@@ -48,6 +48,8 @@ vacuum_browser_profile_folder() {
   for file in "${file_array[@]}"; do
     find_and_destroy "${profile_folder}" 'f' "${file}"
   done
+  unset file
+  unset file_array
 
   directory_array=(
     'ABphotos'
@@ -69,9 +71,12 @@ vacuum_browser_profile_folder() {
   for directory in "${directory_array[@]}"; do
     find_and_destroy "${profile_folder}" 'd' "${directory}"
   done
+  unset directory
+  unset directory_array
 
   echo "--> Size after: $(folder_size "${profile_folder}")"
   success "Successfully processed profile folder for '${1}'"
+  unset profile_folder
 }
 
 process_browser() {

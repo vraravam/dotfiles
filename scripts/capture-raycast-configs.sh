@@ -94,3 +94,6 @@ EOF
 
   success "Successfully imported raycast configs from: $(yellow "${target_file}")"
 fi
+
+unset target_dir
+unset target_file
