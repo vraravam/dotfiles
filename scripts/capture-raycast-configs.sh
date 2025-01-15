@@ -25,6 +25,8 @@ local target_dir="${2}"
 local target_file="${target_dir}/Raycast.rayconfig"
 ensure_dir_exists "${target_dir}"
 
+! is_non_zero_string "${RAYCAST_SETTINGS_PASSWORD}" && error "Cannot proceed without the 'RAYCAST_SETTINGS_PASSWORD' env var set; Aborting!!!"
+
 if [[ "${1}" == 'e' ]]; then
   is_file "${target_dir}/Raycast.rayconfig" && rm -rf "${target_dir}/Raycast.rayconfig"
 
@@ -34,6 +36,20 @@ if [[ "${1}" == 'e' ]]; then
     tell application "System Events"
       key code 36
       delay 0.3
+
+      if (static text "Enter password" of window 1 of application process "Raycast") exists then
+        keystroke "${RAYCAST_SETTINGS_PASSWORD}"
+        delay 0.3
+
+        key code 36
+        delay 0.3
+
+        keystroke "${RAYCAST_SETTINGS_PASSWORD}"
+        delay 0.3
+
+        key code 36
+        delay 0.3
+      end if
 
       key code 5 using {command down, shift down}
       delay 0.3
@@ -55,8 +71,6 @@ EOF
   success "Successfully exported raycast configs to: $(yellow "${target_file}")"
 elif [[ "${1}" == 'i' ]]; then
   ! is_file "${target_file}" && error "Couldn't find file: '$(yellow "${target_file}")' for import operation; Aborting!!!"
-
-  ! is_non_zero_string "${RAYCAST_SETTINGS_PASSWORD}" && error "Cannot proceed without the 'RAYCAST_SETTINGS_PASSWORD' env var set; Aborting!!!"
 
   open raycast://extensions/raycast/raycast/import-settings-data
 
