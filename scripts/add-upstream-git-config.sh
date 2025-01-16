@@ -50,3 +50,4 @@ success "Successfully set new upstream remote for the repo in '$(yellow "${targe
 unset target_folder
 unset upstream_repo_owner
 unset cloned_repo_owner
+unset new_repo_url

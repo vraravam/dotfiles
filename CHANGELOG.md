@@ -2,6 +2,16 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-50
+
+* All Firefox-based browsers are now handled for their respective `chrome` folders to be tracked and get updated as git repos.
+* *[.aliases]* Added utility functions for `pull` and `push` similar to `st`, `count`, etc taking in an optional git repo.
+* *[.shellrc]* Moved a utility function (`set_ssh_folder_permissions`) so that it can be reused.
+
+#### Adopting these changes
+
+* After rebasing, just quit and restart the terminal emulator so that the `.envrc` is processed. (Hint: Use `allow_all_direnv_configs` to accept and process all `.envrc` files in your system.)
+
 ### 1.0-49
 
 * *[capture-raycast-configs.sh]* Automated initial password setup for Raycast export.

@@ -8,8 +8,6 @@
 
 type command_exists &> /dev/null 2>&1 || source "${HOME}/.shellrc"
 
-! command_exists keybase && error 'Keybase not found in the PATH. Aborting!!!'
-
 usage() {
   echo "$(red 'Usage'): $(yellow "${1} [-f] <repo folder>")"
   echo " $(yellow '-f'): force squashing into a single commit (profiles repo will automatically/always be forced anyways)"
@@ -87,6 +85,9 @@ SKIP_SIZE_BEFORE=1 git -C "${folder}" cc
 
 if [[ "${git_url}" =~ 'keybase' ]]; then
   echo "$(blue 'Recreating') '$(yellow "${git_url}")'"
+
+  ! command_exists keybase && error 'Keybase not found in the PATH. Aborting!!!'
+
   local git_remote_repo_name="$(extract_last_segment "${git_url}")"
   keybase git delete -f "${git_remote_repo_name}"
   keybase git create "${git_remote_repo_name}"

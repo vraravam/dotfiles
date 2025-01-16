@@ -56,10 +56,13 @@ else
   debug 'skipping updating brews & casks'
 fi
 
-local zen_profile_chrome_folder="${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/DefaultProfile/chrome"
-if is_git_repo "${zen_profile_chrome_folder}"; then
-  git -C "${zen_profile_chrome_folder}" pull
-  success 'Successfully updated natsumi-browser into the zen profile chrome folder'
-else
-  debug "skipping updating '${zen_profile_chrome_folder}' since it's not a git repo"
-fi
+section_header 'Updating all browser profile chrome folders'
+for folder in "${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome; do
+  if is_git_repo "${folder}"; then
+    git -C "${folder}" pull -r
+    success "Successfully updated natsumi-browser into the folder: '${folder}'"
+  else
+    debug "skipping updating '${folder}' since it's not a git repo"
+  fi
+done
+unset folder

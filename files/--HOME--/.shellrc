@@ -322,6 +322,18 @@ clone_repo_into() {
   unset target_folder
 }
 
+set_ssh_folder_permissions() {
+  local target_folder="${HOME}/.ssh"
+  ensure_dir_exists "${target_folder}"
+  if dir_has_children "${target_folder}"; then
+    chmod -R 600 "${target_folder}"/*
+    success "Successfully set permissions for all files in '${target_folder}'"
+  else
+    warn "Couldn't find any files in '${target_folder}' to set permissions for"
+  fi
+  unset target_folder
+}
+
 # if is_macos; then
   # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
   # TODO: Kept for reference purposes

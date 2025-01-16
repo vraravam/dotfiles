@@ -46,6 +46,12 @@ cc() {
 count() {
   _git_cmd "${1:-$(pwd)}" count
 }
+pull() {
+  _git_cmd "${1:-$(pwd)}" pull -r
+}
+push() {
+  _git_cmd "${1:-$(pwd)}" push
+}
 
 if command_exists 'run_all.sh'; then
   # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
@@ -227,7 +233,10 @@ status_all_repos() {
   _status_repo "${HOME}"
   _status_repo "${DOTFILES_DIR}"
   _status_repo "${PERSONAL_PROFILES_DIR}"
-  _status_repo "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/DefaultProfile/chrome"
+  for folder in "${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome; do
+    _status_repo "${folder}"
+  done
+  unset folder
 }
 
 # counts the number of commits in the specified repo

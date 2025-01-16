@@ -20,18 +20,6 @@ echo "==> Script started at: $(date)"
 #############################################################
 ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
 
-set_ssh_folder_permissions() {
-  local target_folder="${HOME}/.ssh"
-  ensure_dir_exists "${target_folder}"
-  if dir_has_children "${target_folder}"; then
-    sudo chmod -R 600 "${target_folder}"/*
-    success "Successfully set permissions for all files in '${target_folder}'"
-  else
-    warn "Couldn't find any files in '${target_folder}' to set permissions for"
-  fi
-  unset target_folder
-}
-
 # These repos can be alternatively tracked using git submodules, but by doing so, any new change in the submodule, will show up as a new commit in the main (home) repo. To avoid this "noise", I prefer to decouple them
 clone_omz_plugin_if_not_present() {
   clone_repo_into "${1}" "${ZSH_CUSTOM}/plugins/$(extract_last_segment "${1}")"
@@ -331,11 +319,19 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
     clone_repo_into "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"
 
     # Clone the natsumi-browser repo into the ZenProfile/Profiles/DefaultProfile/chrome folder and switch to the 'dev' branch
-    if is_directory "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/"; then
-      clone_repo_into "git@github.com:${UPSTREAM_GH_USERNAME}/natsumi-browser" "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/DefaultProfile/chrome" dev
-      # Setup the zen chrome repo's upstream if it doesn't already point to UPSTREAM_GH_USERNAME's repo
-      add-upstream-git-config.sh "${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/DefaultProfile/chrome" "${UPSTREAM_GH_USERNAME}"
+    local folder="${PERSONAL_PROFILES_DIR}/ZenProfile/"
+    if is_directory "${folder}"; then
+      clone_repo_into "git@github.com:${UPSTREAM_GH_USERNAME}/natsumi-browser" "${folder}/Profiles/DefaultProfile/chrome" dev
+    else
+      warn "skipping cloning of natsumi repo into the zen chrome folder since the folder doesn't exist: '${folder}/Profiles'"
     fi
+    unset folder
+
+    for folder in "${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome; do
+      # Setup the chrome repo's upstream if it doesn't already point to UPSTREAM_GH_USERNAME's repo
+      add-upstream-git-config.sh "${folder}" "${UPSTREAM_GH_USERNAME}"
+    done
+    unset folder
   else
     warn "skipping cloning of profiles repo since either the 'KEYBASE_PROFILES_REPO_NAME' or the 'PERSONAL_PROFILES_DIR' env var hasn't been set"
   fi
@@ -442,6 +438,15 @@ if command_exists recron; then
 else
   warn "skipping setting up of cron jobs since 'recron' couldn't be found in the PATH; Please set it up manually"
 fi
+
+###############################
+# Cleanup temp functions, etc #
+###############################
+unfunction clone_omz_plugin_if_not_present
+unfunction replace_executable_if_exists_and_is_not_symlinked
+unfunction setup_login_item
+unfunction build_keybase_repo_url
+unfunction ensure_safe_load_direnv
 
 # To install the latest versions of the hex, rebar and phoenix packages
 # mix local.hex --force && mix local.rebar --force
