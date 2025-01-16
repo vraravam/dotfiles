@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-49
+
+* *[capture-raycast-configs.sh]* Automated initial password setup for Raycast export.
+
 ### 1.0-48
 
 * *[.shellrc]* Extract common functions `strip_trailing_slash` and `extract_last_segment`.
