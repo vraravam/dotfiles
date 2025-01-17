@@ -1348,11 +1348,6 @@ fi
 # TODO: Capture all settings
 
 ###############################################################################
-# CCleaner                                                                    #
-###############################################################################
-# TODO: Capture all settings
-
-###############################################################################
 # Docker - TODO: Should we replace this with podman-equivalent?               #
 ###############################################################################
 if ask "Docker settings" Y; then
@@ -1375,7 +1370,7 @@ fi
 ###############################################################################
 # Flycut                                                                      #
 ###############################################################################
-if ask "Flycut settings" Y; then
+if ask "Flycut settings" N; then
   defaults write com.generalarcade.flycut loadOnStartup -bool true
   defaults write com.generalarcade.flycut pasteMovesToTop -bool true
   defaults write com.generalarcade.flycut rememberNum -int 60;
@@ -1697,6 +1692,9 @@ defaults write com.apple.screencapture type -string "png"
 
 # Disable shadow in screenshots
 # defaults write com.apple.screencapture disable-shadow -bool true
+
+# Screenshot thumbnail expires in 15 secs
+defaults write com.apple.screencaptureui thumbnailExpiration -float 15
 
 ###############################################################################
 # iCal                                                                        #

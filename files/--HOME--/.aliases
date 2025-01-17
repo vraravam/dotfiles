@@ -143,8 +143,8 @@ command_exists npm && alias npm_cleanup='npm cache clear --force'
 
 if command_exists docker; then
   # docker (TODO: Not sure why this is not done automatically by rancher when it starts up)
-  # alias start_docker="sudo ln -sf ${HOME}/.rd/docker.sock /var/run/docker.sock"
-  # alias stop_docker="sudo rm -rf /var/run/docker.sock"
+  alias start_docker="is_file ${HOME}/.rd/docker.sock && sudo ln -sf ${HOME}/.rd/docker.sock /var/run/docker.sock"
+  alias stop_docker="is_file /var/run/docker.sock && sudo rm -rf /var/run/docker.sock"
   alias docker_cleanup='docker system prune -a --volumes -f'
   alias docker_list='docker ps -a && docker images'
 

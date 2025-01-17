@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-51
+
+* *[.aliases]* Uncommented `start_docker` and `stop_docker` and made them defensive.
+* Removed 'ccleaner' preferences since I am no longer using it.
+
 ### 1.0-50
 
 * All Firefox-based browsers are now handled for their respective `chrome` folders to be tracked and get updated as git repos.

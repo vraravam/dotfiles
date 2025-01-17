@@ -330,7 +330,6 @@ app_array=(
   'com.microsoft.VSCodeInsiders'
   'com.mitchellh.ghostty'
   'com.parallels.Parallels Desktop'
-  'com.piriform.ccleaner'
   'com.qtproject'
   'com.raycast.macos'
   'com.titanium.OnyX.update'
