@@ -336,7 +336,6 @@ app_array=(
   'com.titanium.OnyX'
   'com.visualstudio.code.oss'
   'com.vscodium.VSCodiumInsiders'
-  'company.thebrowser.Browser'
   'eu.exelban.Stats'
   'familycircled'
   'info.marcel-dierkes.KeepingYouAwake'

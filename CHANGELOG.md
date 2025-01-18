@@ -2,6 +2,15 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-52
+
+* Removed auto-configuration from rancher desktop to not manage/change the `PATH` env var since that's already done in [this line](./files/--ZDOTDIR--/.zshrc#L155) of the .zshrc file.
+
+#### Adopting these changes
+
+* Start rancher desktop, go into its preferences, and change the setting to not automatically set the `PATH`.
+* Restart Terminal app and verify that `docker` is in your `PATH`.
+
 ### 1.0-51
 
 * *[.aliases]* Uncommented `start_docker` and `stop_docker` and made them defensive.
