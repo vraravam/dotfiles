@@ -31,11 +31,12 @@ brew 'bash'
 brew 'curl'
 brew 'git'
 brew 'less'
+brew 'rsync'
 brew 'vim'
 brew 'wget'
 brew 'zsh'
 
-# formulae pulled in for base configs
+# formulae pulled in for base configs (if these are absent, you will get errors and things won't work)
 brew 'diff-so-fancy'
 brew 'direnv'
 brew 'eza'
@@ -44,7 +45,7 @@ brew 'git-tools'
 brew 'mise'
 brew 'powerlevel10k'
 
-# casks pulled in for base configs
+# casks pulled in for base configs (if these are absent, you will get errors and things won't work)
 cask 'font-meslo-lg-nerd-font'
 cask 'iterm2'
 

@@ -32,7 +32,7 @@ In your forked repo, make the following changes, commit and push *via the Github
 ## How to upgrade / catch-up to new changes
 
 1. My recommendation is to *always* have all your customizations as a single commit on top of the upstream. This allows to easily rebase and adopt new changes in the future.
-2. Run the `git upreb` command when in this repo's folder (`${HOME}/.bin-oss`). Most of the times, this should simply rebase your changes on top of the latest upstream master
+2. Run the `git -C "${DOTFILES_DIR}" upreb` command. Most of the times, this should simply rebase your changes on top of the latest upstream master
    - *Hint:* Before pushing your changes to your remote, if you want to ensure (diff) that your old changes are retained (for eg in `Brewfile`) and no new/unnecessary changes are present, you can run the following 2 commands and review the diffs manually
 
    ```bash

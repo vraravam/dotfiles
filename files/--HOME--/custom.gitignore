@@ -62,7 +62,7 @@ __pycache__
 /.aspnet/DataProtection-Keys/
 /.bash_history
 /.bash_sessions
-/.bin-oss/
+/.dotfiles/
 /.boot2docker/*
 /.BuildServer
 /.cache/

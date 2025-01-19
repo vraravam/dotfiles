@@ -18,7 +18,7 @@ echo "==> Script started at: $(date)"
 #############################################################
 # Utility scripts and env vars used only within this script #
 #############################################################
-ZSH_CUSTOM="${ZSH_CUSTOM:-${ZSH:-${HOME}/.oh-my-zsh}/custom}"
+export ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH:-"${HOME}/.oh-my-zsh"}/custom"}"
 
 # These repos can be alternatively tracked using git submodules, but by doing so, any new change in the submodule, will show up as a new commit in the main (home) repo. To avoid this "noise", I prefer to decouple them
 clone_omz_plugin_if_not_present() {

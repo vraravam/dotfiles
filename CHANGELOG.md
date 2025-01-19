@@ -2,6 +2,24 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.0-53
+
+* *[Brewfile]* Added `rsync` to be used from homebrew so as to avoid the recently announced RCE vulnerability.
+* Changed the `DOTFILES_DIR` env var to use `${HOME}/.dotfiles` instead of `${HOME}/.bin-oss`.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then proceed with the following steps:
+
+  ```bash
+  cp "${HOME}/.bin-oss/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
+  mv "${HOME}/.bin-oss" "${HOME}/.dotfiles"
+  source "${HOME}/.shellrc"
+  install-dotfiles.rb
+  ```
+
+* Quit and restart the Terminal application.
+
 ### 1.0-52
 
 * Removed auto-configuration from rancher desktop to not manage/change the `PATH` env var since that's already done in [this line](./files/--ZDOTDIR--/.zshrc#L155) of the .zshrc file.
