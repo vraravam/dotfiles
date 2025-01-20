@@ -48,6 +48,7 @@ brew 'powerlevel10k'
 # casks pulled in for base configs (if these are absent, you will get errors and things won't work)
 cask 'font-meslo-lg-nerd-font'
 cask 'iterm2'
+cask 'keybase'
 
 return if is_base_install
 
@@ -71,7 +72,6 @@ cask 'firefox@nightly' #, greedy: true
 cask 'jordanbaird-ice'
 cask 'keepassxc@beta'
 cask 'keepingyouawake'
-cask 'keybase'
 cask 'keycastr'
 cask 'keyclu' if is_arm
 cask 'libreoffice'
