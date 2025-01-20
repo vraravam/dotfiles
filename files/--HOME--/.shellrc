@@ -61,7 +61,7 @@ export UPSTREAM_GH_USERNAME='vraravam' # Note: Do NOT change this
 export DOTFILES_DIR="${HOME}/.dotfiles"
 
 # Branch name of the dotfiles repo that's to be used for testing PR changes before merging
-export DOTFILES_BRANCH='master'
+export DOTFILES_BRANCH='rename-bin-oss'
 
 # All development codebases are cloned into a subfolder of this folder
 export PROJECTS_BASE_DIR="${HOME}/dev"
