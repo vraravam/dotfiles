@@ -171,6 +171,7 @@ error() {
 }
 
 section_header() {
+  echo "$(red '---------------------')"
   echo "$(blue '==>') $(purple "${1}")"
 }
 

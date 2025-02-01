@@ -233,7 +233,7 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
 
     # HACK: To fix issue where someone does not have any such 'DefaultProfile/chrome'.... (need to find a correct fix)
     # otherwise, the next 'for' loop fails and errors out
-    ensure_dir_exists "${PERSONAL_PROFILES_DIR}"/DummyProfile/Profiles/DefaultProfile/chrome
+    ensure_dir_exists "${PERSONAL_PROFILES_DIR}/DummyProfile/Profiles/DefaultProfile/chrome"
 
     for folder in "${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome; do
       # Setup the chrome repo's upstream if it doesn't already point to UPSTREAM_GH_USERNAME's repo
@@ -241,7 +241,7 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
     done
     unset folder
 
-    rm -rf "${PERSONAL_PROFILES_DIR}"/DummyProfile/
+    rm -rf "${PERSONAL_PROFILES_DIR}/DummyProfile/"
   else
     warn "skipping cloning of profiles repo since either the '$(yellow 'KEYBASE_PROFILES_REPO_NAME')' or the '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
   fi

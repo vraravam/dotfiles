@@ -22,7 +22,7 @@ setup_login_item() {
 }
 
 replace_executable_if_exists_and_is_not_symlinked() {
-  is_executable "${2}" && warn "skipping symlinking since '$(yellow "${2}")' is already present" && return
+  is_executable "${2}" && return
 
   if is_executable "${1}"; then
     rm -rf "${2}"

@@ -11,6 +11,7 @@
 # Upgrades and cleans up all regular outdated casks and libs (non-greedy)
 
 # TODO: Need to find cask for:
+#   Picocrypt
 #   Tinkertool
 #   ZoomHider
 
