@@ -75,7 +75,7 @@ brew 'tldr'
 cask 'aldente', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'AlDente'"
 cask 'appcleaner'
 cask 'brave-browser'
-cask 'clocker', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Clocker'"
+cask 'clocker', login_items: true, postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Clocker'"
 cask 'fliqlo'
 cask 'firefox@nightly' #, greedy: true
 cask 'jordanbaird-ice', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Ice'" if OS::Mac::version >= 14
@@ -91,7 +91,7 @@ cask 'onlyoffice'
 cask 'onyx'
 cask 'protonvpn'
 cask 'rancher'
-cask 'raycast', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Raycast'"
+cask 'raycast', login_items: true, postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Raycast'"
 # cask 'silicon' if is_arm
 cask 'stats', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Stats'"
 cask 'the-unarchiver'
