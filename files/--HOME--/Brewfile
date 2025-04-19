@@ -73,7 +73,7 @@ brew 'tldr'
 cask 'aldente', postinstall: "type setup_login_item &> /dev/null 2>&1 || source \"${HOME}/.aliases\"; setup_login_item 'AlDente'"
 cask 'appcleaner'
 cask 'brave-browser'
-cask 'clocker', postinstall: "type setup_login_item &> /dev/null 2>&1 || source \"${HOME}/.aliases\"; setup_login_item 'Clocker'"
+cask 'clocker', login_items: true, postinstall: "type setup_login_item &> /dev/null 2>&1 || source \"${HOME}/.aliases\"; setup_login_item 'Clocker'"
 cask 'fliqlo'
 cask 'firefox@nightly' #, greedy: true
 cask 'jordanbaird-ice', postinstall: "type setup_login_item &> /dev/null 2>&1 || source \"${HOME}/.aliases\"; setup_login_item 'Ice'"
@@ -88,10 +88,11 @@ cask 'onlyoffice'
 cask 'onyx'
 cask 'protonvpn'
 cask 'rancher'
-cask 'raycast', postinstall: "type setup_login_item &> /dev/null 2>&1 || source \"${HOME}/.aliases\"; setup_login_item 'Raycast'"
+cask 'raycast', login_items: true, postinstall: "type setup_login_item &> /dev/null 2>&1 || source \"${HOME}/.aliases\"; setup_login_item 'Raycast'"
 # cask 'silicon' if is_arm
 cask 'stats', postinstall: "type setup_login_item &> /dev/null 2>&1 || source \"${HOME}/.aliases\"; setup_login_item 'Stats'"
 cask 'the-unarchiver'
+# cask 'thunderbird@daily'
 cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when compared to VSCode
 cask 'zen-browser@twilight'
 cask 'zoom'
