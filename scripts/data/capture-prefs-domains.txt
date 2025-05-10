@@ -272,6 +272,7 @@ com.microsoft.shared
 com.microsoft.teams2.helper
 com.microsoft.VSCodeInsiders
 com.mitchellh.ghostty
+com.objective-see.KnockKnock
 com.ovatar.batteryapp
 com.parallels.Parallels Desktop
 com.pdfeditor.pdfeditormac

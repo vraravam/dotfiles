@@ -2,6 +2,12 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.1-18
+
+* *[Brewfile]* Ice is not installed on MacOS < 14, added KnockKnock.
+* *[fresh-install-of-osx.sh]* Use natsumi-browser in Firefox profile (similar to Zen profile).
+* Major refactoring for ruby scripts to optimize for time and use of ruby idioms.
+
 ### 1.1-17
 
 * *[software-updates-cron.sh]* Removed parallelism (something that was introduced in the previous version when optimzing using gemini) - since this was causing lots of confusion when looking through the logs.

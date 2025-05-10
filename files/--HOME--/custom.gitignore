@@ -253,6 +253,7 @@ tmp/
 /.config/bat/config
 /.config/btop/btop.conf
 /.config/mise/config.toml
+/.config/rubocop/config.yml
 /.cshrc
 /.curlrc
 /.default-gems

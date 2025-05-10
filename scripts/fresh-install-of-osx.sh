@@ -222,14 +222,18 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
   if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
     clone_repo_into "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"
 
-    # Clone the natsumi-browser repo into the ZenProfile/Profiles/DefaultProfile/chrome folder and switch to the 'dev' branch
-    local folder="${PERSONAL_PROFILES_DIR}/ZenProfile"
-    if is_directory "${folder}"; then
-      clone_repo_into "git@github.com:${UPSTREAM_GH_USERNAME}/natsumi-browser" "${folder}/Profiles/DefaultProfile/chrome" dev
-    else
-      warn "skipping cloning of natsumi repo into the zen chrome folder since the folder '$(yellow "${folder}/Profiles")' doesn't exist"
-    fi
-    unset folder
+    # Clone the natsumi-browser repo into the FirefoxProfile and ZenProfile chrome folders and switch to the 'dev' branch
+    local -a browsers=(FirefoxProfile ZenProfile)
+    for browser in "${(@kv)browsers}"; do
+      local folder="${PERSONAL_PROFILES_DIR}/${browser}"
+      if is_directory "${folder}"; then
+        clone_repo_into "git@github.com:${UPSTREAM_GH_USERNAME}/natsumi-browser" "${folder}/Profiles/DefaultProfile/chrome" dev
+      else
+        warn "skipping cloning of natsumi repo into the '$(yellow "${browser}")' folder since the folder '$(yellow "${folder}/Profiles/DefaultProfile/chrome")' doesn't exist"
+      fi
+      unset folder
+    done
+    unset browsers
 
     # Use zsh glob qualifiers to only loop if matches exist and are directories
     # (N) nullglob: if no match, the pattern expands to nothing

@@ -78,11 +78,12 @@ cask 'brave-browser'
 cask 'clocker', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Clocker'"
 cask 'fliqlo'
 cask 'firefox@nightly' #, greedy: true
-cask 'jordanbaird-ice', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Ice'"
+cask 'jordanbaird-ice', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Ice'" if OS::Mac::version >= 14
 cask 'keepassxc@beta'
 cask 'keepingyouawake', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'KeepingYouAwake'"
 cask 'keycastr'
 cask 'keyclu' if is_arm
+cask 'knockknock'
 # cask 'monolingual'
 cask 'notunes'
 cask 'ollama', restart_service: :changed
@@ -97,7 +98,7 @@ cask 'the-unarchiver'
 # cask 'thunderbird@daily'
 cask 'utm'
 cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when compared to VSCode
-cask 'zen-browser@twilight'
+cask 'zen@twilight'
 cask 'zoom'
 
 brew 'mas'

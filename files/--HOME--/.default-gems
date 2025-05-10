@@ -1,9 +1,9 @@
+rubocop
 rufo
-# bundler
-# rake
-# rubocop
-# bundler-audit
-# ruby_audit
 # brakeman
+# bundler
+# bundler-audit
 # metric_fu
 # mry
+# rake
+# ruby_audit
