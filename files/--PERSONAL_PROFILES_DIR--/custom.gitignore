@@ -96,8 +96,8 @@ TransportSecurity
 /*Profile/**/tmp
 /*Profile/**/weave
 
-# ignore git repo present in the ZenProfile's chrome directory
-/ZenProfile/Profiles/**/chrome
+# ignore git repo present in the browser's chrome directory
+/*Profile/Profiles/DefaultProfile/**/chrome
 
 /Raycast/extensions/
 /Raycast/NodeJS/runtime/

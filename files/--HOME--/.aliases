@@ -198,7 +198,7 @@ if is_zsh; then
 fi
 
 # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
-command_exists code && alias code-gist='code "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${HOME}/.tool-versions" "${PERSONAL_PROFILES_DIR}/.gitignore"'
+command_exists code && alias code-gist='code "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${HOME}/.ssh" "${HOME}/.tool-versions" "${PERSONAL_PROFILES_DIR}/.gitignore"'
 
 # resurrects the cron entries based on the '${PERSONAL_CONFIGS_DIR}/crontab.txt' file
 recron() {

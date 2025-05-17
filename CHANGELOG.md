@@ -2,6 +2,22 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 1.1-20
+
+* *[Brewfile]* Trial to check if returning `0` will make the fresh installation script continue without needing to be rerun.
+* Minor tweaks to fix the gitignore for profiles repo.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then proceed with the following steps:
+
+  ```bash
+  cp "${HOME}/.dotfiles/files/--PERSONAL_PROFILES_DIR--/custom.gitignore" "${PERSONAL_PROFILES_DIR}/.gitignore"
+  install-dotfiles.rb
+  ```
+
+* Quit and restart the Terminal application.
+
 ### 1.1-19
 
 * Moved a lot of the shell functions from `.aliases` into individual files in `${XDG_CONFIG_HOME}/zsh/` so that they can be autoloaded/lazy-loaded on-demand. (Theoretically, this should improve shell startup time)

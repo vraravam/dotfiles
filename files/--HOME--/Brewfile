@@ -56,7 +56,7 @@ cask 'font-meslo-lg-nerd-font'
 cask 'iterm2'
 cask 'keybase', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Keybase'"
 
-return true if is_base_install
+return 0 if is_base_install
 
 # formulae pulled in for advanced configs (these are optional, but still recommended)
 brew 'bat'

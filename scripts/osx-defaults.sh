@@ -128,21 +128,26 @@ if ask "Show remaining battery percentage" Y; then
   defaults write com.apple.menuextra.battery ShowPercent -string "YES"
 fi
 
-if ask "Turn off Battery in menubar" Y; then
-  defaults -currentHost write com.apple.controlcenter Battery 8
-fi
-
 if ask "Show remaining battery percentage" Y; then
   defaults -currentHost write com.apple.controlcenter BatteryShowPercentage -bool true
 fi
 
+if ask "Turn off Battery in menubar" Y; then
+  defaults write com.apple.controlcenter "NSStatusItem Visible Battery" 0
+fi
+
 if ask "Show bluetooth in menubar" Y; then
-  defaults -currentHost write com.apple.controlcenter Bluetooth 2
+  defaults write com.apple.controlcenter "NSStatusItem Visible Bluetooth" 1
 fi
 
 if ask "Keep keyboard brightness at max value" Y; then
   defaults -currentHost write com.apple.controlcenter KeyboardBrightness 8
 fi
+
+# TODO: Doesn't seem to work (tried in sequoia 15.5)
+# if ask "Turn off keyboard backlight auto-dim" Y; then
+#   defaults write com.apple.CoreBrightness KeyboardBacklightAutoDim -bool false
+# fi
 
 ###############################################################################
 # General UI/UX                                                               #
