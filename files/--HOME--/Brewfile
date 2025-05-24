@@ -54,7 +54,7 @@ brew 'powerlevel10k'
 # casks pulled in for base configs (if these are absent, you will get errors and things won't work)
 cask 'font-meslo-lg-nerd-font'
 cask 'iterm2'
-cask 'keybase', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Keybase'"
+cask 'keybase', login_items: true
 
 return 0 if is_base_install
 
@@ -70,14 +70,12 @@ brew 'ripgrep'
 brew 'syncthing'
 brew 'tldr'
 
-# cask 'batteryboi'
-# cask 'battery-toolkit' #, postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Battery Toolkit'"
-cask 'aldente', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'AlDente'"
+cask 'aldente', login_items: true
 cask 'brave-browser'
-cask 'clocker', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Clocker'"
+cask 'clocker', login_items: true
 cask 'fliqlo'
 cask 'firefox@nightly' #, greedy: true
-cask 'jordanbaird-ice', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Ice'" if OS::Mac::version >= 14
+cask 'jordanbaird-ice', login_items: true
 cask 'keepassxc@beta'
 cask 'keycastr'
 cask 'keyclu' if is_arm
@@ -87,12 +85,12 @@ cask 'notunes'
 cask 'ollama', restart_service: :changed
 cask 'onlyoffice'
 cask 'onyx'
-cask 'pearcleaner', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'PearCleaner'"
+cask 'pearcleaner', login_items: true
 cask 'protonvpn'
 cask 'rancher'
-cask 'raycast', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Raycast'"
+cask 'raycast', login_items: true
 # cask 'silicon' if is_arm
-cask 'stats', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Stats'"
+cask 'stats', login_items: true
 cask 'the-unarchiver'
 # cask 'thunderbird@daily'
 cask 'utm'
