@@ -1,0 +1,33 @@
+#compdef update_all_repos
+#!/usr/bin/env zsh
+
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
+# Updates the specified repo (ie creates a local commit of changed files that I am not interested in verifying, but which need to be committed into that repo)
+# internal function: not to be called separately
+_update_repo() {
+  ! is_git_repo "${1}" && warn "skipping updating the repo since '$(yellow "${1}")' doesn't exist or is not a git repo" && return
+
+  local folder="$(strip_trailing_slash "${1}")"
+
+  local relative_path="$(git -C "${folder}" relative-path "${2}")"
+  relative_path="${relative_path:-.}"
+
+  # shellcheck disable=SC2005
+  section_header "Updating '${folder}'"
+  rm -rfv "${folder}/.git/index.lock" "${folder}/.git/hooks"
+
+  git -C "${folder}" add "${relative_path}"
+
+  # shellcheck disable=SC2086
+  git -C "${folder}" add "${relative_path}" && git -C "${folder}" sci "Incremental commit: $(date)"
+}
+
+# Updates the home and profiles repos
+update_all_repos() {
+  # use full-fledged path (based on env vars for consistency and maintenance)
+  _update_repo "${HOME}" "${PERSONAL_CONFIGS_DIR}/defaults"
+  _update_repo "${PERSONAL_PROFILES_DIR}" "${PERSONAL_PROFILES_DIR}"
+}
+
+update_all_repos "$@"

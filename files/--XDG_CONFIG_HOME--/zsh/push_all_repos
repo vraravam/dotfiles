@@ -1,0 +1,31 @@
+#compdef push_all_repos
+#!/usr/bin/env zsh
+
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
+# Pushes the specified repo
+# internal function: not to be called separately
+_push_repo() {
+  ! is_git_repo "${1}" && warn "skipping pushing the repo since '$(yellow "${1}")' doesn't exist or is not a git repo" && return
+
+  # shellcheck disable=SC2005
+  section_header "Pushing $(yellow "${1}")"
+  git -C "${1}" push --force-with-lease
+  if [ $? -eq 0 ]; then
+    success "Successfully pushed '$(yellow "${1}")'"
+  else
+    warn "Couldn't push '$(yellow "${1}")'"
+  fi
+}
+
+# Pushes the home and profiles repos to their respective remotes (disables and re-enables cron while doing this operation)
+push_all_repos() {
+  crontab -r &> /dev/null 2>&1
+
+  _push_repo "${HOME}"
+  _push_repo "${PERSONAL_PROFILES_DIR}"
+
+  recron
+}
+
+push_all_repos "$@"

@@ -1,0 +1,196 @@
+# file location: ${HOME}/Brewfile
+
+# This file is used along with the `brew bundle` command to ensure that required packages and apps are installed.
+# Also can be used to ensure that any package/apps that were installed as experimentation are uninstalled from the system.
+# For a more detailed explanation of the philosophy/reasoning behind this file, please see https://openfolder.sh/macos-migrations-with-brewfile
+
+# These are the common shell aliases that I have setup in the `${HOME}/.aliases` file for ease of running/typing (and also don't need to remember all these commands by-heart!). If you are using my `${HOME}/.aliases`, they will already be present for you. If not, you can then set these up in the respective dotfile of your choice
+# alias bcg='brew outdated --greedy'  # List all casks that are outdated like a "dry-run" (and which have version marked as 'latest')
+# alias bcug='brew upgrade --greedy'  # Upgrades all casks that are outdated (and which have version marked as 'latest')
+# alias bupc='brew bundle check || brew bundle --all --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true'
+# Upgrades and cleans up all regular outdated casks and libs (non-greedy)
+
+# TODO: Need to find cask for:
+#   Battery Toolkit
+#   Picocrypt
+#   Tinkertool
+#   ZoomHider
+
+# set global preferences for all 'brew install' commands
+cask_args appdir: '/Applications', fontdir: '/Library/Fonts', no_quarantine: true, adopt: true
+
+# java_present = system('/usr/libexec/java_home --failfast')
+is_arm = Hardware::CPU.arm?
+
+is_base_install = ENV.has_key?('HOMEBREW_BASE_INSTALL')
+puts "Only performing base installation!" if is_base_install
+
+# ----------------------------------------------------------------------------------------------------------
+# Register the at_exit hook in the beginning itself
+# TODO: This doesn't solve the issue about performing a custom action when a specific formula/cask is (re)installed
+at_exit { system('post-brew-install.sh') }
+
+tap 'romkatv/powerlevel10k'
+
+# formulae pulled in from homebrew to replace system equivalents to fix any security issues since the OS was released
+brew 'bash'
+brew 'curl'
+brew 'git'
+brew 'less'
+brew 'rsync'
+brew 'vim'
+brew 'wget'
+brew 'zsh'
+
+# formulae pulled in for base configs (if these are absent, you will get errors and things won't work)
+brew 'diff-so-fancy'
+brew 'direnv'
+brew 'eza'
+brew 'git-extras'
+brew 'git-tools'
+brew 'mise'
+brew 'powerlevel10k'
+
+# casks pulled in for base configs (if these are absent, you will get errors and things won't work)
+cask 'font-meslo-lg-nerd-font'
+cask 'iterm2'
+cask 'keybase', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Keybase'"
+
+return 0 if is_base_install
+
+# formulae pulled in for advanced configs (these are optional, but still recommended)
+brew 'bat'
+brew 'btop'
+brew 'git-gui'
+brew 'jq'
+brew 'moreutils'
+brew 'ncdu'
+brew 'prettyping'
+brew 'ripgrep'
+brew 'syncthing'
+brew 'tldr'
+
+cask 'aldente', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'AlDente'"
+cask 'brave-browser'
+cask 'clocker', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Clocker'"
+cask 'fliqlo'
+cask 'firefox@nightly' #, greedy: true
+cask 'jordanbaird-ice', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Ice'" if OS::Mac::version >= 14
+cask 'keepassxc@beta'
+cask 'keycastr'
+cask 'keyclu' if is_arm
+cask 'ollama', restart_service: :changed
+cask 'onlyoffice'
+cask 'onyx'
+cask 'pearcleaner'
+cask 'protonvpn'
+cask 'rancher'
+cask 'raycast', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Raycast'"
+cask 'stats', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Stats'"
+cask 'the-unarchiver'
+cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when compared to VSCode
+cask 'zen@twilight'
+cask 'zoom'
+
+brew 'mas'
+mas 'PDFgear', id: 6469021132
+
+# VSCode extensions
+# Note: I don't want brew to silently install VS Code (which is what it does currently if the following lines are present but it doesn't find code!)
+is_vscode_installed = !`PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}" which code`.chomp.empty?  # explicitly set PATH since the shell being opened doesn't run the login configs
+if is_vscode_installed
+  # This is failing on different machines
+  # vscode 'eamodio.gitlens'
+  # vscode 'formulahendry.code-runner'
+  # vscode 'nicolasvuillamy.vscode-groovy-lint'
+  # vscode 'redhat.java'
+  # vscode 'sonarsource.sonarlint-vscode'
+  # vscode 'vscjava.vscode-java-debug'
+  # vscode 'vscjava.vscode-java-pack'
+  # vscode 'vscjava.vscode-java-test'
+  # vscode 'vscjava.vscode-lombok'
+  # vscode 'wholroyd.jinja'
+  vscode 'brandonkirbyson.vscode-animations'
+  vscode 'britesnow.vscode-toggle-quotes'
+  vscode 'codezombiech.gitignore'
+  vscode 'davidanson.vscode-markdownlint'
+  vscode 'dbaeumer.vscode-eslint'
+  vscode 'digitalbrainstem.javascript-ejs-support'
+  vscode 'drcika.apc-extension'
+  vscode 'editorconfig.editorconfig'
+  vscode 'esbenp.prettier-vscode'
+  vscode 'genuitecllc.codetogether'
+  vscode 'google.geminicodeassist'
+  vscode 'ibm.output-colorizer'
+  vscode 'mechatroner.rainbow-csv'
+  vscode 'mikestead.dotenv'
+  vscode 'mkhl.direnv'
+  vscode 'ms-azuretools.vscode-docker'
+  vscode 'ms-vscode.vscode-typescript-next'
+  vscode 'oderwat.indent-rainbow'
+  vscode 'orta.vscode-jest'
+  vscode 'redhat.vscode-yaml'
+  vscode 'richie5um2.vscode-sort-json'
+  vscode 'shan.code-settings-sync'
+  vscode 'shopify.ruby-lsp'
+  vscode 'tchayen.markdown-links'
+  vscode 'tyriar.sort-lines'
+  vscode 'vscode-icons-team.vscode-icons'
+  vscode 'wayou.vscode-todo-highlight'
+  vscode 'wmaurer.change-case'
+  vscode 'yzhang.markdown-all-in-one'
+end
+
+# ----------------------------------------------------------------------------------------------------------
+# Moved these brew and cask lines to clean up the noise from the above alphabetically sorted lists
+
+# ---- zen-browser development
+# brew 'gnu-tar'
+# brew 'mercurial'
+
+# ---- docker utilities
+# brew 'dive'   # docker layers inspection on steroids
+# brew 'docker-diff'
+# brew 'docker-slim'  # TODO: investigate if the http-probe is a deal-breaker
+# brew 'hadolint'     # lint Dockerfiles (similar to shellcheck for shell scripts)
+# brew 'kubernetes-cli', link: true   # Note: Had to do this: rm /usr/local/bin/kubectl && brew link --overwrite kubernetes-cli
+# brew 'kubernetes-helm'
+
+# ---- git utilities
+# brew 'git-crypt'
+
+# ---- tmux utilities
+# brew 'tmux'
+# brew 'reattach-to-user-namespace' # Needed if using tmux (to be able to access the macos clipboard from within tmux)
+
+# ---- general utilities
+# brew 'fzy'
+# brew 'gradle-completion'
+# brew 'gs'   # used for compressing PDFs
+# brew 'libressl', link: true
+# brew 'localstack'
+# brew 'shellcheck'
+# brew 'speedtest-cli'
+# brew 'watch'
+# brew 'wifi-password'
+
+# ---- casks
+# cask 'cloudflare-warp'
+# cask 'dbeaver-community'
+# cask 'ghostty'
+# cask 'git-credential-manager'   # https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git
+# cask 'intellij-idea-ce'
+# cask 'kdiff3'
+# cask 'knockknock'
+# cask 'licecap'
+# cask 'lulu'
+# cask 'microsoft-remote-desktop'
+# cask 'microsoft-teams'
+# cask 'monolingual'
+# cask 'netspot'
+# cask 'ngrok'
+# cask 'notunes'
+# cask 'silicon' if is_arm
+# cask 'tempbox'
+# cask 'thunderbird@daily'
+# cask 'utm'

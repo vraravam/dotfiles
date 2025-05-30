@@ -1,0 +1,4 @@
+export rvm_path="${HOME}/.rvm"
+export rvm_pretty_print_flag=1
+rvm_autoupdate_flag=2
+export rvm_max_time_flag=20

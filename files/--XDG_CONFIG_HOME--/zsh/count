@@ -1,0 +1,14 @@
+#compdef count
+#!/usr/bin/env zsh
+
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
+# git command: count
+# Note: Use a function so that it can accept parameters
+count() {
+  local folder="${1:-$(pwd)}"
+  section_header "Processing ${folder}"
+  git -C "${folder}" count
+}
+
+count "$@"

@@ -1,0 +1,22 @@
+#compdef count_all_repos
+#!/usr/bin/env zsh
+
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
+# Counts the number of commits in the specified repo
+# internal function: not to be called separately
+_count_repo() {
+  ! is_git_repo "${1}" && warn "skipping finding count of the repo since '$(yellow "${1}")' doesn't exist or is not a git repo" && return
+
+  count "${1}"
+}
+
+# Reports the count of the following repos: HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR
+count_all_repos() {
+  _count_repo "${HOME}"
+  _count_repo "${DOTFILES_DIR}"
+  _count_repo "${PERSONAL_PROFILES_DIR}"
+  # Note: not interested in the count for the ZenProfile's chrome folder since that's an external repo
+}
+
+count_all_repos "$@"

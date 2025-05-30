@@ -1,0 +1,14 @@
+# ~/.railsrc
+
+#--template=http://example.com/my_app_template
+#--database=postgresql
+
+--webpack
+--database=postgresql
+--skip-action-cable
+#--skip-action-mailer
+#--skip-bundle
+#--skip-javascript
+--skip-spring
+--skip-test
+-m https://raw.github.com/RailsApps/rails-composer/master/composer.rb
