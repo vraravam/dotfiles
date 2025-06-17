@@ -54,7 +54,7 @@ brew 'powerlevel10k'
 # casks pulled in for base configs (if these are absent, you will get errors and things won't work)
 cask 'font-meslo-lg-nerd-font'
 cask 'iterm2'
-cask 'keybase', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Keybase'"
+cask 'keybase', login_items: true
 
 return 0 if is_base_install
 
@@ -70,15 +70,15 @@ brew 'ripgrep'
 brew 'syncthing'
 brew 'tlrc'
 
-cask 'aldente', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'AlDente'"
-cask 'boring-notch', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'boringNotch'" if OS::Mac::version >= 14
+cask 'aldente', login_items: true
+cask 'boring-notch', login_items: true if OS::Mac::version >= 14
 cask 'brave-browser'
-cask 'clocker', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Clocker'"
+cask 'clocker', login_items: true
 cask 'firefox@nightly' #, greedy: true
 cask 'fliqlo'
 cask 'google-chrome@beta'
 cask 'grayjay'
-cask 'jordanbaird-ice@beta', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Ice'" if OS::Mac::version >= 14
+cask 'jordanbaird-ice@beta', login_items: true
 cask 'keepassxc@beta'
 cask 'keycastr'
 cask 'keyclu' if is_arm
@@ -88,8 +88,8 @@ cask 'onyx' unless is_beta_os
 cask 'pearcleaner'
 cask 'protonvpn'
 cask 'rancher'
-cask 'raycast', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Raycast'"
-cask 'stats', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Stats'"
+cask 'raycast', login_items: true
+cask 'stats', login_items: true
 cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when compared to VSCode
 cask 'zen@twilight'
 cask 'zoom'
