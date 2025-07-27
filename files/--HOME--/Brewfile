@@ -74,7 +74,7 @@ cask 'brave-browser'
 cask 'clocker', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Clocker'"
 cask 'firefox@nightly' #, greedy: true
 cask 'fliqlo'
-cask 'floorp'
+cask 'google-chrome@beta'
 cask 'jordanbaird-ice', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Ice'" if OS::Mac::version >= 14
 cask 'keepassxc@beta'
 cask 'keycastr'
@@ -188,6 +188,7 @@ brew 'mercurial'
 # cask 'intellij-idea-ce'
 # cask 'kdiff3'
 # cask 'knockknock'
+# cask 'floorp' # Doesn't have keyboard shortcuts to switch across workspaces
 # cask 'licecap'
 # cask 'lulu'
 # cask 'microsoft-remote-desktop'

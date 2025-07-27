@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 2.0.15
+
+* *[.gitconfig]* Fixed issues with incorrect sorting configurations.
+
 ### 2.0.14
 
 * Removed `ZenProfile` from being processed to inject Natsumi for user chrome.

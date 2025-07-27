@@ -195,7 +195,7 @@
 [branch]
   autoSetupMerge = true
   autoSetupRebase = always
-  sort = committerdate # sort branches by last commit date
+  sort = -committerdate # sort branches by commit date (latest first)
 [checkout]
   defaultRemote = origin
   workers = 0
@@ -216,6 +216,7 @@
 [core]
   autocrlf = input
   commentChar = *
+  compression = 9
   excludesFile = ~/.gitignore_global
   fileMode = true
   fsMonitor = true
@@ -276,7 +277,7 @@
 [interactive]
   diffFilter = diff-so-fancy --patch
 [maintenance]
-  auto = false
+  auto = true
   strategy = incremental
 [log]
   decorate = auto
@@ -315,6 +316,7 @@
   showPatch = true
   untracked = true
 [status]
+  branch = true
   showStash = true
   showUntrackedFiles = all
   # Convert to 'true' in case you work with submodules - but, will have visible perf slowdown
@@ -323,7 +325,7 @@
   fetchJobs = 0
   # recurse = true
 [tag]
-  sort = version:refname
+  sort = -version:refname   # sort tags by version number (descending)
 [transfer]
   fsckObjects = false
 [user]
