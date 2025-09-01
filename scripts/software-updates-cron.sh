@@ -13,7 +13,6 @@ load_zsh_configs
 
 script_start_time=$(date +%s)
 section_header "Starting software updates at $(date)"
-echo "==> Starting independent updates in parallel..."
 
 if command_exists bupc; then
   section_header 'Updating brews'
@@ -62,23 +61,25 @@ else
   debug 'skipping updating omz'
 fi
 
-local firefox_profiles="${PERSONAL_PROFILES_DIR}/FirefoxProfile/Profiles/DefaultProfile"
-if is_directory "${firefox_profiles}"; then
-  section_header "Update betterfox user.js in ${firefox_profiles}"
-  curl --retry 3 --retry-delay 5 --retry-all-errors -fsSL https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js -o "${firefox_profiles}/user.js" && success "Updated betterfox user.js" || warn "Failed to update betterfox user.js"
-else
-  debug "Skipping betterfox user.js update, directory not found: ${firefox_profiles}"
-fi
-unset firefox_profiles
+# Commenting out since I have started using rapidfox user.js settings
+# local firefox_profiles="${PERSONAL_PROFILES_DIR}/FirefoxProfile/Profiles/DefaultProfile"
+# if is_directory "${firefox_profiles}"; then
+#   section_header "Update betterfox user.js in ${firefox_profiles}"
+#   curl --retry 3 --retry-delay 5 --retry-all-errors -fsSL https://raw.githubusercontent.com/yokoffing/Betterfox/main/user.js -o "${firefox_profiles}/user.js" && success "Updated betterfox user.js" || warn "Failed to update betterfox user.js"
+# else
+#   debug "Skipping betterfox user.js update, directory not found: ${firefox_profiles}"
+# fi
+# unset firefox_profiles
 
-local zen_profiles="${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/DefaultProfile"
-if is_directory "${zen_profiles}"; then
-  section_header "Update betterzen user.js in ${zen_profiles}"
-  curl --retry 3 --retry-delay 5 --retry-all-errors -fsSL https://raw.githubusercontent.com/yokoffing/Betterfox/main/zen/user.js -o "${zen_profiles}/user.js" && success "Updated betterzen user.js" || warn "Failed to update betterzen user.js"
-else
-  debug "Skipping betterzen user.js update, directory not found: ${zen_profiles}"
-fi
-unset zen_profiles
+# Commenting out since I have started using rapidfox user.js settings
+# local zen_profiles="${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/DefaultProfile"
+# if is_directory "${zen_profiles}"; then
+#   section_header "Update betterzen user.js in ${zen_profiles}"
+#   curl --retry 3 --retry-delay 5 --retry-all-errors -fsSL https://raw.githubusercontent.com/yokoffing/Betterfox/main/zen/user.js -o "${zen_profiles}/user.js" && success "Updated betterzen user.js" || warn "Failed to update betterzen user.js"
+# else
+#   debug "Skipping betterzen user.js update, directory not found: ${zen_profiles}"
+# fi
+# unset zen_profiles
 
 local natsumi_codebase="${PROJECTS_BASE_DIR}/oss/natsumi-browser"
 if is_git_repo "${natsumi_codebase}"; then
@@ -130,7 +131,6 @@ section_header 'Report status of home and profiles repos'
 status_all_repos
 
 section_header 'Updating all browser profile chrome folders'
-# --- Parallel Chrome Folder Updates Start ---
 # Use zsh glob qualifiers to only loop if matches exist and are directories
 # (N) nullglob: if no match, the pattern expands to nothing
 # (/): only match directories
@@ -144,7 +144,7 @@ if [[ ${#chrome_folders[@]} -gt 0 ]]; then
       debug "skipping update for non-repo: '$(yellow "${folder}")'"
     fi
   done
-  echo "==> Finished updating chrome folders."
+  success 'Finished updating chrome folders'
   unset folder
 fi
 unset chrome_folders

@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 2.0.21
+
+* Commented out the update to FF & Zen browser's user.js scripts since I have started using RapidFox settings.
+
 ### 2.0.20
 
 * Trying to grayjay for youtube replacement.
