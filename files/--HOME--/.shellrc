@@ -158,7 +158,9 @@ print_chars_for_length() {
 }
 
 section_header() {
-  local header="${1}"
+  # replace the value of the 'HOME' variable with '~' to shorten the text length
+  local escaped_home="$(echo "${HOME}" | sed "s/\//\\\\\//g")"
+  local header=$(echo "${1}" | sed "s/${escaped_home}/~/")
   local viewport_length=$(tput cols)
   local header_length=${#header}
   local final_length=$(($(($((${viewport_length} - ${header_length})) / 2)) - 10))

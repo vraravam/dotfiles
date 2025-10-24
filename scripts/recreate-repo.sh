@@ -100,8 +100,6 @@ git -C "${folder}" push -fuq origin "${git_branch_name}"
 
 rm -f "${folder}/.git/index.lock"
 
-git -C "${folder}" size
-
 # Resurrect crontab after this script finishes
 load_zsh_configs
 recron

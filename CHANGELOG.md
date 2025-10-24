@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 2.0.28
+
+* *[.shellrc]* Reduce line length when invoking the `section_header` function by replacing the value of `HOME` env var with `~`.
+
 ### 2.0.27
 
 * *[.aliases]* Removed `upreb_me` alias and `upreb-universal.sh` and combined both into a single zsh autoloaded script. This also allows to override it with a folder-specific implementation that can handle pre- and post- (or full override) steps as needed.

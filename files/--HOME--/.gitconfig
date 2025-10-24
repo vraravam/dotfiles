@@ -146,7 +146,6 @@
   # expire the reflog as of this moment (so as to maximize cleanup using the 'cc' alias)
   rfc = reflog expire --expire=now
 
-  # TODO: Find a way to parameterize the 'before' and 'after' strings
   # prints the size of the current repo
   size = !echo \"==> Size of repository at '${PWD}': $(du -sh .git | cut -f1)\"
 
