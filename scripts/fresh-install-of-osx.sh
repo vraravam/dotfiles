@@ -21,11 +21,6 @@ echo "Script started at: $(date '+%Y-%m-%d %H:%M:%S')"
 #############################################################
 export ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH:-"${HOME}/.oh-my-zsh"}/custom"}"
 
-# These repos can be alternatively tracked using git submodules, but by doing so, any new change in the submodule, will show up as a new commit in the main (home) repo. To avoid this "noise", I prefer to decouple them
-clone_omz_plugin_if_not_present() {
-  clone_repo_into "${1}" "${ZSH_CUSTOM}/plugins/$(extract_last_segment "${1}")"
-}
-
 ######################################################################################################################
 # Set DNS of 8.8.8.8 before proceeding (in some cases, for eg Jio Wifi, github doesn't resolve at all and times out) #
 ######################################################################################################################
@@ -129,17 +124,6 @@ install_oh_my_zsh_and_custom_plugins() {
   else
     warn "skipping installation of oh-my-zsh since '$(yellow "${HOME}/.oh-my-zsh")' is already present"
   fi
-
-  ##############################
-  # Install custom omz plugins #
-  ##############################
-  # Note: Some of these are available via brew, but enabling them will take an additional step and the only other benefit (of keeping them up-to-date using brew can still be achieved by updating the git repos directly using git commands)
-  section_header "$(yellow 'Installing custom omz plugins')"
-  # Note: These are not installed using homebrew since sourcing of the files needs to be explicit in .zshrc
-  # Also, the order of these being referenced in the zsh session startup (for vanilla OS) will cause a warning to be printed though the rest of the shell startup sequence is still being performed. Ultimately, until they become included by default into omz, keep them here as custom plugins
-  clone_omz_plugin_if_not_present https://github.com/zdharma-continuum/fast-syntax-highlighting
-  clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-autosuggestions
-  clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-completions
 }
 
 clone_dot_files_repo() {
@@ -434,7 +418,6 @@ fi
 ###############################
 # Cleanup temp functions, etc #
 ###############################
-unfunction clone_omz_plugin_if_not_present
 unfunction setup_jio_dns
 unfunction download_and_source_shellrc
 unfunction approve_fingerprint_sudo

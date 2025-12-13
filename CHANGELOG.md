@@ -2,6 +2,23 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 2.0.32
+
+* Adopt [omz-plus](https://github.com/mattmc3/omz-plus) rather than my custom implementation to use some non-default omz plugins by cloning them in the `fresh-install-of-osx.sh` script.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then proceed with the following steps:
+
+  ```bash
+  cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
+  rm -rf "${ZSH}/custom/plugins/fast-syntax-highlighting" "${ZSH}/custom/plugins/zsh-autosuggestions" "${ZSH}/custom/plugins/zsh-completions"
+  # Note: If you have other custom plugins that you have installed in your fork, they will also need to be cleaned up in the previous step.
+  install-dotfiles.rb
+  ```
+
+* Quit and restart the terminal-emulator application that you are using.
+
 ### 2.0.31
 
 * Unignore `$HOME/.ssh/known_hosts` so that the repository resurrection process is done without user interaction.

@@ -143,6 +143,7 @@
 /.npm
 /.oh-my-zsh
 /.ollama/
+/.omz-plus
 /.oracle_jre_usage/*.timestamp
 /.org.eclipse*
 /.p4tickets

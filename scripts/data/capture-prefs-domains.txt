@@ -16,6 +16,7 @@ com.apple.accounts.suggestions
 com.apple.accountsd
 com.apple.ActivityMonitor
 com.apple.AMPLibraryAgent
+com.apple.amsengagementd
 com.apple.appkit.xpc.openAndSavePanelService
 com.apple.AppleMediaServices
 com.apple.AppleMediaServices.notbackedup
@@ -44,10 +45,13 @@ com.apple.chronod
 com.apple.classroom
 com.apple.cloud.quota
 com.apple.CloudDocs.iCloudDriveFileProvider
+com.apple.cloudpaird
 com.apple.CloudSubscriptionFeatures.config
 com.apple.CloudTelemetryService.xpc
+com.apple.ComfortSounds
 com.apple.commcenter
 com.apple.commcenter.callservices
+com.apple.CommCenter.counts
 com.apple.commcenter.data
 com.apple.configurationprofiles.user
 com.apple.contactsd
@@ -87,6 +91,7 @@ com.apple.dt.xcodebuild
 com.apple.DuetExpertCenter.AppPredictionExpert
 com.apple.eap8021x.eaptlstrust
 com.apple.EmojiPreferences
+com.apple.EscrowSecurityAlert
 com.apple.ExtensionsPreferences.ShareMenu
 com.apple.fba.devices
 com.apple.fileproviderd
@@ -103,10 +108,12 @@ com.apple.GameOverlayViewService
 com.apple.generativepartnerservicesettings
 com.apple.gms.availability
 com.apple.helpd
+com.apple.helpviewer
 com.apple.HIToolbox
 com.apple.homed
 com.apple.homed.notbackedup
 com.apple.homeenergyd
+com.apple.iCal
 com.apple.icloud.fmfd
 com.apple.icloud.fmfd.notbackedup
 com.apple.icloud.gm
@@ -121,6 +128,7 @@ com.apple.ids.service.com.apple.private.alloy.safetymonitor
 com.apple.ids.subservices
 com.apple.imagecapture
 com.apple.imagent
+com.apple.IMCoreSpotlight
 com.apple.imdpersistence.IMDPersistenceAgent
 com.apple.imessage
 com.apple.imessage.bag
@@ -134,12 +142,16 @@ com.apple.inputmethod.ironwood
 com.apple.intents.intents-helper
 com.apple.internal.ck
 com.apple.ipTelephony
+com.apple.itunescloudd
+com.apple.itunesstored
 com.apple.Keyboard-Settings.extension
 com.apple.keyboardservicesd
 com.apple.keychainaccess
 com.apple.knowledge-agent
 com.apple.lighthouse.pnr.PnROnDeviceWorker
 com.apple.lighthouse.PnROnDeviceWoker.default-data-worker
+com.apple.lighthouse.siri.IFTranscriptIngestor
+com.apple.liveactivitiesd
 com.apple.LocalAuthentication.UIAgent
 com.apple.LocalAuthenticationRemoteService
 com.apple.Lock-Screen-Settings.extension
@@ -167,6 +179,7 @@ com.apple.Network-Settings.extension
 com.apple.NetworkExtensionSettingsUI.NESettingsUIExtension
 com.apple.networkserviceproxy
 com.apple.NewDeviceOutreach
+com.apple.notificationcenterui
 com.apple.Notifications-Settings.extension
 com.apple.onetimepasscodes
 com.apple.parsecd
@@ -175,11 +188,13 @@ com.apple.passd.class-d
 com.apple.Passwords
 com.apple.PersonalAudio
 com.apple.photolibraryd
+com.apple.Photos.PhotosReliveWidget
 com.apple.photos.shareddefaults
 com.apple.PowerChime
 com.apple.PowerManagement
 com.apple.preferences.extensions.ShareMenu
 com.apple.preferences.softwareupdate
+com.apple.Preview
 com.apple.Print-Scan-Settings.extension
 com.apple.print.add
 com.apple.print.custompresets
@@ -193,6 +208,7 @@ com.apple.ProblemReporter
 com.apple.Profiles-Settings.extension
 com.apple.protectedcloudstorage.protectedcloudkeysyncing
 com.apple.quicklook.QuickLookUIService
+com.apple.remindd
 com.apple.remotedesktop
 com.apple.remotemanagement.ManagedSettingsSubscriber
 com.apple.replayd
@@ -210,6 +226,7 @@ com.apple.screencapture
 com.apple.screencaptureui
 com.apple.screensaver
 com.apple.ScreenSaver-Settings.extension
+com.apple.ScriptEditor2
 com.apple.scriptmenu
 com.apple.ScriptMenuApp
 com.apple.SecurityAgent
@@ -219,7 +236,10 @@ com.apple.seserviced
 com.apple.settings.PrivacySecurity.extension
 com.apple.SetupAssistant
 com.apple.sharedfilelist
+com.apple.Sharing
 com.apple.sharingd
+com.apple.siri.morphun
+com.apple.siri.shortcuts
 com.apple.siri.VoiceShortcuts
 com.apple.sociallayerd
 com.apple.sociallayerd.CloudKit.ckwriter
@@ -258,6 +278,7 @@ com.apple.symbolichotkeys
 com.apple.syncdefaultsd
 com.apple.systemevents
 com.apple.systempreferences
+com.apple.systempreferences.SpotlightIndexExtension
 com.apple.systemsettings.extensions
 com.apple.systemuiserver
 com.apple.talagent
@@ -351,6 +372,7 @@ com.titanium.OnyX.update
 com.utmapp.UTM
 com.visualstudio.code.oss
 com.vscodium.VSCodiumInsiders
+ContextStoreAgent
 eu.exelban.Stats
 familycircled
 icloudmailagent

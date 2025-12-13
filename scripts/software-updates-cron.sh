@@ -14,6 +14,13 @@ load_zsh_configs
 local script_start_time=$(date +%s)
 print_script_start
 
+if command_exists omz_plus_update; then
+  section_header "$(yellow 'Updating') $(purple 'omz_plus') and the $(purple 'omz plugins') managed by it"
+  omz_plus_update && success 'Successfully updated omz_plus' || warn 'omz_plus update failed'
+else
+  debug 'skipping updating omz_plus and the omz plugins managed by it'
+fi
+
 if command_exists bupc; then
   section_header "$(yellow 'Updating') $(purple 'brews')"
   # brew doctor # Removed for cron job efficiency

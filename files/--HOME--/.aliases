@@ -35,7 +35,7 @@ if command_exists 'run_all.sh'; then
   # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
   alias rug='run_all.sh git'
   alias all="FOLDER='${HOME}' MAXDEPTH=6 rug"
-  alias home="FOLDER='${HOME}' FILTER=\".bin|.dotfiles|zsh|mise\" MAXDEPTH=5 rug"
+  alias home="FOLDER='${HOME}' FILTER=\".bin|.dotfiles|zsh|omz|mise\" MAXDEPTH=5 rug"
   is_directory "${PERSONAL_PROFILES_DIR}" && alias profiles="FOLDER='${PERSONAL_PROFILES_DIR}' MAXDEPTH=5 rug"
   if is_directory "${PROJECTS_BASE_DIR}"; then
     # Use zsh glob qualifiers to only loop if matches exist and are directories
