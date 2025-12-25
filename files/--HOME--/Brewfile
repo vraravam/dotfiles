@@ -32,7 +32,7 @@ tap 'TheBoredTeam/boring-notch' if ::OS::Mac::version >= 14
 
 # Moving these 2 casks to tbe beginning since they are required in the beginning (for manual login) for a vanilla OS installation
 cask 'font-meslo-lg-nerd-font'
-cask 'keybase', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Keybase'"
+cask 'keybase', login_items: true
 
 # formulae pulled in from homebrew to replace system equivalents to fix any security issues since the OS was released
 brew 'bash'
@@ -73,21 +73,21 @@ brew 'ripgrep'
 brew 'syncthing'
 brew 'tlrc'
 
-cask 'aldente', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'AlDente'"
-cask 'boring-notch', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'boringNotch'" if ::OS::Mac::version >= 14
+cask 'aldente', login_items: true
+cask 'boring-notch', login_items: true if ::OS::Mac::version >= 14
 cask 'brave-browser'
-cask 'clocker', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Clocker'"
+cask 'clocker', login_items: true
 cask 'firefox@nightly' #, greedy: true
 cask 'google-chrome@beta'
-cask 'jordanbaird-ice@beta', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Ice'" if ::OS::Mac::version >= 14
+cask 'jordanbaird-ice@beta', login_items: true if ::OS::Mac::version >= 14
 cask 'keepassxc@beta'
 cask 'ollama-app', restart_service: :changed
 cask 'onlyoffice'
 cask 'pearcleaner'
 cask 'protonvpn'
 cask 'rancher' # if ::OS::Mac::version < 26
-cask 'raycast', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Raycast'"
-cask 'stats', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Stats'"
+cask 'raycast', login_items: true
+cask 'stats', login_items: true
 cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when compared to VSCode
 cask 'zen@twilight'
 cask 'zoom'
