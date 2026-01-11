@@ -30,8 +30,7 @@ This script is useful to capture the raycast preferences/configurations. It can 
 
 Since this script uses applescript internally, it needs to be granted the following permissions:
 
-* `Privacy & Security > Accessibility` - need to enable/approve for iTerm and Terminal apps.
-* `Privacy & Security > Automation` - need to enable/approve for "System Events" for iTerm and Terminal apps.
+* `Privacy & Security > Accessibility` - need to enable/approve for your preferred terminal emulator apps.
 * Also, since this mimics keystrokes from the user, while this script is running, you should not move the mouse or type anything else using the keyboard or mouse.
 * The above manual steps have to be performed after installing Raycast and running it at least once (so one has to click through the setup wizard). Due to this reason, this script has NOT been incorporated into the `fresh-install-of-osx.sh` script.
 

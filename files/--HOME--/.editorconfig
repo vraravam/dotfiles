@@ -19,6 +19,15 @@ insert_final_newline = false
 insert_final_newline = false
 trim_trailing_whitespace = false
 
-# Shell scripts
+[*.sh]
+# shell_variant      = posix # like -ln=posix
+# binary_next_line   = true  # like -bn
+switch_case_indent = true  # like -ci from shfmt options
+space_redirects    = true  # like -sr from shfmt options
+keep_padding       = true  # like -kp from shfmt options
+# function_next_line = true  # like -fn
+# never_split        = true  # like -ns
+
+# Windows Shell scripts
 [*.{cmd, bat}]
 end_of_line = crlf

@@ -250,8 +250,8 @@ tmp/
 /.config/ghostty/config
 /.config/mise/config.toml
 /.config/rubocop/config.yml
+/.config/zed/settings.json
 /.config/zsh/*
-/.cshrc
 /.curlrc
 /.default-gems
 /.editorconfig
@@ -284,7 +284,6 @@ tmp/
 /.shellrc
 /.sqliterc
 /.ssh/global_config
-/.tcshrc
 /.terraformrc
 /.vim/autoload/plug.vim
 /.vimrc

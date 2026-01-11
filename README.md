@@ -3,7 +3,7 @@
   - [How to upgrade / catch-up to new changes](#how-to-upgrade--catch-up-to-new-changes)
   - [How to test changes in your fork before raising a Pull Request](#how-to-test-changes-in-your-fork-before-raising-a-pull-request)
 - [Pre-requisites](#pre-requisites)
-- [Basic setup](#basic-setup)
+- [Basic setup](#complete-setup)
 - [Finally...](#finally)
 - [Ongoing tasks to keep your backup up-to-date on a regular basis](#ongoing-tasks-to-keep-your-backup-up-to-date-on-a-regular-basis)
 - [Extras/Details](#extrasdetails)
@@ -31,7 +31,7 @@ _Note:_
 
 In your forked repo, make the following changes, commit and push _via the Github web-UI itself_ (for the first time before running the script). Once the above steps are done, and committed into your fork, then everytime you need to run the setup, you can run the `curl` commands that point to _your_ fork:
 
-1. **_Only in this file (`README.md`), `GettingStarted-Basic.md` and `files/--HOME--/.shellrc` files (and nowhere else; 3 files in total):_** Find and replace the strings that reference my usernames to your equivalent ones (for eg, you can search for `vraravam` (referred to as the `GH_USERNAME` env var) and `avijayr` (referred to as the `KEYBASE_USERNAME` env var) and replace them with your values). If you are not going to use keybase (or are going to defer setting that up), please comment out the lines for the environment variables that start with `KEYBASE_` in the `files/--HOME--/.shellrc`.
+1. **_Only in this file (`README.md`), `GettingStarted.md` and `files/--HOME--/.shellrc` files (and nowhere else; 3 files in total):_** Find and replace the strings that reference my usernames to your equivalent ones (for eg, you can search for `vraravam` (referred to as the `GH_USERNAME` env var) and `avijayr` (referred to as the `KEYBASE_USERNAME` env var) and replace them with your values). If you are not going to use keybase (or are going to defer setting that up), please comment out the lines for the environment variables that start with `KEYBASE_` in the `files/--HOME--/.shellrc`.
 2. Review all entries in the `files/--HOME--/Brewfile`, and ensure that there are no unwanted libraries/applications. If you have any doubts (if comparing with my [Brewfile](files/--HOME--/Brewfile)), you will need to search the internet for the uses of those libraries/applications and decide whether to retain each one or not.
 
 ## How to upgrade / catch-up to new changes
@@ -53,7 +53,7 @@ In your forked repo, make the following changes, commit and push _via the Github
    ```bash
     git -C "${DOTFILES_DIR}" diff @{u}  # will diff your local HEAD against the remote HEAD of your own fork. Please remember that this diff will show new changes that I have made in my repo, and which are now going-to-be-adopted into yours. It's a good idea to remove entries in Brewfile that you won't need
 
-    git -C "${DOTFILES_DIR}" diff upstream/`git branch --show-current`  # will diff your local HEAD against the remote HEAD of the parent repo. These changes should be exactly the changes that you had done previously (most likely only in GettingStarted-Basic.md, files/--HOME--/.shellrc and files/--HOME--/Brewfile)
+    git -C "${DOTFILES_DIR}" diff upstream/`git branch --show-current`  # will diff your local HEAD against the remote HEAD of the parent repo. These changes should be exactly the changes that you had done previously (most likely only in GettingStarted.md, files/--HOME--/.shellrc and files/--HOME--/Brewfile)
    ```
 
 4. You will have to force-push to your fork's remote after the above step. To accomplish this, I recommend using `git -C "${DOTFILES_DIR}" push --force-with-lease`
@@ -63,16 +63,16 @@ In your forked repo, make the following changes, commit and push _via the Github
 
 ## How to test changes in your fork before raising a Pull Request
 
-1. **Especially if you are making changes to the fresh-install scripts and want to test it out on a vanilla OS**, you can change the github urls to refer to your branch in these files `GettingStarted-Basic.md` and `files/--HOME--/.shellrc`. For eg, if your PR branch is called `zdotdir-fixes`, you can search for `DOTFILES_BRANCH=` in those files, and replace `master` with `zddotdir-fixes`. Once your PR is tested and approved, please remember to revert `zddotdir-fixes` back to `master` and then merge the PR into the main working branch.
+1. **Especially if you are making changes to the fresh-install scripts and want to test it out on a vanilla OS**, you can change the github urls to refer to your branch in these files `GettingStarted.md` and `files/--HOME--/.shellrc`. For eg, if your PR branch is called `zdotdir-fixes`, you can search for `DOTFILES_BRANCH=` in those files, and replace `master` with `zddotdir-fixes`. Once your PR is tested and approved, please remember to revert `zddotdir-fixes` back to `master` and then merge the PR into the main working branch.
 
 # Pre-requisites
 
 If you want to capture data from your current mac, please follow the instructions [here](Prerequisites.md)
 
-# Basic setup
+# Complete setup
 
-The backup strategy is split into 2 stages - both of which are run by the [same script](scripts/fresh-install-of-osx.sh). The [basic "getting started"](GettingStarted-Basic.md) provides the instructions for the most common/basic setup. This covers everything that a typical user might need - without the need to backup other parts of the existing laptop.
-The "advanced" setup is the set of final steps to capture your application preferences (both system apps as well as custom apps) and back them up into an _encrypted remote repository_. Currently this kind of **_private, fully-encrypted and free_** service is offered only by [keybase](https://keybase.io/). Instructions for this setup can be found [here](GettingStarted-Advanced.md)
+The backup strategy is split into 2 stages - both of which are run by the [same script](scripts/fresh-install-of-osx.sh). The [basic "getting started"](GettingStarted.md) provides the instructions for the most common/basic setup. This covers everything that a typical user might need - without the need to backup other parts of the existing laptop.
+The "advanced" setup is the set of final steps to capture your application preferences (both system apps as well as custom apps) and back them up into an _encrypted remote repository_. Currently this kind of **_private, fully-encrypted and free_** service is offered only by [keybase](https://keybase.io/).
 
 # Finally...
 
@@ -84,7 +84,7 @@ Of course, you will have to manually take snapshots of your machine for backup f
 
 As a summary, these files will typically have changes between your setup and mine:
 
-- `GettingStarted-Basic.md` (references to your usernames instead of mine, and typically any other changes that you introduce in the `files/--HOME--/.shellrc` - look below)
+- `GettingStarted.md` (references to your usernames instead of mine, and typically any other changes that you introduce in the `files/--HOME--/.shellrc` - look below)
 - `files/--HOME--/.gitconfig` (the `IncludeIf` line to match your global/base configuration filename)
 - `files/--HOME--/.shellrc` (`GH_USERNAME`, `KEYBASE_USERNAME`, and other changeable env vars to control which steps to perform vs which to bypass)
 - `files/--HOME--/Brewfile` (the list of applications and command-line utilities that you choose to install in your local machine)

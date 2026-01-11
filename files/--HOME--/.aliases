@@ -52,18 +52,18 @@ if command_exists 'run_all.sh'; then
 fi
 
 delete_caches() {
-  # deletes the zsh compiled files so that they can be recompiled whenever a new terminal session is next started
-  local prune_paths=(-path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*')
-  # Find and remove .zwc files, pruning common large/irrelevant directories
-  find "${HOME}" \( "${prune_paths[@]}" \) -prune -o -maxdepth 6 -name '*.zwc*' -type f -print -delete || warn "find command failed in ${HOME}"
-  find "${HOMEBREW_PREFIX}" \( "${prune_paths[@]}" \) -prune -o -maxdepth 6 -name '*.zwc*' -type f -print -delete || warn "find command failed in ${HOMEBREW_PREFIX}"
+  # delete the zsh compiled files so that they can be recompiled whenever a new terminal session is next started
+  find "${HOME}" "${HOMEBREW_PREFIX}" \( -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' \) -prune -o -maxdepth 6 -name '*.zwc*' -type f -print -delete || warn "find command failed in ${HOME} or ${HOMEBREW_PREFIX}"
 
-  # deleted the global cache directory
+  # delete the global cache directory
   rm -rfv "${XDG_CACHE_HOME}"
 }
 
 install_mise_versions() {
-  ! command_exists mise && warn "Couldn't find 'mise' in the PATH; Skipping loading any mise configs" && return
+  if ! command_exists mise; then
+    warn "Couldn't find 'mise' in the PATH; Skipping loading any mise configs"
+    return 0 # Success, nothing to do
+  fi
 
   local config_files=('.java-version' '.ruby-version' '.python-version' '.nvmrc' '.tool-versions')
   for f in ${config_files}; do
@@ -80,7 +80,10 @@ _direnv_process() {
 }
 
 allow_all_direnv_configs() {
-  ! command_exists direnv && warn "Couldn't find 'direnv' in the PATH; Skipping allowing all direnv configs" && return
+  if ! command_exists direnv; then
+    warn "Couldn't find 'direnv' in the PATH; Skipping allowing all direnv configs"
+    return 0 # Success, nothing to do
+  fi
 
   find "${HOME}" -maxdepth 1 -name '.envrc' -print0 | while IFS= read -r -d '' file; do
     _direnv_process "${file:h}"
@@ -199,7 +202,15 @@ fi
 
 # convert from pdf to png without losing quality
 pdf_to_png() {
-  ! command_exists magick && warn "Install imagemagick first!" && return
+  if [[ $# -ne 1 ]]; then
+    warn "Usage: ${0} <pdf_file>"
+    return 1 # Failure, invalid arguments
+  fi
+
+  if ! command_exists magick; then
+    warn "Install imagemagick first!"
+    return 0 # Success, nothing to do
+  fi
 
   local pdf="${1}"
   local png="${pdf%.*}.png"
@@ -214,21 +225,22 @@ if is_zsh; then
 fi
 
 # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
-command_exists "${EDITOR%% *}" && alias edit-gist='"${EDITOR%% *}" "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${SSH_CONFIGS_DIR}" "${HOME}/.tool-versions" "${PERSONAL_PROFILES_DIR}/.gitignore"'
+command_exists "$(extract_first_word "${EDITOR}")" && alias edit-gist='"$(extract_first_word "${EDITOR}")" "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${SSH_CONFIGS_DIR}" "${HOME}/.tool-versions" "${PERSONAL_PROFILES_DIR}/.gitignore"'
 
 # resurrects the cron entries based on the '${PERSONAL_CONFIGS_DIR}/crontab.txt' file
 recron() {
-  # shellcheck disable=SC2005
   section_header "$(yellow 'Old cron listing')"
   crontab -l || true
 
   local cron_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
-  ! is_file "${cron_file}" && warn "No '$(yellow "${cron_file}")' found; returning without any processing" && return
+  if ! is_file "${cron_file}"; then
+    warn "No '$(yellow "${cron_file}")' found; returning without any processing"
+    return 0 # Success, nothing to do
+  fi
 
   crontab -r 2>&1 &> /dev/null || true
   crontab "${cron_file}"
 
-  # shellcheck disable=SC2005
   section_header "$(yellow 'New cron listing')"
   crontab -l
 }

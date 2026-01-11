@@ -143,19 +143,19 @@ yellow() {
 }
 
 success() {
-  echo "$(green '**SUCCESS**') ${1}"
+  echo "✅ $(green '**SUCCESS**') ${1}"
 }
 
 warn() {
-  echo "$(light_red '**WARN**') ${1}"
+  echo "⚠️ $(light_red '**WARN**') ${1}"
 }
 
 debug() {
-  echo "$(light_purple '**DEBUG**') ${1}"
+  echo "ℹ️ $(light_purple '**DEBUG**') ${1}"
 }
 
 error() {
-  echo "$(red '**ERROR**') ${1} 🤓"
+  echo "❌ $(red '**ERROR**') ${1} 🤓"
   osascript -e "display notification \"${1} 🤓\""
   return 1
 }
@@ -174,7 +174,7 @@ section_header() {
   local header_length=${#header}
   local final_length=$(($(($((${viewport_length} - ${header_length})) / 2)) - 10))
 
-  echo "$(light_blue $(print_chars_for_length '=' ${final_length})) ${header} $(light_blue $(print_chars_for_length '=' ${final_length}))"
+  echo "$(light_blue $(print_chars_for_length '=' ${final_length})) ⏳ ${header} $(light_blue $(print_chars_for_length '=' ${final_length}))"
 }
 
 print_script_start() {
@@ -243,8 +243,6 @@ is_git_repo() {
 }
 
 load_file_if_exists() {
-  # shellcheck disable=SC2015
-  # shellcheck disable=SC1090
   is_file "${1}" && source "${1}" || warn "Couldn't load file: '${1}'"
 }
 
@@ -314,6 +312,14 @@ is_linux() {
 
 is_windows() {
   [[ "${OSTYPE}" =~ 'MINGW' ]]
+}
+
+extract_first_word() {
+  local input="${1}"
+  local delimiter="${2:- }"
+  local first_part="${input%%${delimiter}*}"
+  # local remaining="${input#*${delimiter}}"
+  echo "${first_part}"
 }
 
 ###############################################################################################

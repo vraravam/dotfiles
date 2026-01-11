@@ -11,7 +11,7 @@
 set -e
 
 # Source shellrc only once if any required function is missing
-if ! type red 2>&1 &> /dev/null || ! type yellow 2>&1 &> /dev/null || ! type ensure_dir_exists 2>&1 &> /dev/null || ! type is_file 2>&1 &> /dev/null || ! type error 2>&1 &> /dev/null || ! type success 2>&1 &> /dev/null || ! type is_non_zero_string 2>&1 &> /dev/null ; then
+if ! type red 2>&1 &> /dev/null || ! type yellow 2>&1 &> /dev/null || ! type ensure_dir_exists 2>&1 &> /dev/null || ! type is_file 2>&1 &> /dev/null || ! type error 2>&1 &> /dev/null || ! type success 2>&1 &> /dev/null || ! type is_non_zero_string 2>&1 &> /dev/null; then
   source "${HOME}/.shellrc"
 fi
 
@@ -31,13 +31,15 @@ ensure_dir_exists "${target_dir}"
 
 ! is_non_zero_string "${RAYCAST_SETTINGS_PASSWORD}" && error "Cannot proceed without the 'RAYCAST_SETTINGS_PASSWORD' env var set; Aborting!!!"
 
+warn "This script uses osascript to enter your Raycast password. This is not secure. Please be aware of the risk."
+
 case "${1}" in
-  "-e" )
+  "-e")
     is_file "${target_dir}/Raycast.rayconfig" && rm -rf "${target_dir}/Raycast.rayconfig"
 
     open raycast://extensions/raycast/raycast/export-settings-data
 
-    osascript <<EOF
+    osascript << EOF
       tell application "System Events"
         key code 36
         delay 0.3
@@ -75,12 +77,12 @@ EOF
     mv "${target_dir}"/Raycast*.rayconfig "${target_file}"
     success "Successfully exported raycast configs to: $(yellow "${target_file}")"
     ;;
-  "-i" )
+  "-i")
     ! is_file "${target_file}" && error "Couldn't find file: '$(yellow "${target_file}")' for import operation; Aborting!!!"
 
     open raycast://extensions/raycast/raycast/import-settings-data
 
-    osascript <<EOF
+    osascript << EOF
       tell application "System Events"
         key code 36
         delay 0.3
@@ -114,7 +116,7 @@ EOF
 
     success "Successfully imported raycast configs from: $(yellow "${target_file}")"
     ;;
-  * )
+  *)
     echo "$(red 'Unknown value entered') for first argument: '${1}'"
     usage "${0}"
     ;;

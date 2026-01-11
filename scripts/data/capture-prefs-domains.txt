@@ -385,6 +385,7 @@ com.visualstudio.code.oss
 com.vscodium.VSCodiumInsiders
 ContextStoreAgent
 dev.kiro.desktop
+dev.zed.Zed-Preview
 eu.exelban.Stats
 familycircled
 icloudmailagent

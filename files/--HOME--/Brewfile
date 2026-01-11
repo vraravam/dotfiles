@@ -18,21 +18,17 @@
 cask_args appdir: '/Applications', fontdir: '/Library/Fonts', no_quarantine: true, adopt: true
 
 # java_present = system('/usr/libexec/java_home --failfast')
-is_arm = ::Hardware::CPU.arm?
-is_beta_os = ::OS::Mac::full_version.unsupported_release?
-
-# While re-imaging my laptop or setting up a new laptop, I want to install only the bare minimum of apps/utilities so that the rest of the restoration from backup can continue in a shorter time. I can then circle back to run the brew bundle command to install all the other missing softwares.
-is_base_install = ENV.has_key?('HOMEBREW_BASE_INSTALL')
-puts "Only performing base installation!" if is_base_install
+# is_arm = ::Hardware::CPU.arm?
+# is_beta_os = ::OS::Mac::full_version.unsupported_release?
 
 # TODO: Hardcoding of the dotfiles repo folder - since that env var is not available inside this env
+setup_login_items_script = "${HOME}/.dotfiles/scripts/setup-login-item.sh"
 
 tap 'romkatv/powerlevel10k'
-tap 'TheBoredTeam/boring-notch' if ::OS::Mac::version >= 14
 
-# Moving these 2 casks to tbe beginning since they are required in the beginning (for manual login) for a vanilla OS installation
+# Moving these casks to tbe beginning since they are required in the beginning (for manual login) for a vanilla OS installation
 cask 'font-meslo-lg-nerd-font'
-cask 'keybase', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Keybase'"
+cask 'keybase', postinstall: "\"#{setup_login_items_script}\" 'Keybase'"
 
 # formulae pulled in from homebrew to replace system equivalents to fix any security issues since the OS was released
 # This list is enhanced from https://macgnu.codewithshin.com/?id=gnu-programs-existing-in-macos-which-are-outdated
@@ -64,7 +60,13 @@ brew 'powerlevel10k'
 # casks pulled in for base configs (if these are absent, you will get errors and things won't work)
 cask 'iterm2'
 
-return 0 if is_base_install
+# While re-imaging the OS or setting up for the first time, install only the bare minimum apps/utilities so that the rest of the backup restoration can proceed faster.
+if ENV.has_key?('HOMEBREW_BASE_INSTALL')
+  puts "Only performing base installation!"
+  return 0
+end
+
+tap 'TheBoredTeam/boring-notch'
 
 # formulae pulled in for advanced configs (these are optional, but still recommended)
 brew 'bat'
@@ -78,25 +80,26 @@ brew 'ncdu'
 brew 'pandoc'
 brew 'prettyping'
 brew 'ripgrep'
+brew 'shfmt'
 brew 'syncthing'
 brew 'tlrc'
 
-cask 'aldente', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'AlDente'"
-cask 'boring-notch', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'boringNotch'" if ::OS::Mac::version >= 14
+cask 'aldente', postinstall: "\"#{setup_login_items_script}\" 'AlDente'"
+cask 'boring-notch', postinstall: "\"#{setup_login_items_script}\" 'boringNotch'" if ::OS::Mac::version >= 14
 cask 'brave-browser'
-cask 'clocker', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Clocker'"
+cask 'clocker', postinstall: "\"#{setup_login_items_script}\" 'Clocker'"
 cask 'firefox@nightly' #, greedy: true
 cask 'google-chrome@beta'
-cask 'jordanbaird-ice@beta', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Ice'" if ::OS::Mac::version >= 14
+cask 'jordanbaird-ice@beta', postinstall: "\"#{setup_login_items_script}\" 'Ice'" if ::OS::Mac::version >= 14
 cask 'keepassxc@beta'
 cask 'ollama-app', restart_service: :changed
 cask 'onlyoffice'
 cask 'pearcleaner'
 cask 'protonvpn'
 cask 'rancher' # if ::OS::Mac::version < 26
-cask 'raycast', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Raycast'"
-cask 'stats', postinstall: "\"${HOME}/.dotfiles/scripts/setup-login-item.sh\" 'Stats'"
-cask 'vscodium@insiders'   # TODO: Doesn't handle 'Remote Containers' and GH-based auto-syncing when compared to VSCode
+cask 'raycast', postinstall: "\"#{setup_login_items_script}\" 'Raycast'"
+cask 'stats', postinstall: "\"#{setup_login_items_script}\" 'Stats'"
+cask 'zed@preview'
 cask 'zen@twilight'
 cask 'zoom'
 
@@ -105,52 +108,40 @@ cask 'zoom'
 
 # VSCode extensions
 # Note: I don't want brew to silently install VS Code (which is what it does currently if the following lines are present but it doesn't find the executable 'code'!)
-is_vscode_installed = !`PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}" which code`.chomp.empty?  # explicitly set PATH since the shell being opened doesn't run the login configs
-if is_vscode_installed
-  # This is failing on different machines
-  # vscode 'eamodio.gitlens'
-  # vscode 'formulahendry.code-runner'
-  # vscode 'nicolasvuillamy.vscode-groovy-lint'
-  # vscode 'redhat.java'
-  # vscode 'sonarsource.sonarlint-vscode'
-  # vscode 'vscjava.vscode-java-debug'
-  # vscode 'vscjava.vscode-java-pack'
-  # vscode 'vscjava.vscode-java-test'
-  # vscode 'vscjava.vscode-lombok'
-  # vscode 'wholroyd.jinja'
-  vscode 'brandonkirbyson.vscode-animations'
-  vscode 'britesnow.vscode-toggle-quotes'
-  vscode 'codezombiech.gitignore'
-  vscode 'davidanson.vscode-markdownlint'
-  vscode 'dbaeumer.vscode-eslint'
-  vscode 'digitalbrainstem.javascript-ejs-support'
-  vscode 'drcika.apc-extension'
-  vscode 'editorconfig.editorconfig'
-  vscode 'esbenp.prettier-vscode'
-  vscode 'genuitecllc.codetogether'
-  vscode 'github.vscode-github-actions'
-  vscode 'google.geminicodeassist'
-  vscode 'ibm.output-colorizer'
-  vscode 'mechatroner.rainbow-csv'
-  vscode 'mikestead.dotenv'
-  vscode 'mkhl.direnv'
-  vscode 'ms-azuretools.vscode-containers'
-  vscode 'ms-azuretools.vscode-docker'
-  vscode 'ms-vscode.atom-keybindings'
-  vscode 'ms-vscode.vscode-typescript-next'
-  vscode 'oderwat.indent-rainbow'
-  vscode 'orta.vscode-jest'
-  vscode 'redhat.vscode-yaml'
-  vscode 'richie5um2.vscode-sort-json'
-  vscode 'shan.code-settings-sync'
-  vscode 'shopify.ruby-lsp'
-  vscode 'tchayen.markdown-links'
-  vscode 'tyriar.sort-lines'
-  vscode 'vscode-icons-team.vscode-icons'
-  vscode 'wayou.vscode-todo-highlight'
-  vscode 'wmaurer.change-case'
-  vscode 'yzhang.markdown-all-in-one'
-end
+# is_vscode_installed = !`PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}" which code`.chomp.empty?  # explicitly set PATH since the shell being opened doesn't run the login configs
+# if is_vscode_installed
+#   vscode 'britesnow.vscode-toggle-quotes'
+#   vscode 'codezombiech.gitignore'
+#   vscode 'davidanson.vscode-markdownlint'
+#   vscode 'dbaeumer.vscode-eslint'
+#   vscode 'digitalbrainstem.javascript-ejs-support'
+#   vscode 'drcika.apc-extension'
+#   vscode 'editorconfig.editorconfig'
+#   vscode 'esbenp.prettier-vscode'
+#   vscode 'genuitecllc.codetogether'
+#   vscode 'github.vscode-github-actions'
+#   vscode 'google.geminicodeassist'
+#   vscode 'ibm.output-colorizer'
+#   vscode 'mechatroner.rainbow-csv'
+#   vscode 'mikestead.dotenv'
+#   vscode 'mkhl.direnv'
+#   vscode 'ms-azuretools.vscode-containers'
+#   vscode 'ms-azuretools.vscode-docker'
+#   vscode 'ms-vscode.atom-keybindings'
+#   vscode 'ms-vscode.vscode-typescript-next'
+#   vscode 'oderwat.indent-rainbow'
+#   vscode 'orta.vscode-jest'
+#   vscode 'redhat.vscode-yaml'
+#   vscode 'richie5um2.vscode-sort-json'
+#   vscode 'shan.code-settings-sync'
+#   vscode 'shopify.ruby-lsp'
+#   vscode 'tchayen.markdown-links'
+#   vscode 'tyriar.sort-lines'
+#   vscode 'vscode-icons-team.vscode-icons'
+#   vscode 'wayou.vscode-todo-highlight'
+#   vscode 'wmaurer.change-case'
+#   vscode 'yzhang.markdown-all-in-one'
+# end
 
 # ----------------------------------------------------------------------------------------------------------
 # Moved these brew and cask lines to clean up the noise from the above alphabetically-sorted lists
@@ -171,7 +162,7 @@ end
 # brew 'dive'   # docker layers inspection on steroids
 # brew 'docker-diff'
 # brew 'docker-slim'  # TODO: investigate if the http-probe is a deal-breaker
-# brew 'hadolint'     # lint Dockerfiles (similar to shellcheck for shell scripts)
+# brew 'hadolint'     # lint Dockerfiles (similar to shellcheck or shfmt for shell scripts)
 # brew 'kubernetes-cli', link: true   # Note: Had to do this: rm /usr/local/bin/kubectl && brew link --overwrite kubernetes-cli
 # brew 'kubernetes-helm'
 
@@ -188,7 +179,7 @@ end
 # brew 'gs'   # used for compressing PDFs
 # brew 'libressl', link: true
 # brew 'localstack'
-# brew 'shellcheck'
+# brew 'shellcheck' # Not using since this only supports bash
 # brew 'speedtest-cli'
 # brew 'watch'
 # brew 'wifi-password'

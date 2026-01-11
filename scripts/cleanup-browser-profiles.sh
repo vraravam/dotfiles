@@ -20,10 +20,13 @@ vacuum_browser_profile_folder() {
 
   if pgrep -i -f -q "${browser_name}"; then
     warn "Shutdown '$(yellow "${browser_name}")' first!; skipping processing of files for ${browser_name}"
-    return
+    return 0 # Success, nothing to do
   fi
 
-  ! is_directory "${profile_folder}" && warn "skipping processing of '$(yellow "${profile_folder}")' since it doesn't exist" && return
+  if ! is_directory "${profile_folder}"; then
+    warn "skipping processing of '$(yellow "${profile_folder}")' since it doesn't exist"
+    return 0 # Success, nothing to do
+  fi
 
   section_header "$(yellow 'Vacuuming') '$(purple "${browser_name}")' in '$(yellow "${profile_folder}")'..."
   echo "--> Size before: $(folder_size "${profile_folder}")"

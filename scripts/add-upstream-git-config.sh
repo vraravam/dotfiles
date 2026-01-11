@@ -9,7 +9,7 @@
 set -e
 
 # Source shellrc only once if any required function is missing
-if ! type red 2>&1 &> /dev/null || ! type section_header 2>&1 &> /dev/null || ! type is_git_repo 2>&1 &> /dev/null || ! type warn 2>&1 &> /dev/null || ! type error 2>&1 &> /dev/null || ! type success 2>&1 &> /dev/null ; then
+if ! type red 2>&1 &> /dev/null || ! type section_header 2>&1 &> /dev/null || ! type is_git_repo 2>&1 &> /dev/null || ! type warn 2>&1 &> /dev/null || ! type error 2>&1 &> /dev/null || ! type success 2>&1 &> /dev/null; then
   source "${HOME}/.shellrc"
 fi
 
@@ -29,7 +29,10 @@ main() {
 
   section_header "$(yellow 'Adding new upstream to'): '$(purple "${target_folder}")'"
 
-  ! is_git_repo "${target_folder}" && error "'$(yellow "${target_folder}")' is not a git repo; Aborting!!!"
+  if ! is_git_repo "${target_folder}"; then
+    warn "'$(yellow "${target_folder}")' is not a git repo; Skipping!!!"
+    return 0 # Success, nothing to do
+  fi
 
   # Check if an 'upstream' remote already exists using 'git remote get-url'
   local existing_upstream

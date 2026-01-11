@@ -32,12 +32,12 @@ require 'yaml'
 require 'open3'
 
 # Constants
-ORIGIN_NAME = 'origin' # Standard name for the primary remote
-FOLDER_KEY_NAME = 'folder' # Key name in YAML for the repository folder
-REMOTE_KEY_NAME = 'remote' # Key name for the primary remote
-OTHER_REMOTES_KEY_NAME = 'other_remotes' # Key name for additional remotes
-POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
-GIT_EXECUTABLE = 'git' # Path to git executable
+ORIGIN_NAME = 'origin'.freeze # Standard name for the primary remote
+FOLDER_KEY_NAME = 'folder'.freeze # Key name in YAML for the repository folder
+REMOTE_KEY_NAME = 'remote'.freeze # Key name for the primary remote
+OTHER_REMOTES_KEY_NAME = 'other_remotes'.freeze # Key name for additional remotes
+POST_CLONE_KEY_NAME = 'post_clone'.freeze # Key name for post-clone commands
+GIT_EXECUTABLE = 'git'.freeze # Path to git executable
 GIT_CONFIG_REGEXP_CMD = ['config', '--get-regexp', '^remote\\..*\\.url'].freeze # Git subcommand to find remote URLs in git config
 
 # Checks if a value is nil or empty.
@@ -70,9 +70,7 @@ def find_and_replace_env_var(folder)
 
   folder.gsub(/\$\{(.*?)\}/) do |match|
     key = $1
-    if ENV.key?(key)
-      ENV[key]
-    else
+    ENV.fetch(key) do
       puts "WARNING: Environment variable '#{key}' not set. Keeping placeholder '#{match}'.".yellow
       match
     end
@@ -89,7 +87,9 @@ def find_and_reverse_replace_env_var(folder)
   # Note: If changing this array, remember that the deep-nested value should be replaced first, followed by the parent folder
   env_vars = ['PROJECTS_BASE_DIR', 'HOME']
   env_vars.each do |env_var|
-    return folder.sub(ENV[env_var], "${#{env_var}}").strip if ENV.has_key?(env_var) && !ENV[env_var].empty?
+    if ENV.key?(env_var) && !ENV[env_var].empty? && folder.start_with?(ENV[env_var])
+      return folder.sub(ENV[env_var], "${#{env_var}}").strip
+    end
   end
   folder
 end
@@ -120,7 +120,7 @@ end
 # @yieldparam remote_name [String] The name of the remote.
 # @yieldparam remote_url [String] The URL of the remote.
 # @return [void] This method is intended to be used with a block; its return value without a block is not defined for callers.
-def find_git_remotes(folder)
+def find_git_remotes(folder, &block)
   git_base_cmd = build_git_context(folder)
   config_cmd = [*git_base_cmd, *GIT_CONFIG_REGEXP_CMD]
   stdout, stderr, status = Open3.capture3(*config_cmd)

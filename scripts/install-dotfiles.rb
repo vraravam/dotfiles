@@ -14,22 +14,25 @@
 # It assumes the following:
 #   1. Ruby language is present in the system prior to this script being run.
 
-require_relative 'utilities/file'
 require_relative 'utilities/string'
 require 'fileutils'
 require 'find'
 require 'pathname'
 
 # --- Constants ---
-ENV_VAR_REGEX = /--(.*?)--/ # For interpolating environment variables like --VAR--
-CUSTOM_GIT_FILENAME_PATTERN = /custom\.git/ # For matching source filenames like custom.gitignore, custom.gitattributes
-CUSTOM_GIT_STRING_TO_REPLACE = 'custom.git' # String to be replaced in paths
-DOT_GIT_REPLACEMENT_TARGET = '.git' # Target string for replacement (e.g., custom.gitignore -> .gitignore)
+ENV_VAR_REGEX = /--(.*?)--/.freeze # For interpolating environment variables like --VAR--
+CUSTOM_GIT_FILENAME_PATTERN = /custom\.git/.freeze # For matching source filenames like custom.gitignore, custom.gitattributes
+CUSTOM_GIT_STRING_TO_REPLACE = 'custom.git'.freeze # String to be replaced in paths
+DOT_GIT_REPLACEMENT_TARGET = '.git'.freeze # Target string for replacement (e.g., custom.gitignore -> .gitignore)
 
 IGNORED_FILENAMES = ['.DS_Store'].freeze # Filenames to ignore during processing
 IGNORED_FILE_PATTERNS = [/\.zwc/].freeze # File patterns to ignore (matches anywhere in path)
 
 # Helper to interpolate environment variables in paths like --VAR--
+#
+# @param path_template [String] The path template containing --VAR-- placeholders.
+# @param source_file [String] The source file path, used for logging purposes.
+# @return [String, nil] The interpolated path, or nil if an environment variable is missing.
 def interpolate_path(path_template, source_file)
   # First, check if all referenced environment variables exist.
   # This avoids partial processing if a variable is missing later.
@@ -43,10 +46,14 @@ def interpolate_path(path_template, source_file)
 
   # If all variables are present, then perform the substitution.
   # ENV[var_name] is guaranteed to exist here due to the check above.
-  path_template.gsub(ENV_VAR_REGEX) { |_match| ENV[$1] }
+  path_template.gsub(ENV_VAR_REGEX) { |_match| ENV.fetch($1) }
 end
 
 # Processes a single dotfile: moves existing real files, creates symlink/copy
+#
+# @param source_pn [Pathname] The Pathname object for the source file.
+# @param target_pn [Pathname] The Pathname object for the target file.
+# @return [void]
 def process_dotfile(source_pn, target_pn)
   puts "Processing #{source_pn.to_s.yellow} --> #{target_pn.to_s.yellow}"
   # Ensure target directory exists
@@ -79,7 +86,7 @@ def process_dotfile(source_pn, target_pn)
 end
 
 puts 'Starting to install dotfiles'.green
-HOME_PATH = Pathname.new(ENV['HOME']).expand_path
+HOME_PATH = Pathname.new(ENV.fetch('HOME')).expand_path
 DOTFILES_ROOT_PATH = Pathname.new(__dir__).join('..', 'files').expand_path
 
 Find.find(DOTFILES_ROOT_PATH) do |source_path_str|

@@ -10,6 +10,47 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
+# Handle errors and crontab backup
+local CRON_BACKUP_FILE
+CRON_BACKUP_FILE="$(mktemp)"
+crontab -l > "${CRON_BACKUP_FILE}" 2>/dev/null || true # Backup crontab, ignore failure if empty
+
+_cleanup_and_exit() {
+  local message='Installation failed. Check for error messages above.'
+  if type error &>/dev/null; then
+    error "${message}"
+  else
+    echo "ERROR: ${message}" >&2
+  fi
+
+  if [[ -s "${CRON_BACKUP_FILE}" ]]; then
+    if type warn &>/dev/null; then
+      warn 'Attempting to restore cron jobs from backup...'
+    else
+      echo 'WARN: Attempting to restore cron jobs from backup...'
+    fi
+    if crontab "${CRON_BACKUP_FILE}"; then
+      if type success &>/dev/null; then
+        success 'Restored crontab from backup.'
+      else
+        echo 'SUCCESS: Restored crontab from backup.'
+      fi
+    else
+      if type error &>/dev/null; then
+        error 'Failed to restore crontab.'
+      else
+        echo 'ERROR: Failed to restore crontab.' >&2
+      fi
+    fi
+  fi
+  rm -f "${CRON_BACKUP_FILE}"
+  exit 1
+}
+trap _cleanup_and_exit ERR
+
+# Normal exit cleanup (for successful runs)
+trap 'rm -f "${CRON_BACKUP_FILE}"' EXIT
+
 # TODO: Need to figure out the scriptable commands for the following settings:
 # 1. Auto-adjust Brightness
 # 2. Brightness on battery
@@ -99,6 +140,7 @@ ensure_filevault_is_on() {
   section_header "$(yellow 'Verifying FileVault status')"
   if [[ "$(fdesetup isactive)" != 'true' ]]; then
     error 'FileVault is not turned on. Please encrypt your hard disk!'
+    exit 1
   fi
 }
 
@@ -115,6 +157,7 @@ install_xcode_command_line_tools() {
     rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
     if ! xcode-select -p 2> /dev/null; then
       error "Couldn't install xcode command-line tools; Aborting"
+      exit 1
     fi
 
     success 'Successfully installed xcode command-line tools'
@@ -156,9 +199,15 @@ install_oh_my_zsh_and_custom_plugins() {
   section_header "$(yellow 'Installing custom omz plugins')"
   # Note: These are not installed using homebrew since sourcing of the files needs to be explicit in .zshrc
   # Also, the order of these being referenced in the zsh session startup (for vanilla OS) will cause a warning to be printed though the rest of the shell startup sequence is still being performed. Ultimately, until they become included by default into omz, keep them here as custom plugins
-  clone_omz_plugin_if_not_present https://github.com/zdharma-continuum/fast-syntax-highlighting
-  clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-autosuggestions
-  clone_omz_plugin_if_not_present https://github.com/zsh-users/zsh-completions
+    local -a omz_plugins=(
+    'zdharma-continuum/fast-syntax-highlighting'
+    'zsh-users/zsh-autosuggestions'
+    'zsh-users/zsh-completions'
+  )
+  for plugin_url in "${omz_plugins[@]}"; do
+    clone_omz_plugin_if_not_present "https://github.com/${plugin_url}"
+  done
+  unset plugin_url omz_plugins
 }
 
 clone_dot_files_repo() {
@@ -182,6 +231,7 @@ clone_dot_files_repo() {
       add-upstream-git-config.sh "${DOTFILES_DIR}" "${UPSTREAM_GH_USERNAME}" || warn 'Failed to add upstream git config for dotfiles repo'
     else
       error 'Failed to clone dotfiles repo'
+      exit 1
     fi
   else
     warn "skipping cloning the dotfiles repo since '$(yellow "${DOTFILES_DIR}")' is either not defined or is already a git repo"
@@ -193,7 +243,10 @@ install_homebrew() {
   # Install homebrew #
   ####################
   section_header "$(yellow 'Installing homebrew') into '$(yellow "${HOMEBREW_PREFIX}")'"
-  ! is_non_zero_string "${HOMEBREW_PREFIX}" && error "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!"
+  if ! is_non_zero_string "${HOMEBREW_PREFIX}"; then
+    error "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!"
+    exit 1 # Irrecoverable failure
+  fi
 
   if ! command_exists brew; then
     # Prep for installing homebrew
@@ -203,12 +256,13 @@ install_homebrew() {
 
     local install_script_file="$(mktemp)"
     if curl --retry 3 --retry-delay 5 -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "${install_script_file}"; then
-      NONINTERACTIVE=1 bash "${install_script_file}" || { rm -f "${install_script_file}"; error 'Homebrew installation failed'; }
+      NONINTERACTIVE=1 bash "${install_script_file}" || { rm -f "${install_script_file}"; error 'Homebrew installation failed'; exit 1 }
       rm -f "${install_script_file}"
       success 'Successfully installed homebrew'
     else
       rm -f "${install_script_file}"
       error 'Failed to download Homebrew installation script'
+      exit 1
     fi
     unset install_script_file
   else
@@ -309,8 +363,11 @@ clone_profiles_repo() {
 # Do not allow rootless login #
 ###############################
 # Note: Commented out since I am not sure if we need to do this on the office MBP or not
-# section_header "$(yellow 'Verifying rootless status')"
-# [[ "$(/usr/bin/csrutil status | awk '/status/ {print $5}' | sed 's/\.$//')" == "enabled" ]] && error "csrutil ('rootless') is enabled. Please disable in boot screen and run again!"
+# section_header "$(yellow 'Verifying rootless login enabled status')"
+# if [[ "$(/usr/bin/csrutil status | awk '/status/ {print $5}' | sed 's/\.$//')" == "enabled" ]]; then
+#   error "rootless login is enabled. Please disable in boot screen and run again"
+#   exit 1 # Irrecoverable failure
+# fi
 
 ############################
 # Disable macos gatekeeper #
@@ -320,7 +377,7 @@ clone_profiles_repo() {
 
 setup_jio_dns
 
-# if this is being run on a machine that's already configured, then remove the cron jobs
+# if this is being run on a machine that's already configured, then remove the cron jobs (it's backed up, and will be restored on failure or regenerated on success)
 crontab -r 2>&1 &> /dev/null || true
 
 download_and_source_shellrc
@@ -351,13 +408,19 @@ FIRST_INSTALL=true load_zsh_configs
 install_homebrew
 
 if is_non_zero_string "${KEYBASE_USERNAME}"; then
-  ! command_exists keybase && error 'Keybase not found in the PATH. Aborting!!!'
+  if ! command_exists keybase; then
+    error 'Keybase not found in the PATH. Aborting!!!'
+    exit 1 # Irrecoverable failure
+  fi
 
   ######################
   # Login into keybase #
   ######################
   section_header "$(yellow 'Logging into keybase')"
-  ! keybase login && error 'Could not login into keybase. Retry after logging in.'
+  if ! keybase login; then
+    error 'Could not login into keybase. Retry after logging in.'
+    exit 1 # Irrecoverable failure
+  fi
 
   clone_home_repo
 
@@ -450,8 +513,8 @@ fi
 # Recreate the zsh completions #
 ################################
 section_header "$(yellow 'Recreate zsh completions')"
-rm -rf "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}"
-autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}"
+rm -rf "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}"* 2>&1 &> /dev/null || true
+autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}" 2>&1 &> /dev/null || true
 
 ###################
 # Setup cron jobs #

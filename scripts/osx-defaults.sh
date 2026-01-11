@@ -5,12 +5,12 @@
 # Thanks to: @erikh, @DAddYE, @mathiasbynens
 
 case "${1}" in
-  "-s" | "--silent" )
+  "-s" | "--silent")
     echo "Running in silent mode..."
     auto=Y
     shift 1
     ;;
-  * )
+  *)
     auto=N
     if [ ! -t 0 ]; then
       echo "Interactive mode needs terminal!" >&2
@@ -360,7 +360,6 @@ fi
 # Follow the keyboard focus while zoomed in
 # defaults write com.apple.universalaccess closeViewZoomFollowsFocus -bool true
 
-
 ###############################################################################
 # Finder                                                                      #
 ###############################################################################
@@ -370,7 +369,7 @@ if ask "Allow quitting Finder via ⌘ + Q; doing so will also hide desktop icons
 fi
 
 # if ask "Disable window animations and Get Info animations" Y; then
-  # defaults write com.apple.finder DisableAllAnimations -bool true
+# defaults write com.apple.finder DisableAllAnimations -bool true
 # fi
 
 if ask "Set Desktop as the default location for new Finder windows" Y; then
@@ -384,7 +383,7 @@ if ask "Show icons for hard drives, servers, and removable media on the desktop"
 fi
 
 # if ask "Show hidden files by default" N; then
-  # defaults write com.apple.finder AppleShowAllFiles -bool false
+# defaults write com.apple.finder AppleShowAllFiles -bool false
 # fi
 
 if ask "Show all filename extensions" Y; then
@@ -428,7 +427,7 @@ if ask "Allowing text selection in Quick Look/Preview in Finder by default" Y; t
 fi
 
 # if ask "Keep folders on top when sorting by name" Y; then
-  # defaults write com.apple.finder _FXSortFoldersFirst -bool true
+# defaults write com.apple.finder _FXSortFoldersFirst -bool true
 # fi
 
 if ask "When performing a search, search the current folder by default (the default 'This Mac' is 'SCev')" Y; then
@@ -440,11 +439,11 @@ if ask "Disable the warning when changing a file extension" Y; then
 fi
 
 # if ask "Enable spring loading for directories" Y; then
-  # defaults write -g com.apple.springing.enabled -bool true
+# defaults write -g com.apple.springing.enabled -bool true
 # fi
 
 # if ask "Remove the delay for spring loading for directories" Y; then
-  # defaults write -g com.apple.springing.delay -float 0
+# defaults write -g com.apple.springing.delay -float 0
 # fi
 
 if ask "Enable snap-to-grid for icons on the desktop and in other icon views" Y; then
@@ -487,7 +486,6 @@ fi
 # /usr/libexec/PlistBuddy -c "Set :DesktopViewSettings:IconViewSettings:iconSize 80" ${HOME}/Library/Preferences/com.apple.finder.plist
 # /usr/libexec/PlistBuddy -c "Set :FK_StandardViewSettings:IconViewSettings:iconSize 80" ${HOME}/Library/Preferences/com.apple.finder.plist
 # /usr/libexec/PlistBuddy -c "Set :StandardViewSettings:IconViewSettings:iconSize 80" ${HOME}/Library/Preferences/com.apple.finder.plist
-
 
 if ask "Use list view in all Finder windows by default" Y; then
   # Four-letter codes for the other view modes: `icnv` (icon), `Nlsv` (list), `Flwv` (cover flow)
@@ -539,12 +537,12 @@ if ask "Windows which were open prior to logging out are re-opened after logging
 fi
 
 # if ask "Location and style of scrollbar arrows" N; then
-  # Applications often need to be relaunched to see the change.
-  # defaults write -g AppleScrollBarVariant -string "DoubleBoth" true
+# Applications often need to be relaunched to see the change.
+# defaults write -g AppleScrollBarVariant -string "DoubleBoth" true
 # fi
 
 # if ask "Disable window animations" N; then
-  # defaults write -g NSAutomaticWindowAnimationsEnabled -bool false && killall Finder
+# defaults write -g NSAutomaticWindowAnimationsEnabled -bool false && killall Finder
 # fi
 
 # Avoiding the creation of .DS_Store files on network volumes
@@ -595,15 +593,15 @@ sudo systemsetup -setrestartfreeze on
 # Preview                                                                     #
 ###############################################################################
 # if ask "Scale images by default when printing" N; then
-  # defaults write com.apple.Preview PVImagePrintingScaleMode -bool true
+# defaults write com.apple.Preview PVImagePrintingScaleMode -bool true
 # fi
 
 # if ask "Preview Auto-rotate by default when printing" N; then
-  # defaults write com.apple.Preview PVImagePrintingAutoRotate -bool true
+# defaults write com.apple.Preview PVImagePrintingAutoRotate -bool true
 # fi
 
 # if ask "Quit Always Keeps Windows" Y; then
-  # defaults write com.apple.Preview NSQuitAlwaysKeepsWindows -bool true
+# defaults write com.apple.Preview NSQuitAlwaysKeepsWindows -bool true
 # fi
 
 ###############################################################################
@@ -763,7 +761,7 @@ if ask "Enable iTunes pop-up notifications" N; then
 fi
 
 # if ask "Add a 'Recent Applications' stack to the Dock" N; then
-  # defaults write com.apple.dock persistent-others -array-add '{ "tile-data" = { "list-type" = 1; }; "tile-type" = "recents-tile"; }'
+# defaults write com.apple.dock persistent-others -array-add '{ "tile-data" = { "list-type" = 1; }; "tile-type" = "recents-tile"; }'
 # fi
 
 if ask "In Expose, only show windows from the current space" N; then
@@ -1240,7 +1238,7 @@ if ask "iTerm2 settings" Y; then
   defaults write com.googlecode.iterm2 PromptOnQuit -bool false
   defaults write com.googlecode.iterm2 SUAutomaticallyUpdate -bool true
   defaults write com.googlecode.iterm2 SUEnableAutomaticChecks -bool true
-  defaults write com.googlecode.iterm2 SUFeedAlternateAppNameKey -string iTerm;
+  defaults write com.googlecode.iterm2 SUFeedAlternateAppNameKey -string iTerm
   defaults write com.googlecode.iterm2 SUFeedURL -string "https://iterm2.com/appcasts/final.xml?shard=69"
   defaults write com.googlecode.iterm2 SUHasLaunchedBefore -bool true
   defaults write com.googlecode.iterm2 SUUpdateRelaunchingMarker -bool false
@@ -1350,7 +1348,7 @@ fi
 ###############################################################################
 if ask "Firefox settings" Y; then
   defaults write -app "Firefox Nightly" NSFullScreenMenuItemEverywhere -bool false
-  defaults write -app "Firefox Nightly" NSNavLastRootDirectory -string "${HOME}/Downloads";
+  defaults write -app "Firefox Nightly" NSNavLastRootDirectory -string "${HOME}/Downloads"
   defaults write -app "Firefox Nightly" NSNavLastUserSetHideExtensionButtonState -bool false
   defaults write -app "Firefox Nightly" NSTreatUnknownArgumentsAsOpen -bool false
   defaults write -app "Firefox Nightly" PMPrintingExpandedStateForPrint2 -bool false
@@ -1362,7 +1360,7 @@ fi
 if ask "Flycut settings" N; then
   defaults write com.generalarcade.flycut loadOnStartup -bool true
   defaults write com.generalarcade.flycut pasteMovesToTop -bool true
-  defaults write com.generalarcade.flycut rememberNum -int 60;
+  defaults write com.generalarcade.flycut rememberNum -int 60
   defaults write com.generalarcade.flycut removeDuplicates -bool true
   defaults write com.generalarcade.flycut store -dict-add displayLen -int 40
   defaults write com.generalarcade.flycut store -dict-add displayNum -int 10
@@ -1451,7 +1449,7 @@ fi
 if ask "ProtonVpn settings" Y; then
   defaults write ch.protonvpn.mac ConnectOnDemand -bool true
   defaults write ch.protonvpn.mac EarlyAccess -bool true
-  defaults write ch.protonvpn.mac NSInitialToolTipDelay -int 500;
+  defaults write ch.protonvpn.mac NSInitialToolTipDelay -int 500
   defaults write ch.protonvpn.mac RememberLoginAfterUpdate -bool true
   defaults write ch.protonvpn.mac SUAutomaticallyUpdate -bool true
   defaults write ch.protonvpn.mac SUEnableAutomaticChecks -bool false
@@ -1574,7 +1572,6 @@ fi
 
 # Disable continuous spell checking
 # defaults write com.apple.messageshelper.MessageController SOInputLineSettings -dict-add "continuousSpellCheckingEnabled" -bool false
-
 
 ###############################################################################
 # Software Update                                                             #

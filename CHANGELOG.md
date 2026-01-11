@@ -2,6 +2,25 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 2.0.41
+
+* Adopted Zed as the default editor and removed VSCodium.
+* Miscellaneous fixes and improvements to shell scripts.
+* Cleanup documentation.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then proceed with the following steps:
+
+  ```bash
+  bupc
+  cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
+  install-dotfiles.rb
+  ```
+
+
+* *Quit and restart your Terminal application* for these changes to take effect.
+
 ### 2.0.40
 
 * *[resurrect-repositories.rb]* Fixed an issue while cloning git repos where the script was silently proceeding further.
@@ -22,7 +41,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 #### Adopting these changes
 
-* Rebase from upstream, resolve conflicts, and then proceed with the following steps:
+* Rebase from upstream, resolve conflicts.
 * *Quit and restart your Terminal application* for these changes to take effect.
 * Run `install-dotfiles.rb` in the new shell.
 * Manually edit `${HOME}/.ssh/config` to replace the reference to `~/.ssh/global_config` towards the last line with `${SSH_CONFIGS_DIR}/global_config`. If this results in a duplicate line, remove the duplicate line.

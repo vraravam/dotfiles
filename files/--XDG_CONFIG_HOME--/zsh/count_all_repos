@@ -1,4 +1,4 @@
-#compdef count_all_repos
+compdef count_all_repos
 #!/usr/bin/env zsh
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
@@ -9,7 +9,10 @@ type is_git_repo 2>&1 &> /dev/null || source "${HOME}/.shellrc"
 # Counts the number of commits in the specified repo
 # internal function: not to be called separately
 _count_repo() {
-  ! is_git_repo "${1}" && warn "skipping finding count of the repo since '$(yellow "${1}")' doesn't exist or is not a git repo" && return
+  if ! is_git_repo "${1}"; then
+    warn "skipping finding count of the repo since '$(yellow "${1}")' doesn't exist or is not a git repo"
+    return 0 # Success, nothing to do
+  fi
 
   count "${1}"
 }

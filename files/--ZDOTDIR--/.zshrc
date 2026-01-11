@@ -128,12 +128,21 @@ load_file_if_exists "${ZSH}/oh-my-zsh.sh"
 # export LANG=en_US.UTF-8
 
 unset EDITOR
-# Preferred editor for local and remote sessions
-is_non_zero_string "${SSH_CONNECTION}" && export EDITOR="vi"
-# Use code if its installed (both Mac OSX and Linux)
-command_exists code && ! is_non_zero_string "${EDITOR}" && export EDITOR="code --wait"
-# If neither of the above works, then fall back to vi
-command_exists vi && ! is_non_zero_string "${EDITOR}" && export EDITOR="vi"
+# Preferred editor for remote sessions
+if is_non_zero_string "${SSH_CONNECTION}"; then
+  export EDITOR="vi"
+else
+  # Preferred editor for local sessions
+  local preferred_editors=('zed --wait' 'code --wait' 'vi')
+  for editor in "${preferred_editors[@]}"; do
+    # Take only the first word as the name to test for existence of the executable
+    if command_exists "$(extract_first_word "${editor}")"; then
+      export EDITOR="${editor}"
+      break
+    fi
+  done
+  unset preferred_editors
+fi
 
 # Set personal aliases, overriding those provided by Oh My Zsh libs,
 # plugins, and themes. Aliases can be placed here, though Oh My Zsh
@@ -262,7 +271,7 @@ if is_macos; then
     prepend_to_manpath_if_dir_exists "${HOMEBREW_PREFIX}/share/man"
 
     use_homebrew_installation_for() {
-      ! is_directory "${1}" && return
+      ! is_directory "${1}" && return 0 # Success, nothing to do
 
       prepend_to_path_if_dir_exists "${1}/bin"
       prepend_to_path_if_dir_exists "${1}/libexec/bin"

@@ -42,8 +42,6 @@ perform_update "tldr database" "tldr" "tldr --update"
 # 'ignore-io' updates the data from http://gitignore.io so that we can generate the '.gitignore' file contents from the cmd-line
 perform_update "git-ignore database" "git-ignore-io" "git ignore-io --update-list"
 
-perform_update "VSCodium extensions" "code" "code --update-extensions"
-
 perform_update "oh-my-zsh" "omz" "omz update"
 
 # Commenting out since I have started using rapidfox user.js settings
@@ -94,8 +92,19 @@ unset zen_browser_desktop_codebase
 
 if command_exists ollama; then
   section_header "$(yellow 'Pull ollama models')"
-  ollama pull codellama
-  ollama pull deepseek-r1
+  local -a ollama_models=(
+    codellama
+    deepseek-coder
+    deepseek-coder-v2
+    deepseek-coder:20b
+    deepseek-r1
+    gpt-4
+    gpt-oss:20b
+  )
+  for model in "${ollama_models[@]}"; do
+    ollama pull "${model}"
+  done
+  unset model ollama_models
 fi
 
 echo '==> Finished independent updates.'

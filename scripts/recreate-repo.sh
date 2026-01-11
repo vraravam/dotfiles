@@ -15,26 +15,26 @@ if ! type red 2>&1 &> /dev/null || ! type strip_trailing_slash 2>&1 &> /dev/null
 fi
 
 usage() {
-  echo "$(red 'Usage'): $(yellow "${1} [-f] <repo folder>")"
+  echo "$(red 'Usage'): $(yellow "${0##*/}") [-f] <repo folder>"
   echo " $(yellow '-f'): force squashing into a single commit (profiles repo will automatically/always be forced anyways)"
   echo "    eg: $(cyan "-f \${HOME}")                (will push to $(yellow "$(build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME}")")"
   echo "    eg: $(cyan "\${PERSONAL_PROFILES_DIR}")  (will push to $(yellow "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")")"
   exit 1
 }
 
-if [ $# -eq 1 ]; then
-  force=N
-  folder="${1}"
-elif [ $# -eq 2 ]; then
-  if [[ "${1}" == '-f' ]]; then
-    force=Y
-    folder="${2}"
-  else
-    usage "${0}"
-  fi
-else
-  usage "${0}"
+local force=N
+while getopts ":f" opt; do
+  case ${opt} in
+    f ) force=Y ;;
+    \? ) usage "${0##*/}" ;;
+  esac
+done
+shift $((OPTIND -1))
+
+if [[ $# -ne 1 ]]; then
+  usage "${0##*/}"
 fi
+local folder="${1}"
 
 # Remove trailing slash if present
 folder="$(strip_trailing_slash "${folder}")"
@@ -51,18 +51,28 @@ extract_git_config_value() {
   git -C "${folder}" config --get "${1}" || error "Failed to get git config value '${1}' for folder '${folder}'"
 }
 
-# Define cleanup function to restore crontab on failure
+# Backup crontab and set up a trap to restore it on exit.
+local CRON_BACKUP_FILE
+CRON_BACKUP_FILE="$(mktemp)"
+# Save current crontab; ignore errors if it's empty.
+crontab -l > "${CRON_BACKUP_FILE}" 2>/dev/null || true
+
 cleanup() {
   local exit_code=$?
+  # Restore crontab from backup only if the script fails.
   if [[ ${exit_code} -ne 0 ]]; then
-    warn "Script exited with error code ${exit_code}. Attempting to restore cron jobs..."
-    load_zsh_configs
-    recron
+    warn "Script exited with error code ${exit_code}."
+    if [[ -s "${CRON_BACKUP_FILE}" ]]; then
+      warn "Attempting to restore cron jobs from backup..."
+      crontab "${CRON_BACKUP_FILE}" && success "Restored crontab from backup." || error "Failed to restore crontab."
+    fi
   fi
+  # Clean up the backup file on any exit.
+  rm -f "${CRON_BACKUP_FILE}"
 }
 trap cleanup EXIT
 
-# Remove crontab while this script is running
+# Remove crontab while this script is running. The trap will restore it on failure.
 crontab -r 2>&1 &> /dev/null || true
 
 # Capture information from pre-existing git repo
