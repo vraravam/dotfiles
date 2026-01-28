@@ -271,17 +271,24 @@ recron() {
   section_header "$(yellow 'Old cron listing')"
   crontab -l || true
 
-  local cron_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
+  crontab -r 2>&1 &> /dev/null || true
+
+  restore_cron "${PERSONAL_CONFIGS_DIR}/crontab.txt"
+
+  section_header "$(yellow 'New cron listing')"
+  crontab -l
+}
+
+restore_cron() {
+  local cron_file="${1}"
   if ! is_file "${cron_file}"; then
     warn "No '$(yellow "${cron_file}")' found; returning without any processing"
     return 0 # Success, nothing to do
   fi
 
-  crontab -r 2>&1 &> /dev/null || true
-  crontab "${cron_file}"
+  ensure_dir_exists "$(dirname "${cron_file}")"
 
-  section_header "$(yellow 'New cron listing')"
-  crontab -l
+  crontab "${cron_file}" && success 'Restored crontab from backup.' || error 'Failed to restore crontab.'
 }
 
 # runs git gc on the keybase remote repos (not sure if this actually compresses the remote repo or not)

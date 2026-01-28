@@ -1711,8 +1711,8 @@ done
 
 sudo softwareupdate --schedule ON
 
-# Re-index spotlight for the Mac volume (to pre-empt any issues with the system settings pane)
-sudo mdutil -E -i on / 2>&1 &> /dev/null
+# Turn off spotlight indexing for all volumes (to pre-empt any issues with the system settings pane)
+sudo mdutil -Eda 2>&1 &> /dev/null && sudo mdutil -ai off 2>&1 &> /dev/null
 
 echo "Need to manually quit and restart 'Terminal' and 'iTerm' - since one of these might be running this script."
 success 'Done. Note that some of these changes require a logout/restart to take effect.'
