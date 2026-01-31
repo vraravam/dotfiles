@@ -11,9 +11,10 @@
 set -e
 
 # Handle errors and crontab backup
-local CRON_BACKUP_FILE
-CRON_BACKUP_FILE="$(mktemp)"
-crontab -l > "${CRON_BACKUP_FILE}" 2>/dev/null || true # Backup crontab, ignore failure if empty
+# Backup crontab and set up a trap to restore it on exit.
+local CRON_BACKUP_FILE="$(mktemp)"
+# Save current crontab; ignore errors if it's empty.
+crontab -l > "${CRON_BACKUP_FILE}" 2> /dev/null || true # Backup crontab, ignore failure if empty
 
 _cleanup_and_exit() {
   local message='Installation failed. Check for error messages above.'
@@ -445,7 +446,20 @@ fi
 ###########################
 # Resurrect tracked repos #
 ###########################
-resurrect_tracked_repos
+# For now, to save time while re-imaging/setting up the laptop, we'll skip resurrecting all the tracked repos
+# resurrect_tracked_repos
+
+if command_exists allow_all_direnv_configs; then
+  allow_all_direnv_configs
+else
+  warn "skipping registering all direnv configs since '$(yellow 'allow_all_direnv_configs')' couldn't be found in the PATH; Please run it manually"
+fi
+
+if command_exists install_mise_versions; then
+  install_mise_versions
+else
+  warn "skipping installation of languages since '$(yellow 'install_mise_versions')' couldn't be found in the PATH; Please run it manually"
+fi
 
 ###############################
 # Cleanup temp functions, etc #

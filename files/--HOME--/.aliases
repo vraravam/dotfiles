@@ -83,17 +83,6 @@ resurrect_tracked_repos() {
     all maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
     all maintenance start
   fi
-  if command_exists allow_all_direnv_configs; then
-    allow_all_direnv_configs
-  else
-    warn "skipping registering all direnv configs since '$(yellow 'allow_all_direnv_configs')' couldn't be found in the PATH; Please run it manually"
-  fi
-
-  if command_exists install_mise_versions; then
-    install_mise_versions
-  else
-    warn "skipping installation of languages since '$(yellow 'install_mise_versions')' couldn't be found in the PATH; Please run it manually"
-  fi
 }
 
 install_mise_versions() {
@@ -271,17 +260,24 @@ recron() {
   section_header "$(yellow 'Old cron listing')"
   crontab -l || true
 
-  local cron_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
+  crontab -r 2>&1 &> /dev/null || true
+
+  restore_cron "${PERSONAL_CONFIGS_DIR}/crontab.txt"
+
+  section_header "$(yellow 'New cron listing')"
+  crontab -l
+}
+
+restore_cron() {
+  local cron_file="${1}"
   if ! is_file "${cron_file}"; then
     warn "No '$(yellow "${cron_file}")' found; returning without any processing"
     return 0 # Success, nothing to do
   fi
 
-  crontab -r 2>&1 &> /dev/null || true
-  crontab "${cron_file}"
+  ensure_dir_exists "$(dirname "${cron_file}")"
 
-  section_header "$(yellow 'New cron listing')"
-  crontab -l
+  crontab "${cron_file}" && success 'Restored crontab from backup.' || error 'Failed to restore crontab.'
 }
 
 # runs git gc on the keybase remote repos (not sure if this actually compresses the remote repo or not)

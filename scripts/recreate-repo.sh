@@ -62,10 +62,9 @@ extract_git_config_value() {
 }
 
 # Backup crontab and set up a trap to restore it on exit.
-local CRON_BACKUP_FILE
-CRON_BACKUP_FILE="$(mktemp)"
+local CRON_BACKUP_FILE="$(mktemp)"
 # Save current crontab; ignore errors if it's empty.
-crontab -l > "${CRON_BACKUP_FILE}" 2> /dev/null || true
+crontab -l > "${CRON_BACKUP_FILE}" 2> /dev/null || true # Backup crontab, ignore failure if empty
 
 cleanup() {
   local exit_code=$?
@@ -74,7 +73,7 @@ cleanup() {
     warn "Script exited with error code ${exit_code}."
     if [[ -s "${CRON_BACKUP_FILE}" ]]; then
       warn 'Attempting to restore cron jobs from backup...'
-      crontab "${CRON_BACKUP_FILE}" && success "Restored crontab from backup." || error "Failed to restore crontab."
+      restore_cron "${CRON_BACKUP_FILE}"
     fi
   fi
   # Clean up the backup file on any exit.
@@ -131,7 +130,8 @@ if [[ "${git_url}" =~ 'keybase' ]]; then
 fi
 
 echo "$(blue 'Pushing') from $(yellow "${folder}") to $(yellow "${git_url}")"
-git -C "${folder}" push --progress -fu origin "${git_branch_name}"
+git -C "${folder}" branch -u "origin/${git_branch_name}" # Not combining with next line to accommodate scenario if push fails
+git -C "${folder}" push --progress -f origin "${git_branch_name}"
 
 rm -f "${folder}/.git/index.lock"
 

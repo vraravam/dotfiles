@@ -107,10 +107,13 @@
     "diagnostics": false,
     "metrics": false,
   },
+  "session": {
+    "trust_all_worktrees": true,
+  },
   "ui_font_size": 16,
   "buffer_font_size": 16,
   "theme": {
-    "mode": "system",
+    "mode": "dark",
     "light": "One Light",
     "dark": "VSCode Dark Modern",
   },

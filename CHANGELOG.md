@@ -2,6 +2,12 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 2.0.47
+
+* *[.aliases] Extract `restore_cron` function to remove some duplication.
+* *[fresh-install-of-osx.sh]* Removed resurrecting all tracked repos to save time while re-imaging/setting up the laptop.
+* *[osx-defaults.sh]* Turned off spotlight indexing for all volumes.
+
 ### 2.0.46
 
 * Moved processing of the natsumi browser extension into the `.envrc` file so that `direnv` will take care of it automatically. This also handles cases where a new browser is installed after the first time setup.
