@@ -21,14 +21,11 @@ cask_args appdir: '/Applications', fontdir: '/Library/Fonts', no_quarantine: tru
 # is_arm = ::Hardware::CPU.arm?
 # is_beta_os = ::OS::Mac::full_version.unsupported_release?
 
-# TODO: Hardcoding of the dotfiles repo folder - since that env var is not available inside this env
-setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.sh"
-
 tap 'romkatv/powerlevel10k'
 
 # Moving these casks to tbe beginning since they are required in the beginning (for manual login) for a vanilla OS installation
 cask 'font-meslo-lg-nerd-font'
-cask 'keybase', postinstall: "\"#{setup_login_items_script}\" -a 'Keybase'"
+cask 'keybase', login_items: true
 
 # formulae pulled in from homebrew to replace system equivalents to fix any security issues since the OS was released
 # This list is enhanced from https://macgnu.codewithshin.com/?id=gnu-programs-existing-in-macos-which-are-outdated
@@ -75,19 +72,19 @@ brew 'ripgrep'
 brew 'syncthing'
 brew 'tlrc'
 
-cask 'aldente', postinstall: "\"#{setup_login_items_script}\" -a 'AlDente'"
+cask 'aldente', login_items: true
 cask 'brave-browser'
-cask 'clocker', postinstall: "\"#{setup_login_items_script}\" -a 'Clocker'"
+cask 'clocker', login_items: true
 cask 'firefox@nightly' #, greedy: true
 cask 'google-chrome@beta'
-cask 'jordanbaird-ice@beta', postinstall: "\"#{setup_login_items_script}\" -a 'Ice'" if ::OS::Mac::version >= 14
+cask 'jordanbaird-ice@beta', login_items: true if ::OS::Mac::version >= 14
 cask 'keepassxc@beta'
 cask 'ollama-app', restart_service: :changed
 cask 'onlyoffice'
 cask 'protonvpn'
 cask 'rancher' # if ::OS::Mac::version < 26
-cask 'raycast', postinstall: "\"#{setup_login_items_script}\" -a 'Raycast'"
-cask 'stats', postinstall: "\"#{setup_login_items_script}\" -a 'Stats'"
+cask 'raycast', login_items: true
+cask 'stats', login_items: true
 cask 'zed@preview'
 cask 'zen@twilight'
 cask 'zoom'
@@ -179,7 +176,7 @@ cask 'zoom'
 
 # ---- casks
 # tap 'TheBoredTeam/boring-notch'
-# cask 'boring-notch', postinstall: "\"#{setup_login_items_script}\" -a 'boringNotch'" if ::OS::Mac::version >= 14
+# cask 'boring-notch', login_items: true if ::OS::Mac::version >= 14
 # cask 'cloudflare-warp'
 # cask 'dbeaver-community'
 # cask 'fliqlo'
