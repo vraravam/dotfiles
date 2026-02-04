@@ -1,0 +1,213 @@
+# file location: ${HOME}/Brewfile
+
+# This file is used along with the `brew bundle` command to ensure that required packages and apps are installed.
+# Also can be used to ensure that any package/apps that were installed as experimentation are uninstalled from the system.
+# For a more detailed explanation of the philosophy/reasoning behind this file, please see https://openfolder.sh/macos-migrations-with-brewfile
+
+# These are the common shell aliases that I have setup in the `${HOME}/.aliases` file for ease of running/typing (and also don't need to remember all these commands by-heart!). If you are using my `${HOME}/.aliases`, they will already be present for you. If not, you can then set these up in the respective dotfile of your choice
+# alias bcg='brew outdated --greedy'  # List all casks that are outdated like a "dry-run" (and which have version marked as 'latest')
+# alias bcug='brew upgrade --greedy'  # Upgrades all casks that are outdated (and which have version marked as 'latest')
+# alias bupc='brew bundle check || brew bundle --all --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true'
+# Upgrades and cleans up all regular outdated casks and libs (non-greedy)
+
+# TODO: Need to find cask for:
+#   Tinkertool
+#   ZoomHider
+
+# set global preferences for all 'brew install' commands
+cask_args appdir: '/Applications', fontdir: '/Library/Fonts', no_quarantine: true, adopt: true
+
+# java_present = system('/usr/libexec/java_home --failfast')
+# is_arm = ::Hardware::CPU.arm?
+# is_beta_os = ::OS::Mac::full_version.unsupported_release?
+
+# TODO: Hardcoding of the dotfiles repo folder - since that env var is not available inside this env
+setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.sh"
+
+tap 'romkatv/powerlevel10k'
+
+# Moving these casks to tbe beginning since they are required in the beginning (for manual login) for a vanilla OS installation
+cask 'font-meslo-lg-nerd-font'
+cask 'keybase', postinstall: "\"#{setup_login_items_script}\" -a 'Keybase'"
+
+# formulae pulled in from homebrew to replace system equivalents to fix any security issues since the OS was released
+# This list is enhanced from https://macgnu.codewithshin.com/?id=gnu-programs-existing-in-macos-which-are-outdated
+brew 'bash'
+brew 'curl'
+brew 'emacs'
+brew 'git'
+brew 'gpatch'
+brew 'grep'
+brew 'less'
+brew 'make'
+brew 'nano'
+brew 'openssl'
+brew 'rsync'
+brew 'sqlite3'
+brew 'vim'
+brew 'wget'
+brew 'zsh'
+
+# formulae pulled in for base configs (if these are absent, you will get errors and things won't work)
+brew 'diff-so-fancy'
+brew 'direnv'
+brew 'eza'
+brew 'git-extras'
+brew 'git-tools'
+brew 'mise'
+brew 'powerlevel10k'
+
+# casks pulled in for base configs (if these are absent, you will get errors and things won't work)
+cask 'iterm2'
+
+# While re-imaging the OS or setting up for the first time, install only the bare minimum apps/utilities so that the rest of the backup restoration can proceed faster.
+if ENV.has_key?('HOMEBREW_BASE_INSTALL')
+  puts "Only performing base installation!"
+  return 0
+end
+
+# formulae pulled in for advanced configs (these are optional, but still recommended)
+brew 'bat'
+brew 'btop'
+# brew 'container', restart_service: :changed if ::OS::Mac::version >= 26
+brew 'dua-cli'
+brew 'git-gui'
+brew 'jq'
+brew 'moreutils'
+brew 'ncdu'
+brew 'pandoc'
+brew 'prettyping'
+brew 'ripgrep'
+brew 'shfmt'
+brew 'syncthing'
+brew 'tlrc'
+
+cask 'aldente', postinstall: "\"#{setup_login_items_script}\" -a 'AlDente'"
+cask 'brave-browser'
+cask 'clocker', postinstall: "\"#{setup_login_items_script}\" -a 'Clocker'"
+cask 'firefox@nightly' #, greedy: true
+cask 'google-chrome@beta'
+cask 'jordanbaird-ice@beta', postinstall: "\"#{setup_login_items_script}\" -a 'Ice'" if ::OS::Mac::version >= 14
+cask 'keepassxc@beta'
+cask 'ollama-app', restart_service: :changed
+cask 'onlyoffice'
+cask 'pearcleaner'
+cask 'protonvpn'
+cask 'rancher' # if ::OS::Mac::version < 26
+cask 'raycast', postinstall: "\"#{setup_login_items_script}\" -a 'Raycast'"
+cask 'stats', postinstall: "\"#{setup_login_items_script}\" -a 'Stats'"
+cask 'zed@preview'
+cask 'zen@twilight'
+cask 'zoom'
+
+# brew 'mas'
+# mas 'PDFgear', id: 6469021132
+
+# VSCode extensions
+# Note: I don't want brew to silently install VS Code (which is what it does currently if the following lines are present but it doesn't find the executable 'code'!)
+# is_vscode_installed = !`PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}" which code`.chomp.empty?  # explicitly set PATH since the shell being opened doesn't run the login configs
+# if is_vscode_installed
+#   vscode 'britesnow.vscode-toggle-quotes'
+#   vscode 'codezombiech.gitignore'
+#   vscode 'davidanson.vscode-markdownlint'
+#   vscode 'dbaeumer.vscode-eslint'
+#   vscode 'digitalbrainstem.javascript-ejs-support'
+#   vscode 'drcika.apc-extension'
+#   vscode 'editorconfig.editorconfig'
+#   vscode 'esbenp.prettier-vscode'
+#   vscode 'genuitecllc.codetogether'
+#   vscode 'github.vscode-github-actions'
+#   vscode 'google.geminicodeassist'
+#   vscode 'ibm.output-colorizer'
+#   vscode 'mechatroner.rainbow-csv'
+#   vscode 'mikestead.dotenv'
+#   vscode 'mkhl.direnv'
+#   vscode 'ms-azuretools.vscode-containers'
+#   vscode 'ms-azuretools.vscode-docker'
+#   vscode 'ms-vscode.atom-keybindings'
+#   vscode 'ms-vscode.vscode-typescript-next'
+#   vscode 'oderwat.indent-rainbow'
+#   vscode 'orta.vscode-jest'
+#   vscode 'redhat.vscode-yaml'
+#   vscode 'richie5um2.vscode-sort-json'
+#   vscode 'shan.code-settings-sync'
+#   vscode 'shopify.ruby-lsp'
+#   vscode 'tchayen.markdown-links'
+#   vscode 'tyriar.sort-lines'
+#   vscode 'vscode-icons-team.vscode-icons'
+#   vscode 'wayou.vscode-todo-highlight'
+#   vscode 'wmaurer.change-case'
+#   vscode 'yzhang.markdown-all-in-one'
+# end
+
+# ----------------------------------------------------------------------------------------------------------
+# Moved these brew and cask lines to clean up the noise from the above alphabetically-sorted lists
+
+# --- encrypted backup in case keybase is shut down in the future
+# tap 'Picocrypt/picocrypt' if is_arm
+# cask 'picocrypt' if is_arm
+
+# ---- zen-browser development
+# brew 'cairo'
+# brew 'gnu-tar'
+# brew 'mercurial'
+# brew 'nvm'
+# brew 'p7zip'
+# brew 'sccache'
+
+# ---- docker utilities
+# brew 'dive'   # docker layers inspection on steroids
+# brew 'docker-diff'
+# brew 'docker-slim'  # TODO: investigate if the http-probe is a deal-breaker
+# brew 'hadolint'     # lint Dockerfiles (similar to shellcheck or shfmt for shell scripts)
+# brew 'kubernetes-cli', link: true   # Note: Had to do this: rm /usr/local/bin/kubectl && brew link --overwrite kubernetes-cli
+# brew 'kubernetes-helm'
+
+# ---- git utilities
+# brew 'git-crypt'
+
+# ---- tmux utilities
+# brew 'reattach-to-user-namespace' # Needed if using tmux (to be able to access the macos clipboard from within tmux)
+# brew 'tmux'
+
+# ---- general utilities
+# brew 'fzy'
+# brew 'gradle-completion'
+# brew 'gs'   # used for compressing PDFs
+# brew 'libressl', link: true
+# brew 'localstack'
+# brew 'shellcheck' # Not using since this only supports bash
+# brew 'speedtest-cli'
+# brew 'watch'
+# brew 'wifi-password'
+
+# ---- casks
+# tap 'TheBoredTeam/boring-notch'
+# cask 'boring-notch', postinstall: "\"#{setup_login_items_script}\" -a 'boringNotch'" if ::OS::Mac::version >= 14
+# cask 'cloudflare-warp'
+# cask 'dbeaver-community'
+# cask 'fliqlo'
+# cask 'floorp' # Doesn't have keyboard shortcuts to switch across workspaces
+# cask 'ghostty@tip' # Not using since it doesn't have many features (like broadcasting keystrokes to panels; using iTerm instead)
+# cask 'git-credential-manager'   # https://docs.github.com/en/get-started/getting-started-with-git/caching-your-github-credentials-in-git
+# cask 'grayjay'
+# cask 'intellij-idea-ce'
+# cask 'kdiff3'
+# cask 'keycastr'
+# cask 'keyclu' if is_arm
+# cask 'knockknock'
+# cask 'licecap'
+# cask 'lulu'
+# cask 'microsoft-remote-desktop'
+# cask 'microsoft-teams'
+# cask 'monolingual'
+# cask 'netspot'
+# cask 'ngrok'
+# cask 'notunes'
+# cask 'onyx' # if !is_beta_os && ::OS::Mac::version < 26
+# cask 'silicon' if is_arm
+# cask 'tempbox'
+# cask 'the-unarchiver'
+# cask 'thunderbird@daily'
+# cask 'tor-browser@alpha'
+# cask 'utm'

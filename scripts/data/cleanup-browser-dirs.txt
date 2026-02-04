@@ -1,0 +1,15 @@
+*healthreport*
+*telemetry*
+ABphotos
+bookmarkbackups
+crashes
+GoogleContacts
+lnubackups
+Local Folders
+minidumps
+SDThumbs
+sessionstore-backups
+smart mailboxes
+startupCache
+thumbnails
+weave

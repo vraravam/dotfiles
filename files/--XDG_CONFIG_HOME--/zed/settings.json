@@ -1,0 +1,398 @@
+// Zed settings
+//
+// For information on how to configure Zed, see the Zed
+// documentation: https://zed.dev/docs/configuring-zed
+//
+// To see all of Zed's default settings without changing your
+// custom settings, run `zed: open default settings` from the
+// command palette (cmd-shift-p / ctrl-shift-p)
+{
+  "buffer_font_family": "MesloLGM Nerd Font",
+  "icon_theme": "VSCode Icons for Zed (Dark)",
+  "agent": {
+    "favorite_models": [
+      {
+        "provider": "ollama",
+        "model": "deepseek-coder-v2:latest"
+      }
+    ],
+    "play_sound_when_agent_done": true,
+    // "single_file_review": false,
+    "model_parameters": [],
+    "default_model": {
+      "provider": "ollama",
+      "model": "deepseek-coder-v2:latest",
+    },
+    "enabled": true,
+    "button": true,
+    "dock": "right",
+    "default_width": 640,
+    "default_height": 320,
+    "inline_alternatives": [
+      {
+        "provider": "zed.dev",
+        "model": "claude-sonnet-4"
+      },
+      {
+        "provider": "zed.dev",
+        "model": "claude-sonnet-4"
+      },
+      {
+        "provider": "zed.dev",
+        "model": "claude-opus-4"
+      },
+      {
+        "provider": "zed.dev",
+        "model": "gpt-4o"
+      },
+      {
+        "provider": "zed.dev",
+        "model": "gpt-4o-mini"
+      },
+      {
+        "provider": "zed.dev",
+        "model": "gemini-2.0-flash"
+      },
+    ],
+    "show_turn_stats": true,
+  },
+  // "disable_ai": true,
+  "hard_tabs": false,
+  "calls": {
+    "mute_on_join": true,
+  },
+  "terminal": {
+    "copy_on_select": true,
+    "detect_venv": "off",
+    "dock": "bottom",
+  },
+  "git_panel": {
+    "tree_view": true,
+    "sort_by_path": true,
+  },
+  "title_bar": {
+    "show_menus": true,
+    "show_branch_icon": true
+  },
+  "project_panel": {
+    "button": true,
+    "dock": "left",
+    "git_status": true,
+    "indent_size": 20,
+    "file_icons": true,
+    "folder_icons": true,
+    "auto_reveal_entries": true,
+    "auto_fold_dirs": true
+  },
+  "close_on_file_delete": true,
+  "current_line_highlight": "all",
+  "selection_highlight": true,
+  "rounded_selection": true,
+  "remove_trailing_whitespace_on_save": true,
+  "ensure_final_newline_on_save": true,
+  "show_whitespaces": "selection",
+  "show_wrap_guides": true,
+  "relative_line_numbers": "disabled",
+  "cursor_blink": true,
+  "format_on_save": "off",
+  "minimap": {
+    "show": "always",
+    "current_line_highlight": "all"
+  },
+  "sticky_scroll": {
+    "enabled": true,
+  },
+  "base_keymap": "Atom",
+  "telemetry": {
+    "diagnostics": false,
+    "metrics": false,
+  },
+  "session": {
+    "trust_all_worktrees": true,
+  },
+  "ui_font_size": 16,
+  "buffer_font_size": 16,
+  "theme": {
+    "mode": "dark",
+    "light": "One Light",
+    "dark": "VSCode Dark Modern",
+  },
+  "when_closing_with_no_tabs": "keep_window_open",
+  "preferred_line_length": 120,
+  "soft_wrap": "editor_width",
+  "tab_size": 2,
+  "autosave": "on_focus_change",
+  "confirm_quit": false,
+  "restore_on_startup": "last_workspace",
+  "extend_comment_on_newline": true,
+  "use_autoclose": true,
+  "show_completion_documentation": true,
+  "tabs": {
+    "file_icons": true,
+    "git_status": true
+  },
+  "file_scan_exclusions": [
+    "**/.git",
+    "**/.ruby-lsp",
+    "**/.svn",
+    "**/.hg",
+    "**/.jj",
+    "**/.repo",
+    "**/CVS",
+    "**/.DS_Store",
+    "**/Thumbs.db",
+    "**/.classpath",
+    "**/.settings",
+    "**/node_modules",
+    "**/.elixir_ls",
+    "**/tmp",
+    "**/dist",
+    "**/build",
+    "**/coverage",
+    "**/.cache",
+    "**/.*.zwc*",
+    "**/*.zwc*",
+  ],
+  "file_scan_inclusions": [
+    "**/.env*"
+  ],
+  "enable_language_server": true,
+  "inlay_hints": {
+    "enabled": true,
+    "show_type_hints": false,
+    "show_parameter_hints": false,
+    "show_other_hints": true,
+    "edit_debounce_ms": 700,
+    "scroll_debounce_ms": 50
+  },
+  "git": {
+    "git_gutter": "tracked_files",
+    "inline_blame": {
+      "enabled": true,
+      "delay_ms": 600
+    }
+  },
+  "auto_install_extensions": {
+    "colored-zed-icons-theme": true,
+    "docker-compose": true,
+    "dockerfile": true,
+    "editorconfig": true,
+    "groovy": true,
+    "html": true,
+    "ini": true,
+    "java": true,
+    "javascript": true,
+    "json": true,
+    "log": true,
+    "macos-classic": true,
+    "markdown": true,
+    "markdownlint": true,
+    "ruby": true,
+    "scss": true,
+    "vscode-dark-modern": true,
+    "vscode-icons": true,
+    "xml": true,
+    "yaml": true,
+    // "graphql": true,
+    // "nginx": true,
+    // "python": true,
+    // "rust": true,
+    // "shell script": true,
+    // "tsx": true,
+    // "typescript": true,
+  },
+  "colorize_brackets": true,
+  "completion_menu_scrollbar": "auto",
+  "auto_signature_help": true,
+  "search": {
+    "include_ignored": true,
+    "whole_word": false,
+    "case_sensitive": false,
+    "regex": false
+  },
+  "scroll_beyond_last_line": "vertical_scroll_margin",
+  "seed_search_query_from_cursor": "selection",
+  "scrollbar": {
+    "show": "auto",
+    "cursors": false,
+    "git_diff": true,
+    "search_results": true,
+    "selected_symbol": true,
+    "diagnostics": "all"
+  },
+  "prettier": {
+    "singleQuote": true,
+  },
+  "languages": {
+    "Ruby": {
+      "formatter": {
+        "external": {
+          "command": "rubocop",
+          "arguments": ["--stdin", "{buffer_path}", "--autocorrect", "--stderr", "--format", "json"]
+        }
+      },
+      "language_servers": ["ruby-lsp", "!solargraph"],
+      "inlay_hints": {
+        "enabled": false
+      }
+    },
+    "ERB": {
+      "formatter": {
+        "external": {
+          "command": "erb-formatter",
+          "arguments": ["--stdin"]
+        }
+      }
+    },
+    "JavaScript": {
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      },
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      }
+    },
+    "TypeScript": {
+      "code_actions_on_format": {
+        "source.organizeImports": true,
+        "source.fixAll.eslint": true
+      },
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      }
+    },
+    "TSX": {
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      },
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      }
+    },
+    "JSON": {
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      },
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      }
+    },
+    "JSONC": {
+      "code_actions_on_format": {
+        "source.fixAll.eslint": true
+      },
+      "formatter": {
+        "external": {
+          "command": "prettier",
+          "arguments": ["--stdin-filepath", "{buffer_path}"]
+        }
+      }
+    },
+    "Markdown": {
+      "use_on_type_format": false,
+      "prettier": {
+        "allowed": true
+      }
+    },
+    "Python": {
+      "language_servers": ["ruff"],
+      "formatter": [
+        {
+          "language_server": {
+            "name": "ruff"
+          }
+        }
+      ],
+      "code_actions_on_format": {
+        "source.organizeImports": true,
+        "source.fixAll.ruff": true
+      }
+    },
+    "SCSS": {
+      "code_actions_on_format": {
+        "source.fixAll.stylelint": true
+      },
+      "prettier": {
+        "allowed": true
+      }
+    },
+    "CSS": {
+      "code_actions_on_format": {
+        "source.fixAll.stylelint": true
+      },
+      "prettier": {
+        "allowed": true
+      }
+    },
+    "Diff": {
+      "remove_trailing_whitespace_on_save": false,
+      "ensure_final_newline_on_save": false
+    },
+    "HTML": {
+      "prettier": {
+        "allowed": true
+      }
+    },
+    "YAML": {
+      "prettier": {
+        "allowed": true
+      }
+    },
+    "Shell Script": {
+      "formatter": {
+        "external": {
+          "command": "shfmt",
+          // Change `--indent 2` to match your preferred tab_size
+          "arguments": ["--apply-ignore", "-ci", "-sr", "-kp", "-i", "2", "--filename", "{buffer_path}"]
+        }
+      }
+    }
+  },
+  "file_types": {
+    "ini": [
+      ".gitconfig*",
+    ],
+    "JSONC": ["*.json"],
+    "Shell Script": [
+      "**/zsh/*",
+      "*.env*",
+      "*.sh",
+      ".env*",
+      ".gitignore*",
+    ],
+    "Dockerfile": ["Dockerfile*"],
+    "Ruby": [
+      "*.arb",
+      "*.erb",
+      "*.gemspec",
+      "*.jbuilder",
+      "*.rake",
+      "*.ru",
+      "*.thor",
+      ".irbrc",
+      ".pryrc",
+      "Brewfile",
+      "Capfile",
+      "Fastfile",
+      "Gemfile",
+      "Guardfile",
+      "Podfile",
+      "Rakefile",
+      "Thorfile",
+      "Vagrantfile",
+    ],
+    "ERB": ["*.erb", "*.html.erb", "*.heex", "*.leex"],
+  },
+}

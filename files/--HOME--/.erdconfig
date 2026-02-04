@@ -1,0 +1,20 @@
+attributes:
+  - foreign_keys
+  - primary_keys
+  - timestamps
+  - inheritance
+  - content
+filetype: pdf
+indirect: true
+inheritance: true
+markup: true
+notation: simple
+orientation: horizontal
+polymorphism: true
+sort: true
+warn: true
+title: true
+only_recursion_depth: null
+prepend_primary: true
+cluster: true
+splines: spline
