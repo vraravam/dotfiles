@@ -1,0 +1,121 @@
+# file location: ${PERSONAL_PROFILES_DIR}/.gitignore
+
+# Do NOT ignore the following files/directories (put these at the beginning)
+!.bundle/config
+!/*Profile/Profiles/DefaultProfile/*.sqlite
+!/*Profile/Profiles/DefaultProfile/**/*.sqlite
+!/*Profile/Profiles/DefaultProfile/**/bookmarks.html
+!/*Profile/Profiles/DefaultProfile/**/cert*.db
+!/*Profile/Profiles/DefaultProfile/**/key*.db
+!/*Profile/Profiles/DefaultProfile/**/search.json.mozlz*
+!/*Profile/Profiles/DefaultProfile/**/search.rdf
+!/*Profile/Profiles/DefaultProfile/**/searchplugins
+!/*Profile/Profiles/DefaultProfile/**/secmod.db
+!/*Profile/Profiles/DefaultProfile/bookmarks.html
+!/*Profile/Profiles/DefaultProfile/cert*.db
+!/*Profile/Profiles/DefaultProfile/extension-store/
+!/*Profile/Profiles/DefaultProfile/key*.db
+!/*Profile/Profiles/DefaultProfile/search.json.mozlz*
+!/*Profile/Profiles/DefaultProfile/search.rdf
+!/*Profile/Profiles/DefaultProfile/secmod.db
+!/*Profile/Profiles/DefaultProfile/storage/default/**
+!/*Profile/Profiles/DefaultProfile/storage/permanent/**
+
+.~lock*#
+.DS_Store
+.local
+.thumbnails
+.Trash
+*-journal
+*.bak-rebuild
+*.iso
+*.log
+*.sqlite-shm
+*.sqlite-wal
+*.sw[nop]
+*db-shm
+*db-wal
+Cache/
+CachedData/
+Crash\ Reports
+GPUCache/
+Local\ Folders
+Local\ Storage
+LOCK
+LOG*
+log/*.log
+logs/
+Network\ Action\ Predictor
+Network\ Persistent\ State
+Reporting\ and\ NEL
+Safe\ Browsing
+Service\ Worker
+Session\ Storage
+SingletonCookie
+SingletonLock
+SingletonSocket
+SiteSecurityServiceState.txt
+SS
+Thumbs.db
+TransportSecurity
+
+# Browser profiles - these files/folders can be safely igored for the backup strategy
+/*Profile.tgz
+/*Profile/**/.parentlock
+/*Profile/**/.startup-incomplete
+/*Profile/**/*.bak
+/*Profile/**/*.baklz4
+/*Profile/**/*.Default*/
+/*Profile/**/*.files
+/*Profile/**/*.ldb
+/*Profile/**/*.leveldb/*
+/*Profile/**/*backup.json
+/*Profile/**/*Cache*
+/*Profile/**/*cache*
+/*Profile/**/*datareporting*
+/*Profile/**/*download*
+/*Profile/**/*jetpack*
+/*Profile/**/*saved-telemetry-pings*
+/*Profile/**/*ShutdownDuration*
+/*Profile/**/*thumbnails*
+/*Profile/**/AlternateServices*
+/*Profile/**/bookmarkbackups
+/*Profile/**/cert-revocations/*.stash
+/*Profile/**/compatibility.ini
+/*Profile/**/crashes/
+/*Profile/**/Crashpad*
+/*Profile/**/cur
+/*Profile/**/gcontactsync_log*.txt
+/*Profile/**/minidumps
+/*Profile/**/msgFilterRules.dat
+/*Profile/**/panacea.dat
+/*Profile/**/Partitions/**
+/*Profile/**/photos
+/*Profile/**/Photos
+/*Profile/**/QuotaManager
+/*Profile/**/RunningChromeVersion
+/*Profile/**/safebrowsing-failedupdate
+/*Profile/**/serviceworker.txt
+/*Profile/**/sessionstore-backups
+/*Profile/**/sessionstore-logs
+/*Profile/**/storage/temporary
+/*Profile/**/Telemetry.ShutdownTime.txt
+/*Profile/**/tmp
+/*Profile/**/weave
+
+# ignore git repos present in the browser's chrome directory
+/*Profile/Profiles/DefaultProfile/chrome/
+
+# files that are symlinked from the dotfiles repo
+/.envrc
+/.gitignore
+
+# Do NOT ignore the following files/directories (put these at the end)
+!/*Profile/Profiles/DefaultProfile/**/cookies.sqlite
+!/*Profile/Profiles/DefaultProfile/**/signons.txt
+!/*Profile/Profiles/DefaultProfile/cookies.sqlite
+!/*Profile/Profiles/DefaultProfile/logins.json
+!/*Profile/Profiles/DefaultProfile/signons.txt
+
+# For Zen alone, do not ignore the chrome folder - since that's not a git repo, and I have customizations there which I don't want to lose
+!/ZenProfile/Profiles/DefaultProfile/chrome/

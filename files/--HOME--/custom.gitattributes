@@ -1,0 +1,9 @@
+*               text=auto
+.ssh/*.pub      text
+.editorconfig   text
+.gitconfig*     text
+.zshrc.*        text
+*.kdbx          -text
+*.key           -text
+*.odt           diff=pandoc
+*.docx          diff=pandoc

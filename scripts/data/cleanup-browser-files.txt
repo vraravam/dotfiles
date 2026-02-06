@@ -1,0 +1,15 @@
+.DS_Store
+.localized
+.parentlock
+*.bak*
+*.log
+*.sqlite-shm
+*.sqlite-wal
+*healthreport*
+compatibility.ini
+extensions.rdf
+global-messages-db.sqlite
+msgFilterRules.dat
+popstate.dat
+sessionstore.bak
+signons*.txt

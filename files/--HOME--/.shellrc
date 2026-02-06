@@ -1,0 +1,469 @@
+#!/usr/bin/env zsh
+
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
+#################################################################################
+# This file is sourced only for login shells. It is used to define the bare
+# minimum shell functions and env vars that are needed during bootstrap of a
+# vanilla OS to bootstrap installation of all other config files. Any functions
+# that are needed after the `.aliases` file is sourced need not be present here.
+#
+# file location: ${HOME}/.shellrc
+# load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
+#################################################################################
+
+# execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
+[[ -n "${DEBUG+1}" ]] && echo "loading ${0}"
+
+export ZDOTDIR="${ZDOTDIR:-"${HOME}"}"
+export XDG_BIN_HOME="${XDG_BIN_HOME:-"${HOME}/.local/bin"}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-"${HOME}/.cache"}"
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-"${HOME}/.config"}"
+export XDG_DATA_HOME="${XDG_DATA_HOME:-"${HOME}/.local/share"}"
+export XDG_STATE_HOME="${XDG_STATE_HOME:-"${HOME}/.local/state"}"
+
+# Note: Change these as per your settings. Deleting/commenting them will essentially unset the var(s) after the shell session is restarted and thus any aliases/backup-operations/etc will not be processed for those deleted variable(s)
+
+# ------------ Customizable env vars (MUST BE CHANGED to your values) ------------
+# The github username where the setup scripts are downloaded from
+export GH_USERNAME='vraravam'
+
+# Keybase username
+export KEYBASE_USERNAME='avijayr'
+# --------------------------------------------------------------------------------
+
+# ---------- Env vars for basic/common setup (can be optionally changed) ---------
+# This repo is cloned into this location
+export DOTFILES_DIR="${XDG_CONFIG_HOME}/dotfiles"
+
+# Branch name of the dotfiles repo that's to be used for testing PR changes before merging
+export DOTFILES_BRANCH='master'
+
+# All development codebases are cloned into a subfolder of this folder
+export PROJECTS_BASE_DIR="${HOME}/dev"
+
+# Executable scripts that are not shared as part of this public repo are present here
+export PERSONAL_BIN_DIR="${HOME}/personal/dev/bin"
+
+# Many configuration files (eg `.envrc`, `.tool-versions`), that might contain sensitive info and so cannot be committed into those repos are stored here and symlinked to their target destination
+export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev/configs"
+
+# All browser profiles are captured in this folder (might contain sensitive info like browsing history and so is considered private)
+export PERSONAL_PROFILES_DIR="${HOME}/personal/$(whoami)/browser-profiles"
+
+# Keybase home repo name
+export KEYBASE_HOME_REPO_NAME='home'
+
+# Keybase profiles repo name
+export KEYBASE_PROFILES_REPO_NAME='profiles'
+
+# SSH folder
+export SSH_CONFIGS_DIR="${HOME}/.ssh"
+# --------------------------------------------------------------------------------
+
+# ------------- Env vars for upstream setup (SHOULD NOT be changed) --------------
+# Vijay's github username for setting upstream remote
+export UPSTREAM_GH_USERNAME='vraravam' # Note: DO NOT CHANGE THIS
+# --------------------------------------------------------------------------------
+
+export LANG='en_US.UTF-8'
+# Setting LC_ALL overrides all other LC_* variables.
+# LANG is kept as a fallback.
+export LC_ALL='en_US.UTF-8'
+export LESSCHARSET='utf-8'
+
+# Cache the architecture check to avoid calling `uname` repeatedly
+export ARCH="${ARCH:-"$(uname -m)"}"
+export ARCHFLAGS="-arch ${ARCH}"
+
+# Dummy function to check if shellrc is sourced
+is_shellrc_sourced() {
+  return 0
+}
+
+is_running_in_tty() {
+  [[ -t 0 ]]
+}
+
+colorize() {
+  printf "\x1b[${1}m"
+}
+
+# Do not use colors if there's no terminal
+if ! is_running_in_tty; then
+  NC=''
+  BLACK=''
+  DARK_GRAY=''
+  RED=''
+  LIGHT_RED=''
+  GREEN=''
+  LIGHT_GREEN=''
+  ORANGE=''
+  YELLOW=''
+  BLUE=''
+  LIGHT_BLUE=''
+  PURPLE=''
+  LIGHT_PURPLE=''
+  CYAN=''
+  LIGHT_CYAN=''
+  LIGHT_GRAY=''
+  WHITE=''
+else
+  NC=$(colorize '0') # No Color
+  BLACK=$(colorize '0;30')
+  DARK_GRAY=$(colorize '1;30')
+  RED=$(colorize '0;31')
+  LIGHT_RED=$(colorize '1;31')
+  GREEN=$(colorize '0;32')
+  LIGHT_GREEN=$(colorize '1;32')
+  ORANGE=$(colorize '0;33')
+  YELLOW=$(colorize '1;33')
+  BLUE=$(colorize '0;34')
+  LIGHT_BLUE=$(colorize '1;34')
+  PURPLE=$(colorize '0;35')
+  LIGHT_PURPLE=$(colorize '1;35')
+  CYAN=$(colorize '0;36')
+  LIGHT_CYAN=$(colorize '1;36')
+  LIGHT_GRAY=$(colorize '0;37')
+  WHITE=$(colorize '1;37')
+fi
+
+blue() {
+  printf "${BLUE}${1}${NC}"
+}
+
+light_blue() {
+  printf "${LIGHT_BLUE}${1}${NC}"
+}
+
+purple() {
+  printf "${PURPLE}${1}${NC}"
+}
+
+light_purple() {
+  printf "${LIGHT_PURPLE}${1}${NC}"
+}
+
+cyan() {
+  printf "${CYAN}${1}${NC}"
+}
+
+light_cyan() {
+  printf "${LIGHT_CYAN}${1}${NC}"
+}
+
+green() {
+  printf "${GREEN}${1}${NC}"
+}
+
+light_green() {
+  printf "${LIGHT_GREEN}${1}${NC}"
+}
+
+red() {
+  printf "${RED}${1}${NC}"
+}
+
+light_red() {
+  printf "${LIGHT_RED}${1}${NC}"
+}
+
+yellow() {
+  printf "${YELLOW}${1}${NC}"
+}
+
+success() {
+  echo "✅ $(green '**SUCCESS**') ${1}"
+}
+
+info() {
+  echo "ℹ️ $(cyan '**INFO**') ${1}"
+}
+
+warn() {
+  echo "⚠️ $(light_red '**WARN**') ${1}"
+}
+
+debug() {
+  echo "⚙️ $(light_purple '**DEBUG**') ${1}"
+}
+
+error() {
+  echo "❌ $(red '**ERROR**') ${1} 🤓"
+  osascript -e "display notification \"${1} 🤓\""
+  return 1
+}
+
+print_chars_for_length() {
+  local char="${1:--}"  # default to using '-'
+  local final_length=${2:-$(($(tput cols)/4))}
+  printf "${char}%.0s" {1..${final_length}}
+}
+
+section_header() {
+  # replace the value of the 'HOME' variable with '~' to shorten the text length
+  local escaped_home="$(echo "${HOME}" | sed "s/\//\\\\\//g")"
+  local header=$(echo "${1}" | sed "s/${escaped_home}/~/")
+  local viewport_length=$(tput cols)
+  local header_length=${#header}
+  local final_length=$(($(($((${viewport_length} - ${header_length})) / 2)) - 10))
+
+  echo "$(light_blue $(print_chars_for_length '=' ${final_length})) ⏳ ${header} $(light_blue $(print_chars_for_length '=' ${final_length}))"
+}
+
+print_script_start() {
+  echo "$(purple '==>') $(yellow 'Script started at:') $(light_blue "$(date '+%Y-%m-%d %H:%M:%S')")"
+}
+
+print_script_duration() {
+  local start_time_seconds="${1}"
+  local end_time_seconds=$(date +%s)
+  local end_time_human=$(date '+%Y-%m-%d %H:%M:%S')
+  local duration=$((end_time_seconds - start_time_seconds))
+
+  # Simple duration formatting (you could make this fancier if needed)
+  local duration_human=$(printf '%02dh:%02dm:%02ds' $((duration/3600)) $((duration%3600/60)) $((duration%60)))
+
+  echo "$(purple '==>') $(yellow 'Script finished at:') $(light_blue "${end_time_human}") ($(yellow 'Total duration:') $(light_blue "${duration_human}") $(yellow 'seconds'))."
+}
+
+is_zero_string() {
+  [[ -z "${1}" ]]
+}
+
+is_non_zero_string() {
+  [[ -n "${1}" ]]
+}
+
+# Remove trailing slash if present
+strip_trailing_slash() {
+  echo "${1%\/}"
+}
+
+extract_last_segment() {
+  local without_trailing_slash="$(strip_trailing_slash "${1}")"
+  echo "${without_trailing_slash##*/}"
+  unset without_trailing_slash
+}
+
+is_arm() {
+  [[ "${ARCH}" =~ 'arm' ]]
+}
+
+is_executable() {
+  is_non_zero_string "${1}" && [[ -x "${1}" ]]
+}
+
+is_symbolic_link() {
+  is_non_zero_string "${1}" && [[ -h "${1}" ]]
+}
+
+is_file() {
+  is_non_zero_string "${1}" && [[ -f "${1}" ]]
+}
+
+is_directory() {
+  is_non_zero_string "${1}" && [[ -d "${1}" ]]
+}
+
+is_file_empty() {
+  is_file "${1}" && [[ ! -s "${1}" ]]
+}
+
+is_directory_empty() {
+  is_directory "${1}" && is_zero_string "$(ls -A "${1}")"
+}
+
+ensure_dir_exists() {
+  if is_non_zero_string "${1}"; then
+    mkdir -pv "${1}"
+  else
+    warn "Skipping creation of the directory since '$(yellow "${1}")' is not defined"
+  fi
+}
+
+is_git_repo() {
+  is_non_zero_string "${1}" && is_directory "${1}/.git"
+  # Note: The above assumes that the parameter passed to this function is the repo's root folder. To work within any other nested sub-folders, this command works better. But, we are not changing to this since we specifically want to be in the context of the repo's root.
+  # git -C "${1}" rev-parse --is-inside-work-tree 2>&1 &> /dev/null
+}
+
+load_file_if_exists() {
+  is_file "${1}" && source "${1}" || warn "Couldn't load file: '${1}'"
+}
+
+# delete_directory_if_exists() {
+#   is_directory "${1}" && echo "$(red 'Deleting') '$(green "${1}")'" && sudo rm -rf "${1}"
+# }
+
+command_exists() {
+  (( $+commands[${1}] || $+functions[${1}] || $+aliases[${1}] || $+builtins[${1}] ))
+}
+
+is_zsh() {
+  [[ "${0}" =~ 'zsh' ]]
+}
+
+if is_zsh; then
+  # Function to reload Zsh configuration files.
+  # WARNING: Sourcing .zshenv/.zshrc/.zlogin from a file that might be sourced *by* them
+  # can lead to infinite loops or unexpected behavior if not called carefully.
+  # This is likely intended for manual use or specific bootstrap scenarios after config changes.
+  # Note: This function is kind of equivalent to 'omz reload', but that doesn't seem to work when installing on a vanilla OS
+  load_zsh_configs() {
+    local file_list=('.zshenv' '.zshrc' '.zlogin')
+    for file in "${file_list[@]}"; do
+      load_file_if_exists "${ZDOTDIR}/${file}"
+    done
+    unset file
+    unset file_list
+  }
+fi
+
+append_to_path_if_dir_exists() {
+  is_directory "${1}" && path+="${1}"
+}
+
+append_to_fpath_if_dir_exists() {
+  is_directory "${1}" && fpath+="${1}"
+}
+
+prepend_to_path_if_dir_exists() {
+  is_directory "${1}" && export PATH="${1}:${PATH+:${PATH}}"
+}
+
+prepend_to_manpath_if_dir_exists() {
+  is_directory "${1}" && export MANPATH="${1}:${MANPATH+:${MANPATH}}"
+}
+
+prepend_to_ldflags_if_dir_exists() {
+  is_directory "${1}" && export LDFLAGS="-L${1} ${LDFLAGS+ ${LDFLAGS}}"
+}
+
+prepend_to_cppflags_if_dir_exists() {
+  is_directory "${1}" && export CPPFLAGS="-I${1} ${CPPFLAGS+ ${CPPFLAGS}}"
+}
+
+prepend_to_pkg_config_path_if_dir_exists() {
+  is_directory "${1}" && export PKG_CONFIG_PATH="${1}${PKG_CONFIG_PATH+:${PKG_CONFIG_PATH}}"
+}
+
+is_macos() {
+  [[ "${OSTYPE}" =~ 'darwin' ]]
+}
+
+is_linux() {
+  [[ "${OSTYPE}" =~ 'Linux' ]]
+}
+
+is_windows() {
+  [[ "${OSTYPE}" =~ 'MINGW' ]]
+}
+
+extract_first_word() {
+  local input="${1}"
+  local delimiter="${2:- }"
+  local first_part="${input%%${delimiter}*}"
+  # local remaining="${input#*${delimiter}}"
+  echo "${first_part}"
+}
+
+###############################################################################################
+# Ask for the administrator password upfront and keep it alive until this script has finished #
+###############################################################################################
+keep_sudo_alive() {
+  section_header "$(yellow 'Keeping sudo alive till this script has finished')"
+  sudo -v
+  while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+}
+
+build_keybase_repo_url() {
+  echo "keybase://private/${KEYBASE_USERNAME}/${1}"
+}
+
+folder_size() {
+  local folder="${1:-$(pwd)}"
+  echo "$(yellow "$(realpath "${folder}")") --> $(cyan "$(/usr/bin/du -sh "${folder}" | cut -f1)") bytes"
+}
+
+clone_repo_into() {
+  local start_time=$(date +%s)
+  local target_folder="${2}"
+  ensure_dir_exists "${target_folder}"
+  if ! is_git_repo "${target_folder}"; then
+    # Since git does not allow cloning into a non-empty folder (like the home folder), clone into a temp folder, then copy the .git folder into the real target location, and do a checkout
+    local tmp_folder="$(mktemp -d)"
+    # Note: Do not use --depth while cloning since that messes up when using upstream to rebase from
+    git -C "${tmp_folder}" clone -q "${1}" .
+    mv "${tmp_folder}/.git" "${target_folder}"
+    rm -rf "${tmp_folder}"
+    git -C "${target_folder}" checkout .
+    git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
+    success "Successfully cloned '$(yellow "${1}")$(green "' into '")$(yellow "${target_folder}")$(green "'")"
+
+    local target_branch="${3}"
+    if is_non_zero_string "${target_branch}"; then
+      git -C "${target_folder}" switch "${target_branch}"
+      local checked_out_branch="$(git -C "${target_folder}" branch --show-current)"
+      [[ "${checked_out_branch}" != "${target_branch}" ]] && error "'${target_branch}' is not equal to the branch that was checked out: '${checked_out_branch}'; something is wrong. Please correct before retrying!"
+      unset checked_out_branch
+    fi
+    unset tmp_folder
+    unset target_branch
+  else
+    warn "Skipping cloning of '$(yellow "${1}")' since '$(yellow "${target_folder}")' is already a git repo"
+  fi
+  unset target_folder
+  local end_time=$(date +%s)
+  local duration=$((end_time - start_time))
+  debug "Clone process took ${duration} seconds"
+}
+
+#################################
+# Setup ssh scripts/directories #
+#################################
+set_ssh_folder_permissions() {
+  info "$(yellow 'Setting ssh config file permissions')"
+  ensure_dir_exists "${SSH_CONFIGS_DIR}"
+  # Set directory permissions first
+  if ! chmod 700 "${SSH_CONFIGS_DIR}"; then
+    warn "Failed to set permissions on '$(yellow "${SSH_CONFIGS_DIR}")'"
+    return
+  fi
+
+  if ! is_directory_empty "${SSH_CONFIGS_DIR}"; then
+    find "${SSH_CONFIGS_DIR}" -type f -exec chmod 600 {} \; && success "Ensured correct permissions for '$(yellow "${SSH_CONFIGS_DIR}")' and files within it." || warn "Failed to set file permissions in '$(yellow "${SSH_CONFIGS_DIR}")'"
+
+    find "${SSH_CONFIGS_DIR}" -maxdepth 1 -name "id_*" ! -name '*.*' -type f -exec ssh-add -q "{}" \; && success "Added ssh identity files from '$(yellow "${SSH_CONFIGS_DIR}")'." || warn "Failed to add ssh identity files from '$(yellow "${SSH_CONFIGS_DIR}")'"
+  else
+    warn "'$(yellow "${SSH_CONFIGS_DIR}")' exists but is empty. No file permissions to set."
+  fi
+}
+
+# Moving homebrew env vars here itself so that the initial homebrew installation on a vanilla OS can be done/applied into memory immediately
+if is_arm; then
+  export HOMEBREW_PREFIX='/opt/homebrew'
+else
+  export HOMEBREW_PREFIX='/usr/local'
+fi
+export HOMEBREW_NO_ANALYTICS=1
+export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
+export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
+export HOMEBREW_BAT=1
+export HOMEBREW_VERBOSE_USING_DOTS=1
+export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
+# TODO: Uncomment once this feature is stabilized
+# export HOMEBREW_VERIFY_ATTESTATIONS=1
+
+# if is_macos; then
+  # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
+  # TODO: Kept for reference purposes
+  # reinstall_xcode() {
+  #   # delete if already present
+  #   delete_directory_if_exists '/Applications/Xcode.app'
+
+  #   xcode-select --install
+  #   sudo xcodebuild -license accept -quiet || true
+  #   success 'Successfully installed xcode'
+  # }
+# fi

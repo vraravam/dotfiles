@@ -1,0 +1,370 @@
+#!/usr/bin/env zsh
+
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
+################################################################################
+# This file is sourced at the end of the .zshrc file and loads aliases & functions
+#
+# file location: ${HOME}/.aliases
+# load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
+################################################################################
+
+# execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
+[[ -n "${DEBUG+1}" ]] && echo "loading ${0}"
+
+# DUPLICATE! Copied over since we get an error if the .shellrc was not loaded
+type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
+
+# add flags to existing aliases
+alias less="${aliases[less]:-less} -RF"
+alias cp="${aliases[cp]:-cp} -p"
+alias grep="${aliases[grep]:-grep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
+alias fgrep="${aliases[fgrep]:-fgrep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
+alias egrep="${aliases[egrep]:-egrep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
+
+# eza already defines 'll' - so skip if that's present
+! command_exists eza && alias ll='ls -la'
+command_exists tree && alias tree="${aliases[tree]:-tree} -Ch"
+command_exists vim && alias vi='vim'
+command_exists prettyping && alias ping='prettyping --nolegend'
+command_exists bat && alias cat='bat'
+command_exists btop && alias top='btop'
+command_exists ncdu && alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'
+
+if command_exists 'run_all.sh'; then
+  # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
+  alias rug='run_all.sh git'
+  alias all="FOLDER='${HOME}' MAXDEPTH=6 rug"
+  alias home="FOLDER='${HOME}' FILTER='.bin|.dotfiles|zsh|mise' MAXDEPTH=5 rug"
+  is_directory "${PERSONAL_PROFILES_DIR}" && alias profiles="FOLDER='${PERSONAL_PROFILES_DIR}' MAXDEPTH=5 rug"
+  if is_directory "${PROJECTS_BASE_DIR}"; then
+    # Use zsh glob qualifiers to only loop if matches exist and are directories
+    # (N) nullglob: if no match, the pattern expands to nothing
+    # (/): only match directories
+    local project_folders=("${PROJECTS_BASE_DIR}"/*/(N/))
+    if [[ ${#project_folders[@]} -gt 0 ]]; then
+      for folder_path in "${project_folders[@]}"; do
+        alias "${folder_path:t}"="FOLDER='${folder_path}' MAXDEPTH=4 rug" # Use :t to get the tail (basename)
+      done
+      unset folder_path
+    fi
+  fi
+fi
+
+delete_caches() {
+  # delete the zsh compiled files so that they can be recompiled whenever a new terminal session is next started
+  find "${HOME}" "${HOMEBREW_PREFIX}" \( -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' \) -prune -o -maxdepth 6 -name '*.zwc*' -type f -print -delete || warn "find command failed in ${HOME} or ${HOMEBREW_PREFIX}"
+
+  # delete the global cache directory
+  is_directory "${XDG_CACHE_HOME}" && rm -rfv "${XDG_CACHE_HOME}"
+}
+
+resurrect_tracked_repos() {
+  if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
+    # TODO: Add the github.com host to the known_hosts file so that the script is not blocked for user input
+    # ssh-keyscan -H -t ED25519 github.com >> "${SSH_CONFIGS_DIR}/known_hosts"
+
+    # resurrect repositories that are in the repo catalogues
+    section_header "$(yellow 'Resurrecting all tracked git repos')"
+    # Use zsh glob qualifier (N.) for nullglob and regular files
+    for file in "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml(N.); do
+      resurrect-repositories.rb -r "${file}"
+    done
+    unset file
+    success 'Successfully resurrected all tracked git repos'
+  else
+    warn "skipping resurrecting of repositories since '$(yellow "${PERSONAL_CONFIGS_DIR}")' doesn't exist"
+  fi
+
+  # post-clone operations for installing system dependencies
+  section_header "$(yellow 'Running post-clone operations')"
+  if command_exists all; then
+    all restore-mtime -c
+    all maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
+    all maintenance start
+  fi
+}
+
+install_mise_versions() {
+  if ! command_exists mise; then
+    warn "Couldn't find 'mise' in the PATH; Skipping loading any mise configs"
+    return 0 # Success, nothing to do
+  fi
+
+  local config_files=('.java-version' '.ruby-version' '.python-version' '.nvmrc' '.tool-versions')
+  for f in ${config_files}; do
+    find "${HOME}" -name "${f}" -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
+  done
+  unset config_files
+
+  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name '.git' -type d -maxdepth 5 -exec echo "===> Installing for {}" \; -execdir mise install \;
+}
+
+# runs 'direnv allow' on all relevant folders
+_direnv_process() {
+  (cd "${1}" 2>&1 &> /dev/null && direnv allow .) && success "Successfully allowed direnv for '$(yellow "${1}")'" || warn "Failed to allow direnv for '${1}'"
+}
+
+allow_all_direnv_configs() {
+  if ! command_exists direnv; then
+    warn "Couldn't find 'direnv' in the PATH; Skipping allowing all direnv configs"
+    return 0 # Success, nothing to do
+  fi
+
+  find "${HOME}" -maxdepth 1 -name '.envrc' -print0 | while IFS= read -r -d '' file; do
+    _direnv_process "${file:h}"
+  done
+  is_directory "${PERSONAL_PROFILES_DIR}" && find "${PERSONAL_PROFILES_DIR}" -maxdepth 1 -name '.envrc' -print0 | while IFS= read -r -d '' file; do
+    _direnv_process "${file:h}"
+  done
+
+  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -maxdepth 5 -name '.envrc' -print0 | while IFS= read -r -d '' file; do
+    _direnv_process "${file:h}"
+  done
+}
+
+if is_macos; then
+  if command_exists brew; then
+    alias bcg='brew outdated --greedy'
+    alias bcug='brew upgrade --greedy'
+    alias bupc='brew bundle check || brew bundle --all --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true; post-brew-install.sh || true'
+  fi
+fi
+
+alias find_broken_links='find . -xtype l -print' # Find links whose targets do not exist
+alias clear_logs='rm -rfv */log/*.log'
+alias clear_coverage='rm -rfv */coverage */coverage.data'
+alias kill_ds='sudo find . -type f -name .DS_Store -print -delete'
+alias kill_loc='sudo find . -type f -name .localized -print -delete'
+
+# Remove trailing spaces
+_remove_trailing_find_cmd="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -print0"
+if is_linux || is_windows; then
+  # Linux/WSL/Cygwin sed uses -i without an argument for backup suffix
+  alias remove_trailing="${_remove_trailing_find_cmd} | xargs -0 sed -i 's/[ ]*$//'"
+elif is_macos; then
+  # macOS sed requires an argument for -i ('' for no backup)
+  alias remove_trailing="${_remove_trailing_find_cmd} | xargs -0 sed -i '' 's/[ ]*$//'"
+fi
+unset _remove_trailing_find_cmd
+
+# generate mac addr to escape some free wifi mac addr restrictions
+_free_wifi() {
+  local interface="${1}"
+  (ifconfig "${interface}" | \grep ether) && \
+  (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig "${interface}" ether) && \
+  (ifconfig "${interface}" | \grep ether)
+}
+if is_linux; then
+  alias free_wifi='_free_wifi eth0'
+elif is_macos; then
+  alias free_wifi='_free_wifi en0'
+  alias flush_dns='sudo killall -HUP mDNSResponder;sudo killall mDNSResponderHelper;sudo dscacheutil -flushcache;say MacOS DNS cache has been cleared'
+fi
+
+if is_macos; then
+  # MacOS: Remove apps from quarantine
+  alias unquarantine='xattr -rd com.apple.quarantine'
+
+  # MacOS: Clean up LaunchServices to remove duplicates in the “Open With” menu
+  alias cleanup_launch_services='/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user && killall Finder'
+
+  # Show/hide hidden files in Finder
+  alias show_hidden_files='defaults write com.apple.finder AppleShowAllFiles -bool true && killall Finder'
+  alias hide_hidden_files='defaults write com.apple.finder AppleShowAllFiles -bool false && killall Finder'
+
+  # Hide/show all desktop icons (useful when presenting)
+  alias hide_desktop='defaults write com.apple.finder CreateDesktop -bool false && killall Finder'
+  alias show_desktop='defaults write com.apple.finder CreateDesktop -bool true && killall Finder'
+fi
+
+# Added to view the shell startup time (modified from https://blog.jonlu.ca/posts/speeding-up-zsh)
+time_shell_startup() {
+  local shell="${1-${SHELL}}"
+  for i in $(seq 1 10); do /usr/bin/time "${shell}" -i -c exit; done
+}
+
+# npm
+command_exists npm && alias npm_cleanup='npm cache clear --force'
+
+if command_exists docker; then
+  # docker (TODO: Not sure why this is not done automatically by rancher when it starts up)
+  # Note: can't use 'is_file' since testing for sockets is slightly different
+  alias start_docker="test -S '${HOME}/.rd/docker.sock' && sudo ln -sf '${HOME}/.rd/docker.sock' /var/run/docker.sock"
+  alias stop_docker="test -S /var/run/docker.sock && sudo rm -rf /var/run/docker.sock"
+  alias docker_cleanup='docker system prune -a --volumes -f'
+  alias docker_list='docker ps -a && docker images'
+
+  show_docker_context_contents() {
+    # Based on BMitch's answer from: https://stackoverflow.com/questions/38946683/how-to-test-dockerignore-file
+    # Note: this will create and delete temporary file called 'Dockerfile.build-context'
+    # Usage:
+    # 1. Run this function in the project folder
+    # 2. You should see list of files in build context
+    # 3. If unwanted files are present, adjust the '.dockerignore' file and go back to step 1
+
+    cat <<EOF > Dockerfile.build-context
+  FROM busybox
+  COPY . /build-context
+  WORKDIR /build-context
+  CMD ["find", "."]
+EOF
+
+    docker build -f Dockerfile.build-context -t build-context .
+    docker run --rm build-context
+
+    rm Dockerfile.build-context
+  }
+fi
+
+# tmux
+if command_exists tmux; then
+  alias tmuxn='tmux new-session -A -s'  # start a new tmux session and name it
+  alias tmuxa='tmux attach -t'          # attach to a named tmux session
+fi
+
+# convert from pdf to png without losing quality
+pdf_to_png() {
+  if [[ $# -ne 1 ]]; then
+    warn "Usage: ${0} <pdf_file>"
+    return 1 # Failure, invalid arguments
+  fi
+
+  if ! command_exists magick; then
+    warn 'Install imagemagick first!'
+    return 0 # Success, nothing to do
+  fi
+
+  local pdf="${1}"
+  local png="${pdf%.*}.png"
+
+  magick -density 800 "${pdf}" -quality 100 "${png}"
+}
+
+if command_exists "$(extract_first_word "${EDITOR}")"; then
+  if is_zsh; then
+    # associate file extensions with applications for the 'open' command
+    alias -s txt="${EDITOR}"
+    alias -s log="${EDITOR}"
+  fi
+
+  # add a generic alias for editing files and folders
+  alias edit="$(extract_first_word "${EDITOR}")"
+
+  # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
+  alias edit-gist='edit "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${SSH_CONFIGS_DIR}" "${HOME}/.tool-versions" "${PERSONAL_PROFILES_DIR}/.gitignore"'
+fi
+
+restore_cron() {
+  local cron_file="${1}"
+  if ! is_file "${cron_file}"; then
+    warn "No '$(yellow "${cron_file}")' found; returning without any processing"
+    return 0 # Success, nothing to do
+  fi
+
+  ensure_dir_exists "$(dirname "${cron_file}")"
+
+  crontab "${cron_file}" || error 'Failed to restore crontab.'
+}
+
+# resurrects the cron entries based on the '${PERSONAL_CONFIGS_DIR}/crontab.txt' file
+recron() {
+  info "$(yellow 'Old cron listing')"
+  crontab -l || true
+
+  crontab -r 2>&1 &> /dev/null || true
+
+  restore_cron "${PERSONAL_CONFIGS_DIR}/crontab.txt"
+
+  info "$(yellow 'New cron listing')"
+  crontab -l
+  success 'Restored crontab from backup.'
+}
+
+# runs git gc on the keybase remote repos (not sure if this actually compresses the remote repo or not)
+if command_exists keybase; then
+  kbgc() {
+    if [ $# -ne 1 ]; then
+      error "$(red 'Usage:') ${0} $(yellow '<repo name>')\n For eg: '\$KEYBASE_HOME_REPO_NAME' or '\$KEYBASE_PROFILES_REPO_NAME'"
+      return
+    fi
+    keybase git gc --force "${1}"
+  }
+fi
+
+if is_macos && command_exists brew; then
+  # brew cask contribution
+  check_cask() {
+    # shasum -a 256 <fileName>
+    # cd $(brew --repository homebrew/cask-versions) &&
+    brew audit --online --cask "${1}" && brew style --fix --cask "${1}"
+    # cd -
+    # brew fetch --cask "${1}"
+  }
+
+  # brew contribution
+  check_formula() {
+    brew install --build-from-source "${1}"
+    brew test "${1}"
+    brew audit --strict "${1}"
+  }
+fi
+
+if is_macos; then
+  # Finds and appends the preferences associated with the partial string passed in as an argument.
+  # Also, sorts (and removes duplicates) from the config file used to capture preferences
+  find_and_append_prefs() {
+    local file_name="${DOTFILES_DIR}/scripts/data/capture-prefs-domains.txt"
+    defaults find "${1}" | \grep 'keys in domain' | cut -d"'" -f2 >> "${file_name}"
+    sort -u -o "${file_name}" "${file_name}"
+    unset file_name
+  }
+fi
+
+# delete all personal data before re-imaging the laptop
+implode() {
+  sudo rm -rfv "${HOME}"/.[a-z]*
+
+  local folders=(
+    "${DOTFILES_DIR}"
+    "${HOME}/personal"
+    "${HOMEBREW_BUNDLE_FILE}"
+    "${HOMEBREW_PREFIX}"
+    "${PROJECTS_BASE_DIR}"
+  )
+  for f in "${folders[@]}"; do
+    sudo rm -rfv "${f}"*
+  done
+}
+
+# common build, debug and launch aliases for any folder - converted to functions for lazy evaluation
+# these will use the current folder name to find the shell script to run
+launch_me() {
+  "${PERSONAL_BIN_DIR}/launch-${PWD##*/}.sh"
+}
+debug_me() {
+  "${PERSONAL_BIN_DIR}/debug-${PWD##*/}.sh"
+}
+build_me() {
+  "${PERSONAL_BIN_DIR}/build-${PWD##*/}.sh"
+}
+
+# rails
+# alias rs="rails s -b 0.0.0.0"
+# alias rc="rails c"
+# alias rdb="rails db"
+# alias sp="RAILS_ENV=test be rake spec"
+# alias clean_bundles_from_git="rm -rfv ${GEM_HOME}/bundler/gems ${GEM_HOME}/cache/bundler/git"
+# alias rdm="be rake db:drop db:create db:migrate db:seed"
+# alias be='bundle exec'
+# alias rubo='be rake rubocop:auto_correct'
+# alias brake='be rake brakeman:run\[brakeman-report.html\]'
+
+# phoenix
+# alias mc='iex -S mix'
+# alias mes='mix ecto.setup'
+# alias mer='mix ecto.reset'
+# alias mch='MIX_ENV=test mix coveralls.html'
+# alias mcd='MIX_ENV=test mix coveralls.detail'
+# alias sps='mix phx.server'
+# alias spsd='iex -S mix phx.server'

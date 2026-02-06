@@ -1,0 +1,2 @@
+[settings]
+idiomatic_version_file_enable_tools = ["dotnet", "elixir", "go", "haskell", "java", "javascript", "kotlin", "node", "python", "ruby", "rust", "scala"]
