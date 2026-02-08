@@ -44,6 +44,8 @@ perform_update 'git-ignore database' 'git-ignore-io' 'git ignore-io --update-lis
 
 perform_update 'oh-my-zsh' 'omz' 'omz update'
 
+perform_update 'claude-code' 'claude' 'claude update'
+
 # Commenting out since I have started using rapidfox user.js settings
 # local firefox_profiles="${PERSONAL_PROFILES_DIR}/FirefoxProfile/Profiles/DefaultProfile"
 # if is_directory "${firefox_profiles}"; then

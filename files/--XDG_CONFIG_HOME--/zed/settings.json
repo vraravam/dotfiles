@@ -7,6 +7,11 @@
 // custom settings, run `zed: open default settings` from the
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
+  "agent_servers": {
+    "qwen-code": {
+      "type": "registry"
+    }
+  },
   "buffer_font_family": "MesloLGM Nerd Font",
   "icon_theme": "VSCode Icons for Zed (Dark)",
   "agent": {
@@ -21,7 +26,7 @@
     "model_parameters": [],
     "default_model": {
       "provider": "ollama",
-      "model": "deepseek-coder-v2:latest",
+      "model": "qwen3-coder:30b",
     },
     "enabled": true,
     "button": true,

@@ -2,8 +2,6 @@
 
 # frozen_string_literal: true
 
-# file location: <anywhere; but advisable in the PATH>
-
 # This script is used to install the dotfiles from this repo/folder structure to the user's home folder
 # It can be invoked from any location as long as its in the PATH (and you don't need to specify the fully qualified name while invoking it).
 # It can handle nested files.
@@ -37,11 +35,10 @@ def interpolate_path(path_template, source_file)
   # First, check if all referenced environment variables exist.
   # This avoids partial processing if a variable is missing later.
   # It also ensures that we check for key presence, not just a truthy value.
-  path_template.scan(ENV_VAR_REGEX) do |(var_name)| # scan returns array of arrays of captures e.g. [["VAR1"], ["VAR2"]]
-    unless ENV.key?(var_name)
-      puts "**WARN** Skipping processing involving '#{source_file}' because env var '#{var_name}' was not defined".yellow
-      return nil # Exit early if any variable is not defined
-    end
+  missing_vars = path_template.scan(ENV_VAR_REGEX).flatten.uniq.reject { |var_name| ENV.key?(var_name) }
+  if missing_vars.any?
+    puts "**WARN** Skipping processing involving '#{source_file}' because env var '#{missing_vars.join(', ')}' was not defined".yellow
+    return nil # Exit early if any variable is not defined
   end
 
   # If all variables are present, then perform the substitution.
@@ -56,39 +53,39 @@ end
 # @return [void]
 def process_dotfile(source_pn, target_pn)
   puts "Processing #{source_pn.to_s.yellow} --> #{target_pn.to_s.yellow}"
+
   # Ensure target directory exists
   FileUtils.mkdir_p(target_pn.dirname)
 
-  begin
-    # Check target status before deciding action
-    if target_pn.symlink?
-      puts "  Target #{target_pn.to_s.cyan} exists as a symlink, will overwrite.".blue
-    elsif target_pn.exist? # It exists and is not a symlink (real file/dir)
-      puts "  Moving existing file #{target_pn.to_s.cyan} to #{source_pn.to_s.cyan} (it will become the new source in your dotfiles repo)".blue
-      # Move the existing file from target to the source location in the dotfiles repo
-      FileUtils.mv(target_pn, source_pn, force: true)
-    else
-      # Target does not exist, no backup needed
-      puts "  Target #{target_pn.to_s.cyan} does not exist, creating new link/copy.".blue
-    end
-
-    # Create symlink or copy file for files matching 'custom.git'
-    if source_pn.basename.to_s.match?(CUSTOM_GIT_FILENAME_PATTERN) # Special handling for git files, match on filename
-      puts "  Copying #{source_pn.to_s.cyan} to #{target_pn.to_s.cyan}".blue
-      FileUtils.cp(source_pn, target_pn)
-    else
-      puts "  Creating symlink from #{source_pn.to_s.cyan} to #{target_pn.to_s.cyan}".blue
-      FileUtils.ln_sf(source_pn, target_pn)
-    end
-  rescue StandardError => e
-    puts "**ERROR** Failed during processing of #{source_pn} -> #{target_pn}: #{e.message}".red
+  # Check target status before deciding action
+  if target_pn.symlink?
+    puts "  Target #{target_pn.to_s.cyan} exists as a symlink, will overwrite.".blue
+  elsif target_pn.exist? # It exists and is not a symlink (real file/dir)
+    puts "  Moving existing file #{target_pn.to_s.cyan} to #{source_pn.to_s.cyan} (it will become the new source in your dotfiles repo)".blue
+    # Move the existing file from target to the source location in the dotfiles repo
+    FileUtils.mv(target_pn, source_pn, force: true)
+  else
+    # Target does not exist, no backup needed
+    puts "  Target #{target_pn.to_s.cyan} does not exist, creating new link/copy.".blue
   end
+
+  # Create symlink or copy file for files matching 'custom.git'
+  if source_pn.basename.to_s.match?(CUSTOM_GIT_FILENAME_PATTERN) # Special handling for git files, match on filename
+    puts "  Copying #{source_pn.to_s.cyan} to #{target_pn.to_s.cyan}".blue
+    FileUtils.cp(source_pn, target_pn)
+  else
+    puts "  Creating symlink from #{source_pn.to_s.cyan} to #{target_pn.to_s.cyan}".blue
+    FileUtils.ln_sf(source_pn, target_pn)
+  end
+rescue StandardError => e
+  puts "**ERROR** Failed during processing of #{source_pn} -> #{target_pn}: #{e.message}".red
 end
 
 puts 'Starting to install dotfiles'.green
 HOME_PATH = Pathname.new(ENV.fetch('HOME')).expand_path
 DOTFILES_ROOT_PATH = Pathname.new(__dir__).join('..', 'files').expand_path
 
+# Note: cannot use Dir.glob since that doesn't handle hidden files
 Find.find(DOTFILES_ROOT_PATH) do |source_path_str|
   source_pn = Pathname.new(source_path_str)
 
@@ -120,7 +117,7 @@ if global_config_link.symlink? && global_config_link.exist?
 
   include_line = 'Include "${SSH_CONFIGS_DIR}/global_config"'
   begin
-    if default_ssh_config.each_line.any? { |l| l.strip == include_line }
+    if File.readlines(default_ssh_config).any? { |l| l.strip == include_line }
       puts "'#{include_line}' already present in '#{default_ssh_config}'".green
     else
       puts "Adding '#{include_line}' to '#{default_ssh_config}'".blue

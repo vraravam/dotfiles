@@ -5,8 +5,13 @@
 .boxfuse/
 .bundle/cache
 .cisco/vpn/log
-.claude/
 .claude.json.backup
+.claude.json.backup.*
+.claude/projects/**/*.jsonl
+.claude/shell-snapshots/snapshot-*.sh
+.claude/stats-cache.json
+.claude/statsig/*
+.claude/todos/*.json
 .cocoapods/
 .cordova
 .dartServer/

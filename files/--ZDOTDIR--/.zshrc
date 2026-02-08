@@ -323,6 +323,9 @@ command_exists bat && export MANPAGER="sh -c 'col -bx | bat -l man -p'"
 export WORDCHARS="${WORDCHARS:s#/#}"
 export WORDCHARS="${WORDCHARS:s#.#}"
 
+# Enable LSP Tools (used for clause-code)
+# export ENABLE_LSP_TOOLS=1
+
 # rspec and cucumber
 # export CUCUMBER_COLORS="pending_param=magenta:failed_param=magenta:passed_param=magenta:skipped_param=magenta"
 # export RSPEC="true"

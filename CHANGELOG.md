@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.1
+
+* *[install-dotfiles.rb]* Optimized the installation script for performance.
+* Introduced `qwen-code` and `claude-code`. (settled on qwen-code)
+
 ### 3.0.0
 
 * Squashed all commits into a single commit.
