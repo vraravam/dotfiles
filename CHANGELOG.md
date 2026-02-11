@@ -2,6 +2,23 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.2
+
+* *[run-all.sh]* Renamed the script to follow the naming convention (using hyphen instead of underscore) for all shell scripts.
+* Replaced the `HOME` env var with the tilde (~) to represent the home directory when printing so as to reduce the amount of text being displayed on the console.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then proceed with the following steps:
+
+  ```bash
+  cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
+  source "${DOTFILES_DIR}/files/--HOME--/.shellrc"
+  source "${DOTFILES_DIR}/files/--HOME--/.aliases"
+  "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
+  ```
+* Quit and restart the Terminal application.
+
 ### 3.0.1
 
 * *[install-dotfiles.rb]* Optimized the installation script for performance.

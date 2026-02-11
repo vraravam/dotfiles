@@ -20,7 +20,7 @@ replace_symlink_if_needed() {
       ln -sf "${1}" "${2}" && success "Successfully created symlink from '$(yellow "${1}")' to '$(yellow "${2}")'" || warn "Failed to create symlink from '${1}' to '${2}'"
     fi
   else
-    warn "skipping symlinking since executable '$(yellow "${1}")' was not found"
+    warn "Skipping symlinking since executable '$(yellow "${1}")' was not found"
   fi
 }
 
@@ -39,7 +39,7 @@ if is_directory '/Applications/Keybase.app'; then
   replace_symlink_if_needed '/Applications/Keybase.app/Contents/SharedSupport/bin/keybase' "${HOMEBREW_PREFIX}/bin/keybase"
   replace_symlink_if_needed '/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase' "${HOMEBREW_PREFIX}/bin/git-remote-keybase"
 else
-  warn 'skipping symlinking keybase for command-line invocation'
+  warn 'Skipping symlinking keybase for command-line invocation'
 fi
 
 print_link_info 'VSCode/VSCodium'
@@ -66,7 +66,7 @@ print_link_info 'rider'
 if is_directory '/Applications/Rider.app'; then
   replace_symlink_if_needed '/Applications/Rider.app/Contents/MacOS/rider' "${HOMEBREW_PREFIX}/bin/rider"
 else
-  warn 'skipping symlinking rider for command-line invocation'
+  warn 'Skipping symlinking rider for command-line invocation'
 fi
 
 print_link_info 'idea/idea-ce'
@@ -75,7 +75,7 @@ if is_directory '/Applications/IntelliJ IDEA CE.app'; then
 elif is_directory '/Applications/IntelliJ IDEA.app'; then
   replace_symlink_if_needed '/Applications/IntelliJ IDEA.app/Contents/MacOS/idea' "${HOMEBREW_PREFIX}/bin/idea"
 else
-  warn 'skipping symlinking idea/idea-ce for command-line invocation'
+  warn 'Skipping symlinking idea/idea-ce for command-line invocation'
 fi
 
 print_link_info 'zed'
@@ -85,7 +85,7 @@ if is_directory '/Applications/Zed Preview.app'; then
 elif is_directory '/Applications/Zed.app'; then
   replace_symlink_if_needed '/Applications/Zed.app/Contents/MacOS/cli' "${HOMEBREW_PREFIX}/bin/zed"
 else
-  warn 'skipping symlinking zed for command-line invocation'
+  warn 'Skipping symlinking zed for command-line invocation'
 fi
 
 # Setup the login items once the full list of applications has been installed on the machine

@@ -31,9 +31,9 @@ command_exists bat && alias cat='bat'
 command_exists btop && alias top='btop'
 command_exists ncdu && alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'
 
-if command_exists 'run_all.sh'; then
+if command_exists 'run-all.sh'; then
   # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
-  alias rug='run_all.sh git'
+  alias rug='run-all.sh git'
   alias all="FOLDER='${HOME}' MAXDEPTH=6 rug"
   alias home="FOLDER='${HOME}' FILTER='.bin|.dotfiles|zsh|mise' MAXDEPTH=5 rug"
   is_directory "${PERSONAL_PROFILES_DIR}" && alias profiles="FOLDER='${PERSONAL_PROFILES_DIR}' MAXDEPTH=5 rug"
@@ -73,7 +73,7 @@ resurrect_tracked_repos() {
     unset file
     success 'Successfully resurrected all tracked git repos'
   else
-    warn "skipping resurrecting of repositories since '$(yellow "${PERSONAL_CONFIGS_DIR}")' doesn't exist"
+    warn "Skipping resurrecting of repositories since '$(yellow "${PERSONAL_CONFIGS_DIR}")' doesn't exist"
   fi
 
   # post-clone operations for installing system dependencies

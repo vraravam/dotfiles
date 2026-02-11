@@ -96,7 +96,7 @@ download_and_source_shellrc() {
     [[ ! -f "${HOME}/.shellrc" ]] && curl --retry 3 --retry-delay 5 -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/files/--HOME--/.shellrc" -o "${HOME}/.shellrc"
     DEBUG=true source "${HOME}/.shellrc"
   else
-    warn "skipping downloading and sourcing '$(yellow "${HOME}/.shellrc")' since its already loaded"
+    warn "Skipping downloading and sourcing '$(yellow "${HOME}/.shellrc")' since its already loaded"
   fi
 }
 
@@ -163,7 +163,7 @@ install_xcode_command_line_tools() {
 
     success 'Successfully installed xcode command-line tools'
   else
-    warn 'skipping installation of xcode command-line tools since its already present'
+    warn 'Skipping installation of xcode command-line tools since its already present'
   fi
   # Note: Duplicate the cleanup if the installation was cancelled and continued via the gui
   rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
@@ -190,7 +190,7 @@ install_oh_my_zsh_and_custom_plugins() {
     sh -c "$(ZSH= curl --retry 3 --retry-delay 5 -fsSL https://install.ohmyz.sh/)" "" --unattended
     success "Successfully installed oh-my-zsh into '$(yellow "${ZSH}")'"
   else
-    warn "skipping installation of oh-my-zsh since '$(yellow "${ZSH}")' is already present"
+    warn "Skipping installation of oh-my-zsh since '$(yellow "${ZSH}")' is already present"
   fi
 
   ##############################
@@ -235,7 +235,7 @@ clone_dot_files_repo() {
       exit 1
     fi
   else
-    warn "skipping cloning the dotfiles repo since '$(yellow "${DOTFILES_DIR}")' is either not defined or is already a git repo"
+    warn "Skipping cloning the dotfiles repo since '$(yellow "${DOTFILES_DIR}")' is either not defined or is already a git repo"
   fi
 }
 
@@ -267,7 +267,7 @@ install_homebrew() {
     fi
     unset install_script_file
   else
-    warn "skipping installation of $(yellow 'homebrew') since it's already installed"
+    warn "Skipping installation of $(yellow 'homebrew') since it's already installed"
   fi
 
   # Note: ensure that homebrew's environment variables are set correctly for this session (even if homebrew was not installed in this session)
@@ -313,7 +313,7 @@ clone_home_repo() {
       warn 'Failed to clone home repo'
     fi
   else
-    warn "skipping cloning of home repo since the '$(yellow 'KEYBASE_HOME_REPO_NAME')' env var hasn't been set"
+    warn "Skipping cloning of home repo since the '$(yellow 'KEYBASE_HOME_REPO_NAME')' env var hasn't been set"
   fi
 }
 
@@ -327,7 +327,7 @@ clone_profiles_repo() {
       warn 'Failed to clone profiles repo'
     fi
   else
-    warn "skipping cloning of profiles repo since either the '$(yellow 'KEYBASE_PROFILES_REPO_NAME')' or the '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
+    warn "Skipping cloning of profiles repo since either the '$(yellow 'KEYBASE_PROFILES_REPO_NAME')' or the '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
   fi
 }
 
@@ -398,7 +398,7 @@ if is_non_zero_string "${KEYBASE_USERNAME}"; then
 
   clone_profiles_repo
 else
-  warn "skipping cloning of any keybase repo since '$(yellow 'KEYBASE_USERNAME')' has not been set"
+  warn "Skipping cloning of any keybase repo since '$(yellow 'KEYBASE_USERNAME')' has not been set"
 fi
 
 rm -rf "${SSH_CONFIGS_DIR}/known_hosts.old"
@@ -411,14 +411,14 @@ if command_exists 'osx-defaults.sh'; then
   osx-defaults.sh -s
   success 'Successfully baselines preferences'
 else
-  warn "skipping baselining of preferences since '$(yellow 'osx-defaults.sh')' couldn't be found in the PATH; Please baseline manually and follow it up with re-import of the backed-up preferences"
+  warn "Skipping baselining of preferences since '$(yellow 'osx-defaults.sh')' couldn't be found in the PATH; Please baseline manually and follow it up with re-import of the backed-up preferences"
 fi
 
 if command_exists 'capture-prefs.sh'; then
   capture-prefs.sh -i
   success 'Successfully restored preferences from backup'
 else
-  warn "skipping importing of preferences since '$(yellow 'capture-prefs.sh')' couldn't be found in the PATH; Please set it up manually"
+  warn "Skipping importing of preferences since '$(yellow 'capture-prefs.sh')' couldn't be found in the PATH; Please set it up manually"
 fi
 
 if is_directory '/Applications/Raycast.app'; then
@@ -440,7 +440,7 @@ if command_exists recron; then
   recron
   success 'Successfully setup cron jobs'
 else
-  warn "skipping setting up of cron jobs since '$(yellow 'recron')' couldn't be found in the PATH; Please set it up manually"
+  warn "Skipping setting up of cron jobs since '$(yellow 'recron')' couldn't be found in the PATH; Please set it up manually"
 fi
 
 ###########################
@@ -452,13 +452,13 @@ fi
 if command_exists allow_all_direnv_configs; then
   allow_all_direnv_configs
 else
-  warn "skipping registering all direnv configs since '$(yellow 'allow_all_direnv_configs')' couldn't be found in the PATH; Please run it manually"
+  warn "Skipping registering all direnv configs since '$(yellow 'allow_all_direnv_configs')' couldn't be found in the PATH; Please run it manually"
 fi
 
 if command_exists install_mise_versions; then
   install_mise_versions
 else
-  warn "skipping installation of languages since '$(yellow 'install_mise_versions')' couldn't be found in the PATH; Please run it manually"
+  warn "Skipping installation of languages since '$(yellow 'install_mise_versions')' couldn't be found in the PATH; Please run it manually"
 fi
 
 ###############################

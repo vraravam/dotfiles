@@ -26,6 +26,9 @@ DOT_GIT_REPLACEMENT_TARGET = '.git'.freeze # Target string for replacement (e.g.
 IGNORED_FILENAMES = ['.DS_Store'].freeze # Filenames to ignore during processing
 IGNORED_FILE_PATTERNS = [/\.zwc/].freeze # File patterns to ignore (matches anywhere in path)
 
+HOME_PATH = Pathname.new(ENV.fetch('HOME')).expand_path
+DOTFILES_ROOT_PATH = Pathname.new(__dir__).join('..', 'files').expand_path
+
 # Helper to interpolate environment variables in paths like --VAR--
 #
 # @param path_template [String] The path template containing --VAR-- placeholders.
@@ -52,38 +55,38 @@ end
 # @param target_pn [Pathname] The Pathname object for the target file.
 # @return [void]
 def process_dotfile(source_pn, target_pn)
-  puts "Processing #{source_pn.to_s.yellow} --> #{target_pn.to_s.yellow}"
+  source_path = source_pn.to_s.replace_home_path_with_tilde
+  target_path = target_pn.to_s.replace_home_path_with_tilde
+  puts "Processing #{source_path.yellow} --> #{target_path.yellow}"
 
   # Ensure target directory exists
   FileUtils.mkdir_p(target_pn.dirname)
 
   # Check target status before deciding action
   if target_pn.symlink?
-    puts "  Target #{target_pn.to_s.cyan} exists as a symlink, will overwrite.".blue
+    puts "  Target #{target_path.cyan} exists as a symlink, will overwrite.".blue
   elsif target_pn.exist? # It exists and is not a symlink (real file/dir)
-    puts "  Moving existing file #{target_pn.to_s.cyan} to #{source_pn.to_s.cyan} (it will become the new source in your dotfiles repo)".blue
+    puts "  Moving existing file #{target_path.cyan} to #{source_path.cyan} (it will become the new source in your dotfiles repo)".blue
     # Move the existing file from target to the source location in the dotfiles repo
     FileUtils.mv(target_pn, source_pn, force: true)
   else
     # Target does not exist, no backup needed
-    puts "  Target #{target_pn.to_s.cyan} does not exist, creating new link/copy.".blue
+    puts "  Target #{target_path.cyan} does not exist, creating new link/copy.".blue
   end
 
   # Create symlink or copy file for files matching 'custom.git'
   if source_pn.basename.to_s.match?(CUSTOM_GIT_FILENAME_PATTERN) # Special handling for git files, match on filename
-    puts "  Copying #{source_pn.to_s.cyan} to #{target_pn.to_s.cyan}".blue
+    puts "  Copying #{source_path.cyan} to #{target_path.cyan}".blue
     FileUtils.cp(source_pn, target_pn)
   else
-    puts "  Creating symlink from #{source_pn.to_s.cyan} to #{target_pn.to_s.cyan}".blue
+    puts "  Creating symlink from #{source_path.cyan} to #{target_path.cyan}".blue
     FileUtils.ln_sf(source_pn, target_pn)
   end
 rescue StandardError => e
-  puts "**ERROR** Failed during processing of #{source_pn} -> #{target_pn}: #{e.message}".red
+  puts "**ERROR** Failed during processing of #{source_path.cyan} -> #{target_path.cyan}: #{e.message}".red
 end
 
 puts 'Starting to install dotfiles'.green
-HOME_PATH = Pathname.new(ENV.fetch('HOME')).expand_path
-DOTFILES_ROOT_PATH = Pathname.new(__dir__).join('..', 'files').expand_path
 
 # Note: cannot use Dir.glob since that doesn't handle hidden files
 Find.find(DOTFILES_ROOT_PATH) do |source_path_str|
@@ -102,7 +105,7 @@ Find.find(DOTFILES_ROOT_PATH) do |source_path_str|
   next unless interpolated_target_str # Skip if env var interpolation failed
 
   # since some env var might already contain the full path from the root...
-  # Pathname#join correctly handles cases where interpolated_target_str might be an absolute path.
+  # Pathname#join correctly handles cases where interpolated_target_str might already be an absolute path.
   target_pn = HOME_PATH.join(interpolated_target_str)
   process_dotfile(source_pn, target_pn)
 end
@@ -118,16 +121,16 @@ if global_config_link.symlink? && global_config_link.exist?
   include_line = 'Include "${SSH_CONFIGS_DIR}/global_config"'
   begin
     if File.readlines(default_ssh_config).any? { |l| l.strip == include_line }
-      puts "'#{include_line}' already present in '#{default_ssh_config}'".green
+      puts "'#{include_line}' already present in '#{default_ssh_config.to_s.replace_home_path_with_tilde}'".green
     else
-      puts "Adding '#{include_line}' to '#{default_ssh_config}'".blue
+      puts "Adding '#{include_line}' to '#{default_ssh_config.to_s.replace_home_path_with_tilde}'".blue
       File.write(default_ssh_config, "\n#{include_line}\n", mode: 'a')
     end
   rescue StandardError => e
-    puts "**ERROR** Failed processing SSH config '#{default_ssh_config}': #{e.message}".red
+    puts "**ERROR** Failed processing SSH config '#{default_ssh_config.to_s.replace_home_path_with_tilde}': #{e.message}".red
   end
 else
-  puts "**WARN** Skipping SSH config update because '#{global_config_link}' does not exist or is not a symlink.".yellow
+  puts "**WARN** Skipping SSH config update because '#{global_config_link.to_s.replace_home_path_with_tilde}' does not exist or is not a symlink.".yellow
 end
 
 puts "Since the '.gitignore' and '.gitattributes' files are COPIED over, any new changes being pulled in (from a newer version of the upstream repo) need to be manually reconciled between this repo and your home and profiles folders".red

@@ -88,23 +88,23 @@ The config file for this script is a yaml file that is passed into this script a
 * `active` (optional; default: false) specifies whether to process this folder/repo or not on your local machine
 * `post_clone` (optional; default: empty array) specifies other `bash` commands (in sequence) to be run once the resurrection is done - for eg, symlink a '.envrc' file if one exists
 
-## run_all.sh
+## run-all.sh
 
 This script will find all git repositories within the specified `FOLDER` (defaults to the current directory), filtered by `FILTER` (defaults to empty string meaning that it will not filter anything; accepts regex) and for a minimum depth of `MINDEPTH` (defaults to 1) and a maximum depth of `MAXDEPTH` (defaults to 3); and then runs the specified commands in each of the matched git repos. This script is not limited to only running 'git' commands - it can run any shell command! Examples:
 
 ```bash
-  run_all.sh git status                                      # to get the git status of all git repos
-  run_all.sh git clean -fxd                                  # to clean all git repos
-  run_all.sh git remote prune origin                         # to run the git remote prune command
-  run_all.sh git add -p                                      # to add all modified (unstaged) files for a commit eventually
-  run_all.sh find . -iname patch.txt --exec rm -rfv {} \;    # find all files with the name 'patch.txt'
+  run-all.sh git status                                      # to get the git status of all git repos
+  run-all.sh git clean -fxd                                  # to clean all git repos
+  run-all.sh git remote prune origin                         # to run the git remote prune command
+  run-all.sh git add -p                                      # to add all modified (unstaged) files for a commit eventually
+  run-all.sh find . -iname patch.txt --exec rm -rfv {} \;    # find all files with the name 'patch.txt'
 ```
 
 You can also control the starting folder by specifying the `FOLDER` env var, the filter for matching either the path and/or the name of the folders to be processed using `FILTER` (including using regular expressions for the same!) and also simultaneously control the depth using the `MINDEPTH` and `MAXDEPTH` env vars. So, for eg, to search in multiple nested folders starting at `~/dev`, you can use the following command:
 
 ```bash
-  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 FILTER="oss|zsh|omz" run_all.sh git status
-  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 run_all.sh git fetch
+  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 FILTER="oss|zsh|omz" run-all.sh git status
+  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 run-all.sh git fetch
 ```
 
 Note: **Any unix command can be run** (specific to the shell that you are currently using) or git commands. These commands are run within the context of each git repository that is matched after applying the filter logic.

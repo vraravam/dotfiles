@@ -20,7 +20,7 @@ type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
 
 recompile_zsh_scripts() {
   if ! is_file_empty "${1}" && (! is_file "${1}.zwc" || [[ "${1}" -nt "${1}.zwc" ]]); then
-    [[ -n "${DEBUG+1}" ]] && echo "recompiling ${1}"
+    [[ -n "${DEBUG+1}" ]] && echo "recompiling '$(replace_home_with_tilde "${1}")'"
     zrecompile -pq "${1}" 2>&1 &> /dev/null
   fi
 }
@@ -30,7 +30,7 @@ find_in_folder_and_recompile() {
   local f # Loop variable
 
   if ! is_directory "${dir_to_scan}"; then
-    echo "Warning: Directory '${dir_to_scan}' not found for zsh script recompilation." >&2
+    warn "Directory '$(replace_home_with_tilde "${dir_to_scan}")' not found for zsh script recompilation." >&2
     return
   fi
 

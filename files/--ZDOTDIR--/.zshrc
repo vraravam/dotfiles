@@ -254,9 +254,6 @@ if is_macos; then
   zstyle ':completion:*:*:docker:*' option-stacking yes
   zstyle ':completion:*:*:docker-*:*' option-stacking yes
 
-  # Use modern completion system (needs to be run AFTER some zstyle defns; usually a good idea to do so after all of them)
-  autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}" 2>&1 &> /dev/null || true
-
   autoload -Uz _git
 
   # Turn on autocomplete predictions
@@ -354,6 +351,9 @@ manpath=( "${manpath[@]:#}" )
 
 # remove duplicates from some env vars
 typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPATH manpath PATH path PKG_CONFIG_PATH
+
+# Use modern completion system (needs to be run AFTER some zstyle defns and setting up of *paths; usually a good idea to do so after all of them)
+autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}" 2>&1 &> /dev/null || true
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
 # execute 'ZSH_PROFILE_RC=true zsh' and run 'zprof' to get the details

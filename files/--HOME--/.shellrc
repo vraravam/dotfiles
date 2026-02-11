@@ -85,6 +85,12 @@ is_running_in_tty() {
   [[ -t 0 ]]
 }
 
+# replace the value of the 'HOME' variable with '~' to shorten the text length
+replace_home_with_tilde() {
+  local escaped_home="$(echo "${HOME}" | sed "s/\//\\\\\//g")"
+  echo "${1}" | sed "s/${escaped_home}/~/"
+}
+
 colorize() {
   printf "\x1b[${1}m"
 }
@@ -129,63 +135,63 @@ else
 fi
 
 blue() {
-  printf "${BLUE}${1}${NC}"
+  printf "${BLUE}$(replace_home_with_tilde "${1}")${NC}"
 }
 
 light_blue() {
-  printf "${LIGHT_BLUE}${1}${NC}"
+  printf "${LIGHT_BLUE}$(replace_home_with_tilde "${1}")${NC}"
 }
 
 purple() {
-  printf "${PURPLE}${1}${NC}"
+  printf "${PURPLE}$(replace_home_with_tilde "${1}")${NC}"
 }
 
 light_purple() {
-  printf "${LIGHT_PURPLE}${1}${NC}"
+  printf "${LIGHT_PURPLE}$(replace_home_with_tilde "${1}")${NC}"
 }
 
 cyan() {
-  printf "${CYAN}${1}${NC}"
+  printf "${CYAN}$(replace_home_with_tilde "${1}")${NC}"
 }
 
 light_cyan() {
-  printf "${LIGHT_CYAN}${1}${NC}"
+  printf "${LIGHT_CYAN}$(replace_home_with_tilde "${1}")${NC}"
 }
 
 green() {
-  printf "${GREEN}${1}${NC}"
+  printf "${GREEN}$(replace_home_with_tilde "${1}")${NC}"
 }
 
 light_green() {
-  printf "${LIGHT_GREEN}${1}${NC}"
+  printf "${LIGHT_GREEN}$(replace_home_with_tilde "${1}")${NC}"
 }
 
 red() {
-  printf "${RED}${1}${NC}"
+  printf "${RED}$(replace_home_with_tilde "${1}")${NC}"
 }
 
 light_red() {
-  printf "${LIGHT_RED}${1}${NC}"
+  printf "${LIGHT_RED}$(replace_home_with_tilde "${1}")${NC}"
 }
 
 yellow() {
-  printf "${YELLOW}${1}${NC}"
+  printf "${YELLOW}$(replace_home_with_tilde "${1}")${NC}"
 }
 
 success() {
-  echo "✅ $(green '**SUCCESS**') ${1}"
+  echo "✅ $(green '**SUCCESS**') $(replace_home_with_tilde "${1}")"
 }
 
 info() {
-  echo "ℹ️ $(cyan '**INFO**') ${1}"
+  echo "ℹ️ $(cyan '**INFO**') $(replace_home_with_tilde "${1}")"
 }
 
 warn() {
-  echo "⚠️ $(light_red '**WARN**') ${1}"
+  echo "⚠️ $(light_red '**WARN**') $(replace_home_with_tilde "${1}")"
 }
 
 debug() {
-  echo "⚙️ $(light_purple '**DEBUG**') ${1}"
+  echo "⚙️ $(light_purple '**DEBUG**') $(replace_home_with_tilde "${1}")"
 }
 
 error() {
@@ -201,9 +207,7 @@ print_chars_for_length() {
 }
 
 section_header() {
-  # replace the value of the 'HOME' variable with '~' to shorten the text length
-  local escaped_home="$(echo "${HOME}" | sed "s/\//\\\\\//g")"
-  local header=$(echo "${1}" | sed "s/${escaped_home}/~/")
+  local header="$(replace_home_with_tilde "${1}")"
   local viewport_length=$(tput cols)
   local header_length=${#header}
   local final_length=$(($(($((${viewport_length} - ${header_length})) / 2)) - 10))

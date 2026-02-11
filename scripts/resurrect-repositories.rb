@@ -4,7 +4,10 @@
 
 # file location: <anywhere; but advisable in the PATH>
 
-require "#{__dir__}/utilities/string.rb"
+# It assumes the following:
+#   1. Ruby language is present in the system prior to this script being run.
+
+require_relative 'utilities/string'
 
 # Displays the usage instructions for the script and exits.
 #
@@ -39,6 +42,8 @@ OTHER_REMOTES_KEY_NAME = 'other_remotes'.freeze # Key name for additional remote
 POST_CLONE_KEY_NAME = 'post_clone'.freeze # Key name for post-clone commands
 GIT_EXECUTABLE = 'git'.freeze # Path to git executable
 GIT_CONFIG_REGEXP_CMD = ['config', '--get-regexp', '^remote\\..*\\.url'].freeze # Git subcommand to find remote URLs in git config
+
+HOME_PATH = Pathname.new(ENV.fetch('HOME')).expand_path
 
 # Checks if a value is nil or empty.
 #
@@ -195,7 +200,7 @@ end
 # @return [Array<Hash>] An array of repository configuration hashes.
 def read_git_repos_from_file(filename)
   yml_file = File.expand_path(filename)
-  puts "Using config file: #{yml_file.green}"
+  puts "Using config file: #{yml_file.replace_home_path_with_tilde.green}"
   repositories = YAML.load_file(yml_file).select { |repo| repo['active'] }
   repositories.each do |repo|
     if repo[FOLDER_KEY_NAME].is_a?(String)
@@ -270,7 +275,7 @@ def resurrect_each(repo, idx, total)
   folder = repo[FOLDER_KEY_NAME] # Assumed to be an absolute, resolved path
   FileUtils.mkdir_p(folder)
 
-  puts "***** Resurrecting [#{justify(idx + 1)} of #{justify(total)}]: #{folder} *****".green
+  puts "***** Resurrecting [#{justify(idx + 1)} of #{justify(total)}]: #{folder.replace_home_path_with_tilde} *****".green
 
   existing_remotes = {} # Store existing remotes {name => url}
   if git_repo?(folder)
@@ -282,7 +287,7 @@ def resurrect_each(repo, idx, total)
   else
     puts 'Cloning git repo...'.yellow
     # This command relies on `clone_repo_into` being available in a shell environment potentially sourced from .shellrc.
-    clone_command = "source \"#{File.join(ENV['HOME'], '.shellrc')}\" && clone_repo_into \"#{repo[REMOTE_KEY_NAME]}\" \"#{folder}\""
+    clone_command = "source \"#{HOME_PATH.join('.shellrc')}\" && clone_repo_into \"#{repo[REMOTE_KEY_NAME]}\" \"#{folder}\""
     _stdout_str, stderr_str, status = Open3.capture3(clone_command)
 
     if !status.success? || (!stderr_str.empty? && stderr_str =~ /error/i)
@@ -311,7 +316,7 @@ def resurrect_each(repo, idx, total)
       puts "Adding remote '#{name}' -> '#{remote}'".blue
       _stdout_add, stderr_add, status_add = Open3.capture3(*git_base_cmd, REMOTE_KEY_NAME, 'add', name, remote)
       unless status_add.success?
-        warning_message = "WARNING: Failed to add remote '#{name}' for repo '#{folder}' (status: #{status_add.exitstatus})".yellow
+        warning_message = "WARNING: Failed to add remote '#{name}' for repo '#{folder.replace_home_path_with_tilde}' (status: #{status_add.exitstatus})".yellow
         warning_message += "\nSTDERR: #{stderr_add}".yellow unless stderr_add.strip.empty?
         puts warning_message
       end
@@ -320,7 +325,7 @@ def resurrect_each(repo, idx, total)
       puts "Updating remote '#{name}' URL from '#{existing_remotes[name]}' to '#{remote}'".blue
       _stdout_update, stderr_update, status_update = Open3.capture3(*git_base_cmd, REMOTE_KEY_NAME, 'set-url', name, remote)
       unless status_update.success?
-        warning_message = "WARNING: Failed to update URL for remote '#{name}' in repo '#{folder}' (status: #{status_update.exitstatus})".yellow
+        warning_message = "WARNING: Failed to update URL for remote '#{name}' in repo '#{folder.replace_home_path_with_tilde}' (status: #{status_update.exitstatus})".yellow
         warning_message += "\nSTDERR: #{stderr_update}".yellow unless stderr_update.strip.empty?
         puts warning_message
       end
@@ -341,7 +346,7 @@ def resurrect_each(repo, idx, total)
         puts "  Executing: #{command_str.dump}".blue
         _stdout, stderr, status = Open3.capture3(command_str)
         unless status.success?
-          puts "WARNING: Post-clone command #{command_str.dump} failed for repo '#{folder}' (exit status: #{status.exitstatus})".yellow
+          puts "WARNING: Post-clone command #{command_str.dump} failed for repo '#{folder.replace_home_path_with_tilde}' (exit status: #{status.exitstatus})".yellow
           puts "STDERR: #{stderr.strip}".red unless stderr.strip.empty?
         end
       end
@@ -374,7 +379,7 @@ def verify_all(repositories, filter)
     end
   end
 
-  local_folders = find_git_repos_from_disk(ref_folder_path || ENV['HOME']).uniq
+  local_folders = find_git_repos_from_disk(ref_folder_path || HOME_PATH.to_s).uniq
   local_folders = apply_filter(local_folders, filter).uniq.sort
 
   # Convert to Sets for potentially faster difference/union operations on large lists
@@ -398,7 +403,7 @@ case ARGV[0]
 when '-g'
   puts "Running operation: #{'generation'.green}"
   discovery_dir = File.expand_path(ARGV[1])
-  puts "Discovering repos under: #{discovery_dir.green}"
+  puts "Discovering repos under: #{discovery_dir.replace_home_path_with_tilde.green}"
   repositories = find_git_repos_from_disk(discovery_dir)
   repositories = apply_filter(repositories, filter)
   puts repositories.map { |dir| generate_each(dir) }.to_yaml

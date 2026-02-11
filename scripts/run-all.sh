@@ -16,11 +16,11 @@ $(red "** Usage **")
 This script will find all git repositories within the specified 'FOLDER' (defaults to current dir) filtered by 'FILTER' (defaults to empty string; accepts regex) and for a minimum depth of 'MINDEPTH' (optional; defaults to 1) and a maximum depth of 'MAXDEPTH' (optional; defaults to 3); and then runs the specified commands in each of those git repos. This script is not limited to only running 'git' commands!
 
 For eg:
-FOLDER=dev MINDEPTH=2 run_all.sh git status
-FOLDER=dev MINDEPTH=2 run_all.sh git branch -vv
-FOLDER=dev MINDEPTH=2 run_all.sh ls -l
-FILTER=oss run_all.sh ls -l
-FILTER='oss|zsh|omz' run_all.sh git fo
+FOLDER=dev MINDEPTH=2 run-all.sh git status
+FOLDER=dev MINDEPTH=2 run-all.sh git branch -vv
+FOLDER=dev MINDEPTH=2 run-all.sh ls -l
+FILTER=oss run-all.sh ls -l
+FILTER='oss|zsh|omz' run-all.sh git fo
 EOF
   exit 1
 }
@@ -38,6 +38,9 @@ while getopts ":h:" opt; do
 done
 shift $((OPTIND - 1))
 
+# if there are no arguments, print usage and exit
+[[ $# -eq 0 ]] && usage "${0##*/}"
+
 section_header 'Running commands in git repositories'
 
 local script_start_time=$(date +%s)
@@ -50,7 +53,7 @@ FILTER="${FILTER:-}"
 
 start_time=$(date +%s)
 
-echo "$(yellow "Finding git repos starting in folder '$(cyan "${FOLDER}")' for a min depth of $(cyan "${MINDEPTH}") and max depth of $(cyan "${MAXDEPTH}")")"
+echo "$(yellow "Finding git repos starting in folder '$(cyan "$(replace_home_with_tilde "${FOLDER}")")' for a min depth of $(cyan "${MINDEPTH}") and max depth of $(cyan "${MAXDEPTH}")")"
 [[ "${FILTER}" != '' ]] && echo "$(yellow "Filtering with: $(cyan "${FILTER}")")"
 
 # Find all .git directories and store their parent directory
@@ -61,7 +64,7 @@ TOTAL_COUNT=${#dir_array[@]}
 COUNT=1
 for dir in "${dir_array[@]}"; do
   if is_directory "${dir}" && ! is_symbolic_link "${dir}"; then
-    info "[${COUNT} of ${TOTAL_COUNT}] '$(yellow "$*")' in '$(cyan "${dir}")'"
+    info "[${COUNT} of ${TOTAL_COUNT}] '$(yellow "$*")' in '$(cyan "$(replace_home_with_tilde "${dir}")")'"
     (cd "${dir}" && eval "$@")
     ((COUNT++))
   fi

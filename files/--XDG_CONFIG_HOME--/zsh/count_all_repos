@@ -10,7 +10,7 @@ type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
 # internal function: not to be called separately
 _count_repo() {
   if ! is_git_repo "${1}"; then
-    warn "skipping finding count of the repo since '$(yellow "${1}")' doesn't exist or is not a git repo"
+    warn "Skipping finding count of the repo since '$(yellow "${1}")' doesn't exist or is not a git repo"
     return 0 # Success, nothing to do
   fi
 

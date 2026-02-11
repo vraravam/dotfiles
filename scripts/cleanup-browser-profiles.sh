@@ -24,7 +24,7 @@ vacuum_browser_profile_folder() {
   fi
 
   if ! is_directory "${profile_folder}"; then
-    warn "skipping processing of '$(yellow "${profile_folder}")' since it doesn't exist"
+    warn "Skipping processing of '$(yellow "${profile_folder}")' since it doesn't exist"
     return 0 # Success, nothing to do
   fi
 
