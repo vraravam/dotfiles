@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.3
+
+* Revamped the documentations to improve clarity, readability and adoptability.
+
 ### 3.0.2
 
 * *[run-all.sh]* Renamed the script to follow the naming convention (using hyphen instead of underscore) for all shell scripts.

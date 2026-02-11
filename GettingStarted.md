@@ -4,8 +4,8 @@ On your local machine:
 
 1. **If you use `mas` to install apps from the App Store**, login into the `App Store` application.
 2. Open the `System Preferences` application.
-   * Search for 'Full Disk Access' and add 'Terminal' (if not, the setup script will error out in between)
-   * Search for 'File Vault' and turn it on (if not, then the setup script will exit in the beginning itself)
+   * Search for 'Full Disk Access' and add 'Terminal' (if not, the setup script will error out)
+   * Search for 'File Vault' and turn it on (if not, then the setup script will exit)
 3. If you are going to use Raycast, open the `System Preferences` application.
    * Search for 'Privacy & Security > Accessibility', and enable/approve for the Terminal app (and later for iTerm once its installed).
 
@@ -15,14 +15,14 @@ The meta script to setup the macos machine from a vanilla OS can be run using th
 export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' HOMEBREW_BASE_INSTALL='true'; curl --retry 3 --retry-delay 5 -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh" | zsh; unset HOMEBREW_BASE_INSTALL
 ```
 
-This script can be run in an idempotent manner, and will setup [oh-my-zsh](https://ohmyz.sh/), [homebrew](https://brew.sh), the dotfiles (this repo), etc. (There is 1 caveat though: on a fresh machine, this script silently fails after the first basic installation, and so has to be run again manually *after* running the following steps.)
+This script can be run in an idempotent manner, and will setup [oh-my-zsh](https://ohmyz.sh/), [homebrew](https://brew.sh), the dotfiles (this repo), etc. (There is 1 caveat though: on a fresh machine, this script silently fails after the first basic installation.)
 All these scripts are optimized for fast loading of the shell so that the user can work almost immediately upon starting the app.
 
 **Important Note** After the above script has completed running successfully, you need to do the following *manually*
 
 1. Use [this gist](https://gist.github.com/vraravam/e9676759db46950e1fd817e49e513394) <!-- Note: Do NOT change this --> as a template to create equivalent configuration files with your details and make corresponding changes in `files/--HOME--/.gitconfig-oss.inc` to reflect the same.
 
-   *Tip*: Since these configurations are deep-merged (latest one wins), you will not want to expose your other client-specific configs or your personal configs like email to the outside world (via this public repo). So, you will want to make these changes in the `${HOME}/.gitconfig-oss.inc` and not in `${HOME}/.gitconfig` directly.
+   *Tip*: Since these git configurations are deep-merged (latest one wins), you will not want to expose your other client-specific configs or your personal configs like email to the outside world (via this public repo). So, you will want to make these changes in the `${HOME}/.gitconfig-oss.inc` and not in `${HOME}/.gitconfig` directly.
 2. Quit and Open the `Terminal` application.
    * Goto Preferences > Profiles > Basic > Text (and change the font to 'MesloLGS Nerd Font')
 3. Open the `iTerm2` application.
@@ -49,8 +49,8 @@ All these scripts are optimized for fast loading of the shell so that the user c
 
 **Continuing the setup process**
 
-1. If you are using my keybase-based advanced setup), make sure that you have logged into `Keybase` either via the application or the command-line. The script will prompt you to login using its in-built cli if you haven't done so.
-2. Rerun the `fresh-install-of-osx.sh` script. This portion of the script will setup the home folder repo, the browser profiles, resurrect the repositories that you have created a registry for, install all the programming languages (each specific version of each language) using [mise](https://github.com/jdx/mise), apply some [OSX defaults](scripts/osx-defaults.sh) and finally re-import your preferences (that were captured from the old machine) using the [capture-prefs](scripts/capture-prefs.sh) script. If you had captured the Raycast preferences, then you can re-import them using the `import settings` option in the Raycast application.
+1. If you are using my keybase-based setup to backup your personal files/settings, make sure that you have logged into `Keybase` either via the application or the command-line. The script will prompt you to login using its in-built cli if you haven't done so.
+2. Rerun the `fresh-install-of-osx.sh` script. This portion of the script will setup the home folder repo, the browser profiles, resurrect the repositories that you have created a registry for, install all the programming languages (each specific version of each language) using [mise](https://github.com/jdx/mise), apply some [OSX defaults](scripts/osx-defaults.sh) and finally re-import your preferences (that were captured from the old machine) using the [capture-prefs](scripts/capture-prefs.sh) script. If you had captured the Raycast preferences, then you can re-import them using the `import settings` option in the Raycast application's UI.
 
 **Important Note** After the above script has completed running successfully, you need to do the following *manually* if you *hadn't* captured the Raycast preferences (otherwise, you can skip these steps):
 
