@@ -421,8 +421,8 @@ else
   warn "Skipping importing of preferences since '$(yellow 'capture-prefs.sh')' couldn't be found in the PATH; Please set it up manually"
 fi
 
-if is_directory '/Applications/Raycast.app'; then
-  open /Applications/Raycast.app
+if is_directory '/Applications/Sol.app'; then
+  open /Applications/Sol.app
 fi
 
 ################################
@@ -500,8 +500,7 @@ unfunction clone_profiles_repo
 
 echo "\n"
 success '** Finished auto installation process: Remember to do the following steps! **'
-echo "$(yellow "1. set the 'RAYCAST_SETTINGS_PASSWORD' env var, and then run the 'capture-raycast-configs.sh' script to import your Raycast configuration into the new machine.")"
-echo "$(yellow "2. Run the 'bupc' alias to finish setting up all other applications managed by homebrew")"
-echo "$(yellow "3. MANUALLY QUIT AND RESTART iTerm2 and Terminal apps")"
+echo "$(yellow "1. Run the 'bupc' alias to finish setting up all other applications managed by homebrew")"
+echo "$(yellow "2. MANUALLY QUIT AND RESTART iTerm2 and Terminal apps")"
 
 print_script_duration "${script_start_time}"

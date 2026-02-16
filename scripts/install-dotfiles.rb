@@ -15,7 +15,7 @@
 require_relative 'utilities/string'
 require 'fileutils'
 require 'find'
-require 'pathname'
+require 'pathname'  # Note: This has been added explicitly due to the default version of ruby (2.6). Once the default ruby upgrades to 3.x, we can remove
 
 # --- Constants ---
 ENV_VAR_REGEX = /--(.*?)--/.freeze # For interpolating environment variables like --VAR--

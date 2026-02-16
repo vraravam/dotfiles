@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'pathname'  # Note: This has been added explicitly due to the default version of ruby (2.6). Once the default ruby upgrades to 3.x, we can remove
+
 class String
   # colorization
   #

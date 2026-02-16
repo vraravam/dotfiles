@@ -151,7 +151,7 @@
 
   # compress disk-space-usage by deleting dangling commits (use SKIP_SIZE_BEFORE=1 to skip printing the size before the operation)
   # Note: Do not use '--all' switch for reflog expire - since that also destroys stashes
-  cc = "![[ ${SKIP_SIZE_BEFORE} -ne 0 ]] || git size; git remote prune origin; git repack -a -d -f --depth=250 --window=250; git reflog expire --all --expire=1.week.ago; git maintenance run --task=gc; git size;"
+  cc = "![[ ${SKIP_SIZE_BEFORE} -ne 0 ]] || git size; git remote prune origin; git prune --progress; git pack-refs --all; git repack -a -d --depth=250 --window=250; git reflog expire --all --expire=1.week.ago; git maintenance run --task=gc; git size;"
 
   # show the biggest files in the disk (this is not technically specific to git-tracked files)
   big = "!git rev-list --objects --all | grep \"$(git verify-pack -v .git/objects/pack/*.idx | sort -k 3 -n | tail -100 | awk '{print $1}')\""
@@ -224,6 +224,7 @@
   logAllRefUpdates = true
   longPaths = true
   pager = diff-so-fancy | less --tabs=2 -RFX
+  # repositoryFormatVersion = 1   # Note: This can be uncommented to enable the new repository format for SHA256 support
   symlinks = false
   untrackedCache = true
   whitespace = fix
@@ -242,6 +243,9 @@
   # markEmptyLines = false
   # stripLeadingSymbols = false
   # useUnicodeRuler = false
+[extensions]
+  # objectFormat = sha256         # Note: This can be uncommented to enable the new repository format for SHA256 support
+  # compatObjectFormat = sha1     # Note: This can be uncommented to enable the new repository format for SHA256 support
 [fetch]
   all = true
   parallel = 0

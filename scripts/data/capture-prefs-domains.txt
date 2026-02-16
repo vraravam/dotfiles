@@ -153,6 +153,7 @@ com.apple.Keyboard-Settings.extension
 com.apple.keyboardservicesd
 com.apple.keychainaccess
 com.apple.knowledge-agent
+com.apple.lighthouse.dill.BiomeSELFIngestor
 com.apple.lighthouse.pnr.PnROnDeviceWorker
 com.apple.lighthouse.PnROnDeviceWoker.default-data-worker
 com.apple.lighthouse.siri.IFTranscriptIngestor
@@ -214,6 +215,7 @@ com.apple.ProblemReporter
 com.apple.Profiles-Settings.extension
 com.apple.protectedcloudstorage.protectedcloudkeysyncing
 com.apple.quicklook.QuickLookUIService
+com.apple.quicklook.ThumbnailsAgent
 com.apple.QuickTimePlayerX
 com.apple.remindd
 com.apple.remotedesktop
@@ -364,6 +366,7 @@ com.googlecode.munki.ManagedSoftwareCenter
 com.jordanbaird.Ice
 com.lowtechguys.ZoomHider
 com.macpaw.site.theunarchiver
+com.mediaatelier.Usage
 com.microsoft.autoupdate.fba
 com.microsoft.autoupdate2
 com.microsoft.rdc.macos
@@ -373,11 +376,13 @@ com.microsoft.VSCodeInsiders
 com.mitchellh.ghostty
 com.objective-see.KnockKnock
 com.okta.mobile
+com.ospfranco.sol
 com.ovatar.batteryapp
 com.parallels.Parallels Desktop
 com.pdfeditor.pdfeditormac
 com.qtproject
 com.raycast.macos
+com.sproutcube.Shortcat
 com.titanium.OnyX
 com.titanium.OnyX.update
 com.utmapp.UTM
@@ -417,6 +422,7 @@ org.torproject.torbrowseralpha
 pbs
 screencapture
 sharedfilelistd
+studio.techflow.badgeify
 systemgroup.com.apple.icloud.searchpartyd.sharedsettings
 theboringteam.boringnotch
 us.zoom.updater

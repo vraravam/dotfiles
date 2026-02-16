@@ -30,6 +30,7 @@ usage(0) if ARGV[0] == '--help'
 usage if ARGV.length != 2 || !['-g', '-r', '-c'].include?(ARGV[0])
 
 require 'fileutils'
+require 'pathname'  # Note: This has been added explicitly due to the default version of ruby (2.6). Once the default ruby upgrades to 3.x, we can remove
 require 'set'
 require 'yaml'
 require 'open3'

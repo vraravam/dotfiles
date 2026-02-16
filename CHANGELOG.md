@@ -2,6 +2,12 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.4
+
+* *[Brewfile]* Replaced 'Raycast' with 'Sol' (https://github.com/ospfranco/sol) - lightweight, FOSS, faster.
+* *[Brewfile]* Added 'Shortcat' (https://github.com/shortcatapp/shortcat) for faster and more efficient keyboard shortcuts.
+* *[resurrect-repositories.rb]* Support for ruby 2.6 (default ruby in macos 26 Tahoe): added 'pathname' to require list.
+
 ### 3.0.3
 
 * Revamped the documentations to improve clarity, readability and adoptability.
