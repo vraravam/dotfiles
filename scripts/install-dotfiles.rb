@@ -16,6 +16,7 @@ require_relative 'utilities/string'
 require 'fileutils'
 require 'find'
 require 'pathname'  # Note: This has been added explicitly due to the default version of ruby (2.6). Once the default ruby upgrades to 3.x, we can remove
+require 'optparse'
 
 # --- Constants ---
 ENV_VAR_REGEX = /--(.*?)--/.freeze # For interpolating environment variables like --VAR--
@@ -28,6 +29,28 @@ IGNORED_FILE_PATTERNS = [/\.zwc/].freeze # File patterns to ignore (matches anyw
 
 HOME_PATH = Pathname.new(ENV.fetch('HOME')).expand_path
 DOTFILES_ROOT_PATH = Pathname.new(__dir__).join('..', 'files').expand_path
+
+# Parse command-line options
+options = { dry_run: false, verbose: false, force: false }
+OptionParser.new do |opts|
+  opts.banner = "Usage: install-dotfiles.rb [options]"
+  opts.on("-n", "--dry-run", "Show what would be done without doing it") do
+    options[:dry_run] = true
+  end
+  opts.on("-v", "--verbose", "Verbose output") do
+    options[:verbose] = true
+  end
+  opts.on("-f", "--force", "Force overwrite without backing up existing files") do
+    options[:force] = true
+  end
+  opts.on("-h", "--help", "Show this help message") do
+    puts opts
+    exit
+  end
+end.parse!
+
+# Statistics tracking
+STATS = { processed: 0, created: 0, updated: 0, skipped: 0, errors: 0 }
 
 # Helper to interpolate environment variables in paths like --VAR--
 #
@@ -53,40 +76,81 @@ end
 #
 # @param source_pn [Pathname] The Pathname object for the source file.
 # @param target_pn [Pathname] The Pathname object for the target file.
+# @param options [Hash] Options hash with :dry_run, :verbose, :force keys
 # @return [void]
-def process_dotfile(source_pn, target_pn)
+def process_dotfile(source_pn, target_pn, options = {})
   source_path = source_pn.to_s.replace_home_path_with_tilde
   target_path = target_pn.to_s.replace_home_path_with_tilde
-  puts "Processing #{source_path.yellow} --> #{target_path.yellow}"
+
+  STATS[:processed] += 1
+
+  if options[:dry_run] || options[:verbose]
+    puts "Processing #{source_path.yellow} --> #{target_path.yellow}"
+  end
+
+  if options[:dry_run]
+    # In dry-run mode, just show what would be done
+    if target_pn.symlink?
+      puts "  [DRY-RUN] Would overwrite existing symlink at #{target_path.cyan}".blue
+      STATS[:updated] += 1
+    elsif target_pn.exist?
+      if options[:force]
+        puts "  [DRY-RUN] Would forcefully overwrite #{target_path.cyan}".blue
+      else
+        puts "  [DRY-RUN] Would move existing file #{target_path.cyan} to #{source_path.cyan}".blue
+      end
+      STATS[:updated] += 1
+    else
+      puts "  [DRY-RUN] Would create new link/copy at #{target_path.cyan}".blue
+      STATS[:created] += 1
+    end
+
+    if source_pn.basename.to_s.match?(CUSTOM_GIT_FILENAME_PATTERN)
+      puts "  [DRY-RUN] Would copy (not symlink)".blue
+    else
+      puts "  [DRY-RUN] Would create symlink".blue
+    end
+    return
+  end
 
   # Ensure target directory exists
-  FileUtils.mkdir_p(target_pn.dirname)
+  FileUtils.mkdir_p(target_pn.dirname) unless options[:dry_run]
 
   # Check target status before deciding action
   if target_pn.symlink?
-    puts "  Target #{target_path.cyan} exists as a symlink, will overwrite.".blue
+    puts "  Target #{target_path.cyan} exists as a symlink, will overwrite.".blue if options[:verbose]
+    STATS[:updated] += 1
   elsif target_pn.exist? # It exists and is not a symlink (real file/dir)
-    puts "  Moving existing file #{target_path.cyan} to #{source_path.cyan} (it will become the new source in your dotfiles repo)".blue
-    # Move the existing file from target to the source location in the dotfiles repo
-    FileUtils.mv(target_pn, source_pn, force: true)
+    if options[:force]
+      puts "  Forcefully overwriting existing file #{target_path.cyan}".blue if options[:verbose]
+      FileUtils.rm_rf(target_pn)
+    else
+      puts "  Moving existing file #{target_path.cyan} to #{source_path.cyan} (it will become the new source in your dotfiles repo)".blue if options[:verbose]
+      # Move the existing file from target to the source location in the dotfiles repo
+      FileUtils.mv(target_pn, source_pn, force: true)
+    end
+    STATS[:updated] += 1
   else
     # Target does not exist, no backup needed
-    puts "  Target #{target_path.cyan} does not exist, creating new link/copy.".blue
+    puts "  Target #{target_path.cyan} does not exist, creating new link/copy.".blue if options[:verbose]
+    STATS[:created] += 1
   end
 
   # Create symlink or copy file for files matching 'custom.git'
   if source_pn.basename.to_s.match?(CUSTOM_GIT_FILENAME_PATTERN) # Special handling for git files, match on filename
-    puts "  Copying #{source_path.cyan} to #{target_path.cyan}".blue
+    puts "  Copying #{source_path.cyan} to #{target_path.cyan}".blue if options[:verbose]
     FileUtils.cp(source_pn, target_pn)
   else
-    puts "  Creating symlink from #{source_path.cyan} to #{target_path.cyan}".blue
+    puts "  Creating symlink from #{source_path.cyan} to #{target_path.cyan}".blue if options[:verbose]
     FileUtils.ln_sf(source_pn, target_pn)
   end
 rescue StandardError => e
   puts "**ERROR** Failed during processing of #{source_path.cyan} -> #{target_path.cyan}: #{e.message}".red
+  STATS[:errors] += 1
 end
 
 puts 'Starting to install dotfiles'.green
+puts '[DRY-RUN MODE]'.yellow if options[:dry_run]
 
 # Note: cannot use Dir.glob since that doesn't handle hidden files
 Find.find(DOTFILES_ROOT_PATH) do |source_path_str|
@@ -107,7 +171,19 @@ Find.find(DOTFILES_ROOT_PATH) do |source_path_str|
   # since some env var might already contain the full path from the root...
   # Pathname#join correctly handles cases where interpolated_target_str might already be an absolute path.
   target_pn = HOME_PATH.join(interpolated_target_str)
-  process_dotfile(source_pn, target_pn)
+  process_dotfile(source_pn, target_pn, options)
+end
+
+# Print statistics summary
+puts "\n#{'Summary:'.green}"
+puts "  Processed: #{STATS[:processed]}"
+puts "  Created:   #{STATS[:created]}"
+puts "  Updated:   #{STATS[:updated]}"
+puts "  Skipped:   #{STATS[:skipped]}"
+if STATS[:errors] > 0
+  puts "  Errors:    #{STATS[:errors]}".red
+else
+  puts "  Errors:    #{STATS[:errors]}"
 end
 
 ssh_folder = HOME_PATH + '.ssh'

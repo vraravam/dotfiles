@@ -61,13 +61,39 @@ local dir_array=("${(@f)$(find "${FOLDER}" -mindepth "${MINDEPTH}" -maxdepth "${
 
 TOTAL_COUNT=${#dir_array[@]}
 
+# Track failures
+local -a failed_repos=()
+local -a successful_repos=()
+
 COUNT=1
 for dir in "${dir_array[@]}"; do
   if is_directory "${dir}" && ! is_symbolic_link "${dir}"; then
     info "[${COUNT} of ${TOTAL_COUNT}] '$(yellow "$*")' in '$(cyan "$(replace_home_with_tilde "${dir}")")'"
-    (cd "${dir}" && eval "$@")
+    if (cd "${dir}" && eval "$@"); then
+      successful_repos+=("${dir}")
+    else
+      failed_repos+=("${dir}")
+      warn "Command failed in: $(replace_home_with_tilde "${dir}")"
+    fi
     ((COUNT++))
   fi
 done
 
+# Report summary
+echo ""
+section_header "$(yellow 'Summary')"
+echo "Total repositories: ${TOTAL_COUNT}"
+echo "Successful: $(green ${#successful_repos[@]})"
+if [[ ${#failed_repos[@]} -gt 0 ]]; then
+  echo "Failed: $(red ${#failed_repos[@]})"
+  echo "$(red 'Failed repositories:')"
+  for repo in "${failed_repos[@]}"; do
+    echo "  - $(red "$(replace_home_with_tilde "${repo}")")"
+  done
+fi
+
 print_script_duration "${script_start_time}"
+
+# Exit with error if any repos failed
+[[ ${#failed_repos[@]} -gt 0 ]] && exit 1
+exit 0

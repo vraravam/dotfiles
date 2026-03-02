@@ -35,7 +35,7 @@ perform_update() {
 perform_update 'brews' 'brew' 'brew bundle check || brew bundle'
 
 # This is typically run only in the ${HOME} folder so as to upgrade the software versions in the "global" sense
-perform_update 'mise plugins' 'mise' 'mise plugins update && mise upgrade --bump && mise prune -y'
+perform_update 'mise plugins' 'mise' 'mise plugins update && mise upgrade --bump' # && mise prune --tools --dry-run'
 
 perform_update 'tldr database' 'tldr' 'tldr --update'
 
@@ -95,10 +95,7 @@ unset zen_browser_desktop_codebase
 if command_exists ollama; then
   section_header "$(yellow 'Pull ollama models')"
   local -a ollama_models=(
-    codellama
     deepseek-coder-v2
-    deepseek-r1
-    gpt-4
     gpt-oss:20b
     qwen3-coder:30b
   )

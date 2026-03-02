@@ -44,6 +44,18 @@ if is_zero_string "${target_folder}" || is_zero_string "${upstream_repo_owner}";
   usage "${0##*/}"
 fi
 
+get_remote_url() {
+  local remote_name="${1:-origin}"
+  local remote_url
+  if git -C "${target_folder}" remote | grep -q "^${remote_name}$"; then
+    if ! remote_url=$(git -C "${target_folder}" remote get-url "${remote_name}" 2>/dev/null); then
+      error "Could not retrieve URL for remote '${remote_name}' in '$(yellow "${target_folder}")'. Does the remote exist?"
+      return 1
+    fi
+  fi
+  echo "${remote_url}"
+}
+
 main() {
   section_header "$(yellow 'Adding new upstream to'): '$(purple "${target_folder}")'"
 
@@ -52,23 +64,23 @@ main() {
     return 0 # Success, nothing to do
   fi
 
-  # Check if an 'upstream' remote already exists using 'git remote get-url'
+  # Check if an 'upstream' remote already exists
   local existing_upstream
-  if existing_upstream=$(git -C "${target_folder}" remote get-url upstream 2> /dev/null); then
-    # If get-url succeeded, the remote exists.
+  if ! existing_upstream="$(get_remote_url upstream)"; then
     warn "Remote 'upstream' already exists for the repo in '$(yellow "${target_folder}")': '$(yellow "${existing_upstream}")'"
     return 0 # Success, nothing to do
   fi
 
   # Get the URL of the 'origin' remote using 'git remote get-url'
   local origin_remote_url
-  # Capture output and check exit status separately for clarity
-  origin_remote_url=$(git -C "${target_folder}" remote get-url origin 2> /dev/null)
-  if [[ $? -ne 0 ]]; then
+  if ! origin_remote_url="$(get_remote_url origin)"; then
     error "Could not retrieve URL for remote 'origin' in '$(yellow "${target_folder}")'. Does the remote exist?"
-  elif is_zero_string "${origin_remote_url}"; then
-    # This case is less likely with get-url but check anyway
+    return 1
+  fi
+
+  if is_zero_string "${origin_remote_url}"; then
     error "Retrieved empty URL for remote 'origin' in '$(yellow "${target_folder}")'."
+    return 1
   fi
 
   local cloned_repo_owner host repo_path new_repo_url protocol

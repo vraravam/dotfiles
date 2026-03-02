@@ -1,4 +1,3 @@
-compdef upreb
 #!/usr/bin/env zsh
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
@@ -44,3 +43,4 @@ upreb() {
 }
 
 upreb "$@"
+compdef upreb

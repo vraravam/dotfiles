@@ -1,4 +1,3 @@
-compdef count
 #!/usr/bin/env zsh
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
@@ -8,7 +7,6 @@ compdef count
 # Source shell helpers if they aren't already loaded
 type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
 
-# Note: Use a function so that it can accept parameters
 count() {
   local folder="${1:-$(pwd)}"
   section_header "$(yellow 'Counting commits') $(purple "${folder}")"
@@ -16,3 +14,4 @@ count() {
 }
 
 count "$@"
+compdef count

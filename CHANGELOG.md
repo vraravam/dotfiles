@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.5
+
+* *[install-dotfiles.rb]* and *[run-all.sh]* Added support for running in 'dry-run' mode and printing the summary.
+* *[software-updates-cron.sh]* Removed pruning of mise-installed software since that doesn't work with the latest version of mise.
+
 ### 3.0.4
 
 * *[Brewfile]* Replaced 'Raycast' with 'Sol' (https://github.com/ospfranco/sol) - lightweight, FOSS, faster.
@@ -45,6 +50,8 @@ For those who follow this repo, here's the changelog for ease of adoption:
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
   ```bash
+  git tag -d 1.0
+  git tag -d 2.0
   mv "${HOME}/.dotfiles" "${XDG_CONFIG_HOME}/dotfiles"
   mv "${HOME}/personal/${USERNAME}/profiles" "${HOME}/personal/${USERNAME}/browser-profiles"
   source "${XDG_CONFIG_HOME}/dotfiles/files/--HOME--/.shellrc"
