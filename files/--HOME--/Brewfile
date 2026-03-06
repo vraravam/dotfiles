@@ -15,7 +15,7 @@
 #   ZoomHider
 
 # set global preferences for all 'brew install' commands
-cask_args appdir: '/Applications', fontdir: '/Library/Fonts', no_quarantine: true, adopt: true
+cask_args appdir: '/Applications', fontdir: '/Library/Fonts', adopt: true
 
 # java_present = system('/usr/libexec/java_home --failfast')
 # is_arm = ::Hardware::CPU.arm?
@@ -71,7 +71,6 @@ brew 'jq'
 brew 'moreutils'
 brew 'ncdu'
 brew 'prettyping'
-brew 'qwen-code'
 brew 'ripgrep'
 brew 'syncthing'
 brew 'tlrc'
@@ -88,9 +87,9 @@ cask 'onlyoffice'
 cask 'protonvpn'
 cask 'rancher' # if ::OS::Mac::version < 26
 cask 'sol', postinstall: "\"#{setup_login_items_script}\" -a 'Sol'"
-# cask 'raycast', postinstall: "\"#{setup_login_items_script}\" -a 'Raycast'"
 cask 'shortcat', postinstall: "\"#{setup_login_items_script}\" -a 'Shortcat'"
 cask 'stats', postinstall: "\"#{setup_login_items_script}\" -a 'Stats'"
+cask 'visual-studio-code'
 cask 'zed@preview'
 cask 'zen@twilight'
 cask 'zoom'

@@ -2,6 +2,12 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.6
+
+* *[osx-defaults.sh]* Fix syntax issue.
+* Remove redundant lines in multiple shell scripts.
+* *[Brewfile]* Remove `unquarantine` flag in Brewfile since its no longer supported.
+
 ### 3.0.5
 
 * *[install-dotfiles.rb]* and *[run-all.sh]* Added support for running in 'dry-run' mode and printing the summary.

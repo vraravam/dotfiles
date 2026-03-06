@@ -40,6 +40,8 @@ print_script_start
 vacuum_browser_profile_folder() {
   local browser_name="${1}"   # Passed browser name
   local profile_folder="${2}" # Profile folder path
+  # Note: this function reads from the outer-scope arrays `file_patterns` and
+  # `dir_patterns`, which must be populated before calling this function.
 
   if pgrep -i -f -q "${browser_name}"; then
     warn "Shutdown '$(yellow "${browser_name}")' first!; skipping processing of files for ${browser_name}"

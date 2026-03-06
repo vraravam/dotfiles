@@ -65,8 +65,8 @@ main() {
   fi
 
   # Check if an 'upstream' remote already exists
-  local existing_upstream
-  if ! existing_upstream="$(get_remote_url upstream)"; then
+  local existing_upstream="$(get_remote_url upstream)"
+  if is_non_zero_string "${existing_upstream}"; then
     warn "Remote 'upstream' already exists for the repo in '$(yellow "${target_folder}")': '$(yellow "${existing_upstream}")'"
     return 0 # Success, nothing to do
   fi

@@ -51,8 +51,6 @@ MAXDEPTH=${MAXDEPTH:-3}
 FOLDER="${FOLDER:-.}"
 FILTER="${FILTER:-}"
 
-start_time=$(date +%s)
-
 echo "$(yellow "Finding git repos starting in folder '$(cyan "$(replace_home_with_tilde "${FOLDER}")")' for a min depth of $(cyan "${MINDEPTH}") and max depth of $(cyan "${MAXDEPTH}")")"
 [[ "${FILTER}" != '' ]] && echo "$(yellow "Filtering with: $(cyan "${FILTER}")")"
 

@@ -28,13 +28,10 @@ while getopts 's' opt; do
 done
 shift $((OPTIND - 1))
 
-if [[ "${auto}" == 'N' ]] && ! is_running_in_tt'y'; then
+if [[ "${auto}" == 'N' ]] && ! is_running_in_tty; then
   error 'Interactive mode needs terminal!'
   exit 1
 fi
-
-# Source helpers only once if any required function is missing
-type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
 
 ###############################################################################################
 # Ask for the administrator password upfront and keep it alive until this script has finished #

@@ -37,7 +37,7 @@ while getopts ":ei" opt; do
       ;;
   esac
 done
-shift $((OPTIND -1))
+shift $((OPTIND - 1))
 
 if is_zero_string "${operation}"; then
   usage "${0##*/}"
