@@ -363,6 +363,7 @@ com.google.gmp.measurement.monitor
 com.googlecode.iterm2
 com.googlecode.iterm2.private
 com.googlecode.munki.ManagedSoftwareCenter
+com.jgraph.drawio.desktop
 com.jordanbaird.Ice
 com.lowtechguys.ZoomHider
 com.macpaw.site.theunarchiver

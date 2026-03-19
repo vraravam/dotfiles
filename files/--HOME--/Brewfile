@@ -18,7 +18,7 @@
 cask_args appdir: '/Applications', fontdir: '/Library/Fonts', adopt: true
 
 # java_present = system('/usr/libexec/java_home --failfast')
-# is_arm = ::Hardware::CPU.arm?
+is_arm = ::Hardware::CPU.arm?
 # is_beta_os = ::OS::Mac::full_version.unsupported_release?
 
 # TODO: Hardcoding of the dotfiles repo folder - since that env var is not available inside this env
@@ -78,6 +78,7 @@ brew 'tlrc'
 cask 'aldente', postinstall: "\"#{setup_login_items_script}\" -a 'AlDente'"
 cask 'brave-browser'
 cask 'clocker', postinstall: "\"#{setup_login_items_script}\" -a 'Clocker'"
+cask 'drawio'
 cask 'firefox@nightly' #, greedy: true
 cask 'google-chrome@beta'
 cask 'jordanbaird-ice@beta', postinstall: "\"#{setup_login_items_script}\" -a 'Ice'" if ::OS::Mac::version >= 14
@@ -193,7 +194,7 @@ cask 'zoom'
 # cask 'intellij-idea-ce'
 # cask 'kdiff3'
 # cask 'keycastr'
-# cask 'keyclu' if is_arm
+cask 'keyclu' if is_arm
 # cask 'knockknock'
 # cask 'licecap'
 # cask 'lulu'

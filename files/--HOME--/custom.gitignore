@@ -259,6 +259,7 @@ tmp/
 /.config/ghostty/config
 /.config/mise/config.toml
 /.config/rubocop/config.yml
+/.config/zed/keymap.json
 /.config/zed/settings.json
 /.config/zsh/*
 /.curlrc

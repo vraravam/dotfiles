@@ -2,6 +2,12 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.7
+
+* Moved `files/--HOME--/.ssh/global_config` file to `files/--SSH_CONFIGS_DIR--/` to make use of the correct ssh folder location if it was customized.
+* mise will default to using pre-compiled ruby binaries if available.
+* *[Brewfile]* Install `keyclu` and `drawio` apps and captured their preferences for backup.
+
 ### 3.0.6
 
 * *[osx-defaults.sh]* Fix syntax issue.
