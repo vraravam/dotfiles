@@ -2,6 +2,13 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.8
+
+* *[Brewfile]* Added opencode for terminal-based free/OSS AI assistant.
+* *[Brewfile]* Removed AlDente since its built into Tahoe now.
+* *[Brewfile]* Removed Brave browser since I will use Chrome if needed.
+* *[install-dotfiles.rb]* Use `SSH_CONFIGS_DIR` environment variable for ssh config directory.
+
 ### 3.0.7
 
 * Moved `files/--HOME--/.ssh/global_config` file to `files/--SSH_CONFIGS_DIR--/` to make use of the correct ssh folder location if it was customized.

@@ -377,6 +377,7 @@ com.microsoft.VSCodeInsiders
 com.mitchellh.ghostty
 com.objective-see.KnockKnock
 com.okta.mobile
+com.olidev.haptyk.app
 com.ospfranco.sol
 com.ovatar.batteryapp
 com.parallels.Parallels Desktop

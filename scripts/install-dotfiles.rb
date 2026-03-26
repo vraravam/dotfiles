@@ -186,7 +186,7 @@ else
   puts "  Errors:    #{STATS[:errors]}"
 end
 
-ssh_folder = HOME_PATH + '.ssh'
+ssh_folder = ENV.fetch('SSH_CONFIGS_DIR')
 global_config_link = ssh_folder + 'global_config'
 
 # Check if the global_config symlink exists and points to a valid file

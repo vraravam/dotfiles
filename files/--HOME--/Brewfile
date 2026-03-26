@@ -11,6 +11,7 @@
 # Upgrades and cleans up all regular outdated casks and libs (non-greedy)
 
 # TODO: Need to find cask for:
+#   Haptyk (start on login)
 #   Tinkertool
 #   ZoomHider
 
@@ -70,19 +71,21 @@ brew 'git-gui'
 brew 'jq'
 brew 'moreutils'
 brew 'ncdu'
+brew 'opencode'
+brew 'pandoc'
 brew 'prettyping'
 brew 'ripgrep'
 brew 'syncthing'
 brew 'tlrc'
 
-cask 'aldente', postinstall: "\"#{setup_login_items_script}\" -a 'AlDente'"
-cask 'brave-browser'
+cask 'aldente', postinstall: "\"#{setup_login_items_script}\" -a 'AlDente'" if ::OS::Mac::version < 26
 cask 'clocker', postinstall: "\"#{setup_login_items_script}\" -a 'Clocker'"
 cask 'drawio'
 cask 'firefox@nightly' #, greedy: true
 cask 'google-chrome@beta'
 cask 'jordanbaird-ice@beta', postinstall: "\"#{setup_login_items_script}\" -a 'Ice'" if ::OS::Mac::version >= 14
 cask 'keepassxc@beta'
+cask 'keyclu' if is_arm
 cask 'ollama-app', restart_service: :changed
 cask 'onlyoffice'
 cask 'protonvpn'
@@ -173,7 +176,6 @@ cask 'zoom'
 # brew 'gs'   # used for compressing PDFs
 # brew 'libressl', link: true
 # brew 'localstack'
-# brew 'pandoc'
 # brew 'shellcheck' # Not using since this only supports bash
 # brew 'shfmt'
 # brew 'speedtest-cli'
@@ -183,6 +185,7 @@ cask 'zoom'
 # ---- casks
 # tap 'TheBoredTeam/boring-notch'
 # cask 'boring-notch', postinstall: "\"#{setup_login_items_script}\" -a 'boringNotch'" if ::OS::Mac::version >= 14
+# cask 'brave-browser'
 # cask 'claude-code'
 # cask 'cloudflare-warp'
 # cask 'dbeaver-community'
@@ -194,7 +197,6 @@ cask 'zoom'
 # cask 'intellij-idea-ce'
 # cask 'kdiff3'
 # cask 'keycastr'
-cask 'keyclu' if is_arm
 # cask 'knockknock'
 # cask 'licecap'
 # cask 'lulu'
