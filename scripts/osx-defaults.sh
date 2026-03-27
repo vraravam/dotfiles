@@ -503,7 +503,7 @@ if ask 'Automatically open a new Finder window when a volume is mounted' 'Y'; th
 fi
 
 if ask "Show the ${HOME}/Library folder" 'Y'; then
-  chflags nohidden ${HOME}/Library
+  chflags nohidden "${HOME}/Library"
 fi
 
 if ask 'Enable the MacBook Air SuperDrive on any Mac' 'N'; then
@@ -1154,7 +1154,7 @@ fi
 
 # Note: To print the values, use this:
 # /usr/libexec/PlistBuddy -c "Print :'Window Settings':Basic" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
-profile_array=(Basic Pro)
+local profile_array=(Basic Pro)
 for profile in "${profile_array[@]}"; do
   # Close the window if the shell exited cleanly - TODO: These error out and stop the whole file from being executed - need to fix
   # /usr/libexec/PlistBuddy -c "Delete :'Window Settings':$profile:shellExitAction" "${HOME}/Library/Preferences/com.apple.Terminal.plist"

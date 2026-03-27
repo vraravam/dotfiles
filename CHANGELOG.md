@@ -2,6 +2,21 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.9
+
+* Fixed issues when running `install-dotfiles.rb` script on a vanilla macos with ruby 2.6 and optimized it for better performance.
+* Fixed all shell scripts using claude-sonnet for better readability and maintainability.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then proceed with the following steps:
+
+  ```bash
+  rm -rf "${XDG_CONFIG_HOME}/zsh"
+  "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
+  ```
+* Quit and restart the Terminal application.
+
 ### 3.0.8
 
 * *[Brewfile]* Added opencode for terminal-based free/OSS AI assistant.

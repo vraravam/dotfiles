@@ -1,7 +1,9 @@
+# frozen_string_literal: true
+
 class File
   class << self
     def append(path, content)
-      File.open(path, 'a') { |f| f << content }
+      File.write(path, content, mode: 'a')
     end
   end
 end

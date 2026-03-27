@@ -13,7 +13,7 @@ require_relative 'utilities/string'
 #
 # @param exit_code [Integer] The exit code to use when terminating the script.
 # @return [void]
-def usage(exit_code = -1)
+def usage(exit_code = 1)
   puts 'This script resurrects or flags for backup all known repositories in the current machine'
   puts "#{'Usage:'.pink} #{__FILE__} [-g <folder-to-generate-config-for>] [-r <config-filename>] [-c <config-filename>]".yellow
   puts "  #{'-g'.green} generates the configuration contents onto the stdout for codebases (usually on current laptop)."
@@ -30,18 +30,19 @@ usage(0) if ARGV[0] == '--help'
 usage if ARGV.length != 2 || !['-g', '-r', '-c'].include?(ARGV[0])
 
 require 'fileutils'
-require 'pathname'  # Note: This has been added explicitly due to the default version of ruby (2.6). Once the default ruby upgrades to 3.x, we can remove
+require 'pathname' # NOTE: This has been added explicitly due to the default version of ruby (2.6) on a vanilla macos. Once the default ruby upgrades to 3.x, we can remove
 require 'set'
+require 'shellwords'
 require 'yaml'
 require 'open3'
 
 # Constants
-ORIGIN_NAME = 'origin'.freeze # Standard name for the primary remote
-FOLDER_KEY_NAME = 'folder'.freeze # Key name in YAML for the repository folder
-REMOTE_KEY_NAME = 'remote'.freeze # Key name for the primary remote
-OTHER_REMOTES_KEY_NAME = 'other_remotes'.freeze # Key name for additional remotes
-POST_CLONE_KEY_NAME = 'post_clone'.freeze # Key name for post-clone commands
-GIT_EXECUTABLE = 'git'.freeze # Path to git executable
+ORIGIN_NAME = 'origin' # Standard name for the primary remote
+FOLDER_KEY_NAME = 'folder' # Key name in YAML for the repository folder
+REMOTE_KEY_NAME = 'remote' # Key name for the primary remote
+OTHER_REMOTES_KEY_NAME = 'other_remotes' # Key name for additional remotes
+POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
+GIT_EXECUTABLE = 'git' # Path to git executable
 GIT_CONFIG_REGEXP_CMD = ['config', '--get-regexp', '^remote\\..*\\.url'].freeze # Git subcommand to find remote URLs in git config
 
 HOME_PATH = Pathname.new(ENV.fetch('HOME')).expand_path
@@ -75,7 +76,7 @@ def find_and_replace_env_var(folder)
   return folder unless folder.is_a?(String) && folder.include?('${')
 
   folder.gsub(/\$\{(.*?)\}/) do |match|
-    key = $1
+    key = Regexp.last_match(1)
     ENV.fetch(key) do
       puts "WARNING: Environment variable '#{key}' not set. Keeping placeholder '#{match}'.".yellow
       match
@@ -90,12 +91,10 @@ end
 # @return [String] The string with environment variables replaced,
 #   or the original string if the env variable was not present or was empty.
 def find_and_reverse_replace_env_var(folder)
-  # Note: If changing this array, remember that the deep-nested value should be replaced first, followed by the parent folder
-  env_vars = ['PROJECTS_BASE_DIR', 'HOME']
+  # NOTE: If changing this array, remember that the deep-nested value should be replaced first, followed by the parent folder
+  env_vars = %w[PROJECTS_BASE_DIR HOME]
   env_vars.each do |env_var|
-    if ENV.key?(env_var) && !ENV[env_var].empty? && folder.start_with?(ENV[env_var])
-      return folder.sub(ENV[env_var], "${#{env_var}}").strip
-    end
+    return folder.sub(ENV[env_var], "${#{env_var}}").strip if ENV.key?(env_var) && !ENV[env_var].empty? && folder.start_with?(ENV[env_var])
   end
   folder
 end
@@ -189,7 +188,7 @@ def find_git_repos_from_disk(path)
 rescue Errno::ENOENT # Specific rescue for `find` not being found
   puts 'Error: `find` command not found. Please ensure it is installed and in your PATH.'.red
   []
-rescue => e # Catch other potential errors during command execution
+rescue StandardError => e # Catch other potential errors during command execution
   puts "Error executing find command: #{e.message}".red
   []
 end
@@ -287,9 +286,13 @@ def resurrect_each(repo, idx, total)
     puts "Existing remotes: #{existing_remotes.keys.join(', ')}" unless existing_remotes.empty?
   else
     puts 'Cloning git repo...'.yellow
-    # This command relies on `clone_repo_into` being available in a shell environment potentially sourced from .shellrc.
-    clone_command = "source \"#{HOME_PATH.join('.shellrc')}\" && clone_repo_into \"#{repo[REMOTE_KEY_NAME]}\" \"#{folder}\""
-    _stdout_str, stderr_str, status = Open3.capture3(clone_command)
+    # NOTE: clone_repo_into is a shell function defined in .shellrc, so we must invoke a login
+    # shell to source it. The remote URL and folder come from a trusted YAML config authored by
+    # the user, but we still use `/bin/bash -c` explicitly (rather than a bare string passed to
+    # capture3) to make the shell invocation unambiguous and to avoid surprises from $SHELL.
+    shellrc = HOME_PATH.join('.shellrc').to_s
+    clone_command = "source #{shellrc.shellescape} && clone_repo_into #{repo[REMOTE_KEY_NAME].shellescape} #{folder.shellescape}"
+    _stdout_str, stderr_str, status = Open3.capture3('/bin/bash', '-c', clone_command)
 
     if !status.success? || (!stderr_str.empty? && stderr_str =~ /error/i)
       error_message = "Failed to clone '#{repo[REMOTE_KEY_NAME]}' into '#{folder}'; aborting (status: #{status.exitstatus})".red
@@ -312,26 +315,29 @@ def resurrect_each(repo, idx, total)
 
   # Add missing 'other_remotes'
   git_base_cmd = build_git_context(folder)
-  Array(repo[OTHER_REMOTES_KEY_NAME]).each do |name, remote|
-    if !existing_remotes.key?(name) # Check against the fetched list
-      puts "Adding remote '#{name}' -> '#{remote}'".blue
-      _stdout_add, stderr_add, status_add = Open3.capture3(*git_base_cmd, REMOTE_KEY_NAME, 'add', name, remote)
-      unless status_add.success?
-        warning_message = "WARNING: Failed to add remote '#{name}' for repo '#{folder.replace_home_path_with_tilde}' (status: #{status_add.exitstatus})".yellow
-        warning_message += "\nSTDERR: #{stderr_add}".yellow unless stderr_add.strip.empty?
-        puts warning_message
-      end
-    elsif existing_remotes[name] != remote
-      # Remote exists but URL is different
-      puts "Updating remote '#{name}' URL from '#{existing_remotes[name]}' to '#{remote}'".blue
-      _stdout_update, stderr_update, status_update = Open3.capture3(*git_base_cmd, REMOTE_KEY_NAME, 'set-url', name, remote)
-      unless status_update.success?
-        warning_message = "WARNING: Failed to update URL for remote '#{name}' in repo '#{folder.replace_home_path_with_tilde}' (status: #{status_update.exitstatus})".yellow
-        warning_message += "\nSTDERR: #{stderr_update}".yellow unless stderr_update.strip.empty?
-        puts warning_message
+  if repo[OTHER_REMOTES_KEY_NAME]
+    # Array() on a Hash yields [[key, val], ...]; block destructuring handles the pair unpacking.
+    Array(repo[OTHER_REMOTES_KEY_NAME]).each do |name, remote|
+      if !existing_remotes.key?(name) # Check against the fetched list
+        puts "Adding remote '#{name}' -> '#{remote}'".blue
+        _stdout_add, stderr_add, status_add = Open3.capture3(*git_base_cmd, REMOTE_KEY_NAME, 'add', name, remote)
+        unless status_add.success?
+          warning_message = "WARNING: Failed to add remote '#{name}' for repo '#{folder.replace_home_path_with_tilde}' (status: #{status_add.exitstatus})".yellow
+          warning_message += "\nSTDERR: #{stderr_add}".yellow unless stderr_add.strip.empty?
+          puts warning_message
+        end
+      elsif existing_remotes[name] != remote
+        # Remote exists but URL is different
+        puts "Updating remote '#{name}' URL from '#{existing_remotes[name]}' to '#{remote}'".blue
+        _stdout_update, stderr_update, status_update = Open3.capture3(*git_base_cmd, REMOTE_KEY_NAME, 'set-url', name, remote)
+        unless status_update.success?
+          warning_message = "WARNING: Failed to update URL for remote '#{name}' in repo '#{folder.replace_home_path_with_tilde}' (status: #{status_update.exitstatus})".yellow
+          warning_message += "\nSTDERR: #{stderr_update}".yellow unless stderr_update.strip.empty?
+          puts warning_message
+        end
       end
     end
-  end if repo[OTHER_REMOTES_KEY_NAME]
+  end
 
   puts 'Fetching all remotes and tags...'.blue
   _stdout, stderr, status = Open3.capture3(*git_base_cmd, 'fetch', '-q', '--all', '--tags')
@@ -340,18 +346,24 @@ def resurrect_each(repo, idx, total)
     puts "Fetch STDERR:\n#{stderr}".yellow unless stderr.strip.empty?
   end
 
-  if repo[POST_CLONE_KEY_NAME]
-    puts 'Running post-clone commands...'.blue
-    Dir.chdir(folder) do
-      Array(repo[POST_CLONE_KEY_NAME]).each do |command_str|
-        puts "  Executing: #{command_str.dump}".blue
-        _stdout, stderr, status = Open3.capture3(command_str)
-        unless status.success?
-          puts "WARNING: Post-clone command #{command_str.dump} failed for repo '#{folder.replace_home_path_with_tilde}' (exit status: #{status.exitstatus})".yellow
-          puts "STDERR: #{stderr.strip}".red unless stderr.strip.empty?
-        end
+  return unless repo[POST_CLONE_KEY_NAME]
+
+  puts 'Running post-clone commands...'.blue
+  # Use begin/ensure so the process working directory is always restored even if a command
+  # raises an unexpected exception mid-loop.
+  original_dir = Dir.pwd
+  begin
+    Dir.chdir(folder)
+    Array(repo[POST_CLONE_KEY_NAME]).each do |command_str|
+      puts "  Executing: #{command_str.dump}".blue
+      _stdout, stderr, status = Open3.capture3(command_str)
+      unless status.success?
+        puts "WARNING: Post-clone command #{command_str.dump} failed for repo '#{folder.replace_home_path_with_tilde}' (exit status: #{status.exitstatus})".yellow
+        puts "STDERR: #{stderr.strip}".red unless stderr.strip.empty?
       end
     end
+  ensure
+    Dir.chdir(original_dir)
   end
 end
 
@@ -361,17 +373,16 @@ end
 #
 # @param repositories [Array<Hash>] An array of repository configurations from the YAML file.
 # @param filter [String] A filter string (regex) to apply to repository paths before comparison.
-# @return [void] Exits with -1 if discrepancies are found.
-def verify_all(repositories, filter)
-  # ENV['REF_FOLDER'] is expected to be a base directory path for comparison.
-  # Both YAML-defined repositories and locally found repositories will be scoped to this path.
-  ref_folder_path = ENV['REF_FOLDER'] ? File.expand_path(ENV['REF_FOLDER']) : nil
+# @param ref_folder [String, nil] Optional base directory to scope the comparison to.
+# @return [void] Exits with 1 if discrepancies are found.
+def verify_all(repositories, filter, ref_folder: nil)
+  ref_folder_path = ref_folder ? File.expand_path(ref_folder) : nil
 
-  # Get folder paths from the YAML configuration (already filtered by ENV['FILTER'] if it was set)
+  # Get folder paths from the YAML configuration (already filtered by FILTER if it was set)
   yml_folders = repositories.map { |repo| repo[FOLDER_KEY_NAME] }.compact.uniq.sort
   if ref_folder_path
-    # If REF_FOLDER is set, filter yml_folders to include only those starting with this path
-    # or exactly matching this path (if REF_FOLDER itself is a repo path).
+    # If ref_folder is set, filter yml_folders to include only those starting with this path
+    # or exactly matching this path (if ref_folder itself is a repo path).
     # Ensure comparison is against a directory prefix by normalizing paths.
     path_prefix_for_selection = ref_folder_path.chomp(File::SEPARATOR)
     yml_folders = yml_folders.select do |folder|
@@ -380,17 +391,17 @@ def verify_all(repositories, filter)
     end
   end
 
-  local_folders = find_git_repos_from_disk(ref_folder_path || HOME_PATH.to_s).uniq
-  local_folders = apply_filter(local_folders, filter).uniq.sort
+  # find_git_repos_from_disk already returns a sorted unique array; apply_filter preserves uniqueness.
+  local_folders = apply_filter(find_git_repos_from_disk(ref_folder_path || HOME_PATH.to_s), filter).sort
 
-  # Convert to Sets for potentially faster difference/union operations on large lists
+  # Convert to Sets for O(1) membership checks on the symmetric difference
   yml_set = Set.new(yml_folders)
   local_set = Set.new(local_folders)
-  diff_repos = (local_set ^ yml_set).to_a.sort # Use ^ for symmetric difference
+  diff_repos = (local_set ^ yml_set).to_a.sort # ^ = symmetric difference
 
   if diff_repos.any?
     puts "Please correlate the following #{diff_repos.length} differences projects manually:\n#{diff_repos.join("\n")}".red
-    exit(-1)
+    exit(1)
   else
     puts 'Everything is kosher!'.green
   end
@@ -419,7 +430,7 @@ when '-c'
   puts "Running operation: #{'verification'.green}"
   repositories = read_git_repos_from_file(ARGV[1])
   repositories = apply_filter(repositories, filter)
-  verify_all(repositories, filter)
+  verify_all(repositories, filter, ref_folder: ENV['REF_FOLDER'])
 else
   usage
 end

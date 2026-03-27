@@ -1,4 +1,3 @@
-compdef update_all_repos
 #!/usr/bin/env zsh
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
@@ -22,8 +21,6 @@ _update_repo() {
   section_header "$(yellow 'Updating') $(purple "${folder}")"
   rm -rfv "${folder}/.git/index.lock" "${folder}/.git/hooks"
 
-  git -C "${folder}" add "${relative_path}"
-
   git -C "${folder}" add "${relative_path}" && git -C "${folder}" sci "Incremental commit: $(date)"
 }
 
@@ -35,3 +32,4 @@ update_all_repos() {
 }
 
 update_all_repos "$@"
+compdef update_all_repos

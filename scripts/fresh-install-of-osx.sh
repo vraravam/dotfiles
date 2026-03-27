@@ -122,7 +122,7 @@ approve_fingerprint_sudo() {
   local target_file='/etc/pam.d/sudo_local'
   if ! is_file "${target_file}"; then
     # Using sh -c 'sed...' is fine here
-    if sudo sh -c "sed 's/^#auth/auth/' ${template_file} > ${target_file}"; then
+    if sudo sh -c "sed 's/^#auth/auth/' '${template_file}' > '${target_file}'"; then
       success "Created new file: '$(yellow "${target_file}")'"
     else
       error "Failed to create '${target_file}'"
@@ -175,7 +175,7 @@ install_xcode_command_line_tools() {
 ensure_directories_exist() {
   section_header "$(yellow 'Creating directories defined by various env vars')"
   local -a folders=("${DOTFILES_DIR}" "${PROJECTS_BASE_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${PERSONAL_PROFILES_DIR}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_STATE_HOME}")
-  for folder in "${(@kv)folders}"; do
+  for folder in "${folders[@]}"; do
     ensure_dir_exists "${folder}"
   done
   unset folders

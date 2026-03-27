@@ -5,7 +5,7 @@
 # This script will find all git repositories within the specified 'FOLDER' (defaults to current dir) filtered by 'FILTER' (defaults to empty string; accepts regex) and for a minimum depth of 'MINDEPTH' (optional; defaults to 1) and a maximum depth of 'MAXDEPTH' (optional; defaults to 3); and then runs the specified commands in each of those git repos. This script is not limited to only running 'git' commands!
 
 # Exit immediately if a command exits with a non-zero status.
-set -e
+set -euo pipefail
 
 # Source shell helpers if they aren't already loaded
 type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
@@ -31,7 +31,7 @@ while getopts ":h:" opt; do
       usage "${0##*/}"
       ;;
     :)
-      echo "Invalid option: -${OPTARG} requires an argument" 1>&2
+      echo "Invalid option: -${OPTARG} requires an argument" >&2
       usage "${0##*/}"
       ;;
   esac
@@ -41,7 +41,7 @@ shift $((OPTIND - 1))
 # if there are no arguments, print usage and exit
 [[ $# -eq 0 ]] && usage "${0##*/}"
 
-section_header 'Running commands in git repositories'
+section_header "$(yellow 'Running commands in git repositories')"
 
 local script_start_time=$(date +%s)
 print_script_start

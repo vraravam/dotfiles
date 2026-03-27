@@ -10,7 +10,11 @@ type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
 count() {
   local folder="${1:-$(pwd)}"
   section_header "$(yellow 'Counting commits') $(purple "${folder}")"
-  git -C "${folder}" count
+  if ! is_git_repo "${folder}"; then
+    warn "Skipping finding count of the repo since '$(yellow "${folder}")' doesn't exist or is not a git repo"
+  else
+    git -C "${folder}" count
+  fi
 }
 
 count "$@"

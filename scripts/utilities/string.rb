@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
-require 'pathname'  # Note: This has been added explicitly due to the default version of ruby (2.6). Once the default ruby upgrades to 3.x, we can remove
+require 'pathname'  # Note: This has been added explicitly due to the default version of ruby (2.6) on a vanilla macos. Once the default ruby upgrades to 3.x, we can remove
+
+# Cached once at load time; HOME does not change during the lifetime of a script.
+HOME_PATH_STR = Pathname.new(ENV.fetch('HOME')).expand_path.to_s.freeze
 
 class String
   # colorization
@@ -14,8 +17,7 @@ class String
 
   # replace the value of the 'HOME' variable with '~' to shorten the text length
   def replace_home_path_with_tilde
-    home_path = Pathname.new(ENV.fetch('HOME')).expand_path
-    self.gsub(home_path.to_s, '~')
+    gsub(HOME_PATH_STR, '~')
   end
 
   # @return [String] The string in red.

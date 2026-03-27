@@ -31,7 +31,7 @@ print_link_info() {
 # This removal is required for completions from other plugins to work (for eg git-extras)
 rm -rf "${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git" 2>&1 &> /dev/null || true
 
-section_header "Linking programs to open from the cmd-line"
+section_header "$(yellow 'Linking programs to open from the cmd-line')"
 
 # Link programs to open from the cmd-line
 print_link_info 'keybase'

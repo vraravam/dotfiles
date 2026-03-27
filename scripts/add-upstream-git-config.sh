@@ -103,6 +103,7 @@ main() {
     new_repo_url="${protocol}://${host}/${upstream_repo_owner}/${repo_path}"
   else
     error "Cannot parse origin remote URL format: $(yellow "${origin_remote_url}")"
+    return 1
   fi
   # Ensure .git suffix for consistency when reconstructing
   [[ "${new_repo_url}" != *.git ]] && new_repo_url+='.git'
