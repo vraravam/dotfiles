@@ -2,6 +2,10 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.10
+
+* *[install-dotfiles.rb]* Now handles the case where there's no env var substitution needed in the file's relative path, in which case, the file is treated as needing to be processed from the machine's root directory.
+
 ### 3.0.9
 
 * Fixed issues when running `install-dotfiles.rb` script on a vanilla macos with ruby 2.6 and optimized it for better performance.
