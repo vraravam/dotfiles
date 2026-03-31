@@ -14,7 +14,7 @@ All of the folder structures and the setup/backup operations are governed by the
 
 # ✨ Features
 
-- 🔍 **Auto-detects architecture** supports both Intel x86_64 and Apple Silicon arm64
+- 🔍 **Auto-detects architecture** - supports both Intel x86_64 and Apple Silicon arm64
 - 🔄 **Idempotent** — safe to run multiple times
 - 📝 **Comprehensive logging** — shows all logs with colors for ease of debugging and checking status
 - 🛡️ **Safe** — retains your pre-existing configs instead of overwriting them
@@ -22,10 +22,12 @@ All of the folder structures and the setup/backup operations are governed by the
 # 📋 What Gets Installed
 
 ## 🛠️ Essential Development Tools
+
 - **Homebrew** — Package manager
 - **Modern CLI and GUI tools** — See the full list in the [Brewfile](files/--HOME/Brewfile)
 
 ## 🐚 Shell Configuration
+
 - **Oh My Zsh** — Zsh framework
 - **powerlevel10k** — Modern shell prompt
 - **Plugins** — autosuggestions, syntax highlighting

@@ -401,8 +401,7 @@ clone_repo_into() {
     git -C "${tmp_folder}" clone -q "${1}" .
     mv "${tmp_folder}/.git" "${target_folder}"
     rm -rf "${tmp_folder}"
-    git -C "${target_folder}" checkout .
-    git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
+    git -C "${target_folder}" restore .
     success "Successfully cloned '$(yellow "${1}")$(green "' into '")$(yellow "${target_folder}")$(green "'")"
 
     local target_branch="${3}"
@@ -417,6 +416,8 @@ clone_repo_into() {
   else
     warn "Skipping cloning of '$(yellow "${1}")' since '$(yellow "${target_folder}")' is already a git repo"
   fi
+  # also update submodules if already a git repo since the submodule changes might be present in the new commits that are being pulled in
+  git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
   unset target_folder
   local end_time=$(date +%s)
   local duration=$((end_time - start_time))

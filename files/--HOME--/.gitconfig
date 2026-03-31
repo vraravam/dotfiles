@@ -181,7 +181,7 @@
   # search for specific strings in your commits
   se = "!git rev-list --all | xargs git grep -F"
 
-  # [siu = submodule init update] Runs submodule-initialisation and update after a fresh checkout RECURSIVE!
+  # [siu = submodule init update] Runs submodule-initialisation and update recursively after a fresh checkout!
   siu = submodule update --init --recursive --remote --rebase --force
 
   sf = submodule foreach

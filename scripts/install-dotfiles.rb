@@ -27,6 +27,7 @@ DOT_GIT_REPLACEMENT_TARGET = '.git' # Target string for replacement (e.g., custo
 IGNORED_FILENAMES = ['.DS_Store'].freeze # Filenames to ignore during processing
 IGNORED_FILE_PATTERNS = [/\.zwc/].freeze # File patterns to ignore (matches anywhere in path)
 
+ROOT_PATH = Pathname.new(File::SEPARATOR)
 HOME_PATH = Pathname.new(ENV.fetch('HOME')).expand_path
 DOTFILES_ROOT_PATH = Pathname.new(__dir__).join('..', 'files').expand_path
 
@@ -186,7 +187,8 @@ Find.find(DOTFILES_ROOT_PATH) do |source_path_str|
 
   # since some env var might already contain the full path from the root...
   # Pathname#join correctly handles cases where interpolated_target_str might already be an absolute path.
-  target_pn = HOME_PATH.join(interpolated_target_str)
+  # if the target path is still relative after interpolation, then we should treat it as relative to the root directory
+  target_pn = ROOT_PATH.join(interpolated_target_str)
   process_dotfile(source_pn, target_pn, **options)
 end
 

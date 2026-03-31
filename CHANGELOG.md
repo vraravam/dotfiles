@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.10
+
+* *[install-dotfiles.rb]* Now handles the case where there's no env var substitution needed in the file's relative path, in which case, the file is treated as needing to be processed from the machine's root directory.
+* Use `git restore` instead of `git checkout` to restore files.
+
 ### 3.0.9
 
 * Fixed issues when running `install-dotfiles.rb` script on a vanilla macos with ruby 2.6 and optimized it for better performance.
@@ -700,7 +705,7 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * Run the following commands in the terminal
 
   ```bash
-  git -C "${DOTFILES_DIR}" checkout files/--PERSONAL_PROFILES_DIR--/custom.gitignore
+  git -C "${DOTFILES_DIR}" restore files/--PERSONAL_PROFILES_DIR--/custom.gitignore
   cp "${DOTFILES_DIR}/files/--PERSONAL_PROFILES_DIR--/custom.gitignore" "${PERSONAL_PROFILES_DIR}/.gitignore"
   rm -rf "${HOME}/Library/Application Support/com.raycast.macos"
   mv "${PERSONAL_PROFILES_DIR}/Raycast" "${HOME}/Library/Application Support/com.raycast.macos"

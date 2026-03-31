@@ -6,7 +6,7 @@ Basically, to get started with the dotfiles, you just need to run the `${DOTFILE
 * This script will also handle nested config files - as long as they are already present in this repo.
 * Special handling (rename + copy instead of symlink) for `.gitattributes` and `.gitignore` - which means that, *for those files alone*, you will have to **keep them manually in sync**.
 * If you do not want a specific file from the home folder to be overridden, simply delete it from this repo's `files` folder - and it will not be processed.
-* If you wish to add a new file to be tracked and managed via this backup mechanism, simply add it into the `files` folder with the requisite relative path (relative to your `HOME` folder) - and it will be processed.
+* If you wish to add a new file to be tracked and managed via this backup mechanism, simply add it into the `files` folder with the requisite relative path (relative to your `/` folder) - and it will be processed.
 
 ## add-upstream-git-config.sh
 
@@ -120,7 +120,7 @@ This script was originally present as a function within the `~/.aliases` file, b
 ## software-updates-cron.sh
 
 There are so many tools installed, and some of them require their local caches/dbs/configs/etc to be updated from time to time. Rather than remembering each tool and its invocation (for updates), this script is a single place where any new tooling is added so that I don't need to remember the incantation for each separately.
-Use [this gist](https://gist.github.com/vraravam/4ffa42fdde16ad4a03ed5709fb198767) <!-- Note: Do NOT change this --> and save to `${PERSONAL_CONFIGS_DIR}/crontab.txt`. Edit the line that refers to `USERNAME` and replace it with your local username. After making this change, run the following command to update your crontab:
+Use [this gist](https://gist.github.com/vraravam/4ffa42fdde16ad4a03ed5709fb198767) <!-- Note: Do NOT change this --> and save to `${PERSONAL_CONFIGS_DIR}/crontab.txt`. Edit the line that refers to `USERNAME` and replace the value with your local username. After making this change, run the following command to update your crontab:
 
   ```bash
   recron

@@ -7,13 +7,22 @@
 # Source shell helpers if they aren't already loaded
 type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
 
-pull() {
+# Note: Use a function so that it can accept parameters
+_pull() {
   local folder="${1:-$(pwd)}"
   section_header "$(yellow 'Pulling') $(purple "${folder}")"
   if ! is_git_repo "${folder}"; then
     warn "Skipping pulling of the repo since '$(yellow "${folder}")' doesn't exist or is not a git repo"
   else
     git -C "${folder}" pull
+  fi
+}
+
+pull() {
+  if is_executable "${PERSONAL_BIN_DIR}/pull-${PWD##*/}.sh"; then
+    . "${PERSONAL_BIN_DIR}/pull-${PWD##*/}.sh" "$@"
+  else
+    _pull "$@"
   fi
 }
 

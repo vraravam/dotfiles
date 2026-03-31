@@ -91,13 +91,17 @@ install_mise_versions() {
     return 0 # Success, nothing to do
   fi
 
-  local config_files=('.java-version' '.ruby-version' '.python-version' '.nvmrc' '.tool-versions')
-  for f in ${config_files}; do
+  local config_files=('.java-version' '.ruby-version' '.python-version' '.node-version' '.nvmrc' '.tool-versions')
+  for f in "${config_files[@]}"; do
     find "${HOME}" -name "${f}" -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
   done
   unset config_files
 
-  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -name '.git' -type d -maxdepth 5 -exec echo "===> Installing for {}" \; -execdir mise install \;
+  local repo_base_dirs=("${DOTFILES_DIR}" "${PROJECTS_BASE_DIR}")
+  for d in "${repo_base_dirs[@]}"; do
+    is_directory "${d}" && find "${d}" -name '.git' -type d -maxdepth 5 -exec echo "===> Installing for {}" \; -execdir mise install \;
+  done
+  unset repo_base_dirs
 }
 
 # runs 'direnv allow' on all relevant folders

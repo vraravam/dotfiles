@@ -7,13 +7,22 @@
 # Source shell helpers if they aren't already loaded
 type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
 
-push() {
+# Note: Use a function so that it can accept parameters
+_push() {
   local folder="${1:-$(pwd)}"
   section_header "$(yellow 'Pushing') $(purple "${folder}")"
   if ! is_git_repo "${folder}"; then
     warn "Skipping pushing of the repo since '$(yellow "${folder}")' doesn't exist or is not a git repo"
   else
     git -C "${folder}" push
+  fi
+}
+
+push() {
+  if is_executable "${PERSONAL_BIN_DIR}/push-${PWD##*/}.sh"; then
+    . "${PERSONAL_BIN_DIR}/push-${PWD##*/}.sh" "$@"
+  else
+    _push "$@"
   fi
 }
 

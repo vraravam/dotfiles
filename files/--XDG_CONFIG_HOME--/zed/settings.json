@@ -287,7 +287,8 @@
     "**/tmp",
   ],
   "file_scan_inclusions": [
-    "**/.env*"
+    "**/.env*",
+    "**/reports/**"
   ],
   "enable_language_server": true,
   "inlay_hints": {
