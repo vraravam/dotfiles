@@ -9,12 +9,21 @@ type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
 
 # Note: Use a function so that it can accept parameters
 _pull() {
-  local folder="${1:-$(pwd)}"
+  local folder
+  local -a switches
+  for arg in "$@"; do
+    if [[ "${arg}" == --* ]]; then
+      switches+=("${arg}")
+    elif is_zero_string "${folder}"; then
+      folder="${arg}"
+    fi
+  done
+  folder="${folder:-$(pwd)}"
   section_header "$(yellow 'Pulling') $(purple "${folder}")"
   if ! is_git_repo "${folder}"; then
     warn "Skipping pulling of the repo since '$(yellow "${folder}")' doesn't exist or is not a git repo"
   else
-    git -C "${folder}" pull
+    git -C "${folder}" pull "${switches[@]}"
   fi
 }
 

@@ -7,13 +7,23 @@
 # Source shell helpers if they aren't already loaded
 type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
 
+# Note: Use a function so that it can accept parameters
 st() {
-  local folder="${1:-$(pwd)}"
+  local folder
+  local -a switches
+  for arg in "$@"; do
+    if [[ "${arg}" == --* ]]; then
+      switches+=("${arg}")
+    elif is_zero_string "${folder}"; then
+      folder="${arg}"
+    fi
+  done
+  folder="${folder:-$(pwd)}"
   section_header "$(yellow 'Checking') $(purple "${folder}")"
   if ! is_git_repo "${folder}"; then
     warn "Skipping finding status of the repo since '$(yellow "${folder}")' doesn't exist or is not a git repo"
   else
-    git -C "${folder}" st
+    git -C "${folder}" st "${switches[@]}"
   fi
 }
 

@@ -120,7 +120,7 @@ This script was originally present as a function within the `~/.aliases` file, b
 ## software-updates-cron.sh
 
 There are so many tools installed, and some of them require their local caches/dbs/configs/etc to be updated from time to time. Rather than remembering each tool and its invocation (for updates), this script is a single place where any new tooling is added so that I don't need to remember the incantation for each separately.
-Use [this gist](https://gist.github.com/vraravam/4ffa42fdde16ad4a03ed5709fb198767) <!-- Note: Do NOT change this --> and save to `${PERSONAL_CONFIGS_DIR}/crontab.txt`. Edit the line that refers to `USERNAME` and replace the value with your local username. After making this change, run the following command to update your crontab:
+Run the following command to generate and update your crontab:
 
   ```bash
   recron

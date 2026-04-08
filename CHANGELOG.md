@@ -2,6 +2,28 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.11
+
+* *[.aliases]* `recron` will now generate the default crontab file and then register it with the system's `crontab` command.
+* *[Brewfile]* Added `mole` instead of `pearcleaner` for a cli-based tool to clean disk space.
+* Custom git-related zsh scripts in `${XDG_CONFIG_HOME}/zsh/` now properly handle git switches passed to them.
+* Added `direnv` configuration file.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then proceed with the following steps:
+
+  ```bash
+  cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
+  source "${HOME}/.shellrc"
+  source "${HOME}/.aliases"
+  "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
+  recron
+  crontab -l # should now show the crontab with the software updates cron job
+  ```
+
+* Quit and restart the Terminal application.
+
 ### 3.0.10
 
 * *[install-dotfiles.rb]* Now handles the case where there's no env var substitution needed in the file's relative path, in which case, the file is treated as needing to be processed from the machine's root directory.
@@ -67,8 +89,8 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
   ```bash
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
-  source "${DOTFILES_DIR}/files/--HOME--/.shellrc"
-  source "${DOTFILES_DIR}/files/--HOME--/.aliases"
+  source "${HOME}/.shellrc"
+  source "${HOME}/.aliases"
   "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
   ```
 * Quit and restart the Terminal application.

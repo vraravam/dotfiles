@@ -3,10 +3,10 @@
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
 #################################################################################
-# This file is sourced only for login shells. It is used to define the bare
-# minimum shell functions and env vars that are needed during bootstrap of a
-# vanilla OS to bootstrap installation of all other config files. Any functions
-# that are needed after the `.aliases` file is sourced need not be present here.
+# This file is sourced all shells. It is used to define the bare minimum shell
+# functions and env vars that are needed during bootstrap of a vanilla OS to
+# bootstrap installation of all other config files. Any functions that are
+# needed after the `.aliases` file is sourced need not be present here.
 #
 # file location: ${HOME}/.shellrc
 # load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
@@ -62,7 +62,7 @@ export SSH_CONFIGS_DIR="${HOME}/.ssh"
 # --------------------------------------------------------------------------------
 
 # ------------- Env vars for upstream setup (SHOULD NOT be changed) --------------
-# Vijay's github username for setting upstream remote
+# Github username for setting upstream remote
 export UPSTREAM_GH_USERNAME='vraravam' # Note: DO NOT CHANGE THIS
 # --------------------------------------------------------------------------------
 
@@ -457,8 +457,17 @@ export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
 export HOMEBREW_BAT=1
 export HOMEBREW_VERBOSE_USING_DOTS=1
 export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
-# TODO: Uncomment once this feature is stabilized
+export HOMEBREW_NO_ENV_HINTS=1
+# TODO: Uncomment once this feature has stabilized
 # export HOMEBREW_VERIFY_ATTESTATIONS=1
+
+eval_shellenv() {
+  local output
+  if output="$("$@" 2>/dev/null)"; then
+    eval "${output}"
+  fi
+  unset output
+}
 
 # if is_macos; then
   # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)

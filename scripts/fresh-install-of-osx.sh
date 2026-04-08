@@ -271,13 +271,7 @@ install_homebrew() {
   fi
 
   # Note: ensure that homebrew's environment variables are set correctly for this session (even if homebrew was not installed in this session)
-  local brew_shellenv
-  if brew_shellenv="$("${HOMEBREW_PREFIX}/bin/brew" shellenv)"; then
-    eval "${brew_shellenv}"
-  else
-    warn 'Failed to load homebrew shellenv'
-  fi
-  unset brew_shellenv
+  eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
 
   # TODO: Need to investigate why this step exits on a vanilla OS's first run of this script
   # Note: Do not set the 'HOMEBREW_BASE_INSTALL' in this script - since its supposed to run idempotently. Also, don't run the cleanup of pre-installed brews/casks (for the same reason)
@@ -440,7 +434,7 @@ if command_exists recron; then
   recron
   success 'Successfully setup cron jobs'
 else
-  warn "Skipping setting up of cron jobs since '$(yellow 'recron')' couldn't be found in the PATH; Please set it up manually"
+  warn "Skipping setting up of cron jobs since '$(yellow 'recron')' couldn't be found; Please set it up manually"
 fi
 
 ###########################

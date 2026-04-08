@@ -1,0 +1,24 @@
+# Reference: https://deepwiki.com/direnv/direnv/3.2-direnv.toml-configuration
+# Direnv configuration file
+
+[global]
+
+# Enable strict mode for better error handling
+strict_env = true
+
+# Don't show environment diff when loading
+hide_env_diff = true
+
+# Warn if commands take more than 10 seconds
+warn_timeout = '10s'
+
+# Configure logging
+# log_format = "direnv: %s"
+# log_filter = "^(export|unset)"
+
+[whitelist]
+# Trust all projects in these directories
+prefix = ["~/personal/"]
+
+# Trust these exact .envrc files
+exact = ["~/"]

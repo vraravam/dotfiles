@@ -91,6 +91,7 @@
 /.config/nvim/plugged/
 /.config/raycast/extensions/
 /.config/simple-update-notifier/electron-builder.json
+/.config/sol/mmkv.default*
 /.config/stetic/library-cache/
 /.config/xbuild/pkgconfig-cache-2.xml
 /.config/zed/.tmp*
@@ -256,6 +257,7 @@ tmp/
 /.bashrc
 /.config/bat/config
 /.config/btop/btop.conf
+/.config/direnv/direnv.toml
 /.config/ghostty/config
 /.config/mise/config.toml
 /.config/rubocop/config.yml

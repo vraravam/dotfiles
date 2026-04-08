@@ -20,7 +20,7 @@ All these scripts are optimized for fast loading of the shell so that the user c
 
 **Important Note** After the above script has completed running successfully, you need to do the following *manually*
 
-1. Use [this gist](https://gist.github.com/vraravam/e9676759db46950e1fd817e49e513394) <!-- Note: Do NOT change this --> as a template to create equivalent configuration files with your details and make corresponding changes in `files/--HOME--/.gitconfig-oss.inc` to reflect the same.
+1. Use [this gist](https://gist.github.com/vraravam/e9676759db46950e1fd817e49e513394) <!-- Note: Do NOT change this --> as a template to create equivalent configuration files with your details and make corresponding changes in `${HOME}/.gitconfig-oss.inc` to reflect the same.
 
    *Tip*: Since these git configurations are deep-merged (latest one wins), you will not want to expose your other client-specific configs or your personal configs like email to the outside world (via this public repo). So, you will want to make these changes in the `${HOME}/.gitconfig-oss.inc` and not in `${HOME}/.gitconfig` directly.
 2. Quit and Open the `Terminal` application.

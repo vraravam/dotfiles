@@ -259,6 +259,23 @@ if command_exists "$(extract_first_word "${EDITOR}")"; then
   alias edit-gist='edit "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${SSH_CONFIGS_DIR}" "${HOME}/.tool-versions" "${PERSONAL_PROFILES_DIR}/.gitignore"'
 fi
 
+_create_crontab() {
+  section_header 'Creating crontab.txt'
+  local file="${1}"
+
+  echo '# Reference: https://crontab.guru/' > "${file}"
+  echo >> "${file}"
+  echo "# Note: 'chronic' is a utility installed using 'moreutils' from homebrew and is needed so that a successful run of any cron job does not cause a mail to get generated unless in case of error scenarios" >> "${file}"
+  echo >> "${file}"
+  echo '# Env' >> "${file}"
+  echo "SHELL=\"${SHELL}\"" >> "${file}"
+  echo "USERNAME=\"${USERNAME}\"" >> "${file}"
+  echo "HOME=\"${HOME}\"" >> "${file}"
+  echo "PATH=${HOMEBREW_PREFIX}/bin:/usr/bin:/bin  # Needed for chronic to be in the PATH" >> "${file}"
+  echo >> "${file}"
+  echo "0   */2   *   *   *   chronic zsh -lsc \"${DOTFILES_DIR}/scripts/software-updates-cron.sh | tee -a ${HOME}/software-updates-cron.log\"" >> "${file}"
+}
+
 restore_cron() {
   local cron_file="${1}"
   if ! is_file "${cron_file}"; then
@@ -273,12 +290,16 @@ restore_cron() {
 
 # resurrects the cron entries based on the '${PERSONAL_CONFIGS_DIR}/crontab.txt' file
 recron() {
+  section_header 'Setting up crontab'
   info "$(yellow 'Old cron listing')"
   crontab -l || true
 
   crontab -r 2>&1 &> /dev/null || true
 
-  restore_cron "${PERSONAL_CONFIGS_DIR}/crontab.txt"
+  local cron_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
+  _create_crontab "${cron_file}"
+
+  restore_cron "${cron_file}"
 
   info "$(yellow 'New cron listing')"
   crontab -l
