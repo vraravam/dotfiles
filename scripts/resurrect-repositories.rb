@@ -8,28 +8,48 @@
 #   1. Ruby language is present in the system prior to this script being run.
 
 require_relative 'utilities/string'
+require 'optparse'
 
-# Displays the usage instructions for the script and exits.
-#
-# @param exit_code [Integer] The exit code to use when terminating the script.
-# @return [void]
-def usage(exit_code = 1)
-  puts 'This script resurrects or flags for backup all known repositories in the current machine'
-  puts "#{'Usage:'.pink} #{__FILE__} [-g <folder-to-generate-config-for>] [-r <config-filename>] [-c <config-filename>]".yellow
-  puts "  #{'-g'.green} generates the configuration contents onto the stdout for codebases (usually on current laptop)."
-  puts "    #{"Please note that this option will not handle 'post_clone' commands in the generated yaml structure".red}"
-  puts "  #{'-r'.green} resurrects 'known' codebases (usually on fresh laptop)"
-  puts "  #{'-c'.green} verifies 'known' codebases"
-  puts 'Environment variables:'.yellow
-  puts "  #{'FILTER'.light_blue} can be used to apply the operation to a subset of codebases (will match on folder or repo name)"
-  puts "  #{'REF_FOLDER'.light_blue} can be used to apply a filter when verifying against a specific yaml file that might not contain all the repos in your system"
-  exit(exit_code)
+options = {}
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: #{File.basename(__FILE__)} [-g <folder>] [-r <config-file>] [-c <config-file>]"
+  opts.separator ''
+  opts.separator 'Options:'
+  opts.on('-g', '--generate FOLDER', 'Generate configuration from FOLDER onto stdout (usually on current laptop)',
+          "  Note: this option will not handle 'post_clone' commands in the generated yaml structure") do |folder|
+    options[:generate] = folder
+  end
+  opts.on('-r', '--resurrect CONFIG_FILE', "Resurrect 'known' codebases from CONFIG_FILE (usually on fresh laptop)") do |file|
+    options[:resurrect] = file
+  end
+  opts.on('-c', '--check CONFIG_FILE', "Verify 'known' codebases from CONFIG_FILE") do |file|
+    options[:check] = file
+  end
+  opts.separator ''
+  opts.separator 'Environment variables:'
+  opts.separator "  FILTER      can be used to apply the operation to a subset of codebases (will match on folder or repo name)"
+  opts.separator "  REF_FOLDER  can be used to apply a filter when verifying against a specific yaml file"
+  opts.on('-h', '--help', 'Show this help message') do
+    puts opts
+    exit
+  end
+end
+begin
+  parser.parse!
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
+  $stderr.puts e.message
+  $stderr.puts parser
+  exit 1
 end
 
-usage(0) if ARGV[0] == '--help'
-usage if ARGV.length != 2 || !['-g', '-r', '-c'].include?(ARGV[0])
+if options.empty? || options.keys.length > 1
+  $stderr.puts "Error: exactly one of -g, -r, or -c must be specified."
+  $stderr.puts parser
+  exit 1
+end
 
 require 'fileutils'
+require 'optparse'
 require 'pathname' # NOTE: This has been added explicitly due to the default version of ruby (2.6) on a vanilla macos. Once the default ruby upgrades to 3.x, we can remove
 require 'set'
 require 'shellwords'
@@ -411,26 +431,23 @@ end
 filter = (ENV['FILTER'] || '').strip
 puts "Using filter: #{filter.green}" unless filter.empty?
 
-case ARGV[0]
-when '-g'
+if options[:generate]
   puts "Running operation: #{'generation'.green}"
-  discovery_dir = File.expand_path(ARGV[1])
+  discovery_dir = File.expand_path(options[:generate])
   puts "Discovering repos under: #{discovery_dir.replace_home_path_with_tilde.green}"
   repositories = find_git_repos_from_disk(discovery_dir)
   repositories = apply_filter(repositories, filter)
   puts repositories.map { |dir| generate_each(dir) }.to_yaml
-when '-r'
+elsif options[:resurrect]
   puts "Running operation: #{'resurrection'.green}"
-  repositories = read_git_repos_from_file(ARGV[1])
+  repositories = read_git_repos_from_file(options[:resurrect])
   repositories = apply_filter(repositories, filter)
   repositories.each_with_index do |repo, idx|
     resurrect_each(repo, idx, repositories.length)
   end
-when '-c'
+elsif options[:check]
   puts "Running operation: #{'verification'.green}"
-  repositories = read_git_repos_from_file(ARGV[1])
+  repositories = read_git_repos_from_file(options[:check])
   repositories = apply_filter(repositories, filter)
   verify_all(repositories, filter, ref_folder: ENV['REF_FOLDER'])
-else
-  usage
 end

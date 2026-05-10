@@ -5,7 +5,7 @@
 # git command: st
 
 # Source shell helpers if they aren't already loaded
-type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
+type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
 
 # Note: Use a function so that it can accept parameters
 st() {

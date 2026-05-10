@@ -33,8 +33,8 @@ DOTFILES_ROOT_PATH = Pathname.new(__dir__).join('..', 'files').expand_path
 
 # Parse command-line options
 options = { dry_run: false, verbose: false, force: false }
-OptionParser.new do |opts|
-  opts.banner = 'Usage: install-dotfiles.rb [options]'
+parser = OptionParser.new do |opts|
+  opts.banner = "Usage: #{File.basename(__FILE__)} [options]"
   opts.on('-n', '--dry-run', 'Show what would be done without doing it') do
     options[:dry_run] = true
   end
@@ -48,7 +48,14 @@ OptionParser.new do |opts|
     puts opts
     exit
   end
-end.parse!
+end
+begin
+  parser.parse!
+rescue OptionParser::InvalidOption, OptionParser::MissingArgument => e
+  $stderr.puts e.message
+  $stderr.puts parser
+  exit 1
+end
 
 # Statistics tracking — use a Struct so the intent (a mutable bag of counters) is explicit
 # and the constant itself is not a mutated Hash (which is misleading for a constant).

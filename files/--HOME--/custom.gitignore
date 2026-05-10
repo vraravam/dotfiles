@@ -153,6 +153,7 @@
 /.nchsoftware
 /.nix-profile
 /.npm
+/.nvm
 /.oh-my-zsh
 /.ollama/
 /.oracle_jre_usage/*.timestamp

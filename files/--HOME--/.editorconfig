@@ -23,7 +23,7 @@ trim_trailing_whitespace = false
 # shell_variant      = posix # like -ln=posix
 # binary_next_line   = true  # like -bn
 switch_case_indent = true  # like -ci from shfmt options
-space_redirects    = true  # like -sr from shfmt options
+space_redirects    = false # like -sr from shfmt options
 keep_padding       = true  # like -kp from shfmt options
 # function_next_line = true  # like -fn
 # never_split        = true  # like -ns
@@ -31,3 +31,7 @@ keep_padding       = true  # like -kp from shfmt options
 # Windows Shell scripts
 [*.{cmd, bat}]
 end_of_line = crlf
+
+# gitignore files — alignment spaces are not indentation
+[{.gitignore_global,.gitignore,custom.gitignore}]
+indent_size = unset

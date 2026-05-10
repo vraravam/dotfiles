@@ -374,6 +374,7 @@ com.microsoft.autoupdate2
 com.microsoft.rdc.macos
 com.microsoft.shared
 com.microsoft.teams2.helper
+com.microsoft.VSCode
 com.microsoft.VSCodeInsiders
 com.mitchellh.ghostty
 com.objective-see.KnockKnock

@@ -9,40 +9,14 @@
 set -e
 
 # Source shellrc only once if any required function is missing
-type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
+type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
 
 usage() {
-  echo "$(red 'Usage'): $(yellow "${1}") -d <target-folder> -u <upstream-repo-owner>"
+  echo "$(red 'Usage'): $(yellow "${${(%):-%x}##*/}") -d <target-folder> -u <upstream-repo-owner>"
   echo "  $(yellow '-d <target-folder>')       --> (mandatory) The folder which has to be processed"
   echo "  $(yellow '-u <upstream-repo-owner>') --> (mandatory) The upstream repo's owner"
   exit 1
 }
-
-local target_folder
-local upstream_repo_owner
-
-while getopts ":d:u:" opt; do
-  case ${opt} in
-    d)
-      target_folder="${OPTARG}"
-      ;;
-    u)
-      upstream_repo_owner="${OPTARG}"
-      ;;
-    \?)
-      usage "${0##*/}"
-      ;;
-    :)
-      echo "Invalid option: -${OPTARG} requires an argument" 1>&2
-      usage "${0##*/}"
-      ;;
-  esac
-done
-shift $((OPTIND - 1))
-
-if is_zero_string "${target_folder}" || is_zero_string "${upstream_repo_owner}"; then
-  usage "${0##*/}"
-fi
 
 get_remote_url() {
   local remote_name="${1:-origin}"
@@ -57,6 +31,32 @@ get_remote_url() {
 }
 
 main() {
+  local target_folder
+  local upstream_repo_owner
+
+  while getopts ":d:u:" opt; do
+    case ${opt} in
+      d)
+        target_folder="${OPTARG}"
+        ;;
+      u)
+        upstream_repo_owner="${OPTARG}"
+        ;;
+      \?)
+        usage
+        ;;
+      :)
+        echo "Invalid option: -${OPTARG} requires an argument" 1>&2
+        usage
+        ;;
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  if is_zero_string "${target_folder}" || is_zero_string "${upstream_repo_owner}"; then
+    usage
+  fi
+
   section_header "$(yellow 'Adding new upstream to'): '$(purple "${target_folder}")'"
 
   if ! is_git_repo "${target_folder}"; then
@@ -65,7 +65,8 @@ main() {
   fi
 
   # Check if an 'upstream' remote already exists
-  local existing_upstream="$(get_remote_url upstream)"
+  local existing_upstream
+  existing_upstream="$(get_remote_url upstream)"
   if is_non_zero_string "${existing_upstream}"; then
     warn "Remote 'upstream' already exists for the repo in '$(yellow "${target_folder}")': '$(yellow "${existing_upstream}")'"
     return 0 # Success, nothing to do
@@ -120,7 +121,7 @@ main() {
   fi
 
   # Fetch the newly added remote
-  if ! git -C "${target_folder}" fetch upstream; then
+  if ! GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${target_folder}" fetch upstream; then
     error "Failed to fetch upstream remote '$(yellow "${new_repo_url}")' after adding it."
   fi
 
@@ -128,4 +129,4 @@ main() {
 }
 
 # Execute the main function with all script arguments
-main
+main "$@"

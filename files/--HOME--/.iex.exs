@@ -10,25 +10,25 @@ IO.puts IO.ANSI.red_background() <> IO.ANSI.white() <> " ❄❄❄ Good Luck wit
 Application.put_env(:elixir, :ansi_enabled, true)
 
 IEx.configure(
- colors: [
-   eval_result: [:cyan, :bright] ,
-   eval_error: [[:red,:bright,"\n▶▶▶Bug Bug ..!!\n"]],
-   eval_info: [:yellow, :bright ],
- ],
- default_prompt: [
-   "\e[G",    # ANSI CHAR, move cursor to column 1
+  colors: [
+    eval_result: [:cyan, :bright],
+    eval_error: [[:red, :bright, "\n▶▶▶Bug Bug ..!!\n"]],
+    eval_info: [:yellow, :bright],
+  ],
+  default_prompt: [
+    "\e[G",    # ANSI CHAR, move cursor to column 1
     :white,
     "I",
     :red,
-    "❤" ,       # plain string
+    "❤",       # plain string
     :green,
     "%prefix", :white, " | ",
     :yellow,
     "%counter", :white, " | ",
     :red,
-    "▶" ,         # plain string
+    "▶",         # plain string
     :yellow,
     "❤ ❤-»",  # plain string
     :reset
-  ] |> IO.ANSI.format |> IO.chardata_to_string
+  ] |> IO.ANSI.format() |> IO.chardata_to_string()
 )

@@ -52,6 +52,7 @@ brew 'direnv'
 brew 'eza'
 brew 'git-extras'
 brew 'git-tools'
+brew 'git-trim'
 brew 'mise'
 brew 'powerlevel10k'
 
@@ -87,7 +88,8 @@ cask 'codeql'
 cask 'dbeaver-community'
 cask 'dockdoor', postinstall: "\"#{setup_login_items_script}\" -a 'Dockdoor'"
 cask 'drawio'
-cask 'firefox@nightly' #, greedy: true
+cask 'firefox@developer-edition' #, greedy: true
+cask 'flux-markdown', postinstall: 'qlmanage -r'
 cask 'google-chrome@beta'
 cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'" if ::OS::Mac::version >= 14
 cask 'keepassxc@beta'
@@ -98,8 +100,6 @@ cask 'rancher' # if ::OS::Mac::version < 26
 cask 'sol', postinstall: "\"#{setup_login_items_script}\" -a 'Sol'"
 cask 'shortcat', postinstall: "\"#{setup_login_items_script}\" -a 'Shortcat'"
 cask 'stats', postinstall: "\"#{setup_login_items_script}\" -a 'Stats'"
-# cask 'visual-studio-code'
-cask 'flux-markdown', postinstall: 'qlmanage -r'
 cask 'zed@preview'
 cask 'zen@twilight'
 cask 'zoom'
@@ -205,7 +205,7 @@ cask 'zoom'
 # cask 'knockknock'
 # cask 'licecap'
 # cask 'lulu'
-# cask 'microsoft-remote-desktop'
+cask 'windows-app'    # replacement for microsoft-remote-desktop
 # cask 'microsoft-teams'
 # cask 'monolingual'
 # cask 'netspot'
@@ -219,3 +219,4 @@ cask 'zoom'
 # cask 'thunderbird@daily'
 # cask 'tor-browser@alpha'
 # cask 'utm'
+# cask 'visual-studio-code'

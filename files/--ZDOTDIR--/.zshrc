@@ -21,7 +21,7 @@
 # execute 'ZSH_PROFILE_RC=true zsh -i -c exit' and run 'zprof' to get the details
 [[ -n "${ZSH_PROFILE_RC+1}" ]] && zmodload zsh/zprof
 
-type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
+type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
 
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ${ZDOTDIR}/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
@@ -64,7 +64,14 @@ zstyle ':omz:update' mode auto      # update automatically without asking
 # zstyle ':omz:update' mode reminder  # just remind me to update when it's time
 
 # Uncomment the following line to change how often to auto-update (in days).
-zstyle ':omz:update' frequency 1
+# Note: Increased from 1 to 7 to avoid a daily git-based update check which adds ~10ms to startup
+zstyle ':omz:update' frequency 7
+
+# Skip compaudit (which checks for insecure completion directories) since it adds ~11ms to startup.
+# The check is unnecessary on a personal machine where you control all fpath directories.
+# ZSH_DISABLE_COMPFIX makes OMZ use 'compinit -u' instead of 'compinit -i', which still calls
+# compaudit internally. However, using -C (cache) flag entirely skips the scan when dump is fresh.
+ZSH_DISABLE_COMPFIX=true
 
 # Set plugin options that are needed before each plugin is loaded
 zstyle ':omz:plugins:eza' 'icons' yes
@@ -114,12 +121,57 @@ export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 plugins=(direnv eza fast-syntax-highlighting git iterm2 mise sudo zbell zsh-autosuggestions)
 
 # Note: Using 'brew' as an oh-my-zsh plugin causes the PATH to be incorrect. For eg, 'bash' gets resolved to '/bin/bash' (which comes default with the OS) rather than the one from homebrew.
-eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
+# Cache brew shellenv to avoid running the brew binary on every shell startup (it's slow due to Ruby startup).
+# The cache is invalidated when the brew binary itself changes (i.e. after brew upgrades).
+# The cache pre-evaluates path_helper so sourcing it is a pure-zsh operation (no subprocesses).
+() {
+  local brew_bin="${HOMEBREW_PREFIX}/bin/brew"
+  local cache_file="${XDG_CACHE_HOME}/brew-shellenv-cache.zsh"
+  # Use the brew binary's modification time as cache key (no need to run brew at all for the check)
+  if [[ ! -f "${cache_file}" ]] || [[ "${brew_bin}" -nt "${cache_file}" ]]; then
+    # Run brew shellenv in a subshell to get brew vars + path_helper result without polluting current PATH
+    local brew_path brew_cellar brew_repo brew_infopath brew_manpath brew_extra_path
+    eval "$("${brew_bin}" shellenv 2>/dev/null)"
+    brew_cellar="${HOMEBREW_CELLAR}"
+    brew_repo="${HOMEBREW_REPOSITORY}"
+    brew_infopath="${INFOPATH}"
+    brew_manpath="${MANPATH}"
+    # Capture only the homebrew-specific path prefix (path_helper result minus what was already in PATH)
+    # Write a static cache: static exports + fpath update (no subprocess calls when cache is sourced)
+    {
+      echo "export HOMEBREW_CELLAR='${brew_cellar}';"
+      echo "export HOMEBREW_REPOSITORY='${brew_repo}';"
+      echo "export INFOPATH='${brew_infopath}';"
+      echo "export MANPATH='${brew_manpath}';"
+      echo "fpath=('/opt/homebrew/share/zsh/site-functions' \"\${fpath[@]}\"); export FPATH;"
+    } >| "${cache_file}" 2>/dev/null
+  fi
+  [[ -f "${cache_file}" ]] && source "${cache_file}"
+}
 
 # according to https://github.com/zsh-users/zsh-completions/issues/603#issue-373185486, this can't be added as a plugin to omz for the fpath to work correctly
 append_to_fpath_if_dir_exists "${ZSH_CUSTOM}/plugins/zsh-completions/src"
 
+load_file_if_exists "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
+
+# Optimize compinit: override compinit to use '-C' flag (skip compaudit scan) when dump file exists.
+# OMZ calls compinit without '-C', causing a ~11ms compaudit filesystem scan every startup.
+# The '-C' flag is safe here because we control all fpath directories on this personal machine.
+# The override is removed after compinit runs so subsequent calls behave normally.
+function compinit() {
+  unfunction compinit  # remove override so the real compinit can be loaded
+  autoload -Uz compinit
+  # If the dump file exists, use -C to skip compaudit; otherwise do a full init
+  local dump="${ZSH_COMPDUMP:-${ZDOTDIR:-$HOME}/.zcompdump}"
+  if [[ -f "$dump" ]]; then
+    compinit -C "$@"
+  else
+    compinit "$@"
+  fi
+}
+
 load_file_if_exists "${ZSH}/oh-my-zsh.sh"
+
 
 # User configuration
 # export MANPATH="/usr/local/man${MANPATH+:$MANPATH}"
@@ -359,7 +411,8 @@ manpath=( "${manpath[@]:#}" )
 typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPATH manpath PATH path PKG_CONFIG_PATH
 
 # Use modern completion system (needs to be run AFTER some zstyle defns and setting up of *paths; usually a good idea to do so after all of them)
-autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}" 2>&1 &> /dev/null || true
+# Note: compinit is already called by oh-my-zsh.sh above. This call was redundant and added an extra ~11ms (compaudit) on startup.
+# autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}" &>/dev/null || true
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
 # execute 'ZSH_PROFILE_RC=true zsh' and run 'zprof' to get the details

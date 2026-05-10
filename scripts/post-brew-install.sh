@@ -8,7 +8,7 @@
 set -e
 
 # Source helpers only once if any required function is missing
-type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
+type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
 
 replace_symlink_if_needed() {
   if is_executable "${1}"; then
@@ -29,7 +29,7 @@ print_link_info() {
 }
 
 # This removal is required for completions from other plugins to work (for eg git-extras)
-rm -rf "${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git" 2>&1 &> /dev/null || true
+rm -rf "${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git" &>/dev/null  || true
 
 section_header "$(yellow 'Linking programs to open from the cmd-line')"
 
@@ -90,7 +90,3 @@ fi
 
 # Setup the login items once the full list of applications has been installed on the machine
 # "${DOTFILES_DIR}/scripts/setup-login-item.sh" -a 'ZoomHider'
-
-# Cleanup temp functions, etc
-unfunction replace_symlink_if_needed
-unfunction print_link_info

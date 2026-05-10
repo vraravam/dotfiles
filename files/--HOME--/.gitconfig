@@ -10,186 +10,320 @@
 [advice]
   statusHints = true
 [alias]
-  # TODO: Need to check if aliases starting with '!' work with 'git -C' context if pwd is different from context-dir
+  # NOTE: Aliases starting with '!' run as shell commands. They inherit the git working directory
+  # (set via -C) as their cwd, so they work correctly with 'git -C <path> <alias>'.
 
-  # find dangling commits
+  # Finds dangling (unreachable) commits not referenced by any branch or tag.
+  # Usage: git dangling
   dangling = fsck --no-reflog
 
-  # edit global git configuration
+  # Opens the global git config file in the default editor.
+  # Usage: git ec
   ec = config --global -e
 
-  # find files/folders with the specified parameter as part of the name
+  # Finds tracked files whose name contains the given string (case-insensitive).
+  # Usage: git f <pattern>
+  # Example: git f config
   f = !git ls-files | grep -i
 
-  # accepts a full (ie not-relative) path, and prints the relative path of that entry from the repo's root folder
-  relative-path = "!sh -c 'echo ${0/$(git root)/} | tail -c+2'"
+  # Prints the relative path of the given path from the repo root.
+  # If no argument is given, prints the relative path of the current directory.
+  # Usage: git relative-path [<path>]
+  # Example: git relative-path /abs/path/to/repo/src/foo.ts  =>  src/foo.ts  (if cwd is repo)
+  # Example: git relative-path ./src/foo.ts                  =>  src/foo.ts  (if cwd is repo)
+  # Example: git relative-path                               =>  src  (if cwd is repo/src)
+  relative-path = "!bash -c 'echo ${0/$(git root)/} | tail -c+2'"
 
-  # if a local commit exists, then amend it, else create a new commit with the specified message. Aborts if diverged (with non-zero error code) or nothing to commit
+  # Smart commit: if already ahead of remote, amends the existing unpushed commit;
+  # otherwise creates a new commit. Aborts if branches have diverged or nothing is staged.
+  # Usage: git sci "<message>"
+  # Example: git sci "fix: correct typo in README"
   sci = "!sh -c '\
-    if $(git st | grep -q \"have diverged\"); then \
-      echo \"Diverged branches: aborting\"; \
+    st=$(git status); \
+    if echo \"$st\" | grep -q \"have diverged\"; then \
+      printf \"Diverged branches: aborting\n\"; \
       exit 1; \
-    elif ! $(git st | grep -q \"to unstage\"); then \
-      echo \"Nothing to commit: aborting\"; \
+    elif ! echo \"$st\" | grep -q \"to unstage\"; then \
+      printf \"Nothing to commit: aborting\n\"; \
     else \
-      if $(git st | grep -q \"is ahead of\"); then \
-        echo \"Amending existing commit\"; \
+      if echo \"$st\" | grep -q \"is ahead of\"; then \
+        printf \"Amending existing commit\n\"; \
         git amq; \
       else \
-        echo \"Creating new commit\"; \
-        echo $0; \
+        printf \"Creating new commit\n\"; \
+        printf \"%s\n\" $0; \
         git ci \"$0\"; \
       fi \
     fi'"
 
+  # Shows a compact one-line summary of a commit: hash, subject, and date.
+  # Usage: git what [<ref>]
+  # Example: git what HEAD
   what = show -s --pretty='tformat:%h (%s, %ad)' --date=short
 
-  # show all committers' info summary (count and name)
-  committers = shortlog -s --
+  # show all committers' info summary (count and name) - use 'git summary' from git-extras for richer output
+  # committers = shortlog -s --
 
-  # print the current user's name and email
+  # Prints the current user's configured name and email.
+  # Usage: git who
   who = !git config --get user.name && git config --get user.email
 
-  # show username/email of the specified author
-  whois = log -i -1 --pretty=format:'%an <%ae>' --author
+  # show username/email of the specified author - use 'git who <author>' from git-extras
+  # whois = log -i -1 --pretty=format:'%an <%ae>' --author
 
-  # show all commits in the past week done by the specified author
+  # Shows commits from the past week by the specified author.
+  # Usage: git standup <author>
+  # Example: git standup "Vijay"
   standup = log --since 1.week.ago --author
 
-  # show git log in colorful graph mode
+  # Shows a colorful commit graph for the current branch.
+  # Usage: git lg
   lg = log --color --graph --pretty=format:'%C(yellow)%h%Creset -%C(bold blue)%d%Creset %s %C(green) %an, %cr%Creset' --abbrev-commit
+
+  # Shows a colorful commit graph for all branches.
+  # Usage: git lga
   lga = log --color --graph --all --pretty=format:'%C(yellow)%h%Creset -%C(bold blue)%d%Creset %s %C(green) %an, %cr%Creset' --abbrev-commit
+
+  # Shows a compact decorated one-line graph log.
+  # Usage: git ll
   ll = log --decorate --graph --oneline --abbrev-commit
+
+  # Merges a branch without auto-committing (lets you inspect/edit before committing).
+  # Usage: git mn <branch>
+  # Example: git mn feature/foo
   mn = merge --no-commit
+
+  # Cherry-picks a commit without auto-committing.
+  # Usage: git cn <commit>
+  # Example: git cn abc1234
   cn = cherry-pick --no-commit
+
+  # Cherry-picks a commit and commits it immediately.
+  # Usage: git cr <commit>
+  # Example: git cr abc1234
   cr = cherry-pick
 
-  # commit with the following message
+  # Creates a commit with the given message.
+  # Usage: git ci "<message>"
+  # Example: git ci "feat: add login page"
   ci = commit -m
 
+  # Checks out a branch or file.
+  # Usage: git co <branch>
+  # Example: git co main
   co = checkout
+
+  # Clones a repository.
+  # Usage: git cl <url>
+  # Example: git cl git@github.com:user/repo.git
   cl = clone
+
+  # Shows the working tree status.
+  # Usage: git st
   st = status
+
+  # Shows working tree status along with submodule summary.
+  # Usage: git stsub
   stsub = !git status && git submodule summary
+
+  # Shows a short branch+status summary (branch name and per-file status flags).
+  # Usage: git sts
   sts = status -sb
+
+  # Lists branches (add -a for all, -r for remote).
+  # Usage: git b [-a|-r]
   b = branch
+
+  # Shows unstaged changes (diff of working tree vs index).
+  # Usage: git d [<path>]
   d = diff
+
+  # Shows staged changes (diff of index vs last commit).
+  # Usage: git dc [<path>]
   dc = diff --staged
-  # show diffs with colored words (red word is deleted, green word is added)
+
+  # Shows diff with changed words highlighted inline (red=deleted, green=added).
+  # Usage: git dcolor [<path>]
   dcolor = diff --color-words
   # dw = diff --word-diff=color           # Note: Commented out since we use diff-so-fancy; but keeping for reference
   # dcw = diff --word-diff=color --staged # Note: Commented out since we use diff-so-fancy; but keeping for reference
 
-  # undo the last commit
-  undo = reset --soft HEAD^
+  # undo the last N commits (1 by default) - provided by git-extras
+  # Usage: git undo [<N>]
+  # Example: git undo 3
 
+  # Stashes ALL changes (staged+unstaged+untracked) as a hidden reflog commit, then hard-resets.
+  # The savepoint can be recovered via 'git reflog' if needed.
+  # Usage: git wipe
   wipe = !git add -A && git commit -qm 'WIPE SAVEPOINT if needed later, can be resurrected using reflog' && git reset HEAD~1 --hard
 
-  # amend last commit and update the commit date to now
+  # Amends the last commit and updates its timestamp to now.
+  # Usage: git amend
   amend = commit --amend --date="now"
 
-  # amend last commit keeping the same commit comment, but updating the commit date to now
+  # Amends the last commit silently, keeping the same message, updating timestamp to now.
+  # Usage: git amq
   amq = amend --no-edit --quiet
 
-  # unstage all staged changes without losing the changed content
+  # Unstages all staged changes without discarding them.
+  # Usage: git unstage [<path>]
+  # Example: git unstage src/foo.ts
   unstage = restore --staged
 
-  # list all large files
+  # Lists the 10 largest files tracked in HEAD by size.
+  # Usage: git large
   large = !git ls-tree -r -t -l --full-name HEAD | sort -n -k 4 | tail -n 10
 
-  # untrack a file
+  # Untracks a file from git without deleting it from disk.
+  # Usage: git untrack <path>
+  # Example: git untrack config/secrets.yml
   untrack = rm -rf --cached --
+
+  # Greps tracked files case-insensitively, ignoring binary files.
+  # Usage: git grep <pattern>
+  # Example: git grep "TODO"
   grep = grep -Ii
 
-  # As a shortcut for a 'normal' diff to save as a patch for emailing or later application (without diff-so-fancy)
+  # Outputs a plain unified diff (bypassing diff-so-fancy) suitable for use as a patch file.
+  # Usage: git patch [<path>] > my.patch
   patch = !git --no-pager diff --no-color
 
-  # show tracking upstream string in the format `<remote>/<branch>`
+  # Shows the upstream tracking branch for the current branch in <remote>/<branch> format.
+  # Usage: git track
   track = rev-parse --abbrev-ref --symbolic-full-name @{u}
 
-  # fetch all branches (fetch tags only from the upstream remote) - (without merging into the local copy of remote)
+  # Prints the default branch name of the repo (e.g. main or master) from origin/HEAD.
+  # Usage: git default-branch
+  # another way: git remote show origin | sed -n '/HEAD branch/s/.*: //p'
+  default-branch = !git symbolic-ref refs/remotes/origin/HEAD | sed 's|refs/remotes/origin/||'
+
+  # Fetches all remotes and tags, then prunes local branches deleted on remote.
+  # Usage: git fo
   fo = !git fetch --all --tags && git dlb
 
-  # print the current remote repo name (assumes remote's name is 'origin')
-  repo = !basename `git remote get-url origin`
+  # Prints the name of the current remote repo (assumes remote named 'origin').
+  # Usage: git repo
+  repo = !basename $(git remote get-url origin)
 
-  # print the current branch name
+  # Prints the current branch name.
+  # Usage: git br
   br = branch --show-current
 
-  # rebase from corresponding upstream branch if a remote named 'upstream' is present, silently quit if a remote is not present
-  upreb = !git branch -u origin/`git br` && git fo && ( git remote | grep upstream 2>&1 &> /dev/null ) && git rebase upstream/`git br` --no-verify && git fetch upstream --tags && git push --progress --no-verify && git push --progress --tags --no-verify && git siu && git dlb
+  # Full upstream rebase workflow: sets tracking, fetches, rebases from upstream (if present),
+  # pushes, updates submodules, and prunes gone branches.
+  # Usage: git upreb
+  upreb = !git branch -u origin/$(git br) && git fo && ( git remote | grep upstream &>/dev/null ) && git rebase upstream/$(git br) --no-verify && git fetch upstream --tags && git push --progress --no-verify && git push --progress --tags --no-verify && git siu && git dlb
 
-  # prune local copy-of-remote to remove deleted branches
+  # Prunes the local copy of remote-tracking branches deleted on origin.
+  # Usage: git rpo
   rpo = remote prune origin
 
-  # show incoming change commits without per-file content changes
+  # Shows commits on the remote not yet in the local branch (incoming), without file diffs.
+  # Usage: git in
   in = log --reverse ..@{u} --stat --no-merges
 
-  # show incoming change commits with per-file content changes
+  # Shows incoming commits with full file diffs.
+  # Usage: git inp
   inp = log -p --reverse ..@{u} --no-merges
 
-  # show incoming changes as a single diff (without breakup of commits)
-  inc = !git diff ..@{u}
+  # Shows incoming changes as a single combined diff (not per-commit).
+  # Usage: git inc
+  inc = diff ..@{u}
 
-  # if you prefer to do "git pull" instead of "git fetch", this can be an equivalent of the "in" alias
-  new = !sh -c 'git log $1@{1}..$1@{0} "$@"'
+  # Shows new commits on a branch since the last pull (useful after 'git pull').
+  # Defaults to the current branch if no argument is given.
+  # Usage: git new [<branch>]
+  # Example: git new main
+  new = "!sh -c 'case $0 in sh|bash) b=$(git branch --show-current) ;; *) b=$0 ;; esac; git log $b@{1}..$b@{0} \"$@\"'"
 
-  # show outgoing change commits
+  # Shows commits in the local branch not yet pushed to remote (outgoing), without file diffs.
+  # Usage: git out
   out = log --reverse @{u}..
 
-  # show outgoing change commits with content changes
+  # Shows outgoing commits with full file diffs.
+  # Usage: git outp
   outp = log -p --reverse @{u}..
 
-  # show more info while grepping commits
+  # Greps across all tracked files with context: shows filename headings and line numbers.
+  # Usage: git g <pattern>
+  # Example: git g "TODO"
   g = grep --break --heading --line-number
 
-  # expire the reflog as of this moment (so as to maximize cleanup using the 'cc' alias)
+  # Expires the entire reflog immediately (maximises cleanup when followed by 'git cc').
+  # Usage: git rfc
   rfc = reflog expire --expire=now
 
-  # prints the size of the current repo
-  size = !echo \"==> Size of repository at '$(pwd)': $(du -sh .git | cut -f1)\"
+  # Prints the disk size of the current repo's .git directory.
+  # Usage: git size
+  size = "!sh -c 'root=$(git rev-parse --show-toplevel); printf \"==> Size of repository at %s: %s\\n\" \"$root\" \"$(du -sh \"$root/.git\" | cut -f1)\"'"
 
-  # compress disk-space-usage by deleting dangling commits (use SKIP_SIZE_BEFORE=1 to skip printing the size before the operation)
-  # Note: Do not use '--all' switch for reflog expire - since that also destroys stashes
-  cc = "![[ ${SKIP_SIZE_BEFORE} -ne 0 ]] || git size; git remote prune origin; git prune --progress; git pack-refs --all; git repack -a -d --depth=250 --window=250; git reflog expire --all --expire=1.week.ago; git maintenance run --task=gc; git size;"
+  # Compresses the repo and reclaims disk space by pruning, repacking, and running gc.
+  # Set SKIP_SIZE_BEFORE=1 (or any non-empty value) to skip printing size before the operation.
+  # Note: '--all' is intentionally omitted from reflog expire to preserve stashes.
+  # Usage: git cc
+  # Example: SKIP_SIZE_BEFORE=1 git cc
+  cc = "!sh -c '[ -n \"${SKIP_SIZE_BEFORE}\" ] || git size; git remote prune origin; git prune --progress; git pack-refs --all; git repack -a -d --depth=250 --window=250; git reflog expire --all --expire=1.week.ago; git maintenance run --task=gc; git size;'"
 
-  # show the biggest files in the disk (this is not technically specific to git-tracked files)
-  big = "!git rev-list --objects --all | grep \"$(git verify-pack -v .git/objects/pack/*.idx | sort -k 3 -n | tail -100 | awk '{print $1}')\""
+  # Lists the 100 biggest objects ever stored in the repo (including deleted files).
+  # Usage: git big
+  big = "!sh -c 'git rev-list --objects --all | grep \"$(git verify-pack -v "$(git rev-parse --show-toplevel)/.git/objects/pack/*.idx" | sort -k 3 -n | tail -100 | awk \"{print \\$1}\")\"'"
 
-  # delete all local branches which are not present on remote
-  dlb = "!git branch -vv | GREP_OPTIONS= grep ': gone]' | awk '{print $1}' | xargs -I {} git branch -D {}"
+  # Deletes all local branches whose remote-tracking counterpart has been deleted (gone).
+  # Usage: git dlb
+  dlb = "!git branch -vv | grep ': gone]' | awk '{print $1}' | xargs -r git branch -D"
 
-  # check if the specified branch has had a commit in the past 10 days and if so, report
-  # old = "!sh -c '[[ \"$(git log $0/$1 --since 10.days -1 | wc -l)\" -eq 0 ]] && echo \"Will need to delete $0/$1\" && git push $0 --delete $1'"
-  old = "!sh -c '[[ \"$(git log $0/$1 --since 10.days -1 | wc -l)\" -eq 0 ]] && echo \"Will need to delete $0/$1\"'"
+  # Reports whether the specified remote branch has had any commits in the past 10 days.
+  # Prints a warning if the branch appears stale (no recent commits).
+  # Defaults to the current branch and its tracked remote (falls back to 'origin' if no tracking set).
+  # Usage: git old [<remote> <branch>]
+  # Example: git old origin feature/old-experiment
+  # old = "!sh -c '[ ... ] && git push $1 --delete $2' --"   # uncomment to also delete the branch
+  old = "!sh -c 'case $1 in \"\") b=$(git branch --show-current); remote=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null | cut -d/ -f1); r=${remote:-origin} ;; *) r=$1; b=$2 ;; esac; [ \"$(git log $r/$b --since 10.days -1 -- 2>/dev/null | wc -l | xargs)\" -eq 0 ] && printf \"Will need to delete %s/%s\n\" $r $b' --"
 
-  # Show most recent and oldest remote branches by committerdate
-  # Copied from https://github.com/rsanheim/dotfiles/pull/34/files
-  # Takes arguments of refbranch (defaults to master) and count (for number of branches to show)
-  recentb = "!r() { refbranch=${1:-origin/master} count=${2:-20}; git for-each-ref --sort=-committerdate refs/remotes --format='%(refname:short)|%(HEAD)%(color:yellow)%(refname:short)|%(color:bold green)%(committerdate:relative)|%(color:blue)%(subject)|%(color:magenta)%(authorname)%(color:reset)' --color=always --count=${count} | while read line; do branch=$(echo \"$line\" | awk 'BEGIN { FS = \"|\" }; { print $1 }' | tr -d '*'); ahead=$(git rev-list --count \"${refbranch}..${branch}\"); behind=$(git rev-list --count \"${branch}..${refbranch}\"); colorline=$(echo \"$line\" | sed 's/^[^|]*|//'); echo \"$ahead|$behind|$colorline\" | awk -F'|' -vOFS='|' '{$5=substr($5,1,70)}1' ; done | ( echo \"ahead|behind||branch|lastcommit|message|author\\n\" && cat) | column -ts'|';}; r"
-  oldestb = "!r() { refbranch=${1:-origin/master} count=${2:-20}; git for-each-ref --sort=committerdate refs/remotes --format='%(refname:short)|%(HEAD)%(color:yellow)%(refname:short)|%(color:bold green)%(committerdate:relative)|%(color:blue)%(subject)|%(color:magenta)%(authorname)%(color:reset)' --color=always --count=${count} | while read line; do branch=$(echo \"$line\" | awk 'BEGIN { FS = \"|\" }; { print $1 }' | tr -d '*'); ahead=$(git rev-list --count \"${refbranch}..${branch}\"); behind=$(git rev-list --count \"${branch}..${refbranch}\"); colorline=$(echo \"$line\" | sed 's/^[^|]*|//'); echo \"$ahead|$behind|$colorline\" | awk -F'|' -vOFS='|' '{$5=substr($5,1,70)}1' ; done | ( echo \"ahead|behind||branch|lastcommit|message|author\\n\" && cat) | column -ts'|';}; r"
+  # Lists remote branches sorted by most-recently-committed, with ahead/behind counts vs the default branch.
+  # Optionally specify a different reference branch and/or a count.
+  # Usage: git recent-branch [<refbranch> [<count>]]
+  # Example: git recent-branch origin/main 30
+  recent-branch = "!r() { refbranch=${1:-origin/$(git default-branch)} count=${2:-20}; git for-each-ref --sort=-committerdate refs/remotes --format='%(refname:short)|%(HEAD)%(color:yellow)%(refname:short)|%(color:bold green)%(committerdate:relative)|%(color:blue)%(subject)|%(color:magenta)%(authorname)%(color:reset)' --color=always --count=${count} | while read line; do branch=$(printf '%s' \"$line\" | awk 'BEGIN { FS = \"|\" }; { print $1 }' | tr -d '*'); ahead=$(git rev-list --count \"${refbranch}..${branch}\"); behind=$(git rev-list --count \"${branch}..${refbranch}\"); colorline=$(printf '%s' \"$line\" | sed 's/^[^|]*|//'); printf '%s' \"$ahead|$behind|$colorline\" | awk -F'|' -vOFS='|' '{$5=substr($5,1,70)}1' ; done | ( printf 'ahead|behind||branch|lastcommit|message|author\n\n' && cat) | column -ts'|';}; r"
 
-  # list all branches along with the committer and when the last commit was done
-  lc = "!git branch -r --sort=-committerdate --format=\"%(color:magenta)%(committerdate:relative)%(color:reset) %(color:bold cyan)%(refname:short)%(color:reset) %(contents:subject) %(color:bold blue) <%(authorname)> %(color:reset)\""
+  # Lists remote branches sorted by oldest-committed first, with ahead/behind counts vs the default branch.
+  # Useful for identifying stale branches. Optionally specify a reference branch and/or count.
+  # Usage: git oldest-branch [<refbranch> [<count>]]
+  # Example: git oldest-branch origin/main 50
+  oldest-branch = "!r() { refbranch=${1:-origin/$(git default-branch)} count=${2:-20}; git for-each-ref --sort=committerdate refs/remotes --format='%(refname:short)|%(HEAD)%(color:yellow)%(refname:short)|%(color:bold green)%(committerdate:relative)|%(color:blue)%(subject)|%(color:magenta)%(authorname)%(color:reset)' --color=always --count=${count} | while read line; do branch=$(printf '%s' \"$line\" | awk 'BEGIN { FS = \"|\" }; { print $1 }' | tr -d '*'); ahead=$(git rev-list --count \"${refbranch}..${branch}\"); behind=$(git rev-list --count \"${branch}..${refbranch}\"); colorline=$(printf '%s' \"$line\" | sed 's/^[^|]*|//'); printf '%s' \"$ahead|$behind|$colorline\" | awk -F'|' -vOFS='|' '{$5=substr($5,1,70)}1' ; done | ( printf 'ahead|behind||branch|lastcommit|message|author\n\n' && cat) | column -ts'|';}; r"
 
-  # [DUPLICATE - WIP] list all branches using the 'log' command which allows to set a particular start date
-  lc2 = "!git branch -r --sort=-committerdate | egrep -v 'HEAD|master|main' | while read b; do git log --since 4.days --color --format=\"%ci _%C(magenta)%cr %C(bold cyan)$b%Creset %s %C(bold blue)<%an>%Creset\" $b | head -n 1; done | sort -r | cut -d_ -f2-"
+  # Lists all remote branches with last committer and relative commit time, sorted by most recent.
+  # Usage: git lc
+  lc = !git branch -r --sort=-committerdate --format='%(color:magenta)%(committerdate:relative)%(color:reset) %(color:bold cyan)%(refname:short)%(color:reset) %(contents:subject) %(color:bold blue) <%(authorname)> %(color:reset)'
 
-  # graphed log in single line
+  # [WIP/DUPLICATE] Like 'lc' but uses 'git log' so a --since date filter can be applied.
+  # Usage: git lc2
+  lc2 = "!git branch -r --sort=-committerdate | grep -Ev 'HEAD|master|main' | while read b; do git log --since 4.days --color --format='%ci _%C(magenta)%cr %C(bold cyan)'"'"'$b'"'"'%Creset %s %C(bold blue)<%an>%Creset' $b | head -n 1; done | sort -r | cut -d_ -f2-"
+
+  # Shows a compact colorful graph log including trailer refs (e.g. Jira ticket refs).
+  # Usage: git lt
   lt = log --color --graph --pretty=format:'%Cred%h%Creset %C(bold)%(trailers:key=Refs,valueonly,separator=%x2c)%Creset - %s %Cgreen(%cr)%C(bold blue) <%an>%C(nobold yellow)%d%Creset' --abbrev-commit
 
-  # search for specific strings in your commits
+  # Searches for a fixed string across the full history of all commits (not just the working tree).
+  # Usage: git se "<string>"
+  # Example: git se "password"
   se = "!git rev-list --all | xargs git grep -F"
 
-  # [siu = submodule init update] Runs submodule-initialisation and update recursively after a fresh checkout!
+  # Initialises and updates all submodules recursively (use after a fresh clone or pull).
+  # Usage: git siu
   siu = submodule update --init --recursive --remote --rebase --force
 
+  # Runs a command in each submodule.
+  # Usage: git sf "<command>"
+  # Example: git sf "git status"
   sf = submodule foreach
 
-  # push all submodules
+  # Pushes all submodules to their remotes.
+  # Usage: git pushsub
   pushsub = sf "git push --progress"
 
-  # pull all submodules
+  # Pulls latest changes in all submodules.
+  # Usage: git pullsub
   pullsub = sf "git pull"
 [branch]
   autoSetupMerge = true
@@ -217,7 +351,7 @@
 [core]
   autocrlf = input
   commentChar = *
-  compression = 9
+  compression = 1
   excludesFile = ~/.gitignore_global
   fileMode = true
   fsMonitor = true
@@ -225,13 +359,13 @@
   longPaths = true
   pager = diff-so-fancy | less --tabs=2 -RFX
   # repositoryFormatVersion = 1   # Note: This can be uncommented to enable the new repository format for SHA256 support
+  sshCommand="ssh -o ConnectTimeout=20"
   symlinks = false
   untrackedCache = true
   whitespace = fix
 [diff]
   algorithm = histogram
   colorMoved = plain
-  compactionHeuristic = true
   mnemonicPrefix = true
   renameLimit = 1000
   renames = true
@@ -246,6 +380,8 @@
 [extensions]
   # objectFormat = sha256         # Note: This can be uncommented to enable the new repository format for SHA256 support
   # compatObjectFormat = sha1     # Note: This can be uncommented to enable the new repository format for SHA256 support
+[feature]
+  manyFiles = true                # Enables optimizations (fsmonitor, untrackedCache) for repos with many files
 [fetch]
   all = true
   parallel = 0
@@ -276,9 +412,13 @@
   tabSize = 2
   warnDetachedCommit = true
 [help]
-  autoCorrect = 1
+  autoCorrect = 10
 [http]
+  lowSpeedLimit = 1000
+  lowSpeedTime = 30
   postBuffer = 786432000
+[index]
+  version = 4                     # More efficient index format with path prefix compression
 [init]
   defaultBranch = master
 [interactive]
@@ -291,6 +431,7 @@
   # abbrevCommit = true
 [merge]
   autoStash = true
+  conflictStyle = zdiff3
   # conflictStyle = diff3
   defaultToUpstream = true
   ff = only
@@ -336,8 +477,8 @@
 [tag]
   sort = -version:refname   # sort tags by version number (descending)
 [transfer]
-  fsckObjects = false
+  fsckObjects = true
 [user]
   useConfigOnly = true
 [oh-my-zsh]
-	hide-status = 1
+  hide-status = 1

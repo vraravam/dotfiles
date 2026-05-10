@@ -16,12 +16,12 @@
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
 [[ -n "${DEBUG+1}" ]] && echo "loading ${0}"
 
-type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
+type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
 
 recompile_zsh_scripts() {
   if ! is_file_empty "${1}" && (! is_file "${1}.zwc" || [[ "${1}" -nt "${1}.zwc" ]]); then
     [[ -n "${DEBUG+1}" ]] && echo "recompiling '$(replace_home_with_tilde "${1}")'"
-    zrecompile -pq "${1}" 2>&1 &> /dev/null
+    zrecompile -pq "${1}" &>/dev/null
   fi
 }
 

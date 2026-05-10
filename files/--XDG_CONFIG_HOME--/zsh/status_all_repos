@@ -3,7 +3,7 @@
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
 # Source shell helpers if they aren't already loaded
-type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
+type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
 
 # Reports status of the following repos: HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, ZenProfile chrome folder
 status_all_repos() {

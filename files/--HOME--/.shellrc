@@ -289,7 +289,7 @@ ensure_dir_exists() {
 is_git_repo() {
   is_non_zero_string "${1}" && is_directory "${1}/.git"
   # Note: The above assumes that the parameter passed to this function is the repo's root folder. To work within any other nested sub-folders, this command works better. But, we are not changing to this since we specifically want to be in the context of the repo's root.
-  # git -C "${1}" rev-parse --is-inside-work-tree 2>&1 &> /dev/null
+  # git -C "${1}" rev-parse --is-inside-work-tree &>/dev/null
 }
 
 load_file_if_exists() {
@@ -398,7 +398,7 @@ clone_repo_into() {
     # Since git does not allow cloning into a non-empty folder (like the home folder), clone into a temp folder, then copy the .git folder into the real target location, and do a checkout
     local tmp_folder="$(mktemp -d)"
     # Note: Do not use --depth while cloning since that messes up when using upstream to rebase from
-    git -C "${tmp_folder}" clone -q "${1}" .
+    GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q "${1}" .
     mv "${tmp_folder}/.git" "${target_folder}"
     rm -rf "${tmp_folder}"
     git -C "${target_folder}" restore .
@@ -417,7 +417,7 @@ clone_repo_into() {
     warn "Skipping cloning of '$(yellow "${1}")' since '$(yellow "${target_folder}")' is already a git repo"
   fi
   # also update submodules if already a git repo since the submodule changes might be present in the new commits that are being pulled in
-  git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
+  GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
   unset target_folder
   local end_time=$(date +%s)
   local duration=$((end_time - start_time))

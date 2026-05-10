@@ -2,6 +2,26 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.14
+
+* *[scripts]* AI-based refactoring of shell scripts and ruby scripts to remove redundant scripting issues like unnecessary `local`/`unset` declarations.
+* *[.curlrc, .envrc, .gitconfig, .iex.exs, .profile, .zlogin, .zshrc]* General cleanup and minor improvements across dotfiles.
+* *[zsh scripts]* Refactored `cc`, `count`, `pull`, `push`, `st`, `status_all_repos`, `update_all_repos`, and `upreb` scripts.
+* *[.eclintignore, .editorconfig]* Added editor config and eclint ignore files for consistent code style enforcement.
+* *[add-upstream-git-config.sh, .shellrc] Potential fix for `direnv allow` hanging when run in the `$PERSONAL_PROFILES_DIR` folder by ensuring that the git config is properly set up for that folder.
+* *[.gitconfig]* Added new alias `default-branch` to get the default branch of a git repository.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then proceed with the following steps:
+
+  ```bash
+  cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
+  "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
+  ```
+
+* Quit and restart the Terminal application.
+
 ### 3.0.13
 
 * *[Brewfile]* Added `Dockdoor`, `flux-markdown`, `dbeaver` and `codeql` to the Brewfile and captured their preferences for backup.

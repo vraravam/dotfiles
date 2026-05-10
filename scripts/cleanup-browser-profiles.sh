@@ -9,33 +9,7 @@
 
 # Source shellrc only once if any required function is missing
 # Check for one key function defined in .shellrc to see if sourcing is needed
-type is_shellrc_sourced 2>&1 &> /dev/null || source "${HOME}/.shellrc"
-
-# Parse command line options
-local dry_run=0
-local show_stats=0
-while getopts ":ns" opt; do
-  case ${opt} in
-    n)
-      dry_run=1
-      ;;
-    s)
-      show_stats=1
-      ;;
-    \?)
-      echo "Usage: ${0##*/} [-n] [-s]"
-      echo "  -n  Dry-run mode (show what would be done without doing it)"
-      echo "  -s  Show detailed statistics"
-      exit 2
-      ;;
-  esac
-done
-shift $((OPTIND - 1))
-
-[[ ${dry_run} -eq 1 ]] && warn "Running in DRY-RUN mode - no changes will be made"
-
-local script_start_time=$(date +%s)
-print_script_start
+type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
 
 vacuum_browser_profile_folder() {
   local browser_name="${1}"   # Passed browser name
@@ -153,39 +127,69 @@ vacuum_browser_profile_folder() {
   success "Successfully processed profile folder for '$(yellow "${browser_name}")'"
 }
 
-# Pre-read patterns from files
-local -a file_patterns dir_patterns
-local file_patterns_file="${DOTFILES_DIR}/scripts/data/cleanup-browser-files.txt"
-local dir_patterns_file="${DOTFILES_DIR}/scripts/data/cleanup-browser-dirs.txt"
+main() {
+  # Parse command line options
+  local dry_run=0
+  local show_stats=0
+  while getopts ":ns" opt; do
+    case ${opt} in
+      n)
+        dry_run=1
+        ;;
+      s)
+        show_stats=1
+        ;;
+      \?)
+        echo "$(red "Usage"): $(yellow "${${(%):-%x}##*/}") [-n] [-s]"
+        echo "  -n  Dry-run mode (show what would be done without doing it)"
+        echo "  -s  Show detailed statistics"
+        exit 2
+        ;;
+    esac
+  done
+  shift $((OPTIND - 1))
 
-if is_file "${file_patterns_file}"; then
-  file_patterns=("${(@f)$(grep -vE '^\s*#|^\s*$' "${file_patterns_file}")}") || warn "Failed to read file patterns from '${file_patterns_file}'"
-else
-  warn "File patterns file not found: '${file_patterns_file}'"
-fi
+  [[ ${dry_run} -eq 1 ]] && warn "Running in DRY-RUN mode - no changes will be made"
 
-if is_file "${dir_patterns_file}"; then
-  dir_patterns=("${(@f)$(grep -vE '^\s*#|^\s*$' "${dir_patterns_file}")}") || warn "Failed to read directory patterns from '${dir_patterns_file}'"
-else
-  warn "Directory patterns file not found: '${dir_patterns_file}'"
-fi
+  local script_start_time=$(date +%s)
+  print_script_start
 
-# Define browsers and their profile folders
-# Key: Browser name (used for process check)
-# Value: Absolute path to the profile folder
-typeset -A browser_profiles
-browser_profiles=(
-  brave       "${PERSONAL_PROFILES_DIR}/BraveProfile"
-  chrome      "${PERSONAL_PROFILES_DIR}/ChromeProfile"
-  firefox     "${PERSONAL_PROFILES_DIR}/FirefoxProfile"
-  thunderbird "${PERSONAL_PROFILES_DIR}/ThunderbirdProfile"
-  zen         "${PERSONAL_PROFILES_DIR}/ZenProfile"
-)
+  # Pre-read patterns from files
+  local -a file_patterns dir_patterns
+  local file_patterns_file="${DOTFILES_DIR}/scripts/data/cleanup-browser-files.txt"
+  local dir_patterns_file="${DOTFILES_DIR}/scripts/data/cleanup-browser-dirs.txt"
 
-# Loop through defined browsers and process them
-local browser_name profile_folder
-for browser_name profile_folder in "${(@kv)browser_profiles}"; do
-  vacuum_browser_profile_folder "${browser_name}" "${profile_folder}"
-done
+  if is_file "${file_patterns_file}"; then
+    file_patterns=("${(@f)$(grep -vE '^\s*#|^\s*$' "${file_patterns_file}")}") || warn "Failed to read file patterns from '${file_patterns_file}'"
+  else
+    warn "File patterns file not found: '${file_patterns_file}'"
+  fi
 
-print_script_duration "${script_start_time}"
+  if is_file "${dir_patterns_file}"; then
+    dir_patterns=("${(@f)$(grep -vE '^\s*#|^\s*$' "${dir_patterns_file}")}") || warn "Failed to read directory patterns from '${dir_patterns_file}'"
+  else
+    warn "Directory patterns file not found: '${dir_patterns_file}'"
+  fi
+
+  # Define browsers and their profile folders
+  # Key: Browser name (used for process check)
+  # Value: Absolute path to the profile folder
+  typeset -A browser_profiles
+  browser_profiles=(
+    brave       "${PERSONAL_PROFILES_DIR}/BraveProfile"
+    chrome      "${PERSONAL_PROFILES_DIR}/ChromeProfile"
+    firefox     "${PERSONAL_PROFILES_DIR}/FirefoxProfile"
+    thunderbird "${PERSONAL_PROFILES_DIR}/ThunderbirdProfile"
+    zen         "${PERSONAL_PROFILES_DIR}/ZenProfile"
+  )
+
+  # Loop through defined browsers and process them
+  local browser_name profile_folder
+  for browser_name profile_folder in "${(@kv)browser_profiles}"; do
+    vacuum_browser_profile_folder "${browser_name}" "${profile_folder}"
+  done
+
+  print_script_duration "${script_start_time}"
+}
+
+main "$@"
