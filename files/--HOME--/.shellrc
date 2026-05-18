@@ -417,7 +417,7 @@ clone_repo_into() {
     warn "Skipping cloning of '$(yellow "${1}")' since '$(yellow "${target_folder}")' is already a git repo"
   fi
   # also update submodules if already a git repo since the submodule changes might be present in the new commits that are being pulled in
-  GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
+  GIT_SSH_COMMAND="ssh -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=3" git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
   unset target_folder
   local end_time=$(date +%s)
   local duration=$((end_time - start_time))

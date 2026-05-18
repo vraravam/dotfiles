@@ -7,11 +7,10 @@
 # These are the common shell aliases that I have setup in the `${HOME}/.aliases` file for ease of running/typing (and also don't need to remember all these commands by-heart!). If you are using my `${HOME}/.aliases`, they will already be present for you. If not, you can then set these up in the respective dotfile of your choice
 # alias bcg='brew outdated --greedy'  # List all casks that are outdated like a "dry-run" (and which have version marked as 'latest')
 # alias bcug='brew upgrade --greedy'  # Upgrades all casks that are outdated (and which have version marked as 'latest')
-# alias bupc='brew bundle check || brew bundle --all --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true'
+# alias bupc='brew bundle check || brew bundle --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true'
 # Upgrades and cleans up all regular outdated casks and libs (non-greedy)
 
 # TODO: Need to find cask for:
-#   Haptyk (start on login)
 #   Tinkertool
 #   TypeWhisper (start on login)
 #   ZoomHider
@@ -93,7 +92,9 @@ cask 'flux-markdown', postinstall: 'qlmanage -r'
 cask 'google-chrome@beta'
 cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'" if ::OS::Mac::version >= 14
 cask 'keepassxc@beta'
+cask 'keycastr', postinstall: "\"#{setup_login_items_script}\" -a 'Keycastr'"
 cask 'keyclu' if is_arm
+cask 'mechvibes', postinstall: "\"#{setup_login_items_script}\" -a 'Mechvibes'"
 cask 'onlyoffice'
 cask 'protonvpn'
 cask 'rancher' # if ::OS::Mac::version < 26
@@ -201,7 +202,6 @@ cask 'zoom'
 # cask 'grayjay'
 # cask 'intellij-idea-ce'
 # cask 'kdiff3'
-# cask 'keycastr'
 # cask 'knockknock'
 # cask 'licecap'
 # cask 'lulu'

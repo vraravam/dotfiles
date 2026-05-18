@@ -2,6 +2,11 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+### 3.0.16
+
+* *[Brewfile]* Added `Mechvibes` since Haptyk turned out to be payware after some days.
+* Updated some aliases to remove duplication.
+
 ### 3.0.14
 
 * *[scripts]* AI-based refactoring of shell scripts and ruby scripts to remove redundant scripting issues like unnecessary `local`/`unset` declarations.

@@ -321,38 +321,30 @@ if is_macos; then
     prepend_to_manpath_if_dir_exists "${HOMEBREW_PREFIX}/share/man"
 
     use_homebrew_installation_for() {
-      ! is_directory "${1}" && return 0 # Success, nothing to do
+      installation_dir="${HOMEBREW_PREFIX}/opt/${1}"
+      ! is_directory "${installation_dir}" && return 0 # Success, nothing to do
 
-      prepend_to_path_if_dir_exists "${1}/bin"
-      prepend_to_path_if_dir_exists "${1}/libexec/bin"
-      prepend_to_path_if_dir_exists "${1}/libexec/gnubin"
+      prepend_to_path_if_dir_exists "${installation_dir}/bin"
+      prepend_to_path_if_dir_exists "${installation_dir}/libexec/bin"
+      prepend_to_path_if_dir_exists "${installation_dir}/libexec/gnubin"
       # For compilers to find this installation you may need to set:
-      prepend_to_ldflags_if_dir_exists "${1}/lib"
-      prepend_to_cppflags_if_dir_exists "${1}/include"
+      prepend_to_ldflags_if_dir_exists "${installation_dir}/lib"
+      prepend_to_cppflags_if_dir_exists "${installation_dir}/include"
       # For pkg-config to find this installation you may need to set:
-      prepend_to_pkg_config_path_if_dir_exists "${1}/lib/pkgconfig"
-      prepend_to_manpath_if_dir_exists "${1}/libexec/gnuman"
+      prepend_to_pkg_config_path_if_dir_exists "${installation_dir}/lib/pkgconfig"
+      prepend_to_manpath_if_dir_exists "${installation_dir}/libexec/gnuman"
     }
 
-    # override default curl and use from homebrew installation
-    use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/curl"
-
-    # zlib - required for installing python via mise
-    use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/zlib"
-
-    # override default Sqlite3 and use from homebrew installation
-    use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/sqlite"
-
-    # override default gnu-tar and use from homebrew installation
-    use_homebrew_installation_for "${HOMEBREW_PREFIX}/opt/gnu-tar"
+    # Note: These are the tools that are brought in from Homebrew and should override the default ones that come with the OS.
+    for pkg in 'bash' 'curl' 'git' 'gnu-tar' 'grep' 'less' 'openssl' 'rsync' 'sqlite' 'vim' 'wget' 'zlib' 'zsh'; do
+      use_homebrew_installation_for "${pkg}"
+    done
 
     # override default openssl and use from homebrew installation
-    local openssl_dir="${HOMEBREW_PREFIX}/opt/openssl@3"
-    if is_directory "${openssl_dir}"; then
-      use_homebrew_installation_for "${openssl_dir}"
-      export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${openssl_dir}"
+    if is_directory "${HOMEBREW_PREFIX}/opt/openssl@3"; then
+      use_homebrew_installation_for 'openssl@3'
+      export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${HOMEBREW_PREFIX}/opt/openssl@3"
     fi
-    unset openssl_dir
   fi
 fi
 
