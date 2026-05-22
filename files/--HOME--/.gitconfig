@@ -349,9 +349,10 @@
 [commit]
   # verbose = true
 [core]
-  autocrlf = input
+  autocrlf = false
   commentChar = *
-  compression = 1
+  bigFileThreshold = 512m          # skip delta compression for files larger than this (faster pack, smaller packs for binary-heavy repos)
+  compression = 9                  # max zlib compression for loose objects (best size reduction)
   excludesFile = ~/.gitignore_global
   fileMode = true
   fsMonitor = true
@@ -384,6 +385,7 @@
   manyFiles = true                # Enables optimizations (fsmonitor, untrackedCache) for repos with many files
 [fetch]
   all = true
+  negotiationAlgorithm = skipping # faster fetch negotiation for repos with long histories (skips exponentially)
   parallel = 0
   prune = true
   pruneTags = true
@@ -417,10 +419,13 @@
   lowSpeedLimit = 1000
   lowSpeedTime = 30
   postBuffer = 786432000
+  version = HTTP/2                 # use HTTP/2 for multiplexed, header-compressed push/pull
 [index]
   version = 4                     # More efficient index format with path prefix compression
 [init]
   defaultBranch = master
+  # TODO: Currently (as of 2026-05-21), p10k does not support git's reftables format (the shell prompt does not display vcs_info correctly). Uncomment the following line when that issue is fixed and p10k supports reftables, since that will speed up git operations significantly.
+  # defaultRefFormat = reftable
 [interactive]
   diffFilter = diff-so-fancy --patch
 [maintenance]
@@ -437,7 +442,11 @@
   ff = only
   renameLimit = 15000
 [pack]
-  threads = 0
+  compression = 9                  # max zlib compression inside packfiles (primary knob for pack size)
+  deltaCacheSize = 2047m           # larger delta cache = better delta chains during repack = smaller packs
+  threads = 0                      # auto-detect CPU count
+  useDeltaBaseOffset = true        # use delta-base offsets (smaller packs; supported by all modern git clients)
+  windowMemory = 1g                # memory per thread during pack window search; more = better compression
   writeReverseIndex = true
 [pager]
   # Note: The '--pattern' switch sets some pre-search terms, but also scrolls to fill the whole console for single line change - which I dont like.
@@ -456,8 +465,12 @@
   autoStash = true
   missingCommitsCheck = error
   updateRefs = true
+[protocol]
+  version = 2                      # git protocol v2: faster ls-refs / fetch negotiation (avoids sending all refs)
 [repack]
   MIDXMustContainCruft = true
+  packKeptObjects = false          # do not repack .keep packs (avoids repackaging intentionally-held packs)
+  useDeltaBaseOffset = true        # smaller packfiles (mirrors pack.useDeltaBaseOffset for repack operations)
 [rerere]
   autoUpdate = true
   enabled = true

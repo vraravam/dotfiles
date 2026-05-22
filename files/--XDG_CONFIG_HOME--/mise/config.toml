@@ -15,6 +15,7 @@ idiomatic_version_file_enable_tools = [
   "rust",
   "scala"
 ]
+experimental = true
 
 [settings.ruby]
 compile = false

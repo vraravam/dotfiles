@@ -231,6 +231,50 @@ print_script_duration() {
   echo "$(purple '==>') $(yellow 'Script finished at:') $(light_blue "${end_time_human}") ($(yellow 'Total duration:') $(light_blue "${duration_human}") $(yellow 'seconds'))."
 }
 
+# ---------------------------------------------------------------------------
+# Step timing helpers
+# ---------------------------------------------------------------------------
+# Holds the epoch-second timestamp of the most recent step_start call.
+_STEP_START_TIME=0
+# Holds the epoch-second timestamp of the overall script start; set by
+# step_timing_init (called automatically by step_start on first use).
+_SCRIPT_START_TIME=0
+
+# Initialise the script-level clock.  Safe to call multiple times.
+step_timing_init() {
+  if [[ "${_SCRIPT_START_TIME}" -eq 0 ]]; then
+    _SCRIPT_START_TIME=$(date +%s)
+  fi
+}
+
+# Record the start of a step.  Should be called just before section_header.
+step_start() {
+  step_timing_init
+  _STEP_START_TIME=$(date +%s)
+}
+
+# Print how long the most recent step took, plus total elapsed since init.
+step_end() {
+  local now delta_step delta_total h m s
+  now=$(date +%s)
+
+  delta_step=$(( now - _STEP_START_TIME ))
+  h=$(( delta_step / 3600 ))
+  m=$(( (delta_step % 3600) / 60 ))
+  s=$(( delta_step % 60 ))
+  local step_human
+  step_human=$(printf '%dh:%02dm:%02ds' "$h" "$m" "$s")
+
+  delta_total=$(( now - _SCRIPT_START_TIME ))
+  h=$(( delta_total / 3600 ))
+  m=$(( (delta_total % 3600) / 60 ))
+  s=$(( delta_total % 60 ))
+  local total_human
+  total_human=$(printf '%dh:%02dm:%02ds' "$h" "$m" "$s")
+
+  echo "$(purple '    ⏱') $(yellow 'step:') $(light_blue "${step_human}") $(yellow '| elapsed:') $(light_blue "${total_human}")"
+}
+
 is_zero_string() {
   [[ -z "${1}" ]]
 }
@@ -399,9 +443,21 @@ clone_repo_into() {
     local tmp_folder="$(mktemp -d)"
     # Note: Do not use --depth while cloning since that messes up when using upstream to rebase from
     GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q "${1}" .
+
+    # TODO: Currently (as of 2026-05-21), p10k does not support git's reftables format (the shell prompt does not display vcs_info correctly). Replace the above line and uncomment the following line when that issue is fixed and p10k supports reftables, since that will speed up git operations significantly.
+    # GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q -c init.defaultRefFormat=reftable "${1}" .
+
     mv "${tmp_folder}/.git" "${target_folder}"
     rm -rf "${tmp_folder}"
     git -C "${target_folder}" restore .
+
+    # TODO: Currently (as of 2026-05-21), p10k does not support git's reftables format (the shell prompt does not display vcs_info correctly). Uncomment the following lines when that issue is fixed and p10k supports reftables, since that will speed up git operations significantly.
+    # Correct HEAD file after reftable clone-via-mv (.git/HEAD retains a '.invalid' placeholder since
+    # the move bypasses git's normal post-clone finalisation; shell prompts read .git/HEAD directly)
+    # local _real_ref; _real_ref="$(git -C "${target_folder}" symbolic-ref HEAD 2>/dev/null)"
+    # [[ -n "${_real_ref}" ]] && echo "ref: ${_real_ref}" > "${target_folder}/.git/HEAD"
+    # unset _real_ref
+
     success "Successfully cloned '$(yellow "${1}")$(green "' into '")$(yellow "${target_folder}")$(green "'")"
 
     local target_branch="${3}"
@@ -417,7 +473,7 @@ clone_repo_into() {
     warn "Skipping cloning of '$(yellow "${1}")' since '$(yellow "${target_folder}")' is already a git repo"
   fi
   # also update submodules if already a git repo since the submodule changes might be present in the new commits that are being pulled in
-  GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
+  GIT_SSH_COMMAND="ssh -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=3" git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
   unset target_folder
   local end_time=$(date +%s)
   local duration=$((end_time - start_time))

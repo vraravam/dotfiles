@@ -19,9 +19,9 @@ type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
 alias less="${aliases[less]:-less} -RF"
 alias cp="${aliases[cp]:-cp} -p"
 alias mkdir="${aliases[mkdir]:-mkdir} -p"
-alias grep="${aliases[grep]:-grep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
-alias fgrep="${aliases[fgrep]:-fgrep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
-alias egrep="${aliases[egrep]:-egrep} -Hn --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn,.zsh_sessions,.IdentityService,.Trash} --exclude=\".*history\" --exclude=\".zcompdump*\""
+alias grep="${aliases[grep]:-grep} -Hn --color=auto --exclude-dir={.zsh_sessions,.IdentityService,.Trash} --exclude={\".*history\",\".zcompdump*\",\"*.zwc*\",\".*.zwc*\"}"
+alias fgrep="${aliases[fgrep]:-fgrep} -Hn --color=auto --exclude-dir={.zsh_sessions,.IdentityService,.Trash} --exclude={\".*history\",\".zcompdump*\",\"*.zwc*\",\".*.zwc*\"}"
+alias egrep="${aliases[egrep]:-egrep} -Hn --color=auto --exclude-dir={.zsh_sessions,.IdentityService,.Trash} --exclude={\".*history\",\".zcompdump*\",\"*.zwc*\",\".*.zwc*\"}"
 
 # eza already defines 'll' - so skip if that's present
 ! command_exists eza && alias ll='ls -la'
@@ -99,6 +99,8 @@ resurrect_tracked_repos() {
     all maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
     all maintenance start
   fi
+  allow_all_direnv_configs
+  install_mise_versions
 }
 
 install_mise_versions() {
@@ -150,7 +152,7 @@ if is_macos; then
   if command_exists brew; then
     alias bcg='brew outdated --greedy'
     alias bcug='brew upgrade --greedy'
-    alias bupc='brew bundle check || brew bundle --all --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true; post-brew-install.sh || true'
+    alias bupc='brew bundle check || brew bundle --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true; post-brew-install.sh || true'
   fi
 fi
 
@@ -187,7 +189,10 @@ fi
 
 if is_macos; then
   # MacOS: Remove apps from quarantine
-  alias unquarantine='xattr -rd com.apple.quarantine'
+  unquarantine() {
+    xattr -rd com.apple.quarantine "${@}"
+    open "${@}"
+  }
 
   # MacOS: Clean up LaunchServices to remove duplicates in the “Open With” menu
   alias cleanup_launch_services='/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user && killall Finder'

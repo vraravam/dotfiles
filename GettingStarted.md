@@ -12,7 +12,7 @@ On your local machine:
 The meta script to setup the macos machine from a vanilla OS can be run using the following command:
 
 ```zsh
-export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' HOMEBREW_BASE_INSTALL='true'; curl --retry 3 --retry-delay 5 -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh" | zsh; unset HOMEBREW_BASE_INSTALL
+export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true'; curl --retry 3 --retry-delay 5 -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh" | zsh; unset FIRST_INSTALL
 ```
 
 This script can be run in an idempotent manner, and will setup [oh-my-zsh](https://ohmyz.sh/), [homebrew](https://brew.sh), the dotfiles (this repo), etc. (There is 1 caveat though: on a fresh machine, this script silently fails after the first basic installation.)

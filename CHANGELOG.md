@@ -2,7 +2,48 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
-### 3.0.14
+### 3.0.16
+
+* *[fresh-install-of-osx.sh]* Fixed issue where this script was failing silently on the first run on a vanilla OS (root cause: curl timeout within homebrew while downloading installables). Replaced the `HOMEBREW_BASE_INSTALL` variable with `FIRST_INSTALL` and added a guard which disables the ERR trap during brew operations, forces re-download of `.shellrc`, sets a long curl timeout (`--max-time 3600`), splits `brew bundle` into separate tap/formula/cask passes for better isolation and resilience, and restores the trap + unsets the extra curl args afterwards.
+* *[Brewfile]* Renamed the early-exit guard from `HOMEBREW_BASE_INSTALL` to `FIRST_INSTALL` for consistency.
+* *[software-updates-cron.sh]* Prune Zen session-backup files older than 7 days from the browser-profiles repo (works with both macOS BSD and GNU `date`).
+* *[.shellrc]* Added TODO comments in `clone_repo_into` for future reftable support once p10k resolves the `vcs_info` incompatibility, including a HEAD-fixup snippet for post-move repos.
+* *[.gitconfig, custom.gitignore, custom.gitattributes, recreate-repo.sh]* Git performance tuning and ignore/attribute reorganisation.
+* *[.gitconfig]* Tuned git performance settings: set `core.autocrlf=false`, increased `core.compression` and `pack.compression` to 9, raised `pack.deltaCacheSize` to 2047m and `pack.windowMemory` to 1g, enabled `pack.useDeltaBaseOffset`, added `fetch.negotiationAlgorithm=skipping`, `http.version=HTTP/2`, `protocol.version=2`, and `repack.packKeptObjects=false` / `repack.useDeltaBaseOffset=true` for faster and smaller pack operations.
+* *[.gitconfig]* Added `init.defaultRefFormat=reftable` as a commented-out TODO pending p10k support.
+* *[custom.gitattributes]* Added explicit `eol=lf` enforcement via `* text=auto`; added binary markers for common image, font, and byte-compiled extensions (`*.png`, `*.jpg`, `*.woff*`, `*.ttf`, `*.pyc`, `*.zwc*`, etc.) so git never mangles them.
+* *[custom.gitignore (home)]* Major reorganisation: grouped all ignore rules under labelled section headers (OS, shell history, caches, build tools, IDE, AI tools, XDG config, SSH, home directories, dev workspace, misc app data, symlinked dotfiles, negations); added new entries for opencode auto-generated files, Zed conversations/themes, GitHub Copilot, Gemini/Qwen/Safety AI tools, and various other tools.
+* *[custom.gitignore (profiles)]* Full rewrite with labelled sections; consolidated browser-profile ignore rules across all `*Profile` dirs (lock files, caches, crash artefacts, telemetry, security state, network/SW state, runtime DBs); added detailed per-browser sections for Firefox, Zen, Thunderbird, and Chrome Beta with explicit comments on what is intentionally tracked.
+* *[.shellrc]* Added TODO comments in `clone_repo_into` for future reftable support; added logic to fix the `.git/HEAD` file after reftable clone-via-move.
+* *[recreate-repo.sh]* Added TODO comment for future `git init --ref-format=reftable` support.
+* *[software-updates-cron.sh]* Added a new step to prune tracked Zen session backup files older than 7 days from the browser-profiles repo (compatible with both macOS BSD and GNU `date`).
+* *[.shellrc]* Added `step_start`, `step_end`, and `step_timing_init` helper functions for per-step and total elapsed time reporting in scripts.
+* *[fresh-install-of-osx.sh, software-updates-cron.sh]* Instrumented all major steps with `step_start`/`step_end` calls for granular timing output. Also initialise `_SCRIPT_START_TIME` explicitly so timing is accurate before `.shellrc` is sourced.
+* *[Brewfile]* Enabled `cairo`, `gnu-tar`, `mercurial`, and `sccache` (previously commented out) for zen-browser development.
+* *[.zshrc]* Added `gnu-tar` to the list of keg-only Homebrew packages that override macOS defaults. Removed the `git_scripts` path addition.
+* *[.envrc (profiles)]* Temporarily disabled natsumi-browser cloning as a trial. Removed `timeout` wrapper from `add-upstream-git-config.sh` call.
+* *[software-updates-cron.sh]* Temporarily disabled natsumi codebase update block as a trial.
+* *[Brewfile]* Added `Mechvibes` since Haptyk turned out to be payware after some days. Removed `Haptyk` from `capture-prefs-domains.txt` and added `Mechvibes`.
+* *[GettingStarted.md]* Updated bootstrap one-liner to use `FIRST_INSTALL` instead of the old `HOMEBREW_BASE_INSTALL` variable name.
+* *[.shellrc]* Added `ServerAliveInterval=10` and `ServerAliveCountMax=3` SSH options to the `submodule update` call in `clone_repo_into` to prevent silent hangs on flaky connections.
+* *[.aliases]* Updated `grep`/`fgrep`/`egrep` aliases: removed VCS dirs from `--exclude-dir` (since Homebrew `grep` handles them natively) and added `*.zwc*` / `.*.zwc*` to `--exclude` patterns. Removed `--all` flag from `bupc`'s `brew bundle` call. Added `allow_all_direnv_configs` and `install_mise_versions` calls inside `resurrect_tracked_repos`.
+* *[.zshrc]* Refactored `use_homebrew_installation_for` to accept a package name (e.g. `curl`) instead of a full path; the function now derives the path internally via `${HOMEBREW_PREFIX}/opt/${1}`. Added `grep` to the keg-only packages loop. Added explicit `prepend_to_path_if_dir_exists` calls for `${HOMEBREW_PREFIX}/bin` and `${HOMEBREW_PREFIX}/sbin`.
+* *[mise/config.toml]* Enabled `experimental = true` for mise.
+* *[zed/settings.json]* Enabled thinking mode (`enable_thinking = true`) and set `effort = "high"` for the default Zed AI model.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then proceed with the following steps:
+
+  ```bash
+  cp "${DOTFILES_DIR}/files/--HOME--/custom.gitattributes" "${HOME}/.gitattributes"
+  cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
+  "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
+  ```
+
+* Quit and restart the Terminal application.
+
+### 3.0.15
 
 * *[scripts]* AI-based refactoring of shell scripts and ruby scripts to remove redundant scripting issues like unnecessary `local`/`unset` declarations.
 * *[.curlrc, .envrc, .gitconfig, .iex.exs, .profile, .zlogin, .zshrc]* General cleanup and minor improvements across dotfiles.
@@ -21,6 +62,10 @@ For those who follow this repo, here's the changelog for ease of adoption:
   ```
 
 * Quit and restart the Terminal application.
+
+### 3.0.14
+
+* *[Brewfile]* Replaced `Ice` with `Thaw`.
 
 ### 3.0.13
 

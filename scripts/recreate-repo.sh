@@ -122,6 +122,9 @@ main() {
     rm -rf "${folder}/.git"
 
     git -C "${folder}" init .
+    # TODO: Currently (as of 2026-05-21), p10k does not support git's reftables format (the shell prompt does not display vcs_info correctly). Replace the above line and uncomment the following line when that issue is fixed and p10k supports reftables, since that will speed up git operations significantly.
+    #  git -C "${folder}" init --ref-format=reftable .
+
     git -C "${folder}" remote add origin "${git_url}"
     git -C "${folder}" config user.name "${git_user_name}"
     git -C "${folder}" config user.email "${git_user_email}"

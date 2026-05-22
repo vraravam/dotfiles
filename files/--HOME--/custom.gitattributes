@@ -1,9 +1,27 @@
-*               text=auto
+# Ensure consistent LF line endings in the repo regardless of OS checkout settings.
+* text=auto
+
+# Binaries — never touch line endings
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.woff          binary
+*.woff2         binary
+*.ttf           binary
+*.eot           binary
+*.pyc           binary
+*.zwc*          binary
+.*.zwc*         binary
+
 .ssh/*.pub      text
 .editorconfig   text
 .gitconfig*     text
 .zshrc.*        text
 *.kdbx          -text
 *.key           -text
+
+# extensions that pandoc can handle
 *.odt           diff=pandoc
 *.docx          diff=pandoc

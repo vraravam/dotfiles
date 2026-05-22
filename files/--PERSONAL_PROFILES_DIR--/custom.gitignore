@@ -1,32 +1,14 @@
 # file location: ${PERSONAL_PROFILES_DIR}/.gitignore
 
-# Do NOT ignore the following files/directories (put these at the beginning)
-!.bundle/config
-!/*Profile/Profiles/DefaultProfile/*.sqlite
-!/*Profile/Profiles/DefaultProfile/**/*.sqlite
-!/*Profile/Profiles/DefaultProfile/**/bookmarks.html
-!/*Profile/Profiles/DefaultProfile/**/cert*.db
-!/*Profile/Profiles/DefaultProfile/**/key*.db
-!/*Profile/Profiles/DefaultProfile/**/search.json.mozlz*
-!/*Profile/Profiles/DefaultProfile/**/search.rdf
-!/*Profile/Profiles/DefaultProfile/**/searchplugins
-!/*Profile/Profiles/DefaultProfile/**/secmod.db
-!/*Profile/Profiles/DefaultProfile/bookmarks.html
-!/*Profile/Profiles/DefaultProfile/cert*.db
-!/*Profile/Profiles/DefaultProfile/extension-store/
-!/*Profile/Profiles/DefaultProfile/key*.db
-!/*Profile/Profiles/DefaultProfile/search.json.mozlz*
-!/*Profile/Profiles/DefaultProfile/search.rdf
-!/*Profile/Profiles/DefaultProfile/secmod.db
-!/*Profile/Profiles/DefaultProfile/storage/default/**
-!/*Profile/Profiles/DefaultProfile/storage/permanent/**
+# ══════════════════════════════════════════════════════════════════════════════
+# COMMON — OS / editor noise, applies everywhere
+# ══════════════════════════════════════════════════════════════════════════════
 
 .~lock*#
 .DS_Store
 .local
 .thumbnails
 .Trash
-*-journal
 *.bak-rebuild
 *.iso
 *.log
@@ -35,87 +17,340 @@
 *.sw[nop]
 *db-shm
 *db-wal
-Cache/
-CachedData/
-Crash\ Reports
-GPUCache/
-Local\ Folders
-Local\ Storage
-LOCK
-LOG*
-log/*.log
-logs/
-Network\ Action\ Predictor
-Network\ Persistent\ State
-Reporting\ and\ NEL
-Safe\ Browsing
-Service\ Worker
-Session\ Storage
-SingletonCookie
-SingletonLock
-SingletonSocket
-SiteSecurityServiceState.txt
-SS
 Thumbs.db
-TransportSecurity
-
-# Browser profiles - these files/folders can be safely igored for the backup strategy
-/*Profile.tgz
-/*Profile/**/.parentlock
-/*Profile/**/.startup-incomplete
-/*Profile/**/*.bak
-/*Profile/**/*.baklz4
-/*Profile/**/*.Default*/
-/*Profile/**/*.files
-/*Profile/**/*.ldb
-/*Profile/**/*.leveldb/*
-/*Profile/**/*backup.json
-/*Profile/**/*Cache*
-/*Profile/**/*cache*
-/*Profile/**/*datareporting*
-/*Profile/**/*download*
-/*Profile/**/*jetpack*
-/*Profile/**/*saved-telemetry-pings*
-/*Profile/**/*ShutdownDuration*
-/*Profile/**/*thumbnails*
-/*Profile/**/AlternateServices*
-/*Profile/**/bookmarkbackups
-/*Profile/**/cert-revocations/*.stash
-/*Profile/**/compatibility.ini
-/*Profile/**/crashes/
-/*Profile/**/Crashpad*
-/*Profile/**/cur
-/*Profile/**/gcontactsync_log*.txt
-/*Profile/**/minidumps
-/*Profile/**/msgFilterRules.dat
-/*Profile/**/panacea.dat
-/*Profile/**/Partitions/**
-/*Profile/**/photos
-/*Profile/**/Photos
-/*Profile/**/QuotaManager
-/*Profile/**/RunningChromeVersion
-/*Profile/**/safebrowsing-failedupdate
-/*Profile/**/serviceworker.txt
-/*Profile/**/sessionstore-backups
-/*Profile/**/sessionstore-logs
-/*Profile/**/storage/temporary
-/*Profile/**/Telemetry.ShutdownTime.txt
-/*Profile/**/tmp
-/*Profile/**/weave
-
-# ignore git repos present in the browser's chrome directory
-/*Profile/Profiles/DefaultProfile/chrome/
 
 # files that are symlinked from the dotfiles repo
 /.envrc
 /.gitignore
 
-# Do NOT ignore the following files/directories (put these at the end)
-!/*Profile/Profiles/DefaultProfile/**/cookies.sqlite
-!/*Profile/Profiles/DefaultProfile/**/signons.txt
-!/*Profile/Profiles/DefaultProfile/cookies.sqlite
-!/*Profile/Profiles/DefaultProfile/logins.json
-!/*Profile/Profiles/DefaultProfile/signons.txt
 
-# For Zen alone, do not ignore the chrome folder - since that's not a git repo, and I have customizations there which I don't want to lose
+# ══════════════════════════════════════════════════════════════════════════════
+# ALL *PROFILE DIRECTORIES — patterns common across every browser/app profile
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Archives
+/*Profile.tgz
+
+# Lock / singleton files
+/*Profile/**/.parentlock
+/*Profile/**/.startup-incomplete
+/*Profile/**/LOCK
+/*Profile/**/SingletonCookie
+/*Profile/**/SingletonLock
+/*Profile/**/SingletonSocket
+
+# Caches (disk, GPU, network)
+/*Profile/**/*Cache*
+/*Profile/**/*cache*
+/*Profile/**/CachedData/
+/*Profile/**/GPUCache/
+
+# Crash / dump artefacts
+/*Profile/**/crashes/
+/*Profile/**/Crashpad*
+/*Profile/**/minidumps
+/*Profile/**/Crash\ Reports/
+
+# Temporary / build artefacts
+/*Profile/**/.Default*/
+/*Profile/**/*.bak
+/*Profile/**/*.baklz4
+/*Profile/**/*.bak-rebuild
+/*Profile/**/*.files
+/*Profile/**/*.ldb
+/*Profile/**/*.leveldb/*
+/*Profile/**/*-journal
+/*Profile/**/tmp
+/*Profile/**/cur
+
+# Telemetry / reporting
+/*Profile/**/*datareporting*
+/*Profile/**/*saved-telemetry-pings*
+/*Profile/**/*ShutdownDuration*
+/*Profile/**/*thumbnails*
+/*Profile/**/Telemetry.ShutdownTime.txt
+/*Profile/**/targeting.snapshot.json
+
+# Download tracking
+/*Profile/**/*download*
+
+# Legacy extension artefacts
+/*Profile/**/*backup.json
+/*Profile/**/*jetpack*
+/*Profile/**/panacea.dat
+/*Profile/**/Partitions/**
+/*Profile/**/photos
+/*Profile/**/Photos
+
+# Security state — auto-downloaded daily, not user data
+/*Profile/**/security_state/
+/*Profile/**/SiteSecurityServiceState.bin
+/*Profile/**/SiteSecurityServiceState.txt
+/*Profile/**/cert-revocations/*.stash
+/*Profile/**/AlternateServices*
+/*Profile/**/TransportSecurity
+/*Profile/**/safebrowsing-failedupdate
+/*Profile/**/Safe\ Browsing/
+
+# Network / service worker state — runtime only
+/*Profile/**/Network\ Action\ Predictor
+/*Profile/**/Network\ Persistent\ State
+/*Profile/**/Reporting\ and\ NEL
+/*Profile/**/Service\ Worker/
+/*Profile/**/serviceworker.txt
+/*Profile/**/Session\ Storage/
+
+# Runtime timestamps / internal metadata
+/*Profile/**/times.json
+/*Profile/**/sessionCheckpoints.json
+/*Profile/**/RunningChromeVersion
+/*Profile/**/compatibility.ini
+/*Profile/**/storage/temporary
+/*Profile/**/storage/ls-archive.sqlite
+/*Profile/**/storage/permanent/chrome/.metadata-v2
+
+# Cosmetic caches — re-downloaded as you browse
+/*Profile/**/favicons.sqlite
+
+# Misc noise
+/*Profile/**/gcontactsync_log*.txt
+/*Profile/**/QuotaManager
+/*Profile/**/SS
+/*Profile/**/weave
+/*Profile/**/sessionstore-backups/upgrade.jsonlz4-*
+/*Profile/**/sessionstore-backups/*.baklz4
+/*Profile/**/sessionstore-logs
+# Intentionally tracked inside sessionstore-backups/:
+#   recovery.jsonlz4  — live crash-safe session snapshot (more current than sessionstore.jsonlz4)
+#   previous.jsonlz4  — prior session, useful fallback on restore
+
+# ── ignore git repos present in the browser's chrome directory ──
+# (overridden below for ZenProfile which has user customisations)
+/*Profile/Profiles/DefaultProfile/chrome/
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FIREFOX-BASED PROFILES (Firefox, Zen, and any future Firefox-based browser)
+# Patterns use /*Profile/**/ so they apply to all *Profile directories.
+# Non-Firefox profiles (Thunderbird, Chrome) are unaffected since they don't
+# have these paths on disk.
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Per-site IndexedDB / localStorage — ephemeral web-app state per visited site
+/*Profile/**/storage/default/https+++*/
+/*Profile/**/storage/default/http+++*/
+/*Profile/**/storage/default/file++++*/
+# Extension IndexedDB — ephemeral; important extensions covered by extension-backups/
+/*Profile/**/storage/default/moz-extension+++*/
+# Containerise (Zen) — URL-to-container routing rules live only in IndexedDB, no export mechanism
+!ZenProfile/Profiles/DefaultProfile/storage/default/moz-extension+++1d5caf90-a7db-48a7-abcd-26af06a99e7e^userContextId=4294967295/
+!ZenProfile/Profiles/DefaultProfile/storage/default/moz-extension+++1d5caf90-a7db-48a7-abcd-26af06a99e7e^userContextId=4294967295/.metadata-v2
+!ZenProfile/Profiles/DefaultProfile/storage/default/moz-extension+++1d5caf90-a7db-48a7-abcd-26af06a99e7e^userContextId=4294967295/idb/
+!ZenProfile/Profiles/DefaultProfile/storage/default/moz-extension+++1d5caf90-a7db-48a7-abcd-26af06a99e7e^userContextId=4294967295/idb/3647222921wleabcEoxlt-eengsairo.sqlite
+
+# Internal browser IDB (bookmarks index, devtools) — regenerated on start
+/*Profile/**/storage/permanent/chrome/idb/
+/*Profile/**/storage/permanent/indexeddb+++fx-devtools/
+
+# DRM / codec plugin binaries — auto-downloaded by the browser
+/*Profile/**/gmp-widevinecdm/
+/*Profile/**/gmp-gmpopenh264/
+/*Profile/**/gmp/
+
+# Addon startup cache — regenerated on every launch
+/*Profile/**/addonStartup.json.lz4
+
+# Runtime state DBs
+/*Profile/**/bounce-tracking-protection.sqlite
+/*Profile/**/domain_to_categories.sqlite
+/*Profile/**/webappsstore.sqlite
+
+# Telemetry ping queues — auto-cleared, no user data
+/*Profile/**/Pending\ Pings/
+
+# Extension local storage — currently empty dirs; tracked if files appear via storage-sync-v2.sqlite
+/*Profile/**/browser-extension-data/
+/*Profile/**/extension-store-userscripts/
+
+# Intentionally tracked (no sync = lost forever):
+#   places.sqlite        — bookmarks + browsing history
+#   formhistory.sqlite   — form autofill data
+#   sessionstore.jsonlz4 — open tabs (clean exit snapshot)
+#   sessionstore-backups/recovery.jsonlz4  — live crash-safe session (most current)
+#   sessionstore-backups/previous.jsonlz4  — prior session, fallback on restore
+#   logins.json / key4.db / cert9.db — saved passwords & certificates
+#   cookies.sqlite       — active sessions
+#   containers.json      — Multi-Account Container setup
+#   prefs.js             — user preferences
+#   extensions/*.xpi     — installed extensions
+#   search.json.mozlz4   — custom search engines
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ZEN BROWSER  (Firefox-based; Firefox rules above already apply)
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Timestamped hourly session snapshots — too noisy; current session tracked via sessionstore.jsonlz4
+ZenProfile/**/zen-sessions-backup/zen-sessions-*.jsonlz4
+
+# Intentionally tracked (same rationale as Firefox, plus):
+#   zen-sessions-backup/clean.jsonlz4  — permanent clean-session snapshot
+#   zen-sessions.jsonlz4               — Zen's active session list
+#   zen-keyboard-shortcuts.json        — custom keyboard shortcuts
+#   zen-themes.json / zen-live-folders.jsonlz4 — Zen-specific config
+#   chrome/userChrome.css + zen-themes/ — user CSS customisations
+
+# Override: keep the Zen chrome/ folder (it is NOT a git repo, unlike other profiles)
 !/ZenProfile/Profiles/DefaultProfile/chrome/
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# THUNDERBIRD
+# ══════════════════════════════════════════════════════════════════════════════
+
+# .msf files — folder index/summary files, always regenerated on folder open
+*.msf
+
+# Global message index — rebuilt automatically
+global-messages-db.sqlite
+
+# Local Folders: only Trash and Unsent Messages are ephemeral; msgFilterRules.dat is tracked
+ThunderbirdProfile/**/Local\ Folders/Trash
+ThunderbirdProfile/**/Local\ Folders/Unsent\ Messages
+# NOTE: Local Folders/msgFilterRules.dat is intentionally tracked (mail filter rules).
+# gitignore cannot negate files inside an ignored directory, so the directory itself
+# is not ignored — only the specific ephemeral files above are ignored.
+
+# Runtime state DBs
+ThunderbirdProfile/**/bounce-tracking-protection.sqlite
+ThunderbirdProfile/**/domain_to_categories.sqlite
+ThunderbirdProfile/**/webappsstore.sqlite
+ThunderbirdProfile/**/addonStartup.json.lz4
+
+# Intentionally tracked (no sync = lost):
+#   ImapMail/**/[mailbox] (no extension) — IMAP cached mail bodies (slow to re-download)
+#   abook.sqlite          — address book contacts
+#   calendar-data/local.sqlite — local calendar entries
+#   openpgp.sqlite        — OpenPGP keys
+#   history.sqlite        — message history
+#   formhistory.sqlite    — form autofill
+#   session.json / session.json.backup — open window/tab state
+#   logins.json / key4.db / cert9.db   — saved passwords & certificates
+#   prefs.js              — user preferences
+#   msgFilterRules.dat    — per-folder mail filter rules
+#   directoryTree.json / folderTree.json / virtualFolders.dat — folder layout
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# CHROME BETA
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Downloaded ML / AI models — auto-downloaded by Chrome
+ChromeBetaProfile/optimization_guide_model_store/
+ChromeBetaProfile/TranslateKit/
+ChromeBetaProfile/WasmTtsEngine/
+ChromeBetaProfile/OnDeviceHeadSuggestModel/
+
+# Auto-downloaded component updates (versioned subdirs)
+ChromeBetaProfile/ActorSafetyLists/
+ChromeBetaProfile/AmountExtractionHeuristicRegexes/
+ChromeBetaProfile/CaptchaProviders/
+ChromeBetaProfile/CertificateRevocation/
+ChromeBetaProfile/Crowd\ Deny/
+ChromeBetaProfile/FileTypePolicies/
+ChromeBetaProfile/FirstPartySetsPreloaded/
+ChromeBetaProfile/MEIPreload/
+ChromeBetaProfile/OptimizationHints/
+ChromeBetaProfile/OriginTrials/
+ChromeBetaProfile/PKIMetadata/
+ChromeBetaProfile/SSLErrorAssistant/
+ChromeBetaProfile/SafetyTips/
+ChromeBetaProfile/Subresource\ Filter/
+ChromeBetaProfile/TrustTokenKeyCommitments/
+ChromeBetaProfile/ZxcvbnData/
+
+# Runtime-generated feature / metrics state
+ChromeBetaProfile/Variations
+ChromeBetaProfile/ChromeFeatureState
+ChromeBetaProfile/BrowserMetrics-spare.pma
+ChromeBetaProfile/Last\ Version
+ChromeBetaProfile/first_party_sets.db
+ChromeBetaProfile/segmentation_platform/
+
+# Cosmetic caches
+ChromeBetaProfile/Default/Favicons
+ChromeBetaProfile/Default/Top\ Sites
+ChromeBetaProfile/Default/HistoryEmbeddings
+
+# Internal LevelDB state — runtime only
+ChromeBetaProfile/Default/Extension\ Rules/
+ChromeBetaProfile/Default/Extension\ Scripts/
+ChromeBetaProfile/Default/Extension\ State/
+ChromeBetaProfile/Default/GCM\ Store/
+ChromeBetaProfile/Default/Sync\ Data/
+ChromeBetaProfile/Default/Site\ Characteristics\ Database/
+ChromeBetaProfile/Default/Platform\ Notifications/
+ChromeBetaProfile/Default/shared_proto_db/
+ChromeBetaProfile/Default/Storage/
+ChromeBetaProfile/Default/Local\ Extension\ Settings/
+
+# Runtime browsing-data DBs
+ChromeBetaProfile/Default/BrowsingTopicsSiteData
+ChromeBetaProfile/Default/BrowsingTopicsState
+ChromeBetaProfile/Default/Conversions
+ChromeBetaProfile/Default/DIPS
+ChromeBetaProfile/Default/InterestGroups
+ChromeBetaProfile/Default/SharedStorage
+ChromeBetaProfile/Default/Shared\ Dictionary/
+ChromeBetaProfile/Default/Account\ Web\ Data
+ChromeBetaProfile/Default/Affiliation\ Database
+ChromeBetaProfile/Default/heavy_ad_intervention_opt_out.db
+ChromeBetaProfile/Default/engine_allowlist.bf
+ChromeBetaProfile/Default/MediaDeviceSalts
+ChromeBetaProfile/Default/Device\ Bound\ Sessions
+ChromeBetaProfile/Default/BookmarkMergedSurfaceOrdering
+ChromeBetaProfile/Default/PreferredApps
+ChromeBetaProfile/Default/Safe\ Browsing\ Cookies
+ChromeBetaProfile/Default/ServerCertificate
+ChromeBetaProfile/Default/Trust\ Tokens
+ChromeBetaProfile/Default/passkey_enclave_state
+ChromeBetaProfile/Default/trusted_vault.pb
+
+# Bundled extension source trees — auto-installed by Chrome, not user-installed
+ChromeBetaProfile/Default/Extensions/ghbmnnjooekpmoecnnnilnnbdlolhkhi/
+ChromeBetaProfile/Default/Extensions/nmmhkkegccagdldgiimedpiccmgmieda/
+
+# PWA — icons auto-downloaded, Temp is transient; nothing user-created here
+ChromeBetaProfile/Default/Web\ Applications/
+
+# Runtime blob / web storage — ephemeral, no user data
+ChromeBetaProfile/Default/blob_storage/
+ChromeBetaProfile/Default/WebStorage/
+
+# Auto-downloaded component packages (binary CRX archives)
+ChromeBetaProfile/component_crx_cache/
+ChromeBetaProfile/extensions_crx_cache/
+
+# DRM plugin binary
+ChromeBetaProfile/WidevineCdm/
+
+# Auto-downloaded attestations / empty runtime dirs
+ChromeBetaProfile/PrivacySandboxAttestationsPreloaded/
+ChromeBetaProfile/RecoveryImproved/
+ChromeBetaProfile/NativeMessagingHosts/
+
+# Intentionally tracked (no sync = lost):
+#   Default/History           — browsing history
+#   Default/Sessions/         — open tabs (Session_* and Tabs_* files)
+#   Default/Preferences       — user preferences
+#   Default/Secure Preferences
+#   Default/Cookies           — active sessions
+#   Default/Web Data          — autofill, addresses
+#   Default/Shortcuts         — omnibox shortcuts
+#   Default/Login Data        — saved passwords
+#   Default/Login Data For Account
+#   Local State               — global Chrome state
+# LevelDB log files (LOG, LOG.old, 000001.log etc.) — runtime internal files
+LOG
+LOG.old
+*.log

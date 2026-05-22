@@ -5,6 +5,7 @@
 # This script is used to cleanup browser profiles folders (delete cache, session and other files that will anyways be recreated when you restart that browser). It can be safely invoked even if that browser is running (in which case it will skip processing after printing a warning to quit that application)
 
 # Exit immediately if a command exits with a non-zero status.
+# TODO: Disabled since this script errors out
 # set -e
 
 # Source shellrc only once if any required function is missing

@@ -17,12 +17,14 @@ perform_update() {
   local update_cmd="${3}"
 
   if command_exists "${check_cmd}"; then
+    step_start
     section_header "$(yellow 'Updating') $(purple "${title}")"
     if eval "${update_cmd}"; then
       success "Successfully updated: '${title}'"
     else
       warn "Failed to update: '${title}'"
     fi
+    step_end
   else
     debug "Command not found: '${check_cmd}'"
   fi
@@ -31,6 +33,7 @@ perform_update() {
 main() {
   local script_start_time
   script_start_time=$(date +%s)
+  _SCRIPT_START_TIME=${script_start_time}
   print_script_start
 
   # brew doctor # Removed for cron job efficiency
@@ -68,31 +71,35 @@ main() {
   # fi
   # unset zen_profiles
 
-  local natsumi_codebase="${PROJECTS_BASE_DIR}/oss/natsumi-browser"
-  if is_git_repo "${natsumi_codebase}"; then
-    section_header "$(yellow 'Update locally checked-out copy of my fork of the natsumi codebase')" # so as to get a clean pull in the Zen profile chrome directory
-    git -C "${natsumi_codebase}" upreb
-    # Check if the working directory is clean and the branch is up-to-date with its upstream
-    if is_zero_string "$(git -C "${natsumi_codebase}" status --porcelain)" &&
-          [[ "$(git -C "${natsumi_codebase}" rev-parse @)" == "$(git -C "${natsumi_codebase}" rev-parse '@{u}' 2>/dev/null)"  ]]; then
-      success "Natsumi codebase '${natsumi_codebase}' is clean and up-to-date."
-    else
-      # Warn instead of erroring out, allowing the cron job to continue
-      warn "Natsumi codebase '${natsumi_codebase}' has uncommitted changes or is not up-to-date with its upstream. Manual intervention might be needed before it can be safely applied into the runtime ZenProfile."
-    fi
-  else
-    debug "Skipping natsumi codebase check as '${natsumi_codebase}' is not a git repo."
-  fi
+  # TODO: Removing natsumi as a trial to check whether I can live without natsumi at all 2026-05-20
+  # local natsumi_codebase="${PROJECTS_BASE_DIR}/oss/natsumi-browser"
+  # if is_git_repo "${natsumi_codebase}"; then
+  #   section_header "$(yellow 'Update locally checked-out copy of my fork of the natsumi codebase')" # so as to get a clean pull in the Zen profile chrome directory
+  #   git -C "${natsumi_codebase}" upreb
+  #   # Check if the working directory is clean and the branch is up-to-date with its upstream
+  #   if is_zero_string "$(git -C "${natsumi_codebase}" status --porcelain)" &&
+  #         [[ "$(git -C "${natsumi_codebase}" rev-parse @)" == "$(git -C "${natsumi_codebase}" rev-parse '@{u}' 2>/dev/null)"  ]]; then
+  #     success "Natsumi codebase '${natsumi_codebase}' is clean and up-to-date."
+  #   else
+  #     # Warn instead of erroring out, allowing the cron job to continue
+  #     warn "Natsumi codebase '${natsumi_codebase}' has uncommitted changes or is not up-to-date with its upstream. Manual intervention might be needed before it can be safely applied into the runtime ZenProfile."
+  #   fi
+  # else
+  #   debug "Skipping natsumi codebase check as '${natsumi_codebase}' is not a git repo."
+  # fi
 
   local zen_browser_desktop_codebase="${PROJECTS_BASE_DIR}/oss/zen-browser-desktop"
   if is_git_repo "${zen_browser_desktop_codebase}"; then
+    step_start
     section_header "$(yellow "Remove 'twilight' tag from") $(purple 'zen-browser-desktop') repo"
     if git -C "${zen_browser_desktop_codebase}" rev-parse -q --verify refs/tags/twilight &>/dev/null; then
       git -C "${zen_browser_desktop_codebase}" delete-tag twilight && success "Deleted 'twilight' tag."
     fi
+    step_end
   fi
 
   if command_exists ollama; then
+    step_start
     section_header "$(yellow 'Pull ollama models')"
     local -a ollama_models=(
       deepseek-coder-v2
@@ -102,28 +109,81 @@ main() {
     for model in "${ollama_models[@]}"; do
       ollama pull "${model}"
     done
+    step_end
   fi
 
   echo '==> Finished independent updates.'
 
+  step_start
   section_header "$(yellow 'Update repos in home folder')"
   home pull
+  step_end
 
   sleep 10  # so that GH doesn't throttle when we call a lot of times within a short time
 
+  step_start
   section_header "$(yellow 'Upreb repos in oss folder')"
   FOLDER="${PROJECTS_BASE_DIR}/oss" rug upreb && success 'Finished upreb for oss repos' || warn 'Failed to upreb oss repos'
+  step_end
 
+  step_start
   section_header "$(yellow 'Capture app preferences')"
   capture-prefs.sh -e && success 'Finished capturing app preferences' || warn 'Failed to capture app preferences'
+  step_end
 
+  step_start
+  section_header "$(yellow 'Prune old timestamped session backups from browser-profiles repo')"
+  if is_git_repo "${PERSONAL_PROFILES_DIR}"; then
+    local cutoff_date cutoff_epoch file_date file_epoch
+    # Use date arithmetic compatible with both macOS (BSD) and Linux (GNU)
+    if date -v-7d +%s &>/dev/null 2>&1; then
+      cutoff_epoch=$(date -v-7d +%s)  # macOS BSD date
+    else
+      cutoff_epoch=$(date -d '7 days ago' +%s)  # GNU date
+    fi
+    # Pattern: zen-sessions-backup/zen-sessions-YYYY-MM-DD-HH.jsonlz4
+    local -a old_backups=()
+    while IFS= read -r tracked_file; do
+      # Extract the date portion: YYYY-MM-DD from the filename
+      file_date="${tracked_file:t:r:r}"   # strip dirs, strip .jsonlz4 → zen-sessions-YYYY-MM-DD-HH
+      file_date="${file_date#zen-sessions-}"  # → YYYY-MM-DD-HH
+      file_date="${file_date%%-[0-9][0-9]}"   # → YYYY-MM-DD
+      if date -j -f "%Y-%m-%d" "${file_date}" +%s &>/dev/null 2>&1; then
+        file_epoch=$(date -j -f "%Y-%m-%d" "${file_date}" +%s)  # macOS
+      else
+        file_epoch=$(date -d "${file_date}" +%s 2>/dev/null)     # GNU
+      fi
+      if [[ -n "${file_epoch}" && "${file_epoch}" -lt "${cutoff_epoch}" ]]; then
+        old_backups+=("${tracked_file}")
+      fi
+    done < <(git -C "${PERSONAL_PROFILES_DIR}" ls-files -- '*/zen-sessions-backup/zen-sessions-*.jsonlz4')
+
+    if [[ ${#old_backups[@]} -gt 0 ]]; then
+      for f in "${old_backups[@]}"; do
+        git -C "${PERSONAL_PROFILES_DIR}" rm --cached --quiet -- "${f}" && debug "Unpinned old session backup: ${f}"
+      done
+      success "Pruned ${#old_backups[@]} session backup file(s) older than 7 days"
+    else
+      debug 'No old session backups to prune'
+    fi
+    unset cutoff_epoch old_backups
+  else
+    debug "Skipping session backup pruning — not a git repo: '${PERSONAL_PROFILES_DIR}'"
+  fi
+  step_end
+
+  step_start
   section_header "$(yellow 'Update home and profiles repos')"
   update_all_repos && success 'Finished updating home and profiles repos' || warn 'Failed to update home and profiles repos'
+  step_end
 
+  step_start
   section_header "$(yellow 'Report status of all repos')"
   status_all_repos
+  step_end
 
-  section_header "$(yellow 'Updating all browser profile chrome folders')"
+  step_start
+  section_header "$(yellow 'Updating all browser profile chrome folders if they are git repos')"
   # Use zsh glob qualifiers to only loop if matches exist and are directories
   # (N) nullglob: if no match, the pattern expands to nothing
   # (/): only match directories
@@ -139,7 +199,9 @@ main() {
     done
     success 'Finished updating chrome folders'
   fi
+  step_end
 
+  step_start
   section_header "$(yellow 'Checking if any greedy applications are outdated')"
   if command_exists bcg; then
     local outdated
@@ -148,6 +210,7 @@ main() {
   else
     debug 'skipping updating brews & casks'
   fi
+  step_end
 
   section_header "$(yellow 'Finished software updates at') $(purple "$(date)")"
   print_script_duration "${script_start_time}"
