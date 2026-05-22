@@ -23,14 +23,10 @@
 
 type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
 
-# Enable Powerlevel10k instant prompt. Should stay close to the top of ${ZDOTDIR}/.zshrc.
-# Initialization code that may require console input (password prompts, [y/n]
-# confirmations, etc.) must go above this block; everything else may go below.
-load_file_if_exists "${XDG_CACHE_HOME}/p10k-instant-prompt-$(whoami).zsh"
-
-# To customize prompt, run `p10k configure` or edit ${HOME}/.p10k.zsh.
-load_file_if_exists "${HOME}/.p10k.zsh"
-load_file_if_exists "${HOMEBREW_PREFIX}/share/powerlevel10k/powerlevel10k.zsh-theme"
+# Initialize starship prompt.
+# Note: Must be initialized AFTER oh-my-zsh is loaded (see further below), so the actual
+# eval is deferred. We use a precmd hook approach via the oh-my-zsh sourcing below.
+# The eval line is placed after 'source oh-my-zsh.sh' further down in this file.
 
 # Path to your Oh My Zsh installation.
 export ZDOTDIR="${ZDOTDIR:-"${HOME}"}"
@@ -41,9 +37,8 @@ export ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH}/custom"}"
 # load a random theme each time Oh My Zsh is loaded, in which case,
 # to know which specific one was loaded, run: echo $RANDOM_THEME
 # See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
+# ZSH_THEME is intentionally unset — starship handles the prompt.
 # ZSH_THEME="robbyrussell"
-# ZSH_THEME="powerlevel10k/powerlevel10k"
-# ZSH_THEME="agnoster"
 
 # Set list of themes to pick from when loading at random
 # Setting this variable when ZSH_THEME=random will cause zsh to load
@@ -172,6 +167,8 @@ function compinit() {
 
 load_file_if_exists "${ZSH}/oh-my-zsh.sh"
 
+# Initialize starship prompt (must be after oh-my-zsh so it wins the PROMPT setup)
+command_exists starship && eval "$(starship init zsh)"
 
 # User configuration
 # export MANPATH="/usr/local/man${MANPATH+:$MANPATH}"

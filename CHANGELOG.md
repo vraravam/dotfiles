@@ -1,6 +1,24 @@
-As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scripts-to-your-own-settings) section, this repo and its scripts are aimed at developers/techies. If you are stuck or need help in any fashion, you can reach out to the [owner of the the parent repo](https://github.com/vraravam) from where this was forked.
+As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scripts-to-your-own-settings) section, this repo and its scripts are aimed at developers/techies. If you are stuck or need help in any fashion, you can reach out to the [owner of the parent repo](https://github.com/vraravam) from where this was forked.
 
-For those who follow this repo, here's the changelog for ease of adoption:
+For those who follow this repo, here's the changelog for ease of changelog:
+
+### 3.0-17
+
+* *[files/--HOME--/.p10k.zsh (deleted), files/--XDG_CONFIG_HOME--/starship.toml (new), files/--HOME--/Brewfile, files/--ZDOTDIR--/.zshrc]* Replaced **powerlevel10k** with **Starship** as the prompt engine. Deleted `.p10k.zsh` and the OMZ p10k instant-prompt setup from `.zshrc`; added `starship.toml`; replaced `tap 'romkatv/powerlevel10k'` and `brew 'powerlevel10k'` with `brew 'starship'` in the Brewfile.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then run in any open terminal:
+
+  ```bash
+  cp $DOTFILES_DIR/files/--HOME--/custom.gitignore $HOME/.gitignore
+  install-dotfiles.rb
+  rm -f "${HOME}/.p10k.zsh"      # remove dangling symlink — source deleted from repo
+  brew install starship
+  delete_caches
+  ```
+
+* Quit and restart the Terminal application.
 
 ### 3.0.16
 

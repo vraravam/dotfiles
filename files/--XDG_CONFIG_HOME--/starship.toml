@@ -1,0 +1,335 @@
+# file location: ${XDG_CONFIG_HOME}/starship.toml
+#
+# Starship prompt configuration mirroring the previous powerlevel10k rainbow setup.
+#
+# Left prompt:  os_icon → dir → git (branch + status symbols + repo size) → prompt char
+# Right prompt: status → cmd_duration (≥3s) → jobs → username@hostname (SSH/root only) → time
+#
+# Colors:
+#   os_icon:   bg=white,  fg=#000000 (explicit black to avoid terminal remapping)
+#   directory: bg=blue,   fg=#e4e4e4 (repo root anchor in bright-white bold)
+#   git clean: bg=green,  fg=black
+#   git dirty: bg=yellow, fg=black  (any modified/staged/untracked/stashed files)
+#   status:    ✔ bold green / ✘ bold red (no background, right prompt)
+#   cmd_dur:   bg=cyan,   fg=black  (only shown when command took ≥ 3 seconds)
+#   time:      bg=white,  fg=black
+#   context:   fg=yellow, no bg     (SSH/root only)
+#
+# Powerline separators (requires Nerd Font / MesloLGS NF):
+#   \uE0B0  — right-pointing filled arrow (left prompt segment separator)
+#   \uE0B2  — left-pointing filled arrow (right prompt segment separator)
+#   \uE0B3  — left-pointing thin arrow (right prompt sub-separator)
+# Branch icon: \uF126
+
+# Add a blank line before each prompt
+add_newline = true
+# Raised from default 500ms to allow du (git_size) to complete on large repos
+command_timeout = 5000
+
+# ── Left prompt ───────────────────────────────────────────────────────────────
+# Segment order: os → directory → git branch+status+size → prompt character
+# Arrow separators transition: white→blue→green(clean)/yellow(dirty)→terminal default
+format = """
+[$os](bg:white fg:black)\
+[\uE0B0](fg:white bg:blue)\
+[$directory](bg:blue fg:#e4e4e4)\
+${custom.git_clean_sep}${custom.git_dirty_sep}\
+${custom.git_clean}${custom.git_dirty}\
+${custom.git_size}${custom.git_size_dirty}\
+${custom.git_clean_end}${custom.git_dirty_end}\
+${custom.git_state}\
+$character"""
+
+# ── Right prompt ──────────────────────────────────────────────────────────────
+# Segment order: status → cmd_duration → jobs → context → time
+# cmd_duration has its own embedded \uE0B2 separator (only appears when visible)
+# time is always shown, preceded by a \uE0B2 separator (white arrow into white bg)
+right_format = """
+$status\
+$cmd_duration\
+$jobs\
+$username$hostname\
+[\uE0B2](fg:white bg:black)\
+$time"""
+
+# Palette - named aliases used by some segments below (not all segments use these;
+# some hardcode colors directly where palette references don't resolve in style strings)
+palette = "rainbow"
+
+[palettes.rainbow]
+color_os        = "white"
+color_os_fg     = "black"
+color_dir       = "blue"
+color_dir_fg    = "color254"   # resolves to #e4e4e4
+color_git       = "green"
+color_git_fg    = "black"
+color_git_dirty = "yellow"     # used by dirty-state git segment (modified/staged/untracked/stashed)
+color_status_fg = "green"
+color_jobs_fg   = "cyan"
+color_ctx_fg    = "yellow"
+color254        = "#e4e4e4"
+
+# ── OS icon ───────────────────────────────────────────────────────────────────
+# White background, explicit #000000 foreground (avoids terminal bold/dim remapping
+# that can make the named "black" color appear washed out)
+[os]
+disabled = false
+format = "[ $symbol ]($style)"
+style = "bg:white fg:#000000"
+
+[os.symbols]
+Macos = "\uF179"   # nerd font apple icon
+
+# ── Directory ─────────────────────────────────────────────────────────────────
+# Full path from ~ with no truncation (truncation_length=100 is effectively unlimited).
+# Repo root segment is highlighted in bright-white bold (anchor styling).
+# All path components share the blue background via repo_root_format.
+[directory]
+format = "[ $path ]($style)[$read_only]($read_only_style)"
+style = "bg:color_dir fg:color_dir_fg bold"
+read_only = " ⭐"
+read_only_style = "bg:color_dir fg:color_dir_fg"
+truncation_length = 100
+truncate_to_repo = false
+truncation_symbol = "…/"
+home_symbol = "~"
+# repo_root_format removed because when the repo root coincides with the home
+# directory (e.g. bare dotfiles repo at ~/.git), $before_root_path incorrectly
+# includes the path after the repo root, producing duplicate directory output:
+# e.g. "~/dev/ossvijay/dev/oss" instead of "~/dev/oss".
+# The regular format handles all cases correctly without duplication.
+
+# ── Git branch ────────────────────────────────────────────────────────────────
+# Disabled: replaced by custom.git_clean / custom.git_dirty which handle
+# conditional green/yellow background based on repo dirty state.
+[git_branch]
+disabled = true
+
+# ── Git status ────────────────────────────────────────────────────────────────
+# Disabled: replaced by custom.git_clean / custom.git_dirty which handle
+# conditional green/yellow background based on repo dirty state.
+[git_status]
+disabled = true
+
+# ── Exit status ───────────────────────────────────────────────────────────────
+# ✔ in bold green on zero exit; ✘ in bold red on non-zero exit.
+# success_symbol embeds its own color tag so it overrides the module-level style.
+[status]
+disabled = false
+format = "[$symbol]($style) "
+style = "bold red"
+success_symbol = "[✔](bold green)"
+symbol = "✘"
+not_executable_symbol = "✘"
+not_found_symbol = "✘"
+sigint_symbol = "✘"
+signal_symbol = "✘"
+map_symbol = true
+
+# ── Command duration ──────────────────────────────────────────────────────────
+# Only shown when the last command took ≥ 3 seconds.
+# Separator \uE0B2 is embedded so the arrow only appears when this segment is visible.
+# \uE0B3 is the thin right-arrow used as a sub-separator after the duration text.
+[cmd_duration]
+min_time = 3_000
+format = "[\uE0B2](fg:cyan bg:black)[ took $duration ](fg:black bg:cyan)[\uE0B3](fg:black bg:cyan)"
+show_milliseconds = false
+
+# ── Background jobs ───────────────────────────────────────────────────────────
+# Shows ⚙ when there is at least one background job.
+[jobs]
+format = "[$symbol](fg:color_jobs_fg) "
+symbol = "⚙"
+number_threshold = 1
+symbol_threshold = 1
+
+# ── Direnv ────────────────────────────────────────────────────────────────────
+# Disabled: ~/.envrc exists so DIRENV_DIR is always set, making the segment
+# permanently visible which is not useful.
+[env_var.DIRENV_DIR]
+disabled = true
+
+# ── Username/hostname (context) ───────────────────────────────────────────────
+# Only shown when in an SSH session or running as root (show_always = false).
+# (hidden by default).
+[username]
+format = "[$user](fg:color_ctx_fg)"
+style_user = "fg:color_ctx_fg"
+style_root = "fg:red bold"
+show_always = false
+
+[hostname]
+format = "[@$hostname ](fg:color_ctx_fg)"
+style = "fg:color_ctx_fg"
+ssh_only = true
+
+# ── Time ──────────────────────────────────────────────────────────────────────
+# 12-hour clock, format "%I:%M:%S %p" (e.g. 11:30:00 AM).
+# White background, black text. Always shown on the right prompt.
+[time]
+disabled = false
+format = "[ $time ](fg:black bg:white)"
+time_format = "%I:%M:%S %p"
+use_12hr = true
+
+# ── Prompt character ──────────────────────────────────────────────────────────
+# ❯ in green on success, red on error. ❮ in vi command mode.
+[character]
+success_symbol = "[❯](bold green)"
+error_symbol = "[❯](bold red)"
+vimcmd_symbol = "[❮](bold green)"
+
+# ── Custom: git segments with conditional green/yellow background ─────────────
+# The git section uses green bg when the repo is clean and yellow bg when dirty
+# (any modified, staged, untracked, or stashed files).
+#
+# Dirty detection: `git status --porcelain` produces output when the working tree
+# is dirty; the `when` condition below succeeds (exit 0) only in the target state.
+#
+# Each state has three parts:
+#   *_sep  — the blue→color powerline left-arrow separator
+#   *      — branch icon + branch name + status symbols
+#   *_end  — the trailing color→default powerline left-arrow separator
+#
+# git_size / git_size_dirty sit between the branch/status and the trailing separator;
+# each variant uses the matching when condition to pick the correct background color.
+
+# Dirty state: shown when `git status --porcelain` produces any output
+[custom.git_dirty_sep]
+command = "git rev-parse --abbrev-ref HEAD 2>/dev/null"
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+format = "[\uE0B0]($style)"
+style = "fg:blue bg:yellow"
+
+[custom.git_dirty]
+command = """
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | cut -c1-32)
+[ ${#branch} -eq 32 ] && branch="${branch}…"
+status_str=""
+modified=$(git status --porcelain 2>/dev/null | grep -c "^.M\\| M")
+staged=$(git status --porcelain 2>/dev/null | grep -c "^[MADRC]")
+untracked=$(git status --porcelain 2>/dev/null | grep -c "^??")
+stashed=$(git stash list 2>/dev/null | wc -l | tr -d ' ')
+ahead=$(git rev-list @{u}..HEAD 2>/dev/null | wc -l | tr -d ' ')
+behind=$(git rev-list HEAD..@{u} 2>/dev/null | wc -l | tr -d ' ')
+[ "$staged" -gt 0 ] && status_str="${status_str}+${staged}"
+[ "$modified" -gt 0 ] && status_str="${status_str}!${modified}"
+[ "$untracked" -gt 0 ] && status_str="${status_str}?${untracked}"
+[ "$stashed" -gt 0 ] && status_str="${status_str}*${stashed}"
+[ "$ahead" -gt 0 ] && [ "$behind" -gt 0 ] && status_str="${status_str}⇣${behind}⇡${ahead}"
+[ "$ahead" -gt 0 ] && [ "$behind" -eq 0 ] && status_str="${status_str}⇡${ahead}"
+[ "$behind" -gt 0 ] && [ "$ahead" -eq 0 ] && status_str="${status_str}⇣${behind}"
+[ -n "$status_str" ] && printf ' \uf126 %s %s \n' "$branch" "$status_str" || printf ' \uf126 %s \n' "$branch"
+"""
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+format = "[$output]($style)"
+style = "bg:yellow fg:black"
+
+# Clean state: shown when inside a git repo but working tree is clean
+[custom.git_clean_sep]
+command = "git rev-parse --abbrev-ref HEAD 2>/dev/null"
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+format = "[\uE0B0]($style)"
+style = "fg:blue bg:green"
+
+[custom.git_clean]
+command = """
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | cut -c1-32)
+[ ${#branch} -eq 32 ] && branch="${branch}…"
+ahead=$(git rev-list @{u}..HEAD 2>/dev/null | wc -l | tr -d ' ')
+behind=$(git rev-list HEAD..@{u} 2>/dev/null | wc -l | tr -d ' ')
+status_str=""
+[ "$ahead" -gt 0 ] && [ "$behind" -gt 0 ] && status_str=" ⇣${behind}⇡${ahead}"
+[ "$ahead" -gt 0 ] && [ "$behind" -eq 0 ] && status_str=" ⇡${ahead}"
+[ "$behind" -gt 0 ] && [ "$ahead" -eq 0 ] && status_str=" ⇣${behind}"
+printf ' \uf126 %s%s \n' "$branch" "$status_str"
+"""
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+format = "[$output]($style)"
+style = "bg:green fg:black"
+
+# ── Custom: git repo size ─────────────────────────────────────────────────────
+# Runs du -sh on the repo's .git folder (equivalent to the 'git size' alias).
+# Two variants to match the dirty (yellow) or clean (green) git segment background.
+[custom.git_size]
+command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} du -sh {}/.git 2>/dev/null | cut -f1"
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+format = "[ $output]($style)"
+style = "bg:green fg:black"
+
+[custom.git_size_dirty]
+command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} du -sh {}/.git 2>/dev/null | cut -f1"
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+format = "[ $output]($style)"
+style = "bg:yellow fg:black"
+
+# Trailing powerline separators (color→terminal default)
+[custom.git_clean_end]
+command = "true"
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+format = "[\uE0B0]($style)"
+style = "fg:green"
+
+[custom.git_dirty_end]
+command = "true"
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+format = "[\uE0B0]($style)"
+style = "fg:yellow"
+
+# ── Custom: git operation state ──────────────────────────────────────────────
+# Shown in bold red when a multi-step git operation is in progress:
+# rebase, merge, cherry-pick, revert, or bisect.
+# Detection uses the marker files/dirs git leaves inside .git/:
+#   rebase-merge/ or rebase-apply/  → REBASING
+#   MERGE_HEAD                      → MERGING
+#   CHERRY_PICK_HEAD                → CHERRY-PICKING
+#   REVERT_HEAD                     → REVERTING
+#   BISECT_LOG                      → BISECTING
+[custom.git_state]
+command = """
+root=$(git rev-parse --git-dir 2>/dev/null) || exit 1
+if [ -d "$root/rebase-merge" ] || [ -d "$root/rebase-apply" ]; then
+  printf ' REBASING '
+elif [ -f "$root/MERGE_HEAD" ]; then
+  printf ' MERGING '
+elif [ -f "$root/CHERRY_PICK_HEAD" ]; then
+  printf ' CHERRY-PICKING '
+elif [ -f "$root/REVERT_HEAD" ]; then
+  printf ' REVERTING '
+elif [ -f "$root/BISECT_LOG" ]; then
+  printf ' BISECTING '
+else
+  exit 1
+fi
+"""
+when = "git rev-parse --git-dir 2>/dev/null"
+format = "[$output]($style)"
+style = "bold red"
+
+# ── Disabled modules ─────────────────────────────────────────────────────────
+[aws]
+disabled = true
+[gcloud]
+disabled = true
+[azure]
+disabled = true
+[terraform]
+disabled = true
+[kubernetes]
+disabled = true
+[python]
+disabled = true
+[nodejs]
+disabled = true
+[ruby]
+disabled = true
+[golang]
+disabled = true
+[rust]
+disabled = true
+[java]
+disabled = true
+[docker_context]
+disabled = true
+[package]
+disabled = true

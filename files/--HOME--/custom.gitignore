@@ -365,6 +365,7 @@ node_modules/
 /.config/ghostty/config
 /.config/mise/config.toml
 /.config/rubocop/config.yml
+/.config/starship.toml
 /.config/zed/keymap.json
 /.config/zed/settings.json
 /.config/zsh/*
@@ -387,7 +388,6 @@ node_modules/
 /.mailrc
 /.notify-osd
 /.npmrc
-/.p10k.zsh
 /.profile
 /.pryrc
 /.psqlrc

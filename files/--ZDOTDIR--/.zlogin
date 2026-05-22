@@ -55,7 +55,6 @@ find_in_folder_and_recompile "${ZSH}"
 
 # omz doesn't know about these files, and so we don't depend on 'ZDOTDIR'
 recompile_zsh_scripts "${HOME}/.aliases"
-recompile_zsh_scripts "${HOME}/.p10k.zsh"
 recompile_zsh_scripts "${HOME}/.shellrc"
 
 find_in_folder_and_recompile "${DOTFILES_DIR}"

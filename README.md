@@ -29,7 +29,7 @@ All of the folder structures and the setup/backup operations are governed by the
 ## 🐚 Shell Configuration
 
 - **Oh My Zsh** — Zsh framework
-- **powerlevel10k** — Modern shell prompt
+- **Starship** — Modern cross-shell prompt
 - **Plugins** — autosuggestions, syntax highlighting
 - **Aliases** — Convenient shortcuts and functions
 

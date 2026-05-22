@@ -25,8 +25,6 @@ is_arm = ::Hardware::CPU.arm?
 # TODO: Hardcoding of the dotfiles repo folder - since that env var is not available inside this env
 setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.sh"
 
-tap 'romkatv/powerlevel10k'
-
 # Moving these casks to tbe beginning since they are required in the beginning (for manual login) for a vanilla OS installation
 cask 'font-meslo-lg-nerd-font'
 cask 'keybase', postinstall: "\"#{setup_login_items_script}\" -a 'Keybase'"
@@ -56,7 +54,7 @@ brew 'git-extras'
 brew 'git-tools'
 brew 'git-trim'
 brew 'mise'
-brew 'powerlevel10k'
+brew 'starship'
 
 # casks pulled in for base configs (if these are absent, you will get errors and things won't work)
 cask 'iterm2'
