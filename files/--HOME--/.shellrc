@@ -357,7 +357,6 @@ if is_zsh; then
   # WARNING: Sourcing .zshenv/.zshrc/.zlogin from a file that might be sourced *by* them
   # can lead to infinite loops or unexpected behavior if not called carefully.
   # This is likely intended for manual use or specific bootstrap scenarios after config changes.
-  # Note: This function is kind of equivalent to 'omz reload', but that doesn't seem to work when installing on a vanilla OS
   load_zsh_configs() {
     local file_list=('.zshenv' '.zshrc' '.zlogin')
     for file in "${file_list[@]}"; do
@@ -516,6 +515,51 @@ export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
 export HOMEBREW_NO_ENV_HINTS=1
 # TODO: Uncomment once this feature has stabilized
 # export HOMEBREW_VERIFY_ATTESTATIONS=1
+
+# Antidote plugin manager home — set explicitly so it is available before antidote.zsh
+# is sourced (e.g. in .zlogin). Mirrors antidote's own platform defaults (see get_dir()
+# in antidote.zsh): ~/Library/Caches/antidote on macOS, $XDG_CACHE_HOME/antidote on Linux.
+# Note: is_macos is not yet defined here; use $OSTYPE directly.
+if [[ "${OSTYPE}" =~ 'darwin' ]]; then
+  export ANTIDOTE_HOME="${HOME}/Library/Caches/antidote"
+else
+  export ANTIDOTE_HOME="${XDG_CACHE_HOME}/antidote"
+fi
+export ANTIDOTE_ZSH="${HOMEBREW_PREFIX}/opt/antidote/share/antidote/antidote.zsh"
+export ANTIDOTE_PLUGIN_ZSH="${ZDOTDIR}/.zsh_plugins.zsh"
+
+#############################################################################################
+# Regenerate the antidote static plugin bundle whenever brew installs or upgrades antidote. #
+# This ensures the sourced .zsh_plugins.zsh always reflects the latest plugin sources.      #
+# antidote is a zsh script (not a binary) — source it first to get the 'antidote' function. #
+#############################################################################################
+update_antidote_and_regenerate_plugin_bundle() {
+  local plugins_txt="${ZDOTDIR}/.zsh_plugins.txt"
+  if is_non_empty_file "${ANTIDOTE_ZSH}" && is_non_empty_file "${plugins_txt}"; then
+    source "${ANTIDOTE_ZSH}"
+    if ! is_directory_empty "${ANTIDOTE_HOME}"; then
+      antidote update
+      # antidote clones with --depth 1 (shallow). On subsequent 'antidote update' runs it
+      # detects a shallow repo and runs 'git fetch --unshallow', which fails on large repos
+      # (e.g. ohmyzsh) due to fsck errors in their packed objects. Converting each bundle to
+      # a full clone immediately after update means the next run takes the normal fetch path
+      # and never triggers --unshallow again.
+      local bundle_dir
+      for bundle_dir in "${ANTIDOTE_HOME}"/github.com/*/*; do
+        [[ -d "${bundle_dir}/.git" ]] || continue
+        if [[ "$(git -C "${bundle_dir}" rev-parse --is-shallow-repository 2>/dev/null)" == "true" ]]; then
+          git -C "${bundle_dir}" fetch --unshallow --quiet 2>/dev/null || \
+            warn "Could not unshallow '$(yellow "${bundle_dir}")' — will retry on next update"
+        fi
+      done
+    fi
+    antidote bundle < "${plugins_txt}" > "${ANTIDOTE_PLUGIN_ZSH}" && \
+      success "antidote bundle regenerated at '$(yellow "${ANTIDOTE_PLUGIN_ZSH}")'" || \
+      warn 'Failed to regenerate antidote bundle'
+  else
+    warn "Skipping antidote bundle regeneration: antidote not found at '$(yellow "${ANTIDOTE_ZSH}")' or '$(yellow "${plugins_txt}")' is missing"
+  fi
+}
 
 eval_shellenv() {
   local output

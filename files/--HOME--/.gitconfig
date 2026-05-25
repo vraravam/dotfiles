@@ -493,5 +493,3 @@
   fsckObjects = true
 [user]
   useConfigOnly = true
-[oh-my-zsh]
-  hide-status = 1

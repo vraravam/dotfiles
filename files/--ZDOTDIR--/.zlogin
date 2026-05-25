@@ -51,9 +51,9 @@ recompile_zsh_scripts "${ZDOTDIR}/.zshenv"
 recompile_zsh_scripts "${ZDOTDIR}/.zshrc"
 recompile_zsh_scripts "${ZDOTDIR}/.zlogin"
 
-find_in_folder_and_recompile "${ZSH}"
+find_in_folder_and_recompile "${ANTIDOTE_HOME}"
 
-# omz doesn't know about these files, and so we don't depend on 'ZDOTDIR'
+# antidote doesn't know about these files, and so we don't depend on 'ZDOTDIR'
 recompile_zsh_scripts "${HOME}/.aliases"
 recompile_zsh_scripts "${HOME}/.shellrc"
 

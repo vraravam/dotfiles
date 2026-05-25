@@ -87,7 +87,6 @@ Thumbs.db
 /.npm/
 /.nvm/
 /.nuget/
-/.oh-my-zsh/
 /.ollama/
 /.oracle_jre_usage/*.timestamp
 /.packer.d/
@@ -404,6 +403,8 @@ node_modules/
 /.vim/autoload/plug.vim
 /.vimrc
 /.zlogin
+/.zsh_plugins.txt
+/.zsh_plugins.zsh
 /.zshenv
 /.zshrc
 /Brewfile

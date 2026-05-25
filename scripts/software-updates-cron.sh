@@ -47,7 +47,11 @@ main() {
   # 'ignore-io' updates the data from http://gitignore.io so that we can generate the '.gitignore' file contents from the cmd-line
   perform_update 'git-ignore database' 'git-ignore-io' 'git ignore-io --update-list'
 
-  perform_update 'oh-my-zsh' 'omz' 'omz update'
+  # update antidote plugins and regenerate the static bundle
+  step_start
+  section_header "$(yellow 'Updating') $(purple 'antidote plugins') and regenerating plugin bundle"
+  update_antidote_and_regenerate_plugin_bundle
+  step_end
 
   perform_update 'claude-code' 'claude' 'claude update'
 

@@ -2,6 +2,42 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of changelog:
 
+### 3.0-18
+
+* *[.zshrc]* Replaced **Oh My Zsh** with **antidote** as the plugin manager. A pre-generated static bundle (`${ZDOTDIR}/.zsh_plugins.zsh`) is checked into the home repo and sourced directly — antidote itself does not need to be installed for the shell to start. The antidote formula (installed via `brew`) and sourced at shell startup is only required for `antidote update` / `antidote bundle` to refresh plugin sources.
+* *[.zshrc]* Removed all Oh My Zsh bootstrap variables (`ZSH`, `ZSH_CUSTOM`, `ZSH_THEME`, `ZSH_DISABLE_COMPFIX`, `zstyle ':omz:update' ...`, `plugins=(...)`) and the `source "${ZSH}/oh-my-zsh.sh"` call. `compinit -C` is now called explicitly (no longer delegated to OMZ). Stale alias/comment block referencing OMZ examples removed.
+* *[.zshrc]* `mise activate zsh` is now cached — output written to `${XDG_CACHE_HOME}/mise-activate-cache.zsh` keyed on the mise binary mtime, regenerated only when mise itself is updated. The OMZ `mise` plugin was removed because it referenced `${ZSH_CACHE_DIR}` (undefined without OMZ), which caused a "no such file or directory: /completions/_mise" error on every shell start.
+* *[.zshrc]* Added `typeset +x FPATH fpath cdpath CDPATH` after the dedup pass — `FPATH` and `CDPATH` must never be exported. Both are zsh-internal variables (autoload search path and `cd` search path respectively). Exporting them causes their contents to leak into the macOS launchd user-session environment, where they persist across iTerm2 restarts and are inherited by every new shell before any rc file runs. Symptoms: `zsh -f -c 'echo $FPATH'` showed stale `~/.oh-my-zsh/...` paths even after `~/.oh-my-zsh` was deleted. All other `*path` vars on that line (`PATH`, `MANPATH`, `INFOPATH`, `CPPFLAGS`, `LDFLAGS`, `PKG_CONFIG_PATH`) are intentionally exported — child processes need them.
+* *[.zshrc]* `compinit` refactored to use `-C` (skip `compaudit` scan) when the dump file already exists, saving ~11ms per startup. Wrapped in an anonymous function so `autoload -Uz compinit` does not pollute the global function table. `ZSH_COMPDUMP` moved to `${XDG_CACHE_HOME}/zcompdump` to keep `$HOME` clean.
+* *[.zshrc]* Starship prompt initialisation cached to `${XDG_CACHE_HOME}/starship-init-cache.zsh`, keyed on the starship binary mtime — avoids forking `starship init zsh` on every shell start. `${commands[starship]}` used instead of `$(command -v starship)` (O(1) zsh hash lookup, no fork). Note: sourcing via a `precmd` hook was attempted but causes `setopt promptsubst` (emitted by starship's init) to be scoped to the hook function, leaving `PROMPT` as an unexpanded literal after the first command — the cache is therefore sourced directly at startup.
+* *[.zshrc]* `autoload -Uz colors && colors` removed — none of the active plugins use `$fg`/`$bg`/`$color` from the zsh `colors` function; own color variables are defined as `$'\e[...'` literals in `.shellrc`.
+* *[.zshrc]* `$(extract_first_word "${editor}")` in the preferred-editor detection loop replaced with `${editor%% *}` (inline parameter expansion, no subshell).
+* *[.zshrc]* Fixed bug in autoload loop: `autoload -Uz "${func_file}"` → `autoload -Uz "${func_file:t}"`. Without `:t` (basename), `autoload` registers the function under its full path (e.g. `/path/to/myfunc`) which can never be invoked by short name.
+* *[.zlogin]* `recompile_zsh_scripts` now removes `.zwc.old` before and after calling `zrecompile -pq` — `zrecompile` moves the existing `.zwc` to `.zwc.old` before writing the new one; if `zcompile` fails mid-write the backup is left behind indefinitely. Cleanup is unconditional so stale backups never accumulate.
+* *[.shellrc]* Added `export ANTIDOTE_HOME`, `ANTIDOTE_ZSH`, and `ANTIDOTE_PLUGIN_ZSH` — set early (before `antidote.zsh` is sourced) so they are available in `.zlogin` and other contexts. `ANTIDOTE_HOME` mirrors antidote's own platform defaults: `~/Library/Caches/antidote` on macOS, `${XDG_CACHE_HOME}/antidote` on Linux.
+* *[.zsh_plugins.txt]* **New file** — canonical antidote plugin list, replacing the old `plugins=(...)` array in `.zshrc`. Loads selected OMZ lib files, OMZ plugins and third-party plugins.
+* *[Brewfile]* Added `antidote` to the base-configs section (installed on every machine, including `FIRST_INSTALL`). Replaced `diff-so-fancy` with `delta` as the diff/pager tool. Replaced `jq` with `jaq` (a faster Rust reimplementation). Commented out `codeql` cask.
+* *[scripts/fresh-install-of-osx.sh]* Replaced `install_oh_my_zsh_and_custom_plugins` (curl install + three `git clone` calls for custom plugins) with a call to `update_antidote_and_regenerate_plugin_bundle` placed after `homebrew` is installed.
+* *[scripts/post-brew-install.sh]* Added antidote update and bundle regeneration step by invoking `update_antidote_and_regenerate_plugin_bundle` on every `brew bundle` / `bupc` run, keeping the bundle in sync after antidote itself is installed or upgraded.
+* *[scripts/software-updates-cron.sh]* Replaced `omz update` with the equivalent antidote update function `update_antidote_and_regenerate_plugin_bundle`.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then proceed with the following steps in any open terminal:
+
+   ```bash
+   cp $DOTFILES_DIR/files/--HOME--/custom.gitignore $HOME/.gitignore
+   rm -rf "${HOME}/.oh-my-zsh"
+   install-dotfiles.rb                                                              # Symlink .zsh_plugins.txt and .zsh_plugins.zsh into ${ZDOTDIR}
+   brew install antidote                                                            # Install antidote (a zsh script, not a binary)
+   source "${HOMEBREW_PREFIX}/opt/antidote/share/antidote/antidote.zsh"             # Load the antidote function into the current shell
+   antidote bundle < "${ZDOTDIR}/.zsh_plugins.txt" > "${ZDOTDIR}/.zsh_plugins.zsh"  # Generate the static plugin bundle
+   launchctl unsetenv FPATH                                                         # One-time flush of the stale FPATH from the launchd user environment
+   delete_caches                                                                    # Clear stale .zwc bytecode and all generated cache files to pick up the typeset +x change
+   ```
+
+* Quit and restart the Terminal application (a full restart is required — sourcing in-place leaves old OMZ functions in memory).
+
 ### 3.0-17
 
 * *[files/--HOME--/.p10k.zsh (deleted), files/--XDG_CONFIG_HOME--/starship.toml (new), files/--HOME--/Brewfile, files/--ZDOTDIR--/.zshrc]* Replaced **powerlevel10k** with **Starship** as the prompt engine. Deleted `.p10k.zsh` and the OMZ p10k instant-prompt setup from `.zshrc`; added `starship.toml`; replaced `tap 'romkatv/powerlevel10k'` and `brew 'powerlevel10k'` with `brew 'starship'` in the Brewfile.

@@ -15,7 +15,8 @@ The meta script to setup the macos machine from a vanilla OS can be run using th
 export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true'; curl --retry 3 --retry-delay 5 -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh" | zsh; unset FIRST_INSTALL
 ```
 
-This script can be run in an idempotent manner, and will setup [oh-my-zsh](https://ohmyz.sh/), [homebrew](https://brew.sh), the dotfiles (this repo), etc. (There is 1 caveat though: on a fresh machine, this script silently fails after the first basic installation.)
+This script can be run in an idempotent manner, and will setup [antidote](https://antidote.sh/), [homebrew](https://brew.sh), the dotfiles (this repo), etc.
+
 All these scripts are optimized for fast loading of the shell so that the user can work almost immediately upon starting the app.
 
 **Important Note** After the above script has completed running successfully, you need to do the following *manually*
@@ -38,7 +39,7 @@ All these scripts are optimized for fast loading of the shell so that the user c
    * Search for 'Displays' and turn off 'Automatically adjust brightness'
    * Search for 'Control Centre' and turn off battery from showing in the Control Center (nice to have especially if you use the Stats app)
    * Search for 'Control Centre' and scroll down to 'Clock options' and change the built-in clock to show as analog to save horizontal space in the top menu bar
-   * Search for 'Full Disk Access' and add `iTerm', 'Terminal', 'zoom.us'
+   * Search for 'Full Disk Access' and add 'iTerm', 'Terminal', 'zoom.us'
    * Search for 'Keyboard' and enable Keyboard Navigation
    * Search for 'Camera' and add 'Brave', 'Firefox', 'Zen', 'zoom.us'
    * Search for 'Microphone' and add 'Brave', 'Firefox', 'Zen', 'zoom.us'

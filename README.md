@@ -28,9 +28,9 @@ All of the folder structures and the setup/backup operations are governed by the
 
 ## 🐚 Shell Configuration
 
-- **Oh My Zsh** — Zsh framework
+- **antidote** — Static zsh plugin manager
 - **Starship** — Modern cross-shell prompt
-- **Plugins** — autosuggestions, syntax highlighting
+- **Plugins** — autosuggestions, syntax highlighting, selected OMZ libs and plugins managed via [antidote](./files/--ZDOTDIR--/.zsh_plugins.txt)
 - **Aliases** — Convenient shortcuts and functions
 
 # 🛠️ How to adopt/customize the scripts to your own settings

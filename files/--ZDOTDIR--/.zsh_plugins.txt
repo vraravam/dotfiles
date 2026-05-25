@@ -1,0 +1,45 @@
+# file location: ${ZDOTDIR}/.zsh_plugins.txt
+#
+# Antidote plugin list (order matters for some of these).
+# Antidote reads this file and generates a static "${ANTIDOTE_PLUGIN_ZSH}" bundle.
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Oh-My-Zsh lib — only the pieces actually used; replaces loading all of OMZ
+#
+# functions.zsh must come first — provides env_default (used by misc.zsh) and
+# omz_urlencode (used by termsupport.zsh)
+# ──────────────────────────────────────────────────────────────────────────────
+ohmyzsh/ohmyzsh path:lib/functions.zsh
+ohmyzsh/ohmyzsh path:lib/completion.zsh
+ohmyzsh/ohmyzsh path:lib/correction.zsh
+ohmyzsh/ohmyzsh path:lib/key-bindings.zsh
+ohmyzsh/ohmyzsh path:lib/misc.zsh
+ohmyzsh/ohmyzsh path:lib/termsupport.zsh
+ohmyzsh/ohmyzsh path:lib/theme-and-appearance.zsh
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Oh-My-Zsh plugins — only the ones actively used
+# ──────────────────────────────────────────────────────────────────────────────
+ohmyzsh/ohmyzsh path:plugins/eza
+ohmyzsh/ohmyzsh path:plugins/git
+ohmyzsh/ohmyzsh path:plugins/iterm2
+ohmyzsh/ohmyzsh path:plugins/sudo
+ohmyzsh/ohmyzsh path:plugins/zbell
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Third-party plugins (previously cloned into ~/.oh-my-zsh/custom/plugins/)
+#
+# zsh-completions must come before compinit (loaded via fpath, not sourced directly)
+# ──────────────────────────────────────────────────────────────────────────────
+zsh-users/zsh-completions path:src kind:fpath
+
+# direnv hook — thin wrapper around 'eval "$(direnv export zsh)"'
+# mise is activated directly in .zshrc (the OMZ mise plugin referenced $ZSH_CACHE_DIR
+# which is undefined without OMZ, so it was replaced with a direct eval there)
+ohmyzsh/ohmyzsh path:plugins/direnv
+
+# Syntax highlighting must be loaded near-last (before autosuggestions)
+zdharma-continuum/fast-syntax-highlighting
+
+# Autosuggestions must be loaded last
+zsh-users/zsh-autosuggestions

@@ -21,101 +21,64 @@
 # execute 'ZSH_PROFILE_RC=true zsh -i -c exit' and run 'zprof' to get the details
 [[ -n "${ZSH_PROFILE_RC+1}" ]] && zmodload zsh/zprof
 
-type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
+# Faster than 'type is_shellrc_sourced &>/dev/null': no subshell, pure zsh builtin check.
+(( $+functions[is_shellrc_sourced] )) || source "${HOME}/.shellrc"
 
-# Initialize starship prompt.
-# Note: Must be initialized AFTER oh-my-zsh is loaded (see further below), so the actual
-# eval is deferred. We use a precmd hook approach via the oh-my-zsh sourcing below.
-# The eval line is placed after 'source oh-my-zsh.sh' further down in this file.
+# ──────────────────────────────────────────────────────────────────────────────
+# Antidote — static plugin bundle
+#
+# antidote is a zsh plugin manager distributed as a zsh script (not a binary).
+# It is sourced from the brew-installed path to make the 'antidote' function
+# available for 'antidote update' and 'antidote bundle' commands.
+# ──────────────────────────────────────────────────────────────────────────────
 
-# Path to your Oh My Zsh installation.
-export ZDOTDIR="${ZDOTDIR:-"${HOME}"}"
-export ZSH="${ZSH:-"${ZDOTDIR}/.oh-my-zsh"}"
-export ZSH_CUSTOM="${ZSH_CUSTOM:-"${ZSH}/custom"}"
+# Source antidote itself so the 'antidote' function is available (for update/bundle).
+# Guarded so a vanilla OS (before brew installs antidote) still works fine.
+#
+# Unset $ZSH and $ZSH_CUSTOM before sourcing so that the OMZ lib files loaded
+# via antidote can self-initialise them to their actual locations in the antidote
+# cache.
+# Without this, stale values left over from a prior OMZ install (e.g.
+# $ZSH=~/.oh-my-zsh, $ZSH_CUSTOM=~/.oh-my-zsh/custom) would be kept and OMZ
+# internals would silently break.
+unset ZSH ZSH_CUSTOM
+load_file_if_exists "${ANTIDOTE_ZSH}"
 
-# Set name of the theme to load --- if set to "random", it will
-# load a random theme each time Oh My Zsh is loaded, in which case,
-# to know which specific one was loaded, run: echo $RANDOM_THEME
-# See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
-# ZSH_THEME is intentionally unset — starship handles the prompt.
-# ZSH_THEME="robbyrussell"
-
-# Set list of themes to pick from when loading at random
-# Setting this variable when ZSH_THEME=random will cause zsh to load
-# a theme from this variable instead of looking in ${ZSH}/themes/
-# If set to an empty array, this variable will have no effect.
-# ZSH_THEME_RANDOM_CANDIDATES=( 'robbyrussell' 'agnoster' )
-
-# Uncomment the following line to use case-sensitive completion.
-# CASE_SENSITIVE="true"
-
-# Uncomment the following line to use hyphen-insensitive completion.
-# Case-sensitive completion must be off. _ and - will be interchangeable.
-# HYPHEN_INSENSITIVE="true"
-
-# Uncomment one of the following lines to change the auto-update behavior
-# zstyle ':omz:update' mode disabled  # disable automatic updates
-zstyle ':omz:update' mode auto      # update automatically without asking
-# zstyle ':omz:update' mode reminder  # just remind me to update when it's time
-
-# Uncomment the following line to change how often to auto-update (in days).
-# Note: Increased from 1 to 7 to avoid a daily git-based update check which adds ~10ms to startup
-zstyle ':omz:update' frequency 7
-
-# Skip compaudit (which checks for insecure completion directories) since it adds ~11ms to startup.
-# The check is unnecessary on a personal machine where you control all fpath directories.
-# ZSH_DISABLE_COMPFIX makes OMZ use 'compinit -u' instead of 'compinit -i', which still calls
-# compaudit internally. However, using -C (cache) flag entirely skips the scan when dump is fresh.
-ZSH_DISABLE_COMPFIX=true
-
-# Set plugin options that are needed before each plugin is loaded
+# zsh-autosuggestions — all options must be set before the antidote bundle is
+# sourced; the plugin reads them at load time.
+#
+# USE_ASYNC: fetch suggestions in a background zpty process so ZLE never blocks
+# while waiting for a history/completion lookup — directly reduces first-keystroke
+# and mid-typing latency.
+#
+# MANUAL_REBIND: skip the full ZLE widget rebind that autosuggestions performs on
+# every precmd call. Without this, every prompt incurs ~10-20ms of widget
+# re-registration. Widgets are bound once at plugin load and never touched again.
+#
+# BUFFER_MAX_SIZE: skip suggestion lookups when the command line exceeds this
+# length. Avoids expensive history DB scans for long one-liners where a
+# suggestion is rarely useful anyway.
+#
+# HISTORY_IGNORE: skip history entries longer than 100 chars. Reduces regex
+# matching cost on large history files — long entries (URLs, one-liners) are
+# almost never the intended suggestion target.
+#
+# STRATEGY=(history): use only the history strategy. The 'completion' strategy
+# spawns a zpty (pseudoterminal) on every suggestion request — ~10-30ms overhead
+# per lookup. History alone is faster and covers the vast majority of useful
+# suggestions; completion suggestions are better served by pressing Tab explicitly.
+export ZSH_AUTOSUGGEST_USE_ASYNC=1
+export ZSH_AUTOSUGGEST_MANUAL_REBIND=1
+export ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
+export ZSH_AUTOSUGGEST_HISTORY_IGNORE="?(#c100,)"
+export ZSH_AUTOSUGGEST_STRATEGY=(history)
+# eza plugin: enable icons
 zstyle ':omz:plugins:eza' 'icons' yes
-# zstyle ':omz:plugins:eza' 'git-status' no
-# zstyle ':omz:plugins:eza' 'header' no
-zstyle :omz:plugins:iterm2 shell-integration yes
-
-# Uncomment the following line if pasting URLs and other text is messed up.
-# DISABLE_MAGIC_FUNCTIONS="true"
-
-# Uncomment the following line to disable colors in ls.
-# DISABLE_LS_COLORS="true"
-
-# Uncomment the following line to disable auto-setting terminal title.
-# DISABLE_AUTO_TITLE="true"
-
-# Uncomment the following line to enable command auto-correction.
+# iterm2 plugin: enable shell integration
+zstyle ':omz:plugins:iterm2' shell-integration yes
+# correction: activated by lib/correction.zsh when ENABLE_CORRECTION is set
 export ENABLE_CORRECTION='true'
 
-# Uncomment the following line to display red dots whilst waiting for completion.
-# You can also set it to another string to have that shown instead of the default red dots.
-# e.g. COMPLETION_WAITING_DOTS="%F{yellow}waiting...%f"
-# Caution: this setting can cause issues with multiline prompts in zsh < 5.7.1 (see #5765)
-# COMPLETION_WAITING_DOTS="true"
-
-# Uncomment the following line if you want to disable marking untracked files
-# under VCS as dirty. This makes repository status check for large repositories
-# much, much faster.
-DISABLE_UNTRACKED_FILES_DIRTY='true'
-
-# Uncomment the following line if you want to change the command execution time
-# stamp shown in the history command output.
-# You can set one of the optional three formats:
-# "mm/dd/yyyy"|"dd.mm.yyyy"|"yyyy-mm-dd"
-# or set a custom format using the strftime function format specifications,
-# see 'man strftime' for details.
-# HIST_STAMPS="yyyy-mm-dd"
-
-# https://github.com/zsh-users/zsh-autosuggestions?tab=readme-ov-file#suggestion-strategy
-export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
-
-# Which plugins would you like to load?
-# Standard plugins can be found in ${ZSH}/plugins/
-# Custom plugins may be added to ${ZSH_CUSTOM}/plugins/
-# Example format: plugins=(rails git textmate ruby lighthouse)
-# Add wisely, as too many plugins slow down shell startup.
-plugins=(direnv eza fast-syntax-highlighting git iterm2 mise sudo zbell zsh-autosuggestions)
-
-# Note: Using 'brew' as an oh-my-zsh plugin causes the PATH to be incorrect. For eg, 'bash' gets resolved to '/bin/bash' (which comes default with the OS) rather than the one from homebrew.
 # Cache brew shellenv to avoid running the brew binary on every shell startup (it's slow due to Ruby startup).
 # The cache is invalidated when the brew binary itself changes (i.e. after brew upgrades).
 # The cache pre-evaluates path_helper so sourcing it is a pure-zsh operation (no subprocesses).
@@ -123,52 +86,97 @@ plugins=(direnv eza fast-syntax-highlighting git iterm2 mise sudo zbell zsh-auto
   local brew_bin="${HOMEBREW_PREFIX}/bin/brew"
   local cache_file="${XDG_CACHE_HOME}/brew-shellenv-cache.zsh"
   # Use the brew binary's modification time as cache key (no need to run brew at all for the check)
-  if [[ ! -f "${cache_file}" ]] || [[ "${brew_bin}" -nt "${cache_file}" ]]; then
+  if ! is_file "${cache_file}" || [[ "${brew_bin}" -nt "${cache_file}" ]]; then
     # Run brew shellenv in a subshell to get brew vars + path_helper result without polluting current PATH
-    local brew_path brew_cellar brew_repo brew_infopath brew_manpath brew_extra_path
+    local brew_cellar brew_repo brew_infopath brew_manpath brew_prefix
     eval "$("${brew_bin}" shellenv 2>/dev/null)"
+    brew_prefix="${HOMEBREW_PREFIX}"
     brew_cellar="${HOMEBREW_CELLAR}"
     brew_repo="${HOMEBREW_REPOSITORY}"
     brew_infopath="${INFOPATH}"
     brew_manpath="${MANPATH}"
-    # Capture only the homebrew-specific path prefix (path_helper result minus what was already in PATH)
     # Write a static cache: static exports + fpath update (no subprocess calls when cache is sourced)
     {
+      echo "export HOMEBREW_PREFIX='${brew_prefix}';"
       echo "export HOMEBREW_CELLAR='${brew_cellar}';"
       echo "export HOMEBREW_REPOSITORY='${brew_repo}';"
       echo "export INFOPATH='${brew_infopath}';"
       echo "export MANPATH='${brew_manpath}';"
-      echo "fpath=('/opt/homebrew/share/zsh/site-functions' \"\${fpath[@]}\"); export FPATH;"
+      # fpath assignment is sufficient — zsh keeps fpath and FPATH in sync automatically.
+      # Exporting FPATH leaks it into child processes and launchd user-session environment;
+      # typeset +x at the bottom of this file strips the export flag after all sources.
+      echo "fpath=('${brew_prefix}/share/zsh/site-functions' \"\${fpath[@]}\");"
     } >| "${cache_file}" 2>/dev/null
   fi
-  [[ -f "${cache_file}" ]] && source "${cache_file}"
+  load_file_if_exists "${cache_file}"
 }
-
-# according to https://github.com/zsh-users/zsh-completions/issues/603#issue-373185486, this can't be added as a plugin to omz for the fpath to work correctly
-append_to_fpath_if_dir_exists "${ZSH_CUSTOM}/plugins/zsh-completions/src"
 
 load_file_if_exists "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
 
-# Optimize compinit: override compinit to use '-C' flag (skip compaudit scan) when dump file exists.
-# OMZ calls compinit without '-C', causing a ~11ms compaudit filesystem scan every startup.
-# The '-C' flag is safe here because we control all fpath directories on this personal machine.
-# The override is removed after compinit runs so subsequent calls behave normally.
-function compinit() {
-  unfunction compinit  # remove override so the real compinit can be loaded
+# compinit: use -C (skip compaudit scan) when the dump file already exists,
+# saving ~11ms per startup. Safe on a personal machine where we control all
+# fpath directories. ZSH_COMPDUMP is set to XDG_CACHE_HOME to keep ~ clean.
+export ZSH_COMPDUMP="${XDG_CACHE_HOME}/zcompdump"
+() {
   autoload -Uz compinit
-  # If the dump file exists, use -C to skip compaudit; otherwise do a full init
-  local dump="${ZSH_COMPDUMP:-${ZDOTDIR:-$HOME}/.zcompdump}"
-  if [[ -f "$dump" ]]; then
-    compinit -C "$@"
+  if is_file "${ZSH_COMPDUMP}"; then
+    compinit -C -d "${ZSH_COMPDUMP}"
   else
-    compinit "$@"
+    compinit -d "${ZSH_COMPDUMP}"
   fi
 }
 
-load_file_if_exists "${ZSH}/oh-my-zsh.sh"
+# Source the pre-generated antidote static bundle.
+# On a vanilla OS (before brew installs antidote) this file is present because
+# it is checked into the home repo. No antidote binary is needed during the
+# shell startup.
+load_file_if_exists "${ANTIDOTE_PLUGIN_ZSH}"
 
-# Initialize starship prompt (must be after oh-my-zsh so it wins the PROMPT setup)
-command_exists starship && eval "$(starship init zsh)"
+# Activate mise — the OMZ mise plugin referenced $ZSH_CACHE_DIR (undefined without OMZ)
+# so it has been removed from .zsh_plugins.txt and replaced with a direct activation here.
+#
+# Performance optimisation — cache `mise activate zsh` output to avoid forking the mise
+# binary on every shell start (~5-10ms saving). Same pattern as the starship init cache
+# below. The cache is keyed on the mise binary mtime and regenerated only when mise itself
+# is updated (e.g. after `brew upgrade`).
+if command_exists mise; then
+  () {
+    local mise_bin="${commands[mise]}"
+    local cache="${XDG_CACHE_HOME}/mise-activate-cache.zsh"
+    if ! is_file "${cache}" || [[ "${mise_bin}" -nt "${cache}" ]]; then
+      mise activate zsh >| "${cache}" 2>/dev/null
+    fi
+    load_file_if_exists "${cache}"
+  }
+fi
+
+# Initialize starship prompt (must be after plugins so it wins the PROMPT setup).
+#
+# Performance optimisation — cache `starship init zsh` output to avoid forking a
+# subprocess on every shell start (~10-15ms saving).  The cache is keyed on the
+# starship binary mtime and regenerated only when starship itself is updated
+# (e.g. after `brew upgrade`).
+#
+# NOTE: Deferring the source of the cache via a precmd hook was attempted but
+# causes 'setopt promptsubst' (emitted by starship's init) to be scoped to the
+# precmd function and unset on return (due to 'setopt local_options' in .zshrc),
+# which leaves PROMPT as an unexpanded literal string after the first command.
+# The cache is therefore sourced directly at startup; the ~5ms cost of sourcing
+# the pre-parsed .zwc bytecode is acceptable.
+if command_exists starship; then
+  () {
+    # $commands[] is an O(1) zsh hash lookup — no subprocess fork needed.
+    local starship_bin="${commands[starship]}"
+    local cache="${XDG_CACHE_HOME}/starship-init-cache.zsh"
+    # Regenerate the cache only when the starship binary is newer than the cache file.
+    if ! is_file "${cache}" || [[ "${starship_bin}" -nt "${cache}" ]]; then
+      starship init zsh >| "${cache}" 2>/dev/null
+    fi
+    # Source directly at the top level (not deferred) so that 'setopt promptsubst'
+    # emitted by the cache takes effect globally and is not scoped to a function.
+    load_file_if_exists "${cache}"
+  }
+fi
 
 # User configuration
 # export MANPATH="/usr/local/man${MANPATH+:$MANPATH}"
@@ -184,8 +192,9 @@ else
   # Preferred editor for local sessions
   local preferred_editors=('zed --wait' 'code --wait' 'vi')
   for editor in "${preferred_editors[@]}"; do
-    # Take only the first word as the name to test for existence of the executable
-    if command_exists "$(extract_first_word "${editor}")"; then
+    # ${editor%% *} strips everything after the first space — pure zsh, no fork.
+    # Equivalent to extract_first_word but avoids a subshell invocation.
+    if command_exists "${editor%% *}"; then
       export EDITOR="${editor}"
       break
     fi
@@ -193,17 +202,7 @@ else
   unset preferred_editors
 fi
 
-# Set personal aliases, overriding those provided by Oh My Zsh libs,
-# plugins, and themes. Aliases can be placed here, though Oh My Zsh
-# users are encouraged to define aliases within a top-level file in
-# the ${ZSH_CUSTOM} folder, with .zsh extension. Examples:
-# - ${ZSH_CUSTOM}/aliases.zsh
-# - ${ZSH_CUSTOM}/macos.zsh
 # For a full list of active aliases, run `alias`.
-#
-# Example aliases
-# alias zshconfig="${EDITOR} ${ZDOTDIR}/.zshrc"
-# alias ohmyzsh="${EDITOR} ${ZSH}"
 
 # setup paths in the beginning so that all other conditions work correctly
 append_to_path_if_dir_exists "${PERSONAL_BIN_DIR}"
@@ -252,8 +251,9 @@ if is_macos; then
   setopt pushd_silent             # do not print the directory stack after pushd or popd
   setopt share_history            # share history between different instances of the shell
 
-  # console colors
-  autoload -Uz colors && colors
+  # Note: 'autoload -Uz colors && colors' was removed — none of the active plugins
+  # use $fg/$bg/$color from the colors function. Our own color vars ($BLUE, $RED, etc.)
+  # are defined as $'\e[...' literals in .shellrc and don't depend on colors.
 
   # colorize completion
   # zstyle ':completion:*:*:kill:*:processes' list-colors "=(#b) #([0-9]#)*=$color[cyan]=$color[red]"
@@ -378,9 +378,12 @@ if is_directory "${XDG_CONFIG_HOME}/zsh"; then
 
   # Dynamically autoload all files in the custom zsh functions directory.
   # Assumes the filename is the function name.
+  # :t extracts the basename — autoload expects the function name, not the full
+  # path; passing the full path would define a function named e.g.
+  # '~/.config/zsh/myfunc' which can never be invoked by short name.
   local func_file
   for func_file in "${XDG_CONFIG_HOME}"/zsh/*(N); do
-    autoload -Uz "${func_file}"
+    autoload -Uz "${func_file:t}"
   done
   unset func_file
 fi
@@ -400,9 +403,13 @@ manpath=( "${manpath[@]:#}" )
 # remove duplicates from some env vars
 typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPATH manpath PATH path PKG_CONFIG_PATH
 
-# Use modern completion system (needs to be run AFTER some zstyle defns and setting up of *paths; usually a good idea to do so after all of them)
-# Note: compinit is already called by oh-my-zsh.sh above. This call was redundant and added an extra ~11ms (compaudit) on startup.
-# autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}" &>/dev/null || true
+# fpath/FPATH and cdpath/CDPATH must NOT be exported — both are zsh-internal variables
+# (autoload search path and cd search path respectively). Exporting them causes their
+# contents to leak into child processes and persist in the macOS launchd user-session
+# environment, where they are inherited by every new shell before any rc file runs.
+# All other *path vars on line 367 (PATH, MANPATH, INFOPATH, CPPFLAGS, LDFLAGS,
+# PKG_CONFIG_PATH) are intentionally exported — child processes need them.
+typeset +x FPATH fpath cdpath CDPATH
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
 # execute 'ZSH_PROFILE_RC=true zsh' and run 'zprof' to get the details
