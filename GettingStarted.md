@@ -12,7 +12,7 @@ On your local machine:
 The meta script to setup the macos machine from a vanilla OS can be run using the following command:
 
 ```zsh
-export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true'; curl --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh" | zsh; unset FIRST_INSTALL
+export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true'; curl --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh" | zsh 2>&1 | tee "${HOME}/fresh-install-of-osx.log"; unset FIRST_INSTALL
 ```
 
 This script can be run in an idempotent manner, and will setup [antidote](https://antidote.sh/), [homebrew](https://brew.sh), the dotfiles (this repo), etc.

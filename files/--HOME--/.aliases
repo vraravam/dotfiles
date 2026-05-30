@@ -21,7 +21,7 @@ is_aliases_sourced() {
 }
 
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
-[[ -n "${DEBUG+1}" ]] && echo "loading ${0}"
+[[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
 
 # Re-source guard is inside .shellrc itself — safe to call unconditionally.
 source "${HOME}/.shellrc"
@@ -121,8 +121,8 @@ EOF
 require_env_var() {
   local var_name
   for var_name in "$@"; do
-    if [[ -z "${(P)var_name:-}" ]]; then
-      echo "Error: ${var_name} must be set (source ~/.aliases first)" >&2
+    if is_zero_string "${(P)var_name:-}"; then
+      warn "${var_name} must be set (source ~/.aliases first)"
       return 1
     fi
   done
@@ -181,7 +181,7 @@ if command_exists 'run-all.sh'; then
 
     if ((force))   || ! is_file "${repo_alias_cache}" || [[ "${PROJECTS_BASE_DIR}" -nt "${repo_alias_cache}" ]]; then
       ((force))     && info "Regenerating repo aliases cache..."
-      ((!force))    && [[ -n "${DEBUG+1}" ]] && debug "Regenerating repo aliases cache (stale or missing)"
+      ((!force))    && [[ -n "${DEBUG:-}" ]] && debug "Regenerating repo aliases cache (stale or missing)"
 
       local -A seen_parent_folders
       local -a parent_folders
@@ -190,7 +190,7 @@ if command_exists 'run-all.sh'; then
       while IFS= read -r p; do
         local ancestor="${p:h:h}" # parent of .git = repo root; parent of that = first ancestor to check
         while [[ "${ancestor}" != "${PROJECTS_BASE_DIR}" && "${ancestor}" != "/" ]]; do
-          if is_zero_string "${seen_parent_folders[$ancestor]}"; then
+          if is_zero_string "${seen_parent_folders[$ancestor]:-}"; then
             seen_parent_folders[$ancestor]=1
             parent_folders+=("${ancestor}")
           fi
@@ -260,7 +260,7 @@ resurrect_tracked_repos() {
     done
     success 'Successfully resurrected all tracked git repos'
   else
-    warn "Skipping resurrecting of repositories since '$(yellow "${PERSONAL_CONFIGS_DIR}")' doesn't exist"
+    debug "Skipping resurrecting of repositories since '$(yellow "${PERSONAL_CONFIGS_DIR}")' doesn't exist"
   fi
 
   # post-clone operations for installing system dependencies
@@ -289,7 +289,7 @@ resurrect_tracked_repos() {
 # Respects FIRST_INSTALL (caps search depth to 3 to speed up vanilla-OS runs).
 _collect_repo_ancestor_dirs() {
   local find_maxdepth=6
-  is_non_zero_string "${FIRST_INSTALL:-}" && find_maxdepth=3
+  is_first_install && find_maxdepth=3
 
   local -A _seen_dirs=()
   all_dirs=()
@@ -313,7 +313,7 @@ _collect_repo_ancestor_dirs() {
 install_mise_versions() {
   section_header2 "$(yellow 'Installing mise in all git repos and ancestors')"
   if ! command_exists mise; then
-    warn "Couldn't find 'mise' in the PATH; Skipping loading any mise configs"
+    debug "Couldn't find 'mise' in the PATH; Skipping loading any mise configs"
     return 0
   fi
 
@@ -345,7 +345,7 @@ install_mise_versions() {
     # Use pre-increment: ((++idx)) evaluates to the incremented value (1 on first use),
     # so it always exits 0. ((idx++)) evaluates to the pre-increment value (0 on first
     # use), which exits 1 in zsh arithmetic and spuriously fires the ERR trap.
-    (( ++idx ))
+    ((++idx))
     if mise -C "${dir}" install --dry-run-code &>/dev/null; then
       debug "[${idx}/${total}] '$(cyan "${dir}")' — all tools already installed"
       continue
@@ -362,7 +362,7 @@ install_mise_versions() {
 allow_all_direnv_configs() {
   section_header2 "$(yellow 'Allowing direnv configs in all git repos and ancestors')"
   if ! command_exists direnv; then
-    warn "Couldn't find 'direnv' in the PATH; Skipping allowing any direnv configs"
+    debug "Couldn't find 'direnv' in the PATH; Skipping allowing any direnv configs"
     return 0
   fi
 
@@ -391,7 +391,7 @@ allow_all_direnv_configs() {
     # Use pre-increment: ((++idx)) evaluates to the incremented value (1 on first use),
     # so it always exits 0. ((idx++)) evaluates to the pre-increment value (0 on first
     # use), which exits 1 in zsh arithmetic and spuriously fires the ERR trap.
-    (( ++idx ))
+    ((++idx))
     info "[${idx}/${total}] allowing direnv for '$(cyan "${dir}")'"
     if direnv allow "${dir}"; then
       success "Successfully allowed direnv for '$(yellow "${dir}")'"
@@ -450,7 +450,7 @@ if is_macos; then
       # Check whether this domain is on the denied list before appending.
       # grep -Fxq: fixed-string, whole-line, quiet — no subprocess output.
       if grep -Fxq "${field}" "${denied_list_file}" 2>/dev/null; then
-        warn "Skipping '$(yellow "${field}")' — it is on the denied list (machine-specific data; see capture-prefs-denied-list.txt)"
+        debug "Skipping '$(yellow "${field}")' — it is on the denied list (machine-specific data; see capture-prefs-denied-list.txt)"
       else
         print -- "${field}" >>"${allowed_list_file}"
       fi
@@ -480,7 +480,8 @@ if is_macos && command_exists brew; then
         # Run antidote command in a clean zsh subshell — no .zshrc, no extended_glob,
         # no color variables. This prevents ANSI escape sequences from being
         # misinterpreted as glob patterns inside antidote's internal eval calls.
-        zsh -f -c 'source "$1"; antidote update' -- "${ANTIDOTE_ZSH}"
+        zsh -f -c 'source "$1"; antidote update' -- "${ANTIDOTE_ZSH}" ||
+          _record_warning 'antidote update failed'
         # antidote clones with --depth 1 (shallow). Convert each bundle to a full clone
         # immediately after update so subsequent runs take the normal fetch path and never
         # trigger --unshallow again (which fails on large repos like ohmyzsh).
@@ -501,7 +502,7 @@ if is_macos && command_exists brew; then
         success "antidote bundle regenerated at '$(yellow "${ANTIDOTE_PLUGIN_ZSH}")'" ||
         warn 'Failed to regenerate antidote bundle'
     else
-      warn "Skipping antidote bundle regeneration: antidote not found at '$(yellow "${ANTIDOTE_ZSH}")' or '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is missing"
+      debug "Skipping antidote bundle regeneration: antidote not found at '$(yellow "${ANTIDOTE_ZSH}")' or '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is missing"
     fi
   }
 
@@ -576,7 +577,7 @@ pdf_to_png() {
   fi
 
   if ! command_exists magick; then
-    warn 'Install imagemagick first!'
+    user_action 'Install imagemagick first!'
     return 0 # Success, nothing to do
   fi
 
@@ -658,9 +659,9 @@ fi
 # after the dotfiles repo has been cloned and the full shell environment is set
 # up (i.e. from within an interactive shell or late in fresh-install-of-osx.sh).
 #
-# The lower-level primitives (CRON_BACKUP_FILE, restore_cron, suspend_cron,
+# The lower-level primitives (_DOTFILES_CRON_BACKUP_FILE, restore_cron, suspend_cron,
 # resume_cron) live in .shellrc so they are available the moment .shellrc is
-# sourced, well before the dotfiles repo exists.  See section 1g in .shellrc.
+# sourced, well before the dotfiles repo exists.  See section 1h in .shellrc.
 # --------------------------------------------------------------------------
 
 # Internal: seeds crontab.txt at $1 with the standard env header and the
@@ -723,7 +724,7 @@ with_cron_suspended() {
   suspend_cron
   "${fn}" "$@"
   recron
-  rm -f "${CRON_BACKUP_FILE}"
+  rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
   trap - EXIT
 }
 
@@ -742,8 +743,8 @@ ensure_keybase_logged_in() {
   # Note: avoid `keybase status | grep -q` under set -o pipefail — grep -q exits after
   # the first match, sending SIGPIPE to keybase (exit 141); pipefail surfaces that
   # instead of grep's 0, inverting the condition. $() buffers all output first, avoiding SIGPIPE.
-  if [[ -n "$(keybase status --json 2>/dev/null | \grep '"logged_in":true')" ]]; then
-    warn "Skipping keybase login since '$(yellow "${KEYBASE_USERNAME}")' is already logged in"
+  if is_non_zero_string "$(keybase status --json 2>/dev/null | \grep '"logged_in":true')"; then
+    debug "Skipping keybase login since '$(yellow "${KEYBASE_USERNAME}")' is already logged in"
   elif ! keybase login; then
     error 'Could not login into keybase. Retry after logging in.'
     return 1

@@ -8,10 +8,8 @@
 
 set -euo pipefail
 
-# Re-source guard is inside .aliases itself — safe to call unconditionally.
-# Sourcing .aliases also brings in .shellrc (which .aliases sources internally).
-source "${HOME}/.aliases"
 _SCRIPT_NAME="${0:t}"
+source "${HOME}/.aliases"
 
 usage() {
   print_usage "${1}" \
@@ -21,18 +19,23 @@ usage() {
     "   eg: $(cyan "-d \${PERSONAL_PROFILES_DIR}")  (will push to $(yellow "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")"))"
 }
 
-# Trap handler: on any exit, restore cron from backup if CRON_BACKUP_FILE is present.
-# On the success path, CRON_BACKUP_FILE is removed before recron runs, so resume_cron becomes a no-op here.
+# Trap handler: on any exit, restore cron from backup if _DOTFILES_CRON_BACKUP_FILE is present.
+# On the success path, _DOTFILES_CRON_BACKUP_FILE is removed before recron runs, so resume_cron becomes a no-op here.
 # On the failure path, resume_cron restores from the backup saved by suspend_cron.
 _cleanup_recreate() {
   local exit_code=$?
   [[ ${exit_code} -ne 0 ]] && warn "Script exited with error code ${exit_code}."
   resume_cron
+  _decrement_script_depth
 }
 
 main() {
   local force=N
   local folder=''
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
   while getopts ":fd:" opt; do
     case ${opt} in
       f)
@@ -44,18 +47,21 @@ main() {
       \?)
         warn "-${OPTARG} is not a valid option"
         usage "${_SCRIPT_NAME}"
+        return 1
         ;;
       :)
         warn "-${OPTARG} requires an argument"
         usage "${_SCRIPT_NAME}"
+        return 1
         ;;
     esac
   done
   shift $((OPTIND - 1))
 
   if is_zero_string "${folder}"; then
-    warn "Missing required arguments/switches"
+    warn 'Missing required arguments/switches'
     usage "${_SCRIPT_NAME}"
+    return 1
   fi
 
   folder="$(strip_trailing_slash "${folder}")"
@@ -68,7 +74,10 @@ main() {
   section_header "$(yellow 'Processing folder'): '$(cyan "${folder}")'"
   info "$(yellow 'Squash commits (will lose history!)'): '$(cyan "${force}")'"
 
-  # Suspend cron while this script is running; the trap restores it on failure, recron regenerates it on success.
+  # Suspend cron while this script is running. with_cron_suspended is not used
+  # here because _cleanup_recreate (the EXIT trap) also logs the exit code —
+  # the wrapper's standard 'trap resume_cron EXIT' cannot substitute for that.
+  # The trap restores cron on failure; recron regenerates it on success.
   suspend_cron
   trap _cleanup_recreate EXIT
 
@@ -106,8 +115,8 @@ main() {
     git -C "${folder}" init --ref-format=reftable .
 
     git -C "${folder}" remote add origin "${git_url}"
-    is_non_zero_string "${git_user_name}"  && git -C "${folder}" config user.name "${git_user_name}"
-    is_non_zero_string "${git_user_email}" && git -C "${folder}" config user.email "${git_user_email}"
+    if is_non_zero_string "${git_user_name}"; then git -C "${folder}" config user.name "${git_user_name}"; fi
+    if is_non_zero_string "${git_user_email}"; then git -C "${folder}" config user.email "${git_user_email}"; fi
 
     rm -f "${folder}/.git/index.lock"
     git -C "${folder}" add -A .
@@ -132,7 +141,7 @@ main() {
     # ${${git_url%/}##*/} strips trailing slash then everything up to the last slash —
     # pure-zsh equivalent of basename, no extract_last_segment subshell call.
     git_remote_repo_name="${${git_url%\/}##*/}"
-    keybase git delete -f "${git_remote_repo_name}" || warn "Failed to delete keybase repo '${git_remote_repo_name}' (it might not exist)"
+    keybase git delete -f "${git_remote_repo_name}" || _record_warning "Failed to delete keybase repo '${git_remote_repo_name}' (it might not exist)"
     keybase git create "${git_remote_repo_name}" || error "Failed to create keybase repo '${git_remote_repo_name}'"
   fi
 
@@ -146,8 +155,9 @@ main() {
   # Regenerate crontab after this script finishes.
   # Clear the backup first so the EXIT trap (_cleanup_recreate -> resume_cron) becomes a no-op.
   load_zsh_configs
-  rm -f "${CRON_BACKUP_FILE}"
+  rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
   recron
+  print_script_summary
 }
 
 main "$@"

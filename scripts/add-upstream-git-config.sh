@@ -7,8 +7,8 @@
 
 set -euo pipefail
 
-source "${HOME}/.shellrc"
 _SCRIPT_NAME="${0:t}"
+source "${HOME}/.shellrc"
 
 usage() {
   print_usage "${1}" \
@@ -19,7 +19,11 @@ usage() {
 main() {
   local target_folder=''
   local upstream_repo_owner=''
-
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  trap '_decrement_script_depth' EXIT
   while getopts ":d:u:" opt; do
     case ${opt} in
       d)
@@ -31,10 +35,12 @@ main() {
       \?)
         warn "-${OPTARG} is not a valid option"
         usage "${_SCRIPT_NAME}"
+        return 1
         ;;
       :)
         warn "-${OPTARG} requires an argument"
         usage "${_SCRIPT_NAME}"
+        return 1
         ;;
     esac
   done
@@ -43,12 +49,13 @@ main() {
   if is_zero_string "${target_folder}" || is_zero_string "${upstream_repo_owner}"; then
     warn "Missing required arguments/switches"
     usage "${_SCRIPT_NAME}"
+    return 1
   fi
 
   debug "$(yellow 'Adding new upstream to'): '$(purple "${target_folder}")'"
 
   if ! is_git_repo "${target_folder}"; then
-    warn "'$(yellow "${target_folder}")' is not a git repo; Skipping!!!"
+    info "'$(yellow "${target_folder}")' is not a git repo — skipping."
     return 0 # Success, nothing to do
   fi
 
@@ -56,7 +63,7 @@ main() {
   local existing_upstream
   existing_upstream="$(get_git_config_value remote.upstream.url "${target_folder}")"
   if is_non_zero_string "${existing_upstream}"; then
-    warn "Remote 'upstream' already exists for the repo in '$(yellow "${target_folder}")': '$(yellow "${existing_upstream}")'"
+    info "Remote 'upstream' already exists for the repo in '$(yellow "${target_folder}")': '$(yellow "${existing_upstream}")' — skipping."
     return 0 # Success, nothing to do
   fi
 
@@ -64,7 +71,8 @@ main() {
   local origin_remote_url
   origin_remote_url="$(get_git_config_value remote.origin.url "${target_folder}")"
   if is_zero_string "${origin_remote_url}"; then
-    error "Could not retrieve URL for remote 'origin' in '$(yellow "${target_folder}")'. Does the remote exist?"
+    _record_error "Could not retrieve URL for remote 'origin' in '$(yellow "${target_folder}")'. Does the remote exist?"
+    print_script_summary
     return 1
   fi
 
@@ -87,7 +95,8 @@ main() {
     [[ "${origin_remote_url}" =~ ^http:// ]] && protocol='http'
     new_repo_url="${protocol}://${host}/${upstream_repo_owner}/${repo_path}"
   else
-    error "Cannot parse origin remote URL format: $(yellow "${origin_remote_url}")"
+    _record_error "Cannot parse origin remote URL format: $(yellow "${origin_remote_url}")"
+    print_script_summary
     return 1
   fi
   # Ensure .git suffix for consistency when reconstructing
@@ -95,21 +104,22 @@ main() {
 
   # Check if the owners are the same
   if [[ "${cloned_repo_owner}" == "${upstream_repo_owner}" ]]; then
-    warn "Origin owner ('$(yellow "${cloned_repo_owner}")') and upstream owner ('$(yellow "${upstream_repo_owner}")') are the same. No change needed for repo in '$(yellow "${target_folder}")'."
+    info "Origin owner ('$(yellow "${cloned_repo_owner}")') and upstream owner ('$(yellow "${upstream_repo_owner}")') are the same — no change needed for repo in '$(yellow "${target_folder}")'."
     return 0 # Exit successfully, no action needed
   fi
 
   # Add the upstream remote
   if ! git -C "${target_folder}" remote add upstream "${new_repo_url}"; then
-    error "Failed to add upstream remote '$(yellow "${new_repo_url}")'"
+    _record_error "Failed to add upstream remote '$(yellow "${new_repo_url}")'"
   fi
 
   # Fetch all remotes, unshallowing if needed (covers the newly added upstream and origin)
   if ! git -C "${target_folder}" fetch-unshallow; then
-    error "Failed to fetch upstream remote '$(yellow "${new_repo_url}")' after adding it."
+    _record_error "Failed to fetch upstream remote '$(yellow "${new_repo_url}")' after adding it."
   fi
 
   success "Successfully added and fetched upstream remote '$(yellow "${new_repo_url}")' to repo in '$(yellow "${target_folder}")'"
+  print_script_summary
 }
 
 main "$@"

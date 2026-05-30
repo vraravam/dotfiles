@@ -179,7 +179,7 @@ Fresh install uses `suspend_cron` / `resume_cron` to avoid cron conflicts.
 These functions are in `.shellrc` (not `.aliases`) so they are available before
 the dotfiles repo is cloned.
 
-The error trap must call `resume_cron` if `CRON_BACKUP_FILE` exists.
+The error trap must call `resume_cron` if `_DOTFILES_CRON_BACKUP_FILE` exists.
 
 ## Keybase Functions
 

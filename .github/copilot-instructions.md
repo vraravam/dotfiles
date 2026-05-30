@@ -82,11 +82,37 @@ the tradeoff in a comment when they conflict.
    `(( $+functions[...] ))`, `${(j::)arr}`, etc.) and document why the
    zsh-specific syntax was chosen.
 
-Note: 
-1. Priorities 3 and 4 only apply to zsh scripts. `.envrc` files are
-evaluated by direnv in a bash subshell and must use POSIX syntax exclusively.
-2. Similarly, the git aliases section might use sh or bash and should be
-POSIX syntax exclusively.
+Note:
+- Priorities 3 and 4 only apply to zsh scripts. `.envrc` files are
+  evaluated by direnv in a bash subshell and must use POSIX syntax exclusively.
+- Similarly, git alias bodies use `sh` or `bash` and must use POSIX syntax.
+
+## Four-Context Validation
+
+Before suggesting or applying any shell construct, variable, or function, verify
+it works correctly in **all four execution contexts**. A suggestion that fails in
+any one of them is not acceptable.
+
+| Context | Description |
+|---|---|
+| **Vanilla OS (pre-`.shellrc`)** | A fresh macOS before `fresh-install-of-osx.sh` has downloaded and sourced `.shellrc`; no utility functions, no Homebrew, no dotfiles symlinks. Only `/bin/zsh` builtins and hardcoded system paths are available. |
+| **Bash / direnv subshell** | `.envrc` evaluated by direnv in bash; `.shellrc` is sourced but zsh-only syntax must not appear at the top level of `.shellrc`. Only POSIX constructs are safe. |
+| **Zsh script / cron** | A `#!/usr/bin/env zsh` script run non-interactively; `.shellrc` may or may not be sourced depending on the script. `$0` is the script name, not `zsh`. |
+| **Interactive zsh** | A normal terminal session; `.shellrc` and `.aliases` are fully loaded. |
+
+Common failure patterns to check:
+
+- **Shell detection**: use `[[ -n "${ZSH_VERSION-}" ]]` — works in all four contexts.
+  `is_zsh` (once defined) delegates to this. Never use `[[ "${0}" =~ 'zsh' ]]` —
+  `$0` is the script name in cron/scripts, not the interpreter name.
+- **Utility functions** (`is_file`, `is_zero_string`, `has_sudo_credentials`, etc.):
+  only available after `.shellrc` is sourced. Not safe in vanilla OS pre-bootstrap
+  code or in bash contexts that have not sourced `.shellrc`.
+- **Zsh-only syntax** (`(( $+functions[...] ))`, `${(j::)arr}`, `typeset -A`):
+  causes a syntax error in bash. Must be guarded with `[[ -n "${ZSH_VERSION-}" ]]`
+  anywhere `.shellrc` may be sourced from bash (e.g. `.envrc`).
+- **`$0` for interpreter detection**: unreliable in scripts and cron — use
+  `ZSH_VERSION` instead.
 
 ---
 
@@ -165,8 +191,6 @@ Avoid the temptation to put convenience functions in `.shellrc` just because
 unnecessarily increases the payload of the initial `curl` download on a vanilla
 OS and adds to shell startup time.
 
-
-
 Guards that belong inside a single function/file must NOT be repeated across
 multiple files. Example: the re-source guard for `.shellrc` is implemented
 **inside** `.shellrc` itself (sentinel function `is_shellrc_sourced`). All
@@ -187,6 +211,44 @@ functions:
   internally), source `.aliases`.
 - Never source `.aliases` AND `.shellrc` in the same script — `.aliases`
   already sources `.shellrc`.
+
+---
+
+## Global State Variable Naming Conventions
+
+Variables that form the shared-state backbone of `.shellrc` and the scripts
+that source it follow a three-tier naming convention. The tier is determined
+by how the variable is scoped and whether it is exported.
+
+| Tier | Pattern | Examples | Declared with |
+|------|---------|----------|---------------|
+| Exported internal infrastructure | `_DOTFILES_*` ALL_CAPS | `_DOTFILES_CRON_BACKUP_FILE`, `_DOTFILES_SCRIPT_DEPTH` | `export VAR=…` |
+| Non-exported global (lives in `.shellrc`, process-wide) | `_lowercase` with `_` prefix | `_script_start_times`, `_step_start_times` | `typeset -a VAR=()` |
+| Dynamically-scoped "locals" (declared in `main()`, read by callees) | `_lowercase` with `_` prefix | `_step_warnings`, `_step_errors`, `_current_section` | `local -a VAR` or `local VAR` in `main()` |
+
+The last two tiers share the same prefix to signal "internal/private". The
+declaration context (`typeset -a` at file scope vs. `local` inside `main()`)
+and surrounding comments distinguish them — no additional naming difference is
+needed.
+
+Rules:
+- **Never use plain `ALL_CAPS` for internal infrastructure** — bare `ALL_CAPS`
+  without the `_DOTFILES_` prefix looks like a user-visible exported variable
+  and conflicts with conventional shell env var naming.
+- **Never use `_DOTFILES_` for non-exported variables** — the `_DOTFILES_`
+  prefix implies exported, process-wide state; using it for a `typeset -a`
+  global or a `local` inside a function is misleading.
+- **Exported internal vars must use `export`** — they are inherited by
+  subprocess scripts (e.g. `_DOTFILES_SCRIPT_DEPTH`) and by ERR/EXIT trap
+  handlers that run before `.shellrc` is re-sourced.
+
+**Exception — module-level cross-function state**: `_SHARED_REPO_DIRS` (in
+`.aliases`) is set *inside* a function and persists until explicitly `unset`.
+It follows the `_lowercase` prefix convention but is neither a `typeset -a`
+file-scope global nor a `local` — it is intentionally process-wide for the
+duration of a single logical operation. This pattern is reserved for expensive
+shared state (e.g. a `find` traversal result) that multiple sibling functions
+need to consume. Always `unset` at the end of the owning function.
 
 ---
 
@@ -225,7 +287,7 @@ inline equivalents:
 |----------|---------|
 | `is_directory_empty "$x"` | True if directory exists and contains no entries |
 | `command_exists "$x"` | True if `$x` exists as a command, function, alias, or builtin (checks 4 hash tables) |
-| `is_running_in_tty` | True if stdout is a TTY or `FORCE_COLOR` is set (allows color output in CI/direnv) |
+| `is_running_in_tty` | True if stdin is a TTY (`[[ -t 0 ]]`) or `FORCE_COLOR` is set (allows color output in CI/direnv) |
 | `is_zsh` | True when running inside zsh (guards zsh-only code in files sourced by bash) |
 | `is_macos` / `is_linux` | OS detection — use instead of `uname` subshell forks |
 | `is_arm` | True on Apple Silicon — uses `$ARCH`, no subshell |
@@ -254,6 +316,86 @@ Use the logging functions from `.shellrc` (`info`, `success`, `warn`, `error`,
 Color functions apply `${1//${HOME}/~}` inline (no subshell fork). Logging
 functions do NOT apply the substitution themselves — it happens inside the color
 functions they call.
+
+### Deferred Error/Warning Collection Pattern
+
+Shell scripts that use `_record_error` / `_record_warning` + `print_script_summary`
+must declare three locals, increment the depth counter, and register the decrement
+trap at the top of `main()`:
+
+```zsh
+main() {
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  trap '_decrement_script_depth' EXIT   # chain into existing EXIT trap if one is set later
+  ...
+}
+```
+
+The decrement trap ensures `_DOTFILES_SCRIPT_DEPTH` is restored on both clean and
+error exits. `is_outermost_script` (shell) / `outermost_script?` (Ruby) check
+`depth <= 1`; `print_script_start` and `print_script_summary` call this predicate
+and return early when depth > 1, so only the outermost script prints banners and
+the final summary. See `TechnicalDeepDive.md` § 6 for the full rationale.
+
+Each entry is prefixed with `[_SCRIPT_NAME][_current_section]` for traceability.
+`print_script_summary` reads `_SCRIPT_NAME` via dynamic scoping — no argument needed.
+
+The Ruby equivalent uses `Logging.record_warning`, `Logging.record_error`,
+`Logging.current_section=`, and `Logging.print_script_summary(start_time)` — see
+`ruby-scripting.instructions.md` § **Deferred error/warning collection**.
+`print_script_summary` accepts an optional `start_time` (Unix epoch from
+`print_script_start`) and calls `print_script_duration` internally — no separate
+call needed. Omit the argument only on early-exit paths inside methods that
+cannot access the top-level `start_time` local.
+
+`print_script_summary` sends a macOS notification when `_step_errors` or
+`_step_warnings` is non-empty (shell only — Ruby omits `osascript`). This makes
+the choice of `_record_error` vs `warn` consequential:
+
+#### Arg-parse failures — `warn` + `usage` + `return 1`
+
+**Never** use `_record_error` / `print_script_summary` for argument-parsing
+failures (bad flag, missing required flag/arg). Use `warn` + `usage` + `return 1`
+directly. Sending a notification because the user mistyped a flag is poor UX.
+
+```zsh
+# getopts cases
+:) warn "Option -${OPTARG} requires an argument."; usage "${_SCRIPT_NAME}"; return 1 ;;
+?) warn "Unknown option: -${OPTARG}";              usage "${_SCRIPT_NAME}"; return 1 ;;
+
+# Missing required positional/flag
+if is_zero_string "${folder}"; then
+  warn 'Missing required arguments/switches'
+  usage "${_SCRIPT_NAME}"
+  return 1
+fi
+```
+
+#### Runtime preconditions — `_record_error` + `print_script_summary` + `return 1`
+
+Use `_record_error` for failures that occur **after** arg-parsing succeeds:
+missing env vars, missing files, failed remote lookups, etc. These represent
+unexpected environment problems the user should be notified about.
+
+```zsh
+if is_zero_string "${PERSONAL_CONFIGS_DIR}"; then
+  _record_error "Required env var '$(yellow 'PERSONAL_CONFIGS_DIR')' is not defined."
+  print_script_summary
+  return 1
+fi
+```
+
+#### `-h` / `--help` path — `return 0` directly
+
+Never call `print_script_summary` on the help path. With empty error/warning
+arrays it would print a spurious success summary.
+
+```zsh
+h) usage "${_SCRIPT_NAME}"; return 0 ;;
+```
 
 ### `set -euo pipefail`
 
@@ -349,6 +491,28 @@ with Ruby 2.6. Do NOT use homebrew-managed Ruby for `$DOTFILES_DIR` scripts.
   into home git repo; source with `load_file_if_exists`; run `antidote bundle`
   in `zsh --no-rcs -c "..."` to avoid ANSI leaks; guard `--unshallow`.
 - Path arrays (`fpath`, `path`, etc.) use `typeset +x` — not `export`.
+- **`load_zsh_configs` uses `${ZDOTDIR}`**: safe to use because the function is
+  defined inside `.shellrc`, which initialises `ZDOTDIR` unconditionally at its
+  own line 38 (`export ZDOTDIR="${ZDOTDIR:-"${HOME}"}"`) before the function
+  definition. `ZDOTDIR` is therefore always set correctly by the time
+  `load_zsh_configs` can be called — even in cron or fresh-install subshell
+  contexts where `.zshenv` has not been sourced.
+- **`load_zsh_configs` not always needed in cron**: only call when the script
+  needs `.zshrc`-defined vars/functions (e.g. `PROJECTS_BASE_DIR`, mise shims).
+  Calling it unconditionally in cron sources `.zlogin`, which triggers background
+  zwc compilation jobs that are disruptive with no terminal attached.
+- **`sudo` in cron — always guard with `has_sudo_credentials`**: any function
+  callable from cron that uses `sudo` must call `has_sudo_credentials` (defined
+  in `.shellrc` § 1e) first; without cached credentials `sudo` hangs
+  indefinitely in a non-interactive context. Use `warn` and return early if the
+  check fails.
+- **`is_running_in_tty` gates interactive-only operations**: `is_running_in_tty`
+  returns `false` in cron (no TTY, `FORCE_COLOR` not set). Gate kill/restart
+  of login-item apps (and any other interactive-only side-effects) on
+  `[[ "${operation}" == 'import' ]] || is_running_in_tty` — cron export must
+  not kill running apps or re-launch them via `open -a`.
+- **`COLUMNS` fallback in cron**: zsh sets `COLUMNS` to `0` with no terminal.
+  Always use `${COLUMNS:-80}` in any code that computes a display width.
 
 ---
 
@@ -381,7 +545,21 @@ Cron functions are split across two files:
 Comments in both files must explain this split for future maintainers.
 
 Exit/error traps in scripts that call `suspend_cron` must call `resume_cron`
-(via trap) if `CRON_BACKUP_FILE` is present.
+(via trap) if `_DOTFILES_CRON_BACKUP_FILE` is present.
+
+Scripts with a single entry point must use the `with_cron_suspended` wrapper
+(defined in `.aliases`) rather than calling `suspend_cron`/`resume_cron`
+directly — it handles the EXIT trap and error recovery internally:
+
+```zsh
+main() {
+  with_cron_suspended _main_impl "$@"
+}
+```
+
+Use the low-level `suspend_cron`/`resume_cron` only when the suspend/resume
+scope spans multiple code paths (e.g. `fresh-install-of-osx.sh` where the
+scope is the entire `main()`).
 
 Scripts that involve cron operations (e.g., `cc-browser-profiles.sh`) should
 source `.aliases` (not `.shellrc`) since the cron functions they need are
@@ -552,8 +730,19 @@ git describe --tags   # e.g. "3.1" — use this as the ### header
 
 - Add the new entry at the **top** of `CHANGELOG.md`, above all existing entries.
 - Use `### <version>` as the section heading (e.g. `### 3.1`).
+- Only include changes made within `$DOTFILES_DIR`. Changes to `$PERSONAL_BIN_DIR`
+  and `$PERSONAL_CONFIGS_DIR` are subject to the same editing/formatting rules but
+  are not documented in this CHANGELOG.
 - Each bullet should be scoped with `*[file or component]*` and describe the
   change succinctly — what was done and why, not how.
+- Keep each bullet concise — one sentence where possible.
+- Order bullets by impact on an adopter picking up the changes into their own
+  fork or machine:
+  1. **Behavioral/runtime changes** — bug fixes, new functions, changed outputs,
+     script logic changes (anything that affects what runs or what the user sees)
+  2. **Infrastructure changes** — refactors, shared helpers, structural changes
+     that enable behavioral changes but are not directly visible
+  3. **Documentation** — instruction files, README, CHANGELOG itself
 
 ### Commit Message Style
 

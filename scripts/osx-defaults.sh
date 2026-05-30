@@ -61,6 +61,10 @@ ask() {
 
 main() {
   auto='N'
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
   while getopts ':s' opt; do
     case ${opt} in
       s)
@@ -68,15 +72,18 @@ main() {
         auto='Y'
         ;;
       \?)
-        warn "-${OPTARG} is not a valid option"
+        _record_error "-${OPTARG} is not a valid option"
         usage "${_SCRIPT_NAME}"
+        print_script_summary "${_SCRIPT_NAME}"
+        return 1
         ;;
     esac
   done
   shift $((OPTIND - 1))
 
   if [[ "${auto}" == 'N' ]] && ! is_running_in_tty; then
-    error 'Interactive mode needs terminal!'
+    _record_error 'Interactive mode needs terminal!'
+    print_script_summary "${_SCRIPT_NAME}"
     exit 1
   fi
 
@@ -1531,8 +1538,9 @@ main() {
   # Turn off spotlight indexing for all volumes (to pre-empt any issues with the system settings pane)
   sudo mdutil -Eda &>/dev/null  && sudo mdutil -ai off &>/dev/null
 
-  warn "Need to manually quit and restart 'Terminal' and 'iTerm' - since one of these might be running this script."
+  user_action "Need to manually quit and restart 'Terminal' and 'iTerm' — since one of these might be running this script."
   success 'Done. Note that some of these changes require a logout/restart to take effect.'
+  print_script_summary "${_SCRIPT_NAME}"
 }
 
 main "$@"

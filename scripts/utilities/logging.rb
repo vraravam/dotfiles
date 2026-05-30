@@ -4,7 +4,8 @@ require_relative 'string'
 
 # Logging helpers that replicate the shell functions defined in .shellrc
 # (success/info/warn/debug/error, section_header, print_script_start,
-# print_script_duration, and the step_start/step_end stack-based timing helpers).
+# print_script_duration, print_script_summary, record_warning, record_error,
+# and the step_start/step_end stack-based timing helpers).
 #
 # Color rendering is handled by the String extensions in string.rb and is
 # automatically suppressed when stdout is not a TTY.
@@ -61,12 +62,20 @@ module Logging
     puts "⚙️  #{'**DEBUG**'.light_purple} #{message}"
   end
 
+  # Prints a message prompting the user to perform a manual step (e.g. restart
+  # an app, run a command, open a URL). Distinct from warn (unexpected problem)
+  # and info (purely informational). Mirrors user_action() in .shellrc.
+  def user_action(message)
+    puts "➡️  #{'**ACTION**'.yellow} #{message}"
+  end
+
   # Prints the error message and raises a +RuntimeError+ with that message,
   # terminating the current execution path unless rescued by the caller.
   # @raise [RuntimeError]
   def error(message)
-    puts "❌ #{'**ERROR**'.red} #{message} 🤓"
-    raise message
+    msg = message.to_s.replace_home_path_with_tilde
+    puts "❌ #{'**ERROR**'.red} #{msg} 🤓"
+    raise msg
   end
 
   # ---------------------------------------------------------------------------
@@ -87,17 +96,36 @@ module Logging
 
   # Prints a centred section header flanked by '=' padding, matching:
   #   echo "$(light_blue $(print_chars_for_length '=' …)) ⏳ ${header} $(light_blue …)"
+  # Also sets current_section to +header+ so that subsequent record_warning /
+  # record_error entries are automatically attributed to this section.
   def section_header(header)
-    header_str = header.replace_home_path_with_tilde
-    padding_length = [((terminal_width - header_str.length) / 2) - 10, 1].max
-    pad = print_chars_for_length(char: '=', length: padding_length)
-    puts "#{pad.light_blue} ⏳ #{header_str} #{pad.light_blue}"
+    @current_section = header
+    _section_header_impl(header, char: '=', glyph: '⏳', color: :light_blue)
   end
 
-  # Prints the script start timestamp, matching:
-  #   echo "$(purple '==>') $(yellow 'Script started at:') $(light_blue "$(date …)")"
+  # Sub-level section header for steps nested inside a top-level section_header.
+  # Mirrors section_header2 in .shellrc: '-' padding, '🔷' glyph, cyan colour,
+  # 2-space indent. Does NOT update current_section — sub-steps belong to the
+  # enclosing top-level section for record_warning / record_error attribution.
+  def section_header2(header)
+    _section_header_impl(header, char: '-', glyph: '🔷', color: :cyan, indent: '  ')
+  end
+
+  # Prints the script start timestamp, prefixed with the script name. Mirrors:
+  #   echo "$(cyan "${_SCRIPT_NAME:-}") $(purple '==>') $(yellow 'Script started at:') $(light_blue "…")"
+  # Returns the start time as a Unix epoch integer so the caller can pass it to
+  # print_script_duration. This deviates from the shell version (which cannot
+  # return a value) but eliminates the two-call pattern and ensures the logged
+  # timestamp and the in-memory start time are identical.
+  # Only prints when this is the outermost script — see outermost_script?.
+  #
+  # @return [Integer] Unix epoch of the logged start time.
   def print_script_start
-    puts "#{'==>'.purple} #{'Script started at:'.yellow} #{Time.now.strftime('%Y-%m-%d %H:%M:%S').light_blue}"
+    now = Time.now
+    if outermost_script?
+      puts "#{script_name.cyan} #{'==>'.purple} #{'Script started at:'.yellow} #{now.strftime('%Y-%m-%d %H:%M:%S').light_blue}"
+    end
+    now.to_i
   end
 
   # Prints the script finish timestamp and total duration.
@@ -105,10 +133,69 @@ module Logging
   # @param start_time [Integer] Unix epoch returned by an earlier +Time.now.to_i+.
   # @return [void]
   def print_script_duration(start_time)
+    return unless outermost_script?
     now = Time.now
     human = format_duration(now.to_i - start_time)
-    puts "#{'==>'.purple} #{'Script finished at:'.yellow} #{now.strftime('%Y-%m-%d %H:%M:%S').light_blue} " \
+    puts "#{script_name.cyan} #{'==>'.purple} #{'Script finished at:'.yellow} #{now.strftime('%Y-%m-%d %H:%M:%S').light_blue} " \
          "(#{'Total duration:'.yellow} #{human.light_blue} #{'seconds'.yellow})."
+  end
+
+  # ---------------------------------------------------------------------------
+  # Deferred error/warning collection
+  # These mirror _record_warning, _record_error, and print_script_summary from
+  # .shellrc. Each entry is prefixed with [script_name][current_section] for
+  # traceability. print_script_summary prints collected issues grouped by type.
+  # No macOS notification is sent — osascript is not appropriate for library code.
+  # ---------------------------------------------------------------------------
+
+  # Sets the current logical section name, used as context in record_warning /
+  # record_error entries. Mirrors the _current_section local in shell scripts.
+  def current_section=(name)
+    @current_section = name
+  end
+
+  # Appends a non-critical issue to the warnings collection and emits an inline
+  # warn so the issue is visible in the log at the point it occurs.
+  def record_warning(message)
+    step_warnings << "[#{script_name || 'unknown'}][#{@current_section || 'unknown'}] #{message}"
+    warn(message)
+  end
+
+  # Appends a significant non-fatal failure to the errors collection and emits
+  # an inline warn so the failure is visible in the log at the point it occurs.
+  def record_error(message)
+    step_errors << "[#{script_name || 'unknown'}][#{@current_section || 'unknown'}] #{message}"
+    warn(message)
+  end
+
+  # Prints a grouped summary of all collected warnings and errors, prefixing
+  # each section header with the script name, then prints the total duration.
+  # Mirrors print_script_summary in .shellrc. No macOS notification — callers
+  # that need one must handle it themselves.
+  #
+  # Accepts an optional +start_time+ (Unix epoch returned by +print_script_start+).
+  # When provided, calls +print_script_duration+ so the caller never needs to
+  # invoke it separately. This deviates from the shell version, which cannot
+  # call print_script_duration from within print_script_summary because shell
+  # functions cannot propagate a return value for the start time.
+  # When omitted (e.g. early-exit paths inside methods that cannot access the
+  # top-level start-time local), the duration line is skipped.
+  #
+  # @param start_time [Integer, nil] Unix epoch of script start, or nil to skip duration.
+  def print_script_summary(start_time = nil)
+    # outermost_script? encapsulates the _DOTFILES_SCRIPT_DEPTH check — see its
+    # definition for the full rationale.
+    return unless outermost_script?
+
+    unless nil_or_empty?(step_warnings)
+      section_header("#{script_name.cyan} #{("#{step_warnings.length} warning(s)").yellow}")
+      step_warnings.each { |w| warn("  #{w}") }
+    end
+    unless nil_or_empty?(step_errors)
+      section_header("#{script_name.cyan} #{("#{step_errors.length} error(s) — manual attention needed").red}")
+      step_errors.each { |e| warn("  #{e}") }
+    end
+    print_script_duration(start_time) unless start_time.nil?
   end
 
   # ---------------------------------------------------------------------------
@@ -152,6 +239,10 @@ module Logging
       end
 
     step_human = format_duration(now - step_start_time)
+
+    # Use the most recently pushed script-start epoch for total elapsed.
+    # Warn when the stack is empty — mirrors the shell step_end behaviour.
+    warn('step_end: script_start_times is empty; total elapsed will be 0') if nil_or_empty?(script_start_times)
     total_human = format_duration(now - (script_start_times.last || now))
 
     puts "#{'    ⏱'.purple} #{'step:'.yellow} #{step_human.light_blue} #{'| elapsed:'.yellow} #{total_human.light_blue}"
@@ -163,6 +254,59 @@ module Logging
 
   private
 
+  # The name of the currently running script, mirroring _SCRIPT_NAME in shell.
+  def script_name
+    File.basename($PROGRAM_NAME)
+  end
+
+  # Returns the current value of _DOTFILES_SCRIPT_DEPTH as an integer,
+  # defaulting to 0 when unset. Single point of truth for reading the counter.
+  def _script_depth
+    ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+  end
+
+  # Returns true when this is the outermost script in a nested call chain.
+  # Mirrors is_outermost_script in .shellrc. _DOTFILES_SCRIPT_DEPTH is exported
+  # and incremented by each script's main(); subprocess increments do not
+  # propagate back to the parent. Defaults to 0 when unset so standalone scripts
+  # (which never set the counter) are treated as outermost — consistent with the
+  # ':-0' used in the increment expression in each main().
+  def outermost_script?
+    _script_depth <= 1
+  end
+
+  # Increments _DOTFILES_SCRIPT_DEPTH and registers an at_exit hook to
+  # decrement it on exit (clean or error). Call once at script start, before
+  # any logging calls. Mirrors the export + trap pattern in shell scripts.
+  def increment_script_depth
+    ENV['_DOTFILES_SCRIPT_DEPTH'] = (_script_depth + 1).to_s
+    at_exit { decrement_script_depth }
+  end
+
+  # Decrements _DOTFILES_SCRIPT_DEPTH, guarding against underflow. Called
+  # automatically by the at_exit hook registered in increment_script_depth.
+  # Mirrors _decrement_script_depth in .shellrc.
+  def decrement_script_depth
+    depth = _script_depth
+    ENV['_DOTFILES_SCRIPT_DEPTH'] = (depth - 1).to_s if depth > 0
+  end
+
+  # Shared implementation for section_header and section_header2. Mirrors
+  # _section_header_impl in .shellrc: centres the header between repeated-char
+  # padding, coloured by +color+, prefixed with +glyph+, and optionally indented.
+  #
+  # @param header [String] The header text to display.
+  # @param char   [String] Padding character ('=' for top-level, '-' for sub-level).
+  # @param glyph  [String] Emoji glyph displayed before the header.
+  # @param color  [Symbol] Color method to apply to padding (e.g. :light_blue, :cyan).
+  # @param indent [String] Leading indent string (empty for top-level, '  ' for sub-level).
+  def _section_header_impl(header, char:, glyph:, color:, indent: '')
+    header_str = header.replace_home_path_with_tilde
+    padding_length = [((terminal_width - header_str.length - indent.length) / 2) - 10, 1].max
+    pad = print_chars_for_length(char: char, length: padding_length).send(color)
+    puts "#{indent}#{pad} #{glyph} #{header_str} #{pad}"
+  end
+
   # Per-includer stacks stored as instance variables so that each object (or
   # the top-level main object when `include`d at script level) has its own
   # independent stacks, matching the zsh array semantics.
@@ -172,6 +316,14 @@ module Logging
 
   def step_start_times
     @step_start_times ||= []
+  end
+
+  def step_warnings
+    @step_warnings ||= []
+  end
+
+  def step_errors
+    @step_errors ||= []
   end
 
   # Returns the current terminal column width, falling back to 80.

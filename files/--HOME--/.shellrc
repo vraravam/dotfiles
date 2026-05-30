@@ -27,7 +27,7 @@ is_shellrc_sourced() {
 }
 
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
-[[ -n "${DEBUG+1}" ]] && echo "loading ${0}"
+[[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
 
 # BASH_VERSION is set by bash but unset in zsh. Any third-party script sourced
 # from here (e.g. antidote.zsh) that checks $BASH_VERSION bare will crash under
@@ -200,8 +200,12 @@ join_array() {
 }
 
 # Returns true if the current shell is zsh.
+# ${ZSH_VERSION-} uses the '-' operator: if ZSH_VERSION is unset, substitute
+# empty string; if set (even to empty), use its value. Combined with -n, this
+# is true only when ZSH_VERSION is set AND non-empty — which is always the case
+# when running inside zsh, since zsh unconditionally sets it to a version string.
 is_zsh() {
-  [[ "${0}" =~ 'zsh' ]]
+  [[ -n "${ZSH_VERSION-}" ]]
 }
 
 # Replaces the value of HOME with '~' to shorten displayed paths.
@@ -324,11 +328,10 @@ white()        { _colorize "${WHITE}"        "${1}"; }
 _dotfiles_notify() {
   local _msg="${1}"
   local _title="${2:-Dotfiles}"
-  # Use a hardcoded path check rather than command_exists — osascript is a fixed
-  # macOS system binary at /usr/bin/osascript. A direct -x check is more precise
-  # than command_exists (which also matches functions/aliases) and avoids the overhead
-  # of 4 hash-table lookups for a known-stable system path.
-  if [[ -x '/usr/bin/osascript' ]]; then
+  # Use is_executable rather than command_exists — osascript is a fixed macOS
+  # system binary at a known path, and is_executable checks the file directly
+  # ([[ -x ]]) rather than searching functions/aliases/builtins/PATH.
+  if is_executable '/usr/bin/osascript'; then
     # Strip ANSI escape sequences inline using zsh parameter expansion — no subshell fork.
     # (S) = shortest match; ## = one-or-more (requires extendedglob); replaces all occurrences globally.
     # Pattern: ESC + '[' + zero-or-more digits/semicolons + final letter (e.g. \e[0;31m).
@@ -377,6 +380,18 @@ warn() {
   fi
 }
 
+user_action() {
+  # Prints a message prompting the user to perform a manual step (e.g. restart
+  # an app, run a command, open a URL). Distinct from warn (which signals an
+  # unexpected problem) and info (which is purely informational). Suppressed
+  # in direnv subshells — direnv runs headlessly and cannot act on prompts.
+  # if/else avoids a bare '|| echo' where is_non_zero_string returning 1 could
+  # trigger an ERR trap in callers running under set -e.
+  if ! is_non_zero_string "${DIRENV_IN_ENVRC:-}"; then
+    echo "➡️ $(yellow '**ACTION**') ${1}"
+  fi
+}
+
 debug() {
   # Suppressed when running inside a direnv subshell. DIRENV_IN_ENVRC=1 is set by
   # direnv during .envrc evaluation and survives strict_env (unlike DIRENV_DIR).
@@ -406,7 +421,8 @@ error() {
 print_chars_for_length() {
   local char="${1:--}"  # default to using '-'
   # ${COLUMNS} is a zsh special variable updated on SIGWINCH — no tput fork needed.
-  local final_length=${2:-$((COLUMNS / 4))}
+  # Fallback to 80 when COLUMNS is 0 (e.g. cron — no terminal attached).
+  local final_length=${2:=$((${COLUMNS:-80} / 4))}
   printf "${char}%.0s" {1..${final_length}}
 }
 
@@ -423,7 +439,8 @@ _section_header_impl() {
   local indent="${5:-}"
   local indent_len=${#indent}
   # ${COLUMNS} is a zsh special variable — no tput subprocess fork needed.
-  local viewport_length=${COLUMNS}
+  # Fallback to 80 when COLUMNS is 0 (e.g. cron — no terminal attached).
+  local viewport_length=${COLUMNS:-80}
   local header_length=${#header}
   local final_length=$(((viewport_length - header_length - indent_len) / 2 - 10))
 
@@ -439,7 +456,7 @@ section_header() {
 }
 
 # Sub-level section header: used for steps nested inside a top-level section_header.
-# Uses '-' padding, a '▶' glyph, cyan colour, and 2-space indent to visually subordinate it.
+# Uses '-' padding, a '🔷' glyph, cyan colour, and 2-space indent to visually subordinate it.
 section_header2() {
   _section_header_impl "${1}" '-' '🔷' 'cyan' '  '
 }
@@ -478,15 +495,23 @@ current_timestamp_for_filename() {
 
 # Prints a timestamped "Script started at" banner. Call at the top of main() and
 # capture $EPOCHSECONDS before calling to pass to print_script_duration later.
+# Only prints when this is the outermost script — nested subprocess scripts
+# stay silent so the outer script's banner is unambiguous in cron output.
 print_script_start() {
+  # is_outermost_script || return 0: safe under set -e — both branches resolve
+  # to exit 0 (|| only fires when is_outermost_script returns 1, and return 0
+  # exits with 0). Avoids the && pattern where the false branch returns 1.
+  is_outermost_script || return 0
   local start_time_human
   current_timestamp start_time_human
-  echo "$(purple '==>') $(yellow 'Script started at:') $(light_blue "${start_time_human}")"
+  echo "$(cyan "${_SCRIPT_NAME:-}") $(purple '==>') $(yellow 'Script started at:') $(light_blue "${start_time_human}")"
 }
 
 # Prints a "Script finished at / Total duration" banner.
 # Usage: print_script_duration <start_epoch_seconds>
+# Only prints when this is the outermost script — see print_script_start.
 print_script_duration() {
+  is_outermost_script || return 0
   local start_time_seconds="${1}"
   local end_time_human
   current_timestamp end_time_human
@@ -496,19 +521,87 @@ print_script_duration() {
   local duration_human
   format_duration "${duration}" duration_human
 
-  echo "$(purple '==>') $(yellow 'Script finished at:') $(light_blue "${end_time_human}") ($(yellow 'Total duration:') $(light_blue "${duration_human}") $(yellow 'seconds'))."
+  echo "$(cyan "${_SCRIPT_NAME:-}") $(purple '==>') $(yellow 'Script finished at:') $(light_blue "${end_time_human}") ($(yellow 'Total duration:') $(light_blue "${duration_human}") $(yellow 'seconds'))."
 }
 
 # --------------------------------------------------------------------------
-# 1c. Step timing helpers
-# Used by fresh-install-of-osx.sh and software-updates-cron.sh for per-step
-# progress reporting. See print_script_start/duration (section 1b) for
-# overall script timing, which is independent of this stack-based mechanism.
+# 1c. Global state variables
+#
+# Variables that form the shared-state backbone of .shellrc and the scripts
+# that source it. Documented here in one place to make the relationships
+# between them clear.
+#
+# CONVENTION — three tiers, same _ prefix for tiers 2 and 3:
+#
+#   _DOTFILES_* ALL_CAPS  (exported env var)
+#     Internal infrastructure. Inherited by subprocesses via export.
+#     Examples: _DOTFILES_SCRIPT_DEPTH, _DOTFILES_CRON_BACKUP_FILE.
+#
+#   _lowercase  typeset -a at file scope  (non-exported global)
+#     Process-wide arrays declared once in this file. Shared by all
+#     functions in the same process without exporting.
+#     Examples: _script_start_times, _step_start_times.
+#
+#   _lowercase  local -a / local in main()  (dynamically-scoped local)
+#     Declared in each script's main(). Zsh's dynamic scoping makes them
+#     readable by callees without being passed as arguments.
+#     Examples: _step_warnings, _step_errors, _current_section.
+#
+# The declaration context (typeset -a at file scope vs. local inside main())
+# and surrounding comments distinguish tiers 2 and 3 — no additional naming
+# difference is needed.
+#
+# --- Collection-pattern locals (tier 3) ---
+#
+#   _step_warnings          (local -a in each script's main())
+#     Array of non-critical recoverable issue strings. Populated by
+#     _record_warning(). Read and printed by print_script_summary().
+#
+#   _step_errors            (local -a in each script's main())
+#     Array of significant non-fatal failure strings. Populated by
+#     _record_error(). Read and printed by print_script_summary().
+#
+#   _current_section        (local in each script's main())
+#     String tracking which named section/step is currently executing.
+#     Set directly (no 'local') inside helpers like _perform_update so
+#     the assignment writes into main()'s local via dynamic scoping.
+#     Included in every _record_warning/_record_error message as context.
+#
+# --- Depth counter (tier 1) ---
+#
+#   _DOTFILES_SCRIPT_DEPTH  (exported env var)
+#     Integer counter incremented by each main() that uses the collection
+#     pattern. Inherited by subprocess scripts via export. Since subprocess
+#     env changes do not propagate back to the parent, the parent's depth
+#     is unaffected by any inner script's execution.
+#     print_script_summary() uses this to suppress output when depth > 1,
+#     ensuring only the outermost script's summary is printed.
+#
+# --- Step-timing globals (tier 2) ---
+#
+#   _script_start_times     (typeset -a, non-exported global)
+#     Stack of epoch-second timestamps for script-level start times.
+#     Used by step_end() to compute total-elapsed. Must be populated by
+#     scripts that use step_start/step_end (fresh-install, software-updates-
+#     cron). Scripts that only call print_script_duration() do not need it.
+#
+#   _step_start_times       (typeset -a, non-exported global)
+#     Stack of epoch-second timestamps for individual step start times.
+#     Pushed by step_start(), popped by step_end(). Supports nested steps.
+#
+# --- Cron infrastructure (tier 1) ---
+#
+#   _DOTFILES_CRON_BACKUP_FILE  (exported env var)
+#     Path to the temporary crontab backup file. Written by suspend_cron()
+#     and fresh-install-of-osx.sh before cron is removed. Read by
+#     resume_cron() and EXIT/ERR traps to restore the crontab on exit or
+#     failure.
 # --------------------------------------------------------------------------
 
-# Stack of epoch-second timestamps for the overall script-start epoch.
-# Initialised on first use and overridable by sub-scripts that need their
-# own baseline without clobbering an outer script's value.
+# Dynamically-scoped locals (_step_warnings, _step_errors, _current_section) are declared
+# with 'local' inside each script's main() — no top-level initialisation needed here.
+
+# Non-exported globals: step-timing stacks used by step_start/step_end.
 # Two consumers, two mechanisms — intentionally separate:
 #
 #   print_script_duration <start_time>
@@ -516,39 +609,48 @@ print_script_duration() {
 #     at the top of main()).  This keeps it self-contained and usable by
 #     scripts that never call step_start/step_end (e.g. run-all.sh,
 #     cleanup-browser-profiles.sh) — those scripts do NOT push to
-#     SCRIPT_START_TIMES and have no need to.
+#     _script_start_times and have no need to.
 #
 #   step_end
 #     Needs a "total elapsed since script start" value independently of
 #     whatever argument was passed to print_script_duration.  It reads
-#     SCRIPT_START_TIMES[-1] for this.  Scripts that call step_start/step_end
+#     _script_start_times[-1] for this.  Scripts that call step_start/step_end
 #     (fresh-install-of-osx.sh, software-updates-cron.sh) MUST push their
-#     start epoch onto SCRIPT_START_TIMES so step_end's total-elapsed column
+#     start epoch onto _script_start_times so step_end's total-elapsed column
 #     is correct.
 #
 # Consequence: if step_start/step_end are ever added to a script that
-# only calls print_script_duration (run-all.sh,
-# cleanup-browser-profiles.sh), that script must also be updated to push its
-# start epoch onto SCRIPT_START_TIMES, otherwise step_end will fall back to
-# the current time and report 0s total elapsed.
-typeset -a SCRIPT_START_TIMES=()
-# Stack of epoch-second timestamps for the overall step-start epoch,
-# supporting nested step_start/step_end calls.
-typeset -a STEP_START_TIMES=()
+# only calls print_script_duration (run-all.sh, cleanup-browser-profiles.sh),
+# that script must also push its start epoch onto _script_start_times,
+# otherwise step_end will fall back to the current time and report 0s elapsed.
+typeset -a _script_start_times=()
+typeset -a _step_start_times=()
+
+# Exported infrastructure: well-known path for suspend_cron/resume_cron.
+# Exported so subshells and ERR/EXIT trap handlers share the same path even
+# when they run before .aliases is sourced.
+export _DOTFILES_CRON_BACKUP_FILE="${TMPDIR:-/tmp}/crontab_backup"
+
+# --------------------------------------------------------------------------
+# 1d. Step timing helpers
+# Used by fresh-install-of-osx.sh and software-updates-cron.sh for per-step
+# progress reporting. See print_script_start/duration (section 1b) for
+# overall script timing, which is independent of this stack-based mechanism.
+# --------------------------------------------------------------------------
 
 # Initialise the script-level clock.  Pushes if the stack is empty so the same
 # process can define a later epoch without clobbering the original.  Safe to
 # call multiple times.
 step_timing_init() {
-  if is_empty_array SCRIPT_START_TIMES; then
-    SCRIPT_START_TIMES+=("${EPOCHSECONDS}")
+  if is_empty_array _script_start_times; then
+    _script_start_times+=("${EPOCHSECONDS}")
   fi
 }
 
 # Record the start of a step.  Should be called just before section_header.
 step_start() {
   step_timing_init
-  STEP_START_TIMES+=("${EPOCHSECONDS}")
+  _step_start_times+=("${EPOCHSECONDS}")
 }
 
 # Print how long the most recent step took, plus total elapsed since init.
@@ -561,17 +663,17 @@ step_end() {
   # step_start after an error), fall back to the current epoch's start time
   # from the script timings stack so the duration stays meaningful.
   local step_start_time
-  if is_empty_array STEP_START_TIMES; then
-    if is_non_empty_array SCRIPT_START_TIMES; then
-      step_start_time="${SCRIPT_START_TIMES[-1]}"
+  if is_empty_array _step_start_times; then
+    if is_non_empty_array _script_start_times; then
+      step_start_time="${_script_start_times[-1]}"
       warn "step_end called without matching step_start; using current epoch start time as fallback"
     else
       step_start_time="${now}"
       warn "step_end called without any timing stack initialised; using current time as fallback"
     fi
   else
-    step_start_time="${STEP_START_TIMES[-1]}"
-    STEP_START_TIMES=("${(@)STEP_START_TIMES[1,-2]}")
+    step_start_time="${_step_start_times[-1]}"
+    _step_start_times=("${(@)_step_start_times[1,-2]}")
   fi
 
   delta_step=$((now - step_start_time))
@@ -580,11 +682,11 @@ step_end() {
 
   # Use the most recently pushed script-start epoch for total elapsed.
   local script_start_time
-  if is_non_empty_array SCRIPT_START_TIMES; then
-    script_start_time="${SCRIPT_START_TIMES[-1]}"
+  if is_non_empty_array _script_start_times; then
+    script_start_time="${_script_start_times[-1]}"
   else
     script_start_time="${now}"
-    warn "step_end: SCRIPT_START_TIMES is empty; total elapsed will be 0"
+    warn "step_end: _script_start_times is empty; total elapsed will be 0"
   fi
   delta_total=$((now - script_start_time))
   local total_human
@@ -593,8 +695,76 @@ step_end() {
   echo "$(purple '    ⏱') $(yellow 'step:') $(light_blue "${step_human}") $(yellow '| elapsed:') $(light_blue "${total_human}")"
 }
 
+# Append a non-critical issue to _step_warnings (declared local in the calling script's main).
+# Also emits an inline warn so the issue is visible in the log at the point it occurs.
+# Relies on zsh dynamic scoping: the caller's main() must declare:
+#   local _current_section='(init)'
+#   local -a _step_warnings=()
+# Each entry is prefixed with [_SCRIPT_NAME][_current_section] for traceability in nested calls.
+_record_warning() {
+  local msg="${1:-unknown warning}"
+  _step_warnings+=("[${_SCRIPT_NAME:-unknown}][${_current_section:-unknown}] ${msg}")
+  warn "${msg}"
+}
+
+# Append a significant non-fatal failure to _step_errors (declared local in the calling script's main).
+# Also emits an inline warn so the failure is visible in the log at the point it occurs.
+# Relies on zsh dynamic scoping: the caller's main() must declare:
+#   local _current_section='(init)'
+#   local -a _step_errors=()
+# Each entry is prefixed with [_SCRIPT_NAME][_current_section] for traceability in nested calls.
+_record_error() {
+  local msg="${1:-unknown error}"
+  _step_errors+=("[${_SCRIPT_NAME:-unknown}][${_current_section:-unknown}] ${msg}")
+  warn "${msg}"
+}
+
+# Print a grouped summary of all warnings and errors collected via _record_warning/_record_error.
+# Reads _step_warnings and _step_errors from the caller's scope via zsh dynamic scoping.
+# Must be called after shellrc is sourced (uses section_header and warn).
+#
+# Optional: pass a script title as $1 to also send a single macOS notification summarising
+# any collected issues. Scripts with custom notification logic (e.g. fresh-install,
+# software-updates-cron) call this without a title and handle their own notification.
+# Standalone scripts pass "${_SCRIPT_NAME}" to get generic notification for free.
+# Usage: print_script_summary
+#
+# Only prints when this is the outermost script in a nested call chain.
+# _SCRIPT_NAME is read directly via zsh dynamic scoping — no argument needed.
+print_script_summary() {
+  # is_outermost_script || return 0: safe under set -e — see print_script_start.
+  is_outermost_script || return 0
+  local _pss_title="${_SCRIPT_NAME:-}"
+  if (($+_step_warnings)) && is_non_empty_array _step_warnings; then
+    section_header "$(cyan "${_pss_title}") $(yellow "${#_step_warnings[@]} warning(s)")"
+    local _psw
+    for _psw in "${_step_warnings[@]}"; do
+      warn "  ${_psw}"
+    done
+  fi
+  if (($+_step_errors)) && is_non_empty_array _step_errors; then
+    section_header "$(cyan "${_pss_title}") $(red "${#_step_errors[@]} error(s) — manual attention needed")"
+    local _pse
+    for _pse in "${_step_errors[@]}"; do
+      warn "  ${_pse}"
+    done
+  fi
+  # Send exactly one notification when there are issues to report, gated solely
+  # on whether errors/warnings were collected — independent of the title source.
+  # Success notifications are intentionally omitted — the user can see success in
+  # the terminal. Notifications are reserved for failures that warrant attention,
+  # especially in headless/cron contexts. Scripts with custom success notifications
+  # (e.g. fresh-install, software-updates-cron) handle them outside this function.
+  local -a _pss_parts=()
+  if (($+_step_errors))   && is_non_empty_array _step_errors;   then _pss_parts+=("${#_step_errors[@]} error(s)"); fi
+  if (($+_step_warnings)) && is_non_empty_array _step_warnings; then _pss_parts+=("${#_step_warnings[@]} warning(s)"); fi
+  if is_non_empty_array _pss_parts; then
+    _dotfiles_notify "${_pss_title}: completed with ${(j: and :)_pss_parts}." "⚠️ ${_pss_title}" || true
+  fi
+}
+
 # --------------------------------------------------------------------------
-# 1d. Filesystem & OS predicates
+# 1e. Filesystem & OS predicates
 # --------------------------------------------------------------------------
 
 # Returns true if the current machine is ARM (Apple Silicon or other arm64 CPU).
@@ -638,9 +808,11 @@ is_directory_empty() {
 
 # Creates $1 (and any intermediate directories) if it does not already exist.
 # Warns and skips silently if $1 is empty or unset.
+# Guards with is_directory to avoid forking mkdir when the directory already
+# exists — the common case on every shell startup (e.g. XDG_CACHE_HOME).
 ensure_dir_exists() {
   if is_non_zero_string "${1}"; then
-    mkdir -pv "${1}"
+    is_directory "${1}" || mkdir -pv "${1}"
   else
     warn "Skipping creation of the directory since '$(yellow "${1}")' is not defined"
   fi
@@ -700,13 +872,52 @@ is_linux() {
   [[ "${OSTYPE}" =~ 'Linux' ]]
 }
 
+# Returns true if FIRST_INSTALL is set to a non-empty value.
+# ${FIRST_INSTALL:-} uses the ':-' operator: if FIRST_INSTALL is unset OR empty,
+# substitute empty string; if set and non-empty, use its value. Combined with -n,
+# this is true only when FIRST_INSTALL holds a real value — treating unset and
+# set-but-empty identically. This is intentional: only a deliberate non-empty
+# assignment (e.g. FIRST_INSTALL=true) should activate vanilla-OS behaviour.
+# Note: two occurrences in fresh-install-of-osx.sh use the raw form because
+# they run before _download_and_source_shellrc has sourced .shellrc.
+is_first_install() {
+  [[ -n "${FIRST_INSTALL:-}" ]]
+}
+
 # Returns true if the current OS is Windows (MSYS/MinGW environment).
 is_windows() {
   [[ "${OSTYPE}" =~ 'MINGW' ]]
 }
 
+# Returns true if this is the outermost script in a nested call chain.
+# _DOTFILES_SCRIPT_DEPTH is exported and incremented by each main() that uses
+# the deferred-collection pattern. Subprocesses inherit the counter but their
+# increments do not propagate back to the parent. Defaults to 0 when unset so
+# standalone scripts (which never set the counter) are treated as outermost —
+# consistent with the ':-0' used in the increment expression in each main().
+is_outermost_script() {
+  [[ ${_DOTFILES_SCRIPT_DEPTH:-0} -le 1 ]]
+}
+
+# Decrements _DOTFILES_SCRIPT_DEPTH, guarding against underflow. Called from
+# EXIT traps in every script that increments the counter. Mirrors
+# Logging.decrement_script_depth in logging.rb.
+_decrement_script_depth() {
+  if [[ ${_DOTFILES_SCRIPT_DEPTH:-0} -gt 0 ]]; then
+    export _DOTFILES_SCRIPT_DEPTH=$((_DOTFILES_SCRIPT_DEPTH - 1))
+  fi
+}
+
+# Returns true if sudo credentials are currently cached (i.e. sudo can run
+# without prompting for a password). Use this to guard any function that calls
+# sudo and may be invoked from cron or other non-interactive contexts where a
+# prompt would hang indefinitely.
+has_sudo_credentials() {
+  sudo -n true 2>/dev/null
+}
+
 # --------------------------------------------------------------------------
-# 1e. PATH & environment variable manipulation
+# 1f. PATH & environment variable manipulation
 # --------------------------------------------------------------------------
 
 # Append/prepend helpers: each adds $1 to the named variable only if $1 is an
@@ -741,7 +952,7 @@ prepend_to_pkg_config_path_if_dir_exists() {
 }
 
 # --------------------------------------------------------------------------
-# 1f. Bootstrap operations
+# 1g. Bootstrap operations
 # Called by fresh-install-of-osx.sh and post-brew-install.sh.
 # set_ssh_folder_permissions is also called from ~/.envrc directly.
 # --------------------------------------------------------------------------
@@ -751,13 +962,13 @@ prepend_to_pkg_config_path_if_dir_exists() {
 # Safe to call multiple times — skips silently if the background loop is already running.
 keep_sudo_alive() {
   # Avoid duplicate background loops (e.g. when child scripts also call this)
-  if [ -n "${KEEP_SUDO_ALIVE_PID:-}" ] && kill -0 "$KEEP_SUDO_ALIVE_PID" 2>/dev/null; then
+  if is_non_zero_string "${KEEP_SUDO_ALIVE_PID:-}" && kill -0 "${KEEP_SUDO_ALIVE_PID}" 2>/dev/null; then
     return
   fi
   step_start
   section_header2 "$(yellow 'Keeping sudo alive till this script has finished')"
   sudo -v
-  while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+  while true; do has_sudo_credentials; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
   export KEEP_SUDO_ALIVE_PID=$!
   step_end
 }
@@ -803,7 +1014,13 @@ clone_repo_into() {
     debug "Fetching '$(yellow "${target_folder}")' since it's already a git repo"
     git -C "${target_folder}" fetch-unshallow
     success "Successfully fetched '$(yellow "${1}")' into '$(yellow "${target_folder}")'"
-    warn 'Remember to merge the incoming changes into the working tree!'
+    # Only warn if FETCH_HEAD has commits not yet in HEAD — fetch-unshallow always
+    # runs but may bring in nothing new (repo already up to date).
+    local incoming_count
+    incoming_count="$(git -C "${target_folder}" rev-list HEAD..FETCH_HEAD --count 2>/dev/null || echo 0)"
+    if [[ "${incoming_count}" -gt 0 ]]; then
+      warn 'Remember to merge the incoming changes into the working tree!'
+    fi
   fi
 
   # Always update submodules after clone or pull — new commits may introduce submodule changes.
@@ -849,7 +1066,7 @@ eval_shellenv() {
 }
 
 # --------------------------------------------------------------------------
-# 1g. Cron management - bootstrap layer
+# 1h. Cron management - bootstrap layer
 #
 # Contains the primitives needed to safely suspend and resume cron around any
 # script that may run before (or during) a fresh install, including before the
@@ -865,11 +1082,6 @@ eval_shellenv() {
 # those functions and a fuller explanation of the split.
 # --------------------------------------------------------------------------
 
-# Well-known path used by suspend_cron/resume_cron to persist the cron backup
-# across a script run.  Exported so subshells and ERR/EXIT trap handlers share
-# the same path even when they run before .aliases is sourced.
-export CRON_BACKUP_FILE="${TMPDIR:-/tmp}/crontab_backup"
-
 # Loads a cron file into the system crontab.  Shared by suspend_cron/resume_cron
 # (bootstrap layer, here) and recron (.aliases layer) so neither duplicates logic.
 # Usage: restore_cron <cron-file-path>
@@ -882,48 +1094,48 @@ restore_cron() {
 
   # ${cron_file:h} is the pure-zsh dirname equivalent — no $(dirname ...) fork.
   # restore_cron is only ever called from zsh contexts (suspend_cron/resume_cron
-  # in .aliases, recron alias) so :h is safe here; .envrc never reaches this function.
+  # in .shellrc, recron alias in .aliases) so :h is safe here; .envrc never reaches this function.
   ensure_dir_exists "${cron_file:h}"
 
   crontab "${cron_file}" || error 'Failed to restore crontab.'
 }
 
-# Backs up the current crontab to CRON_BACKUP_FILE and removes all cron jobs.
+# Backs up the current crontab to _DOTFILES_CRON_BACKUP_FILE and removes all cron jobs.
 # On a first-install where no crontab exists yet, seeds the backup from
 # crontab.txt (if present) so that resume_cron can restore a known-good state.
 suspend_cron() {
   debug 'Suspending cron jobs...'
   local src_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
-  if crontab -l >"${CRON_BACKUP_FILE}"  2>/dev/null; then
-    debug "Backed up existing crontab to '$(yellow "${CRON_BACKUP_FILE}")'"
+  if crontab -l >"${_DOTFILES_CRON_BACKUP_FILE}"  2>/dev/null; then
+    debug "Backed up existing crontab to '$(yellow "${_DOTFILES_CRON_BACKUP_FILE}")'"
   elif is_file "${src_file}"; then
     # No active crontab (e.g. FIRST_INSTALL), but a known-good crontab.txt exists - use it as the backup
-    cp "${src_file}" "${CRON_BACKUP_FILE}"
+    cp "${src_file}" "${_DOTFILES_CRON_BACKUP_FILE}"
     debug "Seeded cron backup from '$(yellow "${src_file}")'"
   else
-    : >"${CRON_BACKUP_FILE}"
+    : >"${_DOTFILES_CRON_BACKUP_FILE}"
     debug 'No existing crontab or crontab.txt; created empty backup'
   fi
   crontab -r &>/dev/null || true
   success 'Cron jobs suspended'
 }
 
-# Restores crontab from CRON_BACKUP_FILE and cleans up the backup file.
+# Restores crontab from _DOTFILES_CRON_BACKUP_FILE and cleans up the backup file.
 # If the backup is empty (e.g. genuine first-install with no prior crontab.txt),
 # does nothing.
 resume_cron() {
   debug 'Resuming cron jobs...'
-  if is_non_empty_file "${CRON_BACKUP_FILE}"; then
-    restore_cron "${CRON_BACKUP_FILE}"
+  if is_non_empty_file "${_DOTFILES_CRON_BACKUP_FILE}"; then
+    restore_cron "${_DOTFILES_CRON_BACKUP_FILE}"
     success 'Cron jobs resumed from backup'
   else
     info 'No cron backup to restore; skipping'
   fi
-  rm -f "${CRON_BACKUP_FILE}"
+  rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
 }
 
 # --------------------------------------------------------------------------
-# 1h. Config reloading (used post-bootstrap to apply changes)
+# 1i. Config reloading (used post-bootstrap to apply changes)
 # --------------------------------------------------------------------------
 
 if is_zsh; then
@@ -932,9 +1144,18 @@ if is_zsh; then
   # can lead to infinite loops or unexpected behavior if not called carefully.
   # This is likely intended for manual use or specific bootstrap scenarios after config changes.
   load_zsh_configs() {
+    # _SCRIPT_NAME is set as a script-scoped global in each script; unset in
+    # interactive shells. The fallback makes the caller visible in both contexts.
+    debug "load_zsh_configs called from '$(yellow "${_SCRIPT_NAME:-<interactive>}")'"
     local file
     local file_list=('.zshenv' '.zshrc' '.zlogin')
     for file in "${file_list[@]}"; do
+      # ${ZDOTDIR} is safe to use here: this function is defined inside .shellrc,
+      # so .shellrc must have already run — and .shellrc initialises ZDOTDIR at
+      # line 38 (export ZDOTDIR="${ZDOTDIR:-"${HOME}"}") before this function is
+      # ever defined. ZDOTDIR is therefore always set correctly, even in cron or
+      # fresh-install subshell contexts where .zshenv has not been sourced.
+      debug "load_zsh_configs: loading '$(yellow "${ZDOTDIR}/${file}")'"
       load_file_if_exists "${ZDOTDIR}/${file}"
     done
   }

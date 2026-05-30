@@ -22,6 +22,6 @@ st() {
 
 # Run only when executed directly, not when sourced (e.g. to import the function into another script).
 [[ "${zsh_eval_context}" == *file* ]] || st "$@"
-# ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
+# is_zsh returns false in bash (ZSH_VERSION unset), short-circuiting the zsh-only '(( $+functions[...] ))' syntax is never
 # evaluated by non-zsh runtimes (e.g. direnv's sandbox).
-[[ -n "${ZSH_VERSION-}" ]] && (($+functions[compdef])) && compdef st || true
+is_zsh && (($+functions[compdef])) && compdef st || true

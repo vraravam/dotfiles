@@ -7,8 +7,8 @@
 # set -euo pipefail is intentionally omitted: some cleanup steps (find, rm on
 # missing files) return non-zero in normal operation and must not abort the script.
 
-source "${HOME}/.aliases"
 _SCRIPT_NAME="${0:t}"
+source "${HOME}/.aliases"
 
 # Vacuums SQLite databases larger than 10 MB and deletes known cache/session files from a
 # browser's profile folder. Skips processing if the browser process is running. Supports
@@ -45,12 +45,12 @@ vacuum_browser_profile_folder() {
   _read_pattern_file "${dir_patterns_file}" dir_patterns
 
   if pgrep -i -f -q "${browser_name}"; then
-    warn "Shutdown '$(yellow "${browser_name}")' first!; skipping processing of files for ${browser_name}"
+    user_action "Shutdown '$(yellow "${browser_name}")' first — skipping processing of files for ${browser_name}"
     return 0 # Success, nothing to do
   fi
 
   if ! is_directory "${profile_folder}"; then
-    warn "Skipping processing of '$(yellow "${profile_folder}")' since it doesn't exist"
+    info "Skipping processing of '$(yellow "${profile_folder}")' since it doesn't exist"
     return 0 # Success, nothing to do
   fi
 
@@ -78,7 +78,7 @@ vacuum_browser_profile_folder() {
         else
           echo "Vacuuming: ${db_file//${HOME}/~}"
           if ! sqlite3 "${db_file}" 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;'; then
-            warn "sqlite3 failed for '$(yellow "${db_file}")'"
+            _record_warning "sqlite3 failed for '$(yellow "${db_file}")'"
             vacuum_failed=1
           else
             ((vacuumed_count++))
@@ -90,7 +90,7 @@ vacuum_browser_profile_folder() {
     [[ ${show_stats} -eq 1 ]] && echo "  -> Processed ${vacuumed_count} of ${db_count} SQLite databases"
 
     if [[ ${vacuum_failed} -ne 0 ]]; then
-      warn "One or more sqlite vacuum/reindex operations failed in '$(yellow "${profile_folder}")'"
+      _record_warning "One or more sqlite vacuum/reindex operations failed in '$(yellow "${profile_folder}")'"
       return 1
     fi
   fi
@@ -148,7 +148,7 @@ vacuum_browser_profile_folder() {
         ((deleted_count++))
       done < <("${combined_find_cmd[@]}" -print -delete 2>/dev/null)
       if [[ $? -ne 0 ]]; then
-        warn "Combined find/delete operation failed (code: $?) in '$(yellow "${profile_folder}")'.";
+        _record_warning "Combined find/delete operation failed (code: $?) in '$(yellow "${profile_folder}")'.";
       else
         [[ ${show_stats} -eq 1 ]] && echo "  -> Deleted ${deleted_count} items"
       fi
@@ -177,7 +177,12 @@ main() {
   # Parse command line options
   local dry_run=0
   local show_stats=0
-  while getopts ":ns" opt; do
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+   export _DOTFILES_SCRIPT_DEPTH=$(( ${_DOTFILES_SCRIPT_DEPTH:-0} + 1 ))
+   trap '_decrement_script_depth' EXIT
+   while getopts ":ns" opt; do
     case ${opt} in
       n)
         dry_run=1
@@ -186,19 +191,21 @@ main() {
         show_stats=1
         ;;
       \?)
-        warn "-${OPTARG} is not a valid option"
+        _record_error "-${OPTARG} is not a valid option"
         usage "${_SCRIPT_NAME}"
+        print_script_summary
+        return 1
         ;;
     esac
   done
   shift $((OPTIND - 1))
 
-  [[ ${dry_run} -eq 1 ]] && warn "Running in DRY-RUN mode - no changes will be made"
+  [[ ${dry_run} -eq 1 ]] && info 'Running in DRY-RUN mode — no changes will be made'
 
   # script_start_time is passed explicitly to print_script_duration below.
   # This script does not call step_start/step_end so there is no need to push
-  # onto SCRIPT_START_TIMES.  If step_start/step_end are ever added here,
-  # this local must also be pushed onto SCRIPT_START_TIMES so step_end can
+  # onto _script_start_times.  If step_start/step_end are ever added here,
+  # this local must also be pushed onto _script_start_times so step_end can
   # compute total elapsed correctly (see design note in .shellrc).
   local script_start_time="${EPOCHSECONDS}"
   print_script_start
@@ -222,6 +229,7 @@ main() {
   done
 
   print_script_duration "${script_start_time}"
+  print_script_summary
 }
 
 main "$@"

@@ -20,12 +20,13 @@
 # not yet include this directory when install-dotfiles.rb is first invoked.
 $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 
-require 'logging'
-include Logging
 require 'cli_parser'
 require 'fileutils'
 require 'find'
+require 'logging'
 require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
+
+include Logging
 
 # --- Constants ---
 ENV_VAR_REGEX = /--(.*?)--/.freeze # For interpolating environment variables like --VAR--

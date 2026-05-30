@@ -14,7 +14,7 @@
 ################################################################################
 
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
-[[ -n "${DEBUG+1}" ]] && echo "loading ${0}"
+[[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
 
 # Re-source guard is inside .shellrc itself — safe to call unconditionally.
 source "${HOME}/.shellrc"
@@ -30,14 +30,14 @@ recompile_zsh_scripts() {
     # Inline ${1//${HOME}/~} rather than replace_home_with_tilde: .shellrc is already
     # sourced above (line 20), so replace_home_with_tilde is available here. The inline
     # form is kept as a belt-and-suspenders measure against any future reordering.
-    [[ -n "${DEBUG+1}" ]] && echo "recompiling '${1//${HOME}/~}'"
+    [[ -n "${DEBUG:-}" ]] && echo "recompiling '${1//${HOME}/~}'"
     # Remove any stale .zwc.old left by a previously failed zrecompile run before
     # attempting recompilation. zrecompile writes .zwc files read-only; if zcompile
     # fails mid-write the .zwc.old backup is left behind — clean it up unconditionally.
-    rm -f "${1}.zwc.old"
-    zrecompile -pq "${1}" &>/dev/null
+    rm -f "${1}.zwc.old" || true
+    zrecompile -pq "${1}" &>/dev/null || true
     # Remove .zwc.old again in case this run moved the old file there before failing.
-    rm -f "${1}.zwc.old"
+    rm -f "${1}.zwc.old" || true
   fi
 }
 
@@ -79,7 +79,7 @@ find_in_folder_and_recompile() {
   local sentinel="${XDG_CACHE_HOME}/zwc-sentinel-${dir_to_scan//\//-}"
   if is_file "${sentinel}" && [[ "${sentinel}" -nt "${dir_to_scan}" ]]; then
     # Bare echo — same reasoning as above: inline to avoid .shellrc load-order dependency.
-    [[ -n "${DEBUG+1}" ]] && echo "skipping recompile scan (unchanged): '${dir_to_scan//${HOME}/~}'"
+    [[ -n "${DEBUG:-}" ]] && echo "skipping recompile scan (unchanged): '${dir_to_scan//${HOME}/~}'"
     return
   fi
 
@@ -144,4 +144,4 @@ recompile_zsh_autoload_dir "${XDG_CONFIG_HOME}/zsh"
   find_in_folder_and_recompile /usr/local
 } &|
 
-[[ -n "${DEBUG+1}" ]] && echo "Finished recompiling zsh scripts."
+if [[ -n "${DEBUG:-}" ]]; then echo "Finished recompiling zsh scripts."; fi

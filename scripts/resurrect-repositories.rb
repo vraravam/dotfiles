@@ -8,10 +8,14 @@
 #   1. Ruby language is present in the system prior to this script being run.
 
 # Ensure utilities/ is on the load path so 'require' works regardless of whether
-# RUBYLIB is set (e.g. when invoked outside of an interactive zsh session).
+# RUBYLIB is set. This is necessary during FIRST_INSTALL (fresh-install-of-osx.sh)
+# where the dotfiles repo is cloned after .shellrc is first sourced, so RUBYLIB does
+# not yet include this directory when install-dotfiles.rb is first invoked.
 $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 
 require 'cli_parser'
+require 'logging'
+
 include Logging
 
 options = {}
@@ -80,7 +84,7 @@ def _find_and_replace_env_var(folder)
   folder.gsub(/\$\{(.*?)\}/) do |match|
     key = Regexp.last_match(1)
     ENV.fetch(key) do
-      warn("Environment variable '#{key}' not set. Keeping placeholder '#{match}'.")
+      record_warning("Environment variable '#{key}' not set. Keeping placeholder '#{match}'.")
       match
     end
   end
@@ -147,8 +151,8 @@ def _find_git_remotes(folder)
       yield remote_name, url if block_given?
     end
   else
-    warn("Could not retrieve remotes using 'git config --get-regexp' for '#{folder.cyan}' (status: #{status.exitstatus}).")
-    warn("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
+    record_warning("Could not retrieve remotes using 'git config --get-regexp' for '#{folder.cyan}' (status: #{status.exitstatus}).")
+    record_warning("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
   end
 end
 
@@ -183,22 +187,22 @@ def _find_git_repos_from_disk(path)
         line.include?('No such file or directory')
       # Add other common noisy messages if needed
     end
-    warn("Issues encountered while searching for git repositories:\n#{meaningful_errors.join("\n")}") if meaningful_errors.any?
+    record_warning("Issues encountered while searching for git repositories:\n#{meaningful_errors.join("\n")}") if meaningful_errors.any?
   end
 
   if status.success? || !nil_or_empty?(stdout_str.strip) # Process output if command was successful or if there's any output despite error
     stdout_str.split("\0").map { |git_path| File.dirname(git_path) }.uniq.sort
   else
     # This case means find command failed AND produced no output, a more critical failure.
-    warn("`find` command failed (status #{status.exitstatus}) and produced no output.")
-    warn("STDERR from find: #{stderr_str}") unless nil_or_empty?(stderr_str.strip)
+    record_error("`find` command failed (status #{status.exitstatus}) and produced no output.")
+    record_error("STDERR from find: #{stderr_str}") unless nil_or_empty?(stderr_str.strip)
     []
   end
 rescue Errno::ENOENT # Specific rescue for `find` not being found
-  warn('`find` command not found. Please ensure it is installed and in your PATH.')
+  record_error('`find` command not found. Please ensure it is installed and in your PATH.')
   []
 rescue StandardError => e # Catch other potential errors during command execution
-  warn("Error executing find command: #{e.message}")
+  record_error("Error executing find command: #{e.message}")
   []
 end
 
@@ -215,7 +219,7 @@ def _read_git_repos_from_file(filename)
     else
       # Provide more context for the warning
       repo_identifier = repo[REMOTE_KEY_NAME] || repo.inspect # Use remote URL or full inspect if no remote
-      warn("Repository entry '#{repo_identifier}' has invalid or missing '#{FOLDER_KEY_NAME}'. Skipping environment variable expansion for its folder.")
+      record_warning("Repository entry '#{repo_identifier}' has invalid or missing '#{FOLDER_KEY_NAME}'. Skipping environment variable expansion for its folder.")
     end
   end
   repositories
@@ -297,18 +301,20 @@ def _resurrect_each(repo, idx, total)
   end
 
   # After cloning, verify the origin URL
+  section_header2('Clone verification')
   cloned_origin_url = _find_git_remote_url(folder, ORIGIN_NAME)
   if cloned_origin_url
     existing_remotes[ORIGIN_NAME] = cloned_origin_url
     if cloned_origin_url != repo[REMOTE_KEY_NAME]
-      warn("Cloned origin URL '#{cloned_origin_url}' differs from config '#{repo[REMOTE_KEY_NAME]}' for '#{folder.cyan}'.")
+      record_warning("Cloned origin URL '#{cloned_origin_url}' differs from config '#{repo[REMOTE_KEY_NAME]}' for '#{folder.cyan}'.")
     end
   else
-    warn("Could not verify origin remote URL after cloning '#{folder.cyan}'.")
+    record_warning("Could not verify origin remote URL after cloning '#{folder.cyan}'.")
     existing_remotes[ORIGIN_NAME] = repo[REMOTE_KEY_NAME] # Assume it matches if verification fails
   end
 
   # Add missing 'other_remotes'
+  section_header2('Remote configuration')
   _find_git_remotes(folder) do |name, url|
     existing_remotes[name] = url
   end
@@ -322,31 +328,31 @@ def _resurrect_each(repo, idx, total)
           info("Updating remote '#{name}' URL from '#{existing_remotes[name]}' to '#{remote}'")
           _stdout, stderr, status = Open3.capture3(*git_base_cmd, REMOTE_KEY_NAME, 'set-url', name, remote)
           unless status.success?
-            warn("Failed to update URL for remote '#{name}' in repo '#{folder.cyan}' (status: #{status.exitstatus})")
-            warn("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
+            record_warning("Failed to update URL for remote '#{name}' in repo '#{folder.cyan}' (status: #{status.exitstatus})")
+            record_warning("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
           end
         end
       else
         info("Adding remote '#{name}' -> '#{remote}'")
         _stdout, stderr, status = Open3.capture3(*git_base_cmd, REMOTE_KEY_NAME, 'add', name, remote)
         unless status.success?
-          warn("Failed to add remote '#{name}' for repo '#{folder.cyan}' (status: #{status.exitstatus})")
-          warn("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
+          record_warning("Failed to add remote '#{name}' for repo '#{folder.cyan}' (status: #{status.exitstatus})")
+          record_warning("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
         end
       end
     end
   end
 
-  info('Fetching all remotes and tags...')
+  section_header2('Fetching all remotes and tags...')
   _stdout, stderr, status = Open3.capture3(*git_base_cmd, 'fetch', '-q', '--all', '--tags')
   unless status.success?
-    warn("Failed to fetch all remotes and tags for repo '#{folder.cyan}'")
-    warn("Fetch STDERR:\n#{stderr}") unless nil_or_empty?(stderr.strip)
+    record_warning("Failed to fetch all remotes and tags for repo '#{folder.cyan}'")
+    record_warning("Fetch STDERR:\n#{stderr}") unless nil_or_empty?(stderr.strip)
   end
 
   return unless repo[POST_CLONE_KEY_NAME].is_a?(Array)
 
-  debug('Running post-clone commands...')
+  section_header2('Running post-clone commands')
   # Use begin/ensure so the process working directory is always restored even if a command
   # raises an unexpected exception mid-loop.
   original_dir = Dir.pwd
@@ -356,8 +362,8 @@ def _resurrect_each(repo, idx, total)
       debug("Executing: #{command_str.dump}")
       _stdout, stderr, status = Open3.capture3(command_str)
       unless status.success?
-        warn("Post-clone command #{command_str.dump} failed for repo '#{folder.cyan}' (exit status: #{status.exitstatus})")
-        warn("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
+        record_warning("Post-clone command #{command_str.dump} failed for repo '#{folder.cyan}' (exit status: #{status.exitstatus})")
+        record_warning("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
       end
     end
   ensure
@@ -406,7 +412,8 @@ def _verify_all(repositories, discovered_count, filter, ref_folder: nil)
   puts("  Verified entries:        #{common_repos.length.green}")
   puts("  Common repositories:\n  #{common_repos.map(&:cyan).join("\n  ")}")
   if diff_repos.any?
-    warn("Please correlate the following #{diff_repos.length.red} differences in projects manually:\n  #{diff_repos.map(&:cyan).join("\n  ")}")
+    record_warning("Please correlate the following #{diff_repos.length.red} differences in projects manually:\n  #{diff_repos.map(&:cyan).join("\n  ")}")
+    print_script_summary
     exit(1)
   else
     success('Everything is kosher!')
@@ -416,8 +423,8 @@ end
 # main program
 filter = (ENV['FILTER'] || '').strip
 
-script_start_time = Time.now.to_i
-print_script_start
+increment_script_depth
+script_start_time = print_script_start
 
 if options[:generate]
   section_header('Generating repository configuration')
@@ -452,7 +459,7 @@ elsif options[:resurrect]
       _resurrect_each(repo, idx, repositories.length)
       successful_repos << folder
     rescue StandardError => e
-      warn("Resurrection failed for '#{folder.cyan}': #{e.message}")
+      record_error("Resurrection failed for '#{folder.cyan}': #{e.message}")
       failed_repos << folder
     end
   end
@@ -465,7 +472,7 @@ elsif options[:resurrect]
     puts("Failed:             #{failed_repos.length.red}")
     puts('Failed repositories:'.red)
     failed_repos.each { |failed_folder| puts("  - '#{failed_folder.red}'") }
-    print_script_duration(script_start_time)
+    print_script_summary(script_start_time)
     exit(1)
   end
 elsif options[:check]
@@ -481,4 +488,4 @@ elsif options[:check]
   _verify_all(repositories, discovered_count, filter, ref_folder: reference_folder)
 end
 
-print_script_duration(script_start_time)
+print_script_summary(script_start_time)

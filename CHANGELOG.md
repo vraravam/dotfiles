@@ -3,6 +3,100 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of changelog:
 
 
+### 3.1.1
+
+#### Introduce deferred error/warning collection
+
+* *[.shellrc]* Added `user_action()` logging function (bold yellow, `➡️` prefix) for manual-step messages — distinct from `warn` (unexpected problem) and `info` (informational). Suppressed in direnv subshells.
+* *[.shellrc]* Extracted `_record_warning`, `_record_error`, and `print_script_summary` as shared helpers using zsh dynamic scoping; `print_script_summary` fires a macOS notification when errors or warnings were collected.
+* *[add-upstream-git-config.sh, capture-prefs.sh, cleanup-browser-profiles.sh, osx-defaults.sh, recreate-repo.sh, run-all.sh, setup-login-item.sh]* Applied the deferred collection pattern — operation failures use `_record_warning`/`_record_error`; `print_script_summary` called at end of `main()`.
+* *[fresh-install-of-osx.sh]* Two-level collection: `_step_warnings` for recoverable issues, `_step_errors` for significant failures; `_cleanup_and_exit` calls `print_script_summary` before the fatal crash message.
+* *[software-updates-cron.sh]* Two-level collection for update and infrastructure failures; escalated `_title_icon` to `⚠️` when outdated packages need manual update.
+
+#### Gate all script banners on outermost-script depth
+
+* *[.shellrc]* Added `is_outermost_script` (`_DOTFILES_SCRIPT_DEPTH <= 1`) and `_decrement_script_depth`; `print_script_start`, `print_script_duration`, and `print_script_summary` now guard on `is_outermost_script || return 0`.
+* *[logging.rb]* Added `outermost_script?`, `increment_script_depth` (registers `at_exit` decrement), and `decrement_script_depth`; all three print helpers guard on `outermost_script?` — mirrors shell behaviour.
+* *[.shellrc, logging.rb]* `print_script_duration` now prefixes output with the script name, eliminating ambiguity in multi-script cron logs.
+* *[add-upstream-git-config.sh, cleanup-browser-profiles.sh, fresh-install-of-osx.sh, recreate-repo.sh, run-all.sh, software-updates-cron.sh]* Each now decrements `_DOTFILES_SCRIPT_DEPTH` on exit via `_decrement_script_depth`.
+* *[resurrect-repositories.rb]* Calls `Logging.increment_script_depth` before `print_script_start`; `at_exit` hook handles the decrement.
+* *[ruby-scripting.instructions.md]* Documented depth counter, `is_outermost_script` / `outermost_script?` guard, and why subprocess scripts still decrement.
+
+#### Expand Ruby logging.rb with deferred collection and timing
+
+* *[logging.rb]* Added `record_warning`, `record_error`, `current_section=`, and `print_script_summary` — Ruby mirrors of the shell deferred-collection pattern. `section_header` now sets `@current_section` as a side effect.
+* *[logging.rb]* `print_script_start` returns the Unix epoch it logs — eliminates the two-call pattern; displayed timestamp and in-memory start time are always identical.
+* *[logging.rb]* `print_script_summary(start_time = nil)` calls `print_script_duration` internally when provided — no separate call needed.
+* *[logging.rb]* Added `Logging.user_action` to mirror the shell `user_action()` function.
+* *[resurrect-repositories.rb]* Converted to `record_warning`/`record_error`; added `section_header` calls per phase; updated to `script_start_time = print_script_start` / `print_script_summary(script_start_time)` pattern.
+* *[ruby-scripting.instructions.md]* Documented the deferred-collection pattern, two shell-version deviations (`print_script_start` return value; `print_script_summary` start-time argument), and `_SCRIPT_NAME` dynamic-scoping behaviour.
+
+#### Unify script logging decoration across shell and Ruby
+
+* *[.shellrc]* `print_script_start` prefixes banner with `_SCRIPT_NAME`; `_record_warning`/`_record_error` prefix entries with `[_SCRIPT_NAME][_current_section]`; `print_script_summary` reads `_SCRIPT_NAME` via dynamic scoping — no argument needed.
+* *[add-upstream-git-config.sh, cleanup-browser-profiles.sh, recreate-repo.sh, run-all.sh]* Removed the now-redundant `"${_SCRIPT_NAME}"` argument from all `print_script_summary` call sites.
+
+#### Harden shell utility infrastructure
+
+* *[.shellrc]* Added `user_action()` — see "Introduce deferred error/warning collection" above.
+* *[.shellrc]* Extracted `has_sudo_credentials` into § 1e; replaced all raw `sudo -n true 2>/dev/null` checks.
+* *[.shellrc]* Fixed `is_zsh` from `[[ "${0}" =~ 'zsh' ]]` to `[[ -n "${ZSH_VERSION-}" ]]`.
+* *[.shellrc]* Added `is_debug` and `is_first_install` predicates; replaced all raw inline forms.
+* *[.shellrc, .aliases]* User-controlled boolean flags (`DEBUG`, `FIRST_INSTALL`) now use `:-`; shell-provided vars (`ZSH_VERSION`) keep `-`.
+* *[.shellrc]* Added `debug` logging to `load_zsh_configs`.
+* *[.aliases]* `require_env_var`: replaced raw `-z` test with `is_zero_string` and `warn`.
+* *[.shellrc, .aliases]* Log-level reclassifications: idempotency guards → `info`; expected-absent tools → `debug`; action items → `user_action`; "Successfully sourced ~/.shellrc" → `success`.
+* *[6 scripts]* Fixed unsafe `&&`-as-conditional patterns in `software-updates-cron.sh`, `recreate-repo.sh`, `capture-prefs.sh`, `run-all.sh`, `fresh-install-of-osx.sh` (×2) — converted to explicit `if` blocks.
+
+#### Fix cron-safety issues in `.shellrc`
+
+* *[.shellrc]* Added `${COLUMNS:-80}` fallback in `_section_header_impl` and `print_chars_for_length` — zsh sets `COLUMNS` to `0` with no terminal.
+
+#### Align startup files and autoload functions to established conventions
+
+* *[files/--ZDOTDIR--/.zshenv]* Changed `${DEBUG+1}` → `${DEBUG:-}`.
+* *[files/--ZDOTDIR--/.zshrc]* Changed `${DEBUG+1}` → `${DEBUG:-}` and `${ZSH_PROFILE_RC+1}` → `${ZSH_PROFILE:-}`; renamed `ZSH_PROFILE_RC` → `ZSH_PROFILE`; converted final `[[ ]] &&` one-liner to `if/fi`.
+* *[files/--ZDOTDIR--/.zlogin]* Changed three `${DEBUG+1}` → `${DEBUG:-}`; added `|| true` to `rm -f`/`zrecompile` calls; converted final `[[ ]] && echo` to `if/fi`.
+* *[files/--XDG_CONFIG_HOME--/zsh/{cc,count,pull,push,st,status_all_repos,update_all_repos,upreb}]* Changed compdef guard to `is_zsh && (($+functions[compdef]))` — guards zsh-only syntax from bash; updated inline comment.
+
+#### Expand shell-scripting documentation
+
+* *[shell-scripting.instructions.md]* Documented `_SCRIPT_NAME` at script scope (not `local`) for dynamic-scoping availability; added `${_SCRIPT_NAME:-<interactive>}` fallback.
+* *[shell-scripting.instructions.md]* Updated "Always Quote Variables" example to use `is_file` instead of `[[ -f ]]`.
+* *[shell-scripting.instructions.md]* Added double-quotes exception for strings containing single quotes.
+* *[shell-scripting.instructions.md]* Added `## Parameter Expansion Operators — \`:-\` vs \`-\`` section with scan rule.
+* *[shell-scripting.instructions.md]* Fixed `DIRENV_IN_ENVRC` variable name (was `DIRENV_DIR`).
+* *[shell-scripting.instructions.md]* Rewrote cron section: `load_zsh_configs` now conditional; added `sudo`, `is_running_in_tty`, and `COLUMNS` subsections.
+* *[shell-scripting.instructions.md]* Updated autoload template and `compdef` guard to use `is_zsh`.
+* *[shell-scripting.instructions.md]* Added `## _DOTFILES_SCRIPT_DEPTH — Increment and Decrement` section.
+* *[shell-scripting.instructions.md]* Updated `shfmtignore` example to use `has_sudo_credentials`.
+* *[zsh-startup.instructions.md]* Updated profiling example to use `ZSH_PROFILE`.
+* *[shell-scripting.instructions.md, ruby-scripting.instructions.md]* Added unified `## Logging — Level Usage` classification table.
+* *[shell-scripting.instructions.md]* Added `## '&&' as Conditional — Safety Under 'set -e' / ERR Trap` section.
+* *[all shell scripts]* Ran `shfmt` across all non-ignored scripts.
+
+#### Expand copilot-instructions documentation
+
+* *[copilot-instructions.md]* Added `## Four-Context Validation` section.
+* *[copilot-instructions.md]* Fixed `is_running_in_tty` table entry (stdin, `[[ -t 0 ]]`).
+* *[copilot-instructions.md]* Updated deferred-collection pattern description: depth counter, decrement trap, Ruby equivalent.
+* *[copilot-instructions.md]* Removed `"${_SCRIPT_NAME}"` from `print_script_summary` example.
+* *[copilot-instructions.md]* Added `load_zsh_configs` ZDOTDIR safety note, conditional-cron guidance, `has_sudo_credentials` guard, `is_running_in_tty` gate, and `COLUMNS` fallback bullets.
+* *[GettingStarted.md]* Updated bootstrap `curl` command to pipe through `tee "${HOME}/fresh-install-of-osx.log"`.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then run in any open terminal:
+
+  ```bash
+  install-dotfiles.rb
+  unfunction is_shellrc_sourced; source ~/.shellrc   # to pick up new functions and bug fixes
+  unfunction is_aliases_sourced; source ~/.aliases   # to pick up new functions and bug fixes
+  delete_caches   # clear any stale .zwc bytecode and cached shell environment files.
+  ```
+
+* Quit and restart the Terminal application (to guarantee that the latest versions of the zsh autoload scripts are loaded).
+
 ### 3.0-19
 
 * *[.shellrc]* Eliminated subprocess forks on every shell start: `$(whoami)` → `${USER}` (PAM builtin); `$(uname -m)` → `${${MACHTYPE%%-*}/#arm/arm64}` (zsh builtin, correctly maps `arm` → `arm64` on Apple Silicon); 16× `$(colorize ...)` calls for color variable initialisation → `$'\e[...'` ANSI escape literals; `$(tput cols)` in `print_chars_for_length` and `_section_header_impl` → `${COLUMNS}` (zsh special variable, no external process).

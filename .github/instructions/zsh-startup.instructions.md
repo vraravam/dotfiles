@@ -183,7 +183,7 @@ Two env vars are wired into every startup file:
 DEBUG=true zsh
 
 # Profile startup time (run zprof after opening the shell):
-ZSH_PROFILE_RC=true zsh -i -c exit
+ZSH_PROFILE=true zsh -i -c exit
 zprof
 ```
 

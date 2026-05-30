@@ -7,7 +7,7 @@
 #   require 'cli_parser'
 
 require 'optparse'
-require 'logging'
+require_relative 'logging'
 
 # Module for parsing command-line options with standard error handling
 module CliParser

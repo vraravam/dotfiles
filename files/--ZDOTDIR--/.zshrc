@@ -15,11 +15,11 @@
 # https://blog.mattclemente.com/2020/06/26/oh-my-zsh-slow-to-load/
 
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
-[[ -n "${DEBUG+1}" ]] && echo "loading ${0}"
+[[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
-# execute 'ZSH_PROFILE_RC=true zsh -i -c exit' and run 'zprof' to get the details
-[[ -n "${ZSH_PROFILE_RC+1}" ]] && zmodload zsh/zprof
+# execute 'ZSH_PROFILE=true zsh -i -c exit' and run 'zprof' to get the details
+[[ -n "${ZSH_PROFILE:-}" ]] && zmodload zsh/zprof
 
 # Re-source guard is inside .shellrc itself — safe to call unconditionally.
 source "${HOME}/.shellrc"
@@ -122,7 +122,7 @@ ensure_dir_exists "${XDG_CACHE_HOME}"
       # Exporting FPATH leaks it into child processes and launchd user-session environment;
       # typeset +x at the bottom of this file strips the export flag after all sources.
       echo "fpath=('${brew_prefix}/share/zsh/site-functions' \"\${fpath[@]}\");"
-    } >| "${brew_shellenv_cache}" 2>/dev/null
+    } >|"${brew_shellenv_cache}" 2>/dev/null
   fi
   load_file_if_exists "${brew_shellenv_cache}"
 }
@@ -154,7 +154,7 @@ if command_exists git; then
     local git_version_cache="${XDG_CACHE_HOME}/git-version-cache.zsh"
     if ! is_file "${git_version_cache}" || [[ "${git_bin}" -nt "${git_version_cache}" ]]; then
       local ver="${${(As: :)$(git version 2>/dev/null)}[3]}"
-      echo "git_version=\"${ver}\"" >| "${git_version_cache}" 2>/dev/null
+      echo "git_version=\"${ver}\"" >|"${git_version_cache}" 2>/dev/null
     fi
     load_file_if_exists "${git_version_cache}"
   }
@@ -164,8 +164,8 @@ fi
 # update_antidote_and_regenerate_plugin_bundle. Uses zsh's -nt (newer-than)
 # file test: pure built-in, no subprocess fork. Only fires when the user has
 # edited plugins.txt and not yet regenerated; silent on every normal startup.
-[[ "${ANTIDOTE_PLUGIN_TXT}" -nt "${ANTIDOTE_PLUGIN_ZSH}" ]] \
-  && warn "antidote: '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is newer than the bundle — run '$(cyan 'update_antidote_and_regenerate_plugin_bundle')' manually to regenerate it."
+[[ "${ANTIDOTE_PLUGIN_TXT}" -nt "${ANTIDOTE_PLUGIN_ZSH}" ]] &&
+  warn "antidote: '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is newer than the bundle — run '$(cyan 'update_antidote_and_regenerate_plugin_bundle')' manually to regenerate it."
 
 # Source the pre-generated antidote static bundle.
 # On a vanilla OS (before brew installs antidote) this file is present because
@@ -194,7 +194,7 @@ if command_exists mise; then
     local mise_bin="${commands[mise]}"
     local mise_activate_cache="${XDG_CACHE_HOME}/mise-activate-cache.zsh"
     if ! is_file "${mise_activate_cache}" || [[ "${mise_bin}" -nt "${mise_activate_cache}" ]]; then
-      mise activate zsh >| "${mise_activate_cache}" 2>/dev/null
+      mise activate zsh >|"${mise_activate_cache}" 2>/dev/null
     fi
     load_file_if_exists "${mise_activate_cache}"
   }
@@ -221,7 +221,7 @@ if command_exists starship; then
     local starship_init_cache="${XDG_CACHE_HOME}/starship-init-cache.zsh"
     # Regenerate the cache only when the starship binary is newer than the cache file.
     if ! is_file "${starship_init_cache}" || [[ "${starship_bin}" -nt "${starship_init_cache}" ]]; then
-      starship init zsh >| "${starship_init_cache}" 2>/dev/null
+      starship init zsh >|"${starship_init_cache}" 2>/dev/null
     fi
     # Source directly at the top level (not deferred) so that 'setopt promptsubst'
     # emitted by the cache takes effect globally and is not scoped to a function.
@@ -288,29 +288,29 @@ if is_macos; then
   # setopt no_auto_menu             # require an extra TAB press to open the completion menu
   # setopt no_clobber               # Prevent overwriting existing files with '> filename', use '>| filename' (or >!) instead.
 
-  setopt append_history           # append history list to the history file
-  setopt auto_cd                  # cd into directory if the name is not an alias or function, but matches a directory
-  setopt auto_list                # automatically list choices on an ambiguous completion.
-  setopt auto_pushd               # make cd push the old directory onto the directory stack
-  setopt beep                     # beep on error or on completion of long commands
-  setopt extended_glob            # Enable zsh's extended glob abilities.
-  setopt extended_history         # save each command's beginning timestamp and the duration to the history file
+  setopt append_history   # append history list to the history file
+  setopt auto_cd          # cd into directory if the name is not an alias or function, but matches a directory
+  setopt auto_list        # automatically list choices on an ambiguous completion.
+  setopt auto_pushd       # make cd push the old directory onto the directory stack
+  setopt beep             # beep on error or on completion of long commands
+  setopt extended_glob    # Enable zsh's extended glob abilities.
+  setopt extended_history # save each command's beginning timestamp and the duration to the history file
   setopt hist_allow_clobber
-  setopt hist_expire_dups_first   # expire duplicates first
-  setopt hist_find_no_dups        # ignore duplicates when searching
-  setopt hist_ignore_all_dups     # do not put duplicated command into history list
-  setopt hist_ignore_dups         # do not store duplications
-  setopt hist_reduce_blanks       # remove unnecessary blanks
-  setopt hist_save_no_dups        # do not save duplicated command
-  setopt inc_append_history       # append command to history file immediately after execution
+  setopt hist_expire_dups_first # expire duplicates first
+  setopt hist_find_no_dups      # ignore duplicates when searching
+  setopt hist_ignore_all_dups   # do not put duplicated command into history list
+  setopt hist_ignore_dups       # do not store duplications
+  setopt hist_reduce_blanks     # remove unnecessary blanks
+  setopt hist_save_no_dups      # do not save duplicated command
+  setopt inc_append_history     # append command to history file immediately after execution
   setopt list_ambiguous
-  setopt list_types               # if the file being listed is a directory, show a trailing slash
+  setopt list_types             # if the file being listed is a directory, show a trailing slash
   setopt local_options
-  setopt no_case_glob             # case-insensitive globbing
-  setopt null_glob                # ignore errors when file globs don't match anything
-  setopt pushd_ignore_dups        # don’t push multiple copies of the same directory
-  setopt pushd_silent             # do not print the directory stack after pushd or popd
-  setopt share_history            # share history between different instances of the shell
+  setopt no_case_glob           # case-insensitive globbing
+  setopt null_glob         # ignore errors when file globs don't match anything
+  setopt pushd_ignore_dups # don’t push multiple copies of the same directory
+  setopt pushd_silent      # do not print the directory stack after pushd or popd
+  setopt share_history     # share history between different instances of the shell
 
   # Note: 'autoload -Uz colors && colors' was removed — none of the active plugins
   # use $fg/$bg/$color from the colors function. Our own color vars ($BLUE, $RED, etc.)
@@ -387,7 +387,7 @@ if is_macos; then
     }
 
     # Note: These are the tools that are brought in from Homebrew but are "keg-only" and should override the default ones that come with macOS.
-    for pkg in 'curl' 'gnu-tar' 'grep' 'sqlite' 'zlib' ; do
+    for pkg in 'curl' 'gnu-tar' 'grep' 'sqlite' 'zlib'; do
       use_homebrew_installation_for "${pkg}"
     done
 
@@ -447,13 +447,13 @@ fi
 # fi
 
 # remove empty components to avoid '::' ending up + resulting in './' being in $PATH, etc
-path=( "${path[@]:#}" )
-fpath=( "${fpath[@]:#}" )
+path=("${path[@]:#}")
+fpath=("${fpath[@]:#}")
 # zsh does not auto-tie INFOPATH<->infopath (unlike PATH<->path); ensure the tie exists
 # so that the array form is available. typeset -T is safe to call even if already tied.
 typeset -gT INFOPATH infopath ':'
-infopath=( "${infopath[@]:#}" )
-manpath=( "${manpath[@]:#}" )
+infopath=("${infopath[@]:#}")
+manpath=("${manpath[@]:#}")
 
 # remove duplicates from some env vars
 typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPATH manpath PATH path PKG_CONFIG_PATH
@@ -467,5 +467,5 @@ typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPAT
 typeset +x FPATH fpath cdpath CDPATH
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
-# execute 'ZSH_PROFILE_RC=true zsh' and run 'zprof' to get the details
-[[ -n "${ZSH_PROFILE_RC+1}" ]] && zprof
+# execute 'ZSH_PROFILE=true zsh' and run 'zprof' to get the details
+if [[ -n "${ZSH_PROFILE:-}" ]]; then zprof; fi

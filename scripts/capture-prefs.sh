@@ -23,6 +23,10 @@ usage() {
 
 main() {
   local operation=''
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
   while getopts ":ei" opt; do
     case ${opt} in
       e)
@@ -34,6 +38,7 @@ main() {
       \?)
         warn "-${OPTARG} is not a valid option"
         usage "${_SCRIPT_NAME}"
+        return 1
         ;;
     esac
   done
@@ -42,10 +47,19 @@ main() {
   if is_zero_string "${operation}"; then
     warn "Missing required arguments/switches"
     usage "${_SCRIPT_NAME}"
+    return 1
   fi
 
-  is_zero_string "${PERSONAL_CONFIGS_DIR}" && error "Required env var '$(yellow 'PERSONAL_CONFIGS_DIR')' is not defined."
-  is_zero_string "${DOTFILES_DIR}" && error "Required env var '$(yellow 'DOTFILES_DIR')' is not defined."
+  if is_zero_string "${PERSONAL_CONFIGS_DIR}"; then
+    _record_error "Required env var '$(yellow 'PERSONAL_CONFIGS_DIR')' is not defined."
+    print_script_summary "${_SCRIPT_NAME}"
+    return 1
+  fi
+  if is_zero_string "${DOTFILES_DIR}"; then
+    _record_error "Required env var '$(yellow 'DOTFILES_DIR')' is not defined."
+    print_script_summary "${_SCRIPT_NAME}"
+    return 1
+  fi
 
   local target_dir="${PERSONAL_CONFIGS_DIR}/defaults"
   ensure_dir_exists "${target_dir}"
@@ -61,10 +75,18 @@ main() {
   # Read domains from the file into the array, splitting by newline and filtering comments/blanks
   # Define the location of the domains list
   local domains_file="${DOTFILES_DIR}/scripts/data/capture-prefs-allowed-list.txt"
-  ! is_file "${domains_file}" && error "Domains list file not found: ${domains_file}"
+  if ! is_file "${domains_file}"; then
+    _record_error "Domains list file not found: ${domains_file}"
+    print_script_summary "${_SCRIPT_NAME}"
+    return 1
+  fi
 
   local denied_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-denied-list.txt"
-  ! is_file "${denied_list_file}" && error "Denied list file not found: ${denied_list_file}"
+  if ! is_file "${denied_list_file}"; then
+    _record_error "Denied list file not found: ${denied_list_file}"
+    print_script_summary "${_SCRIPT_NAME}"
+    return 1
+  fi
 
   # Load denied list into an associative array for O(1) lookups.
   # while+read: no subprocess fork; =~ and ${//} skip comments and blanks.
@@ -84,7 +106,7 @@ main() {
     app_array+=("${_line}")
   done <"${domains_file}"
   if is_empty_array app_array; then
-    warn "No domains found in '$(yellow "${domains_file}")'. Nothing to do."
+    info "No domains found in '$(yellow "${domains_file}")' — nothing to do."
     exit 0
   fi
 
@@ -92,27 +114,28 @@ main() {
   local app_pref
   for app_pref in "${app_array[@]}"; do
     # Defensive guard: skip empty domain names (would produce a stale .defaults file)
-    is_zero_string "${app_pref}" && continue
+    if is_zero_string "${app_pref}"; then continue; fi
     # Skip domains on the denied list — they contain machine-specific or account-bound
     # data that is meaningless or harmful when exported/imported across machines.
     if ((${+_denied[${app_pref}]})); then
-      warn "Skipping denied domain '$(yellow "${app_pref}")' — contains machine-specific data (see capture-prefs-denied-list.txt)"
+      debug "Skipping denied domain '$(yellow "${app_pref}")' — contains machine-specific data (see capture-prefs-denied-list.txt)"
       continue
     fi
     debug "Processing $(cyan "${app_pref}")"
     local target_file="${target_dir}/${app_pref}.defaults"
     # Allow the loop to continue even if a specific defaults command fails
-    /usr/bin/defaults "${operation}" "${app_pref}" "${target_file}" || warn "Failed to ${operation} '${app_pref}'"
+    /usr/bin/defaults "${operation}" "${app_pref}" "${target_file}" || _record_warning "Failed to ${operation} '${app_pref}'"
   done
 
   # If exporting, add the results to git staging
   # Run this *after* the loop finishes exporting all files.
   if [[ "${operation}" == 'export' ]]; then
     # Explicitly specify the git repo in the home folder, so that this script can be run from any folder
-    git -C "${HOME}" add "${target_dir}" || warn "Failed to git add '${target_dir}'"
+    git -C "${HOME}" add "${target_dir}" || _record_warning "Failed to git add '${target_dir}'"
     success "Export complete. Staged changes in '$(cyan "${target_dir}")'."
   fi
-  success "Operation finished. Processed $(cyan "${#app_array[@]}") domains (denied-list entries skipped with warnings)."
+  success "Operation finished. Processed $(cyan "${#app_array[@]}") domains (denied-list entries skipped silently)."
+  print_script_summary "${_SCRIPT_NAME}"
 }
 
 main "$@"

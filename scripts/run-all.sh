@@ -6,8 +6,8 @@
 
 set -euo pipefail
 
-source "${HOME}/.aliases"
 _SCRIPT_NAME="${0:t}"
+source "${HOME}/.aliases"
 
 usage() {
   print_usage "${1}" \
@@ -25,14 +25,21 @@ usage() {
 }
 
 main() {
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  trap '_decrement_script_depth' EXIT
   while getopts ":h:" opt; do
     case ${opt} in
       h)
         usage "${_SCRIPT_NAME}"
+        return 0
         ;;
       :)
         warn "-${OPTARG} requires an argument"
         usage "${_SCRIPT_NAME}"
+        return 1
         ;;
     esac
   done
@@ -40,16 +47,17 @@ main() {
 
   # if there are no arguments, print usage and exit
   if [[ $# -eq 0 ]]; then
-    warn "Missing required arguments/switches"
+    warn 'Missing required arguments/switches'
     usage "${_SCRIPT_NAME}"
+    return 1
   fi
 
   section_header "$(yellow 'Running commands in git repositories')"
 
   # script_start_time is passed explicitly to print_script_duration below.
   # This script does not call step_start/step_end so there is no need to push
-  # onto SCRIPT_START_TIMES.  If step_start/step_end are ever added here,
-  # this local must also be pushed onto SCRIPT_START_TIMES so step_end can
+  # onto _script_start_times.  If step_start/step_end are ever added here,
+  # this local must also be pushed onto _script_start_times so step_end can
   # compute total elapsed correctly (see design note in .shellrc).
   local script_start_time
   script_start_time="${EPOCHSECONDS}"
@@ -70,7 +78,7 @@ main() {
   local -a dir_array=()
   while IFS= read -r git_dir; do
     local d="${git_dir:h}"
-    [[ -n "${filter}" && ! "${d}" =~ ${filter} ]] && continue
+    if is_non_zero_string "${filter}" && [[ ! "${d}" =~ ${filter} ]]; then continue; fi
     if ((!${+_seen[${d}]})); then
       _seen[${d}]=1
       dir_array+=("${d}")
@@ -91,7 +99,7 @@ main() {
         successful_repos+=("${dir}")
       else
         failed_repos+=("${dir}")
-        warn "Command failed in: $(red "${dir}")"
+        _record_warning "Command failed in: $(red "${dir}")"
       fi
       ((count++))
     fi
@@ -110,9 +118,10 @@ main() {
   fi
 
   print_script_duration "${script_start_time}"
+  print_script_summary
 
   # Exit with error if any repos failed
-  is_non_empty_array failed_repos && exit 1
+  if is_non_empty_array failed_repos; then exit 1; fi
   exit 0
 }
 

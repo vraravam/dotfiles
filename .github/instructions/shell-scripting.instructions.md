@@ -77,6 +77,14 @@ underscore signals it is script-private (not exported). `readonly` is omitted
 because the variable is never reassigned and the declaration overhead adds
 no safety in practice.
 
+Because `_SCRIPT_NAME` is declared at script scope (not `local`), it is
+visible to any library function called from the script (e.g. `load_zsh_configs`
+uses it for debug logging, `print_script_start` and `print_script_summary` read
+it via dynamic scoping to prefix their output — no argument needed). Library
+functions that want the calling script's name should reference
+`${_SCRIPT_NAME:-<interactive>}` with a fallback — the variable is absent in
+interactive sessions where no script is active.
+
 ### `print_usage` over `cat <<EOF`
 
 Always use `print_usage` (defined in `.shellrc`) for usage output — not
@@ -234,12 +242,12 @@ value is used in a context where it could contain spaces:
 ```zsh
 # Good — quoted, safe if value contains spaces
 cp "${src_file}" "${dest_dir}/"
-[[ -f "${config_path}" ]]
+is_file "${config_path}"
 info "Processing ${filename}"
 
 # BAD — unquoted, breaks if value contains spaces
 cp $src_file $dest_dir/
-[[ -f $config_path ]]
+is_file $config_path
 info "Processing $filename"
 ```
 
@@ -263,6 +271,20 @@ info "Done: ${count} files processed"
 # BAD — double quotes on strings with no variable expansion (unnecessary)
 local sep="------"
 grep -q "pattern"   # fine if no special chars, but prefer single quotes
+```
+
+Exception: prefer **double quotes** over single quotes when the static string
+contains single quotes that would otherwise require `$'...\n...'` escaping or
+concatenation. Double quotes allow literal single quotes inside and support
+literal newlines, making multiline strings significantly more readable:
+
+```zsh
+# BAD — $'...' with escaped single quotes is hard to read
+user_action $'Restart \'Terminal\' and \'iTerm\':\n  \'ProtonVPN\' - may drop VPN.'
+
+# Good — double quotes; single quotes are literal, newline is literal
+user_action "Restart 'Terminal' and 'iTerm':
+  'ProtonVPN' - may drop VPN."
 ```
 
 ### `${var}` Brace Notation
@@ -295,6 +317,56 @@ local arg="${1:-}"   # Good
 local arg="$1"       # BAD under set -u if $1 not provided
 ```
 
+## Parameter Expansion Operators — `:-` vs `-`
+
+The choice between `${VAR:-fallback}` and `${VAR-fallback}` is not arbitrary —
+it signals intent about whether an **empty** value should be treated the same as
+**unset**:
+
+| Operator | Substitutes fallback when... |
+|---|---|
+| `${VAR:-fallback}` | VAR is **unset** OR **set-but-empty** |
+| `${VAR-fallback}` | VAR is **unset** only |
+
+### Rule: use `:-` for user-controlled boolean feature flags
+
+All user-controlled boolean env vars (`DEBUG`, `ZSH_PROFILE`, `FIRST_INSTALL`,
+and any similar flag) must use `:-`:
+
+```zsh
+# Good — unset and set-but-empty are identical for a user flag
+[[ -n "${DEBUG:-}" ]]
+[[ -n "${ZSH_PROFILE:-}" ]]
+[[ -n "${FIRST_INSTALL:-}" ]]
+```
+
+For a flag, `VAR=` (set but empty) and an unset `VAR` are the same thing — the
+flag is not active. `:-` makes this intent explicit and avoids silent differences
+between `unset VAR` and `VAR=`.
+
+### Rule: use `-` for shell-provided or system-set variables
+
+Variables set by the shell or by external tools — where an empty value is
+meaningfully distinct from unset — use `-`:
+
+```zsh
+# Good — ZSH_VERSION is always non-empty when set; '-' is correct here
+[[ -n "${ZSH_VERSION-}" ]]
+[[ -n "${BASH_VERSION-}" ]]
+```
+
+`ZSH_VERSION` and `BASH_VERSION` are never set to empty by the shell; they are
+either absent (wrong interpreter) or non-empty (correct interpreter). Using `:-`
+here would be harmless in practice, but `-` is more precise about the semantics.
+
+### Scan rule
+
+When reviewing any shell file, flag every `${VAR-}` or `${VAR-""}` where `VAR`
+is a user-controlled boolean feature flag and change it to `${VAR:-}` /
+`${VAR:-""}`. Only leave `-` when the variable is shell-provided (e.g.
+`ZSH_VERSION`, `BASH_VERSION`) or when set-but-empty is genuinely distinct from
+unset for that variable.
+
 ## Pipelines with `grep`
 
 `grep -q` in a pipeline under `set -o pipefail` causes SIGPIPE:
@@ -307,8 +379,54 @@ some_command | grep -q "pattern"
 some_command | grep -q "pattern" || true
 # Or better, capture output first
 output=$(some_command)
-is_non_zero_string "${output}" && echo "${output}" | grep -q "pattern"
+if is_non_zero_string "${output}"; then echo "${output}" | grep -q "pattern"; fi
 ```
+
+## `&&` as Conditional — Safety Under `set -e` / ERR Trap
+
+`A && B` where A returning false (exit 1) is a **normal, expected outcome** is
+unsafe in any script that uses `set -e` or an ERR trap. When A returns 1, the
+overall `&&` expression also returns 1 — that non-zero result triggers `set -e`
+abort or fires the ERR trap, even though no actual error occurred.
+
+The fix is always an explicit `if` statement, which never propagates a non-zero
+exit code from the predicate to the enclosing scope.
+
+```zsh
+# BAD — is_file returning false (file absent) is normal; fires set -e / ERR trap
+is_file "${optional_config}" && cp "${optional_config}" "${dest}"
+
+# BAD — is_zero_string returns 1 for every non-empty string (the common case)
+is_zero_string "${app_pref}" && continue
+
+# BAD — is_non_empty_array returns 1 for empty array (the success/clean-run case)
+is_non_empty_array failed_repos && exit 1
+
+# BAD — is_non_zero_string returns 1 for empty string (e.g. a clean cron run)
+is_non_zero_string "${outdated_flat}" && _msg+=". Needs manual update: ${outdated_flat}"
+
+# Good — explicit if; predicate exit code never reaches the enclosing scope
+if is_file "${optional_config}"; then cp "${optional_config}" "${dest}"; fi
+if is_zero_string "${app_pref}"; then continue; fi
+if is_non_empty_array failed_repos; then exit 1; fi
+if is_non_zero_string "${outdated_flat}"; then _msg+=". Needs manual update: ${outdated_flat}"; fi
+```
+
+**Safe exception — `A && B || C` dispatch:**
+
+`A && B || C` (run B on success, C on failure) is safe when C always returns 0.
+The overall expression resolves to C's exit code, which is 0 — the ERR trap
+never fires. This pattern is correct for intentional success/failure branching:
+
+```zsh
+# Good — C (_record_error / _record_warning) always returns 0; ERR trap never fires
+update_all_repos && success 'Updated repos' || _record_error 'Failed to update repos'
+git pull -r && success "Updated: ${folder}" || _record_warning "Failed: ${folder}"
+```
+
+**Scan rule:** when editing any script that uses `set -e` or an ERR trap, scan
+every standalone `A && B` line and verify that A returning false is an *error*
+(not a normal/expected case). If it is expected, convert to `if A; then B; fi`.
 
 ## Function Visibility
 
@@ -369,23 +487,105 @@ trap 'notify "Error in ${BASH_SOURCE[0]##*/} (line ${LINENO})" "❌ direnv error
 ```
 
 `info` and `success` are automatically suppressed in direnv subshells because
-`.shellrc` guards them with `is_non_zero_string "${DIRENV_DIR:-}"`. `warn` and
+`.shellrc` guards them with `is_non_zero_string "${DIRENV_IN_ENVRC:-}"`. `DIRENV_DIR`
+is intentionally not used: it does not survive direnv's `strict_env` mode. `warn` and
 `error` always print. This means `.envrc` files need no extra log suppression
 logic — just use the standard logging functions as normal.
 
+## Logging — Level Usage
+
+Use the logging functions from `.shellrc` (`debug`, `info`, `success`, `warn`,
+`error`, `user_action`). Never use bare `echo` except for `usage()` output and
+code that runs before `.shellrc` is sourced.
+
+| Level | Function | When to use |
+|---|---|---|
+| `debug` | `debug` | Expected-absent tools or optional steps that are silently skipped (e.g. "mise not in PATH — skipping"). Hidden by default; visible with `DEBUG=true`. |
+| `info` | `info` | Normal progress messages and idempotency guards ("already installed — skipping"). Suppressed in direnv subshells. |
+| `success` | `success` | An operation completed successfully (e.g. "Successfully sourced ~/.shellrc"). Suppressed in direnv subshells. |
+| `warn` | `warn` | Argument-parsing failures (`?`/`:` getopts cases) followed by `usage; return 1`; non-fatal operation failures the script recovers from. |
+| `error` | `error` | Unexpected mid-script operation failures that need attention and warrant a macOS notification. **Calls `_dotfiles_notify` — do NOT use for arg-parse failures in interactive scripts** (notification on every typo is bad UX). |
+| `user_action` | `user_action` | Manual steps the user must perform after the script exits (restart an app, run a command, open a URL). Distinct from `warn` (unexpected problem) and `info` (purely informational). |
+
+### Argument-parse failures — use `warn`, not `error`
+
+```zsh
+while getopts ":fh" opt; do
+  case "${opt}" in
+    f) flag=true ;;
+    h) usage; return 0 ;;
+    :) warn "Option -${OPTARG} requires an argument."; usage; return 1 ;;
+    ?) warn "Unknown option: -${OPTARG}"; usage; return 1 ;;
+  esac
+done
+```
+
+`error` is intentionally avoided here: it calls `_dotfiles_notify` which fires a
+macOS notification pop-up. Triggering a notification because the user typed a
+bad flag is poor UX for any interactive script.
+
+### Idempotency guard messages — use `info`, not `warn`
+
+```zsh
+if is_executable "brew"; then
+  info "Homebrew already installed — skipping."
+else
+  # install ...
+fi
+```
+
+These are expected, non-problematic states. `warn` implies something is wrong;
+`info` correctly signals "nothing to do here".
+
+### Expected-absent tools — use `debug`, not `warn`
+
+```zsh
+if ! command_exists mise; then
+  debug "mise not in PATH — skipping mise config loading."
+  return 0
+fi
+```
+
+If a tool is known to be optionally present, its absence is not a warning.
+
+### Action items for the user — use `user_action`, not `warn`
+
+```zsh
+user_action "Restart iTerm2 to apply the new font settings."
+user_action "Run 'bupc' to update Homebrew packages."
+```
+
+These are follow-up instructions, not warnings about something that went wrong.
+
 ## Cron Scripts
 
-Scripts invoked from cron start with a minimal environment. After sourcing
-`.aliases`, call `load_zsh_configs` explicitly to bring all zsh configs into
-scope:
+Scripts invoked from cron start with a minimal environment.
+
+### Sourcing `.aliases` and `load_zsh_configs`
+
+After sourcing `.aliases`, call `load_zsh_configs` **only if the script uses
+variables or functions that are defined in `.zshrc`** (e.g. `PROJECTS_BASE_DIR`,
+mise shims, etc.). Do NOT call it unconditionally:
+
+- `load_zsh_configs` sources `.zshrc`, which in turn sources `.zlogin`. `.zlogin`
+  triggers background zwc compilation jobs that are disruptive when launched
+  from cron with no terminal attached.
+- Most cron scripts only need vars from `.shellrc`/`.aliases` (e.g.
+  `PERSONAL_CONFIGS_DIR`, `DOTFILES_DIR`) — those are available after sourcing
+  `.aliases` without calling `load_zsh_configs`.
 
 ```zsh
 # Re-source guard is inside .aliases itself — safe to call unconditionally.
 load_file_if_exists "${HOME}/.aliases"
-# This script is invoked from cron, which starts a minimal environment.
-# load_zsh_configs must be called explicitly to bring all zsh configs into scope.
+
+# Call load_zsh_configs only when the script needs .zshrc-defined vars/functions
+# (e.g. PROJECTS_BASE_DIR, mise shims). Omit if only .shellrc/.aliases vars needed.
+# WARNING: load_zsh_configs sources .zlogin which triggers background compilation
+# jobs — do not call from cron unless the .zshrc-defined vars are genuinely required.
 load_zsh_configs
 ```
+
+### ERR Trap Instead of `set -e`
 
 Because cron runs without `set -e` in most cases (a single failing step should
 not abort all subsequent steps), use an `ERR` trap with `error` for failure
@@ -397,6 +597,52 @@ triggers a macOS notification visible to the user even without a terminal:
 # error() calls notify() which triggers an osascript notification on failure.
 trap 'error "Script failed. Check the log for details."' ERR
 ```
+
+### `sudo` in Cron — Always Guard with `has_sudo_credentials`
+
+Any function callable from cron that uses `sudo` must call `has_sudo_credentials`
+(defined in `.shellrc` § 1e) first. Without cached credentials, `sudo` hangs
+waiting for a password in a non-interactive context. Use `warn` and return
+early if the check fails:
+
+```zsh
+_my_func() {
+  if ! has_sudo_credentials; then
+    warn "_my_func: sudo credentials not available — skipping."
+    return 0
+  fi
+  sudo some-command
+}
+```
+
+### `is_running_in_tty` — Gate Interactive-Only Operations
+
+`is_running_in_tty` returns `false` in cron (no TTY attached, `FORCE_COLOR`
+not set). Use it to gate operations that should only run interactively:
+
+```zsh
+# Kill/restart apps only on import or when running interactively.
+# Cron export must not kill apps mid-session or re-launch them via 'open -a'.
+if [[ "${operation}" == 'import' ]] || is_running_in_tty; then
+  kill_login_item_apps
+  trap 'restart_login_item_apps; cleanup' EXIT
+else
+  trap 'cleanup' EXIT
+fi
+```
+
+### `COLUMNS` in Cron
+
+Zsh sets `COLUMNS` to `0` when no terminal is attached. Any code that uses
+`COLUMNS` for length calculations must fall back to a sensible default:
+
+```zsh
+local viewport_length=${COLUMNS:-80}
+```
+
+This applies to `_section_header_impl` and `print_chars_for_length` in
+`.shellrc` (already done). Apply the same pattern in any new code that
+reads `COLUMNS` outside the startup hot path.
 
 Note: cron scripts must also never call aliases by name — see
 **No Aliases in Non-Interactive Scripts** below.
@@ -527,9 +773,9 @@ my_cmd() { dispatch_or_fallback my_cmd _my_cmd "$@"; }
 # Run only when executed directly, not when sourced (e.g. to import the function
 # into another script).
 [[ "${zsh_eval_context}" == *file* ]] || my_cmd "$@"
-# ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
-# evaluated by non-zsh runtimes (e.g. direnv's sandbox).
-[[ -n "${ZSH_VERSION-}" ]] && (($+functions[compdef])) && compdef my_cmd || true
+# is_zsh returns false in bash (ZSH_VERSION unset), short-circuiting the zsh-only
+# '(( $+functions[...] ))' syntax so it is never evaluated by non-zsh runtimes.
+is_zsh && (($+functions[compdef])) && compdef my_cmd || true
 ```
 
 ### `zsh_eval_context` Self-Invocation Guard
@@ -546,13 +792,13 @@ Use `*file*` (not `*:file*`) — the separator before `file` differs by context:
 ### `compdef` Registration Guard
 
 ```zsh
-[[ -n "${ZSH_VERSION-}" ]] && (($+functions[compdef])) && compdef my_cmd || true
+is_zsh && (($+functions[compdef])) && compdef my_cmd || true
 ```
 
 Two guards are required:
-1. `[[ -n "${ZSH_VERSION-}" ]]` — POSIX string test guards against non-zsh
-   runtimes (e.g. direnv's bash subshell) where the next expression would be
-   a syntax error.
+1. `is_zsh` — returns false in bash (where `ZSH_VERSION` is unset), short-
+   circuiting the zsh-only arithmetic expression that follows. `is_zsh` is
+   available here because autoload scripts always source `.shellrc` at the top.
 2. `(($+functions[compdef]))` — zsh built-in check; `compdef` is only available
    after `compinit` has run. Autoload scripts may be sourced before `compinit`
    (e.g. during `fresh-install`), so this guard prevents a "command not found"
@@ -628,17 +874,81 @@ function_name() {
 }
 ```
 
-## Formatting After Every Edit
+## `_DOTFILES_SCRIPT_DEPTH` — Increment and Decrement
 
-After every edit to a shell script, reformat with `shfmt`:
+Every `main()` that uses the deferred-collection pattern (`_record_warning` /
+`_record_error` / `print_script_summary`) **must** both increment the counter
+on entry and decrement it on exit:
 
 ```zsh
-shfmt -w <file>
+main() {
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  trap '_decrement_script_depth' EXIT   # chain into any existing EXIT trap
+  ...
+}
 ```
+
+`_decrement_script_depth` is defined in `.shellrc`. When a script already sets
+its own EXIT trap later in `main()`, chain the decrement into that trap rather
+than setting a separate one — a later `trap ... EXIT` replaces any earlier one:
+
+```zsh
+# Scripts with an existing EXIT trap — chain _decrement_script_depth at the end
+trap 'restart_login_item_apps; resume_softwareupdate_schedule; _decrement_script_depth' EXIT
+
+# Scripts whose EXIT trap calls a function — add _decrement_script_depth inside
+# that function rather than duplicating the trap string
+_cleanup_recreate() {
+  resume_cron
+  _decrement_script_depth
+}
+trap _cleanup_recreate EXIT
+```
+
+`is_outermost_script` (`[[ ${_DOTFILES_SCRIPT_DEPTH:-0} -le 1 ]]`) is used by
+`print_script_start` and `print_script_summary` to suppress output from nested
+subprocess scripts. The decrement ensures the counter returns to its pre-script
+value on exit, which is correct for sourced scripts (subprocess scripts discard
+their env on exit regardless). See `TechnicalDeepDive.md` § 6 for the full
+rationale on why the decrement is applied even for subprocess-only scripts.
+
+## Edit Checklist — Run After Every Change
+
+After every edit to a shell script, follow these steps **in order**:
+
+### Step 1 — Verify Decision-Making Philosophy
+
+Verify every new or changed line upholds the four priorities defined in
+`copilot-instructions.md` § **Decision-Making Philosophy** (startup speed →
+maintainability → POSIX compatibility → zsh built-ins). A higher priority
+always wins; document the tradeoff in a comment when they conflict. If it
+is unclear which priority applies, ask the user before proceeding.
+
+Only continue once every changed line satisfies the highest applicable priority.
+
+### Step 2 — Scan for unsafe `&&` patterns
+
+Scan every standalone `A && B` line in the edited file. If the script uses
+`set -e` or an ERR trap, verify that A returning false is an *error*, not a
+normal/expected outcome. Fix any unsafe patterns before proceeding
+(see **`&&` as Conditional — Safety Under `set -e` / ERR Trap** above).
+
+Only continue to formatting once all unsafe patterns are resolved.
+
+### Step 3 — Reformat with `shfmt`
 
 **Check `.shfmtignore` first.** If the file is listed there, do NOT run `shfmt`
 on it — skip formatting entirely for that file. Running `shfmt` on an excluded
 file will corrupt intentional one-liners (see below).
+
+Run `shfmt`:
+
+```zsh
+shfmt -w <file>
+```
 
 **shfmt has no inline per-line or per-block ignore directive.** Whole files can
 be excluded via `.shfmtignore`, but only for two valid reasons:
@@ -650,7 +960,7 @@ be excluded via `.shfmtignore`, but only for two valid reasons:
    with no way to suppress it. Example — shfmt transforms this intentional
    one-liner:
    ```zsh
-   while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+   while true; do has_sudo_credentials; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
    ```
    into this broken padded expansion:
    ```zsh

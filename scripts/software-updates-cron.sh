@@ -20,12 +20,17 @@ _perform_update() {
   local update_cmd="${3}"
 
   if command_exists "${check_cmd}"; then
+    # Update section tracker before running so _record_warning can include it in the summary.
+    # No 'local' here: intentionally modifies _current_section declared in main via
+    # zsh dynamic scoping.
+    _current_section="${title}"
     step_start
     section_header "$(yellow 'Updating') $(purple "${title}")"
     if eval "${update_cmd}"; then
       success "Successfully updated: '${title}'"
     else
-      warn "Failed to update: '${title}'"
+      # Tool update failures are warnings — the tool is still usable; only the upgrade failed.
+      _record_warning "Failed to update '${title}'"
     fi
     step_end
   else
@@ -39,18 +44,30 @@ main() {
   # finding nothing to commit, st warning about a missing repo) fire the trap even
   # when the call site has '|| warn' or '|| true'.
   setopt LOCAL_TRAPS
-  # error() calls _dotfiles_notify() which triggers an osascript notification.
-  trap 'current_timestamp _trap_time; error "Software updates failed at ${_trap_time}. Check ~/software-updates-cron.log for details."' ERR
 
-  # Capture start epoch into both a local variable and SCRIPT_START_TIMES.
+  # Two separate accumulator arrays for non-fatal step issues:
+  #   _step_warnings — recoverable tool-level failures (e.g. a brew/mise/tldr update step failed)
+  #   _step_errors   — significant infrastructure failures (e.g. repo pull, capture-prefs, size limit)
+  # _record_warning/_record_error/print_script_summary (all from .shellrc via .aliases) read/write
+  # these via zsh dynamic scoping — locals declared here are visible in all callees.
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  trap '_decrement_script_depth' EXIT
+  # ERR trap: collect unexpected failures into _step_errors instead of notifying immediately.
+  # A single grouped notification is sent at the end of main once all steps have run.
+  trap '_record_error "Unexpected failure at line ${LINENO} (exit ${?})"' ERR
+
+  # Capture start epoch into both a local variable and _script_start_times.
   # The local is passed explicitly to print_script_duration at the end of main.
-  # SCRIPT_START_TIMES is used by step_end (called throughout this script via
+  # _script_start_times is used by step_end (called throughout this script via
   # _perform_update) to compute the "total elapsed" column independently of the
   # local variable.  Both are required; see the design note above
   # step_timing_init in .shellrc.
   local script_start_time
   script_start_time="${EPOCHSECONDS}"
-  SCRIPT_START_TIMES+=("${script_start_time}")
+  _script_start_times+=("${script_start_time}")
   local tracked_file f folder outdated_flat=''
   print_script_start
 
@@ -68,6 +85,7 @@ main() {
   _perform_update 'claude-code' 'claude' 'claude update'
 
   # Update antidote plugins and regenerate the static bundle
+  _current_section='antidote plugins'
   step_start
   section_header "$(yellow 'Updating') $(purple 'antidote plugins') and regenerating plugin bundle"
   update_antidote_and_regenerate_plugin_bundle
@@ -75,6 +93,7 @@ main() {
 
   # Update bat cache
   if command_exists bat; then
+    _current_section='bat cache'
     step_start
     section_header "$(yellow 'Updating') $(purple 'bat') cache"
     local bat_syntax_dir
@@ -93,7 +112,6 @@ main() {
   # else
   #   debug "Skipping betterfox user.js update, directory not found: ${firefox_profiles}"
   # fi
-  # unset firefox_profiles
 
   # Disabled: rapidfox user.js replaces betterfox for the Zen profile
   # local zen_profiles="${PERSONAL_PROFILES_DIR}/ZenProfile/Profiles/DefaultProfile"
@@ -103,7 +121,6 @@ main() {
   # else
   #   debug "Skipping betterzen user.js update, directory not found: ${zen_profiles}"
   # fi
-  # unset zen_profiles
 
   # TODO: Removing natsumi as a trial to check whether I can live without natsumi at all 2026-05-20
   # local natsumi_codebase="${PROJECTS_BASE_DIR}/oss/natsumi-browser"
@@ -124,6 +141,7 @@ main() {
 
   local zen_browser_desktop_codebase="${PROJECTS_BASE_DIR}/oss/zen-browser-desktop"
   if is_git_repo "${zen_browser_desktop_codebase}"; then
+    _current_section='zen-browser-desktop tag cleanup'
     step_start
     section_header "$(yellow "Remove 'twilight' tag from") $(purple 'zen-browser-desktop') repo"
     # Only delete the stale tag here (no rebase; upreb is handled in the subsequent blocks)
@@ -137,22 +155,25 @@ main() {
   success 'Finished independent updates.'
 
   if command_exists run-all.sh; then
+    _current_section='Update repos in home folder'
     step_start
     section_header "$(yellow 'Update repos in home folder')"
     # Aliases ('home', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'home pull' alias.
-    FOLDER="${HOME}" FILTER='.bin|.dotfiles|zsh|mise' MAXDEPTH=5 run-all.sh git pull || warn 'Failed to pull home repos'
+    FOLDER="${HOME}" FILTER='.bin|.dotfiles|zsh|mise' MAXDEPTH=5 run-all.sh git pull || _record_error 'Failed to pull home repos'
     step_end
 
     sleep 10  # so that GH doesn't throttle when we call a lot of times within a short time
 
+    _current_section='Upreb repos in oss folder'
     step_start
     section_header "$(yellow 'Upreb repos in oss folder')"
     # Aliases ('oss', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'oss upreb' alias.
-    FOLDER="${PROJECTS_BASE_DIR}/oss" MAXDEPTH=4 run-all.sh git upreb && success 'Finished upreb for oss repos' || warn 'Failed to upreb oss repos'
+    FOLDER="${PROJECTS_BASE_DIR}/oss" MAXDEPTH=4 run-all.sh git upreb && success 'Finished upreb for oss repos' || _record_error 'Failed to upreb oss repos'
     step_end
 
+    _current_section='Restore mtime and register for maintenance'
     step_start
     section_header "$(yellow 'Restoring mtime and registering for maintenance operations')"
     # Aliases ('all', 'rug') are not expanded in non-interactive shells (e.g. cron).
@@ -169,11 +190,13 @@ main() {
   _collect_repo_ancestor_dirs
   _SHARED_REPO_DIRS=("${all_dirs[@]}")
 
+  _current_section='Allow all direnv configs'
   step_start
   section_header "$(yellow 'Allow all direnv configs')"
   allow_all_direnv_configs
   step_end
 
+  _current_section='Install languages using mise'
   step_start
   section_header "$(yellow 'Install languages using mise')"
   install_mise_versions
@@ -181,16 +204,19 @@ main() {
 
   unset _SHARED_REPO_DIRS
 
+  _current_section='Regenerate repo aliases'
   step_start
   section_header "$(yellow 'Regenerate repo aliases')"
   regenerate_repo_aliases
   step_end
 
+  _current_section='Capture app preferences'
   step_start
   section_header "$(yellow 'Capture app preferences')"
-  capture-prefs.sh -e && success 'Finished capturing app preferences' || warn 'Failed to capture app preferences'
+  capture-prefs.sh -e && success 'Finished capturing app preferences' || _record_error 'Failed to capture app preferences'
   step_end
 
+  _current_section='Prune old session backups'
   step_start
   section_header "$(yellow 'Prune old timestamped session backups from browser-profiles repo')"
   if is_git_repo "${PERSONAL_PROFILES_DIR}"; then
@@ -223,6 +249,7 @@ main() {
   fi
   step_end
 
+  _current_section='Check profiles repo size'
   step_start
   section_header "$(yellow 'Check profiles repo size')"
   if is_git_repo "${PERSONAL_PROFILES_DIR}"; then
@@ -232,13 +259,16 @@ main() {
     if ((profiles_size_kb > profiles_size_limit_kb)); then
       local profiles_size_human
       profiles_size_human=$(du -sh "${PERSONAL_PROFILES_DIR}" 2>/dev/null | awk '{print $1}')
-      error "Profiles repo is ${profiles_size_human} — exceeds 2GB threshold. Consider running: recreate-repo.sh -d \"${PERSONAL_PROFILES_DIR}\""
+      # _record_error instead of error(): error() calls _dotfiles_notify() which would
+      # send an immediate notification before the grouped summary at the end of main.
+      _record_error "Profiles repo is ${profiles_size_human} — exceeds 2GB threshold. Consider running: recreate-repo.sh -d \"${PERSONAL_PROFILES_DIR}\""
     else
       debug "Profiles repo size within 2GB threshold"
     fi
   fi
   step_end
 
+  _current_section='Update home and profiles repos'
   step_start
   section_header "$(yellow 'Update home and profiles repos')"
   # source imports the function definition into this shell. The explicit call on
@@ -246,9 +276,10 @@ main() {
   # guard ('*:file*' match) suppresses auto-execution when sourced — it only
   # runs automatically when the file is invoked directly, not when sourced.
   source "${XDG_CONFIG_HOME}/zsh/update_all_repos"
-  update_all_repos && success 'Finished updating home and profiles repos' || warn 'Failed to update home and profiles repos'
+  update_all_repos && success 'Finished updating home and profiles repos' || _record_error 'Failed to update home and profiles repos'
   step_end
 
+  _current_section='Report status of all repos'
   step_start
   section_header "$(yellow 'Report status of all repos')"
   # source imports the function definition into this shell. The explicit call on
@@ -259,6 +290,7 @@ main() {
   status_all_repos || true
   step_end
 
+  _current_section='Update chrome folders'
   step_start
   section_header "$(yellow 'Updating all browser profile chrome folders if they are git repos')"
   # Use zsh glob qualifiers to only loop if matches exist and are directories
@@ -269,7 +301,8 @@ main() {
     for folder in "${chrome_folders[@]}"; do
       if is_git_repo "${folder}"; then
         section_header2 "$(yellow 'Updating chrome folder:') $(purple "${folder}")"
-        git -C "${folder}" pull -r && success "Successfully updated: '$(yellow "${folder}")'" || warn "Failed to update: '$(yellow "${folder}")'"
+        # Chrome folder update failures are warnings — CSS customisation is non-critical.
+        git -C "${folder}" pull -r && success "Successfully updated: '$(yellow "${folder}")'" || _record_warning "Failed to update chrome folder: '${folder}'"
       else
         debug "skipping update for non-repo: '$(yellow "${folder}")'"
       fi
@@ -278,6 +311,7 @@ main() {
   fi
   step_end
 
+  _current_section='Check for outdated applications'
   step_start
   section_header "$(yellow 'Checking if any greedy applications are outdated')"
   if command_exists brew; then
@@ -286,9 +320,8 @@ main() {
     # '|| true' prevents grep -v from triggering the ERR trap when all lines are filtered out
     # (grep -v exits 1 when no lines pass the filter).
     outdated="$(brew outdated --greedy | \grep -v -iE 'homebrew|Downloading' || true)"
-    # warn (not error): outdated software needs manual attention but is not a script failure.
-    # error() returns 1 and would trigger the ERR trap, firing a spurious "Software updates failed"
-    # notification. Instead, warn to the terminal and notify explicitly with the plain-text list.
+    # warn (not _record_warning): outdated software is an advisory notice, not a step failure.
+    # It is surfaced in the final notification separately via outdated_flat.
     if is_non_zero_string "${outdated}"; then
       warn "Found some outdated softwares that need manual updating: $(yellow "${outdated}")"
       # Replace newlines with ', ' — osascript notification cannot span multiple lines.
@@ -307,13 +340,39 @@ main() {
   format_duration "${_duration}" _duration_human
 
   success "Finished software updates at $(purple "${_now}") in $(light_blue "${_duration_human}")"
-  # Include outdated packages in the final notification if any were found, so the
-  # notification is not immediately replaced by a subsequent one before it is seen.
-  if is_non_zero_string "${outdated_flat}"; then
-    _dotfiles_notify "Done (${_duration_human}). Needs manual update: ${outdated_flat}" "⚠️ Software Updates" || true
-  else
-    _dotfiles_notify "All updates finished at ${_now} (took ${_duration_human})." "✅ Software Updates Done" || true
+
+  # Print grouped summary of all collected warnings and errors (warnings first, then errors),
+  # then send exactly one notification regardless of how many steps had issues.
+  print_script_summary
+  local _notification_parts=()
+  if is_non_empty_array _step_errors; then
+    local _errors_summary
+    # Join with '; ' for the notification body — osascript cannot span multiple lines.
+    _errors_summary="${(j:; :)_step_errors}"
+    _notification_parts+=("${#_step_errors[@]} error(s): ${_errors_summary}")
   fi
+  if is_non_empty_array _step_warnings; then
+    local _warnings_summary
+    _warnings_summary="${(j:; :)_step_warnings}"
+    _notification_parts+=("${#_step_warnings[@]} warning(s): ${_warnings_summary}")
+  fi
+  # Build notification message and title, then append outdated packages if any.
+  local _msg _title_icon
+  if is_non_empty_array _notification_parts; then
+    _title_icon='⚠️'
+    _msg=" — ${(j: | :)_notification_parts}"
+  else
+    _title_icon='✅'
+    _msg="."
+  fi
+  # Escalate icon to ⚠️ when outdated packages need manual attention, even if
+  # there were no errors or warnings. Yellow = action required; not an error.
+  # Explicit if avoids firing the ERR trap when outdated_flat is empty (clean run).
+  if is_non_zero_string "${outdated_flat}"; then
+    _title_icon='⚠️'
+    _msg+=". Needs manual update: ${outdated_flat}"
+  fi
+  _dotfiles_notify "Done at ${_now} (took ${_duration_human})${_msg}" "${_title_icon} Software Updates" || true
   print_script_duration "${script_start_time}"
 }
 
