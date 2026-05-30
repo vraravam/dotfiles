@@ -1,4 +1,17 @@
 # file location: ${HOME}/.gitignore
+# IMPORTANT: This file is COPIED (not symlinked) to its destination by install-dotfiles.rb.
+# Resolution rules when both this file and ${HOME}/.gitignore exist as real files:
+#   - FIRST_INSTALL (env var set): ${HOME}/.gitignore always wins — moved here, then this file is copied back.
+#   - Otherwise: the file with the newer mtime wins. If this source is newer or the same age,
+#     ${HOME}/.gitignore is overwritten. If ${HOME}/.gitignore is newer, it is moved here instead.
+# Practical advice: always edit THIS source file first, then run install-dotfiles.rb to propagate.
+# If you edited ${HOME}/.gitignore directly, touch it (or ensure its mtime is newer) before running
+# install-dotfiles.rb so the mtime rule picks up your changes.
+#
+# If you changed PROJECTS_BASE_DIR in .shellrc from the default (~/dev), you must also update
+# the /dev/ entry in the "HOME DIRECTORY TOP-LEVEL FOLDERS" section and all /dev/**/ entries
+# in the "DEV WORKSPACE" section below to match your chosen folder name, then re-run
+# install-dotfiles.rb to copy the updated file to ${HOME}/.gitignore.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # COMMON — OS / editor noise, applies everywhere in the repo tree
@@ -257,7 +270,6 @@ node_modules/
 /.config/jgit/config
 /.config/nvim/autoload/plug.vim
 /.config/nvim/plugged/
-/.config/raycast/extensions/
 /.config/simple-update-notifier/electron-builder.json
 /.config/sol/images_pasteboard/
 /.config/sol/mmkv.default*
@@ -301,6 +313,7 @@ node_modules/
 /Box\ Sync/
 /Brewfile.lock.json
 /Desktop/
+# PROJECTS_BASE_DIR — update if you changed this from ~/dev in .shellrc
 /dev/
 /Documents/
 /Downloads/
@@ -329,6 +342,8 @@ node_modules/
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DEV WORKSPACE — nested repos are skipped by git; loose junk in the tree
+# NOTE: These entries mirror PROJECTS_BASE_DIR (~/dev). Update all /dev/**/ lines
+# below if you changed PROJECTS_BASE_DIR from ~/dev in .shellrc.
 # ══════════════════════════════════════════════════════════════════════════════
 
 /dev/**/.DS_Store
@@ -359,6 +374,7 @@ node_modules/
 /.bash_profile
 /.bashrc
 /.config/bat/config
+/.config/bat/syntaxes/zsh_plugins.sublime-syntax
 /.config/btop/btop.conf
 /.config/direnv/direnv.toml
 /.config/ghostty/config

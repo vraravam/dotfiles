@@ -49,7 +49,7 @@ set wrap
 
 set encoding=utf-8
 
-" Turned off "ignore whitespace during diffing" since I need to test this out first whether it impacts my git diffs
+" Disabled: interaction with git diff output not verified.
 " set diffopt+=iwhite " Ignore whitespace whilst diffing
 " nnoremap <silent> <F5> :let _s=@/<Bar>:%s/\s\+$//e<Bar>:let @/=_s<Bar>:nohl<CR>
 

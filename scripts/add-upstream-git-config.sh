@@ -5,34 +5,20 @@
 # This script will check and add a new remote called 'upstream' to the specified git repo
 # TODO: Need to decide whether this script is best kept standalone or converted to a function that's used only within the fresh-install script (or) moved into the global .gitconfig so as to be used as a git alias. Each of these has their own pros & cons which need to be analyzed.
 
-# Exit immediately if a command exits with a non-zero status.
-set -e
+set -euo pipefail
 
-# Source shellrc only once if any required function is missing
-type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
+source "${HOME}/.shellrc"
+_SCRIPT_NAME="${0:t}"
 
 usage() {
-  echo "$(red 'Usage'): $(yellow "${${(%):-%x}##*/}") -d <target-folder> -u <upstream-repo-owner>"
-  echo "  $(yellow '-d <target-folder>')       --> (mandatory) The folder which has to be processed"
-  echo "  $(yellow '-u <upstream-repo-owner>') --> (mandatory) The upstream repo's owner"
-  exit 1
-}
-
-get_remote_url() {
-  local remote_name="${1:-origin}"
-  local remote_url
-  if git -C "${target_folder}" remote | grep -q "^${remote_name}$"; then
-    if ! remote_url=$(git -C "${target_folder}" remote get-url "${remote_name}" 2>/dev/null); then
-      error "Could not retrieve URL for remote '${remote_name}' in '$(yellow "${target_folder}")'. Does the remote exist?"
-      return 1
-    fi
-  fi
-  echo "${remote_url}"
+  print_usage "${1}" \
+    "$(yellow '-d <target-folder>')       --> (mandatory) The folder which has to be processed" \
+    "$(yellow '-u <upstream-repo-owner>') --> (mandatory) The upstream repo's owner"
 }
 
 main() {
-  local target_folder
-  local upstream_repo_owner
+  local target_folder=''
+  local upstream_repo_owner=''
 
   while getopts ":d:u:" opt; do
     case ${opt} in
@@ -43,21 +29,23 @@ main() {
         upstream_repo_owner="${OPTARG}"
         ;;
       \?)
-        usage
+        warn "-${OPTARG} is not a valid option"
+        usage "${_SCRIPT_NAME}"
         ;;
       :)
-        echo "Invalid option: -${OPTARG} requires an argument" 1>&2
-        usage
+        warn "-${OPTARG} requires an argument"
+        usage "${_SCRIPT_NAME}"
         ;;
     esac
   done
   shift $((OPTIND - 1))
 
   if is_zero_string "${target_folder}" || is_zero_string "${upstream_repo_owner}"; then
-    usage
+    warn "Missing required arguments/switches"
+    usage "${_SCRIPT_NAME}"
   fi
 
-  section_header "$(yellow 'Adding new upstream to'): '$(purple "${target_folder}")'"
+  debug "$(yellow 'Adding new upstream to'): '$(purple "${target_folder}")'"
 
   if ! is_git_repo "${target_folder}"; then
     warn "'$(yellow "${target_folder}")' is not a git repo; Skipping!!!"
@@ -66,21 +54,17 @@ main() {
 
   # Check if an 'upstream' remote already exists
   local existing_upstream
-  existing_upstream="$(get_remote_url upstream)"
+  existing_upstream="$(get_git_config_value remote.upstream.url "${target_folder}")"
   if is_non_zero_string "${existing_upstream}"; then
     warn "Remote 'upstream' already exists for the repo in '$(yellow "${target_folder}")': '$(yellow "${existing_upstream}")'"
     return 0 # Success, nothing to do
   fi
 
-  # Get the URL of the 'origin' remote using 'git remote get-url'
+  # Get the URL of the 'origin' remote
   local origin_remote_url
-  if ! origin_remote_url="$(get_remote_url origin)"; then
-    error "Could not retrieve URL for remote 'origin' in '$(yellow "${target_folder}")'. Does the remote exist?"
-    return 1
-  fi
-
+  origin_remote_url="$(get_git_config_value remote.origin.url "${target_folder}")"
   if is_zero_string "${origin_remote_url}"; then
-    error "Retrieved empty URL for remote 'origin' in '$(yellow "${target_folder}")'."
+    error "Could not retrieve URL for remote 'origin' in '$(yellow "${target_folder}")'. Does the remote exist?"
     return 1
   fi
 
@@ -120,13 +104,12 @@ main() {
     error "Failed to add upstream remote '$(yellow "${new_repo_url}")'"
   fi
 
-  # Fetch the newly added remote
-  if ! GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${target_folder}" fetch upstream; then
+  # Fetch all remotes, unshallowing if needed (covers the newly added upstream and origin)
+  if ! git -C "${target_folder}" fetch-unshallow; then
     error "Failed to fetch upstream remote '$(yellow "${new_repo_url}")' after adding it."
   fi
 
   success "Successfully added and fetched upstream remote '$(yellow "${new_repo_url}")' to repo in '$(yellow "${target_folder}")'"
 }
 
-# Execute the main function with all script arguments
 main "$@"

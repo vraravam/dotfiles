@@ -3,7 +3,12 @@
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
 # Source shell helpers if they aren't already loaded
-type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
+# Re-source guard is inside .shellrc itself — safe to call unconditionally.
+source "${HOME}/.shellrc"
+# st is a required dependency; source it to make the function available without
+# triggering its self-invocation (zsh_eval_context guard in st prevents execution when sourced).
+# Note: load_file_if_exists is intentionally NOT used — st is required, not optional.
+source "${XDG_CONFIG_HOME}/zsh/st"
 
 # Reports status of the following repos: HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, ZenProfile chrome folder
 status_all_repos() {
@@ -14,13 +19,16 @@ status_all_repos() {
   # (N) nullglob: if no match, the pattern expands to nothing
   # (/): only match directories
   local chrome_folders=("${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome(N/))
-  if [[ ${#chrome_folders[@]} -gt 0 ]]; then
+  if is_non_empty_array chrome_folders; then
+    local folder
     for folder in "${chrome_folders[@]}"; do
       st "${folder}"
     done
-    unset folder
   fi
 }
 
-status_all_repos "$@"
-compdef status_all_repos
+# Run only when executed directly, not when sourced (e.g. to import the function into another script).
+[[ "${zsh_eval_context}" == *file* ]] || status_all_repos "$@"
+# ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
+# evaluated by non-zsh runtimes (e.g. direnv's sandbox).
+[[ -n "${ZSH_VERSION-}" ]] && (($+functions[compdef])) && compdef status_all_repos || true

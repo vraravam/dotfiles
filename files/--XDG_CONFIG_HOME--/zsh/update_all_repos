@@ -3,7 +3,8 @@
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
 # Source shell helpers if they aren't already loaded
-type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
+# Re-source guard is inside .shellrc itself — safe to call unconditionally.
+source "${HOME}/.shellrc"
 
 # Updates the specified repo (ie creates a local commit of changed files that I am not interested in verifying, but which need to be committed into that repo)
 # internal function: not to be called separately
@@ -18,10 +19,12 @@ _update_repo() {
   local relative_path="$(git -C "${folder}" relative-path "${2}")"
   relative_path="${relative_path:-.}"
 
-  section_header "$(yellow 'Updating') $(purple "${folder}")"
+  section_header2 "$(yellow 'Updating') $(purple "${folder}")"
   rm -rfv "${folder}/.git/index.lock" "${folder}/.git/hooks"
 
-  git -C "${folder}" add "${relative_path}" && git -C "${folder}" sci "Incremental commit: $(date)"
+  local human_date
+  current_timestamp human_date
+  git -C "${folder}" add "${relative_path}" && git -C "${folder}" sci "Incremental commit: ${human_date}" || true
 }
 
 # Updates the home and profiles repos
@@ -31,5 +34,8 @@ update_all_repos() {
   _update_repo "${PERSONAL_PROFILES_DIR}" "${PERSONAL_PROFILES_DIR}"
 }
 
-update_all_repos "$@"
-compdef update_all_repos
+# Run only when executed directly, not when sourced (e.g. to import the function into another script).
+[[ "${zsh_eval_context}" == *file* ]] || update_all_repos "$@"
+# ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
+# evaluated by non-zsh runtimes (e.g. direnv's sandbox).
+[[ -n "${ZSH_VERSION-}" ]] && (($+functions[compdef])) && compdef update_all_repos || true

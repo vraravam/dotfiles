@@ -7,346 +7,351 @@
 
 # file location: <anywhere; but advisable in the PATH>
 
-# Exit immediately if a command exits with a non-zero status.
-set -e
+# TODO: Need to figure out the scriptable commands for the following settings:
+# 1. Auto-adjust Brightness
+# 2. Brightness on battery
+# 3. Keyboard brightness
 
+set -euo pipefail
+# set -E ensures the ERR trap is inherited by all helper functions defined in this file,
+# so _cleanup_and_exit fires even when the failure originates inside a helper function.
+set -E
+
+# Error trap cleanup and exit
 _cleanup_and_exit() {
   local message='Installation failed. Check for error messages above.'
-  if type error &>/dev/null; then
+  # (( $+functions[...] )) is a no-subshell zsh builtin check, faster than 'type ... &>/dev/null'
+  if (($+functions[error])); then
     error "${message}"
   else
     echo "ERROR: ${message}" >&2
   fi
 
-  if [[ -s "${CRON_BACKUP_FILE}" ]]; then
-    if type warn &>/dev/null; then
-      warn 'Attempting to restore cron jobs from backup...'
-    else
-      echo 'WARN: Attempting to restore cron jobs from backup...'
-    fi
+  # Restore cron from the backup taken at the start of main(); CRON_BACKUP_FILE is set there.
+  # (( $+functions[...] )) is a no-subshell zsh builtin check, faster than 'type ... &>/dev/null'
+  if (($+functions[resume_cron])); then
+    resume_cron
+  elif [[ -s "${CRON_BACKUP_FILE:-}" ]]; then
+    # Fallback: shellrc not yet loaded, restore directly
     if crontab "${CRON_BACKUP_FILE}"; then
-      if type success &>/dev/null; then
-        success 'Restored crontab from backup.'
-      else
-        echo 'SUCCESS: Restored crontab from backup.'
-      fi
+      echo 'SUCCESS: Restored crontab from backup.'
     else
-      if type error &>/dev/null; then
-        error 'Failed to restore crontab.'
-      else
-        echo 'ERROR: Failed to restore crontab.' >&2
-      fi
+      echo 'ERROR: Failed to restore crontab.' >&2
     fi
+    rm -f "${CRON_BACKUP_FILE}"
   fi
-  rm -f "${CRON_BACKUP_FILE}"
+
   exit 1
 }
 
-main() {
-  # Handle errors and crontab backup
-  # Backup crontab and set up a trap to restore it on exit.
-  local CRON_BACKUP_FILE
-  CRON_BACKUP_FILE="$(mktemp)"
-  # Save current crontab; ignore errors if it's empty.
-  crontab -l >"${CRON_BACKUP_FILE}"  2>/dev/null  || true # Backup crontab, ignore failure if empty
+# Set DNS to 1.1.1.1 if on Jio ISP (GitHub may otherwise not resolve)
+_setup_jio_dns() {
+  local _org
+  # Capture curl output into a variable first; then test with a glob match.
+  # Previously: curl ... | grep -qi 'jio' — two processes + pipe.
+  # Now: single curl fork, pure-zsh lowercase expansion (:l) + glob match.
+  _org=$(curl -fsS https://ipinfo.io/org 2>/dev/null)
+  if [[ "${_org:l}" == *jio* ]]; then
+    echo '==> Setting DNS for WiFi from Jio ISP'
+    networksetup -setdnsservers Wi-Fi 1.1.1.1 || echo 'Warning: Failed to set DNS for Wi-Fi'
+  fi
+}
 
-  trap _cleanup_and_exit ERR
+# Download and source .shellrc from GitHub (before dotfiles are cloned)
+_download_and_source_shellrc() {
+  echo "==> Download the '~/.shellrc' for loading the utility functions"
+  if [[ -n "${FIRST_INSTALL:-}" ]]; then
+    # Vanilla OS: always force a fresh download and re-source.
+    # Unfunction the guard so .shellrc's own re-source check is bypassed.
+    # This also handles retries on a vanilla OS where the script is re-run after an error.
+    (($+functions[is_shellrc_sourced]))   && unfunction is_shellrc_sourced
+    curl "${_curl_opts[@]}" -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/files/--HOME--/.shellrc" -o "${HOME}/.shellrc"
+    echo "==> Successfully downloaded '${HOME}/.shellrc'"
+  else
+    # Pre-configured OS: skip downloading; the built-in guard makes the source below a no-op if already loaded.
+    warn "Skipping downloading '$(yellow "${HOME}/.shellrc")' since this is not a first install"
+  fi
+  DEBUG=true source "${HOME}/.shellrc"
+  info "Successfully sourced '$(yellow "${HOME}/.shellrc")'"
+}
 
-  # Normal exit cleanup (for successful runs)
-  trap 'rm -f "${CRON_BACKUP_FILE}"' EXIT
+# Enable Touch ID for sudo command when running on the terminal
+_approve_fingerprint_sudo() {
+  step_start
+  section_header "$(yellow 'Setting up touchId for sudo access in terminal shells')"
 
-  # TODO: Need to figure out the scriptable commands for the following settings:
-  # 1. Auto-adjust Brightness
-  # 2. Brightness on battery
-  # 3. Keyboard brightness
-
-  # Note: Cannot load from shellrc since that file won't be present in a new machine (vanilla OS)
-  local script_start_time
-  script_start_time=$(date +%s)
-  _SCRIPT_START_TIME=${script_start_time}
-  echo "Script started at: $(date '+%Y-%m-%d %H:%M:%S')"
-
-  #############################################################
-  # Utility scripts and env vars used only within this script #
-  #############################################################
-  export ZDOTDIR="${ZDOTDIR:-"${HOME}"}"
-
-  ######################################################################################################################
-  # Set DNS of 8.8.8.8 before proceeding (in some cases, for eg Jio Wifi, github doesn't resolve at all and times out) #
-  ######################################################################################################################
-  setup_jio_dns() {
-    # Fetch only organization and grep quietly (-q) and case-insensitively (-i) for Jio ISP
-    if curl -fsS https://ipinfo.io/org | \grep -qi 'jio'; then
-      echo '==> Setting DNS for WiFi from Jio ISP'
-      networksetup -setdnsservers Wi-Fi 8.8.8.8 || echo 'Warning: Failed to set DNS for Wi-Fi'
-    fi
-  }
-
-  #################################################################################################
-  # Download and source this utility script - so that the functions are available for this script #
-  #################################################################################################
-  download_and_source_shellrc() {
-    echo "==> Download the '${HOME}/.shellrc' for loading the utility functions"
-    # Check for one key function defined in .shellrc to see if sourcing is needed
-    if ! type is_shellrc_sourced &>/dev/null; then
-      [[ ! -f "${HOME}/.shellrc" || -n "${FIRST_INSTALL}" ]] && curl --retry 3 --retry-delay 5 -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/files/--HOME--/.shellrc" -o "${HOME}/.shellrc"
-      DEBUG=true source "${HOME}/.shellrc"
-    else
-      warn "Skipping downloading and sourcing '$(yellow "${HOME}/.shellrc")' since its already loaded"
-    fi
-  }
-
-  ################################################################################################
-  # Setup the 'sudo' command in terminal to prompt the mac touchbar for authorizing the user     #
-  # This will persist through software updates unlike changes directly made to '/etc/pam.d/sudo' #
-  # Copied from: https://apple.stackexchange.com/a/466029                                        #
-  ################################################################################################
-  approve_fingerprint_sudo() {
-    step_start
-    section_header "$(yellow 'Setting up touchId for sudo access in terminal shells')"
-
-    if ! ioreg -c AppleBiometricSensor | \grep -q AppleBiometricSensor; then
-      warn 'Touch ID hardware is not detected. Skipping configuration.'
-      step_end
-      return 0 # Exit successfully as no action is needed
-    fi
-
-    local template_file='/etc/pam.d/sudo_local.template'
-    if ! is_file "${template_file}"; then
-      warn "Template file '$(yellow "${template_file}")' not found! Skipping!"
-      step_end
-      return
-    fi
-
-    local target_file='/etc/pam.d/sudo_local'
-    if ! is_file "${target_file}"; then
-      # Using sh -c 'sed...' is fine here
-      if sudo sh -c "sed 's/^#auth/auth/' '${template_file}' > '${target_file}'"; then
-        success "Created new file: '$(yellow "${target_file}")'"
-      else
-        error "Failed to create '${target_file}'"
-      fi
-    else
-      warn "'$(yellow "${target_file}")' is already present - not creating again"
-    fi
+  # AppleBiometricSensor = T1/T2 chip (Intel Macs); AppleBiometricServices = Apple Silicon
+  # Note: pipe + grep -q triggers SIGPIPE on ioreg under pipefail (grep exits early after
+  # first match, ioreg gets SIGPIPE exit 141, pipefail surfaces that instead of grep's 0).
+  # Command substitution buffers all ioreg output first, avoiding the SIGPIPE entirely.
+  local has_biometric_sensor=0 has_biometric_services=0
+  [[ -n "$(/usr/sbin/ioreg -c AppleBiometricSensor  2>/dev/null | /usr/bin/grep AppleBiometricSensor)"  ]] && has_biometric_sensor=1  || true
+  [[ -n "$(/usr/sbin/ioreg -c AppleBiometricServices 2>/dev/null | /usr/bin/grep AppleBiometricServices)" ]] && has_biometric_services=1 || true
+  if [[ "${has_biometric_sensor}" == 0 && "${has_biometric_services}" == 0 ]]; then
+    warn 'Touch ID hardware is not detected. Skipping configuration.'
     step_end
-  }
+    return 0  # Exit successfully as no action is needed
+  fi
 
-  #####################
-  # Turn on FileVault #
-  #####################
-  ensure_filevault_is_on() {
-    step_start
-    section_header "$(yellow 'Verifying FileVault status')"
-    if [[ "$(fdesetup isactive)" != 'true' ]]; then
-      error 'FileVault is not turned on. Please encrypt your hard disk!'
+  local template_file='/etc/pam.d/sudo_local.template'
+  if ! is_file "${template_file}"; then
+    warn "Template file '$(yellow "${template_file}")' not found! Skipping!"
+    step_end
+    return
+  fi
+
+  local target_file='/etc/pam.d/sudo_local'
+  if ! is_file "${target_file}"; then
+    if sudo sh -c "sed 's/^#auth/auth/' '${template_file}' > '${target_file}'"; then
+      success "Created new file: '$(yellow "${target_file}")'"
+    else
+      error "Failed to create '${target_file}'"
+    fi
+  else
+    warn "'$(yellow "${target_file}")' is already present - not creating again"
+  fi
+  step_end
+}
+
+# Verify FileVault disk encryption is active
+_ensure_filevault_is_on() {
+  step_start
+  section_header "$(yellow 'Verifying FileVault status')"
+  if [[ "$(fdesetup isactive)" != 'true' ]]; then
+    error 'FileVault is not turned on. Please encrypt your hard disk!'
+    exit 1
+  fi
+  step_end
+}
+
+# Install Xcode Command Line Tools via non-interactive, non-gui softwareupdate
+_install_xcode_command_line_tools() {
+  step_start
+  section_header "$(yellow 'Installing xcode command-line tools')"
+  if ! xcode-select -p &>/dev/null; then
+    touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+    sudo softwareupdate -ia --agree-to-license --force || warn 'softwareupdate encountered errors'
+    rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+    if ! xcode-select -p 2>/dev/null; then
+      error "Couldn't install xcode command-line tools; Aborting"
       exit 1
     fi
-    step_end
-  }
 
-  ##################################
-  # Install command line dev tools #
-  ##################################
-  install_xcode_command_line_tools() {
-    step_start
-    section_header "$(yellow 'Installing xcode command-line tools')"
-    # Check if Xcode Command Line Tools are installed
-    if ! xcode-select -p &>/dev/null; then
-      # install using the non-gui cmd-line alone
-      touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
-      sudo softwareupdate -ia --agree-to-license --force || warn 'softwareupdate encountered errors'
-      rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
-      if ! xcode-select -p 2>/dev/null; then
-        error "Couldn't install xcode command-line tools; Aborting"
-        exit 1
+    success 'Successfully installed xcode command-line tools'
+  else
+    warn 'Skipping installation of xcode command-line tools since its already present'
+  fi
+  # Note: Duplicate the cleanup if the installation was cancelled and continued via the gui
+  rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+  step_end
+}
+
+# Create all directories referenced by env vars as a pre-emptive safety step
+_ensure_directories_exist() {
+  step_start
+  section_header "$(yellow 'Creating directories defined by various env vars')"
+  local -a folders=("${ANTIDOTE_HOME}" "${DOTFILES_DIR}" "${PROJECTS_BASE_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${PERSONAL_PROFILES_DIR}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_STATE_HOME}")
+  for folder in "${folders[@]}"; do
+    ensure_dir_exists "${folder}"
+  done
+  step_end
+}
+
+# Clone the dotfiles repo and configure upstream
+_clone_dot_files_repo() {
+  step_start
+  section_header "$(yellow 'Installing dotfiles') into '$(purple "${DOTFILES_DIR}")'"
+  if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
+    # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
+    rm -rf "${ZDOTDIR}/.zshrc"
+
+    # Note: Cloning with https since the ssh keys will not be present at this time
+    if clone_repo_into "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}" "${DOTFILES_BRANCH}"; then
+      # Use the https protocol for pull, but use ssh/git for push (only configure if not already set)
+      if ! git -C "${DOTFILES_DIR}" config --get url.ssh://git@github.com/.pushInsteadOf &>/dev/null; then
+        git -C "${DOTFILES_DIR}" config url.ssh://git@github.com/.pushInsteadOf https://github.com/
       fi
-
-      success 'Successfully installed xcode command-line tools'
+      append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
+      # Setup the DOTFILES_DIR repo's upstream if it doesn't already point to UPSTREAM_GH_USERNAME's repo
+      add-upstream-git-config.sh -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || warn 'Failed to add upstream git config for dotfiles repo'
     else
-      warn 'Skipping installation of xcode command-line tools since its already present'
+      error 'Failed to clone dotfiles repo'
+      exit 1
     fi
-    # Note: Duplicate the cleanup if the installation was cancelled and continued via the gui
-    rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
-    step_end
-  }
+  else
+    warn "Skipping cloning the dotfiles repo since '$(yellow "${DOTFILES_DIR}")' is either not defined or is already a git repo"
+  fi
+  step_end
+}
 
-  #################################################################################
-  # Ensure that some of the directories corresponding to the env vars are created #
-  #################################################################################
-  ensure_directories_exist() {
-    step_start
-    section_header "$(yellow 'Creating directories defined by various env vars')"
-    local -a folders=("${ANTIDOTE_HOME}" "${DOTFILES_DIR}" "${PROJECTS_BASE_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${PERSONAL_PROFILES_DIR}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_STATE_HOME}")
-    for folder in "${folders[@]}"; do
-      ensure_dir_exists "${folder}"
-    done
-    step_end
-  }
+# Install homebrew, tap repos, and run brew bundle
+_install_homebrew() {
+  step_start
+  section_header "$(yellow 'Installing homebrew') into '$(yellow "${HOMEBREW_PREFIX}")'"
+  if is_zero_string "${HOMEBREW_PREFIX}"; then
+    error "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!"
+    exit 1  # Irrecoverable failure
+  fi
 
-  clone_dot_files_repo() {
-    ####################
-    # Install dotfiles #
-    ####################
-    step_start
-    section_header "$(yellow 'Installing dotfiles') into '$(purple "${DOTFILES_DIR}")'"
-    if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
-      # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
-      rm -rf "${ZDOTDIR}/.zshrc"
+  if ! command_exists brew; then
+    # Prep for installing homebrew
+    sudo mkdir -p "${HOMEBREW_PREFIX}/tmp" "${HOMEBREW_PREFIX}/repository" "${HOMEBREW_PREFIX}/plugins" "${HOMEBREW_PREFIX}/bin"
+    sudo chown -fR "${USER}":admin "${HOMEBREW_PREFIX}"
+    chmod u+w "${HOMEBREW_PREFIX}"
 
-      # Note: Cloning with https since the ssh keys will not be present at this time
-      if clone_repo_into "https://github.com/${GH_USERNAME}/dotfiles" "${DOTFILES_DIR}" "${DOTFILES_BRANCH}"; then
-        # Use the https protocol for pull, but use ssh/git for push (only configure if not already set)
-        if ! git -C "${DOTFILES_DIR}" config --get url.ssh://git@github.com/.pushInsteadOf &>/dev/null; then
-          git -C "${DOTFILES_DIR}" config url.ssh://git@github.com/.pushInsteadOf https://github.com/
-        fi
-
-        append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
-
-        # Setup the DOTFILES_DIR repo's upstream if it doesn't already point to UPSTREAM_GH_USERNAME's repo
-        add-upstream-git-config.sh -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || warn 'Failed to add upstream git config for dotfiles repo'
-      else
-        error 'Failed to clone dotfiles repo'
-        exit 1
-      fi
-    else
-      warn "Skipping cloning the dotfiles repo since '$(yellow "${DOTFILES_DIR}")' is either not defined or is already a git repo"
-    fi
-    step_end
-  }
-
-  install_homebrew() {
-    ####################
-    # Install homebrew #
-    ####################
-    step_start
-    section_header "$(yellow 'Installing homebrew') into '$(yellow "${HOMEBREW_PREFIX}")'"
-    if is_zero_string "${HOMEBREW_PREFIX}"; then
-      error "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!"
-      exit 1 # Irrecoverable failure
-    fi
-
-    if ! command_exists brew; then
-      # Prep for installing homebrew
-      sudo mkdir -p "${HOMEBREW_PREFIX}/tmp" "${HOMEBREW_PREFIX}/repository" "${HOMEBREW_PREFIX}/plugins" "${HOMEBREW_PREFIX}/bin"
-      sudo chown -fR "$(whoami)":admin "${HOMEBREW_PREFIX}"
-      chmod u+w "${HOMEBREW_PREFIX}"
-
-      local install_script_file
-      install_script_file="$(mktemp)"
-      if curl --retry 3 --retry-delay 5 -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "${install_script_file}"; then
-        NONINTERACTIVE=1 bash "${install_script_file}" || {
-                                                          rm -f "${install_script_file}"
-                                                                                          error 'Homebrew installation failed'
-                                                                                                                                exit 1
-        }
+    local install_script_file
+    install_script_file="$(mktemp)"
+    if curl "${_curl_opts[@]}" -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "${install_script_file}"; then
+      NONINTERACTIVE=1 bash "${install_script_file}" || {
         rm -f "${install_script_file}"
-        success 'Successfully installed homebrew'
-      else
-        rm -f "${install_script_file}"
-        error 'Failed to download Homebrew installation script'
+        error 'Homebrew installation failed'
         exit 1
-      fi
+      }
+      rm -f "${install_script_file}"
+      success 'Successfully installed homebrew'
     else
-      warn "Skipping installation of $(yellow 'homebrew') since it's already installed"
+      rm -f "${install_script_file}"
+      error 'Failed to download Homebrew installation script'
+      exit 1
     fi
+  else
+    warn "Skipping installation of $(yellow 'homebrew') since it's already installed"
+  fi
 
-    # Note: ensure that homebrew's environment variables are set correctly for this session (even if homebrew was not installed in this session)
-    eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
+  # Note: ensure that homebrew's environment variables are set correctly for this session (even if homebrew was not installed in this session)
+  eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
 
-    # Note: Temporarily disable the ERR trap since brew commands may fail on a vanilla OS (e.g. rate limits, missing deps).
-    if [[ -n "${FIRST_INSTALL}" ]]; then
-      trap - ERR
-      # Note: On a first install, the number and size of downloads is large - allow up to 1hr for any single curl transfer.
-      export HOMEBREW_CURL_EXTRA_CURL_ARGS="--connect-timeout 300 --max-time 3600"
-    fi
+  # Note: Temporarily disable the ERR trap since brew commands may fail on a vanilla OS (e.g. rate limits, missing deps).
+  if is_non_zero_string "${FIRST_INSTALL:-}"; then
+    trap - ERR
+  fi
 
-    # Explicitly tap all taps from the Brewfile first (before brew bundle)
-    \grep -E "^tap " "${HOME}/Brewfile" | awk '{print $2}' | tr -d "'\""  | while read -r tap_name; do
-      brew tap "${tap_name}" || true
-    done
-    # Note: Do not set the 'FIRST_INSTALL' in this script - since its supposed to run idempotently. Also, don't run the cleanup of pre-installed brews/casks (for the same reason)
-    # Run brew bundle install if check fails. Let brew handle idempotency. Continue script even if bundle fails.
-    # Note: Split into taps, formulae and casks separately so that curl doesnt timeout, and failures are isolated and reported clearly.
-    # Note: Each pass includes the Brewfile preamble (non tap/brew/cask lines) to preserve Ruby DSL context (e.g. cask_args, is_arm).
-    # Note: For FIRST_INSTALL, only process lines up to the first 'FIRST_INSTALL' guard in the Brewfile (which marks the end of the base install section).
-    if [[ -n "${FIRST_INSTALL}" ]]; then
-      local brewfile_content brewfile_preamble
-      brewfile_content="$(sed "/^[^#].*FIRST_INSTALL/q" "${HOME}/Brewfile" | \grep -Ev "^[^#].*FIRST_INSTALL")"
-      brewfile_preamble="$(print "${brewfile_content}" | \grep -Ev "^tap |^brew |^cask ")"
-      if brew bundle check || \
-        (brew bundle --file=- <<< "${brewfile_preamble}"$'\n'"$(print "${brewfile_content}" | \grep -E "^tap ")" && \
-        brew bundle --file=- <<< "${brewfile_preamble}"$'\n'"$(print "${brewfile_content}" | \grep -E "^brew ")" && \
-        brew bundle --file=- <<< "${brewfile_preamble}"$'\n'"$(print "${brewfile_content}" | \grep -E "^cask ")"); then
-        success 'Successfully installed cmd-line and gui apps using homebrew'
-      else
-        warn 'Homebrew bundle install encountered errors; continuing...'
-      fi
+  # Since we have moved away from any taps in the FIRST_INSTALL, this logic is no longer required.
+  # TODO: Cleanup once this has been tested on a vanilla OS
+  # \grep -E "^tap " "${HOMEBREW_BUNDLE_FILE}" | awk '{print $2}' | tr -d "'\"" | while read -r tap_name; do
+  #   brew tap "${tap_name}" || true
+  # done
+
+  # Note: Do not set the 'FIRST_INSTALL' in this script - since its supposed to run idempotently. Also, don't run the cleanup of pre-installed brews/casks (for the same reason)
+  # Run brew bundle install if check fails. Let brew handle idempotency. Continue script even if bundle fails.
+  # Note: Split into taps, formulae and casks separately so that curl doesnt timeout, and failures are isolated and reported clearly.
+  # Note: Each pass includes the Brewfile preamble (non tap/brew/cask lines) to preserve Ruby DSL context (e.g. cask_args, is_arm).
+  # Note: For FIRST_INSTALL, only process lines up to the first 'FIRST_INSTALL' guard in the Brewfile (which marks the end of the base install section).
+  local _brew_bundle_exit=0
+  if is_non_zero_string "${FIRST_INSTALL:-}"; then
+    local brewfile_content
+    brewfile_content="$(sed "/^[^#].*FIRST_INSTALL/q" "${HOMEBREW_BUNDLE_FILE}")"
+    brewfile_content="${brewfile_content%$'\n'*FIRST_INSTALL*}"  # strip the FIRST_INSTALL guard line itself
+    brew bundle check || brew bundle --file=- <<<"${brewfile_content}" || _brew_bundle_exit=$?
+  else
+    brew bundle check || brew bundle || _brew_bundle_exit=$?
+  fi
+
+  if [[ "${_brew_bundle_exit}" -eq 0 ]]; then
+    success 'Successfully installed cmd-line and gui apps using homebrew'
+  else
+    warn 'Homebrew bundle install encountered errors; continuing...'
+  fi
+
+  # Note: load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)
+  load_zsh_configs
+  # Note: run the post-brew-install script once more (in case it wasn't run by the brew lifecycle due to any error)
+  # Note: When running with FIRST_INSTALL, some errors might come on a vanilla OS - warn and continue instead of failing.
+  post-brew-install.sh || { is_non_zero_string "${FIRST_INSTALL:-}" && warn 'post-brew-install encountered errors; continuing...'; }
+
+  if is_non_zero_string "${FIRST_INSTALL:-}"; then
+    trap _cleanup_and_exit ERR
+  fi
+
+  # TODO: Commented out to avoid the second touchId popup. Need to investigate how to solve this.
+  # is_arm && sudo rm -rf /usr/local/bin/keybase /usr/local/bin/git-remote-keybase || true
+  step_end
+}
+
+# Clone the Keybase home repo (private configs)
+_clone_home_repo() {
+  step_start
+  section_header "$(yellow 'Cloning') $(purple 'home') repo"
+  if is_non_zero_string "${KEYBASE_HOME_REPO_NAME}"; then
+    if clone_repo_into "$(build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME}")" "${HOME}"; then
+      # Reset ssh keys' permissions so that git doesn't complain when using them
+      set_ssh_folder_permissions
+
+      # Fix /etc/hosts file to block facebook
+      is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts" && sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts
     else
-      if brew bundle check || brew bundle; then
-        success 'Successfully installed cmd-line and gui apps using homebrew'
-      else
-        warn 'Homebrew bundle install encountered errors; continuing...'
-      fi
+      warn 'Failed to clone home repo'
     fi
+  else
+    warn "Skipping cloning of home repo since the '$(yellow 'KEYBASE_HOME_REPO_NAME')' env var hasn't been set"
+  fi
+  step_end
+}
 
-    # Note: load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)
-    load_zsh_configs
-
-    # Note: run the post-brew-install script once more (in case it wasn't run by the brew lifecycle due to any error)
-    # Note: When running with FIRST_INSTALL, some errors might come on a vanilla OS - warn and continue instead of failing.
-    post-brew-install.sh || { [[ -n "${FIRST_INSTALL}" ]] && warn 'post-brew-install encountered errors; continuing...'; }
-
-    if [[ -n "${FIRST_INSTALL}" ]]; then
-      unset HOMEBREW_CURL_EXTRA_CURL_ARGS
-      trap _cleanup_and_exit ERR
+# Clone the Keybase profiles repo (browser profiles)
+_clone_profiles_repo() {
+  step_start
+  section_header "$(yellow 'Cloning') $(purple 'profiles') repo"
+  if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
+    if ! clone_repo_into "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"; then
+      warn 'Failed to clone profiles repo'
     fi
+  else
+    warn "Skipping cloning of profiles repo since either the '$(yellow 'KEYBASE_PROFILES_REPO_NAME')' or the '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
+  fi
+  step_end
+}
 
-    is_arm && sudo rm -rf /usr/local/bin/keybase /usr/local/bin/git-remote-keybase || true
-    step_end
-  }
+main() {
+  # Suspend cron early before .shellrc is available — suspend_cron cannot be called
+  # yet, so the backup and removal are done inline here. Once .shellrc is sourced,
+  # the EXIT and ERR traps use resume_cron/recron from .shellrc for restore.
+  export CRON_BACKUP_FILE="${TMPDIR:-/tmp}/crontab_backup"
+  crontab -l >"${CRON_BACKUP_FILE}"  2>/dev/null || : >"${CRON_BACKUP_FILE}"
+  crontab -r &>/dev/null || true
 
-  clone_home_repo() {
-    #######################
-    # Clone the home repo #
-    #######################
-    step_start
-    section_header "$(yellow 'Cloning') $(purple 'home') repo"
-    if is_non_zero_string "${KEYBASE_HOME_REPO_NAME}"; then
-      if clone_repo_into "$(build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME}")" "${HOME}"; then
-        # Reset ssh keys' permissions so that git doesn't complain when using them
-        set_ssh_folder_permissions
+  trap _cleanup_and_exit ERR
+  trap 'rm -f "${CRON_BACKUP_FILE}"' EXIT
 
-        # Fix /etc/hosts file to block facebook
-        is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts" && sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts
-      else
-        warn 'Failed to clone home repo'
-      fi
-    else
-      warn "Skipping cloning of home repo since the '$(yellow 'KEYBASE_HOME_REPO_NAME')' env var hasn't been set"
-    fi
-    step_end
-  }
+  export ZDOTDIR="${ZDOTDIR:-"${HOME}"}"
 
-  clone_profiles_repo() {
-    ###########################
-    # Clone the profiles repo #
-    ###########################
-    step_start
-    section_header "$(yellow 'Cloning') $(purple 'profiles') repo"
-    if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
-      if ! clone_repo_into "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"; then
-        warn 'Failed to clone profiles repo'
-      fi
-    else
-      warn "Skipping cloning of profiles repo since either the '$(yellow 'KEYBASE_PROFILES_REPO_NAME')' or the '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
-    fi
-    step_end
-  }
+  # On a first install ~/.gitconfig is not yet in place (install-dotfiles.rb runs later),
+  # so core.sshCommand is absent. Export GIT_SSH_COMMAND for the entire run to ensure the
+  # connect timeout is honoured uniformly for all git operations.
+  [[ -n "${FIRST_INSTALL:-}" ]] && export GIT_SSH_COMMAND="ssh -o ConnectTimeout=20"
 
-  ###############################
-  # Do not allow rootless login #
-  ###############################
+  # ~/.curlrc is not yet symlinked (install-dotfiles.rb runs later), so its defaults are
+  # absent. Define resilient curl flags explicitly for all bootstrap curl calls in this
+  # script. Once ~/.curlrc is in place these flags are redundant but harmless.
+  # Note: defined as an array so it expands correctly without word-splitting issues.
+  # Note: local -a initialises to an empty array (not unset), so "${_curl_opts[@]}"
+  #       expands to nothing safely under set -u when ~/.curlrc is already present.
+  # Note: --retry-all-errors is intentionally omitted — it causes the terminal app to close.
+  # Raw -f used here — .shellrc has not been sourced yet when _curl_opts is initialized, so is_file is unavailable.
+  local -a _curl_opts
+  if [[ ! -f "${HOME}/.curlrc" ]]; then
+    _curl_opts=(--retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused)
+  fi
+
+  # Note: Cannot load from shellrc since that file won't be present in a new machine (vanilla OS)
+  # $EPOCHSECONDS is provided by the zsh/datetime built-in module — always available, no fork.
+  # Capture start epoch into both a local variable and SCRIPT_START_TIMES.
+  # The local is passed explicitly to print_script_duration at the end of main.
+  # SCRIPT_START_TIMES is used by step_end (called throughout this script) to
+  # compute the "total elapsed" column independently of the local variable.
+  # Both are required; see the design note above step_timing_init in .shellrc.
+  local script_start_time
+  # zmodload called directly — .shellrc has not been sourced yet when this runs, so the load is not delegated.
+  # A subsequent zmodload in .shellrc is a no-op in zsh.
+  zmodload zsh/datetime
+  script_start_time="${EPOCHSECONDS}"
+  SCRIPT_START_TIMES+=("${script_start_time}")
+  # current_timestamp is not yet available (shellrc not yet sourced); use strftime directly.
+  local script_start_time_human
+  strftime -s script_start_time_human '%Y-%m-%d %H:%M:%S' "${EPOCHSECONDS}"
+  echo "==> Script started at: ${script_start_time_human}"
+
+  # Do not allow rootless login.
   # Note: Commented out since I am not sure if we need to do this on the office MBP or not
   # section_header "$(yellow 'Verifying rootless login enabled status')"
   # if [[ "$(/usr/bin/csrutil status | awk '/status/ {print $5}' | sed 's/\.$//')" == "enabled" ]]; then
@@ -354,77 +359,58 @@ main() {
   #   exit 1 # Irrecoverable failure
   # fi
 
-  ############################
-  # Disable macos gatekeeper #
-  ############################
+  # Disable macOS Gatekeeper.
   # section_header "$(yellow 'Disabling macos gatekeeper')"
   # sudo spectl --master-disable
 
-  setup_jio_dns
+  _setup_jio_dns
 
-  # if this is being run on a machine that's already configured, then remove the cron jobs (it's backed up, and will be restored on failure or regenerated on success)
-  crontab -r &>/dev/null  || true
-
-  download_and_source_shellrc
+  _download_and_source_shellrc
 
   keep_sudo_alive
 
-  approve_fingerprint_sudo
+  _approve_fingerprint_sudo
 
-  ensure_filevault_is_on
+  _ensure_filevault_is_on
 
-  install_xcode_command_line_tools
+  _install_xcode_command_line_tools
 
   set_ssh_folder_permissions
 
-  ensure_directories_exist
+  _ensure_directories_exist
 
-
-  clone_dot_files_repo
+  _clone_dot_files_repo
 
   # run this outside of the clone function, since it needs to be run irrespective of whether the dotfiles repo was pre-existing or not
   append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
   install-dotfiles.rb
 
+  # ~/.gitconfig is now symlinked by install-dotfiles.rb — core.sshCommand is in effect.
+  # Unset GIT_SSH_COMMAND so it no longer overrides core.sshCommand for the rest of the run.
+  unset GIT_SSH_COMMAND
+
   # Load all zsh config files for PATH and other env vars to take effect
+  (($+functions[is_shellrc_sourced]))   && unfunction is_shellrc_sourced
   DEBUG=true load_zsh_configs
 
-  install_homebrew
-
-  section_header2 "$(yellow 'Installing antidote plugins and generating antidote plugin bundle')"
-  update_antidote_and_regenerate_plugin_bundle
+  _install_homebrew
 
   if is_non_zero_string "${KEYBASE_USERNAME}"; then
-    if ! command_exists keybase; then
-      error 'Keybase not found in the PATH. Aborting!!!'
-      exit 1 # Irrecoverable failure
-    fi
-
-    ######################
-    # Login into keybase #
-    ######################
+    # Login into Keybase.
     step_start
-    section_header "$(yellow 'Logging into keybase')"
-    if keybase status --json 2>/dev/null | \grep -q '"logged_in":true'; then
-      warn "Skipping keybase login since '$(yellow "${KEYBASE_USERNAME}")' is already logged in"
-    elif ! keybase login; then
-      error 'Could not login into keybase. Retry after logging in.'
-      exit 1 # Irrecoverable failure
-    fi
+    ensure_keybase_logged_in || exit 1
     step_end
 
-    clone_home_repo
+    _clone_home_repo
 
-    clone_profiles_repo
+    _clone_profiles_repo
   else
     warn "Skipping cloning of any keybase repo since '$(yellow 'KEYBASE_USERNAME')' has not been set"
   fi
 
   is_file "${SSH_CONFIGS_DIR}/known_hosts.old" && rm -f "${SSH_CONFIGS_DIR}/known_hosts.old"
 
-  ###################################################################
-  # Restore the preferences from the older machine into the new one #
-  ###################################################################
+  # Restore the preferences from the older machine into the new one.
   step_start
   section_header "$(yellow 'Restore preferences')"
   if command_exists 'osx-defaults.sh'; then
@@ -446,42 +432,44 @@ main() {
   fi
   step_end
 
-  ################################
-  # Recreate the zsh completions #
-  ################################
+  # Recreate the zsh completions.
   step_start
   section_header "$(yellow 'Recreate zsh completions')"
-  rm -rf "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}"* &>/dev/null  || true
-  autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump-${ZSH_VERSION}" &>/dev/null  || true
+  rm -rf "${XDG_CACHE_HOME}/zcompdump"* &>/dev/null  || true
+  autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump" &>/dev/null  || true
   step_end
 
-  ###################
-  # Setup cron jobs #
-  ###################
+  # Setup cron jobs.
   step_start
   section_header "$(yellow 'Setup cron jobs')"
   if command_exists recron; then
+    # Remove the backup before calling recron so that if any subsequent step fails the EXIT trap
+    # finds nothing to restore, preventing a stale backup file from persisting across runs.
+    rm -f "${CRON_BACKUP_FILE}"
     recron
-    success 'Successfully setup cron jobs'
   else
     warn "Skipping setting up of cron jobs since '$(yellow 'recron')' couldn't be found; Please set it up manually"
   fi
   step_end
 
-  ###########################
-  # Resurrect tracked repos #
-  ###########################
-  # For now, to save time while re-imaging/setting up the laptop, we'll skip resurrecting all the tracked repos
-  # resurrect_tracked_repos
+  # Resurrect tracked repos.
+  if command_exists resurrect_tracked_repos; then
+    # HACKTAG: Can take a long time on FIRST_INSTALL (same as install_mise_versions). Running in background to be non-blocking
+    resurrect_tracked_repos &|
+  else
+    warn "Skipping resurrecting tracked repos since '$(yellow 'resurrect_tracked_repos')' couldn't be found in the PATH; Please run it manually"
+  fi
 
   if command_exists allow_all_direnv_configs; then
-    allow_all_direnv_configs
+    # HACKTAG: Can take a long time on FIRST_INSTALL (same as install_mise_versions). Running in background to be non-blocking
+    allow_all_direnv_configs &|
   else
     warn "Skipping registering all direnv configs since '$(yellow 'allow_all_direnv_configs')' couldn't be found in the PATH; Please run it manually"
   fi
 
   if command_exists install_mise_versions; then
-    install_mise_versions
+    # HACKTAG: For some reason this exits with an error code and can also take a long time on FIRST_INSTALL. Need to investigate a better fix
+    install_mise_versions &|
   else
     warn "Skipping installation of languages since '$(yellow 'install_mise_versions')' couldn't be found in the PATH; Please run it manually"
   fi
@@ -507,10 +495,9 @@ main() {
   # dotnet tool install -g dotnet-sonarscanner
   # dotnet tool install -g dotnet-format
 
-  echo "\n"
   success '** Finished auto installation process: Remember to do the following steps! **'
-  echo "$(yellow "1. Run the 'bupc' alias to finish setting up all other applications managed by homebrew")"
-  echo "$(yellow "2. MANUALLY QUIT AND RESTART iTerm2 and Terminal apps")"
+  warn "1. Run the 'bupc' alias to finish setting up all other applications managed by homebrew"
+  warn "2. MANUALLY QUIT AND RESTART iTerm2 and Terminal apps"
 
   print_script_duration "${script_start_time}"
 }

@@ -1,3 +1,13 @@
+# file location: ${HOME}/.gitattributes
+# IMPORTANT: This file is COPIED (not symlinked) to its destination by install-dotfiles.rb.
+# Resolution rules when both this file and ${HOME}/.gitattributes exist as real files:
+#   - FIRST_INSTALL (env var set): ${HOME}/.gitattributes always wins — moved here, then this file is copied back.
+#   - Otherwise: the file with the newer mtime wins. If this source is newer or the same age,
+#     ${HOME}/.gitattributes is overwritten. If ${HOME}/.gitattributes is newer, it is moved here instead.
+# Practical advice: always edit THIS source file first, then run install-dotfiles.rb to propagate.
+# If you edited ${HOME}/.gitattributes directly, touch it (or ensure its mtime is newer) before running
+# install-dotfiles.rb so the mtime rule picks up your changes.
+#
 # Ensure consistent LF line endings in the repo regardless of OS checkout settings.
 * text=auto
 
@@ -14,6 +24,10 @@
 *.pyc           binary
 *.zwc*          binary
 .*.zwc*         binary
+
+# Apple binary property list files captured by capture-prefs.sh — treat as binary so that
+# git does not attempt text diffs, line-ending normalisation, or merge on them.
+*.defaults      binary
 
 .ssh/*.pub      text
 .editorconfig   text

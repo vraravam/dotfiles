@@ -2,100 +2,117 @@
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
-# This script will find all git repositories within the specified 'FOLDER' (defaults to current dir) filtered by 'FILTER' (defaults to empty string; accepts regex) and for a minimum depth of 'MINDEPTH' (optional; defaults to 1) and a maximum depth of 'MAXDEPTH' (optional; defaults to 3); and then runs the specified commands in each of those git repos. This script is not limited to only running 'git' commands!
+# This script will find all git repositories within the specified 'FOLDER' (defaults to current dir) filtered by 'FILTER' (defaults to empty string; accepts regex) and for a minimum depth of 'MINDEPTH' (optional; defaults to 1) and a maximum depth of 'MAXDEPTH' (optional; defaults to 4); and then runs the specified commands in each of those git repos. This script is not limited to only running 'git' commands!
 
-# Exit immediately if a command exits with a non-zero status.
 set -euo pipefail
 
-# Source shell helpers if they aren't already loaded
-type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
+source "${HOME}/.aliases"
+_SCRIPT_NAME="${0:t}"
 
 usage() {
-  cat <<EOF
-  $(red 'Usage'): $(yellow "${${(%):-%x}##*/}") <any-unix-command>
-This script will find all git repositories within the specified 'FOLDER' (defaults to current dir) filtered by 'FILTER' (defaults to empty string; accepts regex) and for a minimum depth of 'MINDEPTH' (optional; defaults to 1) and a maximum depth of 'MAXDEPTH' (optional; defaults to 3); and then runs the specified commands in each of those git repos. This script is not limited to only running 'git' commands!
-
-For eg:
-FOLDER=dev MINDEPTH=2 $(yellow "${${(%):-%x}##*/}") git status
-FOLDER=dev MINDEPTH=2 $(yellow "${${(%):-%x}##*/}") git branch -vv
-FOLDER=dev MINDEPTH=2 $(yellow "${${(%):-%x}##*/}") ls -l
-FILTER=oss $(yellow "${${(%):-%x}##*/}") ls -l
-FILTER='oss|zsh|omz' $(yellow "${${(%):-%x}##*/}") git fo
-EOF
-  exit 1
+  print_usage "${1}" \
+    "$(yellow '<any-unix-command>') --> (mandatory) The command to run in each discovered git repo (not limited to git commands)" \
+    "Environment variables (all optional):" \
+    "  $(yellow 'FOLDER')   --> Root directory to search for git repos (default: current dir)" \
+    "  $(yellow 'FILTER')   --> Regex to filter repos by folder or repo name (default: empty = all)" \
+    "  $(yellow 'MINDEPTH') --> Minimum search depth (default: 1)" \
+    "  $(yellow 'MAXDEPTH') --> Maximum search depth (default: 4)" \
+    "   eg: $(cyan "FOLDER=dev MINDEPTH=2 ${1} git status")" \
+    "   eg: $(cyan "FOLDER=dev MINDEPTH=2 ${1} git branch -vv")" \
+    "   eg: $(cyan "FOLDER=dev MINDEPTH=2 ${1} ls -l")" \
+    "   eg: $(cyan "FILTER=oss ${1} ls -l")" \
+    "   eg: $(cyan "FILTER='oss|zsh|omz' ${1} git fo")"
 }
 
 main() {
   while getopts ":h:" opt; do
     case ${opt} in
       h)
-        usage
+        usage "${_SCRIPT_NAME}"
         ;;
       :)
-        echo "Invalid option: -${OPTARG} requires an argument" >&2
-        usage
+        warn "-${OPTARG} requires an argument"
+        usage "${_SCRIPT_NAME}"
         ;;
     esac
   done
   shift $((OPTIND - 1))
 
   # if there are no arguments, print usage and exit
-  [[ $# -eq 0 ]] && usage
+  if [[ $# -eq 0 ]]; then
+    warn "Missing required arguments/switches"
+    usage "${_SCRIPT_NAME}"
+  fi
 
   section_header "$(yellow 'Running commands in git repositories')"
 
+  # script_start_time is passed explicitly to print_script_duration below.
+  # This script does not call step_start/step_end so there is no need to push
+  # onto SCRIPT_START_TIMES.  If step_start/step_end are ever added here,
+  # this local must also be pushed onto SCRIPT_START_TIMES so step_end can
+  # compute total elapsed correctly (see design note in .shellrc).
   local script_start_time
-  script_start_time=$(date +%s)
+  script_start_time="${EPOCHSECONDS}"
   print_script_start
 
-  MINDEPTH=${MINDEPTH:-1}
-  MAXDEPTH=${MAXDEPTH:-3}
-  FOLDER="${FOLDER:-.}"
-  FILTER="${FILTER:-}"
+  local mindepth maxdepth folder filter
+  mindepth="${MINDEPTH:-1}"
+  maxdepth="${MAXDEPTH:-4}"
+  folder="${FOLDER:-.}"
+  filter="${FILTER:-}"
+  local total_count count dir repo
 
-  echo "$(yellow "Finding git repos starting in folder '$(cyan "$(replace_home_with_tilde "${FOLDER}")")' for a min depth of $(cyan "${MINDEPTH}") and max depth of $(cyan "${MAXDEPTH}")")"
-  [[ "${FILTER}" != '' ]] && echo "$(yellow "Filtering with: $(cyan "${FILTER}")")"
+  echo "$(yellow "Finding git repos starting in folder '$(cyan "${folder}")' for a min depth of $(cyan "${mindepth}") and max depth of $(cyan "${maxdepth}")")"
+  [[ "${filter}" != '' ]] && echo "$(yellow "Filtering with: $(cyan "${filter}")")"
 
-  # Find all .git directories and store their parent directory
-  local dir_array=("${(@f)$(find "${FOLDER}" -mindepth "${MINDEPTH}" -maxdepth "${MAXDEPTH}" -type d -name '.git' -exec dirname {} \; 2>/dev/null  | grep -iE "${FILTER}" | sort -u)}")
+  # Find all .git directories; use :h modifier for dirname, assoc array for sort -u dedup.
+  local -A _seen=()
+  local -a dir_array=()
+  while IFS= read -r git_dir; do
+    local d="${git_dir:h}"
+    [[ -n "${filter}" && ! "${d}" =~ ${filter} ]] && continue
+    if ((!${+_seen[${d}]})); then
+      _seen[${d}]=1
+      dir_array+=("${d}")
+    fi
+  done < <(find "${folder}" -mindepth "${mindepth}" -maxdepth "${maxdepth}" -type d -name '.git' 2>/dev/null)
 
-  TOTAL_COUNT=${#dir_array[@]}
+  total_count=${#dir_array[@]}
 
   # Track failures
   local -a failed_repos=()
   local -a successful_repos=()
 
-  COUNT=1
+  count=1
   for dir in "${dir_array[@]}"; do
     if is_directory "${dir}" && ! is_symbolic_link "${dir}"; then
-      info "[${COUNT} of ${TOTAL_COUNT}] '$(yellow "$*")' in '$(cyan "$(replace_home_with_tilde "${dir}")")'"
+      info "[${count} of ${total_count}] '$(yellow "$*")' in '$(cyan "${dir}")'"
       if (cd "${dir}" && eval "$@"); then
         successful_repos+=("${dir}")
       else
         failed_repos+=("${dir}")
-        warn "Command failed in: $(replace_home_with_tilde "${dir}")"
+        warn "Command failed in: $(red "${dir}")"
       fi
-      ((COUNT++))
+      ((count++))
     fi
   done
 
   # Report summary
   echo ""
-  section_header "$(yellow 'Summary')"
-  echo "Total repositories: ${TOTAL_COUNT}"
-  echo "Successful: $(green ${#successful_repos[@]})"
-  if [[ ${#failed_repos[@]} -gt 0 ]]; then
+  info "$(yellow 'Summary')"
+  echo "  Total repositories: ${total_count}"
+  echo "  Successful: $(green ${#successful_repos[@]})"
+  if is_non_empty_array failed_repos; then
     echo "Failed: $(red ${#failed_repos[@]})"
-    echo "$(red 'Failed repositories:')"
-    for repo in "${failed_repos[@]}"; do
-      echo "  - $(red "$(replace_home_with_tilde "${repo}")")"
-    done
+    local -a display_repos=()
+    for repo in "${failed_repos[@]}"; do display_repos+=("$(red "${repo}")"); done
+    echo "$(red 'Failed repositories:')$(join_array display_repos)"
   fi
 
   print_script_duration "${script_start_time}"
 
   # Exit with error if any repos failed
-  [[ ${#failed_repos[@]} -gt 0 ]] && exit 1
+  is_non_empty_array failed_repos && exit 1
   exit 0
 }
 

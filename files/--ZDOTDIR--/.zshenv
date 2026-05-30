@@ -4,14 +4,12 @@
 
 ################################################################################
 # This file is sourced on all invocations of the shell. It is the 1st file zsh
-# reads; it's read for every shell, even if started with -f (setopt no_rcs),
-# all other initialization files are skipped.
+# reads; it's read for every shell, unless started with -f (setopt no_rcs), in
+# which case all initialization files including .zshenv are skipped.
 #
 # This file should contain commands to set the command search path, plus other
 # important environment variables. This file should not contain commands that
 # produce output or assume the shell is attached to a tty.
-#
-# Notice: .zshenv is the same, except that it's not read if zsh is started with -f
 #
 # file location: ${ZDOTDIR}/.zshenv
 # load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
@@ -20,7 +18,8 @@
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
 [[ -n "${DEBUG+1}" ]] && echo "loading ${0}"
 
-# Load the .shellrc here - just to define some env vars that we need before zsh lifecycle kicks in
+# Load the .shellrc here - just to define some env vars that we need before zsh lifecycle kicks in.
+# Re-source guard is inside .shellrc itself — safe to call unconditionally.
 source "${HOME}/.shellrc"
 
 skip_global_compinit=1

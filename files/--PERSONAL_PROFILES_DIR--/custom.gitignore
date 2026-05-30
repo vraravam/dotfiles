@@ -1,4 +1,12 @@
 # file location: ${PERSONAL_PROFILES_DIR}/.gitignore
+# IMPORTANT: This file is COPIED (not symlinked) to its destination by install-dotfiles.rb.
+# Resolution rules when both this file and ${PERSONAL_PROFILES_DIR}/.gitignore exist as real files:
+#   - FIRST_INSTALL (env var set): ${PERSONAL_PROFILES_DIR}/.gitignore always wins — moved here, then this file is copied back.
+#   - Otherwise: the file with the newer mtime wins. If this source is newer or the same age,
+#     ${PERSONAL_PROFILES_DIR}/.gitignore is overwritten. If ${PERSONAL_PROFILES_DIR}/.gitignore is newer, it is moved here instead.
+# Practical advice: always edit THIS source file first, then run install-dotfiles.rb to propagate.
+# If you edited ${PERSONAL_PROFILES_DIR}/.gitignore directly, touch it (or ensure its mtime is newer) before running
+# install-dotfiles.rb so the mtime rule picks up your changes.
 
 # ══════════════════════════════════════════════════════════════════════════════
 # COMMON — OS / editor noise, applies everywhere

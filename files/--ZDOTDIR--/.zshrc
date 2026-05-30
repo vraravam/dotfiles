@@ -21,8 +21,8 @@
 # execute 'ZSH_PROFILE_RC=true zsh -i -c exit' and run 'zprof' to get the details
 [[ -n "${ZSH_PROFILE_RC+1}" ]] && zmodload zsh/zprof
 
-# Faster than 'type is_shellrc_sourced &>/dev/null': no subshell, pure zsh builtin check.
-(( $+functions[is_shellrc_sourced] )) || source "${HOME}/.shellrc"
+# Re-source guard is inside .shellrc itself — safe to call unconditionally.
+source "${HOME}/.shellrc"
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Antidote — static plugin bundle
@@ -43,6 +43,12 @@
 # internals would silently break.
 unset ZSH ZSH_CUSTOM
 load_file_if_exists "${ANTIDOTE_ZSH}"
+
+# Plugin option variables must be set before the bundle is sourced.
+# Pre-set iterm2_hostname to zsh's native $HOST (set from uname -n at shell init — no subprocess).
+# The iterm2 shell integration checks [ -z "${iterm2_hostname:-}" ] and forks `hostname -f` if unset.
+# $HOST equals `hostname -f` on macOS and avoids the ~4ms subprocess cost on every shell start.
+iterm2_hostname="${HOST}"
 
 # zsh-autosuggestions — all options must be set before the antidote bundle is
 # sourced; the plugin reads them at load time.
@@ -79,22 +85,32 @@ zstyle ':omz:plugins:iterm2' shell-integration yes
 # correction: activated by lib/correction.zsh when ENABLE_CORRECTION is set
 export ENABLE_CORRECTION='true'
 
+# Ensure XDG_CACHE_HOME exists before any cache writes below.  When delete_caches removes ~/.cache,
+# the subsequent cache-write redirections (>|) silently fail and leave caches empty — breaking fpath
+# updates and other lazy-loaded config that only runs through the cache file.
+ensure_dir_exists "${XDG_CACHE_HOME}"
+
 # Cache brew shellenv to avoid running the brew binary on every shell startup (it's slow due to Ruby startup).
 # The cache is invalidated when the brew binary itself changes (i.e. after brew upgrades).
 # The cache pre-evaluates path_helper so sourcing it is a pure-zsh operation (no subprocesses).
 () {
   local brew_bin="${HOMEBREW_PREFIX}/bin/brew"
-  local cache_file="${XDG_CACHE_HOME}/brew-shellenv-cache.zsh"
+  local brew_shellenv_cache="${XDG_CACHE_HOME}/brew-shellenv-cache.zsh"
   # Use the brew binary's modification time as cache key (no need to run brew at all for the check)
-  if ! is_file "${cache_file}" || [[ "${brew_bin}" -nt "${cache_file}" ]]; then
+  if ! is_file "${brew_shellenv_cache}" || [[ "${brew_bin}" -nt "${brew_shellenv_cache}" ]]; then
+    # Skip cache generation if brew is not yet installed (e.g. vanilla OS first-install)
+    if ! is_executable "${brew_bin}"; then
+      load_file_if_exists "${brew_shellenv_cache}"
+      return
+    fi
     # Run brew shellenv in a subshell to get brew vars + path_helper result without polluting current PATH
     local brew_cellar brew_repo brew_infopath brew_manpath brew_prefix
     eval "$("${brew_bin}" shellenv 2>/dev/null)"
     brew_prefix="${HOMEBREW_PREFIX}"
-    brew_cellar="${HOMEBREW_CELLAR}"
-    brew_repo="${HOMEBREW_REPOSITORY}"
-    brew_infopath="${INFOPATH}"
-    brew_manpath="${MANPATH}"
+    brew_cellar="${HOMEBREW_CELLAR:-}"
+    brew_repo="${HOMEBREW_REPOSITORY:-}"
+    brew_infopath="${INFOPATH:-}"
+    brew_manpath="${MANPATH:-}"
     # Write a static cache: static exports + fpath update (no subprocess calls when cache is sourced)
     {
       echo "export HOMEBREW_PREFIX='${brew_prefix}';"
@@ -106,9 +122,9 @@ export ENABLE_CORRECTION='true'
       # Exporting FPATH leaks it into child processes and launchd user-session environment;
       # typeset +x at the bottom of this file strips the export flag after all sources.
       echo "fpath=('${brew_prefix}/share/zsh/site-functions' \"\${fpath[@]}\");"
-    } >| "${cache_file}" 2>/dev/null
+    } >| "${brew_shellenv_cache}" 2>/dev/null
   fi
-  load_file_if_exists "${cache_file}"
+  load_file_if_exists "${brew_shellenv_cache}"
 }
 
 load_file_if_exists "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
@@ -126,14 +142,48 @@ export ZSH_COMPDUMP="${XDG_CACHE_HOME}/zcompdump"
   fi
 }
 
+# Pre-set git_version to skip the `git version` subprocess fork inside the OMZ git plugin.
+# git.plugin.zsh line 3 runs: git_version="${${(As: :)$(git version 2>/dev/null)}[3]}"
+# and uses it for 4 conditional alias decisions (thresholds 2.8, 2.13, 2.30).
+# Since git is always well above those thresholds on this machine, we cache the version
+# string keyed on the git binary mtime — the same mtime-invalidation pattern used for
+# brew shellenv, mise activate, and starship init. Saves ~14ms on every shell startup.
+if command_exists git; then
+  () {
+    local git_bin="${commands[git]}"
+    local git_version_cache="${XDG_CACHE_HOME}/git-version-cache.zsh"
+    if ! is_file "${git_version_cache}" || [[ "${git_bin}" -nt "${git_version_cache}" ]]; then
+      local ver="${${(As: :)$(git version 2>/dev/null)}[3]}"
+      echo "git_version=\"${ver}\"" >| "${git_version_cache}" 2>/dev/null
+    fi
+    load_file_if_exists "${git_version_cache}"
+  }
+fi
+
+# Warn if plugins.txt is newer than the generated bundle — a reminder to run
+# update_antidote_and_regenerate_plugin_bundle. Uses zsh's -nt (newer-than)
+# file test: pure built-in, no subprocess fork. Only fires when the user has
+# edited plugins.txt and not yet regenerated; silent on every normal startup.
+[[ "${ANTIDOTE_PLUGIN_TXT}" -nt "${ANTIDOTE_PLUGIN_ZSH}" ]] \
+  && warn "antidote: '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is newer than the bundle — run '$(cyan 'update_antidote_and_regenerate_plugin_bundle')' manually to regenerate it."
+
 # Source the pre-generated antidote static bundle.
 # On a vanilla OS (before brew installs antidote) this file is present because
 # it is checked into the home repo. No antidote binary is needed during the
 # shell startup.
-load_file_if_exists "${ANTIDOTE_PLUGIN_ZSH}"
+#
+# Some bundled plugins (e.g. OMZ eza) reference bare positional parameters like
+# $3 without a default, which crashes under NOUNSET (set -u). The fresh-install
+# script runs with `set -euo pipefail`, so NOUNSET is active when load_zsh_configs
+# sources this file. Suspend NOUNSET for the duration of the bundle source only.
+() {
+  setopt LOCAL_OPTIONS
+  unsetopt NOUNSET
+  load_file_if_exists "${ANTIDOTE_PLUGIN_ZSH}"
+}
 
 # Activate mise — the OMZ mise plugin referenced $ZSH_CACHE_DIR (undefined without OMZ)
-# so it has been removed from .zsh_plugins.txt and replaced with a direct activation here.
+# so it has been removed from $ANTIDOTE_PLUGIN_TXT and replaced with a direct activation here.
 #
 # Performance optimisation — cache `mise activate zsh` output to avoid forking the mise
 # binary on every shell start (~5-10ms saving). Same pattern as the starship init cache
@@ -142,11 +192,11 @@ load_file_if_exists "${ANTIDOTE_PLUGIN_ZSH}"
 if command_exists mise; then
   () {
     local mise_bin="${commands[mise]}"
-    local cache="${XDG_CACHE_HOME}/mise-activate-cache.zsh"
-    if ! is_file "${cache}" || [[ "${mise_bin}" -nt "${cache}" ]]; then
-      mise activate zsh >| "${cache}" 2>/dev/null
+    local mise_activate_cache="${XDG_CACHE_HOME}/mise-activate-cache.zsh"
+    if ! is_file "${mise_activate_cache}" || [[ "${mise_bin}" -nt "${mise_activate_cache}" ]]; then
+      mise activate zsh >| "${mise_activate_cache}" 2>/dev/null
     fi
-    load_file_if_exists "${cache}"
+    load_file_if_exists "${mise_activate_cache}"
   }
 fi
 
@@ -159,7 +209,8 @@ fi
 #
 # NOTE: Deferring the source of the cache via a precmd hook was attempted but
 # causes 'setopt promptsubst' (emitted by starship's init) to be scoped to the
-# precmd function and unset on return (due to 'setopt local_options' in .zshrc),
+# precmd function and unset on return (due to 'setopt local_options' set in the
+# macOS block of .zshrc, which scopes all setopts to the file's execution frame),
 # which leaves PROMPT as an unexpanded literal string after the first command.
 # The cache is therefore sourced directly at startup; the ~5ms cost of sourcing
 # the pre-parsed .zwc bytecode is acceptable.
@@ -167,14 +218,14 @@ if command_exists starship; then
   () {
     # $commands[] is an O(1) zsh hash lookup — no subprocess fork needed.
     local starship_bin="${commands[starship]}"
-    local cache="${XDG_CACHE_HOME}/starship-init-cache.zsh"
+    local starship_init_cache="${XDG_CACHE_HOME}/starship-init-cache.zsh"
     # Regenerate the cache only when the starship binary is newer than the cache file.
-    if ! is_file "${cache}" || [[ "${starship_bin}" -nt "${cache}" ]]; then
-      starship init zsh >| "${cache}" 2>/dev/null
+    if ! is_file "${starship_init_cache}" || [[ "${starship_bin}" -nt "${starship_init_cache}" ]]; then
+      starship init zsh >| "${starship_init_cache}" 2>/dev/null
     fi
     # Source directly at the top level (not deferred) so that 'setopt promptsubst'
     # emitted by the cache takes effect globally and is not scoped to a function.
-    load_file_if_exists "${cache}"
+    load_file_if_exists "${starship_init_cache}"
   }
 fi
 
@@ -184,23 +235,33 @@ fi
 # You may need to manually set your language environment
 # export LANG=en_US.UTF-8
 
-unset EDITOR
-# Preferred editor for remote sessions
-if is_non_zero_string "${SSH_CONNECTION}"; then
-  export EDITOR='vi'
+unset GIT_EDITOR
+# SSH sessions fall back to vi; local sessions prefer GUI editors.
+# EDITOR always delegates to wait-editor, which re-execs $GIT_EDITOR via POSIX
+# word-splitting — so '--wait' flags are passed correctly to GUI editors, and
+# vi (which blocks naturally) works without any special casing.
+if is_non_zero_string "${SSH_CONNECTION:-}"; then
+  preferred_editors=('vi')
 else
-  # Preferred editor for local sessions
-  local preferred_editors=('zed --wait' 'code --wait' 'vi')
-  for editor in "${preferred_editors[@]}"; do
-    # ${editor%% *} strips everything after the first space — pure zsh, no fork.
-    # Equivalent to extract_first_word but avoids a subshell invocation.
-    if command_exists "${editor%% *}"; then
-      export EDITOR="${editor}"
-      break
-    fi
-  done
-  unset preferred_editors
+  preferred_editors=('zed --wait' 'code --wait' 'vi')
 fi
+for editor in "${preferred_editors[@]}"; do
+  # ${editor%% *} strips everything after the first space — pure zsh, no fork.
+  if command_exists "${editor%% *}"; then
+    export GIT_EDITOR="${editor}"
+    break
+  fi
+done
+unset preferred_editors editor
+# Safety net: if no editor was found in PATH (e.g. a stripped environment
+# where even vi is absent), fall back to vi unconditionally so GIT_EDITOR is
+# never left unset. wait-editor will fail clearly if vi is truly missing.
+if is_zero_string "${GIT_EDITOR:-}"; then
+  export GIT_EDITOR='vi'
+fi
+# EDITOR is always the wait-editor wrapper regardless of which editor was
+# selected — set once here rather than repeating it in every branch above.
+export EDITOR='wait-editor'
 
 # For a full list of active aliases, run `alias`.
 
@@ -262,7 +323,8 @@ if is_macos; then
   # case insensitive path-completion
   zstyle ':completion:*' matcher-list 'm:{[:lower:][:upper:]}={[:upper:][:lower:]}' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*' 'm:{[:lower:][:upper:]}={[:upper:][:lower:]} l:|=* r:|=*'
   # partial completion suggestions
-  zstyle ':completion:*' list-suffixeszstyle ':completion:*' expand prefix suffix
+  zstyle ':completion:*' list-suffixes
+  zstyle ':completion:*' expand prefix suffix
   # prevent CVS and SVN from being completed
   zstyle ':completion:*:(all-|)files' ignored-patterns '(|*/)CVS'
   zstyle ':completion:*:cd:*' ignored-patterns '(*/)#CVS'
@@ -274,21 +336,12 @@ if is_macos; then
   # local knownhosts
   # knownhosts=( ${${${${(f)"$(<${SSH_CONFIGS_DIR}/known_hosts)"}:#[0-9]*}%%\ *}%%,*} )
   # zstyle ':completion:*:(ssh|scp|sftp):*' hosts $knownhosts
-  compctl -k hosts ftp lftp ncftp ssh w3m lynx links elinks nc telnet rlogin host
-  compctl -k hosts -P '@' finger
-
-  # manpage completion
-  man_glob() {
-    local a
-    read -cA a
-    if [[ $a[2] = -s ]]; then
-      reply=( ${^manpath}/man$a[3]/${1}*${2}(N:t:r) )
-    else
-      reply=( ${^manpath}/man*/${1}*${2}(N:t:r) )
-    fi
-  }
-
-  compctl -K man_glob -x 'C[-1,-P]' -m - 'R[-*l*,;]' -g '*.(man|[0-9nlpo](|[a-z]))' + -g '*(-/)' -- man
+  #
+  # compctl (old pre-compsys completion system) calls were removed:
+  #   compctl -k hosts ftp lftp ncftp ssh ...  — $hosts array was never defined (see above);
+  #   compctl -K man_glob ... -- man           — custom man_glob function
+  # These conflicted silently with the compsys (_ssh, _man) completers loaded via
+  # zsh-completions. compsys takes full ownership of all completions.
   # fuzzy matching
   zstyle ':completion:*' completer _complete _match _approximate
   zstyle ':completion:*:match:*' original only
@@ -319,7 +372,7 @@ if is_macos; then
     prepend_to_manpath_if_dir_exists "${HOMEBREW_PREFIX}/share/man"
 
     use_homebrew_installation_for() {
-      installation_dir="${HOMEBREW_PREFIX}/opt/${1}"
+      local installation_dir="${HOMEBREW_PREFIX}/opt/${1}"
       ! is_directory "${installation_dir}" && return 0 # Success, nothing to do
 
       prepend_to_path_if_dir_exists "${installation_dir}/bin"
@@ -381,7 +434,6 @@ if is_directory "${XDG_CONFIG_HOME}/zsh"; then
   # :t extracts the basename — autoload expects the function name, not the full
   # path; passing the full path would define a function named e.g.
   # '~/.config/zsh/myfunc' which can never be invoked by short name.
-  local func_file
   for func_file in "${XDG_CONFIG_HOME}"/zsh/*(N); do
     autoload -Uz "${func_file:t}"
   done
@@ -397,6 +449,9 @@ fi
 # remove empty components to avoid '::' ending up + resulting in './' being in $PATH, etc
 path=( "${path[@]:#}" )
 fpath=( "${fpath[@]:#}" )
+# zsh does not auto-tie INFOPATH<->infopath (unlike PATH<->path); ensure the tie exists
+# so that the array form is available. typeset -T is safe to call even if already tied.
+typeset -gT INFOPATH infopath ':'
 infopath=( "${infopath[@]:#}" )
 manpath=( "${manpath[@]:#}" )
 
@@ -407,8 +462,8 @@ typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPAT
 # (autoload search path and cd search path respectively). Exporting them causes their
 # contents to leak into child processes and persist in the macOS launchd user-session
 # environment, where they are inherited by every new shell before any rc file runs.
-# All other *path vars on line 367 (PATH, MANPATH, INFOPATH, CPPFLAGS, LDFLAGS,
-# PKG_CONFIG_PATH) are intentionally exported — child processes need them.
+# All other *path vars in the typeset -gU line above (PATH, MANPATH, INFOPATH, CPPFLAGS,
+# LDFLAGS, PKG_CONFIG_PATH) are intentionally exported — child processes need them.
 typeset +x FPATH fpath cdpath CDPATH
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109

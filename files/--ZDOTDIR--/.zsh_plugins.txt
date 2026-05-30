@@ -2,44 +2,112 @@
 #
 # Antidote plugin list (order matters for some of these).
 # Antidote reads this file and generates a static "${ANTIDOTE_PLUGIN_ZSH}" bundle.
+#
+# Deferral policy:
+#   kind:defer  — loads after the first prompt via romkatv/zsh-defer (zle -F).
+#                 zsh-defer reschedules itself if PENDING > 0 (bytes already in the
+#                 TTY buffer), so a fast typist can beat the idle window. Only use
+#                 kind:defer for plugins whose absence during the first interaction
+#                 is completely invisible (alias-only plugins, cosmetic hooks).
+#   NOT deferred — anything that affects the live typing experience: syntax
+#                  highlighting, autosuggestions, history search, key bindings,
+#                  setopts, fpath population, and hooks that must fire on the first
+#                  command. The extra synchronous startup cost of these plugins is
+#                  the deliberate tradeoff for zero first-interaction latency.
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Oh-My-Zsh lib — only the pieces actually used; replaces loading all of OMZ
 #
 # functions.zsh must come first — provides env_default (used by misc.zsh) and
-# omz_urlencode (used by termsupport.zsh)
+# omz_urlencode (used by termsupport.zsh).
+#   NOT deferred: required synchronously by misc.zsh and termsupport.zsh at
+#   load time; deferring it would defer everything that depends on it.
 # ──────────────────────────────────────────────────────────────────────────────
 ohmyzsh/ohmyzsh path:lib/functions.zsh
+
+# NOT deferred: sets WORDCHARS, setopts (auto_menu, complete_in_word,
+# always_to_end), and bindkey -M menuselect — all must be active before
+# compinit runs and before the first Tab press.
 ohmyzsh/ohmyzsh path:lib/completion.zsh
+
+# NOT deferred: sets setopt correct_all — must be active before the first
+# command so spell-correction works immediately. (Only 8 lines; zero cost.)
 ohmyzsh/ohmyzsh path:lib/correction.zsh
+
+# NOT deferred: registers arrow-key history search, Home/End, and other
+# key bindings via bindkey — must be active from the very first keystroke.
 ohmyzsh/ohmyzsh path:lib/key-bindings.zsh
+
+# NOT deferred: registers url-quote-magic via `zle -N self-insert` (a ZLE
+# hook that must fire on the first keypress) and sets setopts (multios,
+# interactivecomments) that must be active before any command runs.
 ohmyzsh/ohmyzsh path:lib/misc.zsh
-ohmyzsh/ohmyzsh path:lib/termsupport.zsh
-ohmyzsh/ohmyzsh path:lib/theme-and-appearance.zsh
+
+# DEFERRED: only registers precmd/preexec hooks for terminal window title and
+# CWD tracking — purely cosmetic. omz_urlencode (used inside) is already loaded
+# synchronously by functions.zsh above, so it is available when this fires.
+ohmyzsh/ohmyzsh path:lib/termsupport.zsh kind:defer
+
+# theme-and-appearance.zsh removed: its only job is setting up `ls --color` aliases,
+# which are immediately overridden by the eza plugin anyway. Removing it saves ~5ms
+# by eliminating the test-ls-args fork (ls /dev/null) on every shell startup.
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Oh-My-Zsh plugins — only the ones actively used
 # ──────────────────────────────────────────────────────────────────────────────
-ohmyzsh/ohmyzsh path:plugins/eza
-ohmyzsh/ohmyzsh path:plugins/git
-ohmyzsh/ohmyzsh path:plugins/iterm2
-ohmyzsh/ohmyzsh path:plugins/sudo
-ohmyzsh/ohmyzsh path:plugins/zbell
+
+# DEFERRED: defines only ls/ll/la/… aliases — no ZLE hooks or setopts.
+# Safe to defer; aliases are available before any keypress is processed.
+ohmyzsh/ohmyzsh path:plugins/eza kind:defer
+
+# DEFERRED: the heaviest non-deferred plugin (431 lines of aliases/functions).
+# Purely alias definitions — no ZLE hooks or setopts. Biggest startup win.
+ohmyzsh/ohmyzsh path:plugins/git kind:defer
+
+# DEFERRED: sources iterm2_shell_integration.zsh which registers precmd/preexec
+# hooks for prompt-zone marking. Cosmetic for the first prompt only.
+# The iterm2_hostname pre-set in .zshrc happens before bundle load, so the
+# `hostname -f` fork-avoidance optimisation still applies after deferral.
+ohmyzsh/ohmyzsh path:plugins/iterm2 kind:defer
+
+# DEFERRED: registers ESC-ESC → add-sudo via `zle -N` + `bindkey`.
+# Safe to defer because its absence is invisible — you can't press ESC-ESC
+# before the shell is interactive, and the binding is cosmetic (not required
+# for any first-command behaviour).
+ohmyzsh/ohmyzsh path:plugins/sudo kind:defer
+
+# DEFERRED: registers precmd/preexec hooks for long-command bell timing.
+# Purely cosmetic; no impact on shell correctness.
+ohmyzsh/ohmyzsh path:plugins/zbell kind:defer
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Third-party plugins (previously cloned into ~/.oh-my-zsh/custom/plugins/)
 #
-# zsh-completions must come before compinit (loaded via fpath, not sourced directly)
+# zsh-completions must come before compinit (loaded via fpath, not sourced directly).
+#   NOT deferred: must be in fpath before compinit runs synchronously in .zshrc.
 # ──────────────────────────────────────────────────────────────────────────────
 zsh-users/zsh-completions path:src kind:fpath
 
-# direnv hook — thin wrapper around 'eval "$(direnv export zsh)"'
+# NOT deferred: binds up/down arrow keys to substring-based history search.
+# Must be active from the very first Up/Down keypress.
+zsh-users/zsh-history-substring-search
+
+# NOT deferred: the direnv hook must fire before any command — especially the
+# very first `cd` or any command that depends on direnv-managed env vars.
+# direnv plugin: thin wrapper around 'eval "$(direnv export zsh)"'
 # mise is activated directly in .zshrc (the OMZ mise plugin referenced $ZSH_CACHE_DIR
 # which is undefined without OMZ, so it was replaced with a direct eval there)
 ohmyzsh/ohmyzsh path:plugins/direnv
 
-# Syntax highlighting must be loaded near-last (before autosuggestions)
+# NOT deferred: hooks into ZLE via zle -N to colour the command line as you
+# type. zsh-defer reschedules on PENDING > 0, so a fast typist gets no
+# highlighting on their first command. Loaded synchronously so highlighting
+# is present from the very first keypress.
+# Must come before autosuggestions so highlighting takes visual precedence.
 zdharma-continuum/fast-syntax-highlighting
 
-# Autosuggestions must be loaded last
+# NOT deferred: hooks into ZLE to show ghost-text suggestions. Same reasoning
+# as FSH — the async suggestion fetch (ZSH_AUTOSUGGEST_USE_ASYNC) means it
+# doesn't block ZLE, so the only cost is the one-time load at startup.
+# Must be last so it wraps all other ZLE widgets.
 zsh-users/zsh-autosuggestions

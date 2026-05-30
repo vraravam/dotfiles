@@ -25,9 +25,12 @@ is_arm = ::Hardware::CPU.arm?
 # TODO: Hardcoding of the dotfiles repo folder - since that env var is not available inside this env
 setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.sh"
 
-# Moving these casks to tbe beginning since they are required in the beginning (for manual login) for a vanilla OS installation
+# These casks must come first — required for manual login during a vanilla OS installation.
 cask 'font-meslo-lg-nerd-font'
-cask 'keybase', postinstall: "\"#{setup_login_items_script}\" -a 'Keybase'"
+cask 'keybase',
+  postinstall: "\"#{setup_login_items_script}\" -a 'Keybase' && " \
+               "ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/keybase' \"${HOMEBREW_PREFIX}/bin/keybase\" && " \
+               "ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase' \"${HOMEBREW_PREFIX}/bin/git-remote-keybase\""
 
 # formulae pulled in from homebrew to replace system equivalents to fix any security issues since the OS was released
 # This list is enhanced from https://macgnu.codewithshin.com/?id=gnu-programs-existing-in-macos-which-are-outdated
@@ -60,11 +63,7 @@ brew 'starship'
 # casks pulled in for base configs (if these are absent, you will get errors and things won't work)
 cask 'iterm2'
 
-# While re-imaging the OS or setting up for the first time, install only the bare minimum apps/utilities so that the rest of the backup restoration can proceed faster.
-if ENV.has_key?('FIRST_INSTALL')
-  puts "Only performing base installation!"
-  return 0
-end
+# FIRST_INSTALL: While re-imaging the OS or setting up for the first time, install only the bare minimum apps/utilities above this line so that the rest of the backup restoration can proceed faster.
 
 tap 'xykong/tap'
 
@@ -80,6 +79,7 @@ brew 'opencode'
 brew 'pandoc'
 brew 'prettyping'
 brew 'ripgrep'
+brew 'shfmt'
 brew 'syncthing'
 brew 'tlrc'
 
@@ -103,7 +103,9 @@ cask 'rancher' # if ::OS::Mac::version < 26
 cask 'sol', postinstall: "\"#{setup_login_items_script}\" -a 'Sol'"
 cask 'shortcat', postinstall: "\"#{setup_login_items_script}\" -a 'Shortcat'"
 cask 'stats', postinstall: "\"#{setup_login_items_script}\" -a 'Stats'"
-cask 'zed@preview'
+cask 'zed@preview',
+  postinstall: "ln -sf '/Applications/Zed Preview.app/Contents/MacOS/cli' \"${HOMEBREW_PREFIX}/bin/zed-preview\" && " \
+               "ln -sf \"${HOMEBREW_PREFIX}/bin/zed-preview\" \"${HOMEBREW_PREFIX}/bin/zed\""
 cask 'zen@twilight'
 cask 'zoom'
 
@@ -111,7 +113,9 @@ cask 'zoom'
 # mas 'PDFgear', id: 6469021132
 
 # VSCode extensions
-# Note: I don't want brew to silently install VS Code (which is what it does currently if the following lines are present but it doesn't find the executable 'code'!)
+# Note: Retained as a reference in case of a future switch back to VSCode or VSCodium.
+# To re-enable: uncomment the is_vscode_installed guard and the extension lines below.
+# Note: brew silently installs VS Code when these lines are present but 'code' is not in PATH.
 # is_vscode_installed = !`PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}" which code`.chomp.empty?  # explicitly set PATH since the shell being opened doesn't run the login configs
 # if is_vscode_installed
 #   vscode 'britesnow.vscode-toggle-quotes'
@@ -148,7 +152,7 @@ cask 'zoom'
 # end
 
 # ----------------------------------------------------------------------------------------------------------
-# Moved these brew and cask lines to clean up the noise from the above alphabetically-sorted lists
+# Miscellaneous formulae and casks grouped separately to keep the main lists clean.
 
 # --- encrypted backup in case keybase is shut down in the future
 # tap 'Picocrypt/picocrypt' if is_arm
@@ -185,7 +189,6 @@ brew 'sccache'
 # brew 'libressl', link: true
 # brew 'localstack'
 # brew 'shellcheck' # Not using since this only supports bash
-# brew 'shfmt'
 # brew 'speedtest-cli'
 # brew 'watch'
 # brew 'wifi-password'

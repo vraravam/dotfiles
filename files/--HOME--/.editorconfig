@@ -12,13 +12,17 @@ insert_final_newline = true
 trim_trailing_whitespace = true
 max_line_length = off
 
-[*.json]
-insert_final_newline = false
+# JSON — no overrides needed; all [*] defaults are correct for JSON
+# (insert_final_newline = true is intentional: POSIX tools expect it and parsers tolerate it)
 
+# Markdown — trailing whitespace is semantically significant (two spaces = <br>), so do not
+# trim it. Indentation in Markdown is structural (code fences, lists), not a style choice,
+# so leave indent_size unset. All other [*] defaults apply.
 [*.md]
-insert_final_newline = false
 trim_trailing_whitespace = false
+indent_size = unset
 
+# Shell scripts
 [*.sh]
 # shell_variant      = posix # like -ln=posix
 # binary_next_line   = true  # like -bn
@@ -28,10 +32,82 @@ keep_padding       = true  # like -kp from shfmt options
 # function_next_line = true  # like -fn
 # never_split        = true  # like -ns
 
-# Windows Shell scripts
-[*.{cmd, bat}]
+# zsh scripts (by extension) — same shfmt options as .sh
+[*.{zsh,zshrc,zshenv,zlogin,zprofile}]
+switch_case_indent = true
+space_redirects    = false
+keep_padding       = true
+
+# Shell dotfiles (no extension) — same shfmt options as .sh
+[{.shellrc,.aliases,.profile,.bashrc,.bash_profile,.zshrc,.zshenv,.zlogin,.envrc}]
+switch_case_indent = true
+space_redirects    = false
+keep_padding       = true
+
+# direnv .envrc files are full bash scripts — same shfmt options as .sh
+[*.envrc]
+switch_case_indent = true
+space_redirects    = false
+keep_padding       = true
+
+# .env files are KEY=VALUE assignment lists, not shell scripts — no shfmt options apply
+# All [*] defaults are correct.
+
+# Windows shell scripts — idiomatically use tabs and CRLF line endings
+[*.{cmd,bat}]
+indent_style = tab
 end_of_line = crlf
 
-# gitignore files — alignment spaces are not indentation
-[{.gitignore_global,.gitignore,custom.gitignore}]
+# Ruby and Elixir — 2-space indent (both communities' standard)
+[*.{rb,iex.exs,exs}]
+indent_size = 2
+
+# Ruby project files with no extension
+[{Brewfile,Gemfile}]
+indent_size = 2
+
+# Lockfiles — generated, never hand-edited; no normalisation
+[*.lock]
+trim_trailing_whitespace = false
+insert_final_newline = false
+indent_size = unset
+
+# TOML — 2-space indent (TOML spec examples and most formatters use 2)
+[*.toml]
+indent_size = 2
+
+# YAML — 2-space indent (community standard)
+[*.{yml,yaml}]
+indent_size = 2
+
+# SQL — 4-space indent (sqlfluff, pgFormatter, and most SQL style guides default to 4)
+[*.sql]
+indent_size = 4
+
+# XML and text plist — 4-space indent (W3C tooling and most XML formatters default to 4)
+[*.{xml,plist}]
+indent_size = 4
+
+# Compiled zsh bytecode — binary; disable all text processing
+[*.zwc]
+charset = unset
+trim_trailing_whitespace = false
+insert_final_newline = false
+indent_size = unset
+
+[*.zwc.old]
+charset = unset
+trim_trailing_whitespace = false
+insert_final_newline = false
+indent_size = unset
+
+# Binary Apple property list captures — binary; disable all text processing
+[*.defaults]
+charset = unset
+trim_trailing_whitespace = false
+insert_final_newline = false
+indent_size = unset
+
+# gitignore/gitattributes files — columns of patterns use alignment spaces, not indentation
+[{.gitignore,.gitignore_global,custom.gitignore,.gitattributes,custom.gitattributes}]
 indent_size = unset

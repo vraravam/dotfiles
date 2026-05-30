@@ -1,0 +1,12 @@
+# Files containing zsh-only syntax that shfmt cannot parse even in zsh mode:
+#   - ${^array} (rc-style expansion)
+#   - for key value in "${(@kv)assoc}" (associative array iteration)
+files/--ZDOTDIR--/.zshrc
+scripts/cleanup-browser-profiles.sh
+
+# shfmt fmt:off/on directives are not honoured inside loop bodies (shfmt bug);
+# one-liners like 'while true; do ...; done' and 'pushd || { ...; }' get expanded
+# into ugly multi-line padded form by keep_padding. Excluding these files is the
+# only reliable fix.
+files/--HOME--/.aliases
+files/--HOME--/.shellrc

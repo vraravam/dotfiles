@@ -5,27 +5,23 @@
 # git command: st
 
 # Source shell helpers if they aren't already loaded
-type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
+# Re-source guard is inside .shellrc itself — safe to call unconditionally.
+source "${HOME}/.shellrc"
 
-# Note: Use a function so that it can accept parameters
 st() {
   local folder
   local -a switches
-  for arg in "$@"; do
-    if [[ "${arg}" == --* ]]; then
-      switches+=("${arg}")
-    elif is_zero_string "${folder}"; then
-      folder="${arg}"
-    fi
-  done
-  folder="${folder:-$(pwd)}"
-  section_header "$(yellow 'Checking') $(purple "${folder}")"
+  parse_folder_and_switches "$@"
+  section_header2 "$(yellow 'Checking') $(purple "${folder}")"
   if ! is_git_repo "${folder}"; then
     warn "Skipping finding status of the repo since '$(yellow "${folder}")' doesn't exist or is not a git repo"
   else
-    git -C "${folder}" st "${switches[@]}"
+    git -C "${folder}" st "${switches[@]}" || true
   fi
 }
 
-st "$@"
-compdef st
+# Run only when executed directly, not when sourced (e.g. to import the function into another script).
+[[ "${zsh_eval_context}" == *file* ]] || st "$@"
+# ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
+# evaluated by non-zsh runtimes (e.g. direnv's sandbox).
+[[ -n "${ZSH_VERSION-}" ]] && (($+functions[compdef])) && compdef st || true

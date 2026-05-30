@@ -9,13 +9,135 @@
 # load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
 ################################################################################
 
+# Guard against re-sourcing — all call sites can unconditionally 'source ~/.aliases'
+# without needing their own check. This return is a no-op cost (single builtin).
+# ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
+# evaluated by non-zsh runtimes (e.g. direnv's sandbox).
+[[ -n "${ZSH_VERSION-}" ]] && (($+functions[is_aliases_sourced]))   && return
+
+# Dummy function to check if .aliases is sourced (mirrors is_shellrc_sourced in .shellrc)
+is_aliases_sourced() {
+  return 0
+}
+
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
 [[ -n "${DEBUG+1}" ]] && echo "loading ${0}"
 
-# DUPLICATE! Copied over since we get an error if the .shellrc was not loaded
-type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
+# Re-source guard is inside .shellrc itself — safe to call unconditionally.
+source "${HOME}/.shellrc"
 
-# add flags to existing aliases
+# --------------------------------------------------------------------------
+# String utilities (zsh-only; not needed in direnv/bash so lives here not .shellrc)
+# --------------------------------------------------------------------------
+
+# Returns the last path segment of $1, stripping any trailing slash.
+# Uses pure-zsh nested expansion — safe here since .aliases is never sourced by bash.
+# Usage: extract_last_segment <path>
+extract_last_segment() {
+  echo "${"${1%/}"##*/}"
+}
+
+# --------------------------------------------------------------------------
+# Script utilities (zsh-only; not needed before dotfiles repo is cloned)
+# --------------------------------------------------------------------------
+
+# Parses positional args into 'folder' (first non-switch arg, defaulting to
+# pwd) and 'switches' (all --flag args). Callers must declare both locals
+# before calling this function so the assignments land in their scope.
+#
+# Usage:
+#   local folder
+#   local -a switches
+#   parse_folder_and_switches "$@"
+parse_folder_and_switches() {
+  folder=''
+  switches=()
+  for arg in "$@"; do
+    if [[ "${arg}" == --* ]]; then
+      switches+=("${arg}")
+    elif is_zero_string "${folder}"; then
+      folder="${arg}"
+    fi
+  done
+  folder="${folder:-$(pwd)}"
+}
+
+# Sources ${PERSONAL_BIN_DIR}/<cmd>-<cwd-basename>.sh if it exists and is
+# executable; otherwise falls back to calling <fallback_fn> with all args.
+#
+# Usage: dispatch_or_fallback <cmd> <fallback_fn> "$@"
+#
+# Example (in the 'push' autoload):
+#   push() { dispatch_or_fallback push _push "$@"; }
+dispatch_or_fallback() {
+  local cmd="${1}"
+  local fallback_fn="${2}"
+  shift 2
+  local override="${PERSONAL_BIN_DIR}/${cmd}-${PWD##*/}.sh"
+  if is_executable "${override}"; then
+    . "${override}" "$@"
+  else
+    "${fallback_fn}" "$@"
+  fi
+}
+
+# Creates a new shell script with standard header boilerplate.
+# Usage: new_script <path> [shell_type]
+#   shell_type: 'zsh' (default) or 'bash'
+new_script() {
+  local script_path="${1:?Script path required}"
+  local shell_type="${2:-zsh}"
+
+  if is_file "${script_path}"; then
+    error "File already exists: ${script_path}"
+    return 1
+  fi
+
+  local dir="${script_path:h}"
+  if ! is_directory "${dir}"; then
+    error "Directory does not exist: ${dir}"
+    return 1
+  fi
+
+  cat >"${script_path}" <<EOF
+#!/usr/bin/env ${shell_type}
+
+# vim:filetype=${shell_type} syntax=${shell_type} tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
+set -euo pipefail
+
+# TODO: Add your code here
+EOF
+
+  chmod +x "${script_path}"
+  success "Created new ${shell_type} script: ${script_path}"
+}
+
+# Validates that a required environment variable is set.
+# Usage: require_env_var VAR_NAME [VAR_NAME2 ...]
+#
+# Example:
+#   require_env_var PERSONAL_BIN_DIR DOTFILES_DIR
+require_env_var() {
+  local var_name
+  for var_name in "$@"; do
+    if [[ -z "${(P)var_name:-}" ]]; then
+      echo "Error: ${var_name} must be set (source ~/.aliases first)" >&2
+      return 1
+    fi
+  done
+}
+
+# --------------------------------------------------------------------------
+# GROUP 3: Ongoing Daily-Use Aliases & Functions
+# (Groups 1 and 2 are defined in .shellrc — bootstrap utilities and core predicates.)
+# Loaded after .shellrc via .zshrc. These are convenience wrappers, maintenance
+# tools, and project-specific helpers used during interactive shell sessions.
+# --------------------------------------------------------------------------
+
+# --------------------------------------------------------------------------
+# 3a. Shell defaults — extended flags on built-in commands
+# --------------------------------------------------------------------------
 alias less="${aliases[less]:-less} -RF"
 alias cp="${aliases[cp]:-cp} -p"
 alias mkdir="${aliases[mkdir]:-mkdir} -p"
@@ -23,6 +145,9 @@ alias grep="${aliases[grep]:-grep} -Hn --color=auto --exclude-dir={.zsh_sessions
 alias fgrep="${aliases[fgrep]:-fgrep} -Hn --color=auto --exclude-dir={.zsh_sessions,.IdentityService,.Trash} --exclude={\".*history\",\".zcompdump*\",\"*.zwc*\",\".*.zwc*\"}"
 alias egrep="${aliases[egrep]:-egrep} -Hn --color=auto --exclude-dir={.zsh_sessions,.IdentityService,.Trash} --exclude={\".*history\",\".zcompdump*\",\"*.zwc*\",\".*.zwc*\"}"
 
+# --------------------------------------------------------------------------
+# 3b. Tool replacements — enhanced CLI tools
+# --------------------------------------------------------------------------
 # eza already defines 'll' - so skip if that's present
 ! command_exists eza && alias ll='ls -la'
 command_exists tree && alias tree="${aliases[tree]:-tree} -Ch"
@@ -32,169 +157,277 @@ command_exists bat && alias cat='bat'
 command_exists btop && alias top='btop'
 command_exists ncdu && alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'
 
+# --------------------------------------------------------------------------
+# 3c. Multi-repo git shortcuts (via run-all.sh)
+# --------------------------------------------------------------------------
 if command_exists 'run-all.sh'; then
-  # shortcuts to handle multiple git repos bypassing the omz auto-correct prompt for 'git'
+  # shortcuts to handle multiple git repos
   alias rug='run-all.sh git'
-  alias all="FOLDER='${HOME}' MAXDEPTH=6 rug"
+  alias all="FOLDER='${HOME}' MAXDEPTH=7 rug"
+  alias all-cache="FILTER='[cC]ache' all"
   alias home="FOLDER='${HOME}' FILTER='.bin|.dotfiles|zsh|mise' MAXDEPTH=5 rug"
   is_directory "${PERSONAL_PROFILES_DIR}" && alias profiles="FOLDER='${PERSONAL_PROFILES_DIR}' MAXDEPTH=5 rug"
-  if is_directory "${PROJECTS_BASE_DIR}"; then
-    local -A _seen_parent_folders
-    local -a parent_folders
 
-    # process substitution keeps 'while' in the current shell (no subshell for the loop body);
-    # :h replaces $(dirname ...) with a zsh parameter expansion (no fork per iteration);
-    # associative array replaces 'sort -u' piped through an external process
-    while IFS= read -r p; do
-      local ancestor="${p:h:h}" # parent of .git = repo root; parent of that = first ancestor to check
-      while [[ "${ancestor}" != "${PROJECTS_BASE_DIR}" && "${ancestor}" != "/" ]]; do
-        if is_zero_string "${_seen_parent_folders[$ancestor]}"; then
-          _seen_parent_folders[$ancestor]=1
-          parent_folders+=("${ancestor}")
-        fi
-        ancestor="${ancestor:h}"
-      done
-    done < <(find "${PROJECTS_BASE_DIR}" -maxdepth 6 -type d -name '.git')
+  # Regenerates the repo alias cache and re-sources it in the current shell.
+  # Without -f: silent; only rebuilds if the cache is missing or stale.
+  # With -f:    always rebuilds and prints progress (use after adding/removing nested project dirs).
+  regenerate_repo_aliases() {
+    is_directory "${PROJECTS_BASE_DIR}" || return 0
 
-    if [[ ${#parent_folders[@]} -gt 0 ]]; then
-      for folder_path in "${parent_folders[@]}"; do
-        local relative_path="${folder_path#${PROJECTS_BASE_DIR}/}"
-        local hyphenated_txt="${relative_path//\//-}"
-        alias "${hyphenated_txt}"="FOLDER='${folder_path}' MAXDEPTH=4 rug" # alias name is the folder name with the base dir removed and '/' replaced with '-'
-      done
-      unset folder_path
+    local force=0
+    [[ "${1-}" == "-f" ]] && force=1
+
+    local repo_alias_cache="${XDG_CACHE_HOME}/repo-aliases-cache.zsh"
+
+    if ((force))   || ! is_file "${repo_alias_cache}" || [[ "${PROJECTS_BASE_DIR}" -nt "${repo_alias_cache}" ]]; then
+      ((force))     && info "Regenerating repo aliases cache..."
+      ((!force))    && [[ -n "${DEBUG+1}" ]] && debug "Regenerating repo aliases cache (stale or missing)"
+
+      local -A seen_parent_folders
+      local -a parent_folders
+
+      # Process substitution + :h (no forks per iteration); associative array deduplicates without sort -u.
+      while IFS= read -r p; do
+        local ancestor="${p:h:h}" # parent of .git = repo root; parent of that = first ancestor to check
+        while [[ "${ancestor}" != "${PROJECTS_BASE_DIR}" && "${ancestor}" != "/" ]]; do
+          if is_zero_string "${seen_parent_folders[$ancestor]}"; then
+            seen_parent_folders[$ancestor]=1
+            parent_folders+=("${ancestor}")
+          fi
+          ancestor="${ancestor:h}"
+        done
+      done < <(find "${PROJECTS_BASE_DIR}" -maxdepth 6 -type d -name '.git')
+
+      {
+        for folder_path in "${parent_folders[@]}"; do
+          local relative_path="${folder_path#${PROJECTS_BASE_DIR}/}"
+          # Alias name: strip base dir prefix and replace '/' with '-'
+          echo "alias ${relative_path//\//-}=\"FOLDER='${folder_path}' MAXDEPTH=4 rug\""
+        done
+      } >|"${repo_alias_cache}"
+
+      ((force))   && success "Repo aliases cache regenerated and loaded (${#${(f)$(<"${repo_alias_cache}")}[@]} aliases)"
     fi
-  fi
+
+    load_file_if_exists "${repo_alias_cache}"
+  }
+
+  regenerate_repo_aliases
 fi
 
-delete_caches() {
-  # delete the zsh compiled files so that they can be recompiled whenever a new terminal session is next started
-  find "${HOME}" "${HOMEBREW_PREFIX}" \( -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' \) -prune -o -maxdepth 6 -name '*.zwc*' -type f -print -delete || warn "find command failed in ${HOME} or ${HOMEBREW_PREFIX}"
+# --------------------------------------------------------------------------
+# 3d. Cache & cleanup
+# --------------------------------------------------------------------------
 
-  # delete the global cache directory
+# Deletes all compiled zsh bytecode (*.zwc*) files under HOME and HOMEBREW_PREFIX, and
+# removes the entire XDG_CACHE_HOME directory. Cache files (brew shellenv, starship init,
+# repo aliases, etc.) are recreated on the next shell start; *.zwc bytecode files are
+# recompiled only on the next login shell (via .zlogin).
+delete_caches() {
+  # Delete all *.zwc* compiled zsh bytecode files under HOME and HOMEBREW_PREFIX so
+  # they are recompiled fresh on the next login shell (via .zlogin).  This covers
+  # compiled config files, scripts, autoload functions, and any *.zwc siblings of
+  # the cache files below.
+  find "${HOME}" "${HOMEBREW_PREFIX}" -maxdepth 10 \( -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' \) -prune -o -name '*.zwc*' -type f -print -delete || warn "find command failed in ${HOME} or ${HOMEBREW_PREFIX}"
+
+  # Delete the entire XDG_CACHE_HOME directory. This removes all generated cache
+  # files (brew-shellenv-cache.zsh, starship-init-cache.zsh, repo-aliases-cache.zsh, zsh
+  # completion dump, fast-syntax-highlighting theme cache, etc.) and their *.zwc
+  # bytecode companions. They are all regenerated automatically on the next shell
+  # start or login shell.  .zshrc recreates XDG_CACHE_HOME with mkdir -p before
+  # any cache write, so the missing directory is safe.
   is_directory "${XDG_CACHE_HOME}" && rm -rfv "${XDG_CACHE_HOME}"
 }
 
+# --------------------------------------------------------------------------
+# 3e. Repo management & environment setup
+# --------------------------------------------------------------------------
+
+# Clones all repositories listed in repositories-*.yml catalogue files under
+# PERSONAL_CONFIGS_DIR, then runs post-clone operations (restore-mtime, git
+# maintenance register/start, allow_all_direnv_configs, install_mise_versions).
 resurrect_tracked_repos() {
   if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
     # TODO: Add the github.com host to the known_hosts file so that the script is not blocked for user input
     # ssh-keyscan -H -t ED25519 github.com >> "${SSH_CONFIGS_DIR}/known_hosts"
 
     # resurrect repositories that are in the repo catalogues
-    section_header "$(yellow 'Resurrecting all tracked git repos')"
+    section_header2 "$(yellow 'Resurrecting all tracked git repos')"
     # Use zsh glob qualifier (N.) for nullglob and regular files
+    local file
     for file in "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml(N.); do
       resurrect-repositories.rb -r "${file}"
     done
-    unset file
     success 'Successfully resurrected all tracked git repos'
   else
     warn "Skipping resurrecting of repositories since '$(yellow "${PERSONAL_CONFIGS_DIR}")' doesn't exist"
   fi
 
   # post-clone operations for installing system dependencies
-  section_header "$(yellow 'Running post-clone operations')"
+  section_header2 "$(yellow 'Running post-clone operations')"
   if command_exists all; then
     all restore-mtime -c
     all maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
     all maintenance start
   fi
+  # Collect repo ancestor dirs once and share across both post-clone operations
+  # to avoid running the expensive find traversal twice.
+  local -a all_dirs
+  _collect_repo_ancestor_dirs
+  _SHARED_REPO_DIRS=("${all_dirs[@]}")
+
   allow_all_direnv_configs
   install_mise_versions
+
+  unset _SHARED_REPO_DIRS
+  regenerate_repo_aliases
 }
 
+# Populates the caller-declared 'all_dirs' array with deduplicated ancestor
+# directories of every git repo found under HOME, DOTFILES_DIR, and
+# PROJECTS_BASE_DIR.  Callers must declare 'local -a all_dirs' before calling.
+# Respects FIRST_INSTALL (caps search depth to 3 to speed up vanilla-OS runs).
+_collect_repo_ancestor_dirs() {
+  local find_maxdepth=6
+  is_non_zero_string "${FIRST_INSTALL:-}" && find_maxdepth=3
+
+  local -A _seen_dirs=()
+  all_dirs=()
+
+  while IFS= read -r git_dir; do
+    local dir="${git_dir:h}"  # strip the trailing /.git to get the repo root
+    while [[ "${dir}" != "/" ]]; do
+      if is_zero_string "${_seen_dirs[$dir]:-}"; then
+        _seen_dirs[$dir]=1
+        all_dirs+=("${dir}")
+      fi
+      [[ "${dir}" == "${HOME}" ]] && break  # stop after processing HOME
+      dir="${dir:h}"  # walk up one level
+    done
+  done < <(find "${HOME}" "${DOTFILES_DIR}" "${PROJECTS_BASE_DIR}" -maxdepth ${find_maxdepth} \( -name 'node_modules' -o -name '.cache' -o -name '.Trash' -o -name 'Library' -o -name 'Caches' \) -prune -o -type d -name '.git' -print 2>/dev/null)
+}
+
+# Installs any missing tool versions declared via mise config files (.mise.toml,
+# .tool-versions, etc.) across all git repos and their ancestor directories under
+# HOME, DOTFILES_DIR, and PROJECTS_BASE_DIR. Skips silently if mise is not in PATH.
 install_mise_versions() {
+  section_header2 "$(yellow 'Installing mise in all git repos and ancestors')"
   if ! command_exists mise; then
     warn "Couldn't find 'mise' in the PATH; Skipping loading any mise configs"
-    return 0 # Success, nothing to do
+    return 0
   fi
 
-  local config_files=('.java-version' '.ruby-version' '.python-version' '.node-version' '.nvmrc' '.tool-versions')
-  for f in "${config_files[@]}"; do
-    find "${HOME}" -name "${f}" -maxdepth 1 -exec echo "===> Installing for {}" \; -execdir mise install \;
-  done
-  unset config_files
-
-  local repo_base_dirs=("${DOTFILES_DIR}" "${PROJECTS_BASE_DIR}")
-  for d in "${repo_base_dirs[@]}"; do
-    is_directory "${d}" && find "${d}" -name '.git' -type d -maxdepth 5 -exec echo "===> Installing for {}" \; -execdir mise install \;
-  done
-  unset repo_base_dirs
-}
-
-_direnv_process() {
-  if ! command_exists direnv; then
-    warn "Couldn't find 'direnv' in the PATH; Skipping allowing direnv configs for '$(yellow "${1}")'"
+  local -a all_dirs
+  if ((${+_SHARED_REPO_DIRS}))   && is_non_empty_array _SHARED_REPO_DIRS; then
+    all_dirs=("${_SHARED_REPO_DIRS[@]}")
   else
-    if direnv allow "${1}"; then
-      success "Successfully allowed direnv for '$(yellow "${1}")'"
-    else
-      warn "Failed to allow direnv for '${1}'"
+    _collect_repo_ancestor_dirs
+  fi
+
+  # Sort by depth so parents come before children, then filter to dirs with mise configs
+  local mise_configs=('.mise.toml' '.tool-versions' '.ruby-version' '.python-version' '.node-version' '.java-version' '.nvmrc')
+  local -a sorted_dirs
+  local dir cfg
+  for dir in "${(@on)all_dirs}"; do
+    for cfg in "${mise_configs[@]}"; do
+      if is_file "${dir}/${cfg}"; then
+        sorted_dirs+=("${dir}")
+        break
+      fi
+    done
+  done
+  local total=${#sorted_dirs}
+  local idx=0
+  # Single pass: --dry-run-code is checked once per dir.
+  # mise trust and mise install only run for dirs that actually need work —
+  # trust is a no-op on already-trusted dirs but is only needed before installation.
+  for dir in "${sorted_dirs[@]}"; do
+    # Use pre-increment: ((++idx)) evaluates to the incremented value (1 on first use),
+    # so it always exits 0. ((idx++)) evaluates to the pre-increment value (0 on first
+    # use), which exits 1 in zsh arithmetic and spuriously fires the ERR trap.
+    (( ++idx ))
+    if mise -C "${dir}" install --dry-run-code &>/dev/null; then
+      debug "[${idx}/${total}] '$(cyan "${dir}")' — all tools already installed"
+      continue
     fi
-  fi
+    info "[${idx}/${total}] installing mise tools in '$(cyan "${dir}")'"
+    mise -C "${dir}" trust -y -a
+    mise -C "${dir}" install
+  done
 }
 
-# runs 'direnv allow' on all relevant folders
+# Runs 'direnv allow' for every directory that has an .envrc file across all
+# git repos and their ancestor directories under HOME, DOTFILES_DIR, and
+# PROJECTS_BASE_DIR. Skips silently if direnv is not in PATH.
 allow_all_direnv_configs() {
-  find "${HOME}" -maxdepth 1 -name '.envrc' -print0 | while IFS= read -r -d '' file; do
-    _direnv_process "${file:h}"
-  done
-  is_directory "${PERSONAL_PROFILES_DIR}" && find "${PERSONAL_PROFILES_DIR}" -maxdepth 1 -name '.envrc' -print0 | while IFS= read -r -d '' file; do
-    _direnv_process "${file:h}"
+  section_header2 "$(yellow 'Allowing direnv configs in all git repos and ancestors')"
+  if ! command_exists direnv; then
+    warn "Couldn't find 'direnv' in the PATH; Skipping allowing any direnv configs"
+    return 0
+  fi
+
+  local -a all_dirs
+  if ((${+_SHARED_REPO_DIRS}))   && is_non_empty_array _SHARED_REPO_DIRS; then
+    all_dirs=("${_SHARED_REPO_DIRS[@]}")
+  else
+    _collect_repo_ancestor_dirs
+  fi
+
+  # Sort by depth so parents come before children, then filter to dirs with .envrc configs
+  local -a sorted_dirs
+  local dir
+  for dir in "${(@on)all_dirs}"; do
+    if is_file "${dir}/.envrc"; then
+      sorted_dirs+=("${dir}")
+    fi
   done
 
-  is_directory "${PROJECTS_BASE_DIR}" && find "${PROJECTS_BASE_DIR}" -maxdepth 5 -name '.envrc' -print0 | while IFS= read -r -d '' file; do
-    _direnv_process "${file:h}"
+  # direnv allow is idempotent and accepts a directory path — no pushd needed.
+  # direnv status always exits 0 regardless of allow state, so a pre-check cannot
+  # short-circuit this loop; just allow every dir unconditionally.
+  local total=${#sorted_dirs}
+  local idx=0
+  for dir in "${sorted_dirs[@]}"; do
+    # Use pre-increment: ((++idx)) evaluates to the incremented value (1 on first use),
+    # so it always exits 0. ((idx++)) evaluates to the pre-increment value (0 on first
+    # use), which exits 1 in zsh arithmetic and spuriously fires the ERR trap.
+    (( ++idx ))
+    info "[${idx}/${total}] allowing direnv for '$(cyan "${dir}")'"
+    if direnv allow "${dir}"; then
+      success "Successfully allowed direnv for '$(yellow "${dir}")'"
+    else
+      warn "Failed to allow direnv for '$(yellow "${dir}")'"
+    fi
   done
 }
 
-if is_macos; then
-  if command_exists brew; then
-    alias bcg='brew outdated --greedy'
-    alias bcug='brew upgrade --greedy'
-    alias bupc='brew bundle check || brew bundle --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true; post-brew-install.sh || true'
-  fi
-fi
+# --------------------------------------------------------------------------
+# 3f. Network utilities (macOS + Linux)
+# --------------------------------------------------------------------------
 
-alias find_broken_links='find . -xtype l -print' # Find links whose targets do not exist
-alias clear_logs='rm -rfv */log/*.log'
-alias clear_coverage='rm -rfv */coverage */coverage.data'
-alias kill_ds='sudo find . -type f -name .DS_Store -print -delete'
-alias kill_loc='sudo find . -type f -name .localized -print -delete'
-
-# Remove trailing spaces
-_remove_trailing_find_cmd="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -print0"
-if is_linux || is_windows; then
-  # Linux/WSL/Cygwin sed uses -i without an argument for backup suffix
-  alias remove_trailing="${_remove_trailing_find_cmd} | xargs -0 sed -i 's/[ ]*$//'"
-elif is_macos; then
-  # macOS sed requires an argument for -i ('' for no backup)
-  alias remove_trailing="${_remove_trailing_find_cmd} | xargs -0 sed -i '' 's/[ ]*$//'"
-fi
-unset _remove_trailing_find_cmd
-
-# generate mac addr to escape some free wifi mac addr restrictions
+# Spoofs the MAC address of the given network interface to a random value, which can
+# bypass MAC-address-based session limits on captive-portal (free) Wi-Fi networks.
+# Prints the old and new MAC address for confirmation.
+# Usage: _free_wifi <interface>  (called via the free_wifi alias, e.g. free_wifi en0)
 _free_wifi() {
   local interface="${1}"
-  (ifconfig "${interface}" | \grep ether) && \
-  (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig "${interface}" ether) && \
-  (ifconfig "${interface}" | \grep ether)
+  (ifconfig "${interface}" | \grep ether) &&
+    (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig "${interface}" ether) &&
+    (ifconfig "${interface}" | \grep ether)
 }
-if is_linux; then
-  alias free_wifi='_free_wifi eth0'
-elif is_macos; then
-  alias free_wifi='_free_wifi en0'
-  alias flush_dns='sudo killall -HUP mDNSResponder;sudo killall mDNSResponderHelper;sudo dscacheutil -flushcache;say MacOS DNS cache has been cleared'
-fi
 
 if is_macos; then
+  alias free_wifi='_free_wifi en0'
+
+  alias flush_dns='sudo killall -HUP mDNSResponder;sudo killall mDNSResponderHelper;sudo dscacheutil -flushcache;say MacOS DNS cache has been cleared'
+
   # MacOS: Remove apps from quarantine
   unquarantine() {
     xattr -rd com.apple.quarantine "${@}"
     open "${@}"
   }
 
-  # MacOS: Clean up LaunchServices to remove duplicates in the “Open With” menu
+  # MacOS: Clean up LaunchServices to remove duplicates in the "Open With" menu
   alias cleanup_launch_services='/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user && killall Finder'
 
   # Show/hide hidden files in Finder
@@ -204,16 +437,105 @@ if is_macos; then
   # Hide/show all desktop icons (useful when presenting)
   alias hide_desktop='defaults write com.apple.finder CreateDesktop -bool false && killall Finder'
   alias show_desktop='defaults write com.apple.finder CreateDesktop -bool true && killall Finder'
+
+  # Finds and appends the preferences associated with the partial string passed in as an argument.
+  # Also, sorts (and removes duplicates) from the config file used to capture preferences.
+  # Warns (and does NOT append) if the discovered domain is on the denied list of
+  # machine-specific/account-bound domains defined in capture-prefs-denied-list.txt.
+  # Usage: find_and_append_prefs <search-string>
+  find_and_append_prefs() {
+    local allowed_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-allowed-list.txt"
+    local denied_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-denied-list.txt"
+    defaults find "${1}" | \grep 'keys in domain' | while IFS="'" read -r _ field _; do
+      # Check whether this domain is on the denied list before appending.
+      # grep -Fxq: fixed-string, whole-line, quiet — no subprocess output.
+      if grep -Fxq "${field}" "${denied_list_file}" 2>/dev/null; then
+        warn "Skipping '$(yellow "${field}")' — it is on the denied list (machine-specific data; see capture-prefs-denied-list.txt)"
+      else
+        print -- "${field}" >>"${allowed_list_file}"
+      fi
+    done
+    sort -u -o "${allowed_list_file}" "${allowed_list_file}"
+  }
+elif is_linux; then
+  alias free_wifi='_free_wifi eth0'
 fi
 
-# Added to view the shell startup time (modified from https://blog.jonlu.ca/posts/speeding-up-zsh)
+# --------------------------------------------------------------------------
+# 3g. Homebrew utilities
+# --------------------------------------------------------------------------
+
+if is_macos && command_exists brew; then
+  alias bcg='brew outdated --greedy'
+  alias bcug='brew upgrade --greedy'
+  alias bupc='brew bundle check || brew bundle --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true; post-brew-install.sh || true'
+
+  # Regenerates the antidote static plugin bundle after antidote is installed or
+  # upgraded. Runs 'antidote update' in a clean zsh subshell, unshallows each
+  # bundle clone, then rewrites ANTIDOTE_PLUGIN_ZSH from the plugins.txt manifest.
+  # Called by post-brew-install.sh after every 'bupc' run and by software-updates-cron.sh.
+  update_antidote_and_regenerate_plugin_bundle() {
+    if is_non_empty_file "${ANTIDOTE_ZSH}" && is_non_empty_file "${ANTIDOTE_PLUGIN_TXT}"; then
+      if ! is_directory_empty "${ANTIDOTE_HOME}"; then
+        # Run antidote command in a clean zsh subshell — no .zshrc, no extended_glob,
+        # no color variables. This prevents ANSI escape sequences from being
+        # misinterpreted as glob patterns inside antidote's internal eval calls.
+        zsh -f -c 'source "$1"; antidote update' -- "${ANTIDOTE_ZSH}"
+        # antidote clones with --depth 1 (shallow). Convert each bundle to a full clone
+        # immediately after update so subsequent runs take the normal fetch path and never
+        # trigger --unshallow again (which fails on large repos like ohmyzsh).
+        local bundle_dir
+        for bundle_dir in "${ANTIDOTE_HOME}"/github.com/*/*(N-/); do
+          is_git_repo "${bundle_dir}" || continue
+          # Disable fsck on fetch — some repos (e.g. ohmyzsh) have objects with
+          # zero-padded file modes that fail the remote fsck check during --unshallow.
+          git -C "${bundle_dir}" config --local fetch.fsckObjects false 2>/dev/null
+          git -C "${bundle_dir}" pull-unshallow -q 2>/dev/null ||
+            warn "Could not unshallow '$(yellow "${bundle_dir}")' — will retry on next update"
+        done
+      fi
+      # Run antidote command in a clean zsh subshell — no .zshrc, no extended_glob,
+      # no color variables. This prevents ANSI escape sequences from being
+      # misinterpreted as glob patterns inside antidote's internal eval calls.
+      zsh -f -c 'source "$1"; antidote bundle <"$2"' -- "${ANTIDOTE_ZSH}" "${ANTIDOTE_PLUGIN_TXT}" >"${ANTIDOTE_PLUGIN_ZSH}" &&
+        success "antidote bundle regenerated at '$(yellow "${ANTIDOTE_PLUGIN_ZSH}")'" ||
+        warn 'Failed to regenerate antidote bundle'
+    else
+      warn "Skipping antidote bundle regeneration: antidote not found at '$(yellow "${ANTIDOTE_ZSH}")' or '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is missing"
+    fi
+  }
+
+  # Audits and auto-styles a Homebrew cask formula for contribution readiness.
+  # Usage: check_cask <cask-name>
+  check_cask() {
+    # shasum -a 256 <fileName>
+    # cd $(brew --repository homebrew/cask-versions) &&
+    brew audit --online --cask "${1}" && brew style --fix --cask "${1}"
+    # cd -
+    # brew fetch --cask "${1}"
+  }
+
+  # Builds a Homebrew formula from source, tests it, and audits it for contribution readiness.
+  # Usage: check_formula <formula-name>
+  check_formula() {
+    brew install --build-from-source "${1}"
+    brew test "${1}"
+    brew audit --strict "${1}"
+  }
+fi
+
+# --------------------------------------------------------------------------
+# 3h. Diagnostic & utility functions
+# --------------------------------------------------------------------------
+
+# Benchmarks shell startup by launching ${SHELL} 10 times and printing timing for each.
+# Reference: https://blog.jonlu.ca/posts/speeding-up-zsh
+# Usage: time_shell_startup [shell-path]  (defaults to $SHELL)
 time_shell_startup() {
   local shell="${1-${SHELL}}"
-  for i in $(seq 1 10); do /usr/bin/time "${shell}" -i -c exit; done
+  # {1..10} brace expansion — no $(seq 1 10) subprocess fork.
+  for i in {1..10}; do /usr/bin/time "${shell}" -i -c exit; done
 }
-
-# npm
-command_exists npm && alias npm_cleanup='npm cache clear --force'
 
 if command_exists docker; then
   # docker (TODO: Not sure why this is not done automatically by rancher when it starts up)
@@ -231,7 +553,7 @@ if command_exists docker; then
     # 2. You should see list of files in build context
     # 3. If unwanted files are present, adjust the '.dockerignore' file and go back to step 1
 
-    cat <<EOF > Dockerfile.build-context
+    cat <<EOF >Dockerfile.build-context
   FROM busybox
   COPY . /build-context
   WORKDIR /build-context
@@ -245,13 +567,8 @@ EOF
   }
 fi
 
-# tmux
-if command_exists tmux; then
-  alias tmuxn='tmux new-session -A -s'  # start a new tmux session and name it
-  alias tmuxa='tmux attach -t'          # attach to a named tmux session
-fi
-
-# convert from pdf to png without losing quality
+# Converts a PDF file to a PNG image at maximum quality using ImageMagick.
+# Usage: pdf_to_png <pdf-file>
 pdf_to_png() {
   if [[ $# -ne 1 ]]; then
     warn "Usage: ${0} <pdf_file>"
@@ -269,68 +586,179 @@ pdf_to_png() {
   magick -density 800 "${pdf}" -quality 100 "${png}"
 }
 
-if command_exists "$(extract_first_word "${EDITOR}")"; then
+# Shows disk usage of a folder in a colorized format. Defaults to the current directory.
+# Usage: folder_size [folder-path]
+folder_size() {
+  local folder="${1:-${PWD}}"
+  # du output is "<size>\t<path>"; capture once then strip with %% — no cut fork.
+  # ${folder:A} is the pure-zsh realpath equivalent — no realpath subprocess.
+  # color functions apply tilde substitution automatically; no pre-substitution needed.
+  local du_out
+  du_out=$(/usr/bin/du -sh "${folder}" 2>/dev/null)
+  echo "$(yellow "${folder:A}") --> $(cyan "${du_out%%$'\t'*}")"
+}
+
+# --------------------------------------------------------------------------
+# 3i. Misc file & path aliases
+# --------------------------------------------------------------------------
+
+alias find_broken_links='find . -xtype l -print' # Find links whose targets do not exist
+alias clear_logs='rm -rfv */log/*.log'
+alias clear_coverage='rm -rfv */coverage */coverage.data'
+alias kill_ds='sudo find . -type f -name .DS_Store -print -delete'
+alias kill_loc='sudo find . -type f -name .localized -print -delete'
+
+# Remove trailing spaces
+remove_trailing_find_cmd="find . -type f \( -name '*.*cs*' -o -name '*.*less' -o -name '*.*js*' -o -name '*.*rb' -o -name '*.*ml' -o -name '*.rake' -o -name '*.java' -o -name '*.ts*' \) -print0"
+if is_linux || is_windows; then
+  # Linux/WSL/Cygwin sed uses -i without an argument for backup suffix
+  alias remove_trailing="${remove_trailing_find_cmd} | xargs -0 sed -i 's/[ ]*$//'"
+elif is_macos; then
+  # macOS sed requires an argument for -i ('' for no backup)
+  alias remove_trailing="${remove_trailing_find_cmd} | xargs -0 sed -i '' 's/[ ]*$//'"
+fi
+unset remove_trailing_find_cmd
+
+# npm
+command_exists npm && alias npm_cleanup='npm cache clear --force'
+
+# tmux
+if command_exists tmux; then
+  alias tmuxn='tmux new-session -A -s'  # start a new tmux session and name it
+  alias tmuxa='tmux attach -t'          # attach to a named tmux session
+fi
+
+# Editor aliases
+# EDITOR='wait-editor' — a wrapper script that re-execs $GIT_EDITOR with word-splitting
+# so --wait is passed correctly to tools that exec() EDITOR directly (crontab, visudo, etc.).
+# GIT_EDITOR carries the full invocation with flags (e.g. 'zed --wait').
+if command_exists "${EDITOR:-}"; then
   if is_zsh; then
     # associate file extensions with applications for the 'open' command
     alias -s txt="${EDITOR}"
     alias -s log="${EDITOR}"
   fi
 
-  # add a generic alias for editing files and folders
-  alias edit="$(extract_first_word "${EDITOR}")"
+  # add a generic alias for editing files and folders — non-blocking (bare binary,
+  # no --wait) so the shell prompt returns immediately after launching the editor.
+  # Non-blocking: strip flags (e.g. 'zed --wait' → 'zed') via nested expansion.
+  # Falls back to $EDITOR then 'vi' if GIT_EDITOR is unset (e.g. non-interactive shells).
+  alias edit="${${GIT_EDITOR:-${EDITOR:-vi}}%% *}"
 
   # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
-  alias edit-gist='edit "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${SSH_CONFIGS_DIR}" "${HOME}/.tool-versions" "${PERSONAL_PROFILES_DIR}/.gitignore"'
+  alias edit-gist='edit "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${SSH_CONFIGS_DIR}" "${HOME}/.mise.toml" "${PERSONAL_PROFILES_DIR}/.gitignore"'
 fi
 
+# --------------------------------------------------------------------------
+# 3j. Cron management - dotfiles layer
+#
+# Contains the higher-level helpers that regenerate crontab from the canonical
+# template stored in the dotfiles repo.  These functions reference DOTFILES_DIR,
+# HOMEBREW_PREFIX, and PERSONAL_CONFIGS_DIR, so they are only safe to call
+# after the dotfiles repo has been cloned and the full shell environment is set
+# up (i.e. from within an interactive shell or late in fresh-install-of-osx.sh).
+#
+# The lower-level primitives (CRON_BACKUP_FILE, restore_cron, suspend_cron,
+# resume_cron) live in .shellrc so they are available the moment .shellrc is
+# sourced, well before the dotfiles repo exists.  See section 1g in .shellrc.
+# --------------------------------------------------------------------------
+
+# Internal: seeds crontab.txt at $1 with the standard env header and the
+# software-updates-cron.sh schedule. Called by recron only when crontab.txt
+# does not already exist (bootstrap / first-install path).
+# Usage: _create_crontab <output-file-path>
 _create_crontab() {
-  section_header 'Creating crontab.txt'
-  local file="${1}"
-
-  echo '# Reference: https://crontab.guru/' > "${file}"
-  echo >> "${file}"
-  echo "# Note: 'chronic' is a utility installed using 'moreutils' from homebrew and is needed so that a successful run of any cron job does not cause a mail to get generated unless in case of error scenarios" >> "${file}"
-  echo >> "${file}"
-  echo '# Env' >> "${file}"
-  echo "SHELL=\"${SHELL}\"" >> "${file}"
-  echo "USERNAME=\"${USERNAME}\"" >> "${file}"
-  echo "HOME=\"${HOME}\"" >> "${file}"
-  echo "PATH=${HOMEBREW_PREFIX}/bin:/usr/bin:/bin  # Needed for chronic to be in the PATH" >> "${file}"
-  echo >> "${file}"
-  echo "0   */2   *   *   *   chronic zsh -lsc \"${DOTFILES_DIR}/scripts/software-updates-cron.sh | tee -a ${HOME}/software-updates-cron.log\"" >> "${file}"
-}
-
-restore_cron() {
-  local cron_file="${1}"
-  if ! is_file "${cron_file}"; then
-    warn "No '$(yellow "${cron_file}")' found; returning without any processing"
-    return 0 # Success, nothing to do
+  local file="${1:-}"
+  if is_zero_string "${file}"; then
+    error "_create_crontab requires an output file path as its first argument."
+    return 1
   fi
+  debug "Creating '$(yellow "${file}")'"
 
-  ensure_dir_exists "$(dirname "${cron_file}")"
-
-  crontab "${cron_file}" || error 'Failed to restore crontab.'
+  echo '# Reference: https://crontab.guru/' >"${file}"
+  echo >>"${file}"
+  echo "# Note: 'chronic' is a utility installed using 'moreutils' from homebrew and is needed so that a successful run of any cron job does not cause a mail to get generated unless in case of error scenarios" >>"${file}"
+  echo >>"${file}"
+  echo '# Env' >>"${file}"
+  echo "SHELL=\"${SHELL}\"" >>"${file}"
+  echo "USERNAME=\"${USERNAME}\"" >>"${file}"
+  echo "HOME=\"${HOME}\"" >>"${file}"
+  # NOTE: do NOT add inline comments on the PATH line — crontab treats '#' as part of the value,
+  # corrupting the last directory entry and causing "command not found" for scripts in that dir.
+  echo "# PATH: homebrew + system utils + personal bin + dotfiles scripts (needed for chronic, run-all.sh, capture-prefs.sh etc.)" >>"${file}"
+  echo "PATH=${HOMEBREW_PREFIX}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PERSONAL_BIN_DIR}:${DOTFILES_DIR}/scripts" >>"${file}"
+  echo >>"${file}"
+  # Run script in its own fresh zsh process; wrap with zsh -c so tee is inside
+  # chronic's scope (chronic must see both the script and tee together to suppress
+  # output on success). The inner zsh sources .aliases fresh — no stale function
+  # inheritance from any parent shell.
+  echo "0   *   *   *   *   chronic ${HOMEBREW_PREFIX}/bin/zsh -c '${HOMEBREW_PREFIX}/bin/zsh ${DOTFILES_DIR}/scripts/software-updates-cron.sh 2>&1 | tee -a ${HOME}/software-updates-cron.log'" >>"${file}"
 }
 
-# resurrects the cron entries based on the '${PERSONAL_CONFIGS_DIR}/crontab.txt' file
+# Loads the system crontab from ${PERSONAL_CONFIGS_DIR}/crontab.txt.
+# If crontab.txt does not exist yet (bootstrap / first-install), seeds it first
+# via _create_crontab so there is always a known-good file on disk.
+# Edit crontab.txt directly to change the schedule; recron will pick it up.
 recron() {
-  section_header 'Setting up crontab'
-  info "$(yellow 'Old cron listing')"
-  crontab -l || true
-
-  crontab -r &>/dev/null || true
-
+  debug 'Setting up crontab'
   local cron_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
-  _create_crontab "${cron_file}"
-
+  if ! is_file "${cron_file}"; then
+    debug "'$(yellow "${cron_file}")' not found — seeding from template"
+    _create_crontab "${cron_file}"
+  fi
   restore_cron "${cron_file}"
-
-  info "$(yellow 'New cron listing')"
-  crontab -l
-  success 'Restored crontab from backup.'
+  success 'Crontab set up successfully'
 }
 
-# runs git gc on the keybase remote repos (not sure if this actually compresses the remote repo or not)
+# Wraps a function call in the cron bracket: suspend cron, run the function,
+# call recron to restore it, then clear the backup so the EXIT trap is a no-op.
+#
+# Usage: with_cron_suspended <fn> "$@"
+#
+# Example: with_cron_suspended _push "$@"
+with_cron_suspended() {
+  local fn="${1}"
+  shift
+  trap 'resume_cron' EXIT
+  suspend_cron
+  "${fn}" "$@"
+  recron
+  rm -f "${CRON_BACKUP_FILE}"
+  trap - EXIT
+}
+
+# --------------------------------------------------------------------------
+# 3k. Keybase helpers
+# --------------------------------------------------------------------------
+
+# Ensures keybase is installed and the current user is logged in.
+# Returns 1 (non-zero) on failure so callers can decide whether to exit or continue.
+ensure_keybase_logged_in() {
+  if ! command_exists keybase; then
+    error "'keybase' command not found in the PATH. Aborting!!!"
+    return 1
+  fi
+  debug "$(yellow 'Logging into keybase')"
+  # Note: avoid `keybase status | grep -q` under set -o pipefail — grep -q exits after
+  # the first match, sending SIGPIPE to keybase (exit 141); pipefail surfaces that
+  # instead of grep's 0, inverting the condition. $() buffers all output first, avoiding SIGPIPE.
+  if [[ -n "$(keybase status --json 2>/dev/null | \grep '"logged_in":true')" ]]; then
+    warn "Skipping keybase login since '$(yellow "${KEYBASE_USERNAME}")' is already logged in"
+  elif ! keybase login; then
+    error 'Could not login into keybase. Retry after logging in.'
+    return 1
+  fi
+}
+
+# Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
+# Usage: build_keybase_repo_url <repo-name>
+build_keybase_repo_url() {
+  echo "keybase://private/${KEYBASE_USERNAME}/${1}"
+}
+
+# Runs 'keybase git gc --force' on the named repo. Whether this actually
+# reclaims space on the remote is unverified — use as a best-effort compaction step.
+# Usage: kbgc <repo-name>
 if command_exists keybase; then
   kbgc() {
     if [ $# -ne 1 ]; then
@@ -341,60 +769,48 @@ if command_exists keybase; then
   }
 fi
 
-if is_macos && command_exists brew; then
-  # brew cask contribution
-  check_cask() {
-    # shasum -a 256 <fileName>
-    # cd $(brew --repository homebrew/cask-versions) &&
-    brew audit --online --cask "${1}" && brew style --fix --cask "${1}"
-    # cd -
-    # brew fetch --cask "${1}"
-  }
-
-  # brew contribution
-  check_formula() {
-    brew install --build-from-source "${1}"
-    brew test "${1}"
-    brew audit --strict "${1}"
-  }
-fi
-
-if is_macos; then
-  # Finds and appends the preferences associated with the partial string passed in as an argument.
-  # Also, sorts (and removes duplicates) from the config file used to capture preferences
-  find_and_append_prefs() {
-    local file_name="${DOTFILES_DIR}/scripts/data/capture-prefs-domains.txt"
-    defaults find "${1}" | \grep 'keys in domain' | cut -d"'" -f2 >> "${file_name}"
-    sort -u -o "${file_name}" "${file_name}"
-    unset file_name
-  }
-fi
+# --------------------------------------------------------------------------
+# 3l. System maintenance
+# --------------------------------------------------------------------------
 
 # delete all personal data before re-imaging the laptop
 implode() {
   sudo rm -rfv "${HOME}"/.[a-z]*
 
   local folders=(
+    "${ANTIDOTE_HOME}"
+    "${ANTIDOTE_PLUGIN_ZSH}"
     "${DOTFILES_DIR}"
-    "${HOME}/personal"
     "${HOMEBREW_BUNDLE_FILE}"
     "${HOMEBREW_PREFIX}"
+    "${HOME}/personal"
     "${PROJECTS_BASE_DIR}"
+    "${XDG_BIN_HOME}"
+    "${XDG_CACHE_HOME}"
+    "${XDG_CONFIG_HOME}"
+    "${XDG_DATA_HOME}"
+    "${XDG_STATE_HOME}"
   )
   for f in "${folders[@]}"; do
     sudo rm -rfv "${f}"*
   done
 }
 
-# common build, debug and launch aliases for any folder - converted to functions for lazy evaluation
-# these will use the current folder name to find the shell script to run
+# --------------------------------------------------------------------------
+# 3m. Project-specific helpers
+# --------------------------------------------------------------------------
+
+# Convenience wrappers that invoke the per-project script in PERSONAL_BIN_DIR
+# corresponding to the current directory name, e.g. 'launch-ferdium.sh'.
 launch_me() {
   "${PERSONAL_BIN_DIR}/launch-${PWD##*/}.sh"
 }
 debug_me() {
+  # Runs the per-project debug script in PERSONAL_BIN_DIR for the current directory.
   "${PERSONAL_BIN_DIR}/debug-${PWD##*/}.sh"
 }
 build_me() {
+  # Runs the per-project build script in PERSONAL_BIN_DIR for the current directory.
   "${PERSONAL_BIN_DIR}/build-${PWD##*/}.sh"
 }
 

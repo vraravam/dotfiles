@@ -28,7 +28,11 @@
     }
   },
   "buffer_font_family": "MesloLGM Nerd Font",
-  "icon_theme": "VSCode Icons for Zed (Dark)",
+  "icon_theme": {
+    "mode": "light",
+    "light": "VSCode Icons for Zed (Dark)",
+    "dark": "VSCode Icons for Zed (Dark)"
+  },
   "agent": {
     "favorite_models": [
       {

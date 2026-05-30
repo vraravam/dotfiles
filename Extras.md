@@ -1,13 +1,3 @@
-## install-dotfiles.rb
-
-Basically, to get started with the dotfiles, you just need to run the `${DOTFILES_DIR}/scripts/install-dotfiles.rb` script. If you have that folder in the `PATH`, then you don't need the fully qualified or relative location (only file name is enough to run it).
-
-* If you already have any of the dotfiles that are managed via this repo, *DON'T WORRY!* Your files will be moved to the cloned folder - so that you can then commit and push them to your fork!
-* This script will also handle nested config files - as long as they are already present in this repo.
-* Special handling (rename + copy instead of symlink) for `.gitattributes` and `.gitignore` - which means that, *for those files alone*, you will have to **keep them manually in sync**.
-* If you do not want a specific file from the home folder to be overridden, simply delete it from this repo's `files` folder - and it will not be processed.
-* If you wish to add a new file to be tracked and managed via this backup mechanism, simply add it into the `files` folder with the requisite relative path (relative to your `/` folder) - and it will be processed.
-
 ## add-upstream-git-config.sh
 
 This script can be used to quickly add a new upstream remote to the specified git repo. The name of the new remote is hardcoded to `upstream`. The rest of the url remains the same with just the username switched to the specified username.
@@ -20,27 +10,45 @@ This script can be used to quickly add a new upstream remote to the specified gi
 
 This script is useful to capture the preferences of the known applications (both system-installed and custom-installed applications) using the `defaults read` command. It can be used to both export the preferences/settings (from the old system) or import them (into the new system). As of version 2.0.4, added a new shell function to help with the above called: `find_and_append_prefs`.
 
-## capture-raycast-configs.sh
+Two data files govern which domains are processed:
 
-This script is useful to capture the raycast preferences/configurations. It can be used to both export the preferences/settings (from the old system) or import them (into the new system)
-
-  ```bash
-  export RAYCAST_SETTINGS_PASSWORD='my-password'
-  capture-raycast-configs.sh -e "${PERSONAL_PROFILES_DIR}/extension-backups"
-  capture-raycast-configs.sh -i "${PERSONAL_PROFILES_DIR}/extension-backups"
-  ```
-
-*Please note:*
-
-Since this script uses applescript internally, it needs to be granted the following permissions:
-
-* `Privacy & Security > Accessibility` - need to enable/approve for your preferred terminal emulator apps.
-* Also, since this mimics keystrokes from the user, while this script is running, you should not move the mouse or type anything else using the keyboard or mouse.
-* The above manual steps have to be performed after installing Raycast and running it at least once (so one has to click through the setup wizard). Due to this reason, this script has NOT been incorporated into the `fresh-install-of-osx.sh` script.
+- **[`scripts/data/capture-prefs-allowed-list.txt`](scripts/data/capture-prefs-allowed-list.txt)** — the list of preference domains to export/import. Add entries here (one domain per line) to include an app's preferences in the backup. Use `find_and_append_prefs <search-string>` to discover and append a domain automatically; it will warn and refuse to add the domain if it appears on the denied list.
+- **[`scripts/data/capture-prefs-denied-list.txt`](scripts/data/capture-prefs-denied-list.txt)** — domains that must never be exported or imported. These contain machine-specific identifiers (device UUIDs, hardware MAC addresses), account-bound credentials (Apple ID DSID, MDM enrollment tokens, AirTag beacon keys), or ephemeral CloudKit cache state that is meaningless or harmful when applied to a different machine. Any domain present in this file is skipped with a warning during both export and import, even if it also appears in the allowed list. `find_and_append_prefs` also checks this file before appending to the allowed list.
 
 ## cleanup-browser-profiles.sh
 
-This script is used to cleanup browser profiles folders (delete cache, session and other files that will anyways be recreated when you restart that browser). It can be safely invoked even if that browser is running (in which case it will skip processing after printing a warning to quit that application)
+This script is used to cleanup browser profiles folders (delete cache, session and other files that will anyways be recreated when you restart that browser). It can be safely invoked even if that browser is running (in which case it will skip processing after printing a warning to quit that application).
+
+The lists of files and directories to clean are maintained in [`scripts/data/cleanup-browser-files.txt`](scripts/data/cleanup-browser-files.txt) and [`scripts/data/cleanup-browser-dirs.txt`](scripts/data/cleanup-browser-dirs.txt).
+
+## fresh-install-of-osx.sh
+
+This is the main setup script for a fresh macOS installation. It is idempotent and can be run multiple times safely. The script:
+
+* Detects Intel vs Apple Silicon architecture automatically
+* Installs Homebrew, antidote (zsh plugin manager), and Starship prompt
+* Sets up the dotfiles repo and symlinks all config files
+* Installs essential CLI tools and GUI applications via the Brewfile
+* Configures macOS system defaults
+* Sets up SSH keys and permissions
+* Resurrects tracked git repositories *(skipped by default — `resurrect_tracked_repos` is commented out; must be run manually)*
+* Installs programming language versions via mise
+* Restores application preferences from backups
+* Configures cron jobs for ongoing maintenance
+
+The script has two modes controlled by the `FIRST_INSTALL` environment variable: when set to `true`, it performs a minimal bootstrap suitable for a vanilla OS (with extended curl timeouts and relaxed error handling for Homebrew operations). On subsequent runs, it performs the full setup.
+
+See the [GettingStarted](GettingStarted.md) guide for the recommended invocation.
+
+## install-dotfiles.rb
+
+Basically, to get started with the dotfiles, you just need to run the `${DOTFILES_DIR}/scripts/install-dotfiles.rb` script. If you have that folder in the `PATH`, then you don't need the fully qualified or relative location (only file name is enough to run it).
+
+* If you already have any of the dotfiles that are managed via this repo, *DON'T WORRY!* Your files will be moved to the cloned folder - so that you can then commit and push them to your fork!
+* This script will also handle nested config files - as long as they are already present in this repo.
+* Special handling (copy instead of symlink) for `custom.git*` files (`.gitattributes`, `.gitignore`) — git itself does not handle symlinks reliably for its own core config files, so these are copied rather than symlinked. Resolution when both the source and the destination exist as real files: on `FIRST_INSTALL` the destination always wins (moved into repo, then copied back); otherwise the file with the **newer mtime** wins. Prefer editing the `custom.git*` source files in this repo; if you edit the destination directly, ensure its mtime is newer before re-running `install-dotfiles.rb`.
+* If you do not want a specific file from the home folder to be overridden, simply delete it from this repo's `files` folder - and it will not be processed.
+* If you wish to add a new file to be tracked and managed via this backup mechanism, add it into the appropriate `files/--VAR--/` subdirectory matching the destination env var. The `--VAR--` naming convention: each subdirectory name is an environment variable name wrapped in double-dashes (e.g. `--HOME--` resolves to `$HOME`, `--XDG_CONFIG_HOME--` resolves to `$XDG_CONFIG_HOME`). Files inside are symlinked into the resolved directory. Plain subdirectory names without the `--VAR--` pattern are also valid — they resolve literally from `/` (e.g. `files/etc/` → `/etc/`), but the `--VAR--` convention is preferred for portability across machines where paths may differ.
 
 ## osx-defaults.sh
 
@@ -48,7 +56,7 @@ This script is the erstwhile script to codify the macos setup. It can be used to
 
 ## post-brew-install.sh
 
-This script is a collection of commands that need to be run after `brew bundle` so as to setup proper command-line usage of some of the gui apps like VSCode, Rancher, etc.
+This script is a collection of commands that need to be run after `brew bundle` to set up proper command-line usage of some GUI apps (VSCode, Rancher, etc.), remove conflicting zsh completion files, and clean up legacy executable paths. It is called automatically by `fresh-install-of-osx.sh` after `brew bundle` completes. It can also be run manually at any time — it is idempotent.
 
 ## recreate-repo.sh
 
@@ -103,7 +111,7 @@ This script will find all git repositories within the specified `FOLDER` (defaul
 You can also control the starting folder by specifying the `FOLDER` env var, the filter for matching either the path and/or the name of the folders to be processed using `FILTER` (including using regular expressions for the same!) and also simultaneously control the depth using the `MINDEPTH` and `MAXDEPTH` env vars. So, for eg, to search in multiple nested folders starting at `~/dev`, you can use the following command:
 
 ```bash
-  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 FILTER="oss|zsh|omz" run-all.sh git status
+  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 FILTER="oss|zsh|antidote" run-all.sh git status
   FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 run-all.sh git fetch
 ```
 
@@ -125,5 +133,29 @@ Run the following command to generate and update your crontab:
   ```bash
   recron
   ```
+
+## Zsh Autoload Functions
+
+A set of git-workflow functions are available as zsh autoloads (lazily loaded on first call) from `files/--XDG_CONFIG_HOME--/zsh/`:
+
+| Function | What it does |
+|----------|-------------|
+| `cc` | Compacts the git repo (`git cc` — garbage collection, pruning, etc.) |
+| `push` | Pushes current branch; handles force-with-lease for rebased branches |
+| `pull` | Pulls with rebase; handles shallow-clone unshallowing |
+| `upreb` | Fetches upstream and rebases the current branch onto it |
+| `st` / `status_all_repos` | Git status for the current repo / all tracked repos |
+| `update_all_repos` | Pulls/rebases all tracked repos in one shot |
+| `count` | Counts commits in the current branch ahead of the remote |
+
+Each of these supports **per-project overrides**: if a file named `<cmd>-<current-directory-name>.sh` exists in `$PERSONAL_BIN_DIR` and is executable, it is sourced instead of the default implementation. This lets you customize behaviour for specific projects without modifying the shared function. For example, a file `$PERSONAL_BIN_DIR/push-my-project.sh` will be sourced when you run `push` from inside a directory called `my-project`.
+
+## delete_caches
+
+Removes all compiled zsh bytecode (`.zwc` files) and other generated cache files (Homebrew shellenv cache, starship cache, mise activation cache, git version cache). Run this when zsh startup behaves unexpectedly or after making significant changes to startup files — zsh will regenerate everything on the next shell open.
+
+```zsh
+delete_caches
+```
 
 Back to the [readme](README.md#extrasdetails)

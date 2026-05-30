@@ -2,38 +2,41 @@
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
-# git command: cc
+# Compresses a git repo and reclaims disk space (prune, repack, gc).
+# Wraps 'git cc'. All --flags are forwarded to 'git reflog expire'.
+#
+# Usage: cc [<folder>] [--expire=<when>] [<extra-reflog-flags>]
+#
+# --expire defaults to 1.week.ago and applies to both reachable and unreachable
+# entries (rebases, amends, deleted branches). --stale-fix is always applied.
+#
+# Examples:
+#   cc                          # current dir, expire=1.week.ago
+#   cc /path/to/repo            # explicit folder, expire=1.week.ago
+#   cc --expire=now             # expire entire reflog immediately
+#   cc /path/to/repo --expire=3.days.ago
+#   cc --dry-run                # preview what would be pruned
 
 # Source shell helpers if they aren't already loaded
-type is_shellrc_sourced &>/dev/null || source "${HOME}/.shellrc"
+# Re-source guard is inside .shellrc itself — safe to call unconditionally.
+source "${HOME}/.shellrc"
 
-# Note: Use a function so that it can accept parameters
 _cc() {
   local folder
   local -a switches
-  for arg in "$@"; do
-    if [[ "${arg}" == --* ]]; then
-      switches+=("${arg}")
-    elif is_zero_string "${folder}"; then
-      folder="${arg}"
-    fi
-  done
-  folder="${folder:-$(pwd)}"
-  section_header "$(yellow 'Compressing') $(purple "${folder}")"
+  parse_folder_and_switches "$@"
+  section_header2 "$(yellow 'Compressing') $(purple "${folder}")"
   if ! is_git_repo "${folder}"; then
     warn "Skipping finding size of the repo since '$(yellow "${folder}")' doesn't exist or is not a git repo"
   else
-    git -C "${folder}" cc "${switches[@]}"
+    git -C "${folder}" cc "${switches[@]}" || true
   fi
 }
 
-cc() {
-  if is_executable "${PERSONAL_BIN_DIR}/cc-${PWD##*/}.sh"; then
-    . "${PERSONAL_BIN_DIR}/cc-${PWD##*/}.sh" "$@"
-  else
-    _cc "$@"
-  fi
-}
+cc() { dispatch_or_fallback cc _cc "$@"; }
 
-cc "$@"
-compdef cc
+# Run only when executed directly, not when sourced (e.g. to import the function into another script).
+[[ "${zsh_eval_context}" == *file* ]] || cc "$@"
+# ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
+# evaluated by non-zsh runtimes (e.g. direnv's sandbox).
+[[ -n "${ZSH_VERSION-}" ]] && (($+functions[compdef])) && compdef cc || true

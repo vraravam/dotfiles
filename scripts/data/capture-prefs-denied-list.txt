@@ -1,0 +1,127 @@
+# Domains that must NOT be exported/imported by capture-prefs.sh.
+#
+# These contain machine-specific identifiers, account-bound credentials,
+# hardware UUIDs, MDM tokens, or ephemeral CloudKit cache state that is either
+# meaningless or actively harmful when imported onto a different machine.
+#
+# Entries here are also checked by find_and_append_prefs: a warning is printed
+# if you try to add a denied-list domain to the allowed list.
+#
+# Format: one domain per line; lines starting with '#' and blank lines are ignored.
+
+# ---------------------------------------------------------------------------
+# Critical: device identity, credentials, machine UUIDs
+# ---------------------------------------------------------------------------
+
+# iMessage/FaceTime per-device NSUUIDs — hardware-bound
+com.apple.ids.deviceproperties
+
+# iMessage/FaceTime identity registration state and per-device key generation
+com.apple.identityservicesd
+
+# Device-unique metric ID (IDSKTAccountKeyFetchMetricDeviceIDDefault UUID)
+com.apple.ids
+
+# MDM enrollment tokens (PushToken, PushMagic, ProfileUUID) — corrupt MDM on import
+com.apple.configurationprofiles.user
+
+# Apple ID DSID, email, full name, AccountAlternateDSID — account-bound
+MobileMeAccounts
+
+# AppleAccountIdentifier + DeviceIdentifier UUIDs — per-device and per-account
+com.apple.seeding
+
+# Per-device AirTag beacon UUIDs; keys embed hardware MAC addresses
+systemgroup.com.apple.icloud.searchpartyd.sharedsettings
+
+# Device-specific Apple Push Service token (publicAPSToken)
+com.apple.findmy.fmfcore.notbackedup
+
+# Same: publicAPSToken + per-account FMIPGarbageCollectorIdentityKey
+com.apple.findmy.fmipcore.notbackedup
+
+# kAssistantTeamIdentifier — binary device identity blob
+com.apple.homed.notbackedup
+
+# registrySyncIdentifier UUID — machine-specific CloudKit sync identity
+com.apple.protectedcloudstorage.protectedcloudkeysyncing
+
+# iMessage device handle UUID + CloudKit sync state (DonatedRecentLiteHandlesFromDevice)
+com.apple.madrid
+
+# ---------------------------------------------------------------------------
+# Critical: printer presets keyed to specific IP addresses
+# ---------------------------------------------------------------------------
+
+# Hardcoded to IP 10.134.3.151 — meaningless on any other network/machine
+com.apple.print.custompresets.forprinter._10_134_3_151
+
+# Hardcoded to IP 10.134.3.152
+com.apple.print.custompresets.forprinter._10_134_3_152
+
+# ---------------------------------------------------------------------------
+# Risky: CloudKit account cache and ephemeral sync state
+# Importing these can confuse daemons into mis-identifying the new machine
+# ---------------------------------------------------------------------------
+
+com.apple.biomesyncd
+com.apple.syncdefaultsd
+com.apple.routined
+com.apple.triald
+com.apple.UsageTrackingAgent
+com.apple.icloud.searchpartyuseragent
+com.apple.homed
+com.apple.passd
+familycircled
+mbuseragent
+com.apple.iCloudHelper
+com.apple.iCloudNotificationAgent
+com.apple.TrustedPeersHelper
+com.apple.internal.ck
+com.apple.icloud.fmfd
+com.apple.icloud.fmfd.notbackedup
+com.apple.icloud.gm
+com.apple.cloudpaird
+com.apple.bird
+
+# ---------------------------------------------------------------------------
+# Noisy: OS version stamps and setup-wizard state
+# These carry no portable value and macOS overwrites them on first boot
+# ---------------------------------------------------------------------------
+
+# Contains BuildVersionStampAsString / SystemVersionStampAsString from old OS
+loginwindow
+
+# Setup screens dismissed on this machine; ignored by macOS on a new machine
+com.apple.SetupAssistant
+
+# DefaultDeviceActivationDate and check-in epoch for this hardware
+com.apple.NewDeviceOutreach
+
+# LastSystemVersion build string
+com.apple.dataaccess.babysitter
+
+# kDAMigrationBuildVersionKey build string
+com.apple.dataaccess.dataaccessd
+
+# ---------------------------------------------------------------------------
+# UI session state: display-geometry-specific, zero portability value
+# ---------------------------------------------------------------------------
+
+# Window frame coords for login-screen panels — display-size-specific
+com.apple.loginwindow
+
+# Space topology with per-monitor display UUIDs — completely hardware-specific
+com.apple.spaces
+
+# Timestamp watermarks for local analytics; not meaningful on a new machine
+ContextStoreAgent
+
+# ML model training state, device-specific salts, usage counters
+com.apple.DuetExpertCenter.AppPredictionExpert
+
+# Per-device redaction salt and personalization state
+com.apple.proactive.PersonalizationPortrait
+
+# Flush/event date watermarks
+com.apple.cseventlistener

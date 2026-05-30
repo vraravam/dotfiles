@@ -2,7 +2,7 @@
 
 # Note:
 # [Windows users] If you are on windows, please search for the word 'windows' - and fix those lines - they seem to cause some trouble
-# [General] Since I use 'diff-so-fancy' as the diffing tool, it's absence on your system will cause some errors. If you are able to, I would sincerely urge you to install and use it for a much better experience. If not, please replace all such occurrences back to use 'diff'
+# [General] Since I use 'delta' as the diffing/pager tool, it's absence on your system will cause some errors. If you are able to, I would sincerely urge you to install and use it for a much better experience. If not, please replace all such occurrences back to use 'diff'
 
 # Note: Even though this will show up twice in `git config -l` - it will still be overridden based on the order of the includeIf lines below (last matching configuration wins). Utility subcommand to find out which config wins: `git who`
 [includeIf "gitdir/i:~/"]
@@ -32,29 +32,23 @@
   # Example: git relative-path /abs/path/to/repo/src/foo.ts  =>  src/foo.ts  (if cwd is repo)
   # Example: git relative-path ./src/foo.ts                  =>  src/foo.ts  (if cwd is repo)
   # Example: git relative-path                               =>  src  (if cwd is repo/src)
-  relative-path = "!bash -c 'echo ${0/$(git root)/} | tail -c+2'"
+  relative-path = "!bash -c 'root=$(git rev-parse --show-toplevel); case ${0} in bash|sh) abs=$(pwd) ;; *) abs=$(realpath \"${0}\") ;; esac; rel=${abs#${root}}; echo \"${rel#/}\"'"
 
-  # Smart commit: if already ahead of remote, amends the existing unpushed commit;
-  # otherwise creates a new commit. Aborts if branches have diverged or nothing is staged.
+  # Smart commit: if already ahead of remote (and not diverged), amends the existing
+  # unpushed commit; if diverged or not yet ahead, creates a new commit instead.
+  # Aborts if nothing is staged.
   # Usage: git sci "<message>"
   # Example: git sci "fix: correct typo in README"
   sci = "!sh -c '\
-    st=$(git status); \
-    if echo \"$st\" | grep -q \"have diverged\"; then \
-      printf \"Diverged branches: aborting\n\"; \
-      exit 1; \
-    elif ! echo \"$st\" | grep -q \"to unstage\"; then \
-      printf \"Nothing to commit: aborting\n\"; \
+    if git diff --cached --quiet; then \
+      printf \"Nothing staged: aborting\n\"; \
+    elif git status | grep -q \"is ahead of\" && ! git status | grep -q \"have diverged\"; then \
+      printf \"Amending existing commit\n\"; \
+      git amq; \
     else \
-      if echo \"$st\" | grep -q \"is ahead of\"; then \
-        printf \"Amending existing commit\n\"; \
-        git amq; \
-      else \
-        printf \"Creating new commit\n\"; \
-        printf \"%s\n\" $0; \
-        git ci \"$0\"; \
-      fi \
-    fi'"
+      printf \"Creating new commit\n\"; \
+      git ci \"${1:-}\"; \
+    fi' -"
 
   # Shows a compact one-line summary of a commit: hash, subject, and date.
   # Usage: git what [<ref>]
@@ -71,10 +65,10 @@
   # show username/email of the specified author - use 'git who <author>' from git-extras
   # whois = log -i -1 --pretty=format:'%an <%ae>' --author
 
-  # Shows commits from the past week by the specified author.
-  # Usage: git standup <author>
+  # Shows commits from the past week by the specified author (defaults to the configured user).
+  # Usage: git standup [<author>]
   # Example: git standup "Vijay"
-  standup = log --since 1.week.ago --author
+  standup = "!sh -c 'git log --since 1.week.ago --author=\"${1:-$(git config user.name)}\"' --"
 
   # Shows a colorful commit graph for the current branch.
   # Usage: git lg
@@ -89,9 +83,10 @@
   ll = log --decorate --graph --oneline --abbrev-commit
 
   # Merges a branch without auto-committing (lets you inspect/edit before committing).
+  # --no-ff is required since merge.ff=only is set globally.
   # Usage: git mn <branch>
   # Example: git mn feature/foo
-  mn = merge --no-commit
+  mn = merge --no-commit --no-ff
 
   # Cherry-picks a commit without auto-committing.
   # Usage: git cn <commit>
@@ -145,8 +140,8 @@
   # Shows diff with changed words highlighted inline (red=deleted, green=added).
   # Usage: git dcolor [<path>]
   dcolor = diff --color-words
-  # dw = diff --word-diff=color           # Note: Commented out since we use diff-so-fancy; but keeping for reference
-  # dcw = diff --word-diff=color --staged # Note: Commented out since we use diff-so-fancy; but keeping for reference
+  # dw = diff --word-diff=color           # Note: Commented out since we use delta; but keeping for reference
+  # dcw = diff --word-diff=color --staged # Note: Commented out since we use delta; but keeping for reference
 
   # undo the last N commits (1 by default) - provided by git-extras
   # Usage: git undo [<N>]
@@ -184,7 +179,7 @@
   # Example: git grep "TODO"
   grep = grep -Ii
 
-  # Outputs a plain unified diff (bypassing diff-so-fancy) suitable for use as a patch file.
+  # Outputs a plain unified diff (bypassing delta) suitable for use as a patch file.
   # Usage: git patch [<path>] > my.patch
   patch = !git --no-pager diff --no-color
 
@@ -198,12 +193,24 @@
   default-branch = !git symbolic-ref refs/remotes/origin/HEAD | sed 's|refs/remotes/origin/||'
 
   # Fetches all remotes and tags, then prunes local branches deleted on remote.
+  # Note: --all/--tags/--prune flags are omitted — fetch.all, fetch.pruneTags, and
+  # fetch.prune=true in config make plain 'git fetch' equivalent to 'git fetch --all --tags --prune'.
   # Usage: git fo
-  fo = !git fetch --all --tags && git dlb
+  fo = !git fetch && git dlb
+
+  # Pulls all remotes; if the repo is shallow, unshallows it first. Accepts extra git-pull flags.
+  # Usage: git pull-unshallow [<extra-flags>]
+  # Example: git pull-unshallow --rebase
+  pull-unshallow = "!sh -c 'git rev-parse --is-shallow-repository | grep -q true && git pull --all --unshallow \"$@\" || git pull --all \"$@\"' --"
+
+  # Fetches all remotes; if the repo is shallow, unshallows it first. Accepts extra git-fetch flags.
+  # Usage: git fetch-unshallow [<extra-flags>]
+  # Example: git fetch-unshallow --tags
+  fetch-unshallow = "!sh -c 'git rev-parse --is-shallow-repository | grep -q true && git fetch --all --unshallow \"$@\" || git fetch --all \"$@\"' --"
 
   # Prints the name of the current remote repo (assumes remote named 'origin').
   # Usage: git repo
-  repo = !basename $(git remote get-url origin)
+  repo = !basename "$(git remote get-url origin)"
 
   # Prints the current branch name.
   # Usage: git br
@@ -212,9 +219,11 @@
   # Full upstream rebase workflow: sets tracking, fetches, rebases from upstream (if present),
   # pushes, updates submodules, and prunes gone branches.
   # Usage: git upreb
-  upreb = !git branch -u origin/$(git br) && git fo && ( git remote | grep upstream &>/dev/null ) && git rebase upstream/$(git br) --no-verify && git fetch upstream --tags && git push --progress --no-verify && git push --progress --tags --no-verify && git siu && git dlb
+  upreb = !git branch -u "origin/$(git br)" && git fo && ( git remote | grep -x upstream &>/dev/null ) && git rebase "upstream/$(git br)" --no-verify && git fetch upstream --tags && git push --progress --no-verify && git push --progress --tags --no-verify && git siu && git dlb
 
   # Prunes the local copy of remote-tracking branches deleted on origin.
+  # Note: fetch.prune=true makes this a no-op after any fetch — useful as an explicit
+  # one-shot command without needing to run a full fetch first.
   # Usage: git rpo
   rpo = remote prune origin
 
@@ -234,7 +243,7 @@
   # Defaults to the current branch if no argument is given.
   # Usage: git new [<branch>]
   # Example: git new main
-  new = "!sh -c 'case $0 in sh|bash) b=$(git branch --show-current) ;; *) b=$0 ;; esac; git log $b@{1}..$b@{0} \"$@\"'"
+  new = "!sh -c 'case ${0} in sh|bash) b=$(git branch --show-current) ;; *) b=${0} ;; esac; git log \"${b}@{1}\"..\"${b}@{0}\" \"$@\"'"
 
   # Shows commits in the local branch not yet pushed to remote (outgoing), without file diffs.
   # Usage: git out
@@ -250,23 +259,31 @@
   g = grep --break --heading --line-number
 
   # Expires the entire reflog immediately (maximises cleanup when followed by 'git cc').
+  # --stale-fix prunes broken reflog entries pointing to missing objects.
+  # Note: refs/stash is intentionally excluded to preserve stashes.
   # Usage: git rfc
-  rfc = reflog expire --expire=now
+  rfc = "!f() { refs=$(git for-each-ref --format='%(refname)' refs/heads refs/remotes); [ -n \"${refs}\" ] && git reflog expire --expire=now --expire-unreachable=now --stale-fix ${refs}; }; f"
 
   # Prints the disk size of the current repo's .git directory.
   # Usage: git size
-  size = "!sh -c 'root=$(git rev-parse --show-toplevel); printf \"==> Size of repository at %s: %s\\n\" \"$root\" \"$(du -sh \"$root/.git\" | cut -f1)\"'"
+  size = !printf '==> Size of repository at %s: %s\n' "$(git rev-parse --show-toplevel)" "$(du -sh "$(git rev-parse --show-toplevel)/.git" | cut -f1)"
 
   # Compresses the repo and reclaims disk space by pruning, repacking, and running gc.
   # Set SKIP_SIZE_BEFORE=1 (or any non-empty value) to skip printing size before the operation.
-  # Note: '--all' is intentionally omitted from reflog expire to preserve stashes.
-  # Usage: git cc
+  # Note: refs/stash is intentionally excluded from reflog expire to preserve stashes.
+  # --expire and --expire-unreachable use the same window (default: 1.week.ago) so
+  # reachable and unreachable commits (rebases, amends, deleted branches) all get the
+  # same 1-week recovery window. --stale-fix is always applied to prune broken entries.
+  # All other flags (e.g. --dry-run, --verbose) are passed to 'git reflog expire'.
+  # Usage: git cc [--expire=<when>] [<extra-reflog-flags>]
   # Example: SKIP_SIZE_BEFORE=1 git cc
-  cc = "!sh -c '[ -n \"${SKIP_SIZE_BEFORE}\" ] || git size; git remote prune origin; git prune --progress; git pack-refs --all; git repack -a -d --depth=250 --window=250; git reflog expire --all --expire=1.week.ago; git maintenance run --task=gc; git size;'"
+  # Example: git cc --expire=now          (expire entire reflog immediately)
+  # Example: git cc --expire=3.days.ago   (expire entries older than 3 days)
+  cc = "!f() { expire=''; rest=(); for a in \"$@\"; do case \"${a}\" in --expire=*) expire=\"${a#--expire=}\" ;; *) rest+=(\"${a}\") ;; esac; done; [ -n \"${expire}\" ] || expire=1.week.ago; refs=$(git for-each-ref --format='%(refname)' refs/heads refs/remotes); [ -n \"${SKIP_SIZE_BEFORE}\" ] || git size; git remote prune origin; git pack-refs --all; git repack -a -d --depth=250 --window=250; [ -n \"${refs}\" ] && git reflog expire --expire=\"${expire}\" --expire-unreachable=\"${expire}\" --stale-fix \"${rest[@]}\" ${refs}; git maintenance run --task=gc; git size; }; f"
 
   # Lists the 100 biggest objects ever stored in the repo (including deleted files).
   # Usage: git big
-  big = "!sh -c 'git rev-list --objects --all | grep \"$(git verify-pack -v "$(git rev-parse --show-toplevel)/.git/objects/pack/*.idx" | sort -k 3 -n | tail -100 | awk \"{print \\$1}\")\"'"
+  big = "!sh -c 'git rev-list --objects --all | grep \"$(git verify-pack -v \"$(git rev-parse --show-toplevel)/.git/objects/pack/*.idx\" | sort -k 3 -n | tail -100 | awk \"{print \\$1}\")\"'"
 
   # Deletes all local branches whose remote-tracking counterpart has been deleted (gone).
   # Usage: git dlb
@@ -278,19 +295,19 @@
   # Usage: git old [<remote> <branch>]
   # Example: git old origin feature/old-experiment
   # old = "!sh -c '[ ... ] && git push $1 --delete $2' --"   # uncomment to also delete the branch
-  old = "!sh -c 'case $1 in \"\") b=$(git branch --show-current); remote=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null | cut -d/ -f1); r=${remote:-origin} ;; *) r=$1; b=$2 ;; esac; [ \"$(git log $r/$b --since 10.days -1 -- 2>/dev/null | wc -l | xargs)\" -eq 0 ] && printf \"Will need to delete %s/%s\n\" $r $b' --"
+  old = "!sh -c 'case "${1}" in \"\") b=$(git branch --show-current); remote=$(git rev-parse --abbrev-ref --symbolic-full-name @{u} 2>/dev/null | cut -d/ -f1); r=${remote:-origin} ;; *) r="${1}"; b="${2:-}" ;; esac; [ \"$(git log \"${r}/${b}\" --since 10.days -1 -- 2>/dev/null | wc -l | xargs)\" -eq 0 ] && printf \"Will need to delete %s/%s\n\" \"${r}\" \"${b}\"' --"
 
   # Lists remote branches sorted by most-recently-committed, with ahead/behind counts vs the default branch.
   # Optionally specify a different reference branch and/or a count.
   # Usage: git recent-branch [<refbranch> [<count>]]
   # Example: git recent-branch origin/main 30
-  recent-branch = "!r() { refbranch=${1:-origin/$(git default-branch)} count=${2:-20}; git for-each-ref --sort=-committerdate refs/remotes --format='%(refname:short)|%(HEAD)%(color:yellow)%(refname:short)|%(color:bold green)%(committerdate:relative)|%(color:blue)%(subject)|%(color:magenta)%(authorname)%(color:reset)' --color=always --count=${count} | while read line; do branch=$(printf '%s' \"$line\" | awk 'BEGIN { FS = \"|\" }; { print $1 }' | tr -d '*'); ahead=$(git rev-list --count \"${refbranch}..${branch}\"); behind=$(git rev-list --count \"${branch}..${refbranch}\"); colorline=$(printf '%s' \"$line\" | sed 's/^[^|]*|//'); printf '%s' \"$ahead|$behind|$colorline\" | awk -F'|' -vOFS='|' '{$5=substr($5,1,70)}1' ; done | ( printf 'ahead|behind||branch|lastcommit|message|author\n\n' && cat) | column -ts'|';}; r"
+  recent-branch = "!r() { refbranch=\"${1:-origin/$(git default-branch)}\" count=\"${2:-20}\"; git for-each-ref --sort=-committerdate refs/remotes --format='%(refname:short)|%(HEAD)%(color:yellow)%(refname:short)|%(color:bold green)%(committerdate:relative)|%(color:blue)%(subject)|%(color:magenta)%(authorname)%(color:reset)' --color=always --count=${count} | while IFS= read -r line; do branch=$(printf '%s' \"${line}\" | awk 'BEGIN { FS = \"|\" }; { print $1 }' | tr -d '*'); ahead=$(git rev-list --count \"${refbranch}..${branch}\"); behind=$(git rev-list --count \"${branch}..${refbranch}\"); colorline=$(printf '%s' \"${line}\" | sed 's/^[^|]*|//'); printf '%s' \"${ahead}|${behind}|${colorline}\" | awk -F'|' -vOFS='|' '{$5=substr($5,1,70)}1' ; done | ( printf 'ahead|behind||branch|lastcommit|message|author\n\n' && cat) | column -ts'|';}; r"
 
   # Lists remote branches sorted by oldest-committed first, with ahead/behind counts vs the default branch.
   # Useful for identifying stale branches. Optionally specify a reference branch and/or count.
   # Usage: git oldest-branch [<refbranch> [<count>]]
   # Example: git oldest-branch origin/main 50
-  oldest-branch = "!r() { refbranch=${1:-origin/$(git default-branch)} count=${2:-20}; git for-each-ref --sort=committerdate refs/remotes --format='%(refname:short)|%(HEAD)%(color:yellow)%(refname:short)|%(color:bold green)%(committerdate:relative)|%(color:blue)%(subject)|%(color:magenta)%(authorname)%(color:reset)' --color=always --count=${count} | while read line; do branch=$(printf '%s' \"$line\" | awk 'BEGIN { FS = \"|\" }; { print $1 }' | tr -d '*'); ahead=$(git rev-list --count \"${refbranch}..${branch}\"); behind=$(git rev-list --count \"${branch}..${refbranch}\"); colorline=$(printf '%s' \"$line\" | sed 's/^[^|]*|//'); printf '%s' \"$ahead|$behind|$colorline\" | awk -F'|' -vOFS='|' '{$5=substr($5,1,70)}1' ; done | ( printf 'ahead|behind||branch|lastcommit|message|author\n\n' && cat) | column -ts'|';}; r"
+  oldest-branch = "!r() { refbranch=\"${1:-origin/$(git default-branch)}\" count=\"${2:-20}\"; git for-each-ref --sort=committerdate refs/remotes --format='%(refname:short)|%(HEAD)%(color:yellow)%(refname:short)|%(color:bold green)%(committerdate:relative)|%(color:blue)%(subject)|%(color:magenta)%(authorname)%(color:reset)' --color=always --count=${count} | while IFS= read -r line; do branch=$(printf '%s' \"${line}\" | awk 'BEGIN { FS = \"|\" }; { print $1 }' | tr -d '*'); ahead=$(git rev-list --count \"${refbranch}..${branch}\"); behind=$(git rev-list --count \"${branch}..${refbranch}\"); colorline=$(printf '%s' \"${line}\" | sed 's/^[^|]*|//'); printf '%s' \"${ahead}|${behind}|${colorline}\" | awk -F'|' -vOFS='|' '{$5=substr($5,1,70)}1' ; done | ( printf 'ahead|behind||branch|lastcommit|message|author\n\n' && cat) | column -ts'|';}; r"
 
   # Lists all remote branches with last committer and relative commit time, sorted by most recent.
   # Usage: git lc
@@ -298,16 +315,17 @@
 
   # [WIP/DUPLICATE] Like 'lc' but uses 'git log' so a --since date filter can be applied.
   # Usage: git lc2
-  lc2 = "!git branch -r --sort=-committerdate | grep -Ev 'HEAD|master|main' | while read b; do git log --since 4.days --color --format='%ci _%C(magenta)%cr %C(bold cyan)'"'"'$b'"'"'%Creset %s %C(bold blue)<%an>%Creset' $b | head -n 1; done | sort -r | cut -d_ -f2-"
+  lc2 = "!git branch -r --sort=-committerdate | grep -Ev 'HEAD|master|main' | while IFS= read -r b; do git log --since 4.days --color --format=\"%ci _%C(magenta)%cr %C(bold cyan)${b}%Creset %s %C(bold blue)<%an>%Creset\" \"${b}\" | head -n 1; done | sort -r | cut -d_ -f2-"
 
   # Shows a compact colorful graph log including trailer refs (e.g. Jira ticket refs).
   # Usage: git lt
   lt = log --color --graph --pretty=format:'%Cred%h%Creset %C(bold)%(trailers:key=Refs,valueonly,separator=%x2c)%Creset - %s %Cgreen(%cr)%C(bold blue) <%an>%C(nobold yellow)%d%Creset' --abbrev-commit
 
   # Searches for a fixed string across the full history of all commits (not just the working tree).
+  # -z/--null pairs rev-list and xargs to safely handle filenames containing spaces.
   # Usage: git se "<string>"
   # Example: git se "password"
-  se = "!git rev-list --all | xargs git grep -F"
+  se = "!git rev-list --all -z | xargs -0 git grep -F"
 
   # Initialises and updates all submodules recursively (use after a fresh clone or pull).
   # Usage: git siu
@@ -322,9 +340,9 @@
   # Usage: git pushsub
   pushsub = sf "git push --progress"
 
-  # Pulls latest changes in all submodules.
+  # Pulls latest changes in all submodules, unshallowing if needed.
   # Usage: git pullsub
-  pullsub = sf "git pull"
+  pullsub = sf "git pull-unshallow"
 [branch]
   autoSetupMerge = true
   autoSetupRebase = always
@@ -358,7 +376,7 @@
   fsMonitor = true
   logAllRefUpdates = true
   longPaths = true
-  pager = diff-so-fancy | less --tabs=2 -RFX
+  pager = delta
   # repositoryFormatVersion = 1   # Note: This can be uncommented to enable the new repository format for SHA256 support
   sshCommand="ssh -o ConnectTimeout=20"
   symlinks = false
@@ -373,11 +391,29 @@
   submodule = diff
 [diff "pandoc"]
   textconv = pandoc --sandbox --to=markdown
-[diff-so-fancy]
-  # changeHunkIndicators = false
-  # markEmptyLines = false
-  # stripLeadingSymbols = false
-  # useUnicodeRuler = false
+[delta]
+  # Designed to emulate diff-so-fancy's default look and feel
+  # ==========================================================
+  file-style = "bold yellow"
+  file-decoration-style = "yellow ul ol"
+  file-added-label = "🟢 added:"
+  file-modified-label = "🟠 modified:"
+  file-removed-label = "🔴 deleted:"
+  file-renamed-label = "🔵 renamed:"
+  file-change-type-label-width = 0
+  hunk-header-style = "file line-number syntax bold"
+  hunk-header-decoration-style = "box"
+  line-numbers = false
+  side-by-side = false
+  syntax-theme = "Monokai Extended"
+  minus-style = "red"
+  minus-emph-style = "bold #FF6B68 #3D1A1A"
+  plus-style = "green"
+  plus-emph-style = "bold #98FB98 #006400"
+  whitespace-error-style = "magenta reverse"
+  navigate = true
+  hyperlinks = true
+  hyperlinks-file-link-format = "zed://file/{path}:{line}"
 [extensions]
   # objectFormat = sha256         # Note: This can be uncommented to enable the new repository format for SHA256 support
   # compatObjectFormat = sha1     # Note: This can be uncommented to enable the new repository format for SHA256 support
@@ -414,7 +450,7 @@
   tabSize = 2
   warnDetachedCommit = true
 [help]
-  autoCorrect = 10
+  autoCorrect = prompt
 [http]
   lowSpeedLimit = 1000
   lowSpeedTime = 30
@@ -424,10 +460,9 @@
   version = 4                     # More efficient index format with path prefix compression
 [init]
   defaultBranch = master
-  # TODO: Currently (as of 2026-05-21), p10k does not support git's reftables format (the shell prompt does not display vcs_info correctly). Uncomment the following line when that issue is fixed and p10k supports reftables, since that will speed up git operations significantly.
-  # defaultRefFormat = reftable
+  defaultRefFormat = reftable
 [interactive]
-  diffFilter = diff-so-fancy --patch
+  diffFilter = delta --color-only
 [maintenance]
   auto = true
   strategy = incremental
@@ -450,7 +485,7 @@
   writeReverseIndex = true
 [pager]
   # Note: The '--pattern' switch sets some pre-search terms, but also scrolls to fill the whole console for single line change - which I dont like.
-  diff = diff-so-fancy | less --tabs=2 -RFX  # --pattern '^(Date|added|deleted|modified|renamed): '    # windows
+  diff = delta  # --pattern '^(Date|added|deleted|modified|renamed): '    # windows
 [pull]
   autoStash = true
   rebase = true

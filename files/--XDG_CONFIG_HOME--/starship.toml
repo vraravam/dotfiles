@@ -96,7 +96,7 @@ home_symbol = "~"
 # repo_root_format removed because when the repo root coincides with the home
 # directory (e.g. bare dotfiles repo at ~/.git), $before_root_path incorrectly
 # includes the path after the repo root, producing duplicate directory output:
-# e.g. "~/dev/ossvijay/dev/oss" instead of "~/dev/oss".
+# e.g. "~/dev/oss/dev/oss" instead of "~/dev/oss".
 # The regular format handles all cases correctly without duplication.
 
 # ── Git branch ────────────────────────────────────────────────────────────────
@@ -196,22 +196,25 @@ vimcmd_symbol = "[❮](bold green)"
 
 # Dirty state: shown when `git status --porcelain` produces any output
 [custom.git_dirty_sep]
-command = "git rev-parse --abbrev-ref HEAD 2>/dev/null"
+command = "true"
 when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
 format = "[\uE0B0]($style)"
 style = "fg:blue bg:yellow"
+ignore_timeout = true
 
 [custom.git_dirty]
 command = """
-branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | cut -c1-32)
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+branch=$(printf '%.32s' "$branch")
 [ ${#branch} -eq 32 ] && branch="${branch}…"
+porcelain=$(git --no-optional-locks status --porcelain 2>/dev/null)
+staged=$(printf '%s\n' "$porcelain" | grep -c "^[MADRC]" || true)
+modified=$(printf '%s\n' "$porcelain" | grep -c "^.M\\| M" || true)
+untracked=$(printf '%s\n' "$porcelain" | grep -c "^??" || true)
+stashed=$(git stash list 2>/dev/null | grep -c . || true)
+ahead=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)
+behind=$(git rev-list --count HEAD..@{u} 2>/dev/null || echo 0)
 status_str=""
-modified=$(git status --porcelain 2>/dev/null | grep -c "^.M\\| M")
-staged=$(git status --porcelain 2>/dev/null | grep -c "^[MADRC]")
-untracked=$(git status --porcelain 2>/dev/null | grep -c "^??")
-stashed=$(git stash list 2>/dev/null | wc -l | tr -d ' ')
-ahead=$(git rev-list @{u}..HEAD 2>/dev/null | wc -l | tr -d ' ')
-behind=$(git rev-list HEAD..@{u} 2>/dev/null | wc -l | tr -d ' ')
 [ "$staged" -gt 0 ] && status_str="${status_str}+${staged}"
 [ "$modified" -gt 0 ] && status_str="${status_str}!${modified}"
 [ "$untracked" -gt 0 ] && status_str="${status_str}?${untracked}"
@@ -224,20 +227,23 @@ behind=$(git rev-list HEAD..@{u} 2>/dev/null | wc -l | tr -d ' ')
 when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
 format = "[$output]($style)"
 style = "bg:yellow fg:black"
+ignore_timeout = true
 
 # Clean state: shown when inside a git repo but working tree is clean
 [custom.git_clean_sep]
-command = "git rev-parse --abbrev-ref HEAD 2>/dev/null"
+command = "true"
 when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
 format = "[\uE0B0]($style)"
 style = "fg:blue bg:green"
+ignore_timeout = true
 
 [custom.git_clean]
 command = """
-branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null | cut -c1-32)
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+branch=$(printf '%.32s' "$branch")
 [ ${#branch} -eq 32 ] && branch="${branch}…"
-ahead=$(git rev-list @{u}..HEAD 2>/dev/null | wc -l | tr -d ' ')
-behind=$(git rev-list HEAD..@{u} 2>/dev/null | wc -l | tr -d ' ')
+ahead=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)
+behind=$(git rev-list --count HEAD..@{u} 2>/dev/null || echo 0)
 status_str=""
 [ "$ahead" -gt 0 ] && [ "$behind" -gt 0 ] && status_str=" ⇣${behind}⇡${ahead}"
 [ "$ahead" -gt 0 ] && [ "$behind" -eq 0 ] && status_str=" ⇡${ahead}"
@@ -247,6 +253,7 @@ printf ' \uf126 %s%s \n' "$branch" "$status_str"
 when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
 format = "[$output]($style)"
 style = "bg:green fg:black"
+ignore_timeout = true
 
 # ── Custom: git repo size ─────────────────────────────────────────────────────
 # Runs du -sh on the repo's .git folder (equivalent to the 'git size' alias).
@@ -256,12 +263,14 @@ command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} du -sh {}/.git
 when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
 format = "[ $output]($style)"
 style = "bg:green fg:black"
+ignore_timeout = true
 
 [custom.git_size_dirty]
 command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} du -sh {}/.git 2>/dev/null | cut -f1"
 when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
 format = "[ $output]($style)"
 style = "bg:yellow fg:black"
+ignore_timeout = true
 
 # Trailing powerline separators (color→terminal default)
 [custom.git_clean_end]
@@ -269,12 +278,14 @@ command = "true"
 when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
 format = "[\uE0B0]($style)"
 style = "fg:green"
+ignore_timeout = true
 
 [custom.git_dirty_end]
 command = "true"
 when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
 format = "[\uE0B0]($style)"
 style = "fg:yellow"
+ignore_timeout = true
 
 # ── Custom: git operation state ──────────────────────────────────────────────
 # Shown in bold red when a multi-step git operation is in progress:
@@ -289,15 +300,15 @@ style = "fg:yellow"
 command = """
 root=$(git rev-parse --git-dir 2>/dev/null) || exit 1
 if [ -d "$root/rebase-merge" ] || [ -d "$root/rebase-apply" ]; then
-  printf ' REBASING '
+  printf '>> REBASING <<'
 elif [ -f "$root/MERGE_HEAD" ]; then
-  printf ' MERGING '
+  printf '>> MERGING <<'
 elif [ -f "$root/CHERRY_PICK_HEAD" ]; then
-  printf ' CHERRY-PICKING '
+  printf '>> CHERRY-PICKING <<'
 elif [ -f "$root/REVERT_HEAD" ]; then
-  printf ' REVERTING '
+  printf '>> REVERTING <<'
 elif [ -f "$root/BISECT_LOG" ]; then
-  printf ' BISECTING '
+  printf '>> BISECTING <<'
 else
   exit 1
 fi
@@ -305,6 +316,7 @@ fi
 when = "git rev-parse --git-dir 2>/dev/null"
 format = "[$output]($style)"
 style = "bold red"
+ignore_timeout = true
 
 # ── Disabled modules ─────────────────────────────────────────────────────────
 [aws]
