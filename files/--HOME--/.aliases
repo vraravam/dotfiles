@@ -228,7 +228,17 @@ delete_caches() {
   # they are recompiled fresh on the next login shell (via .zlogin).  This covers
   # compiled config files, scripts, autoload functions, and any *.zwc siblings of
   # the cache files below.
-  find "${HOME}" "${HOMEBREW_PREFIX}" -maxdepth 10 \( -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' \) -prune -o -name '*.zwc*' -type f -print -delete || warn "find command failed in ${HOME} or ${HOMEBREW_PREFIX}"
+  #
+  # Two separate find calls are required: HOME is searched without -L (no symlink
+  # following) to avoid cycles in user home dirs. HOMEBREW_PREFIX must use -L so
+  # that find descends into opt/<formula>/ directories, which are all symlinks to
+  # Cellar/<formula>/<version>/. Without -L, stale .zwc files in those paths are
+  # silently skipped — antidote.zsh.zwc in particular must be purged so that
+  # antidote's ZSH_EVAL_CONTEXT source-detection check works correctly on next start.
+  find "${HOME}" -maxdepth 10 \( -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' \) -prune -o -name '*.zwc*' -type f -print -delete || warn "find command failed in ${HOME}"
+  # macOS find forbids -delete when -L is active (safety guard against deleting
+  # symlink targets). Use -exec rm -f instead, which is exempt from this restriction.
+  find -L "${HOMEBREW_PREFIX}" -maxdepth 10 \( -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' \) -prune -o -name '*.zwc*' -type f -print -exec rm -f {} + || warn "find command failed in ${HOMEBREW_PREFIX}"
 
   # Delete the entire XDG_CACHE_HOME directory. This removes all generated cache
   # files (brew-shellenv-cache.zsh, starship-init-cache.zsh, repo-aliases-cache.zsh, zsh
@@ -236,7 +246,25 @@ delete_caches() {
   # bytecode companions. They are all regenerated automatically on the next shell
   # start or login shell.  .zshrc recreates XDG_CACHE_HOME with mkdir -p before
   # any cache write, so the missing directory is safe.
-  is_directory "${XDG_CACHE_HOME}" && rm -rfv "${XDG_CACHE_HOME}"
+  if is_directory "${XDG_CACHE_HOME}"; then rm -rfv "${XDG_CACHE_HOME}"; fi
+
+  # Re-source .zlogin immediately to rebuild all .zwc caches in the current shell.
+  # Without this, the first new terminal after delete_caches opens with no .zwc files;
+  # raw-source startup leaves the function table in a state where helper functions
+  # (e.g. is_debug) are not yet visible to the background subshell spawned by
+  # .zlogin's recompile block, producing "command not found: is_debug" errors.
+  # Sourcing here pre-builds every .zwc so subsequent terminals load from bytecode.
+  source "${ZDOTDIR}/.zlogin"
+
+  # Belt-and-suspenders: explicitly recompile the two most-critical startup files
+  # after .zlogin returns. .zlogin's recompile_zsh_scripts handles both files
+  # synchronously, but a stale .zwc compiled from an older source (e.g. after a
+  # git pull that modified .shellrc while a terminal was open) can survive across
+  # sessions if the mtime check happens to pass with the wrong cached file.
+  # A direct zcompile here always writes a fresh .zwc from the current source,
+  # guaranteeing delete_caches leaves the two most-loaded files in a known-good state.
+  zcompile "${HOME}/.shellrc"
+  zcompile "${HOME}/.aliases"
 }
 
 # --------------------------------------------------------------------------
@@ -691,9 +719,10 @@ _create_crontab() {
   echo >>"${file}"
   # Run script in its own fresh zsh process; wrap with zsh -c so tee is inside
   # chronic's scope (chronic must see both the script and tee together to suppress
-  # output on success). The inner zsh sources .aliases fresh — no stale function
-  # inheritance from any parent shell.
-  echo "0   *   *   *   *   chronic ${HOMEBREW_PREFIX}/bin/zsh -c '${HOMEBREW_PREFIX}/bin/zsh ${DOTFILES_DIR}/scripts/software-updates-cron.sh 2>&1 | tee -a ${HOME}/software-updates-cron.log'" >>"${file}"
+  # output on success). The script is directly executable (#!/usr/bin/env zsh shebang)
+  # so no explicit 'zsh' prefix is needed before it. 'zsh' and 'chronic' resolve
+  # from the PATH defined above — no hardcoded binary paths needed.
+  echo "0   *   *   *   *   chronic zsh -c '${DOTFILES_DIR}/scripts/software-updates-cron.sh 2>&1 | tee -a ${HOME}/software-updates-cron.log'" >>"${file}"
 }
 
 # Loads the system crontab from ${PERSONAL_CONFIGS_DIR}/crontab.txt.
@@ -834,3 +863,96 @@ build_me() {
 # alias mcd='MIX_ENV=test mix coveralls.detail'
 # alias sps='mix phx.server'
 # alias spsd='iex -S mix phx.server'
+
+# --------------------------------------------------------------------------
+# 3n. macOS prefs helpers
+# --------------------------------------------------------------------------
+
+# Canonical list of login-item apps managed by osx-defaults.sh and
+# capture-prefs.sh. Both scripts kill these apps before writing defaults so
+# the running instance cannot overwrite writes on quit, and restart them on
+# exit via an EXIT trap.
+# Keep in sync with the Brewfile setup_login_items_script entries and the
+# defaults-write login-key sections in osx-defaults.sh.
+_MACOS_LOGIN_ITEM_APPS=(
+  'Clocker'    # startAtLogin = true (com.abhishek.Clocker)
+  'DockDoor'   # login item via Brewfile setup_login_items_script (SMAppService)
+  'Finder'     # launchd-managed; killall causes immediate relaunch — see restart_login_item_apps
+  'KeyCastr'   # login item via Brewfile setup_login_items_script (SMAppService)
+  'KeyClu'     # launchAtLogin = true (com.0804Team.KeyClu)
+  'Keybase'    # login item via Brewfile setup_login_items_script (SMAppService)
+  'Mechvibes'  # login item via Brewfile setup_login_items_script (SMAppService)
+  'Shortcat'   # login item via Brewfile setup_login_items_script (SMAppService)
+  'Sol'        # login item via Brewfile setup_login_items_script (SMAppService)
+  'Stats'      # LaunchAtLoginNext = true (eu.exelban.Stats)
+  'Thaw'       # login item via Brewfile setup_login_items_script (SMAppService)
+)
+
+# Sends SIGTERM to every app in _MACOS_LOGIN_ITEM_APPS. Called before writing
+# defaults so in-memory state is flushed to disk first.
+# Failures are silenced — apps that are not running are not an error.
+kill_login_item_apps() {
+  local _app
+  for _app in "${_MACOS_LOGIN_ITEM_APPS[@]}"; do
+    killall "${_app}" &>/dev/null || true
+  done
+}
+
+# Re-opens every app in _MACOS_LOGIN_ITEM_APPS. Called from an EXIT trap
+# after defaults writes complete so the user is never left with login-item
+# apps dead.
+# Finder is launchd-managed: killall causes an immediate auto-relaunch with
+# fresh prefs. open -a would be a no-op since launchd already relaunched it
+# after kill_login_item_apps — so killall is used again here to force a
+# second relaunch that reads the newly-written defaults.
+restart_login_item_apps() {
+  local _app
+  for _app in "${_MACOS_LOGIN_ITEM_APPS[@]}"; do
+    if [[ "${_app}" == 'Finder' ]]; then
+      killall "${_app}" &>/dev/null || true
+    else
+      open -a "${_app}" &>/dev/null || true
+    fi
+  done
+}
+
+# Turns the macOS automatic software update schedule off before reading/writing
+# plists. Guards with 'sudo -n true' so it is safe to call from cron — if sudo
+# credentials are not cached (no terminal), warns and skips rather than hanging.
+# Must be paired with resume_softwareupdate_schedule (called from EXIT trap).
+suspend_softwareupdate_schedule() {
+  if ! has_sudo_credentials; then
+    warn "suspend_softwareupdate_schedule: sudo credentials not available — skipping softwareupdate schedule suspension."
+    return 0
+  fi
+  keep_sudo_alive
+  sudo softwareupdate --schedule OFF
+}
+
+# Turns the macOS automatic software update schedule back on. Called from the
+# EXIT trap in osx-defaults.sh and capture-prefs.sh so it runs on both normal
+# and error exits. Guards with 'sudo -n true' so it is safe to call from cron —
+# if sudo credentials are not cached (no terminal), warns and skips rather than
+# hanging. keep_sudo_alive's duplicate-loop guard makes it a no-op when the
+# background loop is already running.
+resume_softwareupdate_schedule() {
+  if ! has_sudo_credentials; then
+    warn "resume_softwareupdate_schedule: sudo credentials not available — skipping softwareupdate schedule restoration."
+    return 0
+  fi
+  keep_sudo_alive
+  sudo softwareupdate --schedule ON
+}
+
+# Restarts the macOS system services that cache preferences so imported or
+# written defaults take effect immediately without a logout.
+# cfprefsd — flushes the global prefs cache (covers NSGlobalDomain).
+# activateSettings — the only supported way to flush com.apple.symbolichotkeys
+#   (keyboard shortcut changes) without a logout.
+reload_macos_prefs() {
+  local _reload_app
+  for _reload_app in 'cfprefsd' 'Dock' 'Finder' 'SystemUIServer'; do
+    killall "${_reload_app}" &>/dev/null || true
+  done
+  /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
+}

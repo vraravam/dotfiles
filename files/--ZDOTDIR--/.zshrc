@@ -307,7 +307,11 @@ if is_macos; then
   setopt list_types             # if the file being listed is a directory, show a trailing slash
   setopt local_options
   setopt no_case_glob           # case-insensitive globbing
-  setopt null_glob         # ignore errors when file globs don't match anything
+  # null_glob is disabled: it causes commands that behave differently with zero
+  # arguments (ls, rm, grep) to silently receive no args instead of a clear
+  # "no matches found" error. Use the (N) per-glob qualifier where nullglob
+  # behaviour is genuinely needed (e.g. rm -f *.bak(N)).
+  # setopt null_glob
   setopt pushd_ignore_dups # don’t push multiple copies of the same directory
   setopt pushd_silent      # do not print the directory stack after pushd or popd
   setopt share_history     # share history between different instances of the shell
@@ -356,6 +360,13 @@ if is_macos; then
   zstyle ':completion:*:*:docker-*:*' option-stacking yes
 
   autoload -Uz _git
+
+  # Option+arrow word navigation for Terminal.app. Terminal.app's "Use Option as Meta key" covers
+  # Option+B/F but arrow keys still send \033[1;9D/C — map them explicitly to ZLE word motion.
+  # In iTerm2 the Natural Text Editing preset remaps these at the terminal level to \033b/\033f,
+  # so zsh never receives \033[1;9D/C from iTerm2 — these bindings are safely inert there.
+  bindkey '\033[1;9D' backward-word
+  bindkey '\033[1;9C' forward-word
 
   # Turn on autocomplete predictions
   autoload -Uz incremental-complete-word predict-on
@@ -434,10 +445,15 @@ if is_directory "${XDG_CONFIG_HOME}/zsh"; then
   # :t extracts the basename — autoload expects the function name, not the full
   # path; passing the full path would define a function named e.g.
   # '~/.config/zsh/myfunc' which can never be invoked by short name.
-  for func_file in "${XDG_CONFIG_HOME}"/zsh/*(N); do
-    autoload -Uz "${func_file:t}"
-  done
-  unset func_file
+  # Anonymous function scopes NULL_GLOB (no error when directory is empty) and
+  # keeps func_file local — no unset needed after the loop.
+  () {
+    setopt localoptions NULL_GLOB
+    local func_file
+    for func_file in "${XDG_CONFIG_HOME}"/zsh/*; do
+      autoload -Uz "${func_file:t}"
+    done
+  }
 fi
 
 # Mole shell completion

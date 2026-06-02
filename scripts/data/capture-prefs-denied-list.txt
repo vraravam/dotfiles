@@ -125,3 +125,9 @@ com.apple.proactive.PersonalizationPortrait
 
 # Flush/event date watermarks
 com.apple.cseventlistener
+
+# ActivityBaseDates: dict of per-device background-task scheduling timestamps
+# (criterion 3). ProductBuildVersion: OS version stamp (criterion 5).
+# VersionSpecificActivitiesRun: post-install activity sentinels (criterion 5).
+# No portable user preference data exists in this domain.
+com.apple.xpc.activity2

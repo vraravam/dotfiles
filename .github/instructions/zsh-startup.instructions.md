@@ -114,6 +114,20 @@ find_in_folder_and_recompile "${XDG_CACHE_HOME}"
 recompile_zsh_autoload_dir "${ZDOTDIR}/functions"
 ```
 
+## Do NOT compile `antidote.zsh` to `.zwc`
+
+antidote 2.1.0's source-detection check uses `[[ ":${ZSH_EVAL_CONTEXT}:" == *:file:* ]]`
+to distinguish sourced-library mode from CLI mode. When a file is loaded from `.zwc`
+bytecode, zsh sets the eval context token to `filecode` — not `file`. The `*:file:*`
+pattern does not match `filecode`, so the CLI branch fires, calls `exit 1`, and crashes
+every interactive shell startup.
+
+**Never add `recompile_zsh_scripts "${ANTIDOTE_ZSH}"` to `.zlogin`.** antidote.zsh must
+always be loaded from raw source. The same applies to `delete_caches` — it must purge any
+pre-existing `antidote.zsh.zwc` (which `find -L "${HOMEBREW_PREFIX}"` now handles), but
+`.zlogin` must not recreate it.
+```
+
 When `delete_caches` is run to remove `.zwc` files, do NOT chmod/chown them.
 Just delete and let zsh regenerate on next startup.
 

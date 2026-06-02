@@ -2,6 +2,7 @@
 
 ## Absolute Rules
 
+- **NEVER commit, amend, or create a PR** unless explicitly requested by the user. This includes `git commit`, `git commit --amend`, and `gh pr create`. Only the user decides when to record history.
 - **NEVER push to any remote** (`git push`, `git push --force`, `git push --force-with-lease`, or any variant). This is unconditional — no exceptions, no user prompts. Only the user pushes.
 
 This is a personal macOS dotfiles repository. The codebase contains zsh startup
@@ -244,11 +245,19 @@ Rules:
 
 **Exception — module-level cross-function state**: `_SHARED_REPO_DIRS` (in
 `.aliases`) is set *inside* a function and persists until explicitly `unset`.
-It follows the `_lowercase` prefix convention but is neither a `typeset -a`
+It follows the `_` prefix convention but is neither a `typeset -a`
 file-scope global nor a `local` — it is intentionally process-wide for the
 duration of a single logical operation. This pattern is reserved for expensive
 shared state (e.g. a `find` traversal result) that multiple sibling functions
 need to consume. Always `unset` at the end of the owning function.
+
+**Exception — file-scope constant arrays**: `_MACOS_LOGIN_ITEM_APPS` (in
+`.aliases § 3n`) is a `typeset -a` constant declared at file scope. It uses
+an uppercase name with `_` prefix — not `_DOTFILES_*` (which implies exported)
+and not `_lowercase` (which signals a mutable global or dynamic local). Uppercase
+with `_` prefix signals a read-only file-scope constant. It is never exported,
+never modified, and never `unset`. This pattern is reserved for arrays that
+represent a canonical list used by multiple sibling functions in the same file.
 
 ---
 
@@ -405,11 +414,39 @@ All shell scripts use `set -euo pipefail`. Guard positional parameters with
 
 ### Quoting and Variable References
 
+- **Never hardcode user-specific paths**: always use the exported env vars from
+  `.shellrc` instead of literal expanded paths. This applies to every file —
+  scripts, config files, and Brewfile Ruby expressions alike.
+
+  | Instead of | Use |
+  |---|---|
+  | `"${HOME}/dev"` literal repeated inline | `"${PROJECTS_BASE_DIR}"` |
+  | `"${HOME}/personal/dev/bin"` | `"${PERSONAL_BIN_DIR}"` |
+  | `"${HOME}/personal/dev/configs"` | `"${PERSONAL_CONFIGS_DIR}"` |
+  | `"${HOME}/.config/dotfiles"` | `"${DOTFILES_DIR}"` |
+  | `"${HOME}/.config"` | `"${XDG_CONFIG_HOME}"` |
+  | `"${HOME}/.cache"` | `"${XDG_CACHE_HOME}"` |
+  | `"${HOME}/.local/bin"` | `"${XDG_BIN_HOME}"` |
+  | `"${HOME}/.local/share"` | `"${XDG_DATA_HOME}"` |
+  | `"${HOME}/.local/state"` | `"${XDG_STATE_HOME}"` |
+  | `"${HOME}/.ssh"` | `"${SSH_CONFIGS_DIR}"` |
+  | `/opt/homebrew` or `/usr/local` | `"${HOMEBREW_PREFIX}"` |
+
+  `${HOME}` itself is always acceptable — it is a standard shell variable, not a
+  hardcoded path. The rule targets its *derived* paths that already have a named
+  env var. Full table and scan rule in `shell-scripting.instructions.md`
+  § **No Hardcoded User-Specific Paths**.
+
 - **Always quote variables**: use `"${var}"` in any context where the value
   could contain spaces. Unquoted variables break on filenames with spaces.
 - **Single quotes for static strings**: use `'literal'` when there is no
   variable expansion. Use double quotes only when expanding variables or
   needing escape sequences.
+  Exception: prefer double quotes when the string contains single quotes that
+  would otherwise require `$'...\n...'` escaping or concatenation — double
+  quotes allow literal single quotes inside and support literal newlines,
+  making multiline strings significantly more readable (see
+  `shell-scripting.instructions.md` § Single Quotes vs Double Quotes).
 - **Always use `${var}` brace notation**: never bare `$var`. Braces
   unambiguously delimit the variable name and prevent accidental
   concatenation bugs (e.g. `"${name}_suffix"` vs `"$name_suffix"` which
@@ -513,6 +550,12 @@ with Ruby 2.6. Do NOT use homebrew-managed Ruby for `$DOTFILES_DIR` scripts.
   not kill running apps or re-launch them via `open -a`.
 - **`COLUMNS` fallback in cron**: zsh sets `COLUMNS` to `0` with no terminal.
   Always use `${COLUMNS:-80}` in any code that computes a display width.
+- **`NULL_GLOB` must always be scoped**: never use bare `setopt NULL_GLOB` /
+  `unsetopt NULL_GLOB` at script or function scope — changes leak to all
+  subsequent code. Always use `setopt localoptions NULL_GLOB` inside an
+  anonymous function `()`. Never use inline `(N)` glob qualifiers — they break
+  editor syntax highlighting. Full rules in `shell-scripting.instructions.md`
+  § **Glob Patterns — NULL_GLOB**.
 
 ---
 
@@ -523,13 +566,15 @@ with Ruby 2.6. Do NOT use homebrew-managed Ruby for `$DOTFILES_DIR` scripts.
 ### Aliases in `~/.gitconfig`
 
 - Aliases that use shell features must use `!sh -c '...' -` or `!git` prefix.
-- For `-C <dir>` support: `!sh -c 'git -C "${1:-.}" ...' -`.
-- The trailing `-` sets `$0`; user args start at `$1`. Never use `$0` for user args.
 - For multi-step logic, use `!f()` named function pattern: `"!f() { ...; }; f"`.
+- Every `!` alias that operates on a repository must accept an optional `<dir>` as its first argument (default `'.'`), using `git -C "${1:-.}"` for every internal git call. This is an alternative to `git -C <path> <alias>` — both forms are equivalent. **Do NOT combine both**: `git -C <path1> alias <path2>` is undefined — the explicit arg wins and `-C <path1>` is silently ignored. Exceptions where `${1}` has a fixed meaning: `sci` (message), `standup` (author), `new`/`old`/`recent-branch`/`oldest-branch` (branch/ref), `pull-unshallow`/`fetch-unshallow` (flags), `f`/`se` (pattern), `relative-path` (own convention) — use `git -C <path> <alias>` only for these.
+- The trailing `-` sets `$0`; user args start at `$1`. Never use `$0` for user args.
 - `git sci`: smart commit, **non-interactive** — takes a message arg; amends (`git amq`) if ahead of remote and not diverged, otherwise creates a new commit (`git ci`). Aborts if nothing staged. Use `git diff --cached --quiet` (not locale-dependent `grep "to unstage"`).
+- `git pull-safe` / `git upreb`: **always guard with a dirty-tree check** before any rebase or push. `rebase.autoStash = true` is not sufficient — it stashes then tries to pop after rebase, which can conflict and leave the repo in a broken mid-operation state. Use `git diff --quiet && git diff --cached --quiet`; if dirty, print to stderr and exit non-zero. Callers in cron scripts must use `_record_warning` (not `_record_error`) — a dirty skip is an expected state, not a failure.
 - `git cc` / `git rfc`: **never use `--all`** in `reflog expire` — it discards stashes. Always enumerate refs explicitly with `git for-each-ref refs/heads refs/remotes` only. `refs/tags` must be excluded — tags have no reflogs in any repo (git only maintains reflogs for `HEAD` and branches), and passing them to `git reflog expire` always produces "reflog could not be found" errors for every tag.
 - `fetch.fsckObjects = false` enforced in antidote bundle repo git configs
   (ohmyzsh, fast-syntax-highlighting) — `fetch` only, not `receive`/`transfer`.
+- **`[delta]`**: use `"syntax <bg-color>"` for `minus-style`/`plus-style` (not bare `"red"`/`"green"`) to preserve syntax highlighting on whole-line diffs. Set `line-fill-method = ansi` to extend diff background to full terminal width. `minus-emph-style` background must be visually brighter than `minus-style` background.
 
 ---
 
@@ -652,7 +697,7 @@ lost. The `--force` flag overrides this and deletes the existing file instead.
 ### SSH `Include` Line
 
 After symlinking, `install-dotfiles.rb` ensures the line
-`Include "${SSH_CONFIGS_DIR}/global_config"` is present in `~/.ssh/config`. This
+`Include "${SSH_CONFIGS_DIR}/global_config"` is present in `${SSH_CONFIGS_DIR}/config`. This
 is a post-symlink SSH setup step — do not add it manually or add a duplicate guard
 elsewhere.
 
@@ -718,34 +763,344 @@ fi
 
 ---
 
-## CHANGELOG
+## `capture-prefs.sh` — Allowed and Denied Lists
 
-Each new CHANGELOG entry must use the output of `git describe --tags` (run from
-`$DOTFILES_DIR`) as the section header. This ensures the version number always
-matches the most recent git tag:
+`capture-prefs.sh` exports/imports macOS `defaults` domains using two data
+files in `scripts/data/`:
+
+- **`capture-prefs-allowed-list.txt`** — domains that are safe to
+  export/import across machines.
+- **`capture-prefs-denied-list.txt`** — domains that must never be
+  exported/imported. `find_and_append_prefs` (in `.aliases`) warns if you try
+  to add a denied domain to the allowed list.
+
+### Denial criteria
+
+A domain belongs on the denied list if it contains any of:
+
+1. **Machine identity / hardware UUIDs** — device-specific identifiers,
+   AirTag beacon UUIDs, Apple Push Service tokens, MDM enrollment tokens.
+   Importing these onto a different machine corrupts the receiving system's
+   identity with the Apple infrastructure.
+
+2. **Account-bound credentials** — Apple ID DSIDs, iMessage/FaceTime
+   per-device key material, iCloud sync identities. These are hardware- and
+   account-specific; they cannot be reused on another machine or account.
+
+3. **Ephemeral CloudKit / daemon sync state** — per-device CloudKit sync
+   cursors, biome sync watermarks, routing state. Importing these confuses
+   daemons into treating the new machine as a continuation of the old one,
+   causing silent sync failures.
+
+4. **Display / session geometry** — window frame coordinates keyed to
+   specific monitor configurations, Space topology with per-monitor display
+   UUIDs. These have zero portability value and macOS overwrites them on first
+   boot anyway.
+
+5. **OS version stamps and setup-wizard state** — build version strings,
+   `SetupAssistant` dismissal flags. macOS ignores or overwrites these; they
+   carry no portable value.
+
+### Export format — XML plist, not binary, not JSON
+
+`capture-prefs.sh` exports each domain as an **XML plist** (text), not binary
+plist and not JSON. The conversion happens immediately after `defaults export`
+via `plutil -convert xml1 <file>` (in-place, no temp file needed).
+
+**Why XML plist over binary plist:**
+- Human-readable and fully diffable in git — binary plist diffs are useless.
+
+**Why XML plist over JSON:**
+- `defaults import` reads XML plist natively — no conversion step needed on
+  import.
+- Plist types that have no JSON equivalent (`<date>`, `<data>`, nested
+  `<dict>`/`<array>`) are preserved exactly. JSON conversion via `plutil`
+  is lossy for `<data>` blobs and `<date>` values, producing base64 strings
+  and RFC 3339 strings respectively that `defaults import` cannot round-trip.
+- Some allowed domains contain `<data>` blobs for legitimate portable keys
+  (e.g. `NSSplitView` frame strings encoded as NSData). These survive
+  XML round-trips intact; they do not survive JSON round-trips.
+
+**Portability rules are unchanged** — the allowed/denied list mechanism applies
+regardless of file format. A domain on the denied list is skipped whether the
+format is binary, XML, or JSON.
+
+**File extension:** `.plist` (not `.defaults`) — signals the format to editors
+(syntax highlighting, validation) and to `plutil`.
+
+Do not change the export format to binary or JSON. If a future macOS version
+changes the behaviour of `plutil -convert xml1`, verify the round-trip with
+`defaults import` before adopting any alternative format.
+
+### Rules when modifying the lists
+
+- **Adding to the allowed list**: verify the domain contains only
+  user-configurable preferences (no UUIDs, no credentials, no sync cursors).
+  When in doubt, check what keys the domain stores with `defaults read <domain>`
+  on a live machine.
+- **Adding to the denied list**: document the specific key(s) that make it
+  unsafe inline in `capture-prefs-denied-list.txt`, following the comment style
+  of the existing entries. Do not add a domain without a comment explaining why.
+- **Adding to the excluded-keys list**: document the denial criterion inline in
+  `capture-prefs-excluded-keys.txt` following the comment style of existing
+  entries. Format is `domain|pattern`. Patterns support `*` as a wildcard
+  matched against the full key name.
+- **Never copy denied-list or excluded-keys reasoning into individual code
+  comments** — the canonical explanation lives in the data files themselves.
+
+### Periodic recheck (at most once per session, not more than once per day)
+
+Apps update frequently and may add new keys that violate portability rules.
+Proactively recheck all three data files when working in this area:
+
+1. **`capture-prefs-allowed-list.txt`** — run `defaults read <domain>` on any
+   domain you touch and verify no new non-portable keys have appeared at the
+   domain level (UUIDs, credentials, sync cursors). If a domain has become
+   unsafe, move it to the denied list.
+
+2. **`capture-prefs-denied-list.txt`** — scan for any domain that was denied
+   for a reason that may no longer apply (e.g. a key that was account-bound but
+   has been removed in a newer app version). If safe, move it to the allowed
+   list with appropriate excluded-keys entries.
+
+3. **`capture-prefs-excluded-keys.txt`** — for each domain you touch, run
+   `defaults read <domain>` and diff the key set against what is listed. Add
+   any new non-portable keys. Remove entries for keys that no longer exist
+   (the script silently skips missing keys, but stale entries are confusing).
+
+Do not recheck all 390+ domains in a single session — focus on domains
+relevant to the work at hand. The goal is incremental hygiene, not a full
+audit on every change.
+
+---
+
+## `osx-defaults.sh` and `capture-prefs.sh` — Two-Phase Preference Architecture
+
+macOS preferences are managed in two distinct, ordered phases. The order is
+load-bearing: phase 2 always wins over phase 1 by design.
+
+### Phase 1 — `osx-defaults.sh -s` (baseline seed)
+
+`osx-defaults.sh` writes a curated baseline of `defaults write` calls covering
+macOS system settings and third-party app settings. It is intentionally a
+**partial baseline** — it does not attempt to capture every possible preference,
+only those where a known-good starting value is worth codifying.
+
+Rules for what belongs in `osx-defaults.sh`:
+- Settings the user has never changed via the UI, but should have a specific
+  starting value on a fresh machine.
+- Settings that are purely scriptable and have no meaningful UI-side override
+  (e.g. disabling analytics, enabling developer menu).
+- Settings are written as `ask 'Y'` blocks so the user can skip any section
+  during a manual run.
+
+Rules for what does NOT belong in `osx-defaults.sh`:
+- Settings the user adjusts via the app's UI after initial setup — those belong
+  in `capture-prefs.sh`'s allowed list, not here. Writing them here would mean
+  `osx-defaults.sh -s` resets them to stale values on every fresh-install.
+- Ephemeral state (window positions, last-opened directory, migration sentinels,
+  A/B experiment shards) — apps manage these themselves; never codify them.
+
+### Phase 2 — `capture-prefs.sh -i` (UI-configured overrides)
+
+After the baseline is seeded, `capture-prefs.sh -i` imports the preferences
+that were captured from the previous machine via `capture-prefs.sh -e`. These
+are the settings the user actually configured through each app's UI over time.
+
+Because import runs **after** `osx-defaults.sh`, every UI-configured value
+overwrites the corresponding baseline value. The user's deliberate choices
+always win.
+
+### Ordering constraint — enforced in `fresh-install-of-osx.sh`
+
+`fresh-install-of-osx.sh` calls these two in strict order:
 
 ```zsh
-git describe --tags   # e.g. "3.1" — use this as the ### header
+osx-defaults.sh -s      # phase 1 — seed baseline
+capture-prefs.sh -i     # phase 2 — restore UI-configured overrides on top
 ```
 
+**Never reverse this order.** Running `capture-prefs.sh -i` first and then
+`osx-defaults.sh` would wipe out the user's UI-configured values wherever
+`osx-defaults.sh` writes the same key.
+
+### Decision rule when adding new preference code
+
+When a new preference needs to be managed, apply this rule:
+
+1. **Is it a one-time baseline default the user will never change via UI?**
+   → Add it to `osx-defaults.sh`.
+2. **Is it something the user configures through the app's UI?**
+   → Add its domain to `capture-prefs-allowed-list.txt` (and any volatile keys
+   to `capture-prefs-excluded-keys.txt`). Do not write it in `osx-defaults.sh`.
+3. **Is it an ephemeral value the app manages itself?**
+   → Add it to `capture-prefs-excluded-keys.txt` or `capture-prefs-denied-list.txt`.
+   Write it nowhere.
+
+---
+
+## CHANGELOG
+
+CHANGELOG section headers use **semantic versioning** (`major.minor.patch`).
+The version to use depends on whether a new commit is being created or an
+existing unpushed commit is being amended/extended.
+
+### Determining the version number
+
+Run these two commands from `$DOTFILES_DIR`:
+
+```zsh
+git describe --tags --abbrev=0   # most recent tag, e.g. "3.1"
+git log @{u}..HEAD --oneline     # empty = nothing unpushed; non-empty = unpushed commit(s)
+```
+
+**If `git log @{u}..HEAD` is non-empty** (unpushed commits exist):
+The current CHANGELOG entry is still in progress — the work will be folded into
+the same commit. Do **not** increment the patch segment. Use the same version
+already at the top of `CHANGELOG.md`.
+
+**If `git log @{u}..HEAD` is empty** (HEAD is in sync with remote):
+A new commit will be created. Increment the **patch** (3rd) segment of the most
+recent tag. If the tag has only two segments (e.g. `3.1`), treat it as `3.1.0`
+and increment to `3.1.1`.
+
+Examples:
+- Tag `3.1`, nothing unpushed, new work → CHANGELOG header `### 3.1.1`
+- Tag `3.1.1`, nothing unpushed, new work → CHANGELOG header `### 3.1.2`
+- Tag `3.1`, unpushed commit exists → keep existing header (e.g. `### 3.1.1`)
+
 - Add the new entry at the **top** of `CHANGELOG.md`, above all existing entries.
-- Use `### <version>` as the section heading (e.g. `### 3.1`).
+- Use `### <version>` as the section heading (e.g. `### 3.1.1`).
 - Only include changes made within `$DOTFILES_DIR`. Changes to `$PERSONAL_BIN_DIR`
   and `$PERSONAL_CONFIGS_DIR` are subject to the same editing/formatting rules but
   are not documented in this CHANGELOG.
-- Each bullet should be scoped with `*[file or component]*` and describe the
-  change succinctly — what was done and why, not how.
-- Keep each bullet concise — one sentence where possible.
-- Order bullets by impact on an adopter picking up the changes into their own
-  fork or machine:
+
+### Sub-sections for top-level goals
+
+Each version entry uses `####` sub-sections to group changes by the high-level
+goal they serve. This keeps the entry scannable and makes it easy to understand
+what was attempted before looking at individual bullets.
+
+Structure:
+
+```markdown
+### <version>
+
+#### <Goal 1 — short noun phrase describing the intent>
+
+* *[file-or-component]* Change description — what and why.
+
+#### <Goal 2>
+
+* *[file-or-component]* ...
+
+#### Adopting these changes
+
+* Steps the user must run to pick up the changes.
+```
+
+Rules for sub-sections:
+- Use a short noun phrase that describes the **intent** of the group, not the
+  files changed (e.g. `Harden capture-prefs.sh`, not `capture-prefs.sh changes`).
+- Order sub-sections by impact: behavioral/runtime first, infrastructure next,
+  documentation last. `Adopting these changes` is always the final sub-section
+  when adoption steps are needed.
+- A sub-section may contain a single bullet — don't artificially merge unrelated
+  changes just to reduce sub-sections.
+- Within each sub-section, bullets follow the same ordering rule:
   1. **Behavioral/runtime changes** — bug fixes, new functions, changed outputs,
      script logic changes (anything that affects what runs or what the user sees)
   2. **Infrastructure changes** — refactors, shared helpers, structural changes
      that enable behavioral changes but are not directly visible
   3. **Documentation** — instruction files, README, CHANGELOG itself
+- Each bullet should be scoped with `*[file or component]*` and describe the
+  change succinctly — what was done and why, not how.
+- Keep each bullet concise — one sentence where possible.
 
 ### Commit Message Style
 
 - Write commit messages in the **past tense** (e.g. "Replaced X with Y", "Fixed
   bug in Z") — not imperative mood ("Replace X", "Fix Z").
 - The message should describe what changed, not what to do.
+- Keep messages **succinct**: use the `####` sub-section goal headings from the
+  current CHANGELOG entry as the commit message, joined with semicolons. These
+  headings already capture the intent of every change made in the session.
+  Omit the `Adopting these changes` sub-section — it is not a code change.
+
+  Example:
+  ```
+  Hardened capture-prefs.sh; expanded osx-defaults.sh; extracted shared macOS
+  prefs helpers; fixed cron-safety issues; added technical deep-dive docs
+  ```
+
+  Use `git next-version` to confirm the version before finalising the CHANGELOG
+  entry, then use the sub-section headings from that entry as the commit message.
+
+---
+
+## Documentation Update Routine
+
+Run this routine **proactively at the end of every session** and **at least
+once per day** when multiple sessions occur. Do not wait to be asked.
+
+### Trigger conditions
+
+Run the routine whenever any of the following occurred during the session:
+
+- A new design decision was made or an existing one was revised
+- A bug was discovered and fixed (especially if the fix reveals a general rule)
+- A new pattern, constraint, or naming convention was established
+- A new script or function was added or significantly changed
+- An existing rule in any instructions file was found to be incorrect or incomplete
+- A new adopter-facing workflow step was introduced
+
+### Routing: what goes where
+
+Apply each piece of pertinent information to the **tightest** file that owns
+it. Never duplicate the same rule across files — put it in one place and
+cross-reference from broader files where needed.
+
+| Type of information | Primary file | Cross-reference if significant |
+|---|---|---|
+| Shell scripting rule, pattern, or pitfall | `shell-scripting.instructions.md` | Here (summary bullets) |
+| Zsh startup optimisation or startup-path constraint | `zsh-startup.instructions.md` | Here (summary bullets) |
+| Git config alias pattern or delta/diff rule | `git-config.instructions.md` | Here (summary bullets) |
+| Ruby scripting pattern or convention | `ruby-scripting.instructions.md` | — |
+| Fresh-install idempotency guard or bootstrap constraint | `fresh-install.instructions.md` | Here if affects general readers |
+| Naming convention, global state variable, or sourcing rule | Here (primary) | `TechnicalDeepDive.md` § 2 or § 3 if architectural |
+| Architectural explanation (why a design exists) | `TechnicalDeepDive.md` | Link from adopter docs if user-visible |
+| New or changed script behaviour | `Extras.md` | Link to `TechnicalDeepDive.md` for internals |
+| Adopter workflow change (fork, upgrade, import/export steps) | `README.md` | `GettingStarted.md` if affects first-run |
+| Bug fix or behavioural change with adoption steps | `CHANGELOG.md` under current version | — |
+| Inaccuracy found in any doc | Fix in-place in the affected file | Fix all files that carry the same error |
+
+### Process
+
+1. Scan the full session for decisions, fixes, and patterns not yet reflected
+   in any doc.
+2. For each item, identify the tightest owning file from the routing table above.
+3. Draft the addition in the style of the surrounding content in that file
+   (see § **Code Comments**: explain *why*, not what; no temporal language; no
+   changelog phrasing).
+4. Apply the edit. If a broader file needs a cross-reference or summary bullet,
+   add that too.
+5. **Cross-reference analysis — mandatory after every doc update**: after
+   editing any documentation file (especially `TechnicalDeepDive.md`), scan
+   all adopter-facing docs (`Extras.md`, `GettingStarted.md`, `README.md`,
+   `copilot-instructions.md`) for places that describe the same concept without
+   a link to the updated section. Add or update links so that every relevant
+   mention in adopter docs points to the canonical deep-dive section. Conversely,
+   if a new section was added to an adopter doc, check whether `TechnicalDeepDive.md`
+   has a matching deep-dive section that should be linked from it.
+6. If the item belongs in `CHANGELOG.md`, add it under the current `### x.y.z`
+   version using the `####` sub-section format. Determine the version using the
+   rules in § **CHANGELOG** above.
+7. After all updates, verify no file now contains a stale or contradicted
+   version of the same rule.
+
+### What does NOT belong in documentation
+
+- Changelog-style phrasing in code comments ("Added X to fix Y").
+- Temporal language ("currently", "as of this session", "now uses").
+- Implementation details that are already self-evident from reading the code.
+- Redundant duplication of a rule already present in the tightest file.

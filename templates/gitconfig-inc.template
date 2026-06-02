@@ -1,0 +1,30 @@
+# Template for a per-context git config include file.
+# File location: ${HOME}/.gitconfig-<context>.inc  (e.g. ~/.gitconfig-oss.inc, ~/.gitconfig-work.inc)
+#
+# Wire it into ${HOME}/.gitconfig with an includeIf block, e.g.:
+#   [includeIf "gitdir:~/personal/dev/oss/"]
+#     path = ~/.gitconfig-oss.inc
+# git deep-merges all matched includes (last match wins), so sensitive or context-specific
+# values — such as your work email or signing keys — placed here will correctly override
+# anything set in ~/.gitconfig without exposing them in this public repo.
+#
+# To avoid exposing even the paths to your private include files in the public ~/.gitconfig,
+# move the includeIf directives into a private file and include that instead.
+# The tracked ~/.gitconfig in this repo already does this — it has one unconditional entry:
+#   [includeIf "gitdir/i:~/"]
+#     path = ~/.gitconfig-oss.inc
+# ~/.gitconfig-oss.inc is private (not in this repo) and can itself contain further
+# includeIf directives for work, client, or other contexts. git resolves includes recursively.
+
+[user]
+  name = <your-name>
+  email = <your-email>
+
+# For seamless URL rewriting across multiple GitHub/GitLab accounts (requires
+# ${SSH_CONFIGS_DIR}/config host aliases to be configured — see templates/ssh-config.template):
+# [url "git@github-personal:"]
+#   insteadOf = git@github.com:
+#   insteadOf = https://github.com/
+# [url "git@gitlab-personal:"]
+#   insteadOf = git@gitlab.com:
+#   insteadOf = https://gitlab.com/

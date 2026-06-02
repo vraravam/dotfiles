@@ -555,9 +555,7 @@ main() {
   # dotnet tool install -g dotnet-sonarscanner
   # dotnet tool install -g dotnet-format
 
-  success '** Finished auto installation process: Remember to do the following steps! **'
-  user_action "1. Run the 'bupc' alias to finish setting up all other applications managed by homebrew"
-  user_action "2. MANUALLY QUIT AND RESTART iTerm2 and Terminal apps"
+  success '** Finished auto installation process **'
 
   # Print grouped summary of all collected warnings and errors, then send exactly one
   # notification. Exit code is unchanged (0) — the summary is informational only.

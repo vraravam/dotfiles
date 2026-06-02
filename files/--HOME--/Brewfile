@@ -83,9 +83,7 @@ brew 'shfmt'
 brew 'syncthing'
 brew 'tlrc'
 
-cask 'aldente', postinstall: "\"#{setup_login_items_script}\" -a 'AlDente'" if ::OS::Mac::version < 26
 cask 'clocker', postinstall: "\"#{setup_login_items_script}\" -a 'Clocker'"
-# cask 'codeql'
 cask 'dbeaver-community'
 cask 'dockdoor', postinstall: "\"#{setup_login_items_script}\" -a 'Dockdoor'"
 cask 'drawio'
@@ -95,10 +93,10 @@ cask 'google-chrome@beta'
 cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'" if ::OS::Mac::version >= 14
 cask 'keepassxc@beta'
 cask 'keycastr', postinstall: "\"#{setup_login_items_script}\" -a 'Keycastr'"
-cask 'keyclu' if is_arm
+ cask 'keyclu', postinstall: "\"#{setup_login_items_script}\" -a 'KeyClu'" if is_arm
 cask 'mechvibes', postinstall: "\"#{setup_login_items_script}\" -a 'Mechvibes'"
 cask 'onlyoffice'
-cask 'protonvpn'
+cask 'protonvpn', postinstall: "\"#{setup_login_items_script}\" -a 'ProtonVPN'"
 cask 'rancher' # if ::OS::Mac::version < 26
 cask 'sol', postinstall: "\"#{setup_login_items_script}\" -a 'Sol'"
 cask 'shortcat', postinstall: "\"#{setup_login_items_script}\" -a 'Shortcat'"
@@ -199,6 +197,7 @@ brew 'sccache'
 # cask 'brave-browser'
 # cask 'claude-code'
 # cask 'cloudflare-warp'
+# cask 'codeql'
 # cask 'fliqlo'
 # cask 'floorp' # Doesn't have keyboard shortcuts to switch across workspaces
 # cask 'ghostty@tip' # Not using since it doesn't have many features (like broadcasting keystrokes to panels; using iTerm instead)

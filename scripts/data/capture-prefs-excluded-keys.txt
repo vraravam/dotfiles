@@ -1,0 +1,150 @@
+# capture-prefs-excluded-keys.txt
+#
+# Per-domain key exclusions for capture-prefs.sh.
+#
+# Format: <domain>|<key-or-glob-pattern>
+#   - One entry per line.
+#   - Lines starting with # and blank lines are ignored.
+#   - * is a wildcard that matches any sequence of characters within a key name.
+#   - Patterns are matched case-sensitively against top-level plist keys only.
+#   - In addition to name patterns, any top-level key whose plist value type is
+#     <date> is always stripped regardless of key name (type-based rule in the
+#     Ruby pass). Date-valued keys are inherently ephemeral OS/app timestamps.
+#   - | is used as the delimiter — it never appears in bundle IDs (reverse-DNS)
+#     or plist key names, and is safe to edit in any text editor.
+#   - The special domain * applies patterns to every domain (global patterns).
+#
+# These keys are stripped from the exported plist before git staging (export)
+# and from a temp copy before writing to the system (import). The script silently
+# skips patterns that match no keys — stale entries are harmless but confusing;
+# remove them when the key no longer exists in the domain.
+#
+# Denial criteria (same as capture-prefs-denied-list.txt):
+#   1. Machine identity / hardware UUIDs
+#   2. Account-bound credentials
+#   3. Ephemeral CloudKit / daemon sync state (timestamps, watermarks)
+#   4. Display / session geometry (coordinates keyed to monitor config)
+#   5. OS version stamps and setup-wizard state
+#
+# Periodic recheck: when working in this area, run `defaults read <domain>` for
+# each domain below and verify no new non-portable keys have appeared. Add new
+# entries; remove entries for keys that no longer exist in the domain.
+# See copilot-instructions.md § "Periodic recheck" for the full protocol.
+
+# ---------------------------------------------------------------------------
+# * (global — applied to every domain)
+# ---------------------------------------------------------------------------
+# NSWindow Frame *: window frame coordinates keyed to monitor configuration
+# (criterion 4). The suffix encodes the window role and may vary across apps
+# but the pattern is universal — all such keys are display-geometry-specific.
+*|NSWindow Frame *
+# NSSplitView Subview Frames *: split-pane geometry keyed to monitor config
+# (criterion 4). Applies globally; per-domain entries (e.g. io.github.keycastr)
+# are superseded by this global pattern but kept for documentation.
+*|NSSplitView Subview Frames *
+# *Date / *date: keys ending with "Date" or "date" — covers last-opened,
+# install, check-in, review-prompt, analytics, and similar per-device
+# timestamps (criterion 3). Supersedes individual date-key entries below.
+# *|*Date
+# *|*date
+# *Timestamp / *TimeStamp / *timestamp: keys ending with "Timestamp" or
+# "TimeStamp" — covers event/flush timestamps and sync watermarks (criterion 3).
+# *|*Timestamp
+# *|*TimeStamp
+# *|*timestamp
+# *Time / *time: keys ending with "Time" or "time" — covers last-check,
+# last-update, expiration, and similar per-device time records (criterion 3).
+# *|*Time
+# *|*time
+# *Identifier / *identifier: keys ending with "Identifier" — covers device UUIDs,
+# vendor identifiers, per-machine installation identifiers, CloudKit client
+# identifiers, and per-session tab/state identifiers (criteria 1, 2, 3).
+*|*Identifier
+*|*identifier
+
+# ---------------------------------------------------------------------------
+# eu.exelban.Stats
+# ---------------------------------------------------------------------------
+# id, remote_id: device UUIDs used for Stats telemetry/remote sync (criterion 1)
+eu.exelban.Stats|id
+eu.exelban.Stats|remote_id
+# Clock_list: array of timezone entries each containing a per-device UUID (criterion 1)
+# eu.exelban.Stats|Clock_list
+# remote_tokens_migrated_to_keychain: credential migration state flag (criterion 2)
+# eu.exelban.Stats|remote_tokens_migrated_to_keychain
+# version: app version stamp, overwritten on first launch (criterion 5)
+# eu.exelban.Stats|version
+# runAtLoginInitialized, setupProcess: onboarding sentinels, overwritten on first launch (criterion 5)
+# eu.exelban.Stats|runAtLoginInitialized
+# eu.exelban.Stats|setupProcess
+# ble_*: Bluetooth Low Energy sensor discovery state, device-specific (criterion 3)
+# eu.exelban.Stats|ble_*
+# sensor_*: hardware sensor ephemeral reading state, device-specific (criterion 3)
+# eu.exelban.Stats|sensor_*
+# *_ts: sync timestamp watermarks (support_ts, updater_check_ts, updater_install_ts, etc.) (criterion 3)
+# eu.exelban.Stats|*_ts
+# NSStatusItem Preferred/Restore Position *: per-display menu bar pixel coordinates (criterion 4)
+# eu.exelban.Stats|NSStatusItem Preferred Position *
+# eu.exelban.Stats|NSStatusItem Restore Position *
+
+# ---------------------------------------------------------------------------
+# com.abhishek.Clocker
+# ---------------------------------------------------------------------------
+# SelectedCalendars: array of iCloud Calendar UUIDs — account-bound (criterion 2)
+# com.abhishek.Clocker|SelectedCalendars
+# defaultPreferences: array of binary NSKeyedArchiver blobs encoding per-timezone
+# config with embedded per-device timestamps — not portably decodable (criterion 3)
+# com.abhishek.Clocker|defaultPreferences
+# Timestamps and version stamps — ephemeral state overwritten on first launch.
+# StatusItemOcclusionLastAlertDate and analyticsLastSignalDate are superseded by
+# the global *Date/*date patterns above, but kept here for documentation.
+com.abhishek.Clocker|StatusItemOcclusionLastAlertDate
+com.abhishek.Clocker|com.abhishek.analyticsLastSignalDate
+com.abhishek.Clocker|com.abhishek.defaultsLastUpdateKey
+# com.abhishek.Clocker|iVersionLastChecked
+# com.abhishek.Clocker|iVersionLastVersionChecked
+com.abhishek.Clocker|last-prompt
+# com.abhishek.Clocker|last-version
+# com.abhishek.Clocker|install
+# NSStatusItem Preferred Position: menu bar pixel coordinate (criterion 4)
+com.abhishek.Clocker|NSStatusItem Preferred Position ClockerStatusItem
+
+# ---------------------------------------------------------------------------
+# com.apple.sharedfilelistd
+# ---------------------------------------------------------------------------
+# fixup* keys are one-time setup-wizard completion sentinels written by
+# sharedfilelistd on first boot — machine-specific (criterion 5). Importing
+# them onto a different machine causes the daemon to skip its first-boot setup.
+# com.apple.sharedfilelistd|fixupDesktopAndDocumentsCompleted
+# com.apple.sharedfilelistd|fixupFileProviderVolumeGroupsV2Completed
+
+# ---------------------------------------------------------------------------
+# com.apple.universalaccess
+# ---------------------------------------------------------------------------
+# History: per-session event log of accessibility state changes (e.g. MouseKeys
+# toggling), each entry stamped with a <string> date. Ephemeral machine-state;
+# contains no portable user preference (criterion 3).
+com.apple.universalaccess|History
+
+# ---------------------------------------------------------------------------
+# com.sproutcube.Shortcat
+# ---------------------------------------------------------------------------
+# telemetryIdentifier: device UUID used for analytics (criterion 1)
+com.sproutcube.Shortcat|telemetryIdentifier
+# NSStatusItem Preferred Position: menu bar pixel coordinate (criterion 4)
+com.sproutcube.Shortcat|NSStatusItem Preferred Position *
+
+# ---------------------------------------------------------------------------
+# io.github.keycastr
+# ---------------------------------------------------------------------------
+# default.textColor: binary NSKeyedArchiver blob encoding an NSColor with an
+# embedded ICC color profile — profile data is display-specific and cannot be
+# reconstructed portably (criterion 4)
+# io.github.keycastr|default.textColor
+# NSStatusItem Preferred Position: menu bar pixel coordinate (criterion 4)
+# io.github.keycastr|NSStatusItem Preferred Position *
+# NSSplitView Subview Frames *: color panel split geometry — superseded by
+# global pattern above, kept for documentation (criterion 4)
+# io.github.keycastr|NSSplitView Subview Frames *
+# NSToolbar Configuration *: toolbar layout state (criterion 4)
+# io.github.keycastr|NSToolbar Configuration *

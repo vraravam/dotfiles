@@ -157,10 +157,13 @@ main() {
   if command_exists run-all.sh; then
     _current_section='Update repos in home folder'
     step_start
-    section_header "$(yellow 'Update repos in home folder')"
+    section_header "$(yellow 'Update non-keybase repos in home folder')"
     # Aliases ('home', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'home pull' alias.
-    FOLDER="${HOME}" FILTER='.bin|.dotfiles|zsh|mise' MAXDEPTH=5 run-all.sh git pull || _record_error 'Failed to pull home repos'
+    # 'git pull-safe' fetches all remotes then rebases only if the working tree is clean;
+    # a dirty repo exits non-zero so run-all.sh records a per-repo warning. Not _record_error:
+    # a dirty skip is an expected state in a personal repo, not a script failure.
+    FOLDER="${HOME}" FILTER='.bin|zsh|mise' MAXDEPTH=5 run-all.sh git pull-safe || _record_warning 'Some home repos could not be auto-updated — working tree may be dirty. Rebase manually.'
     step_end
 
     sleep 10  # so that GH doesn't throttle when we call a lot of times within a short time
@@ -170,7 +173,10 @@ main() {
     section_header "$(yellow 'Upreb repos in oss folder')"
     # Aliases ('oss', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'oss upreb' alias.
-    FOLDER="${PROJECTS_BASE_DIR}/oss" MAXDEPTH=4 run-all.sh git upreb && success 'Finished upreb for oss repos' || _record_error 'Failed to upreb oss repos'
+    # 'git upreb' now aborts early if the working tree is dirty rather than failing mid-workflow
+    # (after fetch+rebase but before push). A dirty skip exits non-zero so run-all.sh records
+    # a per-repo warning. Not _record_error: a dirty skip is expected, not a script failure.
+    FOLDER="${PROJECTS_BASE_DIR}/oss" MAXDEPTH=4 run-all.sh git upreb && success 'Finished upreb for oss repos' || _record_warning 'Some oss repos could not be auto-updated — working tree may be dirty. Run upreb manually.'
     step_end
 
     _current_section='Restore mtime and register for maintenance'
@@ -178,9 +184,9 @@ main() {
     section_header "$(yellow 'Restoring mtime and registering for maintenance operations')"
     # Aliases ('all', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'all' alias.
-    FOLDER='/Users/vijay' MAXDEPTH=7 run-all.sh git restore-mtime -c
-    FOLDER='/Users/vijay' MAXDEPTH=7 run-all.sh git maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
-    FOLDER='/Users/vijay' MAXDEPTH=7 run-all.sh git maintenance start
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git restore-mtime -c
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git maintenance start
     step_end
   fi
 

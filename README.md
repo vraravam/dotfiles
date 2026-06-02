@@ -8,7 +8,7 @@
 
 A comprehensive, idempotent backup and restore strategy that configures your mac for modern software development. Supports both **Intel** and **Apple Silicon** macs with automatic architecture detection.
 
-Each step will intimate the user when skipping, and if you want to rerun the script but force that step, you just need to delete the control `if` condition (you should have a basic understanding of shell programming to figure out what to delete/how to force).
+The script is **idempotent** — every step checks whether its work is already done before executing, so you can safely re-run after a partial failure without undoing completed steps. Each skipped step logs the reason, so you can see at a glance what was already in place.
 
 All of the folder structures and the setup/backup operations are governed by the environment variables [defined here](files/--HOME--/.shellrc). Please read the explanation of each variable in the same and edit appropriately.
 
@@ -51,7 +51,7 @@ In your forked repo, make the following changes, commit and push _via the Github
    - `PERSONAL_CONFIGS_DIR` (default: `${HOME}/personal/dev/configs`) — folder for private config files and repo catalogs
    - `PERSONAL_PROFILES_DIR` (default: `${HOME}/personal/${USER}/browser-profiles`) — folder for browser profile backups
 2. Review all entries in the `files/--HOME--/Brewfile`, and ensure that there are no unwanted libraries/applications. If you have any doubts (if comparing with my [Brewfile](files/--HOME--/Brewfile)), you will need to search the internet for the uses of those libraries/applications and decide whether to retain each one or not.
-3. If you changed `PROJECTS_BASE_DIR` from its default (`~/dev`), update the corresponding entries in `files/--HOME--/custom.gitignore` — specifically the `/dev/` entry in the "HOME DIRECTORY TOP-LEVEL FOLDERS" section and all `/dev/**/` entries in the "DEV WORKSPACE" section. Prefer editing the repo source file directly, then run `install-dotfiles.rb` to propagate. If on a fresh machine the destination `~/.gitignore` already has your edits, set `FIRST_INSTALL=1` before running `install-dotfiles.rb` so the destination is treated as authoritative; otherwise `install-dotfiles.rb` uses mtime to decide which version wins (newer file wins; repo source wins on a tie).
+3. If you changed `PROJECTS_BASE_DIR` from its default (`~/dev`), update the corresponding entries in `files/--HOME--/custom.gitignore` — specifically the `/dev/` entry in the "HOME DIRECTORY TOP-LEVEL FOLDERS" section and all `/dev/**/` entries in the "DEV WORKSPACE" section. Prefer editing the repo source file directly, then run `install-dotfiles.rb` to propagate. See [Technical Deep Dive § 9](TechnicalDeepDive.md#9-install-dotfilesrb-mechanics) for details on how `install-dotfiles.rb` resolves conflicts between the repo copy and an existing file on disk.
 
 ## How to upgrade / catch-up to new changes
 
@@ -98,7 +98,7 @@ If you want to automate the repetitive running of these scripts/commands, you ca
 
 # 🎯 Finally...
 
-The softwares in the `files/--HOME--/Brewfile` will be run only with the bare minimum of formulae with the above invocation. Once the process completes, and you restart the Terminal app, you would want to run `bupc` so that all the other applications can be installed.
+The softwares in the `files/--HOME--/Brewfile` will be run with the bare minimum of formulae initially; the full Brewfile install continues automatically in the background once the base setup completes.
 
 Once the above is done, and if you have setup the [keybase](https://keybase.io)-based home repo, browser profiles repo, etc - you can then re-import your exported preferences from the [pre-requisites section](#-pre-requisites).
 
@@ -111,7 +111,9 @@ As a summary, these files will typically have changes between your setup and min
 - `files/--HOME--/.shellrc` (`GH_USERNAME`, `KEYBASE_USERNAME`, path env vars such as `PROJECTS_BASE_DIR` / `PERSONAL_CONFIGS_DIR` / `PERSONAL_BIN_DIR` / `PERSONAL_PROFILES_DIR`, and other changeable env vars to control which steps to perform vs which to bypass)
 - `files/--HOME--/Brewfile` (the list of applications and command-line utilities that you choose to install in your local machine)
 - `scripts/data/capture-prefs-allowed-list.txt` (the preference domains you choose to back up — add or remove entries to match your installed apps)
-- `scripts/data/capture-prefs-denied-list.txt` (domains that must never be exported or imported because they contain machine-specific identifiers, MDM tokens, or account-bound credentials — edit only if you need to add newly discovered unsafe domains; do not remove existing entries)
+- `scripts/data/capture-prefs-denied-list.txt` (domains that must never be exported or imported — edit only to add newly discovered unsafe domains; do not remove existing entries)
+
+For a deeper understanding of how the scripts work internally — the logging system, startup optimisation, `.shellrc` vs `.aliases` architecture, cron safety, and more — see the [Technical Deep Dive](TechnicalDeepDive.md).
 
 # 🔄 Ongoing tasks to keep your backup up-to-date on a regular basis
 

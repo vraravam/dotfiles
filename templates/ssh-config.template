@@ -1,0 +1,30 @@
+# Template for SSH client configuration.
+# File location: ${SSH_CONFIGS_DIR}/config
+# Note: `install-dotfiles.rb` automatically inserts the final Include line below — you
+# do not need to add it manually. If this file is created after
+# `fresh-install-of-osx.sh` has already run, re-run `install-dotfiles.rb` so it
+# can insert the Include line.
+
+# To generate new SSH keys (replace all placeholders with your values):
+#   ssh-keygen -t ed25519 -a 100 -b 4096 -f "${SSH_CONFIGS_DIR}/id_ed25519-<company-name>" -q -N '' -C "<you>@<company-name>.com"
+#   ssh-keygen -t rsa -a 100 -b 4096 -f "${SSH_CONFIGS_DIR}/id_rsa-personal" -q -N '' -C "<you>@<personal-email-provider>.com"
+#
+# To add the generated keys to the SSH agent:
+#   ssh-add "${SSH_CONFIGS_DIR}/id_ed25519-<company-name>"
+#   ssh-add "${SSH_CONFIGS_DIR}/id_rsa-personal"
+
+# Default GitHub identity (used when cloning via git@github.com directly - unless you use github-personal, etc while cloning)
+Host github.com
+  IdentityFile "${SSH_CONFIGS_DIR}/id_rsa-personal"
+
+# Personal GitHub account (explicit alias — used with url rewriting in gitconfig-inc.template)
+Host github-personal
+  HostName github.com
+  IdentityFile "${SSH_CONFIGS_DIR}/id_rsa-personal"
+
+# <company-name> GitHub account (explicit alias — used with url rewriting in gitconfig-inc.template)
+Host github-<company-name>
+  HostName github.com
+  IdentityFile "${SSH_CONFIGS_DIR}/id_ed25519-<company-name>"
+
+Include "${SSH_CONFIGS_DIR}/global_config"

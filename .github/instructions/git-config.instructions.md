@@ -9,6 +9,63 @@ applyTo: "**/.gitconfig,**/custom.gitattributes,**/add-upstream-git-config.sh"
 These rules mirror the shell scripting rules in `shell-scripting.instructions.md`
 and apply to every `!sh -c` or `!f()` alias body.
 
+## Working Directory Argument Convention
+
+Every `!` alias that operates on a repository **must** accept an optional `<dir>`
+as its first argument, defaulting to `'.'` if omitted. Use `git -C "${1:-.}"` for
+every git call inside the alias body.
+
+```ini
+# Good — accepts optional dir; defaults to current directory
+my-alias = "!f() { git -C \"${1:-.}\" some-command; }; f"
+
+# BAD — hardcodes current directory; cannot be called with an explicit path
+my-alias = !git some-command
+```
+
+This allows callers to pass the path directly (`git my-alias /path/to/repo`) as
+an alternative to `git -C /path/to/repo my-alias`. Both forms are equivalent.
+
+**Do NOT combine both forms.** `git -C <path1> my-alias <path2>` is undefined
+behaviour — the explicit arg wins and `-C <path1>` is silently ignored. Use one
+or the other:
+
+- `git -C <path> my-alias` — git-native; preferred for interactive use and
+  scripting that already has the path in a variable passed to `-C`.
+- `git my-alias <path>` — explicit arg; preferred for callers like `run-all.sh`
+  that set cwd via `cd` and invoke the alias with no args (leaving `${1:-.}` to
+  default to `.`), or when constructing a command string where `-C` is awkward.
+
+### Exceptions — aliases where `${1}` already has a fixed meaning
+
+Do **not** add a `<dir>` argument when the first argument already has an
+established meaning:
+
+| Alias | First arg meaning | Use instead |
+|---|---|---|
+| `sci` | commit message | `git -C <path> sci "<msg>"` |
+| `standup` | author name | `git -C <path> standup "<author>"` |
+| `new` | branch name | `git -C <path> new <branch>` |
+| `old` | remote name | `git -C <path> old <remote> <branch>` |
+| `recent-branch` / `oldest-branch` | reference branch | `git -C <path> recent-branch` |
+| `pull-unshallow` / `fetch-unshallow` | extra flags | `git -C <path> pull-unshallow` |
+| `f` / `se` | search pattern | `git -C <path> f <pattern>` |
+| `relative-path` | path argument | `git -C <path> relative-path` |
+
+For these, `git -C <path> <alias>` is the only option.
+
+### `cc` — dir + flag coexistence
+
+`cc` accepts both a dir and flags. Since flags always start with `-`, detect the
+dir at the top of the function body by checking whether `${1}` starts with `-`:
+
+```ini
+cc = "!f() { case \"${1:-}\" in -*|'') dir='.' ;; *) dir=\"${1}\"; shift ;; esac; ...; }; f"
+```
+
+This preserves the existing `git cc --expire=now` calling convention while also
+allowing `git cc /path/to/repo --expire=now`.
+
 ### Always Quote Variables
 
 Always quote variable expansions to prevent word-splitting on values that could
@@ -153,6 +210,41 @@ sci = "!sh -c '\
 Both paths are non-interactive: `git amq` = `commit --amend --no-edit --quiet`;
 `git ci "<msg>"` = `commit -m "<msg>"`.
 
+## `git pull-safe` and `git upreb` — Dirty-Tree Guard for Cron
+
+Aliases that rebase (or rebase + push) must check for a clean working tree
+**before** doing any destructive work. `rebase.autoStash = true` is not
+sufficient: it stashes, rebases, then tries to pop the stash — if the stash
+conflicts with the rebased commits, the repo is left in a broken mid-operation
+state.
+
+The correct pattern is an **early exit**: check first, do nothing if dirty.
+
+**`git pull-safe`** — fetch all remotes, rebase onto `@{u}` only if clean:
+
+```ini
+pull-safe = "!f() { git -C \"${1:-.}\" fetch --all; if git -C \"${1:-.}\" diff --quiet && git -C \"${1:-.}\" diff --cached --quiet; then git -C \"${1:-.}\" rebase '@{u}'; else printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' \"${1:-.}\" >&2; exit 1; fi; }; f"
+```
+
+**`git upreb`** — abort before touching anything if dirty (a mid-workflow
+failure after fetch+rebase but before push would leave the repo in a worse
+state than doing nothing):
+
+```ini
+upreb = "!f() { if git diff --quiet && git diff --cached --quiet; then <full workflow>; else printf 'Skipping upreb: working tree has uncommitted changes. Run manually.\n' >&2; exit 1; fi; }; f"
+```
+
+Rules:
+- Use `git diff --quiet && git diff --cached --quiet` to check both unstaged
+  and staged changes. Never use `git status --porcelain` for this — it is
+  locale-dependent.
+- Exit non-zero on dirty so callers (e.g. `run-all.sh`) surface a warning.
+- Print to **stderr** (`>&2`) so the message appears in cron logs without
+  polluting stdout that callers might parse.
+- In cron scripts that call these via `run-all.sh`, use `_record_warning`
+  (not `_record_error`) for the outer failure — a dirty skip is an expected
+  state in a personal repo, not a script failure.
+
 ## `git size`
 
 `git size` is human-triggered (not in the startup hot path), so subshell
@@ -185,6 +277,25 @@ must be excluded — tags have no reflogs in any repo (git only maintains reflog
 `HEAD` and branches), and passing them to `git reflog expire` always produces
 "reflog could not be found" errors for every tag.
 
+## `[delta]` — Diff Rendering
+
+`delta` is configured under `[delta]` in `~/.gitconfig`. Key rules:
+
+- **`minus-style` / `plus-style`**: use `"syntax <bg-color>"` (not `"red"` /
+  `"green"`). Foreground-only colors lose syntax highlighting on whole-line
+  diffs; `syntax <bg>` preserves it.
+- **`minus-emph-style` background**: must be visually brighter than the
+  `minus-style` background to remain distinct. If you adjust `minus-style`'s
+  background, adjust `minus-emph-style`'s background proportionally.
+- **`line-fill-method = ansi`**: extends the diff background color to the full
+  terminal width. The default (`spaces`) only colors actual characters, leaving
+  the rest of the line with the terminal's default background — which looks
+  inconsistent on wide terminals.
+- Do not revert `minus-style` / `plus-style` back to bare `"red"` / `"green"` —
+  those were the original values and they dropped syntax highlighting.
+
+---
+
 ## `.gitattributes`
 
 `install-dotfiles.rb` copies `custom.gitattributes` to `.gitattributes` in the
@@ -196,6 +307,8 @@ ensure its mtime is newer before re-running `install-dotfiles.rb`.
 Binary file types must be marked binary:
 
 ```gitattributes
-*.defaults  binary
-*.zwc       binary
+*.zwc  binary
 ```
+
+XML plist files (`*.plist`) exported by `capture-prefs.sh` are text — no
+`binary` attribute needed. Do not add `*.plist binary` or `*.defaults binary`.

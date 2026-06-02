@@ -287,6 +287,34 @@ user_action "Restart 'Terminal' and 'iTerm':
   'ProtonVPN' - may drop VPN."
 ```
 
+### No Hardcoded User-Specific Paths
+
+Never hardcode user-specific or machine-specific paths. Always use the exported
+env vars defined in `.shellrc` instead. This applies to every file in the
+repository — scripts, config files, and Brewfile Ruby expressions alike.
+
+| Instead of | Use |
+|---|---|
+| `"${HOME}/dev"` literal repeated inline | `"${PROJECTS_BASE_DIR}"` |
+| `"${HOME}/personal/dev/bin"` | `"${PERSONAL_BIN_DIR}"` |
+| `"${HOME}/personal/dev/configs"` | `"${PERSONAL_CONFIGS_DIR}"` |
+| `"${HOME}/.config/dotfiles"` | `"${DOTFILES_DIR}"` |
+| `"${HOME}/.config"` | `"${XDG_CONFIG_HOME}"` |
+| `"${HOME}/.cache"` | `"${XDG_CACHE_HOME}"` |
+| `"${HOME}/.local/bin"` | `"${XDG_BIN_HOME}"` |
+| `"${HOME}/.local/share"` | `"${XDG_DATA_HOME}"` |
+| `"${HOME}/.local/state"` | `"${XDG_STATE_HOME}"` |
+| `"${HOME}/.ssh"` | `"${SSH_CONFIGS_DIR}"` |
+| `/opt/homebrew` or `/usr/local` | `"${HOMEBREW_PREFIX}"` |
+
+`${HOME}` itself is always acceptable — it is a standard shell variable, not a
+hardcoded path. The rule targets its *derived* paths that already have a named
+env var.
+
+Scan rule: when editing any script or config file, flag every occurrence of a
+literal expanded path that matches one of the right-hand-side values above, and
+replace it with the corresponding env var.
+
 ### `${var}` Brace Notation
 
 Always use `${var}` brace notation (not bare `$var`) to unambiguously delimit
@@ -467,6 +495,36 @@ is_non_empty_array my_arr   # instead of [[ ${#my_arr[@]} -gt 0 ]]
 
 # Join
 result=$(join_array ", " "${my_arr[@]}")
+```
+
+## Glob Patterns — NULL_GLOB
+
+`setopt localoptions NULL_GLOB` inside an anonymous function `()` is the **only**
+permitted way to enable NULL_GLOB. There is no other valid form.
+
+- **Never use bare `setopt NULL_GLOB`** at script, function, or top-level scope —
+  the change persists for the rest of the process and leaks into every caller.
+- **Never use `unsetopt NULL_GLOB`** — if you find yourself needing to unset it,
+  you set it globally in the first place, which is the mistake to fix.
+- **Never use inline `(N)` glob qualifiers** — they are parsed by most editor
+  syntax highlighters as function calls, breaking highlighting for the rest of
+  the line.
+
+```zsh
+# BAD — NULL_GLOB leaks to the rest of the script / caller
+setopt NULL_GLOB
+rm -f "${dir}"/*.plist "${dir}"/*.defaults
+unsetopt NULL_GLOB
+
+# BAD — inline (N) qualifier breaks editor syntax highlighting
+rm -f "${dir}"/*.plist(N) "${dir}"/*.defaults(N)
+
+# Good — the only permitted form; restored automatically when the anonymous
+# function returns, with no effect on the caller
+() {
+  setopt localoptions NULL_GLOB
+  rm -f "${dir}"/*.plist "${dir}"/*.defaults
+}
 ```
 
 ## `.envrc` Special Rules

@@ -1,7 +1,9 @@
 # Files containing zsh-only syntax that shfmt cannot parse even in zsh mode:
 #   - ${^array} (rc-style expansion)
 #   - for key value in "${(@kv)assoc}" (associative array iteration)
+#   - ${~pattern} (glob matching in [[ == ]] comparisons)
 files/--ZDOTDIR--/.zshrc
+scripts/capture-prefs.sh
 scripts/cleanup-browser-profiles.sh
 
 # shfmt fmt:off/on directives are not honoured inside loop bodies (shfmt bug);

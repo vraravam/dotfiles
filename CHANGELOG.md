@@ -3,6 +3,124 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of changelog:
 
 
+### 3.1.2
+
+#### Fix `setup-login-item.sh` for macOS 26 and complete Brewfile login item hooks
+
+* *[setup-login-item.sh]* Rewrote to use `SMAppService.loginItem(url:)` on macOS 14–25 and fall back to the legacy System Events AppleScript on macOS 13 and macOS 26+. On macOS 26 (Tahoe), Apple removed `loginItem(url:)` and replaced it with `loginItem(identifier:)`, which only works for login item helpers bundled *within* an app — it cannot register standalone third-party apps externally. The legacy System Events path (items appear as "Legacy" in System Settings) is the only viable option on macOS 26.
+* *[setup-login-item.sh]* Added `-b` (background/hidden mode) flag, proper `-h` help, `usage()` using `print_usage`, and deferred warning collection via `_record_warning` — bringing the script in line with the standard script skeleton.
+* *[Brewfile]* Added missing `postinstall: "...setup_login_items_script... -a 'KeyClu'"` and `postinstall: "...setup_login_items_script... -a 'ProtonVPN'"` — these two apps were being installed without registering as login items. Removed `aldente` from Brewfile and `com.apphousekitchen.aldente-pro` from the allowed prefs list.
+
+#### Remove hardcoded user-specific paths
+
+* *[software-updates-cron.sh]* Replaced hardcoded `/Users/vijay` with `${HOME}` in all `FOLDER=` assignments — the previous values were machine-specific and would silently do nothing on any other machine.
+* *[.aliases]* `_create_crontab`: removed `${HOMEBREW_PREFIX}/bin/` prefixes from the cron entry — `zsh` and `chronic` resolve via the `PATH` set earlier in `_create_crontab`, so hardcoding Homebrew's bin path was redundant and fragile across arm/Intel prefix differences.
+
+#### Harden antidote update and fix antidote `.zwc` crash
+
+* *[.aliases]* `delete_caches`: split the single `find` into two separate calls — one for `HOME` (no `-L`, uses `-delete`) and one for `HOMEBREW_PREFIX` (with `-L`, uses `-exec rm -f {} +` because macOS `find` forbids `-delete` when symlinks are followed). Without `-L`, `find` silently skips symlinked directories, so `.zwc` files under `opt/<formula>/` paths (which are all symlinks into `Cellar/`) were never deleted. A stale `antidote.zsh.zwc` could therefore persist across brew upgrades, causing antidote's `ZSH_EVAL_CONTEXT` source-detection check to fail and `exit 1` to fire on every interactive shell startup.
+* *[.zlogin]* Ensured `antidote.zsh` is never compiled to `.zwc` — antidote 2.1.0's source-detection check uses `*:file:*` against `ZSH_EVAL_CONTEXT`, but zsh sets that token to `filecode` (not `file`) when loading from `.zwc` bytecode. The CLI branch fires, calls `exit 1`, and crashes every interactive shell. antidote.zsh must always be loaded from raw source.
+* *[zsh-startup.instructions.md]* Added "Do NOT compile `antidote.zsh` to `.zwc`" section documenting the `filecode` bug and the fix applied to `delete_caches`.
+
+#### Document two-phase preference architecture and no-hardcoded-paths rule
+
+* *[TechnicalDeepDive.md]* Added § 12 — Two-Phase Preference Architecture: explains why `osx-defaults.sh -s` (baseline seed) must run before `capture-prefs.sh -i` (UI-configured overrides), and the decision rule for where new preference code belongs.
+* *[Extras.md, GettingStarted.md]* Added adopter-facing summaries of the two-phase architecture with links to § 12.
+* *[copilot-instructions.md]* Added Two-Phase Preference Architecture section (decision rule + ordering constraint) and cross-referenced `shell-scripting.instructions.md` § No Hardcoded User-Specific Paths.
+* *[shell-scripting.instructions.md, copilot-instructions.md]* Added `## No Hardcoded User-Specific Paths` rule: substitution table of all derived `${HOME}` paths and their canonical env var equivalents, plus a scan rule for auditing existing files.
+* *[copilot-instructions.md]* Documentation Update Routine: added mandatory cross-reference analysis step — after editing any doc file, scan all adopter-facing docs for mentions of the same concept and add or update links to the canonical deep-dive section.
+
+#### Fix `delete_caches` post-deletion `is_debug` error and harden `capture-prefs` key stripping
+
+* *[.aliases]* `delete_caches`: added `source "${ZDOTDIR}/.zlogin"` at the end so all `.zwc` caches are rebuilt immediately in the current shell. Without this, the first new terminal after `delete_caches` starts with no compiled bytecode; raw-source startup leaves the function table in a state where helper functions (e.g. `is_debug`) are not visible to `.zlogin`'s background recompile subshell, producing "command not found: is_debug". Also converted the trailing `&&` guard for `XDG_CACHE_HOME` removal to an explicit `if` to be safe under `set -e` / ERR trap patterns.
+* *[capture-prefs.sh]* `_strip_excluded_keys`: rewrote as a single Ruby/REXML pass (replacing the prior Ruby-enumerate + PlistBuddy-delete approach) using `/usr/bin/ruby` — eliminates the only Homebrew-Python dependency in the codebase. PlistBuddy treats `:` as a path separator in its key-path syntax, so keys whose names contain `:` (e.g. `_DKThrottledActivityLast_...:/app/mediaUsageActivityDate`) were misinterpreted as nested dict paths and silently not deleted. `File.fnmatch` without `FNM_PATHNAME` allows `*` to match `/` and `:`, matching zsh's `[[ == ]]` glob behaviour. Also switched `capture-prefs.sh` to source `.aliases` instead of `.shellrc` so the shared macOS prefs helpers (§ 3n) are available.
+* *[capture-prefs-excluded-keys.txt]* New file: per-domain key exclusion patterns for `capture-prefs.sh`. Added global date/timestamp patterns (`*|*Date`, `*|*date`, `*|*Timestamp`, `*|*timestamp`) to strip ephemeral watermark keys from every domain.
+* *[capture-prefs-allowed-list.txt, capture-prefs-denied-list.txt]* Moved `com.apple.xpc.activity2` from allowed to denied (contains only background-task scheduling timestamps and OS version stamps — no portable user preferences). Removed `Apple Global Domain` and `screencapture` from the allowed list — these domains accumulate too many system-managed non-portable keys to be safely captured wholesale.
+
+#### Unify script logging decoration across shell and Ruby (remaining call sites)
+
+* *[capture-prefs.sh, osx-defaults.sh, setup-login-item.sh]* Removed the now-redundant `"${_SCRIPT_NAME}"` argument from remaining `print_script_summary` call sites.
+
+#### Gate all script banners on outermost-script depth (remaining scripts)
+
+* *[capture-prefs.sh, osx-defaults.sh, setup-login-item.sh]* Each script now decrements `_DOTFILES_SCRIPT_DEPTH` on exit (clean or error) via `_decrement_script_depth`.
+* *[TechnicalDeepDive.md]* Added section on the nesting depth counter, `is_outermost_script` / `outermost_script?` guard, and why subprocess scripts still decrement even though only the outermost script prints output.
+
+#### Harden shell utility infrastructure (remaining changes)
+
+* *[capture-prefs.sh, .zshrc, .zlogin]* Eliminated inline `(N)` glob qualifiers — replaced with `setopt localoptions NULL_GLOB` inside anonymous functions `()`.
+* *[.aliases, capture-prefs.sh]* Replaced remaining raw POSIX test switch (`-d`) usages and unsafe `&&`-as-conditional guards with named utility functions and explicit `if` statements.
+
+#### Fix cron-safety issues (remaining changes)
+
+* *[capture-prefs.sh]* Scoped `kill_login_item_apps` and `restart_login_item_apps` to import-only or interactive (TTY) export — cron export no longer kills running apps mid-session.
+
+#### Harden git alias safety and portability
+
+* *[.gitconfig]* Added `git pull-safe`: fetches all remotes unconditionally, then rebases onto `@{u}` only if the working tree is clean.
+* *[.gitconfig]* Updated `git upreb`: guards the entire rebase + push workflow behind a dirty-tree check before touching anything.
+* *[.gitconfig]* Refactored all `!`-prefixed aliases to accept an optional `[<dir>]` as their first argument via `git -C "${1:-.}"`, enabling `git <alias> /path/to/repo` as an alternative to `git -C /path/to/repo <alias>`.
+* *[.gitconfig]* Fixed `git next-version` to account for commits already made since the last tag.
+* *[software-updates-cron.sh]* Replaced `git pull` with `git pull-safe` and `git upreb` (which now have the dirty-tree guard built in); changed the outer failure handling from `_record_error` to `_record_warning` — a dirty skip during cron is an expected state.
+
+#### Establish "do not combine both forms" rule for git aliases
+
+* *[.gitconfig, git-config.instructions.md, copilot-instructions.md]* Documented that `git -C <path1> alias <path2>` is undefined behaviour — the explicit arg wins and `-C` is silently ignored.
+
+#### Extract shared macOS prefs helpers into `.aliases § 3n`
+
+* *[.aliases]* Extracted `kill_login_item_apps`, `restart_login_item_apps`, and `reload_macos_prefs` into a new `§ 3n. macOS prefs helpers` section, along with the canonical `_MACOS_LOGIN_ITEM_APPS` array.
+* *[.aliases]* Added `suspend_softwareupdate_schedule` and `resume_softwareupdate_schedule` to `§ 3n`.
+* *[osx-defaults.sh, capture-prefs.sh]* Moved `softwareupdate --schedule` management into the shared helpers; wired `resume_softwareupdate_schedule` into the EXIT trap.
+
+#### Expand `osx-defaults.sh`
+
+* *[osx-defaults.sh]* Added sections for new apps: Clocker, DBeaver, DockDoor, Drawio, Firefox, Keybase, KeyCastr, KeyClu, OnlyOffice, Rancher Desktop, Shortcat, Stats, Thaw, Zen Browser.
+* *[osx-defaults.sh]* Replaced inline kill/restart arrays with calls to `kill_login_item_apps` and `trap 'restart_login_item_apps' EXIT`.
+* *[osx-defaults.sh]* Removed stale Dock/Dashboard keys no longer present in macOS Catalina+.
+
+#### Add technical deep-dive documentation and restructure adopter docs
+
+* *[TechnicalDeepDive.md]* New document covering internal architecture for adopters.
+* *[README.md, Extras.md, GettingStarted.md, Prerequisites.md]* Added links and callouts to TechnicalDeepDive.md; improved prose clarity on idempotency and the Brewfile first-install model.
+* *[GettingStarted.md]* Rewrote the post-install checklist; replaced external gist links with local template files.
+* *[templates/gitconfig-inc.template, templates/ssh-config.template]* New template files for per-context git config and SSH config.
+
+#### Fix shell and startup infrastructure
+
+* *[.gitconfig]* Fixed delta whole-line diff rendering: `minus-style`/`plus-style` now use `"syntax <bg-color>"` to preserve syntax highlighting on whole-line diffs; added `line-fill-method = ansi`.
+* *[.zshrc, .zlogin]* Fixed trailing `[[ ]] && ...` conditionals that caused `source` to return exit code 1 on normal runs.
+* *[.zshrc]* Added Option+arrow key bindings for Terminal.app word navigation — Terminal.app's "Use Option as Meta key" covers Option+B/F but not arrow keys; `\033[1;9D/C` mapped to ZLE word-motion (inert in iTerm2, which remaps these at the terminal level).
+* *[.zshrc]* Commented out `setopt null_glob` — the option causes commands that receive zero arguments silently rather than producing a clear "no matches found" error; `setopt localoptions NULL_GLOB` inside an anonymous function is the correct scoped alternative.
+* *[.aliases, capture-prefs.sh]* Fixed remaining unsafe `&&`-as-conditional patterns.
+* *[.editorconfig, custom.gitattributes, .shfmtignore]* Removed `*.defaults` binary/charset entries (leftover from the 3.1.1 `.defaults` → `.plist` format migration); added `capture-prefs.sh` to `.shfmtignore` (uses `${~pattern}` zsh glob matching that shfmt cannot parse).
+* *[fresh-install-of-osx.sh]* Removed trailing manual `user_action` prompts from `main()` — the deferred-collection summary (introduced in 3.1.1) already surfaces all follow-up actions.
+
+#### Update documentation
+
+* *[shell-scripting.instructions.md]* Added NULL_GLOB scoping rules: `setopt localoptions NULL_GLOB` inside an anonymous function is the only permitted form; banned bare `setopt NULL_GLOB`, `unsetopt NULL_GLOB`, and inline `(N)` qualifiers.
+* *[copilot-instructions.md, shell-scripting.instructions.md]* Documented the `_MACOS_LOGIN_ITEM_APPS` file-scope constant array exception to the global-state variable naming convention.
+* *[git-config.instructions.md]* Added working directory argument convention, dirty-tree guard pattern, and `## [delta] — Diff Rendering` section.
+* *[.opencode/skills/dotfiles-domain/SKILL.md]* Updated opencode dotfiles skill with key rules, file reference tables, and documentation update routine.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then run in any open terminal:
+
+  ```bash
+  install-dotfiles.rb
+  unfunction is_shellrc_sourced; source ~/.shellrc    # to pick up new functions and bug fixes
+  unfunction is_aliases_sourced; source ~/.aliases    # to pick up new functions and bug fixes
+  rm -rfv  /opt/homebrew/opt/antidote/share/antidote/antidote.zsh.zwc*
+  delete_caches                                       # clear any stale .zwc bytecode and cached shell environment files.
+  _create_crontab "$PERSONAL_CONFIGS_DIR/crontab.txt" # re-generate the cron file with correct settings
+  recron                                              # to pick up the simplified crontab entry
+  ```
+
+* Quit and restart the Terminal application (to guarantee that the latest versions of the zsh autoload scripts are loaded).
+* On macOS 26: if any app is missing from Login Items, re-run `setup-login-item.sh -a '<AppName>'` for each, or re-run `brew bundle install` to trigger the `postinstall` hooks.
+
+
 ### 3.1.1
 
 #### Introduce deferred error/warning collection

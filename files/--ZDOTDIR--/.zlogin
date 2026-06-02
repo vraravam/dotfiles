@@ -56,11 +56,19 @@ recompile_zsh_autoload_dir() {
     return
   fi
 
-  local f
-  for f in "${dir_to_scan}"/*(N.); do
-    # Skip files that already have an extension — those are handled elsewhere.
-    [[ "${f:e}" == "" ]] && recompile_zsh_scripts "${f}"
-  done
+  # Anonymous function scopes NULL_GLOB so unmatched globs expand to nothing
+  # rather than producing an error. is_file filters for regular files, replacing
+  # the (.) glob qualifier (avoided: breaks editor syntax highlighting).
+  () {
+    setopt localoptions NULL_GLOB
+    local f
+    for f in "${dir_to_scan}"/*; do
+      # Skip files that already have an extension — those are handled elsewhere.
+      if is_file "${f}" && [[ "${f:e}" == "" ]]; then
+        recompile_zsh_scripts "${f}"
+      fi
+    done
+  }
 }
 
 find_in_folder_and_recompile() {
@@ -111,6 +119,14 @@ recompile_zsh_scripts "${HOME}/.aliases"
 # so it is not picked up by any of the find_in_folder_and_recompile scans below.
 # Compile it explicitly so every shell startup sources bytecode, not raw zsh text.
 recompile_zsh_scripts "${ANTIDOTE_PLUGIN_ZSH}"
+
+# antidote.zsh is intentionally NOT compiled to .zwc.
+# antidote 2.1.0 detects whether it is being sourced (vs run as a CLI) by checking
+# ZSH_EVAL_CONTEXT for the token 'file'. When loaded from .zwc bytecode, zsh sets
+# the token to 'filecode' instead, which does not match antidote's '*:file:*' pattern.
+# The CLI branch then fires, calls exit 1, and crashes the interactive shell.
+# Loading antidote.zsh from raw source on every startup is the only safe approach
+# until antidote fixes its source-detection check to also match 'filecode'.
 
 find_in_folder_and_recompile "${ANTIDOTE_HOME}"
 

@@ -101,13 +101,6 @@ trim_trailing_whitespace = false
 insert_final_newline = false
 indent_size = unset
 
-# Binary Apple property list captures — binary; disable all text processing
-[*.defaults]
-charset = unset
-trim_trailing_whitespace = false
-insert_final_newline = false
-indent_size = unset
-
 # gitignore/gitattributes files — columns of patterns use alignment spaces, not indentation
 [{.gitignore,.gitignore_global,custom.gitignore,.gitattributes,custom.gitattributes}]
 indent_size = unset

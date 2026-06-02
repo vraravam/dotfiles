@@ -12,9 +12,18 @@
 [alias]
   # NOTE: Aliases starting with '!' run as shell commands. They inherit the git working directory
   # (set via -C) as their cwd, so they work correctly with 'git -C <path> <alias>'.
+  # Shell aliases that operate on a repository also accept an optional <dir> as their first
+  # argument (defaulting to '.' if omitted) as a convenience for callers that cannot use -C
+  # (e.g. run-all.sh which sets cwd via 'cd' before calling the alias with no args).
+  # Do NOT combine both forms: 'git -C <path1> <alias> <path2>' is undefined — the explicit
+  # arg wins and <path1> is ignored. Use one or the other, not both.
+  # Exceptions — aliases where the first argument already has a fixed meaning do NOT accept <dir>:
+  #   commit message (sci), author (standup), branch/ref (new, old, recent-branch, oldest-branch),
+  #   flags (pull-unshallow, fetch-unshallow), pattern (f, se), or complex own arg convention
+  #   (relative-path). For these, 'git -C <path> <alias>' is the only option.
 
   # Finds dangling (unreachable) commits not referenced by any branch or tag.
-  # Usage: git dangling
+  # Usage: git dangling [<dir>]
   dangling = fsck --no-reflog
 
   # Opens the global git config file in the default editor.
@@ -33,6 +42,21 @@
   # Example: git relative-path ./src/foo.ts                  =>  src/foo.ts  (if cwd is repo)
   # Example: git relative-path                               =>  src  (if cwd is repo/src)
   relative-path = "!bash -c 'root=$(git rev-parse --show-toplevel); case ${0} in bash|sh) abs=$(pwd) ;; *) abs=$(realpath \"${0}\") ;; esac; rel=${abs#${root}}; echo \"${rel#/}\"'"
+
+  # Prints the next patch version derived from the most recent tag (via 'git describe --tags').
+  # Tags with only two segments (e.g. '3.1') are treated as '3.1.0' -> '3.1.1'.
+  # Aborts with a message if no tags exist in the repo.
+  # Usage: git next-version [<dir>]
+  next-version = "!f() { \
+    tag=$(git -C \"${1:-.}\" describe --tags --abbrev=0 2>/dev/null); \
+    if [ -z \"${tag}\" ]; then printf 'No tags found. Create one first (e.g. git tag 1.0.0)\n' >&2; exit 1; fi; \
+    major=$(printf '%s' \"${tag}\" | cut -d. -f1); \
+    minor=$(printf '%s' \"${tag}\" | cut -d. -f2); \
+    patch=$(printf '%s' \"${tag}\" | cut -d. -f3); \
+    commits=$(git -C "${1:-.}" rev-list "${tag}..HEAD" --count 2>/dev/null); \
+    patch=$(( ${patch:-0} + ${commits:-0} + 1 )); \
+    printf '%s.%s.%s\n' \"${major}\" \"${minor}\" \"${patch}\"; \
+  }; f"
 
   # Smart commit: if already ahead of remote (and not diverged), amends the existing
   # unpushed commit; if diverged or not yet ahead, creates a new commit instead.
@@ -118,8 +142,8 @@
   st = status
 
   # Shows working tree status along with submodule summary.
-  # Usage: git stsub
-  stsub = !git status && git submodule summary
+  # Usage: git stsub [<dir>]
+  stsub = "!f() { git -C \"${1:-.}\" status && git -C \"${1:-.}\" submodule summary; }; f"
 
   # Shows a short branch+status summary (branch name and per-file status flags).
   # Usage: git sts
@@ -149,8 +173,8 @@
 
   # Stashes ALL changes (staged+unstaged+untracked) as a hidden reflog commit, then hard-resets.
   # The savepoint can be recovered via 'git reflog' if needed.
-  # Usage: git wipe
-  wipe = !git add -A && git commit -qm 'WIPE SAVEPOINT if needed later, can be resurrected using reflog' && git reset HEAD~1 --hard
+  # Usage: git wipe [<dir>]
+  wipe = "!f() { git -C \"${1:-.}\" add -A && git -C \"${1:-.}\" commit -qm 'WIPE SAVEPOINT if needed later, can be resurrected using reflog' && git -C \"${1:-.}\" reset HEAD~1 --hard; }; f"
 
   # Amends the last commit and updates its timestamp to now.
   # Usage: git amend
@@ -166,8 +190,8 @@
   unstage = restore --staged
 
   # Lists the 10 largest files tracked in HEAD by size.
-  # Usage: git large
-  large = !git ls-tree -r -t -l --full-name HEAD | sort -n -k 4 | tail -n 10
+  # Usage: git large [<dir>]
+  large = "!f() { git -C \"${1:-.}\" ls-tree -r -t -l --full-name HEAD | sort -n -k 4 | tail -n 10; }; f"
 
   # Untracks a file from git without deleting it from disk.
   # Usage: git untrack <path>
@@ -180,28 +204,36 @@
   grep = grep -Ii
 
   # Outputs a plain unified diff (bypassing delta) suitable for use as a patch file.
-  # Usage: git patch [<path>] > my.patch
-  patch = !git --no-pager diff --no-color
+  # Usage: git patch [<dir>] [<path>] > my.patch
+  patch = "!f() { git --no-pager -C \"${1:-.}\" diff --no-color; }; f"
 
   # Shows the upstream tracking branch for the current branch in <remote>/<branch> format.
   # Usage: git track
   track = rev-parse --abbrev-ref --symbolic-full-name @{u}
 
   # Prints the default branch name of the repo (e.g. main or master) from origin/HEAD.
-  # Usage: git default-branch
+  # Usage: git default-branch [<dir>]
   # another way: git remote show origin | sed -n '/HEAD branch/s/.*: //p'
-  default-branch = !git symbolic-ref refs/remotes/origin/HEAD | sed 's|refs/remotes/origin/||'
+  default-branch = "!f() { git -C \"${1:-.}\" symbolic-ref refs/remotes/origin/HEAD | sed 's|refs/remotes/origin/||'; }; f"
 
   # Fetches all remotes and tags, then prunes local branches deleted on remote.
   # Note: --all/--tags/--prune flags are omitted — fetch.all, fetch.pruneTags, and
   # fetch.prune=true in config make plain 'git fetch' equivalent to 'git fetch --all --tags --prune'.
-  # Usage: git fo
-  fo = !git fetch && git dlb
+  # Usage: git fo [<dir>]
+  fo = "!f() { git -C \"${1:-.}\" fetch && git -C \"${1:-.}\" dlb; }; f"
 
   # Pulls all remotes; if the repo is shallow, unshallows it first. Accepts extra git-pull flags.
   # Usage: git pull-unshallow [<extra-flags>]
   # Example: git pull-unshallow --rebase
   pull-unshallow = "!sh -c 'git rev-parse --is-shallow-repository | grep -q true && git pull --all --unshallow \"$@\" || git pull --all \"$@\"' --"
+
+  # Fetches all remotes, then rebases onto @{u} only if the working tree is clean
+  # (no uncommitted or staged changes). If the tree is dirty, skips the rebase,
+  # prints a message to stderr, and exits non-zero — callers such as run-all.sh
+  # surface this as a per-repo warning so the user knows to pull manually.
+  # Designed for cron: a dirty skip is surfaced as a warning, not silently dropped.
+  # Usage: git pull-safe [<dir>]
+  pull-safe = "!f() { git -C \"${1:-.}\" fetch --all; if git -C \"${1:-.}\" diff --quiet && git -C \"${1:-.}\" diff --cached --quiet; then git -C \"${1:-.}\" rebase '@{u}'; else printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' \"${1:-.}\" >&2; exit 1; fi; }; f"
 
   # Fetches all remotes; if the repo is shallow, unshallows it first. Accepts extra git-fetch flags.
   # Usage: git fetch-unshallow [<extra-flags>]
@@ -209,17 +241,20 @@
   fetch-unshallow = "!sh -c 'git rev-parse --is-shallow-repository | grep -q true && git fetch --all --unshallow \"$@\" || git fetch --all \"$@\"' --"
 
   # Prints the name of the current remote repo (assumes remote named 'origin').
-  # Usage: git repo
-  repo = !basename "$(git remote get-url origin)"
+  # Usage: git repo [<dir>]
+  repo = "!f() { basename \"$(git -C \"${1:-.}\" remote get-url origin)\"; }; f"
 
   # Prints the current branch name.
   # Usage: git br
   br = branch --show-current
 
-  # Full upstream rebase workflow: sets tracking, fetches, rebases from upstream (if present),
-  # pushes, updates submodules, and prunes gone branches.
-  # Usage: git upreb
-  upreb = !git branch -u "origin/$(git br)" && git fo && ( git remote | grep -x upstream &>/dev/null ) && git rebase "upstream/$(git br)" --no-verify && git fetch upstream --tags && git push --progress --no-verify && git push --progress --tags --no-verify && git siu && git dlb
+  # Full upstream rebase workflow: fetches unconditionally, then rebases from upstream (if present),
+  # sets tracking, pushes, updates submodules, and prunes gone branches — but only if the working
+  # tree is clean. A dirty tree skips everything after the fetch to avoid a mid-workflow failure
+  # (after rebase but before push) that would leave the repo in an inconsistent state.
+  # Callers (e.g. run-all.sh in cron) receive a non-zero exit and surface a warning.
+  # Usage: git upreb [<dir>]
+  upreb = "!f() { git -C \"${1:-.}\" fetch --all; if git -C \"${1:-.}\" diff --quiet && git -C \"${1:-.}\" diff --cached --quiet; then git -C \"${1:-.}\" branch -u \"origin/$(git -C \"${1:-.}\" br)\" && ( git -C \"${1:-.}\" remote | grep -x upstream &>/dev/null ) && git -C \"${1:-.}\" rebase \"upstream/$(git -C \"${1:-.}\" br)\" --no-verify && git -C \"${1:-.}\" fetch upstream --tags && git -C \"${1:-.}\" push --progress --no-verify && git -C \"${1:-.}\" push --progress --tags --no-verify && git -C \"${1:-.}\" siu && git -C \"${1:-.}\" dlb; else printf 'Skipping rebase/push in %s: working tree has uncommitted changes. Run manually.\n' \"${1:-.}\" >&2; exit 1; fi; }; f"
 
   # Prunes the local copy of remote-tracking branches deleted on origin.
   # Note: fetch.prune=true makes this a no-op after any fetch — useful as an explicit
@@ -261,12 +296,12 @@
   # Expires the entire reflog immediately (maximises cleanup when followed by 'git cc').
   # --stale-fix prunes broken reflog entries pointing to missing objects.
   # Note: refs/stash is intentionally excluded to preserve stashes.
-  # Usage: git rfc
-  rfc = "!f() { refs=$(git for-each-ref --format='%(refname)' refs/heads refs/remotes); [ -n \"${refs}\" ] && git reflog expire --expire=now --expire-unreachable=now --stale-fix ${refs}; }; f"
+  # Usage: git rfc [<dir>]
+  rfc = "!f() { refs=$(git -C \"${1:-.}\" for-each-ref --format='%(refname)' refs/heads refs/remotes); [ -n \"${refs}\" ] && git -C \"${1:-.}\" reflog expire --expire=now --expire-unreachable=now --stale-fix ${refs}; }; f"
 
   # Prints the disk size of the current repo's .git directory.
-  # Usage: git size
-  size = !printf '==> Size of repository at %s: %s\n' "$(git rev-parse --show-toplevel)" "$(du -sh "$(git rev-parse --show-toplevel)/.git" | cut -f1)"
+  # Usage: git size [<dir>]
+  size = "!f() { root=$(git -C \"${1:-.}\" rev-parse --show-toplevel); printf '==> Size of repository at %s: %s\n' \"${root}\" \"$(du -sh \"${root}/.git\" | cut -f1)\"; }; f"
 
   # Compresses the repo and reclaims disk space by pruning, repacking, and running gc.
   # Set SKIP_SIZE_BEFORE=1 (or any non-empty value) to skip printing size before the operation.
@@ -275,19 +310,21 @@
   # reachable and unreachable commits (rebases, amends, deleted branches) all get the
   # same 1-week recovery window. --stale-fix is always applied to prune broken entries.
   # All other flags (e.g. --dry-run, --verbose) are passed to 'git reflog expire'.
-  # Usage: git cc [--expire=<when>] [<extra-reflog-flags>]
+  # The first argument is treated as <dir> if it does not start with '-'; flags follow.
+  # Usage: git cc [<dir>] [--expire=<when>] [<extra-reflog-flags>]
   # Example: SKIP_SIZE_BEFORE=1 git cc
   # Example: git cc --expire=now          (expire entire reflog immediately)
   # Example: git cc --expire=3.days.ago   (expire entries older than 3 days)
-  cc = "!f() { expire=''; rest=(); for a in \"$@\"; do case \"${a}\" in --expire=*) expire=\"${a#--expire=}\" ;; *) rest+=(\"${a}\") ;; esac; done; [ -n \"${expire}\" ] || expire=1.week.ago; refs=$(git for-each-ref --format='%(refname)' refs/heads refs/remotes); [ -n \"${SKIP_SIZE_BEFORE}\" ] || git size; git remote prune origin; git pack-refs --all; git repack -a -d --depth=250 --window=250; [ -n \"${refs}\" ] && git reflog expire --expire=\"${expire}\" --expire-unreachable=\"${expire}\" --stale-fix \"${rest[@]}\" ${refs}; git maintenance run --task=gc; git size; }; f"
+  # Example: git cc /path/to/repo --expire=now
+  cc = "!f() { case \"${1:-}\" in -*|'') dir='.' ;; *) dir=\"${1}\"; shift ;; esac; expire=''; rest=(); for a in \"$@\"; do case \"${a}\" in --expire=*) expire=\"${a#--expire=}\" ;; *) rest+=(\"${a}\") ;; esac; done; [ -n \"${expire}\" ] || expire=1.week.ago; refs=$(git -C \"${dir}\" for-each-ref --format='%(refname)' refs/heads refs/remotes); [ -n \"${SKIP_SIZE_BEFORE}\" ] || git -C \"${dir}\" size; git -C \"${dir}\" remote prune origin; git -C \"${dir}\" pack-refs --all; git -C \"${dir}\" repack -a -d --depth=250 --window=250; [ -n \"${refs}\" ] && git -C \"${dir}\" reflog expire --expire=\"${expire}\" --expire-unreachable=\"${expire}\" --stale-fix \"${rest[@]}\" ${refs}; git -C \"${dir}\" maintenance run --task=gc; git -C \"${dir}\" size; }; f"
 
   # Lists the 100 biggest objects ever stored in the repo (including deleted files).
   # Usage: git big
   big = "!sh -c 'git rev-list --objects --all | grep \"$(git verify-pack -v \"$(git rev-parse --show-toplevel)/.git/objects/pack/*.idx\" | sort -k 3 -n | tail -100 | awk \"{print \\$1}\")\"'"
 
   # Deletes all local branches whose remote-tracking counterpart has been deleted (gone).
-  # Usage: git dlb
-  dlb = "!git branch -vv | grep ': gone]' | awk '{print $1}' | xargs -r git branch -D"
+  # Usage: git dlb [<dir>]
+  dlb = "!f() { git -C \"${1:-.}\" branch -vv | grep ': gone]' | awk '{print $1}' | xargs -r git -C \"${1:-.}\" branch -D; }; f"
 
   # Reports whether the specified remote branch has had any commits in the past 10 days.
   # Prints a warning if the branch appears stale (no recent commits).
@@ -406,10 +443,19 @@
   line-numbers = false
   side-by-side = false
   syntax-theme = "Monokai Extended"
-  minus-style = "red"
-  minus-emph-style = "bold #FF6B68 #3D1A1A"
-  plus-style = "green"
+  # Use "syntax <bg>" so whole removed/added lines keep syntax highlighting
+  # on a coloured background. Plain "red"/"green" only set the foreground
+  # colour, which loses syntax highlighting and looks flat on multi-line diffs.
+  minus-style = "syntax #3D1A1A"
+  # Emph bg must be brighter than the minus-style bg (#3D1A1A) so that
+  # intra-line changed characters remain visually distinct from the base line.
+  minus-emph-style = "bold #FF6B68 #6B2020"
+  plus-style = "syntax #002800"
+  # #006400 is visually distinct from the plus-style bg #002800 — no change needed.
   plus-emph-style = "bold #98FB98 #006400"
+  # ansi fills the background colour to the full terminal width; "spaces"
+  # (the default) only colours actual characters, leaving short lines unshaded.
+  line-fill-method = ansi
   whitespace-error-style = "magenta reverse"
   navigate = true
   hyperlinks = true

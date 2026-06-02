@@ -1,11 +1,9 @@
 app.zen-browser.zen
-Apple Global Domain
 asc.onlyoffice.ONLYOFFICE
 ch.protonvpn.mac
 com.0804Team.KeyClu
 com.abhishek.Clocker
 com.alienator88.Pearcleaner
-com.apphousekitchen.aldente-pro
 com.apple.Accessibility
 com.apple.Accessibility-Settings.extension
 com.apple.Accessibility.Assets
@@ -307,7 +305,6 @@ com.apple.widgets
 com.apple.wifi-settings-extension
 com.apple.wifi.WiFiAgent
 com.apple.WindowManager
-com.apple.xpc.activity2
 com.brave.Browser
 com.brave.Browser.beta
 com.brave.Browser.nightly
@@ -381,7 +378,6 @@ org.mozilla.thunderbird-daily
 org.torproject.torbrowser
 org.torproject.torbrowseralpha
 pbs
-screencapture
 sharedfilelistd
 studio.techflow.badgeify
 theboringteam.boringnotch
