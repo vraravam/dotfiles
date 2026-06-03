@@ -1118,7 +1118,7 @@ main() {
       # instead of PlistBuddy — it sets font name/size as first-class properties on the settings set.
       # PostScript name: MesloLGSNF-Italic (from MesloLGS Nerd Font Italic).
       osascript -e "tell application \"Terminal\" to set font name of settings set \"${profile}\" to \"MesloLGSNF-Italic\""
-      osascript -e "tell application \"Terminal\" to set font size of settings set \"${profile}\" to 12"
+      osascript -e "tell application \"Terminal\" to set font size of settings set \"${profile}\" to 13"
       # Profiles > Keyboard > "Use Option as Meta key": makes Option+B/F send \033b/\033f for readline
       # word navigation. Option+arrow keys still send \033[1;9D/C — those need bindkey in .zshrc.
       /usr/libexec/PlistBuddy -c "Delete :'Window Settings':'${profile}':useOptionAsMetaKey" "${HOME}/Library/Preferences/com.apple.Terminal.plist" 2>/dev/null || true
@@ -1194,7 +1194,7 @@ main() {
 
     # Profiles > Text > Font. Stored as "PostScriptName Size" plain string — no binary encoding needed.
     # PostScript name: MesloLGSNF-Italic (from MesloLGS Nerd Font Italic).
-    /usr/libexec/PlistBuddy -c "Set :'New Bookmarks':0:'Normal Font' 'MesloLGSNF-Italic 12'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Set :'New Bookmarks':0:'Normal Font' 'MesloLGSNF-Italic 13'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
     # Profiles > Keys > Key Bindings > Presets > Natural Text Editing.
     # Action 10 = send escape sequence; Action 11 = send hex code.
     # Key format: hex-keycode-modifierflags (0x80000=Option, 0x100000=Cmd, 0x280000=Option+Shift(?), 0x300000=Ctrl+Shift(?)).

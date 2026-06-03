@@ -561,9 +561,13 @@ fi
 # Reference: https://blog.jonlu.ca/posts/speeding-up-zsh
 # Usage: time_shell_startup [shell-path]  (defaults to $SHELL)
 time_shell_startup() {
-  local shell="${1-${SHELL}}"
+  local shell_bin
+  # Resolve via PATH so the result is the PATH-located binary, not a version
+  # that may differ from what cron or a fresh login shell would use.
+  shell_bin="$(which "$(basename "${1:-${SHELL}}")")"
   # {1..10} brace expansion — no $(seq 1 10) subprocess fork.
-  for i in {1..10}; do /usr/bin/time "${shell}" -i -c exit; done
+  local i
+  for i in {1..10}; do /usr/bin/time "${shell_bin}" -i -c exit; done
 }
 
 if command_exists docker; then
@@ -704,12 +708,16 @@ _create_crontab() {
   fi
   debug "Creating '$(yellow "${file}")'"
 
+  local shell_bin
+  # Resolve via PATH so the crontab SHELL= points to the same binary a login
+  # shell would use, not a version-specific path that may diverge across upgrades.
+  shell_bin="$(which "$(basename "${SHELL}")")"
   echo '# Reference: https://crontab.guru/' >"${file}"
   echo >>"${file}"
   echo "# Note: 'chronic' is a utility installed using 'moreutils' from homebrew and is needed so that a successful run of any cron job does not cause a mail to get generated unless in case of error scenarios" >>"${file}"
   echo >>"${file}"
   echo '# Env' >>"${file}"
-  echo "SHELL=\"${SHELL}\"" >>"${file}"
+  echo "SHELL=\"${shell_bin}\"" >>"${file}"
   echo "USERNAME=\"${USERNAME}\"" >>"${file}"
   echo "HOME=\"${HOME}\"" >>"${file}"
   # NOTE: do NOT add inline comments on the PATH line — crontab treats '#' as part of the value,
@@ -877,7 +885,6 @@ build_me() {
 _MACOS_LOGIN_ITEM_APPS=(
   'Clocker'    # startAtLogin = true (com.abhishek.Clocker)
   'DockDoor'   # login item via Brewfile setup_login_items_script (SMAppService)
-  'Finder'     # launchd-managed; killall causes immediate relaunch — see restart_login_item_apps
   'KeyCastr'   # login item via Brewfile setup_login_items_script (SMAppService)
   'KeyClu'     # launchAtLogin = true (com.0804Team.KeyClu)
   'Keybase'    # login item via Brewfile setup_login_items_script (SMAppService)
@@ -896,6 +903,7 @@ kill_login_item_apps() {
   for _app in "${_MACOS_LOGIN_ITEM_APPS[@]}"; do
     killall "${_app}" &>/dev/null || true
   done
+  killall 'Finder' &>/dev/null || true  # launchd-managed; killall causes immediate relaunch
 }
 
 # Re-opens every app in _MACOS_LOGIN_ITEM_APPS. Called from an EXIT trap
@@ -908,12 +916,9 @@ kill_login_item_apps() {
 restart_login_item_apps() {
   local _app
   for _app in "${_MACOS_LOGIN_ITEM_APPS[@]}"; do
-    if [[ "${_app}" == 'Finder' ]]; then
-      killall "${_app}" &>/dev/null || true
-    else
-      open -a "${_app}" &>/dev/null || true
-    fi
+    open -a "${_app}" &>/dev/null || true
   done
+  killall 'Finder' &>/dev/null || true  # launchd-managed; killall causes immediate relaunch
 }
 
 # Turns the macOS automatic software update schedule off before reading/writing

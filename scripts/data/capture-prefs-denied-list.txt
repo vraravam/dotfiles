@@ -131,3 +131,8 @@ com.apple.cseventlistener
 # VersionSpecificActivitiesRun: post-install activity sentinels (criterion 5).
 # No portable user preference data exists in this domain.
 com.apple.xpc.activity2
+
+# Library file path is device-specific; iCloud Music Library sync state is
+# account- and device-bound (criterion 1 and 2).
+# No portable user preference data exists in this domain.
+com.apple.Music

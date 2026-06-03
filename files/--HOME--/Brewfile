@@ -205,7 +205,7 @@ brew 'sccache'
 # cask 'grayjay'
 # cask 'intellij-idea-ce'
 # cask 'kdiff3'
-# cask 'knockknock'
+# cask 'knockknock'   # app to find persistently installed softwares/services/malwares
 # cask 'licecap'
 # cask 'lulu'
 cask 'windows-app'    # replacement for microsoft-remote-desktop

@@ -412,6 +412,12 @@ All shell scripts use `set -euo pipefail`. Guard positional parameters with
 `${1:-}`. Use `grep -q ... || true` in pipelines to avoid SIGPIPE under
 `set -o pipefail`.
 
+**Arithmetic increment under `set -e`**: never use bare `(( var++ ))` — post-increment
+evaluates to the *old* value, so `(( 0 ))` on the first iteration (when `var` starts
+at zero) is arithmetic false (exit 1) and silently aborts the script. Always use
+`(( var += 1 )) || true`. See `shell-scripting.instructions.md`
+§ **Arithmetic Increment — Safety Under `set -e`** for the full rule and scan rule.
+
 ### Quoting and Variable References
 
 - **Never hardcode user-specific paths**: always use the exported env vars from
@@ -841,12 +847,8 @@ changes the behaviour of `plutil -convert xml1`, verify the round-trip with
 - **Adding to the denied list**: document the specific key(s) that make it
   unsafe inline in `capture-prefs-denied-list.txt`, following the comment style
   of the existing entries. Do not add a domain without a comment explaining why.
-- **Adding to the excluded-keys list**: document the denial criterion inline in
-  `capture-prefs-excluded-keys.txt` following the comment style of existing
-  entries. Format is `domain|pattern`. Patterns support `*` as a wildcard
-  matched against the full key name.
-- **Never copy denied-list or excluded-keys reasoning into individual code
-  comments** — the canonical explanation lives in the data files themselves.
+- **Never copy denied-list reasoning into individual code comments** — the
+  canonical explanation lives in the data files themselves.
 
 ### Periodic recheck (at most once per session, not more than once per day)
 
@@ -861,12 +863,7 @@ Proactively recheck all three data files when working in this area:
 2. **`capture-prefs-denied-list.txt`** — scan for any domain that was denied
    for a reason that may no longer apply (e.g. a key that was account-bound but
    has been removed in a newer app version). If safe, move it to the allowed
-   list with appropriate excluded-keys entries.
-
-3. **`capture-prefs-excluded-keys.txt`** — for each domain you touch, run
-   `defaults read <domain>` and diff the key set against what is listed. Add
-   any new non-portable keys. Remove entries for keys that no longer exist
-   (the script silently skips missing keys, but stale entries are confusing).
+   list.
 
 Do not recheck all 390+ domains in a single session — focus on domains
 relevant to the work at hand. The goal is incremental hygiene, not a full
@@ -931,11 +928,9 @@ When a new preference needs to be managed, apply this rule:
 1. **Is it a one-time baseline default the user will never change via UI?**
    → Add it to `osx-defaults.sh`.
 2. **Is it something the user configures through the app's UI?**
-   → Add its domain to `capture-prefs-allowed-list.txt` (and any volatile keys
-   to `capture-prefs-excluded-keys.txt`). Do not write it in `osx-defaults.sh`.
+   → Add its domain to `capture-prefs-allowed-list.txt`. Do not write it in `osx-defaults.sh`.
 3. **Is it an ephemeral value the app manages itself?**
-   → Add it to `capture-prefs-excluded-keys.txt` or `capture-prefs-denied-list.txt`.
-   Write it nowhere.
+   → Add its domain to `capture-prefs-denied-list.txt`. Write it nowhere.
 
 ---
 

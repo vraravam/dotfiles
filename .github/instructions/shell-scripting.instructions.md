@@ -456,7 +456,29 @@ git pull -r && success "Updated: ${folder}" || _record_warning "Failed: ${folder
 every standalone `A && B` line and verify that A returning false is an *error*
 (not a normal/expected case). If it is expected, convert to `if A; then B; fi`.
 
-## Function Visibility
+## Arithmetic Increment — Safety Under `set -e`
+
+`(( var++ ))` uses post-increment: it evaluates to the *old* value of `var`.
+When `var` is `0`, `(( 0 ))` is arithmetic false (exit code 1), which triggers
+`set -e` abort or fires the ERR trap — silently killing the script at the first
+iteration of any counter that starts at zero.
+
+```zsh
+# BAD — (( 0 )) on the first iteration; fires set -e and silently aborts
+(( count++ ))
+
+# Good — += 1 always evaluates to the new value (≥ 1); || true is a safety net
+# for any edge case where the result could reach 0 (e.g. wrap-around)
+(( count += 1 )) || true
+```
+
+The same applies to `(( var-- ))` when `var` reaches `1` (post-decrement
+returns `1`, then evaluates to `0` on the next call). Use `(( var -= 1 )) || true`.
+
+**Scan rule:** whenever adding or reviewing an arithmetic counter in a script
+that uses `set -e`, replace bare `(( var++ ))` / `(( var-- ))` with
+`(( var += 1 )) || true` / `(( var -= 1 )) || true`.
+
 
 Internal helpers not called by external scripts must be prefixed with `_`:
 

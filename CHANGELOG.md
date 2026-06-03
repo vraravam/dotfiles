@@ -3,6 +3,56 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of changelog:
 
 
+### 3.1.3
+
+#### Harden capture-prefs key stripping
+
+* *[capture-prefs-excluded-keys.txt]* Commented out overly-aggressive global patterns (`*|NSWindow Frame *`, `*|NSSplitView Subview Frames *`, `*|*Identifier`, `*|*identifier`) that stripped legitimate app config keys and caused data loss (e.g. Clocker lost configured timezones). Added "cannot use" notes for `*Date`, `*Timestamp`, `*Time` patterns — these would also cause app startup failures if applied globally.
+* *[capture-prefs-excluded-keys.txt]* Added targeted per-domain `SULastCheckTime` exclusions for 15 apps (Sparkle update-check timestamp, criterion 3). Added specific entries for `com.abhishek.analyticsLastSignalDate` and `iVersionLastChecked` (Clocker), `LastAutoUpdateCompletion`/`LastUpdatesCheck`/`LastUpdatesPerform` (`com.apple.appstored`), `LastPeriodicAnalyticsPostDate` (`com.apple.controlcenter`), and `_DKThrottledActivityLast_*` (`com.apple.knowledge-agent`).
+* *[capture-prefs.sh]* After stripping, delete the exported plist if no `<key>` elements remain — empty plists have no value in git history and cannot be meaningfully imported.
+* *[capture-prefs.sh]* Show count of files actually saved (after empty-plist deletion) in the export success message.
+
+#### Fix import robustness
+
+* *[capture-prefs.sh]* Guard import with `is_file` before `cp` — skips domains for which no exported plist exists (app not installed on the source machine) instead of crashing with `cp: No such file or directory`.
+* *[capture-prefs.sh]* Fixed `mktemp` template: removed `.plist` suffix — BSD `mktemp` on macOS requires the `X`s to be at the very end of the template; a suffix after them causes `mkstemp failed: File exists`.
+
+#### Prompt user to restart apps after import
+
+* *[capture-prefs.sh]* Replaced the generic "restart any open apps" `user_action` with `_notify_apps_needing_restart` — detects which of a curated list of terminal/IDE apps are currently running and emits a single targeted restart message, excluding login-item apps already handled by `kill/restart_login_item_apps`.
+
+#### Refactor Finder handling in login-item restart
+
+* *[.aliases]* Removed `Finder` from `_MACOS_LOGIN_ITEM_APPS` and moved `killall Finder` directly into both `kill_login_item_apps` and `restart_login_item_apps` — Finder is launchd-managed (killall causes immediate relaunch) and cannot be handled the same way as SMAppService login items. Removed the special-case `Finder` branch from `restart_login_item_apps`.
+
+#### Prune uninstalled app domains from capture-prefs allowed list
+
+* *[capture-prefs-allowed-list.txt]* Removed 16 domains for apps no longer installed on this machine.
+* *[capture-prefs-denied-list.txt]* Moved `com.apple.Music` to the denied list — library file path is device-specific and iCloud Music Library sync state is account- and device-bound (criteria 1 and 2).
+* *[Brewfile]* Added inline comment to the commented-out `knockknock` cask explaining what the app does.
+
+#### Enable per-domain exclusion entries after verification
+
+* *[capture-prefs-excluded-keys.txt]* Enabled all `eu.exelban.Stats` exclusion entries after confirming the keys exist: `id`, `remote_id` (device UUIDs), `Clock_list` (per-device UUIDs), `remote_tokens_migrated_to_keychain` (credential migration flag), `version` / `runAtLoginInitialized` / `setupProcess` (onboarding sentinels), `ble_*` (Bluetooth sensor state), `sensor_*` (hardware sensor state), `*_ts` (timestamp watermarks), and `NSStatusItem Preferred/Restore Position *` (display geometry).
+* *[capture-prefs-excluded-keys.txt]* Enabled `com.abhishek.Clocker` entries for `defaultPreferences` (binary NSKeyedArchiver blobs), `install` (install timestamp), `com.abhishek.defaultsLastUpdateKey`, and `NSStatusItem Preferred Position ClockerStatusItem`; left entries absent from this machine commented as documentation.
+* *[capture-prefs-excluded-keys.txt]* Enabled `com.apple.universalaccess|History` (per-session accessibility event log, criterion 3); `com.sproutcube.Shortcat|telemetryIdentifier` (device UUID) and `NSStatusItem Preferred Position *` (display geometry); and all four `io.github.keycastr` entries: `default.textColor` (display-specific ICC color blob), `NSStatusItem Preferred Position *`, `NSSplitView Subview Frames *`, and `NSToolbar Configuration *`.
+
+#### Document arithmetic increment pitfall under set -e
+
+* *[shell-scripting.instructions.md]* Added `## Arithmetic Increment — Safety Under set -e` section: `(( var++ ))` post-increment evaluates to the old value, so `(( 0 ))` on the first iteration silently aborts the script under `set -e`. Always use `(( var += 1 )) || true`.
+* *[copilot-instructions.md]* Added summary bullet under `### set -euo pipefail` cross-referencing the full rule in `shell-scripting.instructions.md`.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then run in any open terminal:
+
+  ```bash
+  unfunction is_aliases_sourced; source ~/.aliases    # to pick up new functions and bug fixes
+  ```
+
+* Quit and restart the Terminal application.
+
+
 ### 3.1.2
 
 #### Fix `setup-login-item.sh` for macOS 26 and complete Brewfile login item hooks

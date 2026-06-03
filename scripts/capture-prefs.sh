@@ -28,6 +28,35 @@ usage() {
     "$(yellow '-i') --> (mandatory; mutually exclusive with -e) Import preferences from the dotfiles repo into the current [new] system"
 }
 
+# Builds and emits a single user_action listing every running user-visible app
+# that needs to be quit and restarted to pick up the just-imported preferences.
+# Only user-specified apps are considered. Login-item apps (_MACOS_LOGIN_ITEM_APPS)
+# are excluded because kill/restart_login_item_apps already handles them.
+# Process names (left-hand keys) are what pgrep -x matches against; display names
+# (right-hand values) are what appears in the message. They differ only where the
+# bundle executable name does not match the app's marketed name (e.g. zoom.us → Zoom).
+_notify_apps_needing_restart() {
+  local -A _proc_to_name=(
+    ['Ghostty']='Ghostty'
+    ['iTerm2']='iTerm2'
+    ['Terminal']='Terminal'
+  )
+
+  local -a _running=()
+  local _proc _name
+  for _proc _name in "${(@kv)_proc_to_name}"; do
+    # Skip login-item apps (auto-killed and restarted) and apps not currently running.
+    if (( ! ${_MACOS_LOGIN_ITEM_APPS[(Ie)${_name}]} )) && pgrep -xq "${_proc}" 2>/dev/null; then
+      _running+=("${_name}")
+    fi
+  done
+
+  if is_non_empty_array _running; then
+    _running=("${(o)_running[@]}")
+    user_action "Quit and restart to pick up imported preferences: $(join_array ', ' "${_running[@]}")."
+  fi
+}
+
 # Strip non-portable keys from a plist file in-place.
 # Reads patterns from _excluded_by_domain (script-scoped associative array).
 # Uses ruby/REXML to enumerate top-level keys (handles keys with spaces safely
@@ -108,6 +137,7 @@ main() {
   local _current_section='(init)'
   local -a _step_warnings=()
   local -a _step_errors=()
+  local _saved_count=0
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
   while getopts ":ei" opt; do
     case ${opt} in
@@ -300,14 +330,29 @@ main() {
         # Strip non-portable keys (device UUIDs, account credentials, ephemeral
         # sync state, display geometry) before the file is staged to git.
         _strip_excluded_keys "${app_pref}" "${target_file}"
+        # Delete the file if stripping left an empty dict — an empty plist has
+        # no value in git history and cannot be imported meaningfully.
+        # grep -q inside 'if' is safe under set -e: 'if' consumes the exit code.
+        if ! grep -q '<key>' "${target_file}" 2>/dev/null; then
+          rm -f "${target_file}"
+          debug "Deleted empty plist for '$(yellow "${app_pref}")' — no keys remain after stripping"
+        else
+          (( _saved_count += 1 )) || true
+        fi
       else
         _record_warning "Failed to export '${app_pref}'"
       fi
     else
+      # Skip domains for which no exported plist exists — the app may not have
+      # been installed on the source machine when the export was run.
+      if ! is_file "${target_file}"; then
+        debug "Skipping import of '$(yellow "${app_pref}")' — no exported plist found"
+        continue
+      fi
       # Strip non-portable keys from a temp copy — the source file in target_dir
       # must not be modified during import (it lives in the git repo).
       local _tmp_plist
-      _tmp_plist="$(mktemp "${TMPDIR:-/tmp}/capture-prefs-XXXXXX.plist")"
+      _tmp_plist="$(mktemp "${TMPDIR:-/tmp}/capture-prefs-XXXXXX")"
       cp "${target_file}" "${_tmp_plist}"
       _strip_excluded_keys "${app_pref}" "${_tmp_plist}"
       /usr/bin/defaults import "${app_pref}" "${_tmp_plist}" || _record_warning "Failed to import '${app_pref}'"
@@ -321,9 +366,7 @@ main() {
     # Explicitly specify the git repo in the home folder, so that this script can be run from any folder
     git -C "${HOME}" add "${target_dir}" || _record_warning "Failed to git add '${target_dir}'"
     success "Export complete. Staged changes in '$(cyan "${target_dir}")'."
-  fi
-
-  if [[ "${operation}" == 'import' ]]; then
+  else
     # Reload system services so imported preferences take effect immediately
     # without a logout. The imported domains include symbolichotkeys (keyboard
     # shortcuts), controlcenter, dock, finder, and NSGlobalDomain — all of which
@@ -333,9 +376,13 @@ main() {
     # to flush com.apple.symbolichotkeys — see .aliases § 3n for details.
     reload_macos_prefs
     success 'System services reloaded — most imported settings are now active.'
-    user_action 'Restart any open apps (Terminal, iTerm, browsers, etc.) to pick up their imported preferences.'
+    _notify_apps_needing_restart
   fi
-  success "Operation finished. Processed $(cyan "${#app_array[@]}") domains (denied-list entries skipped silently)."
+  local _saved_msg=''
+  if [[ "${operation}" == 'export' ]]; then
+    _saved_msg=" — $(cyan "${_saved_count}") files saved after stripping"
+  fi
+  success "Operation finished. Processed $(cyan "${#app_array[@]}") domains (denied-list entries skipped silently)${_saved_msg}."
   print_script_summary
 }
 
