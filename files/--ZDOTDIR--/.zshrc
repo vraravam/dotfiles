@@ -194,7 +194,18 @@ if command_exists mise; then
     local mise_bin="${commands[mise]}"
     local mise_activate_cache="${XDG_CACHE_HOME}/mise-activate-cache.zsh"
     if ! is_file "${mise_activate_cache}" || [[ "${mise_bin}" -nt "${mise_activate_cache}" ]]; then
-      mise activate zsh >|"${mise_activate_cache}" 2>/dev/null
+      # Generate the activation cache, but replace the bare '_mise_hook' call at the end
+      # (which forks the mise binary once at startup to seed the environment) with a
+      # deferred version via zsh-defer. zsh-defer fires after the first idle ZLE event —
+      # before any command can be typed — so tools are active before the first keypress
+      # while saving ~25ms from time-to-first-prompt. Falls back to a synchronous call
+      # when zsh-defer is not available (e.g. a vanilla OS before antidote is installed).
+      # grep -v filters only the bare '_mise_hook' line; the function definition
+      # (_mise_hook() { ... }) and indented references are multi-line/indented and do not match.
+      {
+        mise activate zsh 2>/dev/null | \grep -v '^_mise_hook$'
+        printf '%s\n' 'if (( $+functions[zsh-defer] )); then zsh-defer _mise_hook; else _mise_hook; fi'
+      } >|"${mise_activate_cache}"
     fi
     load_file_if_exists "${mise_activate_cache}"
   }
@@ -221,7 +232,15 @@ if command_exists starship; then
     local starship_init_cache="${XDG_CACHE_HOME}/starship-init-cache.zsh"
     # Regenerate the cache only when the starship binary is newer than the cache file.
     if ! is_file "${starship_init_cache}" || [[ "${starship_bin}" -nt "${starship_init_cache}" ]]; then
-      starship init zsh >|"${starship_init_cache}" 2>/dev/null
+      # Strip the eager PROMPT2="$(...)" line that starship emits (double-quoted, forks
+      # the binary at source time, ~9-15ms). Replace it with a lazy single-quoted form
+      # so the fork only happens when the continuation prompt is actually displayed.
+      # PROMPT and RPROMPT are already lazy in starship's output; PROMPT2 is the only
+      # outlier. The single-quoted form uses the same pattern as PROMPT/RPROMPT.
+      starship init zsh 2>/dev/null \
+        | \grep -v '^PROMPT2=' \
+        >|"${starship_init_cache}"
+      printf "PROMPT2='\$(%s prompt --continuation)'\n" "${starship_bin}" >>"${starship_init_cache}"
     fi
     # Source directly at the top level (not deferred) so that 'setopt promptsubst'
     # emitted by the cache takes effect globally and is not scoped to a function.

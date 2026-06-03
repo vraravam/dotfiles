@@ -3,6 +3,25 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of changelog:
 
 
+### 3.1.4
+
+#### Optimise zsh shell startup latency
+
+* *[.zshrc]* Deferred the initial `_mise_hook` call in the mise activate cache by appending a `zsh-defer`-guarded invocation and stripping the bare `_mise_hook` line from `mise activate zsh` output. `zsh-defer` fires after the first ZLE idle event (before any keypress), saving ~25ms from time-to-first-prompt. Falls back to a synchronous call when `zsh-defer` is unavailable.
+* *[.zshrc]* Fixed eager `PROMPT2` fork in starship init cache generation. `starship init zsh` emits `PROMPT2="$(...)"` (double-quoted — forks starship at source time, ~9-15ms). Cache generation now strips that line and appends a lazy single-quoted `PROMPT2='$(...)'` matching the pattern already used by `PROMPT` and `RPROMPT`.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts, and then run in any open terminal:
+
+  ```bash
+  # delete the mise activate cache and starship init cache to force regeneration
+  rm -f ~/.cache/mise-activate-cache.zsh ~/.cache/starship-init-cache.zsh
+  ```
+
+* Quit and restart the Terminal application.
+
+
 ### 3.1.3
 
 #### Harden capture-prefs key stripping
