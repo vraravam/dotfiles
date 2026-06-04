@@ -973,6 +973,56 @@ keep_sudo_alive() {
   step_end
 }
 
+# Migrates a git repo from the legacy loose/packed-refs format to reftable.
+# Requires git 2.45+; silently skips on older git (e.g. the system git on a
+# vanilla macOS, which does not support 'git refs migrate'). After migration
+# it removes stale loose-ref files that 'git refs migrate' may leave behind in
+# .git/refs/heads/, .git/refs/tags/, and .git/refs/remotes/ — those stale
+# files confuse some git operations even though the canonical refs now live in
+# the reftable directory.
+# Usage: migrate_git_repo_to_reftable [repo-dir]
+#   repo-dir defaults to $PWD when omitted — use this to migrate the repo in
+#   the current directory without having to specify the path explicitly.
+migrate_git_repo_to_reftable() {
+  local repo_dir="${1:-${PWD}}"
+  if ! is_git_repo "${repo_dir}"; then return 0; fi
+
+  # git rev-parse --show-ref-format was added in git 2.45; fall back to 'files'
+  # on older git so the guard below correctly detects a non-reftable repo.
+  local ref_format
+  ref_format="$(git -C "${repo_dir}" rev-parse --show-ref-format 2>/dev/null || echo 'files')"
+  if [[ "${ref_format}" == 'reftable' ]]; then return 0; fi
+
+  # 'git refs migrate' requires git 2.45+. On older git (vanilla macOS system
+  # git) this returns non-zero; skip silently — fresh-install calls this again
+  # after Homebrew's modern git is on PATH.
+  if ! git -C "${repo_dir}" refs migrate --ref-format=reftable 2>/dev/null; then
+    debug "git refs migrate unavailable (requires git 2.45+) — skipping reftable migration for '$(yellow "${repo_dir}")'"
+    return 0
+  fi
+
+  # 'git refs migrate' writes all refs to the reftable directory and should
+  # clear loose refs, but may leave behind empty files in the legacy
+  # .git/refs/{heads,tags,remotes}/ trees. Remove them so they cannot shadow
+  # the canonical reftable entries.
+  # Named helper instead of anonymous '()': bash can parse 'name() {}' at file
+  # load time; '()' is a parse-time error in bash even inside 'if is_zsh'.
+  # setopt is a runtime-only issue in bash and this function is never called
+  # from bash, so no is_zsh guard is needed.
+  _remove_loose_reftable_refs() {
+    setopt localoptions NULL_GLOB
+    rm -f "${repo_dir}/.git/refs/heads/"* "${repo_dir}/.git/refs/tags/"* "${repo_dir}/.git/refs/remotes/"*
+  }
+  _remove_loose_reftable_refs
+  # Named functions defined inside another function persist in the global table
+  # after the outer function returns — unfunction immediately after use to avoid
+  # polluting the global namespace in non-subshell call sites (e.g. direct
+  # interactive calls, clone_repo_into from fresh-install-of-osx.sh).
+  unfunction _remove_loose_reftable_refs
+
+  success "Migrated '$(yellow "${repo_dir}")' refs to reftable format"
+}
+
 # Clones a git repo into a temp folder, moves the .git dir into the real target
 # location, and does an initial checkout there. Works around git's refusal to
 # clone into a non-empty directory (e.g. HOME). If the target is already a git
@@ -998,6 +1048,13 @@ clone_repo_into() {
     local real_ref
     real_ref="$(git -C "${target_folder}" symbolic-ref HEAD 2>/dev/null)"
     is_non_zero_string "${real_ref}" && echo "ref: ${real_ref}" >"${target_folder}/.git/HEAD"
+
+    # Migrate to reftable if the clone used the legacy files format. On a vanilla
+    # macOS the system git (< 2.45) ignores -c init.defaultRefFormat=reftable and
+    # 'git refs migrate' is unavailable, so this is a no-op until Homebrew's git
+    # is on PATH. fresh-install-of-osx.sh calls this again post-Homebrew for repos
+    # that were cloned with system git.
+    migrate_git_repo_to_reftable "${target_folder}"
 
     success "Successfully cloned '$(yellow "${1}")' into '$(yellow "${target_folder}")'"
 
@@ -1138,48 +1195,46 @@ resume_cron() {
 # 1i. Config reloading (used post-bootstrap to apply changes)
 # --------------------------------------------------------------------------
 
-if is_zsh; then
-  # Function to reload Zsh configuration files.
-  # WARNING: Sourcing .zshenv/.zshrc/.zlogin from a file that might be sourced *by* them
-  # can lead to infinite loops or unexpected behavior if not called carefully.
-  # This is likely intended for manual use or specific bootstrap scenarios after config changes.
-  load_zsh_configs() {
-    # _SCRIPT_NAME is set as a script-scoped global in each script; unset in
-    # interactive shells. The fallback makes the caller visible in both contexts.
-    debug "load_zsh_configs called from '$(yellow "${_SCRIPT_NAME:-<interactive>}")'"
-    local file
-    local file_list=('.zshenv' '.zshrc' '.zlogin')
-    for file in "${file_list[@]}"; do
-      # ${ZDOTDIR} is safe to use here: this function is defined inside .shellrc,
-      # so .shellrc must have already run — and .shellrc initialises ZDOTDIR at
-      # line 38 (export ZDOTDIR="${ZDOTDIR:-"${HOME}"}") before this function is
-      # ever defined. ZDOTDIR is therefore always set correctly, even in cron or
-      # fresh-install subshell contexts where .zshenv has not been sourced.
-      debug "load_zsh_configs: loading '$(yellow "${ZDOTDIR}/${file}")'"
-      load_file_if_exists "${ZDOTDIR}/${file}"
-    done
-  }
+# Reloads zsh configuration files in order (.zshenv → .zshrc → .zlogin).
+# WARNING: sourcing these files from a context that is itself sourced by them
+# can cause infinite loops. Use only for manual post-change reloads or targeted
+# bootstrap scenarios (e.g. fresh-install applying new config mid-run).
+load_zsh_configs() {
+  # _SCRIPT_NAME is set as a script-scoped global in each script; unset in
+  # interactive shells. The fallback makes the caller visible in both contexts.
+  debug "load_zsh_configs called from '$(yellow "${_SCRIPT_NAME:-<interactive>}")'"
+  local file
+  local file_list=('.zshenv' '.zshrc' '.zlogin')
+  for file in "${file_list[@]}"; do
+    # ${ZDOTDIR} is safe to use here: this function is defined inside .shellrc,
+    # so .shellrc must have already run — and .shellrc initialises ZDOTDIR at
+    # line 38 (export ZDOTDIR="${ZDOTDIR:-"${HOME}"}") before this function is
+    # ever defined. ZDOTDIR is therefore always set correctly, even in cron or
+    # fresh-install subshell contexts where .zshenv has not been sourced.
+    debug "load_zsh_configs: loading '$(yellow "${ZDOTDIR}/${file}")'"
+    load_file_if_exists "${ZDOTDIR}/${file}"
+  done
+}
 
-  # Prints a standardized usage message and exits.
-  # Used by scripts in $DOTFILES_DIR/scripts/ that may be invoked during fresh-install
-  # before install-dotfiles.rb has run (e.g. add-upstream-git-config.sh).
-  # Usage: print_usage <script-name> <option-descriptions...>
-  #
-  # Example:
-  #   print_usage "${0:t}" \
-  #     "-a <app-name>  --> (mandatory) The application name" \
-  #     "-v             --> (optional) Verbose output"
-  print_usage() {
-    local script_name="${1}"
+# Prints a standardized usage message and exits.
+# Used by scripts in $DOTFILES_DIR/scripts/ that may be invoked during fresh-install
+# before install-dotfiles.rb has run (e.g. add-upstream-git-config.sh).
+# Usage: print_usage <script-name> <option-descriptions...>
+#
+# Example:
+#   print_usage "${0:t}" \
+#     "-a <app-name>  --> (mandatory) The application name" \
+#     "-v             --> (optional) Verbose output"
+print_usage() {
+  local script_name="${1}"
+  shift
+  echo "$(red 'Usage'): $(cyan "${script_name}") $(yellow "${1:+"[options]"}")"
+  while [[ $# -gt 0 ]]; do
+    echo "  ${1}"
     shift
-    echo "$(red 'Usage'): $(cyan "${script_name}") $(yellow "${1:+"[options]"}")"
-    while [[ $# -gt 0 ]]; do
-      echo "  ${1}"
-      shift
-    done
-    exit 1
-  }
-fi
+  done
+  exit 1
+}
 
 # if is_macos; then
   # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)

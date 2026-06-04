@@ -60,7 +60,7 @@ In your forked repo, make the following changes, commit and push _via the Github
    - Run the `git -C "${DOTFILES_DIR}" upreb` command. Most of the times, this should simply rebase your changes on top of the latest upstream master.
    - As an alternative to the above step, if there are too many commits to catch-up to, AND your fork had only 1 commit on top of any of my historical commits, then you can quickly re-apply your changes (remember: single commit) using the following script:
 
-      ```bash
+      ```zsh
       latest_head="$(git -C "${DOTFILES_DIR}" rev-parse HEAD)"
       git -C "${DOTFILES_DIR}" reset --hard upstream/master
       git -C "${DOTFILES_DIR}" cherry-pick ${latest_head}
@@ -69,7 +69,7 @@ In your forked repo, make the following changes, commit and push _via the Github
 
 3. _Hint:_ Before pushing your changes to your remote, if you want to ensure (diff) that your old changes are retained (for eg in `Brewfile`) and no new/unnecessary changes are present, you can run the following 2 commands and review the diffs manually
 
-   ```bash
+   ```zsh
     git -C "${DOTFILES_DIR}" diff @{u}  # will diff your local HEAD against the remote HEAD of your own fork. Please remember that this diff will show new changes that I have made in my repo, and which are now going-to-be-adopted into yours. It's a good idea to remove entries in Brewfile that you won't need
 
     git -C "${DOTFILES_DIR}" diff upstream/`git br`  # will diff your local HEAD against the remote HEAD of the parent repo. These changes should be exactly the changes that you had done previously (most likely only in GettingStarted.md, files/--HOME--/.shellrc and files/--HOME--/Brewfile)

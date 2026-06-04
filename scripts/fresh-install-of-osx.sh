@@ -17,8 +17,13 @@ set -euo pipefail
 # so _cleanup_and_exit fires even when the failure originates inside a helper function.
 set -E
 
-# Error trap cleanup and exit
+# Error trap cleanup and exit.
+# $1 = LINENO of the failing command, captured by the caller via the trap string
+# ('trap "_cleanup_and_exit ${LINENO}" ERR') so that $LINENO expands in the
+# failing command's scope rather than inside this function.
 _cleanup_and_exit() {
+  local failed_line="${1:-}"
+
   # Print any non-fatal warnings and errors already collected before this fatal failure,
   # so the full context is visible alongside the crash message.
   # Uses print_script_summary when shellrc is loaded; falls back to plain echo for early failures.
@@ -43,6 +48,9 @@ _cleanup_and_exit() {
   fi
 
   local message='Installation failed. Check for error messages above.'
+  if [[ -n "${failed_line}" ]]; then
+    message="Installation failed at line ${failed_line}. Check for error messages above."
+  fi
   # (( $+functions[...] )) is a no-subshell zsh builtin check, faster than 'type ... &>/dev/null'
   if (($+functions[error])); then
     error "${message}"
@@ -297,7 +305,7 @@ _install_homebrew() {
   post-brew-install.sh || { is_first_install && _record_warning 'post-brew-install encountered errors; continuing...'; }
 
   if is_first_install; then
-    trap _cleanup_and_exit ERR
+    trap '_cleanup_and_exit "${LINENO}"' ERR
   fi
 
   # TODO: Commented out to avoid the second touchId popup. Need to investigate how to solve this.
@@ -353,7 +361,7 @@ main() {
   crontab -l >"${_DOTFILES_CRON_BACKUP_FILE}"  2>/dev/null || : >"${_DOTFILES_CRON_BACKUP_FILE}"
   crontab -r &>/dev/null || true
 
-  trap _cleanup_and_exit ERR
+  trap '_cleanup_and_exit "${LINENO}"' ERR
   trap 'rm -f "${_DOTFILES_CRON_BACKUP_FILE}"; _decrement_script_depth' EXIT
 
   export ZDOTDIR="${ZDOTDIR:-"${HOME}"}"
@@ -439,6 +447,15 @@ main() {
   append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
   install-dotfiles.rb
 
+  # On a vanilla OS, .shellrc was curl-downloaded before the dotfiles repo was
+  # cloned. install-dotfiles.rb (with FIRST_INSTALL set) adopts any pre-existing
+  # ~/.shellrc into the repo, which can overwrite the committed version with the
+  # stale GitHub-cached curl content. Restore the committed version if it differs,
+  # so that load_zsh_configs below sources the correct up-to-date .shellrc.
+  if ! git -C "${DOTFILES_DIR}" diff --quiet -- 'files/--HOME--/.shellrc'; then
+    git -C "${DOTFILES_DIR}" checkout -- 'files/--HOME--/.shellrc'
+  fi
+
   # ~/.gitconfig is now symlinked by install-dotfiles.rb — core.sshCommand is in effect.
   # Unset GIT_SSH_COMMAND so it no longer overrides core.sshCommand for the rest of the run.
   unset GIT_SSH_COMMAND
@@ -448,6 +465,16 @@ main() {
   DEBUG=true load_zsh_configs
 
   _install_homebrew
+
+  # Migrate repos cloned before Homebrew's git (2.45+) was on PATH. The system
+  # git on a vanilla macOS ignores -c init.defaultRefFormat=reftable and does not
+  # support 'git refs migrate', so clone_repo_into's migration call was a no-op
+  # for those early clones. Now that Homebrew's git is available, migrate them.
+  _current_section='Migrate repos to reftable'
+  step_start
+  section_header "$(yellow 'Migrating repos to reftable format')"
+  migrate_git_repo_to_reftable "${DOTFILES_DIR}"
+  step_end
 
   if is_non_zero_string "${KEYBASE_USERNAME}"; then
     section_header "$(yellow 'Cloning') $(purple 'keybase') repos"

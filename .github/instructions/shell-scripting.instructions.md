@@ -521,8 +521,9 @@ result=$(join_array ", " "${my_arr[@]}")
 
 ## Glob Patterns — NULL_GLOB
 
-`setopt localoptions NULL_GLOB` inside an anonymous function `()` is the **only**
-permitted way to enable NULL_GLOB. There is no other valid form.
+`setopt localoptions NULL_GLOB` scoped to a function body is the only permitted
+way to enable NULL_GLOB. The scoping vehicle depends on whether the file can be
+sourced by bash (see below).
 
 - **Never use bare `setopt NULL_GLOB`** at script, function, or top-level scope —
   the change persists for the rest of the process and leaks into every caller.
@@ -531,6 +532,21 @@ permitted way to enable NULL_GLOB. There is no other valid form.
 - **Never use inline `(N)` glob qualifiers** — they are parsed by most editor
   syntax highlighters as function calls, breaking highlighting for the rest of
   the line.
+
+### Anonymous function `()` vs named helper
+
+The `()` anonymous-function syntax is zsh-only. Bash **cannot parse** it — not
+even inside an `if is_zsh; then` block, because bash parses the entire `if` body
+before evaluating the condition. A `()` anywhere in a file that bash will ever
+`source` is a **parse-time** error, not a runtime one.
+
+**Files that bash never sources** (pure zsh scripts, autoload functions,
+`.zshrc`, `.zlogin`): use the anonymous `()` form.
+
+**Files that bash may source** (`.shellrc`, which direnv loads in a bash
+subshell): use a named helper function instead. `name()` syntax is valid in
+both bash and zsh; `setopt localoptions` inside it is a runtime zsh-only call
+that bash never reaches because the function is only invoked from zsh code.
 
 ```zsh
 # BAD — NULL_GLOB leaks to the rest of the script / caller
@@ -541,12 +557,90 @@ unsetopt NULL_GLOB
 # BAD — inline (N) qualifier breaks editor syntax highlighting
 rm -f "${dir}"/*.plist(N) "${dir}"/*.defaults(N)
 
-# Good — the only permitted form; restored automatically when the anonymous
-# function returns, with no effect on the caller
+# BAD in .shellrc — () is zsh-only syntax; bash cannot parse this file at all,
+# even if the block is guarded by 'if is_zsh' (bash parses before executing)
 () {
   setopt localoptions NULL_GLOB
   rm -f "${dir}"/*.plist "${dir}"/*.defaults
 }
+
+# Good in pure zsh files (.zshrc, autoload scripts, zsh-only scripts) —
+# () is valid; restored automatically when the anonymous function returns
+() {
+  setopt localoptions NULL_GLOB
+  rm -f "${dir}"/*.plist "${dir}"/*.defaults
+}
+
+# Good in .shellrc (bash-parseable files) — named helper; bash can parse
+# 'name() {}' syntax and never calls this function in a bash context
+_remove_loose_files() {
+  setopt localoptions NULL_GLOB
+  rm -f "${dir}"/*.plist "${dir}"/*.defaults
+}
+_remove_loose_files
+```
+
+## Do not mandate named helpers everywhere
+
+`()` anonymous functions are idiomatic and correct in pure zsh files. Named
+functions defined inside another function in zsh persist in the global function
+table after the outer function returns — they are **not** scoped. The `()` form
+is truly scoped and disappears on return. Using named helpers everywhere would
+introduce namespace pollution in files where `()` is perfectly safe.
+
+Use named helpers **only** where bash parseability requires it (`.shellrc`,
+`.aliases`, `.envrc`). The deciding question: can bash ever `source` this file?
+
+When a named helper is required (bash-parseable file), always `unfunction` it
+immediately after use to prevent global namespace pollution. This matters in
+non-subshell call sites — direct interactive invocations and calls from other
+functions running in the same process. `run-all.sh` sandboxes each repo call in
+a `()` subshell so the leak is contained there, but the `unfunction` is still
+required for correctness at other call sites:
+
+```zsh
+# Named helper required in .shellrc — bash cannot parse '() { ... }'
+_do_the_thing() {
+  setopt localoptions NULL_GLOB
+  rm -f "${dir}"/*.tmp
+}
+_do_the_thing
+# Unfunction immediately: named functions inside functions persist in the global
+# table after the outer function returns, polluting the namespace at non-subshell
+# call sites (direct interactive calls, calls from other functions in the same process).
+unfunction _do_the_thing
+```
+
+## `is_zsh` guards are for parse-time zsh-only syntax only
+
+Do not wrap a function definition in `if is_zsh; then` unless its body contains
+syntax that bash **cannot parse** (e.g. `${(j.:.)array}`, `(( $+functions[...] ))`).
+Runtime-only zsh constructs (`setopt`, `autoload`) inside functions that bash
+never calls do not need a guard — bash defines the function but never invokes it,
+so the runtime failure never occurs.
+
+```zsh
+# BAD — setopt is runtime-only; bash can parse this function definition fine.
+# The is_zsh guard is redundant and misleads readers into thinking bash would
+# fail to parse the body.
+if is_zsh; then
+  _my_helper() {
+    setopt localoptions NULL_GLOB
+    rm -f "${dir}"/*.plist
+  }
+fi
+
+# Good — no guard needed; bash parses it, never calls it
+_my_helper() {
+  setopt localoptions NULL_GLOB
+  rm -f "${dir}"/*.plist
+}
+
+# Good — guard IS needed: ${(j.:.)array} is zsh-only syntax that bash cannot
+# parse at all, causing a syntax error when the file is loaded
+if is_zsh; then
+  export RUBYLIB="${(j.:.)rubylib_paths}"
+fi
 ```
 
 ## `.envrc` Special Rules
@@ -677,6 +771,36 @@ triggers a macOS notification visible to the user even without a terminal:
 # error() calls notify() which triggers an osascript notification on failure.
 trap 'error "Script failed. Check the log for details."' ERR
 ```
+
+### ERR Trap — `$LINENO` String Form vs Function Form
+
+When the ERR trap body calls a **function** (`trap my_handler ERR`), `$LINENO`
+inside `my_handler` is the line *within the handler*, not the failing command's
+line. To capture the failing line, use a **string trap** and pass `$LINENO` as
+an argument before the function call — the string is evaluated in the failing
+command's scope:
+
+```zsh
+# BAD — $LINENO inside _cleanup_and_exit is the handler's own line, not the failing line
+trap _cleanup_and_exit ERR
+
+# Good — $LINENO expands in the failing command's scope before _cleanup_and_exit is called
+trap '_cleanup_and_exit "${LINENO}"' ERR
+
+# _cleanup_and_exit then accepts it as $1:
+_cleanup_and_exit() {
+  local failed_line="${1:-}"
+  local message='Operation failed.'
+  if [[ -n "${failed_line}" ]]; then
+    message="Operation failed at line ${failed_line}."
+  fi
+  error "${message}"
+}
+```
+
+This rule applies whether `set -E` is active or not. With `set -E`, the trap
+fires in the scope of the failing helper function — `$LINENO` in the string
+trap correctly reports that helper's line.
 
 ### `sudo` in Cron — Always Guard with `has_sudo_credentials`
 

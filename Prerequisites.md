@@ -6,7 +6,7 @@ These steps capture the state of your current machine so that `fresh-install-of-
 2. Use the `scripts/capture-prefs.sh` script with the `-e` (export) option to export your application and system preferences. Please ensure that you edit the whitelist of applications to what you have installed and would like to capture the preferences for.
 3. Use the `scripts/resurrect-repositories.rb` script with the `-g` (generate) option to generate the yaml for all git repos that you might have on your current machine. The output must be saved into `${PERSONAL_CONFIGS_DIR}` (the same directory that `resurrect_tracked_repos` reads from during restore) using a filename matching `repositories-*.yml`. For example:
 
-   ```bash
+   ```zsh
    # If your shell is already configured (i.e. ~/.shellrc is sourced), PERSONAL_CONFIGS_DIR will
    # already be set. If not (e.g. on a machine where the dotfiles are not yet installed), export
    # it explicitly first:

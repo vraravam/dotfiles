@@ -6,7 +6,7 @@ Reference documentation for the utility scripts bundled in this repo. Each secti
 
 When you fork a repo, you need an `upstream` remote pointing to the original so you can fetch and rebase against it. This script adds that remote automatically, deriving the upstream URL from the existing `origin` URL by substituting the owner username — so you do not have to look up or copy-paste the URL manually. The new remote is always named `upstream`.
 
-  ```bash
+  ```zsh
   add-upstream-git-config.sh -d <target-folder> -u <upstream-repo-owner>
   ```
 
@@ -100,7 +100,7 @@ This script is a collection of commands that need to be run after `brew bundle` 
 
 Usually, over time, if a repo has lots of branches that were deleted or became stale, and constant rebases done - it can lead to the repo bloating in size (both on local and remote). This is especially true of the browser-profiles repo in my usage since I have a cron job setup to amend the repo with the new state files. To effectively reduce the size on the remote so that any future clone does not pull down dangling commits and other cruft, the simplest way that I have found is to recreate the remote after running the `git cc` command on the local.
 
-  ```bash
+  ```zsh
   recreate-repo.sh [-f] -d <repo-folder>
   ```
 
@@ -138,7 +138,7 @@ The config file for this script is a yaml file that is passed into this script a
 
 This script will find all git repositories within the specified `FOLDER` (defaults to the current directory), filtered by `FILTER` (defaults to empty string meaning that it will not filter anything; accepts regex) and for a minimum depth of `MINDEPTH` (defaults to 1) and a maximum depth of `MAXDEPTH` (defaults to 3); and then runs the specified commands in each of the matched git repos. This script is not limited to only running 'git' commands - it can run any shell command! Examples:
 
-```bash
+```zsh
   run-all.sh git status                                      # to get the git status of all git repos
   run-all.sh git clean -fxd                                  # to clean all git repos
   run-all.sh git remote prune origin                         # to run the git remote prune command
@@ -148,7 +148,7 @@ This script will find all git repositories within the specified `FOLDER` (defaul
 
 You can also control the starting folder by specifying the `FOLDER` env var, the filter for matching either the path and/or the name of the folders to be processed using `FILTER` (including using regular expressions for the same!) and also simultaneously control the depth using the `MINDEPTH` and `MAXDEPTH` env vars. So, for eg, to search in multiple nested folders starting at `~/dev`, you can use the following command:
 
-```bash
+```zsh
   FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 FILTER="oss|zsh|antidote" run-all.sh git status
   FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 run-all.sh git fetch
 ```
@@ -159,7 +159,7 @@ Note: **Any unix command can be run** (specific to the shell that you are curren
 
 Some apps must be registered as macOS login items programmatically after installation — the System Settings UI is not scriptable in a repeatable way. This script handles that registration so `fresh-install-of-osx.sh` can set up login items unattended. It is also safe to run manually at any time.
 
-  ```bash
+  ```zsh
   setup-login-item.sh -a <app-name>
   ```
 
@@ -168,7 +168,7 @@ Some apps must be registered as macOS login items programmatically after install
 There are so many tools installed, and some of them require their local caches/dbs/configs/etc to be updated from time to time. Rather than remembering each tool and its invocation (for updates), this script is a single place where any new tooling is added so that I don't need to remember the incantation for each separately.
 Run the following command to generate and update your crontab:
 
-  ```bash
+  ```zsh
   recron
   ```
 

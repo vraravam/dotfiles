@@ -3,6 +3,54 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of changelog:
 
 
+### 3.1.5
+
+#### Migrate cloned repos to reftable format during fresh-install
+
+* *[.shellrc]* Added `migrate_git_repo_to_reftable` helper that checks whether a repo uses the legacy loose/packed-refs format and, when `git refs migrate` (git 2.45+) is available, converts it to reftable. After migration it removes stale loose-ref files from `.git/refs/heads/`, `.git/refs/tags/`, and `.git/refs/remotes/` that `git refs migrate` may leave behind and that can confuse ref lookup. Uses a named helper (`_remove_loose_reftable_refs`) instead of an anonymous `()` function so bash can parse `.shellrc` without a syntax error.
+* *[.shellrc]* `clone_repo_into` now calls `migrate_git_repo_to_reftable` after a successful clone. On a vanilla macOS the system git silently ignores this (the function exits early when `git refs migrate` is unavailable), so it is a no-op until Homebrew's modern git is on PATH.
+* *[fresh-install-of-osx.sh]* Added a "Migrate repos to reftable format" step immediately after `_install_homebrew`. At that point Homebrew's git 2.45+ is on PATH, so the dotfiles repo (cloned earlier with system git and therefore still in files format) is migrated correctly.
+
+#### Remove redundant `is_zsh` guards from `.shellrc`
+
+* *[.shellrc]* Removed the `if is_zsh` wrapper around `load_zsh_configs` and `print_usage`. Neither function contains parse-time zsh-only syntax; the guard was preventing bash from defining them but bash never calls them, so the guard was unnecessary. Restored the warning comment about infinite-loop risk above `load_zsh_configs` that was attached to the removed wrapper.
+
+#### Clarify `()` vs named helper and `is_zsh` guard rules in AI assistant docs
+
+* *[shell-scripting.instructions.md]* Rewrote the [§ Glob Patterns — NULL_GLOB](.github/instructions/shell-scripting.instructions.md#glob-patterns--null_glob) section to explain the `()` vs named helper decision based on whether bash may source the file. Added two new top-level sections: [§ Do not mandate named helpers everywhere](.github/instructions/shell-scripting.instructions.md#do-not-mandate-named-helpers-everywhere) (named functions in zsh are not scoped — `()` avoids namespace pollution in pure zsh files; named helpers require `unfunction` immediately after use) and [§ `is_zsh` guards are for parse-time zsh-only syntax only](.github/instructions/shell-scripting.instructions.md#is_zsh-guards-are-for-parse-time-zsh-only-syntax-only) (`setopt`/`autoload` are runtime-only issues; guards are only needed for syntax bash cannot tokenise).
+* *[copilot-instructions.md]* Added matching summary bullets for the two new rules, referencing the full treatment in `shell-scripting.instructions.md`.
+
+#### Fix ERR trap `$LINENO` in `fresh-install-of-osx.sh`
+
+* *[fresh-install-of-osx.sh]* Changed both `trap _cleanup_and_exit ERR` calls to the string form `trap '_cleanup_and_exit "${LINENO}"' ERR`. With the function-name form, `$LINENO` inside the handler reports its own line (wrong); the string form evaluates `$LINENO` in the failing command's scope before calling the function, so the reported line is always accurate — including for failures in helper functions when `set -E` propagates the trap.
+* *[fresh-install-of-osx.sh]* Updated `_cleanup_and_exit` to accept `$1` as the failing line number and include it in the error message when non-empty.
+* *[shell-scripting.instructions.md]* Added new [§ ERR Trap — `$LINENO` String Form vs Function Form](.github/instructions/shell-scripting.instructions.md#err-trap---lineno-string-form-vs-function-form) section under Cron Scripts with BAD/Good examples and a note that the rule applies with or without `set -E`.
+* *[copilot-instructions.md]* Added a matching summary bullet referencing [§ ERR Trap — `$LINENO` String Form vs Function Form](.github/instructions/shell-scripting.instructions.md#err-trap---lineno-string-form-vs-function-form).
+
+#### Add missing `unfunction` for named inner functions
+
+* *[.shellrc]* Added missing `unfunction _remove_loose_reftable_refs` after calling it inside `migrate_git_repo_to_reftable`. The named function persists in the global table after the outer function returns — `unfunction` is required for non-subshell call sites (direct interactive use, `clone_repo_into` from `fresh-install-of-osx.sh`). `run-all.sh` sandboxes each repo call in a `()` subshell so the leak is contained there, but does not eliminate the need for cleanup at other call sites.
+* *[cleanup-browser-profiles.sh]* Added missing `unfunction _read_pattern_file` after its two call sites inside `vacuum_browser_profile_folder`. Same pattern — named inner function would persist in the global table for the rest of the shell session.
+* *[shell-scripting.instructions.md]* Expanded [§ Do not mandate named helpers everywhere](.github/instructions/shell-scripting.instructions.md#do-not-mandate-named-helpers-everywhere) to include the `unfunction` requirement with a code example noting the `run-all.sh` subshell distinction.
+* *[copilot-instructions.md]* Updated the matching summary bullet to include the `unfunction` requirement and `run-all.sh` subshell nuance.
+
+#### Fix stale GitHub-cached `.shellrc` on vanilla OS install
+
+* *[fresh-install-of-osx.sh]* After `install-dotfiles.rb` runs, check whether the committed `files/--HOME--/.shellrc` differs from what was adopted (the curl-downloaded, potentially GitHub-cached version). If it does, restore the committed version with `git checkout -- files/--HOME--/.shellrc` before `load_zsh_configs` re-sources it. Without this guard, a stale cache could cause the rest of the install to run with an older `.shellrc` that is missing newly added functions.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts. To migrate all existing repos to reftable format (optional, but recommended), run in any open terminal:
+
+  ```zsh
+  delete_caches
+  unfunction is_shellrc_sourced
+  FOLDER="${HOME}" MAXDEPTH=7 run-all.sh migrate_git_repo_to_reftable
+  ```
+
+* Quit and restart the Terminal application.
+
+
 ### 3.1.4
 
 #### Optimise zsh shell startup latency
@@ -14,7 +62,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then run in any open terminal:
 
-  ```bash
+  ```zsh
   # delete the mise activate cache and starship init cache to force regeneration
   rm -f ~/.cache/mise-activate-cache.zsh ~/.cache/starship-init-cache.zsh
   ```
@@ -65,7 +113,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then run in any open terminal:
 
-  ```bash
+  ```zsh
   unfunction is_aliases_sourced; source ~/.aliases    # to pick up new functions and bug fixes
   ```
 
@@ -176,7 +224,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then run in any open terminal:
 
-  ```bash
+  ```zsh
   install-dotfiles.rb
   unfunction is_shellrc_sourced; source ~/.shellrc    # to pick up new functions and bug fixes
   unfunction is_aliases_sourced; source ~/.aliases    # to pick up new functions and bug fixes
@@ -275,7 +323,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then run in any open terminal:
 
-  ```bash
+  ```zsh
   install-dotfiles.rb
   unfunction is_shellrc_sourced; source ~/.shellrc   # to pick up new functions and bug fixes
   unfunction is_aliases_sourced; source ~/.aliases   # to pick up new functions and bug fixes
@@ -382,7 +430,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then run in any open terminal:
 
-  ```bash
+  ```zsh
   cp $DOTFILES_DIR/files/--HOME--/custom.gitattributes $HOME/.gitattributes
   cp $DOTFILES_DIR/files/--HOME--/custom.gitignore $HOME/.gitignore
   install-dotfiles.rb
@@ -414,7 +462,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps in any open terminal:
 
-   ```bash
+   ```zsh
    cp $DOTFILES_DIR/files/--HOME--/custom.gitignore $HOME/.gitignore
    rm -rf "${HOME}/.oh-my-zsh"
    install-dotfiles.rb                                                              # Symlink .zsh_plugins.txt and .zsh_plugins.zsh into ${ZDOTDIR}
@@ -435,7 +483,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then run in any open terminal:
 
-  ```bash
+  ```zsh
   cp $DOTFILES_DIR/files/--HOME--/custom.gitignore $HOME/.gitignore
   install-dotfiles.rb
   rm -f "${HOME}/.p10k.zsh"      # remove dangling symlink — source deleted from repo
@@ -478,7 +526,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitattributes" "${HOME}/.gitattributes"
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
@@ -499,7 +547,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
   ```
@@ -519,7 +567,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   source "${HOME}/.aliases"
   "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
@@ -542,7 +590,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   source "${HOME}/.shellrc"
   source "${HOME}/.aliases"
@@ -567,7 +615,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   rm -rf "${XDG_CONFIG_HOME}/zsh"
   "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
   ```
@@ -616,7 +664,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   source "${HOME}/.shellrc"
   source "${HOME}/.aliases"
@@ -639,7 +687,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 * Quit all browsers completely
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   git tag -d 1.0
   git tag -d 2.0
   mv "${HOME}/.dotfiles" "${XDG_CONFIG_HOME}/dotfiles"
@@ -703,7 +751,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   bupc
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   install-dotfiles.rb
@@ -769,7 +817,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   install-dotfiles.rb
   ```
@@ -793,7 +841,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   install-dotfiles.rb
   ```
@@ -823,7 +871,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   install-dotfiles.rb
   ```
 
@@ -847,7 +895,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   install-dotfiles.rb
   ```
@@ -889,7 +937,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${DOTFILES_DIR}/files/--PERSONAL_PROFILES_DIR--/custom.gitignore" "${PERSONAL_PROFILES_DIR}/.gitignore"
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   install-dotfiles.rb
@@ -997,7 +1045,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${HOME}/.dotfiles/files/--PERSONAL_PROFILES_DIR--/custom.gitignore" "${PERSONAL_PROFILES_DIR}/.gitignore"
   install-dotfiles.rb
   ```
@@ -1012,7 +1060,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${HOME}/.dotfiles/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   install-dotfiles.rb
   ```
@@ -1125,7 +1173,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps:
 
-  ```bash
+  ```zsh
   cp "${HOME}/.bin-oss/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   mv "${HOME}/.bin-oss" "${HOME}/.dotfiles"
   source "${HOME}/.shellrc"
@@ -1199,7 +1247,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * After rebasing, run the following command prior to running the `install-dotfiles.rb` script.
 
-  ```bash
+  ```zsh
   cp "${DOTFILES_DIR}/files/--PERSONAL_PROFILES_DIR--/custom.gitignore" "${PERSONAL_PROFILES_DIR}/.gitignore"
   ```
 
@@ -1255,7 +1303,7 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * Manually reconcile the diffs / dirty state of `files/--PERSONAL_PROFILES_DIR--/custom.gitignore` with `$PERSONAL_PROFILES_DIR/.gitignore` on your local machine
 * Run the following commands in the terminal
 
-  ```bash
+  ```zsh
   git -C "${DOTFILES_DIR}" restore files/--PERSONAL_PROFILES_DIR--/custom.gitignore
   cp "${DOTFILES_DIR}/files/--PERSONAL_PROFILES_DIR--/custom.gitignore" "${PERSONAL_PROFILES_DIR}/.gitignore"
   rm -rf "${HOME}/Library/Application Support/com.raycast.macos"
@@ -1332,7 +1380,7 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * Manually reconcile the diffs between `files/--HOME--/custom.gitignore` & `${HOME}/.gitignore`, and `files/--PERSONAL_PROFILES_DIR--/custom.gitignore` & `${PERSONAL_PROFILES_DIR}/.gitignore`.
 * Open the Terminal application and run the following commands:
 
-    ```bash
+    ```zsh
     rm -rf ${HOME}/.aliases.custom ${HOME}/.zshrc.custom ${HOME}/.oh-my-zsh/custom/plugins/zsh-defer
     cp files/--HOME--/custom.gitignore ${HOME}/.gitignore
     cp files/--PERSONAL_PROFILES_DIR--/custom.gitignore ${PERSONAL_PROFILES_DIR}/.gitignore

@@ -43,6 +43,9 @@ vacuum_browser_profile_folder() {
   # =~ regex test skips comment lines; ${_line//[[:space:]]/} blank-line check.
   _read_pattern_file "${file_patterns_file}" file_patterns
   _read_pattern_file "${dir_patterns_file}" dir_patterns
+  # Named function defined inside vacuum_browser_profile_folder — persists in the
+  # global table after the outer function returns. Unfunction immediately after use.
+  unfunction _read_pattern_file
 
   if pgrep -i -f -q "${browser_name}"; then
     user_action "Shutdown '$(yellow "${browser_name}")' first — skipping processing of files for ${browser_name}"

@@ -556,12 +556,36 @@ with Ruby 2.6. Do NOT use homebrew-managed Ruby for `$DOTFILES_DIR` scripts.
   not kill running apps or re-launch them via `open -a`.
 - **`COLUMNS` fallback in cron**: zsh sets `COLUMNS` to `0` with no terminal.
   Always use `${COLUMNS:-80}` in any code that computes a display width.
+- **ERR trap — string form required to capture `$LINENO`**: `trap my_handler ERR`
+  evaluates `$LINENO` inside the handler (wrong line). Use a string trap to
+  capture it in the failing command's scope: `trap 'my_handler "${LINENO}"' ERR`.
+  Full rule in `shell-scripting.instructions.md` § **ERR Trap — `$LINENO` String Form vs Function Form**.
 - **`NULL_GLOB` must always be scoped**: never use bare `setopt NULL_GLOB` /
   `unsetopt NULL_GLOB` at script or function scope — changes leak to all
-  subsequent code. Always use `setopt localoptions NULL_GLOB` inside an
-  anonymous function `()`. Never use inline `(N)` glob qualifiers — they break
-  editor syntax highlighting. Full rules in `shell-scripting.instructions.md`
+  subsequent code. Always use `setopt localoptions NULL_GLOB` inside a scoped
+  block. In pure zsh files (`.zshrc`, autoload scripts), use the anonymous
+  function `()`. In files bash may source (`.shellrc`), use a named helper
+  function instead — `()` is a **parse-time** error in bash even inside an
+  `if is_zsh` guard. Never use inline `(N)` glob qualifiers — they break editor
+  syntax highlighting. Full rules in `shell-scripting.instructions.md`
   § **Glob Patterns — NULL_GLOB**.
+- **Do not mandate named helpers everywhere**: `()` anonymous functions are
+  idiomatic and correct in pure zsh files. Named functions defined inside
+  another function in zsh persist in the global table after the outer function
+  returns — they are not scoped. The `()` form is truly scoped. Use named
+  helpers **only** where bash parseability requires it (`.shellrc`, `.aliases`,
+  `.envrc`). The deciding question: can bash ever `source` this file?
+  When a named helper is required, always `unfunction` it immediately after use
+  — `run-all.sh` sandboxes each repo call in a `()` subshell so the leak is
+  contained there, but the `unfunction` is still required for correctness at
+  non-subshell call sites (direct interactive invocations, calls from other
+  functions in the same process). Full rule in `shell-scripting.instructions.md`
+  § **Do not mandate named helpers everywhere**.
+- **`is_zsh` guards are for parse-time zsh-only syntax only**: do not wrap a
+  function definition in `if is_zsh` unless its body contains syntax bash
+  cannot parse (e.g. `${(j.:.)array}`, `(( $+functions[...] ))`). Runtime-only
+  zsh constructs (`setopt`, `autoload`) inside functions that bash never calls
+  do not need a guard — bash defines the function but never invokes it.
 
 ---
 
@@ -1011,6 +1035,23 @@ Rules for sub-sections:
 - Each bullet should be scoped with `*[file or component]*` and describe the
   change succinctly — what was done and why, not how.
 - Keep each bullet concise — one sentence where possible.
+- **Link instruction-file bullets to the named section they reference.** When a
+  bullet describes adding or changing a named section in an instructions file,
+  embed a markdown link to that section using a repo-root-relative path. Only
+  apply this to bullets whose subject is an instructions file (`.instructions.md`,
+  `copilot-instructions.md`) — not to code-file bullets (`.shellrc`,
+  `fresh-install-of-osx.sh`, etc.), where a file name is sufficient. The link
+  text should use the `§ Section Name` convention. GitHub anchor rules: lowercase
+  the heading text, strip backticks (keep content), remove all characters except
+  letters, numbers, hyphens, underscores, and spaces, then replace spaces with
+  hyphens. Em-dashes (—) are stripped and leave two adjacent spaces that each
+  become a hyphen (double-hyphen). `$` signs are stripped.
+
+  Example:
+  ```markdown
+  * *[shell-scripting.instructions.md]* Added
+    [§ ERR Trap — `$LINENO` String Form vs Function Form](.github/instructions/shell-scripting.instructions.md#err-trap---lineno-string-form-vs-function-form).
+  ```
 
 ### Commit Message Style
 
