@@ -79,7 +79,7 @@ _cleanup_and_exit() {
 _setup_jio_dns() {
   local _org
   # Capture curl output into a variable first; then test with a glob match.
-  # Previously: curl ... | grep -qi 'jio' — two processes + pipe.
+  # Previously: curl ... | \grep -qi 'jio' — two processes + pipe.
   # Now: single curl fork, pure-zsh lowercase expansion (:l) + glob match.
   _org=$(curl -fsS https://ipinfo.io/org 2>/dev/null)
   if [[ "${_org:l}" == *jio* ]]; then
@@ -313,6 +313,42 @@ _install_homebrew() {
   step_end
 }
 
+# Set the default login shell to Homebrew's zsh.
+# macOS ships with /bin/zsh but Homebrew's zsh is newer and managed independently.
+# chsh requires the target shell to be listed in /etc/shells — add it if absent.
+# Without this, iTerm2's "Login shell" setting uses /bin/zsh (system) even when
+# /opt/homebrew/bin/zsh is on PATH, and $SHELL stays /bin/zsh after a fresh install.
+_set_default_shell() {
+  _current_section='Set default shell'
+  step_start
+  section_header "$(yellow 'Setting default shell to Homebrew zsh')"
+
+  local _brew_zsh="${HOMEBREW_PREFIX}/bin/zsh"
+
+  if ! is_executable "${_brew_zsh}"; then
+    _record_error "Homebrew zsh not found at '$(yellow "${_brew_zsh}")' — skipping default shell change."
+    step_end
+    return 1
+  fi
+
+  # /etc/shells must list the shell before chsh will accept it.
+  if ! \grep -qxF "${_brew_zsh}" /etc/shells; then
+    info "Adding '$(yellow "${_brew_zsh}")' to /etc/shells"
+    echo "${_brew_zsh}" | sudo tee -a /etc/shells >/dev/null
+  else
+    info "'$(yellow "${_brew_zsh}")' already in /etc/shells — skipping."
+  fi
+
+  if [[ "${SHELL}" == "${_brew_zsh}" ]]; then
+    info "Default shell is already '$(yellow "${_brew_zsh}")' — skipping."
+  else
+    chsh -s "${_brew_zsh}"
+    success "Default shell changed to '$(yellow "${_brew_zsh}")'."
+  fi
+
+  step_end
+}
+
 # Clone the Keybase home repo (private configs)
 _clone_home_repo() {
   _current_section='Clone home repo'
@@ -465,6 +501,8 @@ main() {
   DEBUG=true load_zsh_configs
 
   _install_homebrew
+
+  _set_default_shell
 
   # Migrate repos cloned before Homebrew's git (2.45+) was on PATH. The system
   # git on a vanilla macOS ignores -c init.defaultRefFormat=reftable and does not

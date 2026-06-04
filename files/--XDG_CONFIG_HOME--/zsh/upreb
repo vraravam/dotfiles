@@ -26,6 +26,17 @@ _upreb() {
       debug "processing: $(yellow "${branch}")"
       git -C "${folder}" switch "${branch}"
       git -C "${folder}" upreb || true
+      # If incoming and outgoing commit counts are identical AND git diff @{u}
+      # produces no diffs, the branch has diverged symmetrically with no content
+      # difference (e.g. remote was force-pushed/rebased). Safe to rebase silently.
+      local incoming outgoing
+      incoming="$(git -C "${folder}" rev-list HEAD..@{u} --count 2>/dev/null || echo 0)"
+      outgoing="$(git -C "${folder}" rev-list @{u}..HEAD --count 2>/dev/null || echo 0)"
+      if [[ "${incoming}" -gt 0 && "${incoming}" -eq "${outgoing}" ]] &&
+        git -C "${folder}" diff @{u} --quiet 2>/dev/null; then
+        info "Symmetric diverge with no content diff — rebasing $(yellow "${branch}") onto @{u}"
+        git -C "${folder}" rebase @{u} || true
+      fi
       git -C "${folder}" push || true
       echo "$(red "$(print_chars_for_length '-' $COLUMNS)")"
     done

@@ -409,10 +409,10 @@ def _verify_all(repositories, discovered_count, filter, ref_folder: nil)
   info('Summary'.yellow)
   puts("  Discovered repositories: #{discovered_count}")
   puts("  After filter:            #{repositories.length}") unless nil_or_empty?(filter)
-  puts("  Verified entries:        #{common_repos.length.green}")
+  puts("  Verified entries:        #{common_repos.length.to_s.green}")
   puts("  Common repositories:\n  #{common_repos.map(&:cyan).join("\n  ")}")
   if diff_repos.any?
-    record_warning("Please correlate the following #{diff_repos.length.red} differences in projects manually:\n  #{diff_repos.map(&:cyan).join("\n  ")}")
+    record_warning("Please correlate the following #{diff_repos.length.to_s.red} differences in projects manually:\n  #{diff_repos.map(&:cyan).join("\n  ")}")
     print_script_summary
     exit(1)
   else
@@ -442,7 +442,7 @@ if options[:generate]
   info('Summary'.yellow)
   puts("  Discovered repositories: #{discovered_count}")
   puts("  After filter:            #{filtered_count}") unless nil_or_empty?(filter)
-  puts("  Generated entries:       #{generated.length.green}")
+  puts("  Generated entries:       #{generated.length.to_s.green}")
 elsif options[:resurrect]
   section_header('Resurrecting repositories')
   config_file = File.expand_path(options[:resurrect])
@@ -469,7 +469,7 @@ elsif options[:resurrect]
   puts("  Total repositories: #{repositories.length}")
   puts("  Successful:         #{successful_repos.length.to_s.green}")
   if failed_repos.any?
-    puts("Failed:             #{failed_repos.length.red}")
+    puts("Failed:             #{failed_repos.length.to_s.red}")
     puts('Failed repositories:'.red)
     failed_repos.each { |failed_folder| puts("  - '#{failed_folder.red}'") }
     print_script_summary(script_start_time)

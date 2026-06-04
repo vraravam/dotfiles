@@ -3,6 +3,31 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of changelog:
 
 
+### 3.1.6
+
+#### Set Homebrew zsh as the default login shell during fresh-install
+
+* *[fresh-install-of-osx.sh]* Added `_set_default_shell` function that adds `/opt/homebrew/bin/zsh` to `/etc/shells` (required by `chsh`) if absent, then calls `chsh -s` to make it the default shell. Called immediately after `_install_homebrew` so Homebrew's zsh is guaranteed to be on disk. Idempotent — skips each step if already done.
+* *[osx-defaults.sh]* Added `PlistBuddy` call to set `Custom Command = No` (Login shell) in the Default iTerm2 profile. The key defaults to `Custom Shell` on a fresh iTerm2 install, which means `.zlogin` is never triggered for new windows/tabs. Setting it to `No` ensures the full zsh startup sequence (`.zshenv → .zshrc → .zlogin`) runs correctly.
+
+#### Added symmetric-diverge rebase to `upreb` autoload script
+
+* *[upreb]* After `git upreb` runs per-branch, compare incoming vs outgoing commit counts; if they are equal and non-zero AND `git diff @{u}` produces no diffs, perform `git rebase @{u}`. This handles branches that have diverged symmetrically (e.g. remote was force-pushed or rebased) with identical content — situations the git `upreb` alias skips because no `upstream` remote is present.
+
+#### Fix color methods called on Integer in `resurrect-repositories.rb`
+
+* *[resurrect-repositories.rb]* Added missing `.to_s` before `.red` / `.green` on four `Integer` values (`.length` return values). Ruby's color methods are defined on `String` only — calling them directly on an `Integer` raises `NoMethodError`.
+
+#### Adopting these changes
+
+* Since `_set_default_shell` only runs inside `fresh-install-of-osx.sh`, pre-configured machines will not automatically get the default shell changed to Homebrew's zsh. Run `fresh-install-of-osx.sh` to pick up this change — it is fully idempotent and safe to run on an already-configured machine. It will add `/opt/homebrew/bin/zsh` to `/etc/shells` and call `chsh` only if the default shell is not already set correctly.
+
+* After `chsh` takes effect (quit and reopen the terminal), verify with `echo $SHELL` — it should print `/opt/homebrew/bin/zsh`.
+
+* **Terminal.app** requires no manual change — it always opens a login shell using `$SHELL`, so it picks up the new default automatically once `chsh` is done.
+
+* **iTerm2** — open **Preferences → Profiles → General → Command** and set it to **Login shell** (not "Custom Shell"). This is also applied automatically by `osx-defaults.sh -s`, but pre-configured machines that skip that step must set it manually.
+
 ### 3.1.5
 
 #### Migrate cloned repos to reftable format during fresh-install

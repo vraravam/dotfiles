@@ -1195,6 +1195,10 @@ main() {
     # Profiles > Text > Font. Stored as "PostScriptName Size" plain string — no binary encoding needed.
     # PostScript name: MesloLGSNF-Italic (from MesloLGS Nerd Font Italic).
     /usr/libexec/PlistBuddy -c "Set :'New Bookmarks':0:'Normal Font' 'MesloLGSNF-Italic 13'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    # Profiles > General > Command > Login shell. The 'Custom Command' key defaults to 'Custom Shell'
+    # on a fresh iTerm2 install; 'No' means "Login shell", which is required for .zlogin to run on
+    # every new window/tab and for the full zsh startup sequence to execute correctly.
+    /usr/libexec/PlistBuddy -c "Set :'New Bookmarks':0:'Custom Command' 'No'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
     # Profiles > Keys > Key Bindings > Presets > Natural Text Editing.
     # Action 10 = send escape sequence; Action 11 = send hex code.
     # Key format: hex-keycode-modifierflags (0x80000=Option, 0x100000=Cmd, 0x280000=Option+Shift(?), 0x300000=Ctrl+Shift(?)).
@@ -1250,6 +1254,16 @@ main() {
 
     /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Unlimited Scrollback'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Unlimited Scrollback' bool true" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+
+    # Profiles > General > Initial directory: 'Recycle' = reuse previous session's directory.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Custom Directory'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Custom Directory' string 'Recycle'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Enable Progress Bars'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Enable Progress Bars' bool true" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Show Status Bar'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Show Status Bar' bool true" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
 
     /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Cursor Guide'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Cursor Guide' bool true" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"

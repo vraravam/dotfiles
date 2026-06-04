@@ -515,8 +515,8 @@ typeset -A my_assoc_array
 is_empty_array my_arr       # instead of [[ ${#my_arr[@]} -eq 0 ]]
 is_non_empty_array my_arr   # instead of [[ ${#my_arr[@]} -gt 0 ]]
 
-# Join
-result=$(join_array ", " "${my_arr[@]}")
+# Join — pass the array name (not elements); delimiter is hardcoded as '\n  - '
+join_array my_arr
 ```
 
 ## Glob Patterns — NULL_GLOB

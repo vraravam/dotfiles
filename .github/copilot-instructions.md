@@ -313,7 +313,7 @@ Exception: `fresh-install-of-osx.sh` early-boot code that runs before
 Use named utility functions instead of inline `${#arr[@]}` checks:
 - `is_empty_array arr` instead of `[[ ${#arr[@]} -eq 0 ]]`
 - `is_non_empty_array arr` instead of `[[ ${#arr[@]} -gt 0 ]]`
-- `join_array separator arr` for joining array elements
+- `join_array arr_name` for joining array elements into a bulleted list (pass the array name, not elements)
 
 ### Logging — Never Use Bare `echo` in Scripts
 

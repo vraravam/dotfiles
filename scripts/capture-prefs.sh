@@ -53,7 +53,7 @@ _notify_apps_needing_restart() {
 
   if is_non_empty_array _running; then
     _running=("${(o)_running[@]}")
-    user_action "Quit and restart to pick up imported preferences: $(join_array ', ' "${_running[@]}")."
+    user_action "Quit and restart to pick up imported preferences: $(join_array _running)."
   fi
 }
 
