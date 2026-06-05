@@ -223,7 +223,84 @@ _clone_dot_files_repo() {
   step_end
 }
 
-# Install homebrew, tap repos, and run brew bundle
+# Install the Nix package manager (Determinate Systems installer)
+_install_nix() {
+  _current_section='Install Nix'
+  step_start
+  section_header "$(yellow 'Installing Nix package manager')"
+
+  if command_exists nix; then
+    info 'Nix already installed — skipping.'
+    step_end
+    return 0
+  fi
+
+  local install_script_file
+  install_script_file="$(mktemp)"
+  # Determinate Systems installer: supports macOS natively, configures the
+  # nix daemon, and handles Apple Silicon correctly without extra flags.
+  if curl "${_curl_opts[@]}" -fsSL https://install.determinate.systems/nix -o "${install_script_file}"; then
+    sh "${install_script_file}" install --no-confirm || {
+      rm -f "${install_script_file}"
+      error 'Nix installation failed'
+      step_end
+      return 1
+    }
+    rm -f "${install_script_file}"
+    success 'Successfully installed Nix'
+  else
+    rm -f "${install_script_file}"
+    error 'Failed to download Nix installation script'
+    step_end
+    return 1
+  fi
+
+  # Make nix command available in this session without requiring a new login.
+  load_file_if_exists '/nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh'
+  step_end
+}
+
+# Bootstrap nix-darwin + home-manager from the flake and apply the configuration
+_bootstrap_nix_darwin() {
+  _current_section='Bootstrap nix-darwin'
+  step_start
+  section_header "$(yellow 'Bootstrapping') $(purple 'nix-darwin')"
+
+  if is_zero_string "${DOTFILES_DIR}"; then
+    _record_error "Required env var '$(yellow 'DOTFILES_DIR')' is not defined — cannot locate nix flake."
+    step_end
+    return 1
+  fi
+
+  local flake_key
+  # is_arm uses $ARCH (set in .shellrc) — no subshell fork.
+  if is_arm; then
+    flake_key='arm'
+  else
+    flake_key='intel'
+  fi
+
+  if command_exists darwin-rebuild; then
+    info "nix-darwin already bootstrapped — applying switch."
+    # darwin-rebuild is the alias body expanded inline (aliases not available in scripts).
+    darwin-rebuild switch --flake "${DOTFILES_DIR}/nix#${flake_key}" || _record_warning 'nix-darwin switch encountered errors; continuing...'
+    step_end
+    return 0
+  fi
+
+  # First bootstrap: 'nix run nix-darwin' fetches nix-darwin from the flake and
+  # runs darwin-rebuild switch, which installs the nix-darwin system and makes
+  # darwin-rebuild available for all subsequent runs.
+  nix run nix-darwin -- switch --flake "${DOTFILES_DIR}/nix#${flake_key}" || {
+    _record_warning 'nix-darwin bootstrap encountered errors; continuing...'
+    step_end
+    return 0
+  }
+  success 'Successfully bootstrapped nix-darwin'
+  step_end
+}
+
+# Install homebrew (required for GUI casks managed by the nix-darwin homebrew module)
 _install_homebrew() {
   _current_section='Install Homebrew'
   step_start
@@ -261,52 +338,22 @@ _install_homebrew() {
   # Ensure homebrew's environment variables are set correctly for this session.
   eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
 
-  # Note: Temporarily disable the ERR trap since brew commands may fail on a vanilla OS (e.g. rate limits, missing deps).
-  if is_first_install; then
-    trap - ERR
-  fi
-
-  # Taps are no longer used in the FIRST_INSTALL base Brewfile section.
-  # The tap commands below are kept for reference in case a tap is needed again.
-  # \grep -E "^tap " "${HOMEBREW_BUNDLE_FILE}" | awk '{print $2}' | tr -d "'\"" | while read -r tap_name; do
-  #   brew tap "${tap_name}" || true
-  # done
-
-  # Note: Do not set the 'FIRST_INSTALL' in this script - since its supposed to run idempotently. Also, don't run the cleanup of pre-installed brews/casks (for the same reason)
-  # Run brew bundle install if check fails. Let brew handle idempotency. Continue script even if bundle fails.
-  # Note: Split into taps, formulae and casks separately so that curl doesnt timeout, and failures are isolated and reported clearly.
-  # Note: Each pass includes the Brewfile preamble (non tap/brew/cask lines) to preserve Ruby DSL context (e.g. cask_args, is_arm).
-  # Note: For FIRST_INSTALL, only process lines up to the first 'FIRST_INSTALL' guard in the Brewfile (which marks the end of the base install section).
-  local _brew_bundle_exit=0
-  if is_first_install; then
-    local brewfile_content
-    brewfile_content="$(sed "/^[^#].*FIRST_INSTALL/q" "${HOMEBREW_BUNDLE_FILE}")"
-    brewfile_content="${brewfile_content%$'\n'*FIRST_INSTALL*}"  # strip the FIRST_INSTALL guard line itself
-    brew bundle check || brew bundle --file=- <<<"${brewfile_content}" || _brew_bundle_exit=$?
-  else
-    brew bundle check || brew bundle || _brew_bundle_exit=$?
-  fi
-
-  if [[ "${_brew_bundle_exit}" -eq 0 ]]; then
-    success 'Successfully installed cmd-line and gui apps using homebrew'
-  else
-    _record_warning 'Homebrew bundle install encountered errors; continuing...'
-  fi
-
-  if is_first_install; then
-    # The base section is done; fork the full Brewfile install in the background so
-    # optional/heavy packages install without blocking the rest of this run.
-    # FIRST_INSTALL is unset in the subshell so brew bundle runs the complete Brewfile.
-    local _full_bundle_log="${HOME}/brew-bundle-full-install.log"
-    FIRST_INSTALL= brew bundle >>"${_full_bundle_log}"  2>&1 &|
-    info "Full Brewfile install running in background (log: $(yellow "${_full_bundle_log}"))"
-  fi
+  # Cask installation is handled by _bootstrap_nix_darwin (darwin-rebuild switch
+  # invokes the nix-darwin homebrew module, which runs 'brew bundle' with the
+  # generated Brewfile from nix/darwin-configuration.nix).
+  # TODO(FIRST_INSTALL optimisation): darwin-rebuild switch installs all casks in
+  # one pass. The old Brewfile approach installed only the base set (keybase,
+  # iterm2, font-meslo-lg-nerd-font) synchronously and deferred the rest to a
+  # background process, so backup restoration could proceed sooner. A future
+  # optimisation could implement the same two-phase approach in nix-darwin by
+  # using a minimal first-install darwinConfiguration that is swapped for the
+  # full one after the keybase restore completes.
 
   # Note: load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)
   load_zsh_configs
-  # Note: run the post-brew-install script once more (in case it wasn't run by the brew lifecycle due to any error)
-  # Note: When running with FIRST_INSTALL, some errors might come on a vanilla OS - warn and continue instead of failing.
-  post-brew-install.sh || { is_first_install && _record_warning 'post-brew-install encountered errors; continuing...'; }
+  # post-brew-install.sh is NOT called here: antidote is managed by nix, so it
+  # is not yet installed at this point in the flow. It is called after
+  # _bootstrap_nix_darwin (which installs antidote via nix packages).
 
   if is_first_install; then
     trap '_cleanup_and_exit "${LINENO}"' ERR
@@ -509,7 +556,26 @@ main() {
   if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
   DEBUG=true load_zsh_configs
 
+  _install_nix
+
+  # Homebrew must be installed before _bootstrap_nix_darwin because darwin-rebuild
+  # switch activates the nix-darwin homebrew module (which runs 'brew bundle').
+  # If brew is absent when darwin-rebuild switch runs, the homebrew module errors out.
   _install_homebrew
+
+  _bootstrap_nix_darwin
+
+  # antidote is installed by _bootstrap_nix_darwin (via the nix packages module);
+  # post-brew-install.sh must run after that to set up antidote plugin bundles.
+  _current_section='Post-brew-install'
+  step_start
+  section_header "$(yellow 'Running post-brew-install setup')"
+  if command_exists 'post-brew-install.sh'; then
+    post-brew-install.sh
+  else
+    _record_error "Skipping post-brew-install since '$(yellow 'post-brew-install.sh')' couldn't be found in the PATH; Please run it manually"
+  fi
+  step_end
 
   _set_default_shell
 

@@ -512,13 +512,29 @@ elif is_linux; then
 fi
 
 # --------------------------------------------------------------------------
-# 3g. Homebrew utilities
+# 3g. Nix utilities
+# --------------------------------------------------------------------------
+
+if command_exists darwin-rebuild; then
+  # Apply nix-darwin + home-manager configuration from the flake.
+  # Selects the arm or intel darwinConfiguration key based on CPU architecture.
+  alias nixup='darwin-rebuild switch --flake "${DOTFILES_DIR}/nix#$(is_arm && echo arm || echo intel)"'
+
+  # Update all flake inputs (nixpkgs, nix-darwin, home-manager) then apply.
+  alias nixsync='nix flake update "${DOTFILES_DIR}/nix" && nixup'
+fi
+
+# --------------------------------------------------------------------------
+# 3h. Homebrew utilities
 # --------------------------------------------------------------------------
 
 if is_macos && command_exists brew; then
   alias bcg='brew outdated --greedy'
   alias bcug='brew upgrade --greedy'
-  alias bupc='brew bundle check || brew bundle --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true; post-brew-install.sh || true'
+  # nixup (darwin-rebuild switch) handles install + upgrade + cleanup of both nix
+  # packages and homebrew casks. brew cleanup and autoremove handle cached
+  # downloads and orphaned deps that darwin-rebuild does not cover.
+  alias bupc='nixup || true; brew cleanup --prune=all || true; brew autoremove || true; post-brew-install.sh || true'
 
   # Regenerates the antidote static plugin bundle after antidote is installed or
   # upgraded. Runs 'antidote update' in a clean zsh subshell, unshallows each
@@ -736,7 +752,7 @@ _create_crontab() {
   shell_bin="$(which "$(basename "${SHELL}")")"
   echo '# Reference: https://crontab.guru/' >"${file}"
   echo >>"${file}"
-  echo "# Note: 'chronic' is provided by 'moreutils' from Homebrew and suppresses cron mail on success" >>"${file}"
+  echo "# Note: 'chronic' is provided by 'moreutils' (managed by nix) and suppresses cron mail on success" >>"${file}"
   echo >>"${file}"
   echo '# Env' >>"${file}"
   echo "SHELL=\"${shell_bin}\"" >>"${file}"
@@ -744,8 +760,8 @@ _create_crontab() {
   echo "HOME=\"${HOME}\"" >>"${file}"
   # NOTE: do NOT add inline comments on the PATH line — crontab treats '#' as part of the value,
   # corrupting the last directory entry and causing "command not found" for scripts in that dir.
-  echo "# PATH: homebrew + system utils + personal bin + dotfiles scripts" >>"${file}"
-  echo "PATH=${HOMEBREW_PREFIX}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PERSONAL_BIN_DIR}:${DOTFILES_DIR}/scripts" >>"${file}"
+  echo "# PATH: nix profile + homebrew + system utils + personal bin + dotfiles scripts" >>"${file}"
+  echo "PATH=${HOME}/.nix-profile/bin:${HOMEBREW_PREFIX}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PERSONAL_BIN_DIR}:${DOTFILES_DIR}/scripts" >>"${file}"
   echo >>"${file}"
   # Run script in its own fresh zsh process; wrap with zsh -c so tee is inside
   # chronic's scope (chronic must see both the script and tee together to suppress
@@ -841,7 +857,6 @@ implode() {
     "${ANTIDOTE_HOME}"
     "${ANTIDOTE_PLUGIN_ZSH}"
     "${DOTFILES_DIR}"
-    "${HOMEBREW_BUNDLE_FILE}"
     "${HOMEBREW_PREFIX}"
     "${HOME}/personal"
     "${PROJECTS_BASE_DIR}"
@@ -902,19 +917,19 @@ build_me() {
 # capture-prefs.sh. Both scripts kill these apps before writing defaults so
 # the running instance cannot overwrite writes on quit, and restart them on
 # exit via an EXIT trap.
-# Keep in sync with the Brewfile setup_login_items_script entries and the
+# Keep in sync with the postinstall entries in nix/darwin-configuration.nix and the
 # defaults-write login-key sections in osx-defaults.sh.
 _MACOS_LOGIN_ITEM_APPS=(
   'Clocker'    # startAtLogin = true (com.abhishek.Clocker)
-  'DockDoor'   # login item via Brewfile setup_login_items_script (SMAppService)
-  'KeyCastr'   # login item via Brewfile setup_login_items_script (SMAppService)
+  'DockDoor'   # login item via nix/darwin-configuration.nix postinstall: (SMAppService)
+  'KeyCastr'   # login item via nix/darwin-configuration.nix postinstall: (SMAppService)
   'KeyClu'     # launchAtLogin = true (com.0804Team.KeyClu)
-  'Keybase'    # login item via Brewfile setup_login_items_script (SMAppService)
-  'Mechvibes'  # login item via Brewfile setup_login_items_script (SMAppService)
-  'Shortcat'   # login item via Brewfile setup_login_items_script (SMAppService)
-  'Sol'        # login item via Brewfile setup_login_items_script (SMAppService)
+  'Keybase'    # login item via nix/darwin-configuration.nix postinstall: (SMAppService)
+  'Mechvibes'  # login item via nix/darwin-configuration.nix postinstall: (SMAppService)
+  'Shortcat'   # login item via nix/darwin-configuration.nix postinstall: (SMAppService)
+  'Sol'        # login item via nix/darwin-configuration.nix postinstall: (SMAppService)
   'Stats'      # LaunchAtLoginNext = true (eu.exelban.Stats)
-  'Thaw'       # login item via Brewfile setup_login_items_script (SMAppService)
+  'Thaw'       # login item via nix/darwin-configuration.nix postinstall: (SMAppService)
 )
 
 # Sends SIGTERM to every app in _MACOS_LOGIN_ITEM_APPS. Called before writing

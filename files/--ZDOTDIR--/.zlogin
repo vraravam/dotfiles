@@ -140,7 +140,15 @@ find_in_folder_and_recompile "${ANTIDOTE_HOME}"
 # These live outside DOTFILES_DIR / XDG_CACHE_HOME / ANTIDOTE_HOME, so they are
 # not covered by the find_in_folder_and_recompile calls below. Add any new
 # third-party sourced completions here rather than extending those scans.
-recompile_zsh_scripts "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
+#
+# git-extras: nix is the primary install (same probe order as .zshrc). The nix
+# profile path is read-only so zrecompile silently no-ops when nix-managed; the
+# call is still correct for the brew-fallback path where the file is writable.
+if is_file "${HOME}/.nix-profile/share/git-extras/git-extras-completion.zsh"; then
+  recompile_zsh_scripts "${HOME}/.nix-profile/share/git-extras/git-extras-completion.zsh"
+else
+  recompile_zsh_scripts "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
+fi
 
 # Compile extensionless autoload function files under XDG_CONFIG_HOME/zsh/.
 # These are not *.sh / *.zsh so find_in_folder_and_recompile misses them.

@@ -634,6 +634,82 @@ The sequence is order-dependent and must never be reversed:
 `osx-defaults.sh -s` then `capture-prefs.sh -i`). When running either script
 manually, always follow this order.
 
+### What this means for nix (`targets.darwin.defaults`)
+
+`targets.darwin.defaults` in `osx-app-defaults.nix` runs on **every**
+`darwin-rebuild switch` (i.e., every `bupc`). This runs *after* both layers have
+been applied and will **overwrite both** for any key it touches.
+
+Strict rules:
+
+- **`targets.darwin.defaults` must only contain true policy settings** — settings you
+  explicitly want nix to enforce on every rebuild, overriding any manual UI change.
+  Policy examples: autoupdate flags (`SU*`), privacy settings (`SendDoNotTrackHTTPHeader`),
+  NS* framework defaults (`NSTreatUnknownArgumentsAsOpen`), system utility behavior
+  (DockDoor traffic-light buttons).
+- **Never put initial defaults in `targets.darwin.defaults`**. A setting that belongs
+  in `osx-defaults.sh` must stay there — moving it to nix turns it into a policy that
+  overwrites the user's UI changes on every `bupc`.
+- **Decision rule**: ask "Would I want this value reset to the nix-declared value even
+  if I changed it in the app UI yesterday?" If no → `osx-defaults.sh`. If yes →
+  `targets.darwin.defaults`.
+- **Ephemeral app state** (`NSNavLastRootDirectory`, window coordinates, migration
+  sentinels, A/B test shards) must not appear in either layer — the app manages these
+  itself and any declared value is overwritten within seconds of app launch.
+
+---
+
+## Nix Configuration Rules
+
+### No Hardcoded Usernames or Home Paths
+
+Never hardcode the macOS username (`vijay`) or the home directory path
+(`/Users/vijay`) in any nix file (`flake.nix`, `darwin-configuration.nix`,
+`home.nix`, or any imported module). Use derived variables instead:
+
+- **`flake.nix`** — define `username = "vijay"` once in the `let` block.
+  Pass it to `darwin-configuration.nix` via `specialArgs = { inherit username; }`
+  and to `home.nix` via `home-manager.extraSpecialArgs = { inherit username; }`.
+  Use `home-manager.users.${username}` (not a literal key).
+
+- **`darwin-configuration.nix`** — accept `username` in the module signature
+  (`{ pkgs, username, ... }`). Derive `homeDir = "/Users/${username}"` in
+  the `let` block and use `homeDir` for any path that starts with `/Users/`.
+
+- **`home.nix`** — accept `username` in the module signature
+  (`{ config, pkgs, username, ... }`). Set `home.username = username` and
+  `home.homeDirectory = "/Users/${username}"`.
+
+- **Imported modules** (e.g. `osx-app-defaults.nix`) that need the home
+  directory or username must read them from `config.home.homeDirectory` and
+  `config.home.username` respectively — never from a hardcoded string.
+
+The same rule applies to any other machine-specific value (e.g., a custom
+env var exported by `.shellrc`, `.zshrc`, or `.aliases`) that appears in a
+nix file: derive it from a variable or `builtins.getEnv`, never inline a
+literal value that would break on a machine with a different username or path.
+
+### Why `builtins.getEnv` Is Not Used for `username`
+
+`builtins.getEnv "USER"` is **not** a safe substitute for `specialArgs` for
+the username, even though it works in the common case. The failure modes differ
+critically:
+
+- `builtins.getEnv "DOTFILES_DIR"` → empty string → postinstall scripts
+  silently no-op. **Graceful degradation**: the rest of activation succeeds.
+- `builtins.getEnv "USER"` → empty string → `home.username = ""` and
+  `home.homeDirectory = "/Users/"` → home-manager activation **fails entirely**
+  or silently misconfigures the entire user environment.
+
+`builtins.getEnv` returns empty string in `--pure-eval` mode (a valid, explicit
+nix flag) and in any non-interactive evaluation context where the variable is
+not exported. `specialArgs` is immune to all of these: the value is a nix
+expression evaluated at flake definition time, not an env-var lookup.
+
+Use `builtins.getEnv` only for values whose empty-string fallback is explicitly
+handled and causes only localised, recoverable degradation (e.g. `DOTFILES_DIR`
+in postinstall hooks). Never use it for values whose absence would break
+activation globally.
 ---
 
 ## Git Configuration Rules

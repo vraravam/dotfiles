@@ -125,7 +125,6 @@ export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
 export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
 export HOMEBREW_BAT=1
 export HOMEBREW_VERBOSE_USING_DOTS=1
-export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
 export HOMEBREW_NO_ENV_HINTS=1
 # Note: If the number and size of downloads is large - allow up to 1hr for any single curl transfer.
 export HOMEBREW_CURL_EXTRA_CURL_ARGS='--connect-timeout 300 --max-time 3600'
@@ -144,7 +143,14 @@ case "${OSTYPE}" in
     export ANTIDOTE_HOME="${XDG_CACHE_HOME}/antidote"
     ;;
 esac
-export ANTIDOTE_ZSH="${HOMEBREW_PREFIX}/opt/antidote/share/antidote/antidote.zsh"
+# antidote is managed by nix (primary) with a brew fallback for pre-nix installs.
+# Nix places package share files at ~/.nix-profile/share/; brew uses ${HOMEBREW_PREFIX}/opt/.
+# is_file is not yet defined at this point in .shellrc, so raw [[ -f ]] is used here.
+if [[ -f "${HOME}/.nix-profile/share/antidote/antidote.zsh" ]]; then
+  export ANTIDOTE_ZSH="${HOME}/.nix-profile/share/antidote/antidote.zsh"
+else
+  export ANTIDOTE_ZSH="${HOMEBREW_PREFIX}/opt/antidote/share/antidote/antidote.zsh"
+fi
 export ANTIDOTE_PLUGIN_ZSH="${ZDOTDIR}/.zsh_plugins.zsh"
 export ANTIDOTE_PLUGIN_TXT="${ZDOTDIR}/.zsh_plugins.txt"
 

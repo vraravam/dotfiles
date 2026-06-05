@@ -72,7 +72,17 @@ main() {
   print_script_start
 
   # brew doctor is skipped — too slow for cron jobs
-  _perform_update 'brews' 'brew' 'brew bundle check || brew bundle'
+  # darwin-rebuild switch handles both nix packages AND homebrew casks via the
+  # nix-darwin homebrew module (onActivation.upgrade = true). A separate brew
+  # bundle step is no longer needed.
+  # 'darwin-rebuild' invoked directly — aliases not expanded in non-interactive shells (cron).
+  local _nix_flake_key
+  if is_arm; then
+    _nix_flake_key='arm'
+  else
+    _nix_flake_key='intel'
+  fi
+  _perform_update 'nix packages + homebrew casks' 'darwin-rebuild' "darwin-rebuild switch --flake '${DOTFILES_DIR}/nix#${_nix_flake_key}'"
 
   # This is typically run only in the ${HOME} folder so as to upgrade the software versions in the "global" sense
   _perform_update 'mise plugins' 'mise' 'mise plugins update && mise upgrade --bump' # && mise prune --tools --dry-run'

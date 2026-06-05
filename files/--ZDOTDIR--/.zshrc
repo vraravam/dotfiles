@@ -127,7 +127,13 @@ ensure_dir_exists "${XDG_CACHE_HOME}"
   load_file_if_exists "${brew_shellenv_cache}"
 }
 
-load_file_if_exists "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
+# git-extras completions: probe nix path first (primary), then brew fallback.
+# Nix places share files at ~/.nix-profile/share/; brew uses ${HOMEBREW_PREFIX}/opt/.
+if is_file "${HOME}/.nix-profile/share/git-extras/git-extras-completion.zsh"; then
+  load_file_if_exists "${HOME}/.nix-profile/share/git-extras/git-extras-completion.zsh"
+else
+  load_file_if_exists "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
+fi
 
 # compinit is deferred to after the antidote bundle and .aliases load (see
 # _deferred_compinit below). Deferring achieves two things:
