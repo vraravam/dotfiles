@@ -99,6 +99,24 @@ usage() {
 }
 ```
 
+`usage()` must reference `${_SCRIPT_NAME}` directly — never accept the script
+name as a parameter and never call `usage "${_SCRIPT_NAME}"` at the call site.
+Call sites always invoke `usage` with no arguments:
+
+```zsh
+# BAD — passing _SCRIPT_NAME as an argument is redundant; usage() can read it directly
+usage() { print_usage "${1}" ...; }
+usage "${_SCRIPT_NAME}"
+
+# Good — usage() references _SCRIPT_NAME directly; call sites pass no argument
+usage() { print_usage "${_SCRIPT_NAME}" ...; }
+usage
+```
+
+Exception: `*-common.sh` scripts use `${CALLER_SCRIPT:-${0:t}}` instead of
+`${_SCRIPT_NAME}` so the wrapper script's name appears in usage output — see
+§ **`exec`-Wrapper Scripts**.
+
 ## Intentional Omission of `set -euo pipefail`
 
 All shell scripts use `set -euo pipefail` **except** when a script's logic
@@ -229,8 +247,18 @@ local result
 result="$(cmd)"
 ```
 
-Never collapse a two-step `local` + assignment back into a single line, even
-though it may look redundant. The split is intentional.
+This rule applies **only when the RHS contains a command substitution `$(...)`**.
+Parameter expansions, string literals, and arithmetic have no exit code to mask,
+so they may be combined with `local` on one line:
+
+```zsh
+local start_time="${1:-}"           # Good — parameter expansion, no exit code to lose
+local folder="${1:-${PWD}}"         # Good — same reason
+local name="${CALLER_SCRIPT:-${0:t}}"  # Good — same reason
+```
+
+Never collapse a two-step `local` + assignment back into a single line when
+`$(...)` is involved, even though it may look redundant. The split is intentional.
 
 ## Quoting and Variable References
 
@@ -479,6 +507,46 @@ returns `1`, then evaluates to `0` on the next call). Use `(( var -= 1 )) || tru
 that uses `set -e`, replace bare `(( var++ ))` / `(( var-- ))` with
 `(( var += 1 )) || true` / `(( var -= 1 )) || true`.
 
+
+## `return` vs `exit` Inside `main()`
+
+Always use `return` (never `exit`) inside `main()`. `exit` terminates the entire
+shell process — if the script is ever sourced, it kills the calling shell. `return`
+exits only the function; the script process then exits with that return code because
+`main "$@"` is the last line.
+
+```zsh
+# BAD — exit inside main() terminates the calling shell if the script is sourced
+main() {
+  if is_zero_string "${folder}"; then
+    warn 'Missing required argument'
+    usage
+    exit 1   # BAD
+  fi
+  ensure_keybase_logged_in || exit 1   # BAD
+}
+
+# Good — return propagates the exit code via 'main "$@"' at the bottom
+main() {
+  if is_zero_string "${folder}"; then
+    warn 'Missing required argument'
+    usage
+    return 1
+  fi
+  ensure_keybase_logged_in || return 1
+}
+
+main "$@"
+```
+
+`exit` IS correct in:
+- Trap handler functions (`_cleanup_and_exit`, ERR/EXIT traps) — these run outside
+  the normal call stack and must terminate the process.
+- Git `!` alias bodies — git runs them in a subprocess shell; `exit` propagates
+  the code back to git.
+
+**Scan rule:** when editing any script, flag every `exit` inside `main()` and
+replace with `return`. Leave `exit` in trap handlers and git alias bodies.
 
 Internal helpers not called by external scripts must be prefixed with `_`:
 

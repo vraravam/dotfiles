@@ -12,11 +12,16 @@ _SCRIPT_NAME="${0:t}"
 source "${HOME}/.aliases"
 
 usage() {
-  print_usage "${1}" \
+  print_usage "${_SCRIPT_NAME}" \
     "$(yellow '-f')               --> (optional) force squashing into a single commit (profiles repo will automatically/always be forced anyways)" \
     "$(yellow '-d <repo-folder>') --> (mandatory) The folder which has to be processed" \
     "   eg: $(cyan "-f -d \${HOME}")                (will push to $(yellow "$(build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME}")"))" \
     "   eg: $(cyan "-d \${PERSONAL_PROFILES_DIR}")  (will push to $(yellow "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")"))"
+}
+
+_is_keybase_repo() {
+  # == glob is faster than =~ (no regex engine); no capture groups needed.
+  [[ "${1:-}" == *keybase* ]]
 }
 
 # Trap handler: on any exit, restore cron from backup if _DOTFILES_CRON_BACKUP_FILE is present.
@@ -36,6 +41,11 @@ main() {
   local -a _step_warnings=()
   local -a _step_errors=()
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  # Minimal trap ensures depth is restored on early-return paths (arg-parse
+  # failures, missing folder) before suspend_cron and the full EXIT trap run.
+  # _cleanup_recreate (registered below) replaces this and calls
+  # _decrement_script_depth itself, so depth is decremented exactly once.
+  trap '_decrement_script_depth' EXIT
   while getopts ":fd:" opt; do
     case ${opt} in
       f)
@@ -46,12 +56,12 @@ main() {
         ;;
       \?)
         warn "-${OPTARG} is not a valid option"
-        usage "${_SCRIPT_NAME}"
+        usage
         return 1
         ;;
       :)
         warn "-${OPTARG} requires an argument"
-        usage "${_SCRIPT_NAME}"
+        usage
         return 1
         ;;
     esac
@@ -60,16 +70,20 @@ main() {
 
   if is_zero_string "${folder}"; then
     warn 'Missing required arguments/switches'
-    usage "${_SCRIPT_NAME}"
+    usage
     return 1
   fi
 
   folder="$(strip_trailing_slash "${folder}")"
 
-  # For the profiles repo alone, I don't care about retaining the history
-  [[ "$(extract_last_segment "${folder}")" == "${KEYBASE_PROFILES_REPO_NAME}" ]] && force=Y
+  # if/fi avoids the && pattern where A returning false (folder IS the profiles
+  # repo, the common case) propagates a non-zero exit under set -e.
+  if [[ "$(extract_last_segment "${folder}")" == "${KEYBASE_PROFILES_REPO_NAME}" ]]; then force=Y; fi
 
-  ! is_git_repo "${folder}" && error "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!"
+  if ! is_git_repo "${folder}"; then
+    error "'${folder}' is not a git repo. Please specify the root of a git repo to proceed. Aborting!!!"
+    return 1
+  fi
 
   section_header "$(yellow 'Processing folder'): '$(cyan "${folder}")'"
   info "$(yellow 'Squash commits (will lose history!)'): '$(cyan "${force}")'"
@@ -98,14 +112,14 @@ main() {
 
   if is_zero_string "${git_url}" || is_zero_string "${git_user_name}" || is_zero_string "${git_user_email}" || is_zero_string "${git_branch_name}"; then
     error "One or more required git metadata values are missing for '$(yellow "${folder}")' — see above"
-    exit 1
+    return 1
   fi
 
   # Before deleting the current git information, ensure that keybase is installed and logged
   # in (if the remote url is a keybase url). This avoids a scenario where we delete the git
   # history and then fail to push to the remote due to authentication issues.
-  if [[ "${git_url}" =~ 'keybase' ]]; then
-    ensure_keybase_logged_in || exit 1
+  if _is_keybase_repo "${git_url}"; then
+    ensure_keybase_logged_in || return 1
   fi
 
   git -C "${folder}" size || true
@@ -134,7 +148,7 @@ main() {
   git -C "${folder}" rfc
   SKIP_SIZE_BEFORE=1 git -C "${folder}" cc
 
-  if [[ "${git_url}" =~ 'keybase' ]]; then
+  if _is_keybase_repo "${git_url}"; then
     debug "$(blue 'Recreating') '$(yellow "${git_url}")'"
 
     local git_remote_repo_name
@@ -150,14 +164,13 @@ main() {
 
   rm -f "${folder}/.git/index.lock"
 
-  success "The git repo in '$(yellow "${folder}")' recreated and pushed successfully to '$(yellow "${git_url}")'"
-
   # Regenerate crontab after this script finishes.
   # Clear the backup first so the EXIT trap (_cleanup_recreate -> resume_cron) becomes a no-op.
   load_zsh_configs
   rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
   recron
-  print_script_summary
+
+  print_script_summary '' "The git repo in '$(yellow "${folder}")' recreated and pushed successfully to '$(yellow "${git_url}")'"
 }
 
 main "$@"

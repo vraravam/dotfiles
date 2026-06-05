@@ -23,7 +23,7 @@ source "${HOME}/.aliases"
 typeset -A _excluded_by_domain=()
 
 usage() {
-  print_usage "${1}" \
+  print_usage "${_SCRIPT_NAME}" \
     "$(yellow '-e') --> (mandatory; mutually exclusive with -i) Export preferences from the current [old] system into the dotfiles repo" \
     "$(yellow '-i') --> (mandatory; mutually exclusive with -e) Import preferences from the dotfiles repo into the current [new] system"
 }
@@ -139,6 +139,9 @@ main() {
   local -a _step_errors=()
   local _saved_count=0
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  # Minimal trap ensures depth is restored on early-return paths (arg-parse
+  # failures, missing env vars) before the full EXIT trap is registered below.
+  trap '_decrement_script_depth' EXIT
   while getopts ":ei" opt; do
     case ${opt} in
       e)
@@ -149,7 +152,7 @@ main() {
         ;;
       \?)
         warn "-${OPTARG} is not a valid option"
-        usage "${_SCRIPT_NAME}"
+        usage
         return 1
         ;;
     esac
@@ -158,7 +161,7 @@ main() {
 
   if is_zero_string "${operation}"; then
     warn "Missing required arguments/switches"
-    usage "${_SCRIPT_NAME}"
+    usage
     return 1
   fi
 
@@ -176,17 +179,13 @@ main() {
   local target_dir="${PERSONAL_CONFIGS_DIR}/defaults"
   ensure_dir_exists "${target_dir}"
 
-  # Kill login-item apps upfront (SIGTERM — graceful shutdown) so:
-  #   export — their in-memory state is flushed to disk before we read it.
-  #   import — they cannot overwrite our writes when they eventually quit.
-   # Kill/restart apps on interactive import only.
-   # On import, apps must be killed before writing so they cannot overwrite the
-   # imported values when they quit. Cron import skips this — killall would
-   # disrupt the user's running session, and 'open -a' would re-launch apps
-   # mid-session. On export, macOS cfprefsd has already flushed current prefs
-   # to disk; killing apps is unnecessary.
-   # The canonical app list lives in _MACOS_LOGIN_ITEM_APPS (.aliases § 3n).
-   # is_running_in_tty returns true when stdout is a TTY or FORCE_COLOR is set.
+  # Kill/restart login-item apps on import only, and only when running interactively.
+  # On import, apps must be stopped before writing so they cannot overwrite imported
+  # values when they quit. Cron skips this — killall would disrupt the user's running
+  # session, and 'open -a' would re-launch apps mid-session. On export, macOS cfprefsd
+  # has already flushed current prefs to disk; killing apps is unnecessary.
+  # The canonical app list lives in _MACOS_LOGIN_ITEM_APPS (.aliases § 3n).
+  # is_running_in_tty returns true when stdout is a TTY or FORCE_COLOR is set.
    if [[ "${operation}" == 'import' ]] && is_running_in_tty; then
      kill_login_item_apps
      trap 'restart_login_item_apps; resume_softwareupdate_schedule; _decrement_script_depth' EXIT
@@ -257,11 +256,11 @@ main() {
   fi
 
   # Load denied list into an associative array for O(1) lookups.
-  # while+read: no subprocess fork; =~ and ${//} skip comments and blanks.
+  # while+read: no subprocess fork; is_blank_or_comment_line skips comments and blanks.
   typeset -A _denied=()
   local _bl_line
   while IFS= read -r _bl_line; do
-    [[ "${_bl_line}" =~ '^[[:space:]]*#' || -z "${_bl_line//[[:space:]]/}" ]] && continue
+    if is_blank_or_comment_line "${_bl_line}"; then continue; fi
     _denied["${_bl_line}"]=1
   done <"${denied_list_file}"
 
@@ -270,7 +269,7 @@ main() {
   # Value is newline-separated patterns; consumed by _strip_excluded_keys.
   local _ex_line _ex_dom _ex_pat
   while IFS= read -r _ex_line; do
-    [[ "${_ex_line}" =~ '^[[:space:]]*#' || -z "${_ex_line//[[:space:]]/}" ]] && continue
+    if is_blank_or_comment_line "${_ex_line}"; then continue; fi
     _ex_dom="${_ex_line%%|*}"
     _ex_pat="${_ex_line#*|}"
      # zsh's subscript glob-expansion makes ["${var}"] and ['*'] write to different
@@ -296,14 +295,14 @@ main() {
   local -a app_array=()
   local _line
   # while+read replaces $("${(@f)$(grep -vE ...)}"): no grep subprocess fork.
-  # =~ regex skips comment lines; ${_line//[[:space:]]/} detects blank lines.
+  # is_blank_or_comment_line skips comment lines and blank lines.
   while IFS= read -r _line; do
-    [[ "${_line}" =~ '^[[:space:]]*#' || -z "${_line//[[:space:]]/}" ]] && continue
+    if is_blank_or_comment_line "${_line}"; then continue; fi
     app_array+=("${_line}")
   done <"${domains_file}"
   if is_empty_array app_array; then
     info "No domains found in '$(yellow "${domains_file}")' — nothing to do."
-    exit 0
+    return 0
   fi
 
   info "Running operation: $(green "${operation}")"

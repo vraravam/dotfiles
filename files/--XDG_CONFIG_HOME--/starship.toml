@@ -290,24 +290,29 @@ ignore_timeout = true
 # ── Custom: git operation state ──────────────────────────────────────────────
 # Shown in bold red when a multi-step git operation is in progress:
 # rebase, merge, cherry-pick, revert, or bisect.
-# Detection uses the marker files/dirs git leaves inside .git/:
-#   rebase-merge/ or rebase-apply/  → REBASING
-#   MERGE_HEAD                      → MERGING
-#   CHERRY_PICK_HEAD                → CHERRY-PICKING
-#   REVERT_HEAD                     → REVERTING
-#   BISECT_LOG                      → BISECTING
+#
+# All states are detected via 'git rev-parse --verify <REF>' so the check works
+# with both the classic .git/ files backend and the reftable backend (git 2.45+
+# default). The reftable stores pseudorefs in the reftable rather than as plain
+# files in .git/, so file/directory checks silently fail on reftable repos.
+#
+#   REBASE_HEAD      → REBASING        (set during both interactive and
+#                                        non-interactive rebase; introduced git 2.24)
+#   MERGE_HEAD       → MERGING
+#   CHERRY_PICK_HEAD → CHERRY-PICKING
+#   REVERT_HEAD      → REVERTING
+#   BISECT_HEAD      → BISECTING
 [custom.git_state]
 command = """
-root=$(git rev-parse --git-dir 2>/dev/null) || exit 1
-if [ -d "$root/rebase-merge" ] || [ -d "$root/rebase-apply" ]; then
+if git rev-parse --verify REBASE_HEAD > /dev/null 2>&1; then
   printf '>> REBASING <<'
-elif [ -f "$root/MERGE_HEAD" ]; then
+elif git rev-parse --verify MERGE_HEAD > /dev/null 2>&1; then
   printf '>> MERGING <<'
-elif [ -f "$root/CHERRY_PICK_HEAD" ]; then
+elif git rev-parse --verify CHERRY_PICK_HEAD > /dev/null 2>&1; then
   printf '>> CHERRY-PICKING <<'
-elif [ -f "$root/REVERT_HEAD" ]; then
+elif git rev-parse --verify REVERT_HEAD > /dev/null 2>&1; then
   printf '>> REVERTING <<'
-elif [ -f "$root/BISECT_LOG" ]; then
+elif git rev-parse --verify BISECT_HEAD > /dev/null 2>&1; then
   printf '>> BISECTING <<'
 else
   exit 1

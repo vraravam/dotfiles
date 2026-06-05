@@ -8,13 +8,18 @@
 #   1. Ruby language is present in the system prior to this script being run.
 
 # Ensure utilities/ is on the load path so 'require' works regardless of whether
-# RUBYLIB is set. This is necessary during FIRST_INSTALL (fresh-install-of-osx.sh)
-# where the dotfiles repo is cloned after .shellrc is first sourced, so RUBYLIB does
-# not yet include this directory when install-dotfiles.rb is first invoked.
+# RUBYLIB is set (e.g. during FIRST_INSTALL before .shellrc has been sourced).
 $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 
 require 'cli_parser'
+require 'enumerable_ext'
+require 'fileutils'
 require 'logging'
+require 'open3'
+require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
+require 'set'
+require 'shellwords'
+require 'yaml'
 
 include Logging
 
@@ -42,13 +47,6 @@ end
 if options.empty? || options.size > 1
   parser.abort_with_usage('Exactly one of -g, -r, or -c must be specified.')
 end
-
-require 'fileutils'
-require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
-require 'set'
-require 'shellwords'
-require 'yaml'
-require 'open3'
 
 # Constants
 ORIGIN_NAME = 'origin' # Standard name for the primary remote
@@ -383,7 +381,8 @@ end
 def _verify_all(repositories, discovered_count, filter, ref_folder: nil)
   ref_folder_path = ref_folder ? File.expand_path(ref_folder) : nil
 
-  # Get folder paths from the YAML configuration (already filtered by FILTER if it was set)
+  # Get folder paths from the YAML configuration (already filtered by FILTER if it was set).
+  # filter_map polyfill in enumerable_ext.rb covers Ruby 2.6 (system Ruby on vanilla macOS).
   yml_folders = repositories.filter_map { |repo| repo[FOLDER_KEY_NAME] }.uniq.sort
   if ref_folder_path
     # If ref_folder is set, filter yml_folders to include only those starting with this path

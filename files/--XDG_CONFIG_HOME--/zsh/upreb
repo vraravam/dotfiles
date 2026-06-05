@@ -4,24 +4,26 @@
 
 # git command: upreb
 
-# Source shell helpers if they aren't already loaded
 # Re-source guard is inside .shellrc itself — safe to call unconditionally.
 source "${HOME}/.shellrc"
 
-# Rebases all locally checked-out branches of the specified folder against their upstream. Defaults to the current directory if no folder is specified.
+# Rebases all locally checked-out branches of the specified folder against their upstream,
+# then pushes each branch. Defaults to the current directory if no folder is specified.
 _upreb() {
-  local folder="${1:-$(pwd)}"
+  local folder="${1:-${PWD}}"
   section_header2 "$(yellow 'Upreb-ing') $(purple "${folder}")"
 
-  local current_branch="$(git -C "${folder}" br)"
+  local current_branch
+  current_branch="$(git -C "${folder}" br)"
   info "current branch: $(yellow "${current_branch}")"
   local local_branches=("${(@f)$(git -C "${folder}" branch --format='%(refname:short)')}")
   if is_non_empty_array local_branches; then
     # remove the current_branch from the list of branches
-    local_branches=("${(@)local_branches:#$current_branch}")
+    local_branches=("${(@)local_branches:#${current_branch}}")
     # add the current branch to the end of the list
     local_branches+=("${current_branch}")
 
+    local branch
     for branch in "${local_branches[@]}"; do
       debug "processing: $(yellow "${branch}")"
       git -C "${folder}" switch "${branch}"
@@ -47,6 +49,6 @@ upreb() { dispatch_or_fallback upreb _upreb "$@"; }
 
 # Run only when executed directly, not when sourced (e.g. to import the function into another script).
 [[ "${zsh_eval_context}" == *file* ]] || upreb "$@"
-# is_zsh returns false in bash (ZSH_VERSION unset), short-circuiting the zsh-only '(( $+functions[...] ))' syntax is never
-# evaluated by non-zsh runtimes (e.g. direnv's sandbox).
+# is_zsh returns false in bash (ZSH_VERSION unset), short-circuiting the zsh-only
+# '(( $+functions[...] ))' syntax so it is never evaluated by non-zsh runtimes.
 is_zsh && (($+functions[compdef])) && compdef upreb || true

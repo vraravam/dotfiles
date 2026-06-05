@@ -41,7 +41,7 @@
   # Example: git relative-path /abs/path/to/repo/src/foo.ts  =>  src/foo.ts  (if cwd is repo)
   # Example: git relative-path ./src/foo.ts                  =>  src/foo.ts  (if cwd is repo)
   # Example: git relative-path                               =>  src  (if cwd is repo/src)
-  relative-path = "!bash -c 'root=$(git rev-parse --show-toplevel); case ${0} in bash|sh) abs=$(pwd) ;; *) abs=$(realpath \"${0}\") ;; esac; rel=${abs#${root}}; echo \"${rel#/}\"'"
+  relative-path = "!bash -c 'root=$(git rev-parse --show-toplevel); case ${0} in bash|sh) abs=${PWD} ;; *) abs=$(realpath \"${0}\") ;; esac; rel=${abs#${root}}; echo \"${rel#/}\"'"
 
   # Prints the next patch version derived from the most recent tag (via 'git describe --tags').
   # Tags with only two segments (e.g. '3.1') are treated as '3.1.0' -> '3.1.1'.
@@ -61,18 +61,22 @@
   # Smart commit: if already ahead of remote (and not diverged), amends the existing
   # unpushed commit; if diverged or not yet ahead, creates a new commit instead.
   # Aborts if nothing is staged.
+  # Uses git rev-list --count for ahead/diverged detection (locale-independent);
+  # git status output is locale-dependent and breaks on non-English installations.
   # Usage: git sci "<message>"
   # Example: git sci "fix: correct typo in README"
-  sci = "!sh -c '\
+  sci = "!f() { \
     if git diff --cached --quiet; then \
-      printf \"Nothing staged: aborting\n\"; \
-    elif git status | grep -q \"is ahead of\" && ! git status | grep -q \"have diverged\"; then \
-      printf \"Amending existing commit\n\"; \
+      printf 'Nothing staged: aborting\n'; \
+    elif [ \"$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)\" -gt 0 ] \
+      && [ \"$(git rev-list --count HEAD..@{u} 2>/dev/null || echo 0)\" -eq 0 ]; then \
+      printf 'Amending existing commit\n'; \
       git amq; \
     else \
-      printf \"Creating new commit\n\"; \
+      printf 'Creating new commit\n'; \
       git ci \"${1:-}\"; \
-    fi' -"
+    fi; \
+  }; f"
 
   # Shows a compact one-line summary of a commit: hash, subject, and date.
   # Usage: git what [<ref>]
@@ -83,8 +87,9 @@
   # committers = shortlog -s --
 
   # Prints the current user's configured name and email.
-  # Usage: git who
-  who = !git config --get user.name && git config --get user.email
+  # With an optional <dir> argument, reads from that repo's local config instead.
+  # Usage: git who [<dir>]
+  who = "!f() { git -C \"${1:-.}\" config --get user.name && git -C \"${1:-.}\" config --get user.email; }; f"
 
   # show username/email of the specified author - use 'git who <author>' from git-extras
   # whois = log -i -1 --pretty=format:'%an <%ae>' --author
@@ -278,7 +283,8 @@
   # Defaults to the current branch if no argument is given.
   # Usage: git new [<branch>]
   # Example: git new main
-  new = "!sh -c 'case ${0} in sh|bash) b=$(git branch --show-current) ;; *) b=${0} ;; esac; git log \"${b}@{1}\"..\"${b}@{0}\" \"$@\"'"
+  # Note: $1 is the branch (not $0). The trailing '-' sets $0; user args start at $1.
+  new = "!sh -c 'if [ -n \"${1:-}\" ]; then b=\"${1}\"; shift; else b=$(git branch --show-current); fi; git log \"${b}@{1}\"..\"${b}@{0}\" \"$@\"' -"
 
   # Shows commits in the local branch not yet pushed to remote (outgoing), without file diffs.
   # Usage: git out

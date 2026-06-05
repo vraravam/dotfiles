@@ -115,6 +115,11 @@ recompile_zsh_scripts "${ZDOTDIR}/.zlogin"
 recompile_zsh_scripts "${HOME}/.shellrc"
 recompile_zsh_scripts "${HOME}/.aliases"
 
+# zcompdump has no extension so find_in_folder_and_recompile's *.sh/*.zsh glob
+# misses it. Compile it explicitly so compinit loads bytecode on subsequent
+# startups instead of parsing from source (~2-4ms savings per shell start).
+recompile_zsh_scripts "${XDG_CACHE_HOME}/zcompdump"
+
 # The antidote static bundle lives in ZDOTDIR (not ANTIDOTE_HOME or XDG_CACHE_HOME),
 # so it is not picked up by any of the find_in_folder_and_recompile scans below.
 # Compile it explicitly so every shell startup sources bytecode, not raw zsh text.

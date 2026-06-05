@@ -333,6 +333,8 @@ Two variants depending on where the script lives:
 require 'logging'
 require 'cli_parser'
 
+include Logging
+
 # ---------------------------------------------------------------------------
 # Constants
 

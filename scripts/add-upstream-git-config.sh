@@ -11,7 +11,7 @@ _SCRIPT_NAME="${0:t}"
 source "${HOME}/.shellrc"
 
 usage() {
-  print_usage "${1}" \
+  print_usage "${_SCRIPT_NAME}" \
     "$(yellow '-d <target-folder>')       --> (mandatory) The folder which has to be processed" \
     "$(yellow '-u <upstream-repo-owner>') --> (mandatory) The upstream repo's owner"
 }
@@ -34,12 +34,12 @@ main() {
         ;;
       \?)
         warn "-${OPTARG} is not a valid option"
-        usage "${_SCRIPT_NAME}"
+        usage
         return 1
         ;;
       :)
         warn "-${OPTARG} requires an argument"
-        usage "${_SCRIPT_NAME}"
+        usage
         return 1
         ;;
     esac
@@ -48,7 +48,7 @@ main() {
 
   if is_zero_string "${target_folder}" || is_zero_string "${upstream_repo_owner}"; then
     warn "Missing required arguments/switches"
-    usage "${_SCRIPT_NAME}"
+    usage
     return 1
   fi
 
@@ -92,15 +92,20 @@ main() {
     repo_path="${match[3]}"
     # Preserve http vs https
     protocol='https'
-    [[ "${origin_remote_url}" =~ ^http:// ]] && protocol='http'
+    # == glob is faster than =~ (no regex engine); http:// prefix check needs no capture groups.
+    # if/fi avoids the && pattern where A returning false (https is the normal case) would
+    # propagate a non-zero exit under set -e.
+    if [[ "${origin_remote_url}" == http://* ]]; then protocol='http'; fi
     new_repo_url="${protocol}://${host}/${upstream_repo_owner}/${repo_path}"
   else
     _record_error "Cannot parse origin remote URL format: $(yellow "${origin_remote_url}")"
     print_script_summary
     return 1
   fi
-  # Ensure .git suffix for consistency when reconstructing
-  [[ "${new_repo_url}" != *.git ]] && new_repo_url+='.git'
+  # Ensure .git suffix for consistency when reconstructing.
+  # if/fi avoids the && pattern where A returning false (URL already ends in .git,
+  # the common case) propagates a non-zero exit under set -e.
+  if [[ "${new_repo_url}" != *.git ]]; then new_repo_url+='.git'; fi
 
   # Check if the owners are the same
   if [[ "${cloned_repo_owner}" == "${upstream_repo_owner}" ]]; then
@@ -118,8 +123,7 @@ main() {
     _record_error "Failed to fetch upstream remote '$(yellow "${new_repo_url}")' after adding it."
   fi
 
-  success "Successfully added and fetched upstream remote '$(yellow "${new_repo_url}")' to repo in '$(yellow "${target_folder}")'"
-  print_script_summary
+  print_script_summary '' "Successfully updated upstream remote '$(yellow "${new_repo_url}")' to repo in '$(yellow "${target_folder}")'"
 }
 
 main "$@"

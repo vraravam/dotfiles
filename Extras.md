@@ -178,17 +178,44 @@ See [Technical Deep Dive § 8](TechnicalDeepDive.md#8-cron-safety-mechanisms) fo
 
 A set of git-workflow functions are available as zsh autoloads (lazily loaded on first call) from `files/--XDG_CONFIG_HOME--/zsh/`:
 
-| Function | What it does |
-|----------|-------------|
-| `cc` | Compacts the git repo (`git cc` — garbage collection, pruning, etc.) |
-| `push` | Pushes current branch; handles force-with-lease for rebased branches |
-| `pull` | Pulls with rebase; handles shallow-clone unshallowing |
-| `upreb` | Fetches upstream and rebases the current branch onto it |
-| `st` / `status_all_repos` | Git status for the current repo / all tracked repos |
-| `update_all_repos` | Pulls/rebases all tracked repos in one shot |
-| `count` | Counts commits in the current branch ahead of the remote |
+| Function | What it does | Supports override? |
+|----------|-------------|:-----------------:|
+| `cc` | Compacts the git repo (`git cc` — garbage collection, pruning, etc.) | ✓ |
+| `count` | Counts commits in the current branch ahead of the remote | ✓ |
+| `pull` | Pulls with rebase; handles shallow-clone unshallowing | ✓ |
+| `push` | Pushes current branch; handles force-with-lease for rebased branches | ✓ |
+| `st` | Git status for the current repo | ✓ |
+| `upreb` | Fetches upstream and rebases the current branch onto it | ✓ |
+| `status_all_repos` | Git status for all tracked repos (HOME, dotfiles, profiles, chrome folders) | — |
+| `update_all_repos` | Stages and commits all changes in the HOME and profiles repos | — |
 
-Each of these supports **per-project overrides**: if a file named `<cmd>-<current-directory-name>.sh` exists in `$PERSONAL_BIN_DIR` and is executable, it is sourced instead of the default implementation. For example, a file `$PERSONAL_BIN_DIR/push-my-project.sh` overrides `push` when run from a directory named `my-project`. See [Technical Deep Dive § 10](TechnicalDeepDive.md#10-per-project-script-overrides) for details.
+`status_all_repos` and `update_all_repos` do not support per-project overrides — they operate on a fixed set of repos and a cwd-based override would not be meaningful.
+
+### Per-project overrides
+
+For the six commands marked ✓, if a file named `<cmd>-<current-directory-name>.sh` exists in `$PERSONAL_BIN_DIR` and is executable, it is sourced in the current shell instead of the built-in implementation.
+
+**Example**: to customise `push` when inside a directory named `my-project`, create:
+
+```zsh
+# $PERSONAL_BIN_DIR/push-my-project.sh
+
+# All functions and env vars from .shellrc and .aliases are available because
+# this file is sourced (not exec'd) in the current interactive shell.
+
+# Run whatever pre-push steps are needed, then call the default implementation.
+info "Running pre-push checks for my-project..."
+some_check || { warn "Pre-push check failed — aborting."; return 1; }
+
+# Call the private default implementation directly to avoid infinite recursion.
+# dispatch_or_fallback already resolved to this file, so calling push() again
+# would loop. _push (or _st, _count, etc.) is always the safe fallback target.
+_push "$@"
+```
+
+The override file receives the same arguments the user passed to the public command (`"$@"`). It runs in the current shell, so `return 1` correctly aborts the operation without killing the terminal.
+
+See [Technical Deep Dive § 10](TechnicalDeepDive.md#10-per-project-script-overrides) for the internal mechanics.
 
 ## delete_caches
 

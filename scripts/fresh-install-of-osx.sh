@@ -97,7 +97,10 @@ _download_and_source_shellrc() {
     # Vanilla OS: always force a fresh download and re-source.
     # Unfunction the guard so .shellrc's own re-source check is bypassed.
     # This also handles retries on a vanilla OS where the script is re-run after an error.
-    (($+functions[is_shellrc_sourced]))   && unfunction is_shellrc_sourced
+    # if/fi avoids the && pattern where (($+functions[...])) returning false
+    # (guard not yet defined, the common case on first install) propagates a
+    # non-zero exit under the ERR trap that is active by this point.
+    if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
     curl "${_curl_opts[@]}" -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/files/--HOME--/.shellrc" -o "${HOME}/.shellrc"
     echo "==> Successfully downloaded '${HOME}/.shellrc'"
   else
@@ -185,6 +188,7 @@ _ensure_directories_exist() {
   step_start
   section_header "$(yellow 'Creating directories defined by various env vars')"
   local -a folders=("${ANTIDOTE_HOME}" "${DOTFILES_DIR}" "${PROJECTS_BASE_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${PERSONAL_PROFILES_DIR}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_STATE_HOME}")
+  local folder
   for folder in "${folders[@]}"; do
     ensure_dir_exists "${folder}"
   done
@@ -254,7 +258,7 @@ _install_homebrew() {
     info "Skipping installation of $(yellow 'homebrew') — already installed."
   fi
 
-  # Note: ensure that homebrew's environment variables are set correctly for this session (even if homebrew was not installed in this session)
+  # Ensure homebrew's environment variables are set correctly for this session.
   eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
 
   # Note: Temporarily disable the ERR trap since brew commands may fail on a vanilla OS (e.g. rate limits, missing deps).
@@ -262,8 +266,8 @@ _install_homebrew() {
     trap - ERR
   fi
 
-  # Since we have moved away from any taps in the FIRST_INSTALL, this logic is no longer required.
-  # TODO: Cleanup once this has been tested on a vanilla OS
+  # Taps are no longer used in the FIRST_INSTALL base Brewfile section.
+  # The tap commands below are kept for reference in case a tap is needed again.
   # \grep -E "^tap " "${HOMEBREW_BUNDLE_FILE}" | awk '{print $2}' | tr -d "'\"" | while read -r tap_name; do
   #   brew tap "${tap_name}" || true
   # done
@@ -407,7 +411,9 @@ main() {
   # connect timeout is honoured uniformly for all git operations.
   # Raw form: this line runs in main() before _download_and_source_shellrc (line 418)
   # has sourced .shellrc, so is_first_install is not yet defined.
-  [[ -n "${FIRST_INSTALL:-}" ]] && export GIT_SSH_COMMAND="ssh -o ConnectTimeout=20"
+  # if/fi avoids the && pattern where [[ -n ... ]] returning false (not a first install,
+  # the common case on a pre-configured machine) propagates a non-zero exit under the ERR trap.
+  if [[ -n "${FIRST_INSTALL:-}" ]]; then export GIT_SSH_COMMAND="ssh -o ConnectTimeout=20"; fi
 
   # ~/.curlrc is not yet symlinked (install-dotfiles.rb runs later), so its defaults are
   # absent. Define resilient curl flags explicitly for all bootstrap curl calls in this
@@ -434,7 +440,7 @@ main() {
   # Note: Cannot load from shellrc since that file won't be present in a new machine (vanilla OS)
   # $EPOCHSECONDS is provided by the zsh/datetime built-in module — always available, no fork.
   # Capture start epoch into both a local variable and _script_start_times.
-  # The local is passed explicitly to print_script_duration at the end of main.
+  # The local is passed explicitly to print_script_summary at the end of main.
   # _script_start_times is used by step_end (called throughout this script) to
   # compute the "total elapsed" column independently of the local variable.
   # Both are required; see the design note above step_timing_init in .shellrc.
@@ -483,6 +489,11 @@ main() {
   append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
   install-dotfiles.rb
 
+  # ~/.gitconfig is now symlinked by install-dotfiles.rb — core.sshCommand is in effect.
+  # Unset GIT_SSH_COMMAND immediately so it no longer overrides core.sshCommand.
+  # Must happen before any subsequent git operations (e.g. the diff/checkout below).
+  unset GIT_SSH_COMMAND
+
   # On a vanilla OS, .shellrc was curl-downloaded before the dotfiles repo was
   # cloned. install-dotfiles.rb (with FIRST_INSTALL set) adopts any pre-existing
   # ~/.shellrc into the repo, which can overwrite the committed version with the
@@ -492,12 +503,10 @@ main() {
     git -C "${DOTFILES_DIR}" checkout -- 'files/--HOME--/.shellrc'
   fi
 
-  # ~/.gitconfig is now symlinked by install-dotfiles.rb — core.sshCommand is in effect.
-  # Unset GIT_SSH_COMMAND so it no longer overrides core.sshCommand for the rest of the run.
-  unset GIT_SSH_COMMAND
-
   # Load all zsh config files for PATH and other env vars to take effect
-  (($+functions[is_shellrc_sourced]))   && unfunction is_shellrc_sourced
+  # if/fi avoids the && pattern where (($+functions[...])) returning false
+  # (guard not yet defined on some paths) propagates a non-zero exit under the ERR trap.
+  if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
   DEBUG=true load_zsh_configs
 
   _install_homebrew
@@ -518,7 +527,7 @@ main() {
     section_header "$(yellow 'Cloning') $(purple 'keybase') repos"
     # Login into Keybase.
     step_start
-    ensure_keybase_logged_in || exit 1
+    ensure_keybase_logged_in || return 1
     step_end
 
     _clone_home_repo
@@ -608,23 +617,14 @@ main() {
 
   # vagrant plugin install vagrant-vbguest
 
-  # if installing jhipster for dot-net-core
-  # TODO: Use the next line since the released version is only for .net 2.2:
-  # npm i -g generator-jhipster-dotnetcore
-  # Note: '-g' didnt work. Had to do 'npm init' and then use '--save-dev' to install and link as a local dependency
-  # npm i -g jhipster/jhipster-dotnetcore
-  # npm link generator-jhipster-dotnetcore
-  # jhipster -d --blueprints dotnetcore
-
   # Default tooling for dotnet projects
   # dotnet tool install -g dotnet-sonarscanner
   # dotnet tool install -g dotnet-format
 
-  success '** Finished auto installation process **'
-
-  # Print grouped summary of all collected warnings and errors, then send exactly one
-  # notification. Exit code is unchanged (0) — the summary is informational only.
-  print_script_summary
+  # Print grouped summary of all collected warnings and errors, print duration,
+  # then send exactly one notification. Exit code is unchanged (0) — the summary
+  # is informational only.
+  print_script_summary "${script_start_time}" '** Finished auto installation process **'
   local _notification_parts=()
   if is_non_empty_array _step_errors; then
     local _errors_summary
@@ -644,8 +644,6 @@ main() {
   else
     _dotfiles_notify "Fresh install completed successfully." "✅ Fresh Install Done" || true
   fi
-
-  print_script_duration "${script_start_time}"
 }
 
 main "$@"

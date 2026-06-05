@@ -2,19 +2,32 @@
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
-# This is a script with useful tips taken from: https://gist.github.com/DAddYE/2108403
-# Please, share your tips by forking the repo and adding your customizations
-# Thanks to: @erikh, @DAddYE, @mathiasbynens
+# Sets macOS system and application preferences via 'defaults write'.
+# Run with -s to seed a baseline on a fresh machine; run with -i to import
+# preferences on top of that baseline (see osx-defaults.sh -h for full usage).
+# Originally inspired by: https://gist.github.com/DAddYE/2108403
 
 # set -euo pipefail is intentionally omitted: many 'defaults write' and 'killall'
 # calls return non-zero when a setting is unsupported on the current OS version,
 # which is expected and must not abort the script.
 
+# This script handles settings that cannot be managed by capture-prefs.sh alone,
+# or that require mechanisms other than a plain 'defaults write':
+#   - sudo / pmset / systemsetup / scutil calls
+#   - defaults -currentHost writes (host-specific pref domain)
+#   - PlistBuddy nested plist edits (Terminal/iTerm2 profiles, Finder icon view,
+#     Spotlight symbolic hotkeys)
+#   - defaults -dict-add patterns (Mail DraftsViewerAttributes,
+#     Finder FXInfoPanesExpanded)
+#   - com.apple.AddressBook (sandbox-restricted; writes suppressed with || true)
+#   - Firefox / Zen Browser user.js file writes
+#   - Interactive ask-N settings (intentionally left to user choice)
+
 _SCRIPT_NAME="${0:t}"
 source "${HOME}/.aliases"
 
 usage() {
-  print_usage "${1}" \
+  print_usage "${_SCRIPT_NAME}" \
     "$(yellow '[-s]') --> $(yellow '-s') (optional) Run in silent/auto mode without interactive prompts"
 }
 
@@ -65,6 +78,9 @@ main() {
   local -a _step_warnings=()
   local -a _step_errors=()
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  # Minimal trap ensures depth is restored on early-return paths (arg-parse failure,
+  # non-TTY check) before kill_login_item_apps and the full EXIT trap are registered.
+  trap '_decrement_script_depth' EXIT
   while getopts ':s' opt; do
     case ${opt} in
       s)
@@ -72,9 +88,8 @@ main() {
         auto='Y'
         ;;
       \?)
-        _record_error "-${OPTARG} is not a valid option"
-        usage "${_SCRIPT_NAME}"
-        print_script_summary
+        warn "-${OPTARG} is not a valid option"
+        usage
         return 1
         ;;
     esac
@@ -84,7 +99,7 @@ main() {
   if [[ "${auto}" == 'N' ]] && ! is_running_in_tty; then
     _record_error 'Interactive mode needs terminal!'
     print_script_summary
-    exit 1
+    return 1
   fi
 
   # Ask for the administrator password upfront and keep it alive until this script has finished
@@ -111,36 +126,17 @@ main() {
   # both normal and error exits. Both functions guard with sudo -n (no prompt).
   suspend_softwareupdate_schedule
 
-  # Couldn't find the following settings in macOS Mojave (10.14.3)
-  # Expand 'save as...' dialog by default
-  # defaults write -g NSNavPanelExpandedStateForSaveMode -bool true
-  # defaults write -g NSNavPanelExpandedStateForSaveMode2 -bool true
-
-  # Expand print panel by default
-  # defaults write -g PMPrintingExpandedStateForPrint -bool true
-  # defaults write -g PMPrintingExpandedStateForPrint2 -bool true
-
-  # Automatically quit printer app once the print jobs complete
-  # defaults write com.apple.print.PrintingPrefs 'Quit When Finished' -bool true
-
-  # Restore the 'Save As' menu item (Equivalent to adding a Keyboard shortcut in the System Preferences.app )
-  # defaults write -g NSUserKeyEquivalents -dict-add 'Save As...' '@$S'
-
-  # Icon Size for Open Panels:
-  # defaults write -g NSNavPanelIconViewIconSizeForOpenMode -number
-
-  # Disable press-and-hold for keys in favor of key repeat
-
-  # Set a blazingly fast keyboard repeat rate
-  # defaults write NSGlobalDomain KeyRepeat -int 1
-  # defaults write NSGlobalDomain InitialKeyRepeat -int 10
-
+  # ---------------------------------------------------------------------------
   # Login Window
+  # ---------------------------------------------------------------------------
+
   if ask 'Disable guest login' 'Y'; then
     sudo defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false
   fi
 
-  # MenuBar
+  # ---------------------------------------------------------------------------
+  # Menu Bar
+  # ---------------------------------------------------------------------------
 
   # System Settings > Control Center > Menu Bar Only items
   # Bluetooth = on
@@ -172,6 +168,8 @@ main() {
   # Now Playing = show when active
   defaults write com.apple.controlcenter 'NowPlaying' -int 8
 
+  # Keep keyboard brightness at maximum via -currentHost write; cannot be
+  # expressed as a plain defaults write (host-specific pref domain).
   if ask 'Keep keyboard brightness at maximum' 'Y'; then
     defaults -currentHost write com.apple.controlcenter KeyboardBrightness 8
   fi
@@ -188,7 +186,9 @@ main() {
     defaults write com.apple.BezelServices dAuto -bool false
   fi
 
+  # ---------------------------------------------------------------------------
   # General UI/UX
+  # ---------------------------------------------------------------------------
 
   if ask 'Set computer name (as done via System Preferences → Sharing)' 'Y'; then
     local username_in_camel_case="${(C)USER}"
@@ -205,16 +205,11 @@ main() {
     sudo pmset -a standbydelay 21600
   fi
 
-  # Disable the sound effects on boot
-  # sudo nvram SystemAudioVolume=' '
-
-  # Disable transparency in the menu bar and elsewhere on Yosemite
-  # defaults write com.apple.universalaccess reduceTransparency -bool true
-
-  # Set highlight color to green
-  # defaults write NSGlobalDomain AppleHighlightColor -string '0.764700 0.976500 0.568600'
-
-  # Use zsh glob qualifier (N.) for nullglob and regular files
+  # dontAutoLoad must be written to the ByHost preference file (identified by
+  # hardware UUID) — not to the regular com.apple.systemuiserver domain. The
+  # ByHost path is what SystemUIServer reads on startup to skip certain menu
+  # extras regardless of which user is logged in.
+  local domain
   for domain in "${HOME}"/Library/Preferences/ByHost/com.apple.systemuiserver.*(N.); do
     defaults write "${domain}" dontAutoLoad -array \
       '/System/Library/CoreServices/Menu Extras/TimeMachine.menu' \
@@ -335,9 +330,14 @@ main() {
   #sudo rm -rf /System/Library/CoreServices/DefaultDesktop.jpg
   #sudo ln -s /path/to/your/image /System/Library/CoreServices/DefaultDesktop.jpg
 
+  # ---------------------------------------------------------------------------
   # TextEdit
+  # ---------------------------------------------------------------------------
 
+  # ---------------------------------------------------------------------------
   # SSD-specific tweaks
+  # ---------------------------------------------------------------------------
+
   if ask 'Disable hibernation (speeds up entering sleep mode)' 'Y'; then
     sudo pmset -a hibernatemode 0
   fi
@@ -346,7 +346,9 @@ main() {
     sudo pmset -a sms 0
   fi
 
+  # ---------------------------------------------------------------------------
   # Trackpad, mouse, keyboard, Bluetooth accessories, and input
+  # ---------------------------------------------------------------------------
 
   # Bluetooth trackpad (com.apple.driver.AppleBluetoothMultitouch.trackpad) and
   # built-in trackpad (com.apple.AppleMultitouchTrackpad) share the same gesture
@@ -409,7 +411,9 @@ main() {
     defaults -currentHost write -g com.apple.mouse.tapBehavior -int 1
   fi
 
+  # ---------------------------------------------------------------------------
   # Apple Multitouch Mouse
+  # ---------------------------------------------------------------------------
   if ask 'Apple Multitouch mouse features' 'Y'; then
     defaults write com.apple.AppleMultitouchMouse MouseButtonMode -string 'OneButton'
     defaults write com.apple.AppleMultitouchMouse MouseHorizontalScroll -int 1
@@ -444,7 +448,9 @@ main() {
   # Follow the keyboard focus while zoomed in
   # defaults write com.apple.universalaccess closeViewZoomFollowsFocus -bool true
 
+  # ---------------------------------------------------------------------------
   # Finder
+  # ---------------------------------------------------------------------------
 
   if ask 'Allow quitting Finder via ⌘Q (also hides desktop icons)' 'Y'; then
     defaults write com.apple.finder QuitMenuItem -bool true
@@ -627,7 +633,9 @@ main() {
   # Avoiding the creation of .DS_Store files on network volumes
   defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
 
+  # ---------------------------------------------------------------------------
   # Energy saving
+  # ---------------------------------------------------------------------------
 
   # Enable lid wakeup
   sudo pmset -a lidwake 1
@@ -676,7 +684,9 @@ main() {
   #   defaults write com.apple.Preview NSQuitAlwaysKeepsWindows -bool true
   #fi
 
+  # ---------------------------------------------------------------------------
   # Keychain
+  # ---------------------------------------------------------------------------
   if ask 'Keychain shows expired certificates' 'Y'; then
     defaults write com.apple.keychainaccess 'Show Expired Certificates' -bool true
   fi
@@ -685,7 +695,9 @@ main() {
     defaults write com.apple.keychainaccess 'Distinguish Legacy ACLs' -bool true
   fi
 
+  # ---------------------------------------------------------------------------
   # Remote Desktop
+  # ---------------------------------------------------------------------------
   # if ask 'Admin Console Allows Remote Control' 'N'; then
   #   defaults delete /Library/Preferences/com.apple.RemoteManagement AdminConsoleAllowsRemoteControl
   # fi
@@ -710,7 +722,9 @@ main() {
   #   defaults write com.apple.RemoteDesktop multiObserveMaxPerScreen -int 20
   # fi
 
+  # ---------------------------------------------------------------------------
   # Screen Sharing
+  # ---------------------------------------------------------------------------
   # if ask 'Prevent protection when attempting to remotely control this computer' 'Y'; then
   #   defaults write com.apple.ScreenSharing skipLocalAddressCheck -bool true
   # fi
@@ -743,7 +757,10 @@ main() {
   #   defaults write com.klieme.ScreenSharingMenulet showIPAddresses -bool true
   # fi
 
+  # ---------------------------------------------------------------------------
   # Dock, Dashboard, and hot corners
+  # ---------------------------------------------------------------------------
+
   if ask 'Set the icon size of Dock items to 35 pixels' 'Y'; then
     defaults write com.apple.dock tilesize -int 35
   fi
@@ -830,7 +847,9 @@ main() {
     defaults write com.apple.loginwindow LoginwindowLaunchesRelaunchApps -bool true
   fi
 
+  # ---------------------------------------------------------------------------
   # Launchpad
+  # ---------------------------------------------------------------------------
   if ask 'Number of columns and rows in the dock springboard set to 10' 'Y'; then
     defaults write com.apple.dock springboard-rows -int 10
     defaults write com.apple.dock springboard-columns -int 10
@@ -876,7 +895,10 @@ main() {
     defaults write com.apple.dock wvous-br-modifier -int 0
   fi
 
+  # ---------------------------------------------------------------------------
   # Safari & WebKit
+  # ---------------------------------------------------------------------------
+
   if ask "Privacy: don't send search queries to Apple" 'Y'; then
     defaults write com.apple.Safari UniversalSearchEnabled -bool false
     defaults write com.apple.Safari SuppressSearchSuggestions -bool true
@@ -996,7 +1018,10 @@ main() {
   # Update extensions automatically
   defaults write com.apple.Safari InstallExtensionUpdatesAutomatically -bool true
 
+  # ---------------------------------------------------------------------------
   # Mail
+  # ---------------------------------------------------------------------------
+
   if ask 'Display emails in threaded mode, sorted by date (oldest at the top)' 'Y'; then
     defaults write com.apple.mail DraftsViewerAttributes -dict-add 'DisplayInThreadedMode' -string 'yes'
     defaults write com.apple.mail DraftsViewerAttributes -dict-add 'SortedDescending' -string 'yes'
@@ -1033,13 +1058,14 @@ main() {
     defaults write com.apple.mail SendWindowsFriendlyAttachments -bool true
   fi
 
+  # ---------------------------------------------------------------------------
   # Spotlight
-  # Turning off since this causes the system settings pane to break.
-  # if ask 'Disable Spotlight indexing for any volume that gets mounted and has not yet been indexed before.' 'Y'; then
-  #   sudo defaults write /.Spotlight-V100/VolumeConfiguration Exclusions -array '/Volumes'
-  # fi
+  # ---------------------------------------------------------------------------
+  # Initial default seeded here. The user may enable/disable categories via
+  # System Settings > Spotlight afterward — re-running osx-defaults.sh will
+  # reset them.
 
-  if ask 'Change indexing order and disable some search results' 'Y'; then
+  if ask 'Configure Spotlight search category ordering' 'Y'; then
     defaults write com.apple.spotlight orderedItems -array \
       '{"enabled" = 1;"name" = "APPLICATIONS";}' \
       '{"enabled" = 1;"name" = "SYSTEM_PREFS";}' \
@@ -1092,21 +1118,23 @@ main() {
         "${HOME}/Library/Preferences/com.apple.symbolichotkeys.plist"
   fi
 
+  # ---------------------------------------------------------------------------
   # Terminal
+  # ---------------------------------------------------------------------------
+
   if ask 'Terminal.app settings' 'Y'; then
+    # Top-level Terminal.app defaults — initial defaults seeded here so the user
+    # can change them via the UI afterward without osx-defaults.sh resetting them.
     defaults write com.apple.Terminal NewWindowWorkingDirectoryBehavior -int 2
-    # (see: https://security.stackexchange.com/a/47786/8918)
     defaults write com.apple.Terminal SecureKeyboardEntry -bool false
     defaults write com.apple.Terminal Shell -string ''
     defaults write com.apple.Terminal 'Default Window Settings' -string 'Clear Dark'
     defaults write com.apple.Terminal 'Startup Window Settings' -string 'Clear Dark'
-
-    # Disable the annoying line marks
-    # defaults write com.apple.Terminal ShowLineMarks -int 0
-
+    #
     # Note: To print the values, use this:
     # /usr/libexec/PlistBuddy -c "Print :'Window Settings':'Clear Dark'" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
     local profile_array=('Clear Dark')
+    local profile
     for profile in "${profile_array[@]}"; do
       # Profile names may contain spaces; quote them in PlistBuddy paths using single quotes.
       # Delete before Add is idempotent: suppress errors when the entry doesn't exist yet.
@@ -1137,72 +1165,143 @@ main() {
     done
   fi
 
-  # Focus follows Mouse
-  # defaults write com.apple.Terminal FocusFollowsMouse -bool true
+  # ---------------------------------------------------------------------------
+  # iTerm2
+  # ---------------------------------------------------------------------------
 
-  # iTerm 2
   # TODO: Need to set the keyboard overrides for 'back/forward 1 word' AND 'Jobs to Ignore'
   if ask 'iTerm2 settings' 'Y'; then
     defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true
+    # Enables alternate scrolling (scroll wheel scrolls in alt-screen apps like less/man).
+    defaults write com.googlecode.iterm2 AlternateMouseScroll -bool true
     defaults write com.googlecode.iterm2 AppleAntiAliasingThreshold -bool true
+    # Disables press-and-hold for accent characters; enables key repeat instead.
+    defaults write com.googlecode.iterm2 ApplePressAndHoldEnabled -bool false
     defaults write com.googlecode.iterm2 AppleScrollAnimationEnabled -bool false
     defaults write com.googlecode.iterm2 AppleSmoothFixedFontsSizeThreshold -bool true
-    defaults write com.googlecode.iterm2 AppleWindowTabbingMode -string "manual"
+    defaults write com.googlecode.iterm2 AppleWindowTabbingMode -string 'manual'
     defaults write com.googlecode.iterm2 AutoCommandHistory -bool false
     defaults write com.googlecode.iterm2 CheckTestRelease -bool true
+    # Copies trailing newline when selecting to end of line.
+    defaults write com.googlecode.iterm2 CopyLastNewline -bool true
+    defaults write com.googlecode.iterm2 DefaultTabBarHeight -float 28
     defaults write com.googlecode.iterm2 DimBackgroundWindows -bool true
+    defaults write com.googlecode.iterm2 DisableTmuxWindowResizing -bool false
+    defaults write com.googlecode.iterm2 DisableWindowSizeSnap -bool false
+    defaults write com.googlecode.iterm2 DoubleClickPerformsSmartSelection -bool true
+    # Enables the Python API server for shell integration and scripts.
+    defaults write com.googlecode.iterm2 EnableAPIServer -bool true
+    # Shows tab bar briefly when entering full-screen.
+    defaults write com.googlecode.iterm2 FlashTabBarInFullscreen -bool true
+    defaults write com.googlecode.iterm2 HapticFeedbackForEsc -bool false
     defaults write com.googlecode.iterm2 HideTab -bool false
-    defaults write com.googlecode.iterm2 HotkeyMigratedFromSingleToMulti -bool true
     defaults write com.googlecode.iterm2 IRMemory -int 4
+    # Prefs are stored locally (not in a custom folder or cloud-synced path).
+    defaults write com.googlecode.iterm2 LoadPrefsFromCustomFolder -bool false
+    defaults write com.googlecode.iterm2 NSAutoFillHeuristicControllerEnabled -bool false
     defaults write com.googlecode.iterm2 NSFontPanelAttributes -string "1, 0"
     defaults write com.googlecode.iterm2 NSNavLastRootDirectory -string "${HOME}/Desktop"
+    defaults write com.googlecode.iterm2 NSOverlayScrollersFallBackForAccessoryViews -bool false
     defaults write com.googlecode.iterm2 NSQuotedKeystrokeBinding -string ""
+    defaults write com.googlecode.iterm2 NSRepeatCountBinding -string ""
     defaults write com.googlecode.iterm2 NSScrollAnimationEnabled -bool false
     defaults write com.googlecode.iterm2 NSScrollViewShouldScrollUnderTitlebar -bool false
+    # NoSync keys: suppress one-time dialogs, warnings, and migration markers so
+    # a fresh install does not show prompts that have already been acknowledged.
+    defaults write com.googlecode.iterm2 NoSyncBrowserUpsell -bool true
+    defaults write com.googlecode.iterm2 NoSyncBrowserUpsell_selection -int 1
+    defaults write com.googlecode.iterm2 NoSyncClaudeCodeDiffModeBackfilled -bool true
+    defaults write com.googlecode.iterm2 NoSyncClaudeCodeReviewSystemPromptCommandBackfilled -bool true
+    defaults write com.googlecode.iterm2 NoSyncClearAllBroadcast -bool true
+    defaults write com.googlecode.iterm2 NoSyncClearAllBroadcast_selection -int 0
     defaults write com.googlecode.iterm2 NoSyncCommandHistoryHasEverBeenUsed -bool true
+    defaults write com.googlecode.iterm2 NoSyncConfirmRunOpenFile -bool true
+    defaults write com.googlecode.iterm2 NoSyncConfirmRunOpenFile_selection -int 0
     defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforeMultilinePaste -bool true
     defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforeMultilinePaste_selection -bool false
     defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforePastingOneLineEndingInNewlineAtShellPrompt -bool true
     defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforePastingOneLineEndingInNewlineAtShellPrompt_selection -bool true
+    defaults write com.googlecode.iterm2 NoSyncEnableAPIServer -bool true
+    defaults write com.googlecode.iterm2 NoSyncEnableAPIServer_selection -int 0
     defaults write com.googlecode.iterm2 NoSyncHaveRequestedFullDiskAccess -bool true
+    defaults write com.googlecode.iterm2 NoSyncHaveUsedCopyMode -bool true
     defaults write com.googlecode.iterm2 NoSyncHaveWarnedAboutPasteConfirmationChange -bool true
+    defaults write com.googlecode.iterm2 NoSyncIgnoreSystemWindowRestoration -bool true
+    defaults write com.googlecode.iterm2 NoSyncKeyCode0MitigationDisabled_Global -bool true
+    defaults write com.googlecode.iterm2 NoSyncMigratedDynamicProfileTagToFlag -bool true
+    defaults write com.googlecode.iterm2 NoSyncNeverRemindPrefsChangesLostForFile -bool true
+    defaults write com.googlecode.iterm2 NoSyncNeverRemindPrefsChangesLostForFile_selection -int 1
+    defaults write com.googlecode.iterm2 NoSyncOnboardingWindowHasBeenShown -bool true
+    defaults write com.googlecode.iterm2 NoSyncOnboardingWindowHasBeenShown34 -bool true
+    defaults write com.googlecode.iterm2 NoSyncOpenLinksInApp -bool true
+    defaults write com.googlecode.iterm2 NoSyncOpenLinksInApp_selection -int 0
     defaults write com.googlecode.iterm2 NoSyncPermissionToShowTip -bool true
+    defaults write com.googlecode.iterm2 NoSyncRemoveDeprecatedKeyMappings -int 2
+    defaults write com.googlecode.iterm2 NoSyncRestoreIconAndWindowNameOnHostChange -bool true
+    defaults write com.googlecode.iterm2 NoSyncSuppressBadPWDInArrangementWarning -bool true
     defaults write com.googlecode.iterm2 NoSyncSuppressBroadcastInputWarning -bool true
     defaults write com.googlecode.iterm2 NoSyncSuppressBroadcastInputWarning_selection -bool false
+    defaults write com.googlecode.iterm2 NoSyncSuppressMissingProfileInArrangementWarning -bool true
+    defaults write com.googlecode.iterm2 NoSyncTipsDisabled -bool true
+    defaults write com.googlecode.iterm2 NoSyncUserHasSelectedCommand -bool true
+    defaults write com.googlecode.iterm2 NoSyncWindowRestoresWorkspaceAtLaunch -bool false
+    defaults write com.googlecode.iterm2 NoSyncWorkgroupShortcutsBackfilled -bool true
     defaults write com.googlecode.iterm2 OnlyWhenMoreTabs -bool false
     defaults write com.googlecode.iterm2 OpenArrangementAtStartup -bool false
+    defaults write com.googlecode.iterm2 OpenBookmark -bool false
     defaults write com.googlecode.iterm2 OpenNoWindowsAtStartup -bool false
+    # 0 = open tmux windows in tabs of the current window.
+    defaults write com.googlecode.iterm2 OpenTmuxWindowsIn -int 0
+    defaults write com.googlecode.iterm2 PrefsCustomFolder -string ""
+    defaults write com.googlecode.iterm2 PreserveWindowSizeWhenTabBarVisibilityChanges -bool false
+    defaults write com.googlecode.iterm2 PreventEscapeSequenceFromClearingHistory -bool false
+    defaults write com.googlecode.iterm2 'Print In Black And White' -bool true
     defaults write com.googlecode.iterm2 PromptOnQuit -bool false
     defaults write com.googlecode.iterm2 SUAutomaticallyUpdate -bool true
     defaults write com.googlecode.iterm2 SUEnableAutomaticChecks -bool true
     defaults write com.googlecode.iterm2 SUFeedAlternateAppNameKey -string iTerm
     defaults write com.googlecode.iterm2 SUFeedURL -string 'https://iterm2.com/appcasts/final.xml?shard=69'
     defaults write com.googlecode.iterm2 SUHasLaunchedBefore -bool true
+    defaults write com.googlecode.iterm2 SUSendProfileInfo -bool false
     defaults write com.googlecode.iterm2 SUUpdateRelaunchingMarker -bool false
     defaults write com.googlecode.iterm2 SavePasteHistory -bool false
+    # Each pane gets its own status bar rather than one shared bar per window.
+    defaults write com.googlecode.iterm2 SeparateStatusBarsPerPane -bool false
     defaults write com.googlecode.iterm2 ShowBookmarkName -bool false
+    defaults write com.googlecode.iterm2 ShowFullScreenTabBar -bool true
+    defaults write com.googlecode.iterm2 ShowPaneTitles -bool true
+    defaults write com.googlecode.iterm2 SoundForEsc -bool false
     defaults write com.googlecode.iterm2 SplitPaneDimmingAmount -string '0.4070612980769232'
+    defaults write com.googlecode.iterm2 StartDebugLoggingAutomatically -bool false
+    # 1 = status bar at bottom of terminal (not top).
     defaults write com.googlecode.iterm2 StatusBarPosition -integer 1
+    defaults write com.googlecode.iterm2 StretchTabsToFillBar -bool true
     defaults write com.googlecode.iterm2 SuppressRestartAnnouncement -bool true
+    # 1 = use Option key to switch panes.
+    defaults write com.googlecode.iterm2 SwitchPaneModifier -int 1
+    # 4 = minimal tab style (auto-adapts to light/dark mode).
     defaults write com.googlecode.iterm2 TabStyleWithAutomaticOption -integer 4
     defaults write com.googlecode.iterm2 TraditionalVisualBell -bool true
     defaults write com.googlecode.iterm2 UseBorder -bool true
+    defaults write com.googlecode.iterm2 VisualIndicatorForEsc -bool false
     defaults write com.googlecode.iterm2 WordCharacters -string "/-+\\~-integer."
-    defaults write com.googlecode.iterm2 findMode_iTerm -bool false
+    # 2 = regex find mode (not case-insensitive plain text = 0, or smart case = 1).
+    defaults write com.googlecode.iterm2 findMode_iTerm -int 2
     defaults write com.googlecode.iterm2 kCPKSelectionViewPreferredModeKey -bool false
     defaults write com.googlecode.iterm2 kCPKSelectionViewShowHSBTextFieldsKey -bool false
 
+    # All PlistBuddy calls in this block write to the same plist; capture path once.
+    local _iterm_plist="${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
     # Profiles > Text > Font. Stored as "PostScriptName Size" plain string — no binary encoding needed.
     # PostScript name: MesloLGSNF-Italic (from MesloLGS Nerd Font Italic).
-    /usr/libexec/PlistBuddy -c "Set :'New Bookmarks':0:'Normal Font' 'MesloLGSNF-Italic 13'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Set :'New Bookmarks':0:'Normal Font' 'MesloLGSNF-Italic 13'" "${_iterm_plist}"
     # Profiles > General > Command > Login shell. The 'Custom Command' key defaults to 'Custom Shell'
     # on a fresh iTerm2 install; 'No' means "Login shell", which is required for .zlogin to run on
     # every new window/tab and for the full zsh startup sequence to execute correctly.
-    /usr/libexec/PlistBuddy -c "Set :'New Bookmarks':0:'Custom Command' 'No'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Set :'New Bookmarks':0:'Custom Command' 'No'" "${_iterm_plist}"
     # Profiles > Keys > Key Bindings > Presets > Natural Text Editing.
     # Action 10 = send escape sequence; Action 11 = send hex code.
     # Key format: hex-keycode-modifierflags (0x80000=Option, 0x100000=Cmd, 0x280000=Option+Shift(?), 0x300000=Ctrl+Shift(?)).
-    local _iterm_plist="${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
     /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Keyboard Map'" "${_iterm_plist}" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map' dict" "${_iterm_plist}"
     # Cmd+Delete → send Ctrl+U (delete to beginning of line)
@@ -1237,93 +1336,180 @@ main() {
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f728-0x80000' dict" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f728-0x80000':Action integer 10" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f728-0x80000':Text string d" "${_iterm_plist}"
-    # TODO: Need to set up the status bar layout and prefs in iTerm2
 
     # Note: To print the values, use this:
-    # /usr/libexec/PlistBuddy -c "Print :'New Bookmarks':0:'Jobs to Ignore'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    # /usr/libexec/PlistBuddy -c "Print :'New Bookmarks':0:'Jobs to Ignore'" "${_iterm_plist}"
     # Ensure the array exists; suppress error if it already does (idempotent).
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks' array" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:Rows" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:Rows integer 48" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks' array" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:Rows" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:Rows integer 48" "${_iterm_plist}"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:Columns" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:Columns integer 160" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:Columns" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:Columns integer 160" "${_iterm_plist}"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Silence Bell'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Silence Bell' bool false" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Silence Bell'" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Silence Bell' bool false" "${_iterm_plist}"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Unlimited Scrollback'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Unlimited Scrollback' bool true" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Unlimited Scrollback'" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Unlimited Scrollback' bool true" "${_iterm_plist}"
 
     # Profiles > General > Initial directory: 'Recycle' = reuse previous session's directory.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Custom Directory'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Custom Directory' string 'Recycle'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Custom Directory'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Custom Directory' string 'Recycle'" "${_iterm_plist}"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Enable Progress Bars'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Enable Progress Bars' bool true" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Enable Progress Bars'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Enable Progress Bars' bool true" "${_iterm_plist}"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Show Status Bar'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Show Status Bar' bool true" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Show Status Bar'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Show Status Bar' bool true" "${_iterm_plist}"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Cursor Guide'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Cursor Guide' bool true" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Cursor Guide'" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Cursor Guide' bool true" "${_iterm_plist}"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Visual Bell'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Visual Bell' bool true" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Visual Bell'" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Visual Bell' bool true" "${_iterm_plist}"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Jobs to Ignore'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore' array" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':0 string screen" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':1 string tmux" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':2 string rlogin" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':3 string ssh" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':4 string slogin" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':5 string telnet" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':5 string zsh" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Jobs to Ignore'" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore' array" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':0 string screen" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':1 string tmux" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':2 string rlogin" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':3 string ssh" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':4 string slogin" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':5 string telnet" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':5 string zsh" "${_iterm_plist}"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Minimum Contrast'" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Minimum Contrast' integer 0" "${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Minimum Contrast'" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Minimum Contrast' integer 0" "${_iterm_plist}"
+
+    # Profiles > Text
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'ASCII Anti Aliased'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'ASCII Anti Aliased' bool true" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Allow Title Setting'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Allow Title Setting' bool true" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Ambiguous Double Width'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Ambiguous Double Width' bool false" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Background Image Location'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Background Image Location' string ''" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Blinking Cursor'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Blinking Cursor' bool false" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Blur'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Blur' bool false" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Draw Powerline Glyphs'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Draw Powerline Glyphs' bool true" "${_iterm_plist}"
+    # Horizontal and Vertical Spacing: multipliers relative to font's natural spacing (1.0 = default).
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Horizontal Spacing'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Horizontal Spacing' real 1" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Non Ascii Font'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Non Ascii Font' string 'Monaco 12'" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Non-ASCII Anti Aliased'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Non-ASCII Anti Aliased' bool true" "${_iterm_plist}"
+    # Keeps background color opaque when transparency > 0; only cursor/text area is affected.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Only The Default BG Color Uses Transparency'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Only The Default BG Color Uses Transparency' bool true" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Transparency'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Transparency' real 0" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Bold Font'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Bold Font' bool true" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Bright Bold'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Bright Bold' bool true" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Italic Font'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Italic Font' bool true" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Non-ASCII Font'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Non-ASCII Font' bool false" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Vertical Spacing'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Vertical Spacing' real 1" "${_iterm_plist}"
+
+    # Profiles > Terminal
+    # 4 = UTF-8 encoding.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Character Encoding'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Character Encoding' integer 4" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Custom Locale'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Custom Locale' string 'en_US.UTF-8'" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Disable Printing'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Disable Printing' bool true" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Idle Code'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Idle Code' integer 0" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Load Shell Integration Automatically'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Load Shell Integration Automatically' bool true" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Mouse Reporting'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Mouse Reporting' bool true" "${_iterm_plist}"
+    # 0 scrollback lines with Unlimited Scrollback = true means no hard cap.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Scrollback Lines'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Scrollback Lines' integer 0" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Send Code When Idle'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Send Code When Idle' bool false" "${_iterm_plist}"
+    # 2 = set locale environment variables automatically.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Set Local Environment Vars'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Set Local Environment Vars' integer 2" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Terminal Type'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Terminal Type' string 'xterm-256color'" "${_iterm_plist}"
+
+    # Profiles > Window
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Disable Window Resizing'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Disable Window Resizing' bool true" "${_iterm_plist}"
+    # 1 = use profile name as window/tab icon label.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Icon'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Icon' integer 1" "${_iterm_plist}"
+    # -1 = open new sessions on the screen the window is currently on.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Screen'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Screen' integer -1" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Sync Title'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Sync Title' bool false" "${_iterm_plist}"
+    # 1 = show profile name as the title component.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Title Components'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Title Components' integer 1" "${_iterm_plist}"
+    # 0 = normal (non-fullscreen, non-maximized) window type.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Window Type'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Window Type' integer 0" "${_iterm_plist}"
+
+    # Profiles > General / Session
+    # BM Growl: post a notification-center alert when bell fires in a background tab.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'BM Growl'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'BM Growl' bool true" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Close Sessions On End'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Close Sessions On End' bool true" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Command'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Command' string ''" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Custom Tab Title'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Custom Tab Title' string ''" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Default Bookmark'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Default Bookmark' string 'No'" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Description'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Description' string 'Default'" "${_iterm_plist}"
+    # Flashing Bell: flash the screen on bell (distinct from Visual Bell which uses a badge).
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Flashing Bell'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Flashing Bell' bool true" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Name'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Name' string 'Default'" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Open Toolbelt'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Open Toolbelt' bool false" "${_iterm_plist}"
+    # 2 = always prompt before closing if a job other than those in 'Jobs to Ignore' is running.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Prompt Before Closing 2'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Prompt Before Closing 2' integer 2" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Shortcut'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Shortcut' string ''" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Custom Tab Title'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Custom Tab Title' bool false" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Working Directory'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Working Directory' string '${HOME}'" "${_iterm_plist}"
+
+    # Profiles > Keys — modifier key behavior for Option keys
+    # 0 = normal (do not send escape sequences for Option key combos; rely on Keyboard Map).
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Option Key Sends'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Option Key Sends' integer 0" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Right Option Key Sends'" "${_iterm_plist}" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Right Option Key Sends' integer 0" "${_iterm_plist}"
   fi
 
-  # TODO: Need to add these - stopping due to time constraints
-  # {
-  #     'New Bookmarks' =     (
-  #                 {
-  #             // Same level as 'Jobs to Ignore'
-  #             "Character Encoding" -integer 4;
-  #             "Mouse Reporting" -integer 1;
-  #             "Close Sessions On End" -bool true
-  #             Command -string ""
-  #             Description -string Default
-  #             "Flashing Bell" -bool true
-  #             "Idle Code" -bool false
-  #             Name -string Default
-  #             "Non Ascii Font" = "Monaco 12";
-  #             "Non-ASCII Anti Aliased" = 1;
-  #             "Normal Font" = "MenloForPowerline-Regular 14";
-  #             "Option Key Sends" -integer 0
-  #             "Prompt Before Closing 2" -integer 2
-  #             "Right Option Key Sends" -integer 0
-  #             Screen -string "-1"
-  #             "Scrollback Lines" -integer 0
-  #             "Send Code When Idle" -bool false
-  #             "Show Status Bar" = 1;
-  #             "Sync Title" -bool false
-  #             Transparency -string "0.1610584549492386"
-  #             "Use Bold Font" -bool true
-  #             "Use Bright Bold" -bool true
-  #             "Use Italic Font" -bool true
-  #             "Use Non-ASCII Font" -bool false
-  #             "Window Type" -integer 0
-  #             "Working Directory" -string "${HOME}"
-  #         }
-  #     );
-  # }
-
+  # ---------------------------------------------------------------------------
   # Hour - World Clock
+  # ---------------------------------------------------------------------------
   # TODO: Capture all settings
 
+  # ---------------------------------------------------------------------------
   # Google Chrome & Google Chrome Canary
+  # ---------------------------------------------------------------------------
   if ask 'Chrome settings' 'Y'; then
     defaults write com.google.Chrome AppleEnableMouseSwipeNavigateWithScrolls -bool false
     defaults write com.google.Chrome AppleEnableSwipeNavigateWithScrolls -bool false
@@ -1339,12 +1525,16 @@ main() {
     # defaults write com.google.Chrome.canary ExtensionInstallSources -array 'https://*.github.com/*' 'http://userscripts.org/*'
   fi
 
+  # ---------------------------------------------------------------------------
   # KeepassXC
+  # ---------------------------------------------------------------------------
   if ask 'KeepassXC settings' 'Y'; then
     defaults write org.keepassxc.keepassxc 'NSNavLastRootDirectory' -string "${HOME}/personal/${USER}"
   fi
 
+  # ---------------------------------------------------------------------------
   # Monolingual
+  # ---------------------------------------------------------------------------
   if ask 'Monolingual settings' 'Y'; then
     defaults write net.sourceforge.Monolingual SUAutomaticallyUpdate -bool true
     defaults write net.sourceforge.Monolingual SUEnableAutomaticChecks -bool true
@@ -1352,7 +1542,9 @@ main() {
     defaults write net.sourceforge.Monolingual Strip -bool true
   fi
 
+  # ---------------------------------------------------------------------------
   # ProtonVpn
+  # ---------------------------------------------------------------------------
   if ask 'ProtonVpn settings' 'Y'; then
     defaults write ch.protonvpn.mac ConnectOnDemand -bool true
     defaults write ch.protonvpn.mac EarlyAccess -bool true
@@ -1370,13 +1562,17 @@ main() {
     defaults write ch.protonvpn.mac alternativeRouting -bool true
   fi
 
+  # ---------------------------------------------------------------------------
   # Thunderbird-beta
+  # ---------------------------------------------------------------------------
   if ask 'Thunderbird settings' 'Y'; then
     defaults write org.mozilla.thunderbird NSFullScreenMenuItemEverywhere -bool false
     defaults write org.mozilla.thunderbird NSTreatUnknownArgumentsAsOpen -bool false
   fi
 
+  # ---------------------------------------------------------------------------
   # Zoomus
+  # ---------------------------------------------------------------------------
   if ask 'Zoomus settings' 'Y'; then
     defaults write us.zoom.xos BounceApplicationSetting -int 2
     defaults write us.zoom.xos NSInitialToolTipDelay -int 100
@@ -1395,7 +1591,9 @@ main() {
     defaults write ZoomChat ZoomRememberPhoneKey -bool true
   fi
 
+  # ---------------------------------------------------------------------------
   # Clocker
+  # ---------------------------------------------------------------------------
   if ask 'Clocker settings' 'Y'; then
     # Skip: SelectedCalendars (iCloud Calendar UUIDs — denial criterion #2) and
     # defaultPreferences (binary NSData blobs — not portably expressible).
@@ -1413,7 +1611,9 @@ main() {
     defaults write com.abhishek.Clocker userFontSize -int 7
   fi
 
+  # ---------------------------------------------------------------------------
   # DBeaver
+  # ---------------------------------------------------------------------------
   if ask 'DBeaver settings' 'Y'; then
     defaults write org.jkiss.dbeaver.core.product NSAutomaticDashSubstitutionEnabled -bool false
     defaults write org.jkiss.dbeaver.core.product NSAutomaticQuoteSubstitutionEnabled -bool false
@@ -1421,7 +1621,9 @@ main() {
     defaults write org.jkiss.dbeaver.core.product NSScrollAnimationEnabled -bool false
   fi
 
+  # ---------------------------------------------------------------------------
   # DockDoor
+  # ---------------------------------------------------------------------------
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # DockDoor has no defaults key for login-item status.
   if ask 'DockDoor settings' 'Y'; then
@@ -1434,7 +1636,9 @@ main() {
     defaults write com.ethanbills.DockDoor reopenSettingsAfterRestart -bool false
   fi
 
+  # ---------------------------------------------------------------------------
   # Drawio
+  # ---------------------------------------------------------------------------
   if ask 'Drawio settings' 'Y'; then
     defaults write com.jgraph.drawio.desktop AppleTextDirection -bool true
     defaults write com.jgraph.drawio.desktop NSForceRightToLeftWritingDirection -bool false
@@ -1466,9 +1670,12 @@ user_pref("browser.newtabpage.activity-stream.showSponsoredTopSites", false);
 user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
 '
 
+  # ---------------------------------------------------------------------------
   # Firefox
+  # ---------------------------------------------------------------------------
   if ask 'Firefox settings' 'Y'; then
     # macOS-level NS* keys for all Firefox-family bundles.
+    local _ff_bundle
     for _ff_bundle in org.mozilla.firefox org.mozilla.nightly org.mozilla.floorp org.mozilla.thunderbird.betterbird; do
       defaults write "${_ff_bundle}" NSFullScreenMenuItemEverywhere -bool false
       defaults write "${_ff_bundle}" NSNavLastRootDirectory -string "${HOME}/Downloads"
@@ -1489,7 +1696,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     fi
   fi
 
+  # ---------------------------------------------------------------------------
   # Keybase
+  # ---------------------------------------------------------------------------
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # Keybase has no defaults key for login-item status.
   if ask 'Keybase settings' 'Y'; then
@@ -1499,7 +1708,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     defaults write keybase.Electron NSTreatUnknownArgumentsAsOpen -bool false
   fi
 
+  # ---------------------------------------------------------------------------
   # MechVibes
+  # ---------------------------------------------------------------------------
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # MechVibes has no defaults key for login-item status.
   if ask 'MechVibes settings' 'Y'; then
@@ -1508,7 +1719,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     defaults write com.electron.mechvibes NSTreatUnknownArgumentsAsOpen -bool false
   fi
 
+  # ---------------------------------------------------------------------------
   # KeyCastr
+  # ---------------------------------------------------------------------------
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # KeyCastr has no defaults key for login-item status.
   if ask 'KeyCastr settings' 'Y'; then
@@ -1530,7 +1743,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     defaults write io.github.keycastr selectedVisualizer -string 'Default'
   fi
 
+  # ---------------------------------------------------------------------------
   # KeyClu
+  # ---------------------------------------------------------------------------
   if ask 'KeyClu settings' 'Y'; then
     defaults write com.0804Team.KeyClu SUAutomaticallyUpdate -bool true
     defaults write com.0804Team.KeyClu SUEnableAutomaticChecks -bool true
@@ -1552,7 +1767,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     defaults write com.0804Team.KeyClu silentLaunchQuit -bool true
   fi
 
+  # ---------------------------------------------------------------------------
   # OnlyOffice
+  # ---------------------------------------------------------------------------
   if ask 'OnlyOffice settings' 'Y'; then
     # Skip: asc_save_path (machine-specific path) and asc_user_name_app (personal name).
     defaults write asc.onlyoffice.ONLYOFFICE AppleLanguages -array 'en-US'
@@ -1568,7 +1785,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     defaults write asc.onlyoffice.ONLYOFFICE 'asc_user_ui_theme' -string 'theme-light'
   fi
 
+  # ---------------------------------------------------------------------------
   # Rancher Desktop
+  # ---------------------------------------------------------------------------
   if ask 'Rancher Desktop settings' 'Y'; then
     defaults write io.rancherdesktop.app AppleTextDirection -bool true
     defaults write io.rancherdesktop.app NSForceRightToLeftWritingDirection -bool false
@@ -1576,7 +1795,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     defaults write io.rancherdesktop.app NSTreatUnknownArgumentsAsOpen -bool false
   fi
 
+  # ---------------------------------------------------------------------------
   # Shortcat
+  # ---------------------------------------------------------------------------
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # Shortcat has no defaults key for login-item status.
   if ask 'Shortcat settings' 'Y'; then
@@ -1593,7 +1814,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     defaults write com.sproutcube.Shortcat upKeycode -int 40
   fi
 
+  # ---------------------------------------------------------------------------
   # Sol
+  # ---------------------------------------------------------------------------
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # Sol has no defaults key for login-item status.
   if ask 'Sol settings' 'Y'; then
@@ -1607,7 +1830,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     defaults write com.ospfranco.sol SUSendProfileInfo -bool false
   fi
 
+  # ---------------------------------------------------------------------------
   # Stats
+  # ---------------------------------------------------------------------------
   if ask 'Stats settings' 'Y'; then
     # Skip: id, remote_id (device UUIDs — denial criterion #1), ble_*, sensor_*, *_ts
     # (ephemeral sync state — denial criterion #3), remote_tokens_migrated_to_keychain,
@@ -1742,9 +1967,12 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     defaults write com.stonerl.Thaw UseIceBarOnlyOnNotchedDisplay -bool false
   fi
 
+  # ---------------------------------------------------------------------------
   # Zen Browser
+  # ---------------------------------------------------------------------------
   if ask 'Zen Browser settings' 'Y'; then
     # Two bundle IDs in use across Zen versions.
+    local _zen_bundle
     for _zen_bundle in app.zen-browser.zen org.mozilla.com.zen.browser; do
       defaults write "${_zen_bundle}" NSFullScreenMenuItemEverywhere -bool false
       defaults write "${_zen_bundle}" NSTreatUnknownArgumentsAsOpen -bool false
@@ -1763,7 +1991,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     fi
   fi
 
+  # ---------------------------------------------------------------------------
   # Activity Monitor
+  # ---------------------------------------------------------------------------
 
   if ask 'Show the main window when launching Activity Monitor' 'Y'; then
     defaults write com.apple.ActivityMonitor OpenMainWindow -bool true
@@ -1786,12 +2016,16 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     defaults write com.apple.ActivityMonitor SelectedTab -int 4
   fi
 
+  # ---------------------------------------------------------------------------
   # Photos
+  # ---------------------------------------------------------------------------
   if ask 'Prevent Photos from opening automatically when devices are plugged in' 'Y'; then
     defaults -currentHost write com.apple.ImageCapture disableHotPlug -bool true
   fi
 
+  # ---------------------------------------------------------------------------
   # Messages
+  # ---------------------------------------------------------------------------
   # Disable automatic emoji substitution (i.e. use plain text smileys)
   # defaults write com.apple.messageshelper.MessageController SOInputLineSettings -dict-add 'automaticEmojiSubstitutionEnablediMessage' -bool false
 
@@ -1801,7 +2035,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Disable continuous spell checking
   # defaults write com.apple.messageshelper.MessageController SOInputLineSettings -dict-add 'continuousSpellCheckingEnabled' -bool false
 
+  # ---------------------------------------------------------------------------
   # Software Update
+  # ---------------------------------------------------------------------------
   if ask 'Automatically check for updates (required for any downloads)' 'Y'; then
     defaults write com.apple.SoftwareUpdate AutomaticCheckEnabled -bool true
   fi
@@ -1830,7 +2066,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     defaults write com.apple.SoftwareUpdate ScheduleFrequency -int 1
   fi
 
+  # ---------------------------------------------------------------------------
   # Mac App Store
+  # ---------------------------------------------------------------------------
   # Disable smart quotes as they're annoying when typing code
   # defaults write -g NSAutomaticQuoteSubstitutionEnabled -bool false
 
@@ -1846,7 +2084,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Add a context menu item for showing the Web Inspector in web views
   defaults write -g WebKitDeveloperExtras -bool true
 
+  # ---------------------------------------------------------------------------
   # Time Machine
+  # ---------------------------------------------------------------------------
   # Prevent Time Machine from prompting to use new hard drives as backup volume
   defaults write com.apple.TimeMachine DoNotOfferNewDisksForBackup -bool true
 
@@ -1860,7 +2100,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Backup frequency default= 3600 seconds (every hour) 1800 = 1/2 hour, 7200=2 hours
   # sudo defaults write /System/Library/Launch Daemons/com.apple.backupd-auto StartInterval -int 1800
 
+  # ---------------------------------------------------------------------------
   # Screen
+  # ---------------------------------------------------------------------------
   # Require password immediately after sleep or screen saver begins
   defaults write com.apple.screensaver askForPassword -bool true
   defaults write com.apple.screensaver askForPasswordDelay -int 0
@@ -1872,7 +2114,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Enable HiDPI display modes (requires restart)
   sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool true
 
+  # ---------------------------------------------------------------------------
   # Screen capture
+  # ---------------------------------------------------------------------------
   # Save screenshots to the desktop
   defaults write com.apple.screencapture location -string "${HOME}/Desktop"
 
@@ -1889,7 +2133,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Log HTTP Activity:
   # defaults write com.apple.iCal LogHTTPActivity -bool true
 
+  # ---------------------------------------------------------------------------
   # Address Book
+  # ---------------------------------------------------------------------------
 
   # Show Contact Reflection:
   # defaults write com.apple.AddressBook reflection -boolean
@@ -1899,22 +2145,30 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   defaults write com.apple.AddressBook ABBirthDayVisible -bool true 2>/dev/null || true
   defaults write com.apple.AddressBook ABDefaultAddressCountryCode -string in 2>/dev/null || true
 
+  # ---------------------------------------------------------------------------
   # OmniGraffle
+  # ---------------------------------------------------------------------------
   # Allow scroll wheel zooming:
   # defaults write com.omnigroup.OmniGraffle DisableScrollWheelZooming -bool false
 
   # Allow scroll wheel zooming in OmniGrafflePro:
   # defaults write com.omnigroup.OmniGrafflePro DisableScrollWheelZooming -bool false
 
+  # ---------------------------------------------------------------------------
   # Quick Time Player
+  # ---------------------------------------------------------------------------
   # Automatically show Closed Captions (CC) when opening a Movie:
   # defaults -currentHost write com.apple.QuickTimePlayerX.plist MGEnableCCAndSubtitlesOnOpen -boolean
 
+  # ---------------------------------------------------------------------------
   # Spaces
+  # ---------------------------------------------------------------------------
   # When switching applications, switch to respective space
   defaults write -g AppleSpacesSwitchOnActivate -bool true
 
+  # ---------------------------------------------------------------------------
   # Kill affected applications
+  # ---------------------------------------------------------------------------
   local app_array=(
     'Activity Monitor'
     'Address Book'
@@ -1934,6 +2188,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     'SizeUp'
     'SystemUIServer'
   )
+  local app
   for app in "${app_array[@]}"; do
     killall "${app}" &>/dev/null || true
   done
@@ -1954,8 +2209,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   'Zoom' (force-quitting during a call would disconnect it),
   'Thunderbird',
   'KeePassXC'"
-  success 'Done. Note that some of these changes require a logout/restart to take effect.'
-  print_script_summary
+  print_script_summary '' 'Done. Note that some of these changes require a logout/restart to take effect.'
 }
 
 main "$@"

@@ -2,21 +2,24 @@
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
-# Source shell helpers if they aren't already loaded
 # Re-source guard is inside .shellrc itself — safe to call unconditionally.
 source "${HOME}/.shellrc"
 
-# Updates the specified repo (ie creates a local commit of changed files that I am not interested in verifying, but which need to be committed into that repo)
-# internal function: not to be called separately
+# Stages and commits all changed files in the specified repo without prompting.
+# Intended for repos that track auto-generated state (e.g. preference exports) where
+# the caller does not need to review individual changes before committing.
+# Internal helper — not intended to be called directly.
 _update_repo() {
   if ! is_git_repo "${1}"; then
     warn "Skipping updating the repo since '$(yellow "${1}")' doesn't exist or is not a git repo"
     return 0 # Success, nothing to do
   fi
 
-  local folder="$(strip_trailing_slash "${1}")"
+  local folder
+  folder="$(strip_trailing_slash "${1}")"
 
-  local relative_path="$(git -C "${folder}" relative-path "${2}")"
+  local relative_path
+  relative_path="$(git -C "${folder}" relative-path "${2}")"
   relative_path="${relative_path:-.}"
 
   section_header2 "$(yellow 'Updating') $(purple "${folder}")"
@@ -36,6 +39,6 @@ update_all_repos() {
 
 # Run only when executed directly, not when sourced (e.g. to import the function into another script).
 [[ "${zsh_eval_context}" == *file* ]] || update_all_repos "$@"
-# is_zsh returns false in bash (ZSH_VERSION unset), short-circuiting the zsh-only '(( $+functions[...] ))' syntax is never
-# evaluated by non-zsh runtimes (e.g. direnv's sandbox).
+# is_zsh returns false in bash (ZSH_VERSION unset), short-circuiting the zsh-only
+# '(( $+functions[...] ))' syntax so it is never evaluated by non-zsh runtimes.
 is_zsh && (($+functions[compdef])) && compdef update_all_repos || true

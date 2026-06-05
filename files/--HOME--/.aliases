@@ -37,6 +37,25 @@ extract_last_segment() {
   echo "${"${1%/}"##*/}"
 }
 
+# Returns 0 (true) when $1 is blank or a comment line (optional leading
+# whitespace followed by '#'). Use this to skip non-data lines when reading
+# config or data files with while+read loops.
+#
+# =~ (regex) is used rather than == (glob) because the comment-start pattern
+# '^[[:space:]]*#' requires an anchor — zsh extended globs cannot anchor at the
+# start of a string with [[:space:]]* in the same expression without extendedglob
+# side-effects. .aliases is never sourced by bash so zsh regex is safe here.
+#
+# Usage:
+#   while IFS= read -r line; do
+#     if is_blank_or_comment_line "${line}"; then continue; fi
+#     # process "${line}" ...
+#   done < "${file}"
+is_blank_or_comment_line() {
+  local _line="${1:-}"
+  [[ "${_line}" =~ '^[[:space:]]*#' || -z "${_line//[[:space:]]/}" ]]
+}
+
 # --------------------------------------------------------------------------
 # Script utilities (zsh-only; not needed before dotfiles repo is cloned)
 # --------------------------------------------------------------------------
@@ -59,7 +78,10 @@ parse_folder_and_switches() {
       folder="${arg}"
     fi
   done
-  folder="${folder:-$(pwd)}"
+  # ${PWD} is a POSIX standard variable — always set in bash, zsh, and cron.
+  # Avoids the $(pwd) subprocess fork that fires on every call when no folder arg
+  # is given (the common case for push/pull/upreb/cc and similar autoload functions).
+  folder="${folder:-${PWD}}"
 }
 
 # Sources ${PERSONAL_BIN_DIR}/<cmd>-<cwd-basename>.sh if it exists and is
@@ -714,7 +736,7 @@ _create_crontab() {
   shell_bin="$(which "$(basename "${SHELL}")")"
   echo '# Reference: https://crontab.guru/' >"${file}"
   echo >>"${file}"
-  echo "# Note: 'chronic' is a utility installed using 'moreutils' from homebrew and is needed so that a successful run of any cron job does not cause a mail to get generated unless in case of error scenarios" >>"${file}"
+  echo "# Note: 'chronic' is provided by 'moreutils' from Homebrew and suppresses cron mail on success" >>"${file}"
   echo >>"${file}"
   echo '# Env' >>"${file}"
   echo "SHELL=\"${shell_bin}\"" >>"${file}"
@@ -722,7 +744,7 @@ _create_crontab() {
   echo "HOME=\"${HOME}\"" >>"${file}"
   # NOTE: do NOT add inline comments on the PATH line — crontab treats '#' as part of the value,
   # corrupting the last directory entry and causing "command not found" for scripts in that dir.
-  echo "# PATH: homebrew + system utils + personal bin + dotfiles scripts (needed for chronic, run-all.sh, capture-prefs.sh etc.)" >>"${file}"
+  echo "# PATH: homebrew + system utils + personal bin + dotfiles scripts" >>"${file}"
   echo "PATH=${HOMEBREW_PREFIX}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PERSONAL_BIN_DIR}:${DOTFILES_DIR}/scripts" >>"${file}"
   echo >>"${file}"
   # Run script in its own fresh zsh process; wrap with zsh -c so tee is inside

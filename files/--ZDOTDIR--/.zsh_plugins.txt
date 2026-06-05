@@ -88,9 +88,13 @@ ohmyzsh/ohmyzsh path:plugins/zbell kind:defer
 # ──────────────────────────────────────────────────────────────────────────────
 zsh-users/zsh-completions path:src kind:fpath
 
-# NOT deferred: binds up/down arrow keys to substring-based history search.
-# Must be active from the very first Up/Down keypress.
-zsh-users/zsh-history-substring-search
+# DEFERRED: binds up/down arrow keys to substring-based history search. The
+# binding is set up during the first zle-line-init event (before the first
+# prompt is displayed), so it is active before any keypress is possible.
+# The same accepted risk applies as for .aliases deferral: pasting text before
+# ZLE is fully idle on the first prompt. Falls back to zsh's built-in history
+# cycling for any buffered input in that narrow window, which is acceptable.
+zsh-users/zsh-history-substring-search kind:defer
 
 # NOT deferred: the direnv hook must fire before any command — especially the
 # very first `cd` or any command that depends on direnv-managed env vars.

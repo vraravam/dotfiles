@@ -3,6 +3,69 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of changelog:
 
 
+### 3.1.8
+
+#### Clarified two-phase preference architecture in documentation
+
+* *[copilot-instructions.md]* Backported the [`§ osx-defaults.sh and capture-prefs — Two-Phase Preference Architecture`](.github/copilot-instructions.md#osx-defaultssh-and-capture-prefs--two-phase-preference-architecture) Layer 1/Layer 2 section from `nix-migration`, inserted before Git Configuration Rules; stripped the nix-specific `targets.darwin.defaults` subsection. Gives a concise accessible overview (what the layers are, auto-call behavior, re-run warning, ordering constraint) alongside the existing detailed Phase 1/Phase 2 decision-rules section.
+* *[GettingStarted.md]* Added an inline sentence to the bootstrap paragraph noting that the script automatically applies the two-phase preference setup in order.
+
+#### Tightened `_create_crontab` cron header comments
+
+* *[.aliases]* Replaced the verbose `chronic` comment ("is a utility installed using 'moreutils' from homebrew and is needed so that a successful run...") with a concise form ("is provided by 'moreutils' from Homebrew and suppresses cron mail on success").
+* *[.aliases]* Removed the parenthetical `(needed for chronic, run-all.sh, capture-prefs.sh etc.)` from the `# PATH:` cron header comment — the comment described *why* the path was set, which belongs in the code comment above it, not in the generated crontab header.
+
+#### Unified `custom.git_state` detection to `git rev-parse --verify`
+
+* *[starship.toml]* Replaced `[ -d "$root/rebase-merge" ] || [ -d "$root/rebase-apply" ]` and `[ -f "$root/BISECT_LOG" ]` with `git rev-parse --verify REBASE_HEAD` and `git rev-parse --verify BISECT_HEAD` respectively; removed the now-unused `root=$(git rev-parse --git-dir …)` line. All five operation states now use a single unified detection strategy that works with both the classic `.git/` files backend and the reftable backend (git 2.45+), where pseudorefs are stored in the reftable and plain file/directory checks silently fail.
+* *[copilot-instructions.md]* Updated the [`§ Starship Prompt Rules`](.github/copilot-instructions.md#starship-prompt-rules) bullet to drop the "two strategies" framing and document the unified `git rev-parse --verify` approach for all five states (`REBASE_HEAD`, `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `BISECT_HEAD`).
+
+#### Standardised `osx-defaults.sh` section formatting
+
+* *[osx-defaults.sh]* Renamed `# MenuBar` section header to `# Menu Bar` to match macOS terminology.
+* *[osx-defaults.sh]* Added missing blank lines after the closing `# ---` divider in seven sections (Login Window, SSD-specific tweaks, Dock, Safari & WebKit, Mail, Terminal, iTerm2) for consistent section-body separation.
+
+### 3.1.7
+
+#### Standardised `dispatch_or_fallback` across all per-repo autoload commands
+
+* *[count, st]* Renamed `count()`/`st()` to `_count()`/`_st()` (private implementations) and added `count() { dispatch_or_fallback count _count "$@"; }` / `st() { dispatch_or_fallback st _st "$@"; }` entry points — consistent with `cc`, `pull`, `push`, `upreb`.
+* *[copilot-instructions.md]* Updated `dispatch_or_fallback` section to list all six commands (`cc`, `count`, `pull`, `push`, `st`, `upreb`) and explicitly document that `status_all_repos` and `update_all_repos` are excluded because they operate on a fixed set of repos.
+* *[TechnicalDeepDive.md]* Same update to § 10 Per-Project Script Overrides.
+* *[Extras.md]* Updated git autoload table to split `st`/`status_all_repos` into separate rows, add an "Supports override?" column, and clarify that `status_all_repos` and `update_all_repos` are excluded; expanded the per-project override description with a concrete annotated example showing how to implement an override file, call `_push "$@"` to avoid infinite recursion, and use `return 1` safely.
+
+#### Rewrote keg-only PATH/compiler-flags cache to filesystem-direct approach
+
+* *[.zshrc]* Replaced the snapshot-and-delta cache-generation approach with direct filesystem enumeration: `_keg_collect` (renamed from `_use_keg_for`) interrogates `${HOMEBREW_PREFIX}/opt/<pkg>/bin`, `libexec/bin`, `libexec/gnubin`, etc. directly and builds `keg_paths`, `keg_manpath`, `ldflags_new`, `cppflags_new`, and `pkgconfig_new` without reading the current environment. `LDFLAGS`, `CPPFLAGS`, and `PKG_CONFIG_PATH` are written as plain overwrites (not prepend-expressions) since the keg-only block is their sole setter during startup.
+* *[.zshrc]* Added Homebrew base `bin`/`sbin` to the generated cache (`hb_base`) so PATH priority is: mise > keg-only > Homebrew base > system.
+* The new approach is idempotent: regenerating the cache inside a shell that already has keg-only vars set (e.g. a tool like OpenCode inheriting the user's `PATH`) produces the same result as regenerating in a clean shell. The snapshot-and-delta approach was broken in this scenario — a pre-populated `PATH` produced an empty delta (keg-only bins missing from cache) and a pre-populated `LDFLAGS` caused doubled flags on every re-source.
+
+#### Removed dead `prepend_to_*` functions from `.shellrc`
+
+* *[.shellrc]* Removed five functions superseded by the filesystem-direct keg-only cache approach: `prepend_to_path_if_dir_exists`, `prepend_to_manpath_if_dir_exists`, `prepend_to_ldflags_if_dir_exists`, `prepend_to_cppflags_if_dir_exists`, `prepend_to_pkg_config_path_if_dir_exists`. `append_to_path_if_dir_exists` and `append_to_fpath_if_dir_exists` are retained (both have active call sites in `.zshrc` and `fresh-install-of-osx.sh`).
+
+#### Disabled `predict-on` and `incremental-complete-word` ZLE features
+
+* *[.zshrc]* Commented out `autoload` and `bindkey` calls for `predict-on` (Ctrl+Xp) and `incremental-complete-word` (Ctrl+Xi). `predict-on` overlaps with `zsh-autosuggestions` (already loaded synchronously) which provides the same history-based inline completion non-destructively without a toggle. `incremental-complete-word` is superseded by fzf-based tab completion. Neither adds startup overhead, but `predict-on` adds per-keystroke cost when active.
+
+#### Removed `is_macos` wrapper from `.zshrc`
+
+* *[.zshrc]* Lifted `setopt` calls, `zstyle` completions config, `autoload -Uz _git`, `bindkey` for Option+arrow, and the `if (($+commands[brew]))` keg-only cache block out of the `if is_macos; then` wrapper. The setopts and zstyle config are generic zsh behaviour, the bindkeys are safely inert on non-macOS terminals, and the brew block was already guarded by `(($+commands[brew]))` — the outer `is_macos` check added no safety and made the code harder to reason about.
+* *[.zshrc]* Updated the comment above the starship init block to remove the stale reference to "the macOS block" and to accurately state that starship's init must be sourced at file scope (not deferred) because its `precmd_functions+=` registration and `setopt promptsubst` must be applied before the first prompt.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts. Run in any open terminal — `delete_caches` is essential: the old keg-only cache format called `prepend_to_path_if_dir_exists` (now removed from `.shellrc`); sourcing the old cache without clearing it will produce "command not found" errors:
+
+  ```zsh
+  delete_caches
+  unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
+  unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
+  ```
+
+* Quit and restart the Terminal application.
+
+
 ### 3.1.6
 
 #### Set Homebrew zsh as the default login shell during fresh-install

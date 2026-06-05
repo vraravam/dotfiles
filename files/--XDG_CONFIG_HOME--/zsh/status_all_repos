@@ -2,7 +2,6 @@
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
-# Source shell helpers if they aren't already loaded
 # Re-source guard is inside .shellrc itself — safe to call unconditionally.
 source "${HOME}/.shellrc"
 # st is a required dependency; source it to make the function available without
@@ -29,6 +28,6 @@ status_all_repos() {
 
 # Run only when executed directly, not when sourced (e.g. to import the function into another script).
 [[ "${zsh_eval_context}" == *file* ]] || status_all_repos "$@"
-# is_zsh returns false in bash (ZSH_VERSION unset), short-circuiting the zsh-only '(( $+functions[...] ))' syntax is never
-# evaluated by non-zsh runtimes (e.g. direnv's sandbox).
+# is_zsh returns false in bash (ZSH_VERSION unset), short-circuiting the zsh-only
+# '(( $+functions[...] ))' syntax so it is never evaluated by non-zsh runtimes.
 is_zsh && (($+functions[compdef])) && compdef status_all_repos || true

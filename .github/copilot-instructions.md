@@ -356,9 +356,11 @@ The Ruby equivalent uses `Logging.record_warning`, `Logging.record_error`,
 `Logging.current_section=`, and `Logging.print_script_summary(start_time)` — see
 `ruby-scripting.instructions.md` § **Deferred error/warning collection**.
 `print_script_summary` accepts an optional `start_time` (Unix epoch from
-`print_script_start`) and calls `print_script_duration` internally — no separate
-call needed. Omit the argument only on early-exit paths inside methods that
-cannot access the top-level `start_time` local.
+`print_script_start`) as `$1` and calls `print_script_duration` internally — no
+separate call needed. Omit when no start time is available (e.g. early-exit paths
+before the start epoch was captured). An optional `$2` message is printed via
+`info` before the warnings/errors list — use this instead of a bare `info` /
+`success` call immediately before `print_script_summary`.
 
 `print_script_summary` sends a macOS notification when `_step_errors` or
 `_step_warnings` is non-empty (shell only — Ruby omits `osascript`). This makes
@@ -372,13 +374,13 @@ directly. Sending a notification because the user mistyped a flag is poor UX.
 
 ```zsh
 # getopts cases
-:) warn "Option -${OPTARG} requires an argument."; usage "${_SCRIPT_NAME}"; return 1 ;;
-?) warn "Unknown option: -${OPTARG}";              usage "${_SCRIPT_NAME}"; return 1 ;;
+:) warn "Option -${OPTARG} requires an argument."; usage; return 1 ;;
+?) warn "Unknown option: -${OPTARG}";              usage; return 1 ;;
 
 # Missing required positional/flag
 if is_zero_string "${folder}"; then
   warn 'Missing required arguments/switches'
-  usage "${_SCRIPT_NAME}"
+  usage
   return 1
 fi
 ```
@@ -403,7 +405,7 @@ Never call `print_script_summary` on the help path. With empty error/warning
 arrays it would print a spurious success summary.
 
 ```zsh
-h) usage "${_SCRIPT_NAME}"; return 0 ;;
+h) usage; return 0 ;;
 ```
 
 ### `set -euo pipefail`
@@ -468,6 +470,10 @@ at zero) is arithmetic false (exit 1) and silently aborts the script. Always use
 - Internal helpers: prefix with `_`.
 - `source` vs `load_file_if_exists`: use `load_file_if_exists` after `.shellrc`
   is sourced; use raw `[[ -f ]]` + `source` before `.shellrc` is available.
+- **`return` vs `exit` inside `main()`**: always use `return`, never `exit`.
+  `exit` terminates the entire shell process — if the script is ever sourced it
+  kills the calling shell. `exit` IS correct in trap handlers and git `!` alias
+  bodies. See `shell-scripting.instructions.md` § `return` vs `exit` Inside `main()`.
 
 ### No Aliases in Non-Interactive Scripts
 
@@ -589,6 +595,47 @@ with Ruby 2.6. Do NOT use homebrew-managed Ruby for `$DOTFILES_DIR` scripts.
 
 ---
 
+## osx-defaults.sh and capture-prefs — Two-Phase Preference Architecture
+
+macOS application preferences are managed in two distinct layers that must always be
+applied in order. Understanding this split is a prerequisite before placing any new
+preference setting.
+
+### Layer 1 — Baseline initial defaults (`osx-defaults.sh`)
+
+`osx-defaults.sh` is a **run-once seed script**. It writes the initial value for each
+preference when a machine is first set up. After that, the user can change any of these
+values via the application UI and the change persists — `osx-defaults.sh` is never
+re-run automatically by any background process.
+
+- Every `defaults write` call in `osx-defaults.sh` represents an *initial default*,
+  not a policy enforcement.
+- Called automatically by `fresh-install-of-osx.sh` in silent mode
+  (`osx-defaults.sh -s`) as step 1 of the preference setup sequence.
+- Can be re-run manually at any time, but this overwrites UI-configured values that
+  differ from the script — always follow a manual re-run with `capture-prefs.sh -i`
+  to restore the UI layer.
+
+### Layer 2 — UI-configured overrides (`capture-prefs.sh -i`)
+
+`capture-prefs.sh -i` imports plist files previously exported by `capture-prefs.sh`
+from a prior machine or session. These represent the user's actual configured state —
+every preference the user has changed via the application UI since initial setup.
+
+Because the import runs *after* `osx-defaults.sh`, the imported UI values always win.
+The sequence is order-dependent and must never be reversed:
+
+```
+(1) osx-defaults.sh -s      # seed the baseline
+(2) capture-prefs.sh -i     # restore UI-configured values on top
+```
+
+`fresh-install-of-osx.sh` enforces this order automatically (see lines calling
+`osx-defaults.sh -s` then `capture-prefs.sh -i`). When running either script
+manually, always follow this order.
+
+---
+
 ## Git Configuration Rules
 
 > Full rules are in `.github/instructions/git-config.instructions.md`.
@@ -647,6 +694,13 @@ defined in `.aliases`.
 - Git state (rebase/cherry-pick/merge) must be shown in the `custom.git_state`
   section in red.
 - `custom.git_state` works for both reftable and classic `.git/HEAD` formats.
+  All states are detected via `git rev-parse --verify <REF>`: `REBASE_HEAD`
+  (set during both interactive and non-interactive rebase since git 2.24),
+  `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `BISECT_HEAD`. The reftable
+  format (git 2.45+ default) stores pseudorefs in the reftable rather than as
+  plain files in `.git/`, so file/directory checks (`[ -f … ]`, `[ -d … ]`)
+  silently fail on reftable repos — `git rev-parse --verify` resolves through
+  git's own ref machinery and handles both backends correctly.
 - No leading space before the chevron when `custom.git_state` has no output
   (use `when` condition to suppress the module when inactive).
 - `ignore_timeout = true` in custom commands that may be slow.
@@ -751,8 +805,11 @@ would silently override it for the remainder of the run.
 
 ## `dispatch_or_fallback` — Per-Project Script Overrides
 
-Autoload functions (`push`, `pull`, `cc`, `upreb`, etc.) support per-project
-overrides via `dispatch_or_fallback` (defined in `.shellrc`):
+Autoload functions (`cc`, `count`, `pull`, `push`, `st`, `upreb`) support
+per-project overrides via `dispatch_or_fallback` (defined in `.shellrc`).
+`status_all_repos` and `update_all_repos` intentionally do not use this pattern
+— they operate on a fixed set of repos and a cwd-based override would not be
+meaningful:
 
 ```zsh
 push() { dispatch_or_fallback push _push "$@"; }

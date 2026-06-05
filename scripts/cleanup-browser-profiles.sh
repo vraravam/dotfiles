@@ -30,7 +30,7 @@ vacuum_browser_profile_folder() {
     is_file "${_file}" || return 0
     local _line
     while IFS= read -r _line; do
-      [[ "${_line}" =~ '^[[:space:]]*#' || -z "${_line//[[:space:]]/}" ]] && continue
+      if is_blank_or_comment_line "${_line}"; then continue; fi
       eval "${_var}+=(\"\${_line}\")"
     done < "${_file}"
   }
@@ -39,8 +39,8 @@ vacuum_browser_profile_folder() {
   local -a file_patterns dir_patterns
   local file_patterns_file="${DOTFILES_DIR}/scripts/data/cleanup-browser-files.txt"
   local dir_patterns_file="${DOTFILES_DIR}/scripts/data/cleanup-browser-dirs.txt"
-  # while+read replaces $("${(@f)$(grep -vE ...)}"): no grep subprocess fork.
-  # =~ regex test skips comment lines; ${_line//[[:space:]]/} blank-line check.
+  # _read_pattern_file reads each file line-by-line via while+read, skipping comment
+  # and blank lines, and populates the named array without any subprocess fork.
   _read_pattern_file "${file_patterns_file}" file_patterns
   _read_pattern_file "${dir_patterns_file}" dir_patterns
   # Named function defined inside vacuum_browser_profile_folder — persists in the
@@ -63,7 +63,7 @@ vacuum_browser_profile_folder() {
   local _du_out size_before
   _du_out=$(du -sk "${profile_folder}" 2>/dev/null)
   size_before="${_du_out%%$'\t'*}"
-  echo "--> Size before: $(folder_size "${profile_folder}")"
+  info "--> Size before: $(folder_size "${profile_folder}")"
 
   if command_exists sqlite3; then
     local vacuum_failed=0
@@ -77,9 +77,9 @@ vacuum_browser_profile_folder() {
       # Only vacuum if > 10MB to save time
       if [[ ${db_size} -gt 10485760 ]]; then
         if [[ ${dry_run} -eq 1 ]]; then
-          echo "[DRY-RUN] Would vacuum: ${db_file//${HOME}/~} ($(numfmt --to=iec ${db_size} 2>/dev/null || echo "${db_size} bytes"))"
+          info "[DRY-RUN] Would vacuum: ${db_file//${HOME}/~} ($(numfmt --to=iec ${db_size} 2>/dev/null || echo "${db_size} bytes"))"
         else
-          echo "Vacuuming: ${db_file//${HOME}/~}"
+          info "Vacuuming: ${db_file//${HOME}/~}"
           if ! sqlite3 "${db_file}" 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;'; then
             _record_warning "sqlite3 failed for '$(yellow "${db_file}")'"
             vacuum_failed=1
@@ -102,6 +102,7 @@ vacuum_browser_profile_folder() {
   # Build find arguments for files
   local file_find_args=()
   if is_non_empty_array file_patterns; then
+    local pattern
     for pattern in "${file_patterns[@]}"; do
       is_non_empty_array file_find_args && file_find_args+=('-o')
       file_find_args+=('-iname' "${pattern}")
@@ -111,6 +112,7 @@ vacuum_browser_profile_folder() {
   # Build find arguments for directories
   local dir_find_args=()
   if is_non_empty_array dir_patterns; then
+    local pattern
     for pattern in "${dir_patterns[@]}"; do
       is_non_empty_array dir_find_args && dir_find_args+=('-o')
       dir_find_args+=('-iname' "${pattern}")
@@ -136,13 +138,14 @@ vacuum_browser_profile_folder() {
   if [[ ${has_conditions} -eq 1 ]]; then
     if [[ ${dry_run} -eq 1 ]]; then
       # Capture find output into an array; ${#_items} replaces `wc -l` subprocess.
-      local -a _items=("${(@f)$("${combined_find_cmd[@]}" -print 2>/dev/null)}")
+      local -a _items
+      _items=("${(@f)$("${combined_find_cmd[@]}" -print 2>/dev/null)}")
       local total_count=${#_items}
-      echo '[DRY-RUN] Would delete the following files and directories:'
+      info '[DRY-RUN] Would delete the following files and directories:'
       print -l "${_items[@]}" | head -20
-      [[ ${total_count} -gt 20 ]] && echo "  ... and $((total_count - 20)) more items"
+      if [[ ${total_count} -gt 20 ]]; then info "  ... and $((total_count - 20)) more items"; fi
     else
-      echo 'Deleting files and directories matching patterns...'
+      info 'Deleting files and directories matching patterns...'
       # Single find pass: -print emits names (captured for count), -delete removes them.
       local -a _items
       local deleted_count=0
@@ -153,25 +156,25 @@ vacuum_browser_profile_folder() {
       if [[ $? -ne 0 ]]; then
         _record_warning "Combined find/delete operation failed (code: $?) in '$(yellow "${profile_folder}")'.";
       else
-        [[ ${show_stats} -eq 1 ]] && echo "  -> Deleted ${deleted_count} items"
+        if [[ ${show_stats} -eq 1 ]]; then info "  -> Deleted ${deleted_count} items"; fi
       fi
     fi
   fi
 
   _du_out=$(du -sk "${profile_folder}" 2>/dev/null)
   local size_after="${_du_out%%$'\t'*}"
-  echo "--> Size after: $(folder_size "${profile_folder}")"
+  info "--> Size after: $(folder_size "${profile_folder}")"
 
   if [[ ${show_stats} -eq 1 ]] && [[ ${dry_run} -eq 0 ]]; then
     local space_saved=$((size_before - size_after))
-    echo "  -> Space saved: $(numfmt --to=iec $((space_saved * 1024)) 2>/dev/null || echo "${space_saved}K")"
+    info "  -> Space saved: $(numfmt --to=iec $((space_saved * 1024)) 2>/dev/null || echo "${space_saved}K")"
   fi
 
   success "Successfully processed profile folder for '$(yellow "${browser_name}")'"
 }
 
 usage() {
-  print_usage "${1}" \
+  print_usage "${_SCRIPT_NAME}" \
     "$(yellow '-n') --> Dry-run mode (show what would be done without doing it)" \
     "$(yellow '-s') --> Show detailed statistics"
 }
@@ -183,9 +186,9 @@ main() {
   local _current_section='(init)'
   local -a _step_warnings=()
   local -a _step_errors=()
-   export _DOTFILES_SCRIPT_DEPTH=$(( ${_DOTFILES_SCRIPT_DEPTH:-0} + 1 ))
-   trap '_decrement_script_depth' EXIT
-   while getopts ":ns" opt; do
+  export _DOTFILES_SCRIPT_DEPTH=$(( ${_DOTFILES_SCRIPT_DEPTH:-0} + 1 ))
+  trap '_decrement_script_depth' EXIT
+  while getopts ":ns" opt; do
     case ${opt} in
       n)
         dry_run=1
@@ -194,18 +197,17 @@ main() {
         show_stats=1
         ;;
       \?)
-        _record_error "-${OPTARG} is not a valid option"
-        usage "${_SCRIPT_NAME}"
-        print_script_summary
+        warn "-${OPTARG} is not a valid option"
+        usage
         return 1
         ;;
     esac
   done
   shift $((OPTIND - 1))
 
-  [[ ${dry_run} -eq 1 ]] && info 'Running in DRY-RUN mode — no changes will be made'
+  if [[ ${dry_run} -eq 1 ]]; then info 'Running in DRY-RUN mode — no changes will be made'; fi
 
-  # script_start_time is passed explicitly to print_script_duration below.
+  # script_start_time is passed explicitly to print_script_summary below.
   # This script does not call step_start/step_end so there is no need to push
   # onto _script_start_times.  If step_start/step_end are ever added here,
   # this local must also be pushed onto _script_start_times so step_end can
@@ -231,8 +233,7 @@ main() {
     vacuum_browser_profile_folder "${browser_name}" "${profile_folder}" "${dry_run}" "${show_stats}"
   done
 
-  print_script_duration "${script_start_time}"
-  print_script_summary
+  print_script_summary "${script_start_time}" 'Finished cleaning up browser profiles'
 }
 
 main "$@"

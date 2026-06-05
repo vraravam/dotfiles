@@ -60,7 +60,7 @@ main() {
   trap '_record_error "Unexpected failure at line ${LINENO} (exit ${?})"' ERR
 
   # Capture start epoch into both a local variable and _script_start_times.
-  # The local is passed explicitly to print_script_duration at the end of main.
+  # The local is passed explicitly to print_script_summary at the end of main.
   # _script_start_times is used by step_end (called throughout this script via
   # _perform_update) to compute the "total elapsed" column independently of the
   # local variable.  Both are required; see the design note above
@@ -160,9 +160,8 @@ main() {
     section_header "$(yellow 'Update non-keybase repos in home folder')"
     # Aliases ('home', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'home pull' alias.
-    # 'git pull-safe' fetches all remotes then rebases only if the working tree is clean;
-    # a dirty repo exits non-zero so run-all.sh records a per-repo warning. Not _record_error:
-    # a dirty skip is an expected state in a personal repo, not a script failure.
+    # run-all.sh records a warning (not an error) per failing repo: a dirty skip is
+    # an expected state in a personal repo, not a script failure.
     FOLDER="${HOME}" FILTER='.bin|zsh|mise' MAXDEPTH=5 run-all.sh git pull-safe || _record_warning 'Some home repos could not be auto-updated — working tree may be dirty. Rebase manually.'
     step_end
 
@@ -299,10 +298,14 @@ main() {
   _current_section='Update chrome folders'
   step_start
   section_header "$(yellow 'Updating all browser profile chrome folders if they are git repos')"
-  # Use zsh glob qualifiers to only loop if matches exist and are directories
-  # (N) nullglob: if no match, the pattern expands to nothing
-  # (/): only match directories
-  local chrome_folders=("${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome(N/))
+  # Inline (N/) glob qualifiers break editor syntax highlighting (parsed as function calls).
+  # Use localoptions NULL_GLOB in an anonymous function so unmatched globs expand to
+  # nothing instead of erroring. The trailing / restricts matches to directories.
+  local -a chrome_folders
+  () {
+    setopt localoptions NULL_GLOB
+    chrome_folders=("${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome/)
+  }
   if is_non_empty_array chrome_folders; then
     for folder in "${chrome_folders[@]}"; do
       if is_git_repo "${folder}"; then
@@ -339,17 +342,10 @@ main() {
   fi
   step_end
 
-  # Compute duration using format_duration from .shellrc (already sourced via .aliases).
-  local _now _duration_human
-  current_timestamp _now
-  local _duration=$((EPOCHSECONDS - script_start_time))
-  format_duration "${_duration}" _duration_human
-
-  success "Finished software updates at $(purple "${_now}") in $(light_blue "${_duration_human}")"
-
-  # Print grouped summary of all collected warnings and errors (warnings first, then errors),
-  # then send exactly one notification regardless of how many steps had issues.
-  print_script_summary
+  # Print grouped summary of all collected warnings and errors (warnings first,
+  # then errors), print duration, then send exactly one notification regardless
+  # of how many steps had issues.
+  print_script_summary "${script_start_time}" 'Finished software updates'
   local _notification_parts=()
   if is_non_empty_array _step_errors; then
     local _errors_summary
@@ -378,8 +374,14 @@ main() {
     _title_icon='⚠️'
     _msg+=". Needs manual update: ${outdated_flat}"
   fi
+
+  # Compute duration using format_duration from .shellrc (already sourced via .aliases).
+  local _now _duration_human _duration
+  current_timestamp _now
+  _duration=$((EPOCHSECONDS - script_start_time))
+  format_duration "${_duration}" _duration_human
+
   _dotfiles_notify "Done at ${_now} (took ${_duration_human})${_msg}" "${_title_icon} Software Updates" || true
-  print_script_duration "${script_start_time}"
 }
 
 main "$@"

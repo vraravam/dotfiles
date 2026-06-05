@@ -103,9 +103,9 @@ export LANG='en_US.UTF-8'
 export LC_ALL='en_US.UTF-8'
 export LESSCHARSET='utf-8'
 
-# On a vanilla OS, for some reason MACHTYPE does not report 'arm' correctly - could be
-# due to the older version of zsh. So, fallback to 'uname -m'.
-# the /#arm/arm64 substitution maps 'arm' → 'arm64' while leaving 'x86_64' unchanged.
+# MACHTYPE is not used here: on a vanilla macOS (Apple Silicon) it incorrectly
+# reports 'x86_64' instead of 'arm64' — a confirmed zsh/macOS bug discussed in
+# Apple support forums. uname -m is the only reliable source on all machines.
 # The outer ${ARCH:-...} honours any value already exported by a parent process.
 export ARCH="${ARCH:-"$(uname -m)"}"
 export ARCHFLAGS="-arch ${ARCH}"
@@ -494,7 +494,7 @@ current_timestamp_for_filename() {
 }
 
 # Prints a timestamped "Script started at" banner. Call at the top of main() and
-# capture $EPOCHSECONDS before calling to pass to print_script_duration later.
+# capture $EPOCHSECONDS before calling to pass to print_script_summary later.
 # Only prints when this is the outermost script — nested subprocess scripts
 # stay silent so the outer script's banner is unambiguous in cron output.
 print_script_start() {
@@ -509,10 +509,13 @@ print_script_start() {
 
 # Prints a "Script finished at / Total duration" banner.
 # Usage: print_script_duration <start_epoch_seconds>
+# If start_epoch_seconds is empty or omitted, returns silently — safe to call
+# unconditionally when the start time may not have been captured.
 # Only prints when this is the outermost script — see print_script_start.
 print_script_duration() {
   is_outermost_script || return 0
-  local start_time_seconds="${1}"
+  local start_time_seconds="${1:-}"
+  if is_zero_string "${start_time_seconds}"; then return 0; fi
   local end_time_human
   current_timestamp end_time_human
   local end_time_seconds="${EPOCHSECONDS}"
@@ -583,7 +586,8 @@ print_script_duration() {
 #     Stack of epoch-second timestamps for script-level start times.
 #     Used by step_end() to compute total-elapsed. Must be populated by
 #     scripts that use step_start/step_end (fresh-install, software-updates-
-#     cron). Scripts that only call print_script_duration() do not need it.
+#     cron). Scripts that only call print_script_summary() without
+#     step_start/step_end do not need it.
 #
 #   _step_start_times       (typeset -a, non-exported global)
 #     Stack of epoch-second timestamps for individual step start times.
@@ -604,23 +608,24 @@ print_script_duration() {
 # Non-exported globals: step-timing stacks used by step_start/step_end.
 # Two consumers, two mechanisms — intentionally separate:
 #
-#   print_script_duration <start_time>
-#     Takes its start time as an explicit argument (a local variable captured
-#     at the top of main()).  This keeps it self-contained and usable by
-#     scripts that never call step_start/step_end (e.g. run-all.sh,
+#   print_script_summary [start_time]
+#     Takes its start time as an optional argument (a local variable captured
+#     at the top of main()). When non-empty, calls print_script_duration
+#     internally. This keeps it self-contained and usable by scripts that
+#     never call step_start/step_end (e.g. run-all.sh,
 #     cleanup-browser-profiles.sh) — those scripts do NOT push to
 #     _script_start_times and have no need to.
 #
 #   step_end
 #     Needs a "total elapsed since script start" value independently of
-#     whatever argument was passed to print_script_duration.  It reads
+#     whatever argument was passed to print_script_summary.  It reads
 #     _script_start_times[-1] for this.  Scripts that call step_start/step_end
 #     (fresh-install-of-osx.sh, software-updates-cron.sh) MUST push their
 #     start epoch onto _script_start_times so step_end's total-elapsed column
 #     is correct.
 #
 # Consequence: if step_start/step_end are ever added to a script that
-# only calls print_script_duration (run-all.sh, cleanup-browser-profiles.sh),
+# only calls print_script_summary (run-all.sh, cleanup-browser-profiles.sh),
 # that script must also push its start epoch onto _script_start_times,
 # otherwise step_end will fall back to the current time and report 0s elapsed.
 typeset -a _script_start_times=()
@@ -723,27 +728,39 @@ _record_error() {
 # Reads _step_warnings and _step_errors from the caller's scope via zsh dynamic scoping.
 # Must be called after shellrc is sourced (uses section_header and warn).
 #
-# Optional: pass a script title as $1 to also send a single macOS notification summarising
-# any collected issues. Scripts with custom notification logic (e.g. fresh-install,
-# software-updates-cron) call this without a title and handle their own notification.
-# Standalone scripts pass "${_SCRIPT_NAME}" to get generic notification for free.
-# Usage: print_script_summary
+# Usage: print_script_summary [start_epoch_seconds [message]]
 #
+# Accepts an optional start time (epoch seconds from $EPOCHSECONDS, captured
+# before print_script_start). When provided, calls print_script_duration
+# internally — no separate call needed. Omit when no start time is available
+# (e.g. early-exit paths before the start epoch was captured).
+# Accepts an optional info message as $2. When provided, it is printed via
+# info before the warnings/errors list — use this instead of a bare info/success
+# call immediately before print_script_summary. Guarded with ${2:-} so omitting
+# it is safe under set -u.
 # Only prints when this is the outermost script in a nested call chain.
 # _SCRIPT_NAME is read directly via zsh dynamic scoping — no argument needed.
 print_script_summary() {
   # is_outermost_script || return 0: safe under set -e — see print_script_start.
   is_outermost_script || return 0
+  local _pss_start_time="${1:-}"
+  local _pss_msg="${2:-}"
   local _pss_title="${_SCRIPT_NAME:-}"
+
+  local viewport_length=${COLUMNS:-80}
+  local final_length=$(((viewport_length) * 3 / 4))
+  echo $(dark_gray "$(print_chars_for_length '*' ${final_length})")
+
+  if is_non_zero_string "${_pss_msg}"; then info "${_pss_msg}"; fi
   if (($+_step_warnings)) && is_non_empty_array _step_warnings; then
-    section_header "$(cyan "${_pss_title}") $(yellow "${#_step_warnings[@]} warning(s)")"
+    _section_header_impl "$(cyan "${_pss_title}") $(yellow "${#_step_warnings[@]} warning(s)")" '-' '⏳' 'orange'
     local _psw
     for _psw in "${_step_warnings[@]}"; do
       warn "  ${_psw}"
     done
   fi
   if (($+_step_errors)) && is_non_empty_array _step_errors; then
-    section_header "$(cyan "${_pss_title}") $(red "${#_step_errors[@]} error(s) — manual attention needed")"
+    _section_header_impl "$(cyan "${_pss_title}") $(red "${#_step_errors[@]} error(s) — manual attention needed")" '-' '⏳' 'light_red'
     local _pse
     for _pse in "${_step_errors[@]}"; do
       warn "  ${_pse}"
@@ -756,11 +773,12 @@ print_script_summary() {
   # especially in headless/cron contexts. Scripts with custom success notifications
   # (e.g. fresh-install, software-updates-cron) handle them outside this function.
   local -a _pss_parts=()
-  if (($+_step_errors))   && is_non_empty_array _step_errors;   then _pss_parts+=("${#_step_errors[@]} error(s)"); fi
+  if (($+_step_errors))   && is_non_empty_array _step_errors; then   _pss_parts+=("${#_step_errors[@]} error(s)"); fi
   if (($+_step_warnings)) && is_non_empty_array _step_warnings; then _pss_parts+=("${#_step_warnings[@]} warning(s)"); fi
   if is_non_empty_array _pss_parts; then
     _dotfiles_notify "${_pss_title}: completed with ${(j: and :)_pss_parts}." "⚠️ ${_pss_title}" || true
   fi
+  if is_non_zero_string "${_pss_start_time}"; then print_script_duration "${_pss_start_time}"; fi
 }
 
 # --------------------------------------------------------------------------
@@ -769,7 +787,8 @@ print_script_summary() {
 
 # Returns true if the current machine is ARM (Apple Silicon or other arm64 CPU).
 is_arm() {
-  [[ "${ARCH}" =~ 'arm' ]]
+  # == glob is faster than =~ (no regex engine); valid in both bash [[ ]] and zsh.
+  [[ "${ARCH}" == *arm* ]]
 }
 
 # Returns true if $1 is a non-empty path pointing to an executable file or command.
@@ -864,12 +883,14 @@ command_exists() {
 
 # Returns true if the current OS is macOS.
 is_macos() {
-  [[ "${OSTYPE}" =~ 'darwin' ]]
+  # == glob is faster than =~ (no regex engine); valid in both bash [[ ]] and zsh.
+  [[ "${OSTYPE}" == *darwin* ]]
 }
 
 # Returns true if the current OS is Linux.
 is_linux() {
-  [[ "${OSTYPE}" =~ 'Linux' ]]
+  # == glob is faster than =~ (no regex engine); valid in both bash [[ ]] and zsh.
+  [[ "${OSTYPE}" == *Linux* ]]
 }
 
 # Returns true if FIRST_INSTALL is set to a non-empty value.
@@ -886,7 +907,8 @@ is_first_install() {
 
 # Returns true if the current OS is Windows (MSYS/MinGW environment).
 is_windows() {
-  [[ "${OSTYPE}" =~ 'MINGW' ]]
+  # == glob is faster than =~ (no regex engine); consistent with is_macos/is_linux.
+  [[ "${OSTYPE}" == *MINGW* ]]
 }
 
 # Returns true if this is the outermost script in a nested call chain.
@@ -920,7 +942,7 @@ has_sudo_credentials() {
 # 1f. PATH & environment variable manipulation
 # --------------------------------------------------------------------------
 
-# Append/prepend helpers: each adds $1 to the named variable only if $1 is an
+# Append helpers: each adds $1 to the named variable only if $1 is an
 # existing directory. No-op if the directory does not exist. Safe to call
 # multiple times — the underlying path arrays deduplicate in zsh.
 append_to_path_if_dir_exists() {
@@ -929,26 +951,6 @@ append_to_path_if_dir_exists() {
 
 append_to_fpath_if_dir_exists() {
   is_directory "${1}" && fpath+="${1}"
-}
-
-prepend_to_path_if_dir_exists() {
-  is_directory "${1}" && export PATH="${1}${PATH:+:${PATH}}"
-}
-
-prepend_to_manpath_if_dir_exists() {
-  is_directory "${1}" && export MANPATH="${1}${MANPATH:+:${MANPATH}}"
-}
-
-prepend_to_ldflags_if_dir_exists() {
-  is_directory "${1}" && export LDFLAGS="-L${1}${LDFLAGS:+ ${LDFLAGS}}"
-}
-
-prepend_to_cppflags_if_dir_exists() {
-  is_directory "${1}" && export CPPFLAGS="-I${1}${CPPFLAGS:+ ${CPPFLAGS}}"
-}
-
-prepend_to_pkg_config_path_if_dir_exists() {
-  is_directory "${1}" && export PKG_CONFIG_PATH="${1}${PKG_CONFIG_PATH:+:${PKG_CONFIG_PATH}}"
 }
 
 # --------------------------------------------------------------------------
@@ -1235,16 +1237,3 @@ print_usage() {
   done
   exit 1
 }
-
-# if is_macos; then
-  # Uninstall and reinstall xcode (useful immediately after upgrade or if reinstalling the OS)
-  # TODO: Kept for reference purposes
-  # reinstall_xcode() {
-  #   # delete if already present
-  #   delete_directory_if_exists '/Applications/Xcode.app'
-
-  #   xcode-select --install
-  #   sudo xcodebuild -license accept -quiet || true
-  #   success 'Successfully installed xcode'
-  # }
-# fi

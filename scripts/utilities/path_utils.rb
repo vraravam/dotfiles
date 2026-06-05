@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Shared path utilities for Ruby scripts in personal/dev/bin
+# Shared path utilities for Ruby scripts across all scripts
 #
 # Usage:
 #   require 'path_utils'
