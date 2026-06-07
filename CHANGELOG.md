@@ -3,6 +3,29 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of changelog:
 
 
+### 3.1.9
+
+#### Created `git_helpers.rb` utility module for git operations
+
+* *[scripts/utilities/git_helpers.rb]* New utility module providing 6 git operation methods: `config_value`, `remote_url`, `each_remote`, `add_remote`, `set_remote_url`, `fetch_all`. All methods accept `folder:` keyword argument (default `Dir.pwd`) and return full `Open3.capture3` tuples (stdout, stderr, status). Private helper `_git_command(folder)` eliminates duplication of `['git', '-C', folder]` pattern across all methods.
+
+#### Refactored `resurrect-repositories.rb` to use `git_helpers.rb`
+
+* *[scripts/resurrect-repositories.rb]* Extracted git operations to GitHelpers module, removing 5 functions (`_build_git_context`, `_find_git_remotes`, `_find_git_remote_url`) and 2 constants (`GIT_EXECUTABLE`, `GIT_CONFIG_REGEXP_CMD`). Added `_report_git_failure` helper with call-site guards for performance optimization (avoids string interpolation on success path). Net reduction: 50 lines (498 → 448).
+
+#### Fixed error handling in `resurrect-repositories.rb`
+
+* *[scripts/resurrect-repositories.rb]* Changed `abort()` and `record_warning` calls to `raise` for fatal failures (clone failure, origin URL verification failure) so they are caught by the rescue block, allowing the script to continue processing remaining repos instead of terminating entirely. Added inline comments documenting the distinction between fatal errors (which abort the current repo) and non-fatal errors (which log warnings but continue).
+
+#### Changed environment variable warning to immediate output
+
+* *[scripts/resurrect-repositories.rb]* Changed `_find_and_replace_env_var` to use `warn()` instead of `record_warning()` for missing environment variables. Missing env vars during config loading are configuration issues, not operational failures, and should not be accumulated in the final summary.
+
+#### Removed unused methods from `logging.rb`
+
+* *[scripts/utilities/logging.rb]* Removed unused `command_exists?` method and entire step timing subsystem (`step_timing_init`, `step_start`, `step_end`, `step_start_times` accessor). Total reduction: 39 lines. All internal methods used by public logging methods (section_header, print_script_summary, record_warning, etc.) are retained.
+
+
 ### 3.1.8
 
 #### Fixed `ensure_keybase_logged_in` not found on re-running `fresh-install-of-osx.sh`

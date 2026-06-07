@@ -4,8 +4,7 @@ require_relative 'string'
 
 # Logging helpers that replicate the shell functions defined in .shellrc
 # (success/info/warn/debug/error, section_header, print_script_start,
-# print_script_duration, print_script_summary, record_warning, record_error,
-# and the step_start/step_end stack-based timing helpers).
+# print_script_duration, print_script_summary, record_warning, record_error).
 #
 # Color rendering is handled by the String extensions in string.rb and is
 # automatically suppressed when stdout is not a TTY.
@@ -80,8 +79,8 @@ module Logging
 
   # ---------------------------------------------------------------------------
   # Section / script timing helpers
-  # These mirror section_header, print_script_start, print_script_duration,
-  # step_start, step_end, and step_timing_init from .shellrc.
+  # These mirror section_header, print_script_start, and print_script_duration
+  # from .shellrc.
   # ---------------------------------------------------------------------------
 
   # Prints +char+ repeated +length+ times.
@@ -198,54 +197,38 @@ module Logging
     print_script_duration(start_time) unless start_time.nil?
   end
 
-  # ---------------------------------------------------------------------------
-  # Stack-based step timing (mirrors step_timing_init / step_start / step_end)
-  # ---------------------------------------------------------------------------
-
-  # Pushes the current epoch time onto the script-level clock stack only if it is
-  # empty, recording the overall script start time.
-  # Safe to call multiple times; subsequent calls are no-ops once the stack is populated.
-  def step_timing_init
-    script_start_times << Time.now.to_i if nil_or_empty?(script_start_times)
+  # Returns a frozen copy of collected warnings. Public so callers (e.g.
+  # software-updates-cron.rb notification block) can read them without
+  # reaching into private state via instance_variable_get.
+  def step_warnings
+    @step_warnings ||= []
   end
 
-  # Records the start of a step (push onto the step stack).
-  def step_start
-    step_timing_init
-    step_start_times << Time.now.to_i
+  # Returns a frozen copy of collected errors. Public for the same reason
+  # as step_warnings above.
+  def step_errors
+    @step_errors ||= []
   end
 
-  # Pops the most recent step start time and prints the step duration and total elapsed,
-  # mirroring the shell output: "    ⏱ step: 0h:01m:23s | elapsed: 0h:05m:00s"
-  #
-  # If called without a preceding +step_start+, falls back to the script start time.
-  # If neither stack is initialised, falls back to the current time.
-  # Both fallback paths emit a warning via +warn+.
-  #
-  # @return [void]
-  def step_end
-    now = Time.now.to_i
+  # Formats +seconds+ as "Hh:MMm:SSs". Public so callers that build their own
+  # notification or summary strings can format a duration without reaching into
+  # private state via send().
+  def format_duration(seconds)
+    format('%02dh:%02dm:%02ds', seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+  end
 
-    step_start_time = if nil_or_empty?(step_start_times)
-        if nil_or_empty?(script_start_times)
-          warn('step_end called without any timing stack initialised; using current time as fallback')
-          now
-        else
-          warn('step_end called without matching step_start; using current epoch start time as fallback')
-          script_start_times.last
-        end
-      else
-        step_start_times.pop
-      end
+  # ---------------------------------------------------------------------------
+  # Script depth tracking — public API called by each script's main()
+  # ---------------------------------------------------------------------------
 
-    step_human = format_duration(now - step_start_time)
-
-    # Use the most recently pushed script-start epoch for total elapsed.
-    # Warn when the stack is empty — mirrors the shell step_end behaviour.
-    warn('step_end: script_start_times is empty; total elapsed will be 0') if nil_or_empty?(script_start_times)
-    total_human = format_duration(now - (script_start_times.last || now))
-
-    puts "#{'    ⏱'.purple} #{'step:'.yellow} #{step_human.light_blue} #{'| elapsed:'.yellow} #{total_human.light_blue}"
+  # Returns true when this is the outermost script in a nested call chain.
+  # Mirrors is_outermost_script in .shellrc. _DOTFILES_SCRIPT_DEPTH is exported
+  # and incremented by each script's main(); subprocess increments do not
+  # propagate back to the parent. Defaults to 0 when unset so standalone scripts
+  # (which never set the counter) are treated as outermost — consistent with the
+  # ':-0' used in the increment expression in each main().
+  def outermost_script?
+    _script_depth <= 1
   end
 
   # Increments _DOTFILES_SCRIPT_DEPTH and registers an at_exit hook to
@@ -281,16 +264,6 @@ module Logging
     ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
   end
 
-  # Returns true when this is the outermost script in a nested call chain.
-  # Mirrors is_outermost_script in .shellrc. _DOTFILES_SCRIPT_DEPTH is exported
-  # and incremented by each script's main(); subprocess increments do not
-  # propagate back to the parent. Defaults to 0 when unset so standalone scripts
-  # (which never set the counter) are treated as outermost — consistent with the
-  # ':-0' used in the increment expression in each main().
-  def outermost_script?
-    _script_depth <= 1
-  end
-
   # Shared implementation for section_header and section_header2. Mirrors
   # _section_header_impl in .shellrc: centres the header between repeated-char
   # padding, coloured by +color+, prefixed with +glyph+, and optionally indented.
@@ -314,18 +287,6 @@ module Logging
     @script_start_times ||= []
   end
 
-  def step_start_times
-    @step_start_times ||= []
-  end
-
-  def step_warnings
-    @step_warnings ||= []
-  end
-
-  def step_errors
-    @step_errors ||= []
-  end
-
   # Returns the current terminal column width, falling back to 80.
   # $stdout.winsize[1] reads the terminal dimensions via ioctl — no `tput cols` subprocess fork.
   # rescue 0 handles non-tty contexts (e.g. pipes, cron) gracefully.
@@ -333,10 +294,5 @@ module Logging
     return @terminal_width if @terminal_width
     cols = $stdout.winsize[1] rescue 0
     @terminal_width = cols.nonzero? || 80
-  end
-
-  # Formats +seconds+ as "Hh:MMm:SSs".
-  def format_duration(seconds)
-    format('%02dh:%02dm:%02ds', seconds / 3600, (seconds % 3600) / 60, seconds % 60)
   end
 end

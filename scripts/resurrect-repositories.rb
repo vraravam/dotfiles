@@ -14,6 +14,7 @@ $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 require 'cli_parser'
 require 'enumerable_ext'
 require 'fileutils'
+require 'git_helpers'
 require 'logging'
 require 'open3'
 require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
@@ -54,8 +55,6 @@ FOLDER_KEY_NAME = 'folder' # Key name in YAML for the repository folder
 REMOTE_KEY_NAME = 'remote' # Key name for the primary remote
 OTHER_REMOTES_KEY_NAME = 'other_remotes' # Key name for additional remotes
 POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
-GIT_EXECUTABLE = 'git' # Path to git executable
-GIT_CONFIG_REGEXP_CMD = ['config', '--get-regexp', '^remote\\..*\\.url'].freeze # Git subcommand to find remote URLs in git config
 
 HOME_PATH = Pathname.new(ENV.fetch('HOME')).expand_path
 
@@ -69,7 +68,7 @@ end
 
 # Expands environment variables in a string.
 # Handles multiple ${VAR} patterns. If an environment variable is not set,
-# the placeholder ${VAR} is kept and a warning is logged.
+# the placeholder ${VAR} is kept and a warning is printed (not accumulated in summary).
 #
 # @param folder [Object] The value in which to expand `${VAR}` patterns.
 #   Non-String values and strings without `${` are returned unchanged.
@@ -82,7 +81,7 @@ def _find_and_replace_env_var(folder)
   folder.gsub(/\$\{(.*?)\}/) do |match|
     key = Regexp.last_match(1)
     ENV.fetch(key) do
-      record_warning("Environment variable '#{key}' not set. Keeping placeholder '#{match}'.")
+      warn("Environment variable '#{key}' not set. Keeping placeholder '#{match}'.")
       match
     end
   end
@@ -108,61 +107,17 @@ def _find_and_reverse_replace_env_var(folder)
   folder
 end
 
-# Builds the base command array for executing Git commands within a specific repository folder.
-# This prefix is used to target Git operations to the correct directory.
+# Reports a git operation failure by recording a warning with the operation description,
+# exit status, and optional stderr output.
 #
-# @param folder [String] The path to the Git repository.
-# @return [Array<String>] An array of strings representing the Git command prefix
-#   (e.g., `['git', '-C', '/path/to/repo']`).
-def _build_git_context(folder)
-  [GIT_EXECUTABLE, '-C', folder]
-end
-
-# Checks if the given folder path is a Git repository (i.e., contains a .git directory).
-#
-# @param folder [String] The path to the folder to check.
-# @return [true, false] True if the folder is a Git repository, false otherwise.
-def git_repo?(folder)
-  # Ensure folder is a string and not nil before appending path components
-  folder.is_a?(String) && Dir.exist?(File.join(folder, '.git'))
-end
-
-# Fetches remote configurations using 'git config --get-regexp' and yields each remote.
-#
-# @param folder [String] The path to the Git repository. Used as the working directory
-#   for the git command and in warning messages when the command fails.
-# @yield [remote_name, remote_url] Called for each remote found.
-# @yieldparam remote_name [String] The name of the remote.
-# @yieldparam remote_url [String] The URL of the remote.
-# @return [void] When called without a block the git command is still executed
-#   but results are silently discarded.
-def _find_git_remotes(folder)
-  git_base_cmd = _build_git_context(folder)
-  config_cmd = [*git_base_cmd, *GIT_CONFIG_REGEXP_CMD]
-  stdout, stderr, status = Open3.capture3(*config_cmd)
-
-  if status.success?
-    stdout.each_line do |line|
-      next if line.strip.empty?
-      key, url = line.strip.split(' ', 2) # key is like 'remote.origin.url'
-      remote_name = key.split('.')[1]
-      yield remote_name, url if block_given?
-    end
-  else
-    record_warning("Could not retrieve remotes using 'git config --get-regexp' for '#{folder.cyan}' (status: #{status.exitstatus}).")
-    record_warning("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
-  end
-end
-
-# Finds the URL for a specific remote in a given Git repository.
-#
-# @param repo_path [String] The path to the Git repository.
-# @param remote_name [String] The name of the remote (e.g., 'origin').
-# @return [String, nil] The URL of the remote if found, otherwise nil.
-def _find_git_remote_url(repo_path, remote_name)
-  _find_git_remotes(repo_path) do |name, url|
-    return url if name == remote_name
-  end
+# @param operation_desc [String] Description of the failed operation (e.g., "Failed to add remote 'upstream'").
+# @param status [Process::Status] The status object from Open3.capture3.
+# @param stderr [String] The stderr output from the git command.
+# @return [void]
+def _report_git_failure(operation_desc, status, stderr)
+  message = "#{operation_desc} (status: #{status.exitstatus})"
+  message += "\nSTDERR: #{stderr.strip}".red unless nil_or_empty?(stderr.strip)
+  record_warning(message)
 end
 
 # Finds all Git repositories on disk starting from a given path.
@@ -250,34 +205,35 @@ end
 #                The 'post_clone' key is intentionally not added here as per the script's design for generation.
 def _generate_each(folder)
   hash = { folder: _find_and_reverse_replace_env_var(folder), active: true }
+
+  # Get origin URL using GitHelpers
+  hash[:remote] = GitHelpers.remote_url(folder: folder) || ''
+
+  # Collect other remotes (excluding origin)
   other_remotes = {}
-  _find_git_remotes(folder) do |name, url|
-    other_remotes[name] = url
+  GitHelpers.each_remote(folder: folder) do |name, url|
+    other_remotes[name] = url unless name == ORIGIN_NAME
   end
 
-  unless nil_or_empty?(other_remotes)
-    hash[:remote] = other_remotes.delete(ORIGIN_NAME)
-    hash[OTHER_REMOTES_KEY_NAME] = other_remotes
-  end
-
-  # Ensure :remote is set, even if it's an empty string (e.g. repo with no remotes)
-  hash[:remote] ||= ''
+  hash[OTHER_REMOTES_KEY_NAME] = other_remotes unless nil_or_empty?(other_remotes)
 
   hash.transform_keys(&:to_s)
 end
 
 # Resurrects a single repository based on its configuration.
-# This involves cloning if it doesn't exist, ensuring remotes are correctly configured,
-# fetching all data, and running post-clone commands.
+# This involves cloning if it doesn't exist, verifying the clone, ensuring remotes are
+# correctly configured, fetching all data, and running post-clone commands.
 #
 # @param repo [Hash] The repository configuration hash. Expected keys include
 #   `folder`, `remote`, `other_remotes` (optional), and `post_clone` (optional).
 # @param idx [Integer] The index of the current repository in the processing list (for logging).
 # @param total [Integer] The total number of repositories to process (for logging).
 # @return [void]
-# @note Only a clone failure causes +abort+ (immediate script termination). All other
-#   failures — remote configuration, fetch, and post-clone command failures — are logged
-#   as warnings and execution continues.
+# @raise [StandardError] Raises an exception for fatal failures (clone failure, verification
+#   failure) which abort processing of this repo. Non-fatal failures (remote configuration,
+#   fetch, post-clone commands) are logged as warnings but do not abort processing.
+#   The caller's rescue block catches exceptions to mark the repo as failed and continue
+#   processing remaining repos.
 def _resurrect_each(repo, idx, total)
   folder = repo[FOLDER_KEY_NAME] # Assumed to be an absolute, resolved path
   FileUtils.mkdir_p(folder)
@@ -293,63 +249,64 @@ def _resurrect_each(repo, idx, total)
   stdout_str, stderr_str, status = Open3.capture3({ 'FORCE_COLOR' => '1' }, '/bin/zsh', '-lc', clone_command)
   print stdout_str
   unless status.success?
-    error_message = "Failed to clone '#{repo[REMOTE_KEY_NAME]}' into '#{folder.cyan}'; aborting (status: #{status.exitstatus})".red
-    error_message += "\nClone command STDERR:\n#{stderr_str}".red unless nil_or_empty?(stderr_str.strip)
-    abort(error_message)
+    # Clone failure is fatal — cannot proceed without a cloned repository
+    error_message = "Failed to clone '#{repo[REMOTE_KEY_NAME]}' into '#{folder}' (status: #{status.exitstatus})"
+    error_message += "\nClone command STDERR:\n#{stderr_str}" unless nil_or_empty?(stderr_str.strip)
+    raise error_message
   end
 
   # After cloning, verify the origin URL
   section_header2('Clone verification')
-  cloned_origin_url = _find_git_remote_url(folder, ORIGIN_NAME)
+  cloned_origin_url = GitHelpers.remote_url(folder: folder, name: ORIGIN_NAME)
   if cloned_origin_url
     existing_remotes[ORIGIN_NAME] = cloned_origin_url
     if cloned_origin_url != repo[REMOTE_KEY_NAME]
-      record_warning("Cloned origin URL '#{cloned_origin_url}' differs from config '#{repo[REMOTE_KEY_NAME]}' for '#{folder.cyan}'.")
+      # Verification failure is fatal — wrong URL means wrong code
+      raise "Cloned origin URL '#{cloned_origin_url}' differs from config '#{repo[REMOTE_KEY_NAME]}' for '#{folder}'"
     end
   else
-    record_warning("Could not verify origin remote URL after cloning '#{folder.cyan}'.")
-    existing_remotes[ORIGIN_NAME] = repo[REMOTE_KEY_NAME] # Assume it matches if verification fails
+    # Verification failure is fatal — cannot confirm clone succeeded
+    raise "Could not verify origin remote URL after cloning '#{folder}'"
   end
 
   # Add missing 'other_remotes'
+  # Remote configuration failures are non-fatal — origin is correct, just can't add/update additional remotes
   section_header2('Remote configuration')
-  _find_git_remotes(folder) do |name, url|
+  GitHelpers.each_remote(folder: folder) do |name, url|
     existing_remotes[name] = url
   end
   debug("Existing remotes: #{existing_remotes.keys.join(', ')}") unless nil_or_empty?(existing_remotes)
-  git_base_cmd = _build_git_context(folder)
   if repo[OTHER_REMOTES_KEY_NAME].is_a?(Hash)
     repo[OTHER_REMOTES_KEY_NAME].each do |name, remote|
       if existing_remotes.key?(name)
         if existing_remotes[name] != remote
           # Remote exists but URL is different
           info("Updating remote '#{name}' URL from '#{existing_remotes[name]}' to '#{remote}'")
-          _stdout, stderr, status = Open3.capture3(*git_base_cmd, REMOTE_KEY_NAME, 'set-url', name, remote)
+          _stdout, stderr, status = GitHelpers.set_remote_url(name, remote, folder: folder)
           unless status.success?
-            record_warning("Failed to update URL for remote '#{name}' in repo '#{folder.cyan}' (status: #{status.exitstatus})")
-            record_warning("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
+            _report_git_failure("Failed to update URL for remote '#{name}' in repo '#{folder.cyan}'", status, stderr)
           end
         end
       else
         info("Adding remote '#{name}' -> '#{remote}'")
-        _stdout, stderr, status = Open3.capture3(*git_base_cmd, REMOTE_KEY_NAME, 'add', name, remote)
+        _stdout, stderr, status = GitHelpers.add_remote(name, remote, folder: folder)
         unless status.success?
-          record_warning("Failed to add remote '#{name}' for repo '#{folder.cyan}' (status: #{status.exitstatus})")
-          record_warning("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
+          _report_git_failure("Failed to add remote '#{name}' for repo '#{folder.cyan}'", status, stderr)
         end
       end
     end
   end
 
+  # Fetch failures are non-fatal — repository exists and is usable, just couldn't pull latest changes
   section_header2('Fetching all remotes and tags...')
-  _stdout, stderr, status = Open3.capture3(*git_base_cmd, 'fetch', '-q', '--all', '--tags')
+  _stdout, stderr, status = GitHelpers.fetch_all(folder: folder)
   unless status.success?
-    record_warning("Failed to fetch all remotes and tags for repo '#{folder.cyan}'")
-    record_warning("Fetch STDERR:\n#{stderr}") unless nil_or_empty?(stderr.strip)
+    _report_git_failure("Failed to fetch all remotes and tags for repo '#{folder.cyan}'", status, stderr)
   end
 
   return unless repo[POST_CLONE_KEY_NAME].is_a?(Array)
 
+  # Post-clone command failures are non-fatal — repository is usable, just missing post-setup steps
   section_header2('Running post-clone commands')
   # Use begin/ensure so the process working directory is always restored even if a command
   # raises an unexpected exception mid-loop.
@@ -360,8 +317,7 @@ def _resurrect_each(repo, idx, total)
       debug("Executing: #{command_str.dump}")
       _stdout, stderr, status = Open3.capture3(command_str)
       unless status.success?
-        record_warning("Post-clone command #{command_str.dump} failed for repo '#{folder.cyan}' (exit status: #{status.exitstatus})")
-        record_warning("STDERR: #{stderr.strip}".red) unless nil_or_empty?(stderr.strip)
+        _report_git_failure("Post-clone command #{command_str.dump} failed for repo '#{folder.cyan}'", status, stderr)
       end
     end
   ensure
@@ -436,14 +392,13 @@ if options[:generate]
   repositories = _find_git_repos_from_disk(discovery_dir)
   discovered_count = repositories.length
   repositories = _apply_filter(repositories, filter)
-  filtered_count = repositories.length
   generated = repositories.map { |dir| _generate_each(dir) }
   puts generated.to_yaml
 
   puts('')
   info('Summary'.yellow)
   puts("  Discovered repositories: #{discovered_count}")
-  puts("  After filter:            #{filtered_count}") unless nil_or_empty?(filter)
+  puts("  After filter:            #{repositories.length}") unless nil_or_empty?(filter)
   puts("  Generated entries:       #{generated.length.to_s.green}")
 elsif options[:resurrect]
   section_header('Resurrecting repositories')
