@@ -32,7 +32,7 @@ or the other:
 
 - `git -C <path> my-alias` — git-native; preferred for interactive use and
   scripting that already has the path in a variable passed to `-C`.
-- `git my-alias <path>` — explicit arg; preferred for callers like `run-all.sh`
+- `git my-alias <path>` — explicit arg; preferred for callers like `run-all.rb`
   that set cwd via `cd` and invoke the alias with no args (leaving `${1:-.}` to
   default to `.`), or when constructing a command string where `-C` is awkward.
 
@@ -238,10 +238,10 @@ Rules:
 - Use `git diff --quiet && git diff --cached --quiet` to check both unstaged
   and staged changes. Never use `git status --porcelain` for this — it is
   locale-dependent.
-- Exit non-zero on dirty so callers (e.g. `run-all.sh`) surface a warning.
+- Exit non-zero on dirty so callers (e.g. `run-all.rb`) surface a warning.
 - Print to **stderr** (`>&2`) so the message appears in cron logs without
   polluting stdout that callers might parse.
-- In cron scripts that call these via `run-all.sh`, use `_record_warning`
+- In cron scripts that call these via `run-all.rb`, use `_record_warning`
   (not `_record_error`) for the outer failure — a dirty skip is an expected
   state in a personal repo, not a script failure.
 

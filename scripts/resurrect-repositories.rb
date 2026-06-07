@@ -369,7 +369,7 @@ def _verify_all(repositories, discovered_count, filter, ref_folder: nil)
   if diff_repos.any?
     record_warning("Please correlate the following #{diff_repos.length.to_s.red} differences in projects manually:\n  #{diff_repos.map(&:cyan).join("\n  ")}")
     print_script_summary(script_start_time)
-    exit(1)
+    @has_failures = true
   else
     success('Everything is kosher!')
   end
@@ -379,10 +379,10 @@ end
 filter = (ENV['FILTER'] || '').strip
 
 # Increment script depth and register at_exit decrement. print_script_start checks
-# outermost_script? internally and only prints when depth <= 1. Mirrors the shell
-# pattern: increment first, then call print functions which check depth internally.
-Logging.increment_script_depth
-script_start_time = Logging.print_script_start
+# outermost_script? to decide whether to print the banner.
+# Both calls must come before any logging.
+increment_script_depth
+script_start_time = print_script_start
 
 if options[:generate]
   section_header('Generating repository configuration')
@@ -421,17 +421,12 @@ elsif options[:resurrect]
     end
   end
 
-  puts('')
-  info('Summary'.yellow)
-  puts("  Total repositories: #{repositories.length}")
-  puts("  Successful:         #{successful_repos.length.to_s.green}")
-  if failed_repos.any?
-    puts("Failed:             #{failed_repos.length.to_s.red}")
-    puts('Failed repositories:'.red)
-    failed_repos.each { |failed_folder| puts("  - '#{failed_folder.red}'") }
-    print_script_summary(script_start_time)
-    exit(1)
-  end
+  print_operation_summary(repositories.length, successful_repos, failed_repos)
+  print_script_summary(script_start_time)
+  # Set @has_failures flag if any repos failed. The exit code at the end of the
+  # script (line ~447) checks this flag and exits with code 1, which propagates
+  # to the calling shell for error detection in loops.
+  @has_failures = true if failed_repos.any?
 elsif options[:check]
   section_header('Verifying repositories')
   config_file = File.expand_path(options[:check])
@@ -446,3 +441,12 @@ elsif options[:check]
 end
 
 print_script_summary(script_start_time)
+
+# Exit with appropriate code. Exit 1 if there were any failures (repos that
+# raised exceptions) OR any warnings (fetch failures, post-clone failures, etc.).
+# This is intentionally stricter than other scripts because the calling shell
+# function (resurrect_tracked_repos) needs to distinguish "clean success" from
+# "success with issues" to avoid printing "Successfully resurrected all tracked
+# git repos" when there were fetch failures or other warnings.
+exit(1) if defined?(@has_failures) && @has_failures
+exit(1) if step_warnings.any?

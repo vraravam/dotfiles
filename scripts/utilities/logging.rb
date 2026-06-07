@@ -247,6 +247,37 @@ module Logging
     ENV['_DOTFILES_SCRIPT_DEPTH'] = (depth - 1).to_s if depth > 0
   end
 
+  # Prints a summary table showing total/successful/failed counts and lists failed items.
+  # Used by scripts that process multiple items (repos, files, etc.).
+  #
+  # @param total [Integer] Total number of items processed
+  # @param successful [Array<String>] List of successful items (paths, names, etc.)
+  # @param failed [Array<String>] List of failed items
+  # @param item_label [String] What to call each item (default: 'repositories')
+  #
+  # @example
+  #   print_operation_summary(10, successful_repos, failed_repos)
+  #   print_operation_summary(5, successful_files, failed_files, item_label: 'files')
+  def print_operation_summary(total, successful, failed, item_label: 'repositories')
+    # Only print when this is the outermost script — suppresses nested summaries
+    # when called from a wrapper script/function that prints its own final summary.
+    return unless outermost_script?
+
+    puts ''
+    info 'Summary'.yellow
+    puts "  Total #{item_label}: #{total}"
+    puts "  Successful:         #{successful.length.to_s.green}"
+    return unless failed.any?
+
+    singular = item_label.sub(/ies$/, 'y').sub(/s$/, '')
+    plural = item_label
+    count_label = failed.length == 1 ? singular : plural
+
+    puts "  Failed:             #{failed.length.to_s.red}"
+    puts "  Failed #{count_label}:".red
+    failed.each { |item| puts "    - '#{item.red}'" }
+  end
+
   # ---------------------------------------------------------------------------
   # Private implementation details
   # ---------------------------------------------------------------------------

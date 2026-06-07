@@ -662,7 +662,7 @@ Use named helpers **only** where bash parseability requires it (`.shellrc`,
 When a named helper is required (bash-parseable file), always `unfunction` it
 immediately after use to prevent global namespace pollution. This matters in
 non-subshell call sites — direct interactive invocations and calls from other
-functions running in the same process. `run-all.sh` sandboxes each repo call in
+functions running in the same process. `run-all.rb` sandboxes each repo call in
 a `()` subshell so the leak is contained there, but the `unfunction` is still
 required for correctness at other call sites:
 
@@ -798,6 +798,39 @@ user_action "Run 'bupc' to update Homebrew packages."
 ```
 
 These are follow-up instructions, not warnings about something that went wrong.
+
+### Deferred warning collection — immediate vs summary-only
+
+`_record_warning` both stores the warning AND prints it immediately. Use it for
+warnings where immediate feedback is valuable (e.g., per-item failures in a loop).
+
+For **aggregated summary messages** computed after processing multiple items
+(e.g., "Failed to process N files" with a list), append directly to
+`_step_warnings` to avoid duplicate output (immediate print + summary):
+
+```zsh
+# Immediate warning — print now AND in summary (typical case)
+for item in "${items[@]}"; do
+  if ! process_item "${item}"; then
+    _record_warning "Failed to process ${item}"
+  fi
+done
+
+# Summary-only warning — only in final summary (aggregated message)
+if is_non_empty_array failed_files; then
+  local msg="Failed to process ${#failed_files[@]} file(s):"
+  msg+=$'\n'"$(join_array failed_files)"
+  _step_warnings+=("[${_SCRIPT_NAME}][${_current_section}] ${msg}")
+fi
+```
+
+The direct append pattern is the exception, not the rule. Use it only when:
+- The message is computed/aggregated after processing multiple items
+- Showing it immediately would be confusing or redundant
+- The message is only meaningful in the context of the final summary
+
+The pattern mirrors Ruby's `record_warning` (immediate) vs direct append to
+`@step_warnings` (summary-only).
 
 ## Cron Scripts
 
@@ -944,8 +977,8 @@ oss upreb
 bcg | grep ...
 
 # Good — use the direct equivalent; no dependency on .aliases being loaded
-FOLDER="${HOME}" FILTER='.bin|.dotfiles|zsh|mise' MAXDEPTH=5 run-all.sh git pull
-FOLDER="${PROJECTS_BASE_DIR}/oss" MAXDEPTH=4 run-all.sh git upreb
+FOLDER="${HOME}" FILTER='.bin|.dotfiles|zsh|mise' MAXDEPTH=5 run-all.rb git pull
+FOLDER="${PROJECTS_BASE_DIR}/oss" MAXDEPTH=4 run-all.rb git upreb
 brew outdated --greedy | grep ...
 ```
 

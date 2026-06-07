@@ -3,6 +3,38 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of changelog:
 
 
+### 3.1.10
+
+#### Converted `run-all.sh` and `recreate-repo.sh` into ruby
+
+* *[scripts/run-all.sh, scripts/recreate-repo.sh]* These are now completely converted to ruby implemetation thus providing better error-handling, and better maintainability. Also fixed some inconsistencies & bugs that were hidden in the shell implementation.
+
+#### Implemented `recreate-repo.rb` dry-run capability
+
+* *[scripts/recreate-repo.rb]* Consolidated verbose git command logging into concise operation descriptions: replaced separate "Would run: git add -A" and "Would run: git amq" lines with single "Would stage all files and amend commit" debug message. Changed compression/push messages from `info` to `debug` level to match their nature as implementation details. Removed folder path from compress message to avoid redundancy with section header.
+
+#### Aliases functions now delegate to the ruby implementation for cron operations
+
+* *[files/--HOME--/.aliases, files/--HOME--/.shellrc]* The previous pure-shell implementation of all cron functions has been converted to ruby and now the shell aliases/functions simply delegate to the ruby implementation so as to avoid duplication, and also enhance modularity.
+
+#### Updated AI assistant documentation with new rules
+
+* *[.github/instructions/ruby-scripting.instructions.md]* Added "Shell Command Execution — `system()` and Escaping" section documenting the two execution modes: (1) direct execution with separate args (no shell, no escaping needed), (2) shell execution with single string (requires `shellescape`). Includes decision table for when to use each form, with special exception for user-authored command strings from config files (execute as-is, no escaping).
+* *[.github/instructions/ruby-scripting.instructions.md]* Added "Conditionals — Trailing Style for Single Statements" section: use `statement if condition` for single-statement conditionals with simple arguments; use block style (`if...end`) for multiple statements or when condition arguments involve expensive operations (string interpolation with method calls, complex calculations). Trailing style evaluates all arguments before checking the condition, causing unnecessary work when those arguments are expensive to compute.
+* *[.github/instructions/shell-scripting.instructions.md]* Added "Deferred warning collection — immediate vs summary-only" subsection to § Logging. `_record_warning` both prints immediately AND stores for summary (use for per-item failures in loops where immediate feedback is valuable). Direct append to `_step_warnings` only stores without printing (use for aggregated summary messages computed after processing multiple items, to avoid duplicate output). Rule mirrors Ruby's `record_warning` vs direct `@step_warnings` append.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts.
+* Quit and restart the Terminal application.
+* Recreate the crontab file in a new Terminal window:
+
+  ```zsh
+  _create_crontab "${PERSONAL_CONFIGS_DIR}/crontab.txt"
+  recron
+  ```
+
+
 ### 3.1.9
 
 #### Created `git_helpers.rb` utility module for git operations

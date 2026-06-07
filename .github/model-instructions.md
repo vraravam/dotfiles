@@ -127,6 +127,38 @@ fi
 
 The Git‑related rules in `git-config.instructions.md` are unchanged.  Both editors honour the same commit and push restrictions.
 
+### Git Staging Rules — Mandatory
+
+**DO NOT stage, unstage, add, or reset files without explicit permission from the user.**
+
+When reviewing changes:
+- Use `git status` and `git diff` to inspect changes
+- Use `git diff --cached` to review staged changes
+- **NEVER** run `git add`, `git add -A`, `git reset`, `git restore`, or any other command that modifies the staging area unless the user explicitly requests it
+
+**Applies to:**
+- `git add <file>` — stages a file
+- `git add -A` — stages all changes
+- `git add .` — stages all changes in current directory
+- `git reset <file>` — unstages a file
+- `git restore --staged <file>` — unstages a file
+- `git rm <file>` — stages a deletion
+- Any other command that modifies the index/staging area
+
+**Why this matters:**
+- Users may have carefully staged specific hunks or files for different commits
+- Automatically staging all changes destroys that intent
+- Mixing unrelated changes into a single commit breaks atomic commit principles
+- The user's staging state is a deliberate choice, not something to override
+
+**Correct workflow:**
+1. Make edits to files as requested
+2. Show `git status` or `git diff` to display what changed
+3. Ask the user if they want to stage the changes
+4. Only after explicit permission: run `git add` commands
+
+**Exception:** When the user explicitly says "stage everything", "commit all changes", or similar clear intent to modify staging state, then `git add -A` is permitted.
+
 ## Changelog Generation Rules
 
 - When generating a changelog, first examine the list of staged changes.

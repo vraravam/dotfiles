@@ -180,11 +180,11 @@ command_exists btop && alias top='btop'
 command_exists ncdu && alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'
 
 # --------------------------------------------------------------------------
-# 3c. Multi-repo git shortcuts (via run-all.sh)
+# 3c. Multi-repo git shortcuts (via run-all.rb)
 # --------------------------------------------------------------------------
-if command_exists 'run-all.sh'; then
+if command_exists 'run-all.rb'; then
   # shortcuts to handle multiple git repos
-  alias rug='run-all.sh git'
+  alias rug='run-all.rb git'
   alias all="FOLDER='${HOME}' MAXDEPTH=7 rug"
   alias all-cache="FILTER='[cC]ache' all"
   alias home="FOLDER='${HOME}' FILTER='.bin|.dotfiles|zsh|mise' MAXDEPTH=5 rug"
@@ -297,6 +297,15 @@ delete_caches() {
 # PERSONAL_CONFIGS_DIR, then runs post-clone operations (restore-mtime, git
 # maintenance register/start, allow_all_direnv_configs, install_mise_versions).
 resurrect_tracked_repos() {
+  # Deferred-collection locals. _SCRIPT_NAME is read by logging functions via
+  # dynamic scoping (no argument passing needed). _current_section is currently
+  # unused but declared for consistency with scripts using deferred collection.
+  # _step_warnings and _step_errors accumulate issues for the final summary.
+  local _SCRIPT_NAME='resurrect_tracked_repos'
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+
   # Increment script depth and register decrement trap. This ensures that when
   # called directly from the command line, this function acts as the outermost
   # script (depth 1, prints banners). When called from fresh-install-of-osx.sh
@@ -316,26 +325,42 @@ resurrect_tracked_repos() {
 
     # resurrect repositories that are in the repo catalogues
     section_header2 "$(yellow 'Resurrecting all tracked git repos')"
+    _current_section='Resurrecting all tracked git repos'
     # Use zsh glob qualifier (N.) for nullglob and regular files
     local file
+    local -a failed_files=()
     for file in "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml(N.); do
-      resurrect-repositories.rb -r "${file}"
+      if ! resurrect-repositories.rb -r "${file}"; then
+        # Transform and store failed files: replace HOME with ~ and colorize in red
+        failed_files+=("$(red "$(replace_home_with_tilde "${file}")")")
+      fi
     done
-    success 'Successfully resurrected all tracked git repos'
+    # resurrect-repositories.rb exits non-zero if there are any failures OR
+    # warnings (fetch failures, post-clone failures, etc.), so failed_files
+    # will contain any yaml file that had issues.
+    if is_empty_array failed_files; then
+      success 'Successfully resurrected all tracked git repos'
+    else
+      local msg="$(red "Failed to process ${#failed_files[@]} file(s):")"
+      msg+=$'\n'"$(join_array failed_files)"
+      # Append directly to _step_warnings instead of calling _record_warning
+      # to avoid duplicate output (don't print immediately, only in final summary)
+      _step_warnings+=("[${_SCRIPT_NAME}][${_current_section}] ${msg}")
+    fi
   else
     debug "Skipping resurrecting of repositories since '$(yellow "${PERSONAL_CONFIGS_DIR}")' doesn't exist"
   fi
 
   # post-clone operations for installing system dependencies
   section_header2 "$(yellow 'Running post-clone operations')"
-  # 'all' (alias: FOLDER='${HOME}' MAXDEPTH=7 rug → run-all.sh git) requires .aliases
+  # 'all' (alias: FOLDER='${HOME}' MAXDEPTH=7 rug → run-all.rb git) requires .aliases
   # to be loaded so the alias is defined. Use the underlying command directly to avoid
   # that dependency — this function is called from fresh-install as a background job
   # where the sourcing order may differ.
-  if command_exists 'run-all.sh'; then
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git restore-mtime -c
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git maintenance start
+  if command_exists 'run-all.rb'; then
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git restore-mtime -c
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git maintenance start
   fi
   # Collect repo ancestor dirs once and share across both post-clone operations
   # to avoid running the expensive find traversal twice.
@@ -349,7 +374,13 @@ resurrect_tracked_repos() {
   unset _SHARED_REPO_DIRS
   regenerate_repo_aliases
 
-  print_script_summary "${script_start_time}" 'Finished resurrecting tracked repos'
+  # Only print success message if there were no warnings/errors. print_script_summary
+  # will show the warnings/errors section if any were recorded.
+  local summary_msg=''
+  if is_empty_array _step_warnings && is_empty_array _step_errors; then
+    summary_msg='Finished resurrecting tracked repos'
+  fi
+  print_script_summary "${script_start_time}" "${summary_msg}"
   # Manual decrement — EXIT trap does not fire on function return in shell functions.
   _decrement_script_depth
 }
@@ -742,6 +773,10 @@ fi
 # Internal: seeds crontab.txt at $1 with the standard env header and the
 # software-updates-cron.sh schedule. Called by recron only when crontab.txt
 # does not already exist (bootstrap / first-install path).
+# Thin wrapper that delegates to Ruby Cron.create_crontab.
+# Seeds the given file with the standard crontab header and the
+# software-updates-cron schedule. Called by recron only when crontab.txt
+# does not already exist (bootstrap / first-install path).
 # Usage: _create_crontab <output-file-path>
 _create_crontab() {
   local file="${1:-}"
@@ -749,46 +784,16 @@ _create_crontab() {
     error "_create_crontab requires an output file path as its first argument."
     return 1
   fi
-  debug "Creating '$(yellow "${file}")'"
-
-  local shell_bin
-  # Resolve via PATH so the crontab SHELL= points to the same binary a login
-  # shell would use, not a version-specific path that may diverge across upgrades.
-  shell_bin="$(which "$(basename "${SHELL}")")"
-  echo '# Reference: https://crontab.guru/' >"${file}"
-  echo >>"${file}"
-  echo "# Note: 'chronic' is provided by 'moreutils' from Homebrew and suppresses cron mail on success" >>"${file}"
-  echo >>"${file}"
-  echo '# Env' >>"${file}"
-  echo "SHELL=\"${shell_bin}\"" >>"${file}"
-  echo "USERNAME=\"${USERNAME}\"" >>"${file}"
-  echo "HOME=\"${HOME}\"" >>"${file}"
-  # NOTE: do NOT add inline comments on the PATH line — crontab treats '#' as part of the value,
-  # corrupting the last directory entry and causing "command not found" for scripts in that dir.
-  echo "# PATH: homebrew + system utils + personal bin + dotfiles scripts" >>"${file}"
-  echo "PATH=${HOMEBREW_PREFIX}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PERSONAL_BIN_DIR}:${DOTFILES_DIR}/scripts" >>"${file}"
-  echo >>"${file}"
-  # Run script in its own fresh zsh process; wrap with zsh -c so tee is inside
-  # chronic's scope (chronic must see both the script and tee together to suppress
-  # output on success). The script is directly executable (#!/usr/bin/env zsh shebang)
-  # so no explicit 'zsh' prefix is needed before it. 'zsh' and 'chronic' resolve
-  # from the PATH defined above — no hardcoded binary paths needed.
-  echo "0   *   *   *   *   chronic zsh -c '${DOTFILES_DIR}/scripts/software-updates-cron.sh 2>&1 | tee -a ${HOME}/software-updates-cron.log'" >>"${file}"
+  _call_ruby_cron create_crontab "${file}"
 }
 
+# Thin wrapper that delegates to Ruby Cron.recron.
 # Loads the system crontab from ${PERSONAL_CONFIGS_DIR}/crontab.txt.
 # If crontab.txt does not exist yet (bootstrap / first-install), seeds it first
-# via _create_crontab so there is always a known-good file on disk.
+# so there is always a known-good file on disk.
 # Edit crontab.txt directly to change the schedule; recron will pick it up.
 recron() {
-  debug 'Setting up crontab'
-  local cron_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
-  if ! is_file "${cron_file}"; then
-    debug "'$(yellow "${cron_file}")' not found — seeding from template"
-    _create_crontab "${cron_file}"
-  fi
-  restore_cron "${cron_file}"
-  success 'Crontab set up successfully'
+  _call_ruby_cron recron
 }
 
 # Wraps a function call in the cron bracket: suspend cron, run the function,

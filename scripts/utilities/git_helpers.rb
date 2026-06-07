@@ -27,6 +27,17 @@ module GitHelpers
     config_value("remote.#{name}.url", folder: folder)
   end
 
+  # Returns the current branch name for the repo at +folder+, or nil if HEAD
+  # is detached or the repo is empty.
+  #
+  # @param folder [String] Path to the repo (defaults to Dir.pwd).
+  # @return [String, nil]
+  def current_branch(folder: Dir.pwd)
+    out, = Open3.capture3(*_git_command(folder), 'branch', '--show-current')
+    out = out.strip
+    out.empty? ? nil : out
+  end
+
   # Enumerates all remotes in the repo at +folder+, yielding each remote name
   # and URL. Uses `git config --get-regexp` to fetch all remotes in one call.
   #
@@ -79,6 +90,17 @@ module GitHelpers
     args << '-q' if quiet
     args << '--all' << '--tags'
     Open3.capture3(*args)
+  end
+
+  # Returns true if +path+ contains a .git directory or file (worktree/submodule).
+  # Mirrors is_git_repo in .shellrc.
+  #
+  # @param path [String] Path to check.
+  # @return [Boolean]
+  def git_repo?(path)
+    return false if nil_or_empty?(path)
+    # .git can be a directory (normal clone) or a file (worktree / submodule).
+    File.exist?(File.join(path, '.git'))
   end
 
   private

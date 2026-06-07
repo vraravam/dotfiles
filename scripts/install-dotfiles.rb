@@ -228,3 +228,6 @@ puts "  Errors:    #{STATS.errors.positive? ? STATS.errors.to_s.red : STATS.erro
 _ensure_ssh_include_line
 
 warn("Since 'custom.git*' files are COPIED (not symlinked), always edit the repo source first. When re-running without FIRST_INSTALL set, the newer file wins — so a stale home-dir copy can silently overwrite repo changes if its mtime is newer.")
+
+# Single exit point at end of script
+exit(1) if STATS.errors.positive?

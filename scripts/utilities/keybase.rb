@@ -1,0 +1,82 @@
+# frozen_string_literal: true
+
+require 'open3'
+
+require_relative 'logging'
+require_relative 'path_utils'
+
+# Keybase helpers that replicate ensure_keybase_logged_in from .aliases § 3k.
+# These are only needed by scripts that interact with Keybase git repos
+# (recreate-repo.rb).
+module Keybase
+  extend self
+
+  # Note: Logging methods must be qualified (Logging.debug, Logging.error, etc.)
+  # because 'include Logging' + 'extend self' doesn't make included methods
+  # available as module methods.
+
+  # Ensures keybase is installed and the current user is logged in.
+  # Returns false on failure so callers can decide whether to abort or continue.
+  # Mirrors ensure_keybase_logged_in in .aliases.
+  #
+  # @return [Boolean] true if logged in, false otherwise.
+  def ensure_logged_in
+    unless PathUtils.command_exists?('keybase')
+      Logging.error "'keybase' command not found in PATH. Aborting."
+      return false
+    end
+
+    Logging.debug 'Logging into keybase'
+
+    # Use Open3 to avoid SIGPIPE from grep -q under pipefail.
+    # keybase status --json returns a JSON blob; parse for logged_in:true.
+    status_json, = Open3.capture3('keybase', 'status', '--json')
+    if status_json.include?('"logged_in":true')
+      Logging.debug "Skipping keybase login — '#{username}' is already logged in"
+      return true
+    end
+
+    unless system('keybase', 'login')
+      Logging.error 'Could not log into keybase. Retry after logging in manually.'
+      return false
+    end
+
+    true
+  end
+
+  # Returns true if the URL is a Keybase git repo URL (keybase://...).
+  #
+  # @param url [String]
+  # @return [Boolean]
+  def keybase_url?(url)
+    url.to_s.start_with?('keybase://')
+  end
+
+  # Deletes the named Keybase repo (irreversible). Passes -f to skip confirmation.
+  #
+  # @param repo_name [String]
+  # @return [Boolean] true if the command succeeded.
+  def delete_repo(repo_name)
+    system('keybase', 'git', 'delete', '-f', repo_name)
+  end
+
+  # Creates a new private Keybase repo.
+  #
+  # @param repo_name [String]
+  # @return [Boolean] true if the command succeeded.
+  def create_repo(repo_name)
+    system('keybase', 'git', 'create', repo_name)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Private helpers
+  # ---------------------------------------------------------------------------
+
+  private
+
+  def username
+    ENV.fetch('KEYBASE_USERNAME') do
+      raise 'ENV[KEYBASE_USERNAME] is not set — was .shellrc sourced?'
+    end
+  end
+end

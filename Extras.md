@@ -96,12 +96,12 @@ See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-two-phase-preference-arc
 
 This script is a collection of commands that need to be run after `brew bundle` to set up proper command-line usage of some GUI apps (VSCode, Rancher, etc.), remove conflicting zsh completion files, and clean up legacy executable paths. It is called automatically by `fresh-install-of-osx.sh` after `brew bundle` completes. It can also be run manually at any time — it is idempotent.
 
-## recreate-repo.sh
+## recreate-repo.rb
 
 Usually, over time, if a repo has lots of branches that were deleted or became stale, and constant rebases done - it can lead to the repo bloating in size (both on local and remote). This is especially true of the browser-profiles repo in my usage since I have a cron job setup to amend the repo with the new state files. To effectively reduce the size on the remote so that any future clone does not pull down dangling commits and other cruft, the simplest way that I have found is to recreate the remote after running the `git cc` command on the local.
 
   ```zsh
-  recreate-repo.sh [-f] -d <repo-folder>
+  recreate-repo.rb [-f] -d <repo-folder>
   ```
 
 ## resurrect-repositories.rb
@@ -134,26 +134,32 @@ The config file for this script is a yaml file that is passed into this script a
 * `active` (optional; default: false) specifies whether to process this folder/repo or not on your local machine
 * `post_clone` (optional; default: empty array) specifies other `bash` commands (in sequence) to be run once the resurrection is done - for eg, symlink a '.envrc' file if one exists
 
-## run-all.sh
+## run-all.rb
 
-This script will find all git repositories within the specified `FOLDER` (defaults to the current directory), filtered by `FILTER` (defaults to empty string meaning that it will not filter anything; accepts regex) and for a minimum depth of `MINDEPTH` (defaults to 1) and a maximum depth of `MAXDEPTH` (defaults to 3); and then runs the specified commands in each of the matched git repos. This script is not limited to only running 'git' commands - it can run any shell command! Examples:
+This script finds all git repositories within the specified `FOLDER` (defaults to the current directory), filtered by `FILTER` (regex pattern; defaults to empty = match all) for a minimum depth of `MINDEPTH` (defaults to 1) and a maximum depth of `MAXDEPTH` (defaults to 4), then runs the specified command in each matched repository's root directory.
 
-```zsh
-  run-all.sh git status                                      # to get the git status of all git repos
-  run-all.sh git clean -fxd                                  # to clean all git repos
-  run-all.sh git remote prune origin                         # to run the git remote prune command
-  run-all.sh git add -p                                      # to add all modified (unstaged) files for a commit eventually
-  run-all.sh find . -iname patch.txt --exec rm -rfv {} \;    # find all files with the name 'patch.txt'
-```
+**Key feature**: Commands run in the context of each git repo's root directory (the folder containing `.git`). This works for both git commands (`git status`, `git pull`) and any other shell command (`ls`, `find`, custom scripts, etc.).
 
-You can also control the starting folder by specifying the `FOLDER` env var, the filter for matching either the path and/or the name of the folders to be processed using `FILTER` (including using regular expressions for the same!) and also simultaneously control the depth using the `MINDEPTH` and `MAXDEPTH` env vars. So, for eg, to search in multiple nested folders starting at `~/dev`, you can use the following command:
+Examples:
 
 ```zsh
-  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 FILTER="oss|zsh|antidote" run-all.sh git status
-  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 run-all.sh git fetch
+  run-all.rb git status                                      # get git status of all repos
+  run-all.rb git clean -fxd                                  # clean all repos
+  run-all.rb git remote prune origin                         # prune remotes in all repos
+  run-all.rb git add -p                                      # stage files interactively in each repo
+  run-all.rb ls -la                                          # list files in each repo root
+  run-all.rb find . -name "*.rb" -type f                     # find Ruby files in each repo
 ```
 
-Note: **Any unix command can be run** (specific to the shell that you are currently using) or git commands. These commands are run within the context of each git repository that is matched after applying the filter logic.
+You can control the search scope and filtering using environment variables:
+
+```zsh
+  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 FILTER="oss|zsh|antidote" run-all.rb git status
+  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 run-all.rb git fetch
+  FILTER="dotfiles" run-all.rb git pull
+```
+
+**Note**: Any shell command can be run — not just git commands. Each command executes in the context of the git repository root, giving you access to the repo's files and structure.
 
 ## setup-login-item.sh
 

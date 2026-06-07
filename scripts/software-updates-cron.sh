@@ -154,18 +154,18 @@ main() {
 
   success 'Finished independent updates.'
 
-  if command_exists run-all.sh; then
+  if command_exists run-all.rb; then
     _current_section='Update repos in home folder'
     step_start
     section_header "$(yellow 'Update non-keybase repos in home folder')"
     # Aliases ('home', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'home pull' alias.
-    # run-all.sh records a warning (not an error) per failing repo: a dirty skip is
+    # run-all.rb records a warning (not an error) per failing repo: a dirty skip is
     # an expected state in a personal repo, not a script failure.
-    FOLDER="${HOME}" FILTER='.bin|zsh|mise' MAXDEPTH=5 run-all.sh git pull-safe || _record_warning 'Some home repos could not be auto-updated — working tree may be dirty. Rebase manually.'
+    FOLDER="${HOME}" FILTER='.bin|zsh|mise' MAXDEPTH=5 run-all.rb git pull-safe || _record_warning 'Some home repos could not be auto-updated — working tree may be dirty. Rebase manually.'
     step_end
 
-    sleep 10  # so that GH doesn't throttle when we call a lot of times within a short time
+    sleep 10 # so that GH doesn't throttle when we call a lot of times within a short time
 
     _current_section='Upreb repos in oss folder'
     step_start
@@ -173,9 +173,9 @@ main() {
     # Aliases ('oss', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'oss upreb' alias.
     # 'git upreb' now aborts early if the working tree is dirty rather than failing mid-workflow
-    # (after fetch+rebase but before push). A dirty skip exits non-zero so run-all.sh records
+    # (after fetch+rebase but before push). A dirty skip exits non-zero so run-all.rb records
     # a per-repo warning. Not _record_error: a dirty skip is expected, not a script failure.
-    FOLDER="${PROJECTS_BASE_DIR}/oss" MAXDEPTH=4 run-all.sh git upreb && success 'Finished upreb for oss repos' || _record_warning 'Some oss repos could not be auto-updated — working tree may be dirty. Run upreb manually.'
+    FOLDER="${PROJECTS_BASE_DIR}/oss" MAXDEPTH=4 run-all.rb git upreb && success 'Finished upreb for oss repos' || _record_warning 'Some oss repos could not be auto-updated — working tree may be dirty. Run upreb manually.'
     step_end
 
     _current_section='Restore mtime and register for maintenance'
@@ -183,9 +183,9 @@ main() {
     section_header "$(yellow 'Restoring mtime and registering for maintenance operations')"
     # Aliases ('all', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'all' alias.
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git restore-mtime -c
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git maintenance start
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git restore-mtime -c
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git maintenance start
     step_end
   fi
 
@@ -266,7 +266,7 @@ main() {
       profiles_size_human=$(du -sh "${PERSONAL_PROFILES_DIR}" 2>/dev/null | awk '{print $1}')
       # _record_error instead of error(): error() calls _dotfiles_notify() which would
       # send an immediate notification before the grouped summary at the end of main.
-      _record_error "Profiles repo is ${profiles_size_human} — exceeds 2GB threshold. Consider running: recreate-repo.sh -d \"${PERSONAL_PROFILES_DIR}\""
+      _record_error "Profiles repo is ${profiles_size_human} — exceeds 2GB threshold. Consider running: recreate-repo.rb -d \"${PERSONAL_PROFILES_DIR}\""
     else
       debug "Profiles repo size within 2GB threshold"
     fi

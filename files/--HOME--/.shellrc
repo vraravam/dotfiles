@@ -612,7 +612,7 @@ print_script_duration() {
 #     Takes its start time as an optional argument (a local variable captured
 #     at the top of main()). When non-empty, calls print_script_duration
 #     internally. This keeps it self-contained and usable by scripts that
-#     never call step_start/step_end (e.g. run-all.sh,
+#     never call step_start/step_end (e.g. run-all.rb,
 #     cleanup-browser-profiles.sh) — those scripts do NOT push to
 #     _script_start_times and have no need to.
 #
@@ -625,7 +625,7 @@ print_script_duration() {
 #     is correct.
 #
 # Consequence: if step_start/step_end are ever added to a script that
-# only calls print_script_summary (run-all.sh, cleanup-browser-profiles.sh),
+# only calls print_script_summary (run-all.rb, cleanup-browser-profiles.sh),
 # that script must also push its start epoch onto _script_start_times,
 # otherwise step_end will fall back to the current time and report 0s elapsed.
 typeset -a _script_start_times=()
@@ -1145,56 +1145,44 @@ eval_shellenv() {
 # those functions and a fuller explanation of the split.
 # --------------------------------------------------------------------------
 
-# Loads a cron file into the system crontab.  Shared by suspend_cron/resume_cron
+# Internal helper: calls a Ruby Cron module method with optional arguments.
+# Eliminates duplication of $LOAD_PATH setup across cron wrapper functions.
+# Usage: _call_ruby_cron <method_name> [args...]
+_call_ruby_cron() {
+  local method="${1:-}"
+  if [[ -z "${method}" ]]; then
+    error '_call_ruby_cron: method name required'
+    return 1
+  fi
+  shift
+  local args_str=""
+  if [[ $# -gt 0 ]]; then
+    # Build comma-separated list of single-quoted Ruby string literals using printf.
+    # printf "'%s', " expands to "'arg1', 'arg2', 'arg3', " then strip trailing ', '
+    printf -v args_str "'%s', " "$@"
+    args_str="${args_str%, }"
+  fi
+  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'cron'; Cron.${method}(${args_str})"
+}
+
+# Loads a cron file into the system crontab. Shared by suspend_cron/resume_cron
 # (bootstrap layer, here) and recron (.aliases layer) so neither duplicates logic.
+# Thin wrapper that delegates to Ruby Cron.restore_cron.
 # Usage: restore_cron <cron-file-path>
 restore_cron() {
-  local cron_file="${1}"
-  if ! is_file "${cron_file}"; then
-    warn "No '$(yellow "${cron_file}")' found; returning without any processing"
-    return 0 # Success, nothing to do
-  fi
-
-  # ${cron_file:h} is the pure-zsh dirname equivalent — no $(dirname ...) fork.
-  # restore_cron is only ever called from zsh contexts (suspend_cron/resume_cron
-  # in .shellrc, recron alias in .aliases) so :h is safe here; .envrc never reaches this function.
-  ensure_dir_exists "${cron_file:h}"
-
-  crontab "${cron_file}" || error 'Failed to restore crontab.'
+  _call_ruby_cron restore_cron "$@"
 }
 
+# Thin wrapper that delegates to Ruby Cron.suspend_cron.
 # Backs up the current crontab to _DOTFILES_CRON_BACKUP_FILE and removes all cron jobs.
-# On a first-install where no crontab exists yet, seeds the backup from
-# crontab.txt (if present) so that resume_cron can restore a known-good state.
 suspend_cron() {
-  debug 'Suspending cron jobs...'
-  local src_file="${PERSONAL_CONFIGS_DIR}/crontab.txt"
-  if crontab -l >"${_DOTFILES_CRON_BACKUP_FILE}"  2>/dev/null; then
-    debug "Backed up existing crontab to '$(yellow "${_DOTFILES_CRON_BACKUP_FILE}")'"
-  elif is_file "${src_file}"; then
-    # No active crontab (e.g. FIRST_INSTALL), but a known-good crontab.txt exists - use it as the backup
-    cp "${src_file}" "${_DOTFILES_CRON_BACKUP_FILE}"
-    debug "Seeded cron backup from '$(yellow "${src_file}")'"
-  else
-    : >"${_DOTFILES_CRON_BACKUP_FILE}"
-    debug 'No existing crontab or crontab.txt; created empty backup'
-  fi
-  crontab -r &>/dev/null || true
-  success 'Cron jobs suspended'
+  _call_ruby_cron suspend_cron
 }
 
+# Thin wrapper that delegates to Ruby Cron.resume_cron.
 # Restores crontab from _DOTFILES_CRON_BACKUP_FILE and cleans up the backup file.
-# If the backup is empty (e.g. genuine first-install with no prior crontab.txt),
-# does nothing.
 resume_cron() {
-  debug 'Resuming cron jobs...'
-  if is_non_empty_file "${_DOTFILES_CRON_BACKUP_FILE}"; then
-    restore_cron "${_DOTFILES_CRON_BACKUP_FILE}"
-    success 'Cron jobs resumed from backup'
-  else
-    info 'No cron backup to restore; skipping'
-  fi
-  rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
+  _call_ruby_cron resume_cron
 }
 
 # --------------------------------------------------------------------------

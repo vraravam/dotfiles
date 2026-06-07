@@ -135,6 +135,68 @@ sep = "------"
 raise "File not found"
 ```
 
+## Conditionals — Trailing Style for Single Statements
+
+Use trailing `if`/`unless` style when the conditional body is a single statement.
+Use block style (`if...end`) when the body has multiple statements or when the
+condition is complex.
+
+```ruby
+# Good — single statement, use trailing style
+return if nil_or_empty?(value)
+exit 1 unless success
+info "Skipping '#{path}'" if File.exist?(path)
+system('git', '-C', folder, 'config', 'user.name', user_name) unless nil_or_empty?(user_name)
+
+# BAD — single statement in block form (verbose)
+if nil_or_empty?(value)
+  return
+end
+unless success
+  exit 1
+end
+
+# Good — multiple statements or complex logic, use block style
+if condition
+  statement1
+  statement2
+end
+
+unless File.exist?(path) && valid_path?(path)
+  error "Invalid path"
+  return 1
+end
+
+# Good — if/else always uses block style (can't be trailing)
+if dry_run
+  info 'Would run command'
+else
+  system('command')
+end
+```
+
+**Exception:** Do NOT use trailing style when it makes the line too long (>120
+characters) or when it reduces readability. Readability always takes precedence.
+
+**Performance consideration:** Trailing style evaluates all method arguments
+**before** checking the condition. For expensive operations (complex string
+interpolation, method calls), use block style to avoid unnecessary work:
+
+```ruby
+# BAD — string interpolation happens even when status.success? is true
+_report_git_failure("Failed in '#{folder.cyan}': #{compute_details}", status, stderr) unless status.success?
+
+# Good — string only built when needed
+unless status.success?
+  _report_git_failure("Failed in '#{folder.cyan}': #{compute_details}", status, stderr)
+end
+
+# Trailing style is fine for simple/cheap arguments
+return unless items.any?
+exit 1 unless success
+File.delete(path) if obsolete
+```
+
 ## Idiomatic Patterns
 
 ```ruby
@@ -160,6 +222,65 @@ hash.deep_sort              # recursive sort by keys
 # String color extensions — see ## String Colors for the full convention table
 'text'.blue
 'path/to/file'.cyan         # HOME->tilde substitution happens inside color methods
+```
+
+## Shell Command Execution — `system()` and Escaping
+
+Ruby's `system()` and `Open3.capture3()` have two execution modes:
+
+### 1. Direct execution (safe, no escaping needed)
+
+Pass command and arguments as separate parameters. Ruby executes the command
+directly without invoking a shell. NO shell interpretation happens, so NO
+escaping is needed:
+
+```ruby
+# Good — safe, no shell, no escaping needed
+system('git', '-C', folder, 'status')
+system({ 'VAR' => 'value' }, 'git', '-C', folder, 'command')
+Open3.capture3('git', '-C', folder, 'log', '--oneline')
+```
+
+Even if `folder` contains spaces or special characters, they are passed as-is
+to the command — no shell interprets them.
+
+### 2. Shell execution (requires escaping)
+
+Pass a single string. Ruby invokes `/bin/sh -c "string"`, which means the shell
+interprets the string. Variable interpolation MUST use `shellescape`:
+
+```ruby
+# BAD — unsafe if folder contains spaces or shell metacharacters
+system("git -C #{folder} status")
+
+# Good — shellescape protects against shell interpretation
+require 'shellwords'
+system("git -C #{folder.shellescape} status")
+
+# Good — explicit shell invocation (needed for shell functions, pipes, etc.)
+Open3.capture3('/bin/zsh', '-lc', "clone_repo_into #{url.shellescape} #{folder.shellescape}")
+```
+
+### When to use each form
+
+| Use Case | Form |
+|----------|------|
+| Simple command with arguments | Direct execution (separate args) |
+| Command with env vars | Direct execution with env hash |
+| Shell function (e.g., from `.shellrc`) | Shell execution with `shellescape` |
+| Pipeline or redirection | Shell execution with `shellescape` |
+| User-authored command string from config | Shell execution (no escaping — user controls the command) |
+
+### Exception: User-controlled command strings
+
+When executing commands from user-authored config files (YAML `post_clone`
+commands, etc.), pass the string as-is WITHOUT escaping. The user intends for
+their command to be executed exactly as written, including any shell syntax:
+
+```ruby
+# User-authored command from YAML config — execute as-is
+command_str = repo['post_clone']  # e.g., "npm install && npm run build"
+Open3.capture3(command_str)       # Shell interprets the string as the user intended
 ```
 
 ## String Colors
@@ -241,6 +362,54 @@ class MyClass
   def internal_method; end
 end
 ```
+
+## Utility Modules — Logging Pattern
+
+Utility modules in `scripts/utilities/` use `extend self` to make all methods
+available as module methods (e.g., `Cron.suspend_cron`). This allows them to be
+called from both Ruby scripts and shell wrappers.
+
+**CRITICAL RULE**: Do NOT use `include Logging` in utility modules that use
+`extend self`. The combination `extend self` + `include Logging` does NOT make
+Logging's methods available as module methods.
+
+```ruby
+# BAD — Logging methods won't be available
+module Cron
+  extend self
+  include Logging  # This doesn't work!
+
+  def suspend_cron
+    debug 'Suspending...'  # ERROR: undefined method 'debug'
+  end
+end
+
+# Good — Qualify all Logging calls
+module Cron
+  extend self
+
+  # Note: Logging methods must be qualified (Logging.debug, Logging.info, etc.)
+  # because 'include Logging' + 'extend self' doesn't make included methods
+  # available as module methods.
+
+  def suspend_cron
+    Logging.debug 'Suspending...'  # Works correctly
+  end
+end
+```
+
+**Why this matters:**
+- Shell functions delegate to Ruby utilities via `ruby -e` (e.g., `suspend_cron` → `Cron.suspend_cron`)
+- Ruby scripts call utility modules directly (e.g., `Cron.with_cron_suspended { }`)
+- Both contexts need the same behavior
+
+**Applies to:**
+- `scripts/utilities/cron.rb` - uses `Logging.debug`, `Logging.success`, etc.
+- `scripts/utilities/keybase.rb` - uses `Logging.debug`, `Logging.error`
+- Any future utility modules that need logging
+
+**Exception:** Top-level scripts (not modules) can use `include Logging` because
+they execute in the main context where `include` works as expected.
 
 ## Option Parsing — Use `CliParser`
 
@@ -395,6 +564,79 @@ require 'cli_parser'
 
 # ... rest follows the same structure as above ...
 ```
+
+## Exit Points — Single Exit at End of Script
+
+**All Ruby scripts must have a single exit point at the end of the script.**
+
+This rule applies primarily to scripts that **process multiple items** (repos, files, etc.). Never call `exit()` in the middle of a processing loop. Instead:
+1. Use flags or variables to track failure state
+2. Let the script run to completion
+3. Call `exit(code)` once at the very end based on accumulated state
+
+```ruby
+# BAD — exits in middle of processing loop
+process_items.each do |item|
+  if item.invalid?
+    warn "Invalid: #{item}"
+    exit(1)  # BAD — prevents processing remaining items
+  end
+end
+
+# Good — single exit at end, all items processed
+@has_failures = false
+
+process_items.each do |item|
+  if item.invalid?
+    warn "Invalid: #{item}"
+    @has_failures = true
+  end
+end
+
+# Single exit point at end of script
+exit(1) if @has_failures
+```
+
+**Why this matters:**
+- **Nested script safety**: When called from another script (e.g., in a loop), premature `exit()` terminates the entire subprocess, making exit code checking work correctly
+- **Process all items**: Users expect all items to be processed, not just up to the first failure
+- **Complete summaries**: Allows printing a full summary of all successes and failures at the end
+- **Predictable cleanup**: `at_exit` hooks and ensure blocks run reliably
+- **Better debugging**: Single exit point makes control flow explicit
+
+**Exceptions:**
+
+1. **Help/usage output**: Scripts that print help and exit (e.g., `ARGV.first == '-h'` or `ARGV.empty?`) may call `exit(0)` directly — these are not processing failures, just usage information requests:
+
+```ruby
+# Allowed — help flag exits immediately
+if ARGV.empty? || ARGV.first == '-h' || ARGV.first == '--help'
+  puts "Usage: #{File.basename(__FILE__)} <command...>"
+  exit 0  # OK — just printing usage
+end
+```
+
+2. **Precondition validation**: `error()` (which raises) or `parser.abort_with_usage` are allowed for argument validation and precondition checks at the top of the script — these are immediate user errors that should abort before any work begins:
+
+```ruby
+# Allowed — precondition checks before processing
+unless GitHelpers.git_repo?(folder)
+  error "'#{folder}' is not a git repo. Aborting."
+end
+
+folder = ARGV.first
+if nil_or_empty?(folder)
+  parser.abort_with_usage('Missing required argument: <folder>')
+end
+
+# ... rest of script processes normally ...
+# Single exit at end
+exit(1) if @has_failures
+```
+
+2. **Fatal mid-operation errors**: Single-item scripts (not processing loops) may use `error()` for truly unrecoverable failures where continuing would cause data corruption. But prefer tracking state and exiting cleanly when possible.
+
+**Summary:** The rule targets scripts that process multiple items. For those, never exit in the middle of the loop. For help/usage, validation, and single-item operations, early exit is acceptable.
 
 ## Logging
 
