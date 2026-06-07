@@ -342,6 +342,32 @@ main() {
   fi
   step_end
 
+  # TODO: Similar to ollama, need to update the models used by omlx via cli
+  if command_exists ollama; then
+    _current_section='Pull ollama models'
+    step_start
+    section_header "$(yellow 'Pull ollama models')"
+    # reference: https://insiderllm.com/guides/ollama-mac-setup-optimization/
+    # reference: https://popularaitools.ai/blog/run-gemma-4-locally-opencode-2026
+    # Note: This list is up-to-date as of 2026-06-06
+    local -a ollama_models=(
+      # deepseek-coder-v2
+      # gpt-oss:20b
+      # qwen3.5:9b-q8_0 # Qwen 3.5 9B (Q8): strong reasoning model
+      qwen2.5-coder:14b # Qwen 2.5 Coder 14B: strong coding model
+      gemma3:12b        # Gemma 3 12B: free coding model
+      # gemma4:26b        # Gemma 4 26B: free coding model
+      # codestral:22b     # TODO: Need to research
+    )
+    local model
+    for model in "${ollama_models[@]}"; do
+      ollama pull "${model}" && success "Pulled model: '${model}'" || _record_warning "Failed to pull model: '${model}'"
+    done
+    step_end
+  else
+    debug 'ollama not found — skipping model pulls'
+  fi
+
   # Print grouped summary of all collected warnings and errors (warnings first,
   # then errors), print duration, then send exactly one notification regardless
   # of how many steps had issues.

@@ -1,0 +1,6 @@
+# file location: ${DOTFILES_DIR}/.gitignore
+
+*.zwc*
+.*.zwc*
+/.opencode/*
+/.ruby-lsp/*

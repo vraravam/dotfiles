@@ -176,7 +176,7 @@ def _ensure_ssh_include_line
   default_ssh_config = ssh_folder.join('config')
   FileUtils.touch(default_ssh_config) unless default_ssh_config.exist?
 
-  include_line = 'Include "${SSH_CONFIGS_DIR}/global_config"'
+  include_line = 'Include "./global_config"'
   begin
     # Use File.foreach to stream the file line-by-line instead of loading it all into memory.
     if File.foreach(default_ssh_config).any? { |l| l.strip == include_line }

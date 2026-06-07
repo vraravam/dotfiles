@@ -211,7 +211,7 @@ node_modules/
 /.babel.json
 /.boxfuse/
 .idea*
-/.bundle/cache
+/.bundle/*
 /.continue/calculator.py
 /.continue/config.py
 /.continue/server
@@ -283,6 +283,9 @@ node_modules/
 /.config/opencode/package-lock.json
 /.config/opencode/package.json
 
+# omlx - only settings.json is hand-crafted; everything else is auto-generated
+/.omlx/*
+
 # Zed — prompts db (data.mdb) is tracked; lock and derived files are not
 /.config/zed/.tmp*
 /.config/zed/conversations/
@@ -291,6 +294,7 @@ node_modules/
 /.config/zed/settings_backup.json
 /.config/zed/themes/
 
+/.config/homebrew/trust.json
 /.config/zsh/
 
 
@@ -403,6 +407,7 @@ node_modules/
 /.mailrc
 /.notify-osd
 /.npmrc
+/.ollama/env
 /.profile
 /.pryrc
 /.psqlrc
@@ -431,4 +436,5 @@ node_modules/
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Do NOT ignore the following files/directories
-!.bundle/config
+!/.bundle/config
+!/.omlx/settings.json

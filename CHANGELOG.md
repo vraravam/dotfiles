@@ -5,6 +5,31 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 ### 3.1.8
 
+#### Fixed `ensure_keybase_logged_in` not found on re-running `fresh-install-of-osx.sh`
+
+* *[fresh-install-of-osx.sh]* Added `load_file_if_exists "${HOME}/.aliases"` directly after `load_zsh_configs` in `main()`. `~/.zsh_plugins.zsh` (the antidote bundle) is checked into the home git repo and symlinked by `install-dotfiles.rb` before this point, so it is present on both vanilla OS and pre-configured machine runs. `.zshrc` sources the bundle, which defines `zsh-defer`, and then defers `.aliases` to the next ZLE idle event. In a non-interactive script there is no ZLE idle event, so the deferred callback never fires and `.aliases` functions (`ensure_keybase_logged_in`, `build_keybase_repo_url`) are absent. The `is_aliases_sourced` guard inside `.aliases` prevents double-loading.
+
+#### Fixed `all` alias not found in `resurrect_tracked_repos`
+
+* *[.aliases]* Replaced `command_exists all` / `all restore-mtime -c` / `all maintenance register` / `all maintenance start` with direct `FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git ...` invocations. The failure was not caused by alias expansion being disabled — zsh's `ALIASES` option is on by default even in non-interactive scripts. The actual cause: `resurrect_tracked_repos` is called as a background `&|` job from `fresh-install-of-osx.sh`, and if `.aliases` is not loaded in that child-process, `all` is simply never defined. Using the underlying command directly removes the dependency on `.aliases` being in scope.
+
+#### Made `allow_all_direnv_configs` and `install_mise_versions` synchronous in fresh-install
+
+* *[fresh-install-of-osx.sh]* Removed `&|` (background + disown) from the `allow_all_direnv_configs` and `install_mise_versions` calls; both now run synchronously. Also removed the HACKTAG comments that described the background rationale.
+
+#### Corrected `No Aliases in Non-Interactive Scripts` rule
+
+* *[shell-scripting.instructions.md]* Replaced the incorrect claim "Zsh disables alias expansion in non-interactive shells" with the accurate mechanism: zsh's `ALIASES` option is on by default universally; the real risk is that `.aliases` may not have been sourced, leaving the alias undefined. Updated the rule rationale, BAD/Good examples, and comment templates accordingly.
+* *[copilot-instructions.md]* Updated the [`§ No Aliases in Non-Interactive Scripts`](.github/copilot-instructions.md#no-aliases-in-non-interactive-scripts) summary to match.
+
+#### Corrected ssh `config` file to use relative paths
+
+* *[ssh config]* Some tools do not understand `SSH_CONFIGS_DIR` custom env var. To accommodate this, the ssh config file refers to the global config and the itentity key files using relative paths. The template has also been modified to reflect the same for new adopters.
+
+#### Made GHC instructions generic
+
+* The github copilot instructions file is read only by GHC. In an effort to move to a locally running GPT-OSS model, moved all these instructions to a model-agnostic instructions file.
+
 #### Clarified two-phase preference architecture in documentation
 
 * *[copilot-instructions.md]* Backported the [`§ osx-defaults.sh and capture-prefs — Two-Phase Preference Architecture`](.github/copilot-instructions.md#osx-defaultssh-and-capture-prefs--two-phase-preference-architecture) Layer 1/Layer 2 section from `nix-migration`, inserted before Git Configuration Rules; stripped the nix-specific `targets.darwin.defaults` subsection. Gives a concise accessible overview (what the layers are, auto-call behavior, re-run warning, ordering constraint) alongside the existing detailed Phase 1/Phase 2 decision-rules section.
@@ -24,6 +49,21 @@ For those who follow this repo, here's the changelog for ease of changelog:
 
 * *[osx-defaults.sh]* Renamed `# MenuBar` section header to `# Menu Bar` to match macOS terminology.
 * *[osx-defaults.sh]* Added missing blank lines after the closing `# ---` divider in seven sections (Login Window, SSD-specific tweaks, Dock, Safari & WebKit, Mail, Terminal, iTerm2) for consistent section-body separation.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts. Run in all open terminals:
+
+  ```zsh
+  unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
+  unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
+  install-dotfiles.rb
+  fresh-install-of-osx.sh
+  ```
+
+* Quit and restart the Terminal application.
+* Review and edit the `~/.ssh/config` file to remove any duplicate `Include` lines. The best way to determine which format to use is to remove all those, and just run `install-dotfiles.rb` which will put the correct expected format in it
+
 
 ### 3.1.7
 
@@ -871,7 +911,7 @@ For those who follow this repo, here's the changelog for ease of changelog:
 * Rebase from upstream, resolve conflicts.
 * *Quit and restart your Terminal application* for these changes to take effect.
 * Run `install-dotfiles.rb` in the new shell.
-* Manually edit `${HOME}/.ssh/config` to replace the reference to `~/.ssh/global_config` towards the last line with `${SSH_CONFIGS_DIR}/global_config`. If this results in a duplicate line, remove the duplicate line.
+* Manually edit `${HOME}/.ssh/config` to replace the reference to `~/.ssh/global_config` towards the last line with `./global_config`. If this results in a duplicate line, remove the duplicate line.
 * Verify the above changes in the `${HOME}/.ssh/config` file by running `git pull` in one of the cloned repos on your local machine.
 
 ### 2.0.36

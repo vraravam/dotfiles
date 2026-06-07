@@ -412,7 +412,7 @@ def _verify_all(repositories, discovered_count, filter, ref_folder: nil)
   puts("  Common repositories:\n  #{common_repos.map(&:cyan).join("\n  ")}")
   if diff_repos.any?
     record_warning("Please correlate the following #{diff_repos.length.to_s.red} differences in projects manually:\n  #{diff_repos.map(&:cyan).join("\n  ")}")
-    print_script_summary
+    print_script_summary(script_start_time)
     exit(1)
   else
     success('Everything is kosher!')
@@ -422,8 +422,11 @@ end
 # main program
 filter = (ENV['FILTER'] || '').strip
 
-increment_script_depth
-script_start_time = print_script_start
+# Increment script depth and register at_exit decrement. print_script_start checks
+# outermost_script? internally and only prints when depth <= 1. Mirrors the shell
+# pattern: increment first, then call print functions which check depth internally.
+Logging.increment_script_depth
+script_start_time = Logging.print_script_start
 
 if options[:generate]
   section_header('Generating repository configuration')

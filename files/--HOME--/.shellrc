@@ -1040,6 +1040,10 @@ clone_repo_into() {
     tmp_folder="$(mktemp -d)"
     # Note: Do not use --depth while cloning since that messes up when using upstream to rebase from
     GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q -c init.defaultRefFormat=reftable "${1}" .
+    if [[ $? -ne 0 ]]; then
+      warn "Failed to clone '$(yellow "${1}")' into '$(yellow "${target_folder}")'"
+      return 1
+    fi
 
     mv "${tmp_folder}/.git" "${target_folder}"
     rm -rf "${tmp_folder}"

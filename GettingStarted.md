@@ -34,7 +34,7 @@ If you have not yet exported preferences from a previous machine, skip step 2 fo
 
 - [ ] 1. Use [gitconfig-inc.template](templates/gitconfig-inc.template) as a template to create per-context git config include files (e.g. `${HOME}/.gitconfig-personal.inc`, `${HOME}/.gitconfig-work.inc`), then wire them into `${HOME}/.gitconfig-oss.inc` using [`includeIf "gitdir:..."`](https://git-scm.com/docs/git-config#_conditional_includes) so that git automatically applies the right identity and settings depending on which directory a repo lives in. Other conditions beyond `gitdir:` — such as `onbranch:` and `hasconfig:` — are documented at that link. See the template file for guidance on keeping sensitive values private.
 
-- [ ] 2. Use [ssh-config.template](templates/ssh-config.template) as a template to create `${HOME}/.ssh/config` with your SSH key paths and host aliases. Replace all placeholders with your own values. Note: `install-dotfiles.rb` automatically inserts the `Include "${SSH_CONFIGS_DIR}/global_config"` line — you do not need to add it manually. These settings only apply when cloning repos over SSH, not HTTPS.
+- [ ] 2. Use [ssh-config.template](templates/ssh-config.template) as a template to create `${HOME}/.ssh/config` with your SSH key paths and host aliases. Replace all placeholders with your own values. Note: `install-dotfiles.rb` automatically inserts the `Include "./global_config"` line — you do not need to add it manually. These settings only apply when cloning repos over SSH, not HTTPS.
 
 - [ ] 3. *(optional)* Open the `System Preferences` application.
    * Search for 'Displays' and set scaling / screen resolution as per your preference

@@ -23,6 +23,9 @@ main() {
   # Required for completions from other plugins (e.g. git-extras) to work
   rm -rf "${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git" &>/dev/null || true
 
+  # trust the taps that we use and know can be trusted
+  brew trust jundot/omlx xykong/tap
+
   section_header "$(yellow 'Updating antidote plugins and regenerating antidote plugin bundle')"
   update_antidote_and_regenerate_plugin_bundle
 }

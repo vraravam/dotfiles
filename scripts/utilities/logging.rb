@@ -248,6 +248,22 @@ module Logging
     puts "#{'    ⏱'.purple} #{'step:'.yellow} #{step_human.light_blue} #{'| elapsed:'.yellow} #{total_human.light_blue}"
   end
 
+  # Increments _DOTFILES_SCRIPT_DEPTH and registers an at_exit hook to
+  # decrement it on exit (clean or error). Call once at script start, before
+  # any logging calls. Mirrors the export + trap pattern in shell scripts.
+  def increment_script_depth
+    ENV['_DOTFILES_SCRIPT_DEPTH'] = (_script_depth + 1).to_s
+    at_exit { decrement_script_depth }
+  end
+
+  # Decrements _DOTFILES_SCRIPT_DEPTH, guarding against underflow. Called
+  # automatically by the at_exit hook registered in increment_script_depth.
+  # Mirrors _decrement_script_depth in .shellrc.
+  def decrement_script_depth
+    depth = _script_depth
+    ENV['_DOTFILES_SCRIPT_DEPTH'] = (depth - 1).to_s if depth > 0
+  end
+
   # ---------------------------------------------------------------------------
   # Private implementation details
   # ---------------------------------------------------------------------------
@@ -273,22 +289,6 @@ module Logging
   # ':-0' used in the increment expression in each main().
   def outermost_script?
     _script_depth <= 1
-  end
-
-  # Increments _DOTFILES_SCRIPT_DEPTH and registers an at_exit hook to
-  # decrement it on exit (clean or error). Call once at script start, before
-  # any logging calls. Mirrors the export + trap pattern in shell scripts.
-  def increment_script_depth
-    ENV['_DOTFILES_SCRIPT_DEPTH'] = (_script_depth + 1).to_s
-    at_exit { decrement_script_depth }
-  end
-
-  # Decrements _DOTFILES_SCRIPT_DEPTH, guarding against underflow. Called
-  # automatically by the at_exit hook registered in increment_script_depth.
-  # Mirrors _decrement_script_depth in .shellrc.
-  def decrement_script_depth
-    depth = _script_depth
-    ENV['_DOTFILES_SCRIPT_DEPTH'] = (depth - 1).to_s if depth > 0
   end
 
   # Shared implementation for section_header and section_header2. Mirrors

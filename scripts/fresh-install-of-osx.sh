@@ -17,10 +17,20 @@ set -euo pipefail
 # so _cleanup_and_exit fires even when the failure originates inside a helper function.
 set -E
 
+_SCRIPT_NAME="${0:t}"
+
 # Error trap cleanup and exit.
 # $1 = LINENO of the failing command, captured by the caller via the trap string
 # ('trap "_cleanup_and_exit ${LINENO}" ERR') so that $LINENO expands in the
 # failing command's scope rather than inside this function.
+#
+# NOTE: This function duplicates logic from .shellrc (print_script_summary, error,
+# resume_cron) because it must handle failures that occur BEFORE .shellrc can be
+# downloaded on a vanilla OS (e.g., network failures, DNS issues, curl timeouts).
+# The fallback implementations (lines 36-49, 60, 68-74) ensure the script can still
+# display collected warnings/errors and restore cron even when .shellrc is unavailable.
+# This is intentional defensive programming for bootstrap edge cases, not accidental
+# duplication.
 _cleanup_and_exit() {
   local failed_line="${1:-}"
 
@@ -453,7 +463,8 @@ main() {
   # current_timestamp is not yet available (shellrc not yet sourced); use strftime directly.
   local script_start_time_human
   strftime -s script_start_time_human '%Y-%m-%d %H:%M:%S' "${EPOCHSECONDS}"
-  echo "==> Script started at: ${script_start_time_human}"
+  # Replicate print_script_start format: script_name (cyan) ==> (purple) 'Script started at:' (yellow) timestamp (light_blue)
+  printf "\033[36m%s\033[0m \033[35m==>\033[0m \033[33mScript started at:\033[0m \033[94m%s\033[0m\n" "${_SCRIPT_NAME}" "${script_start_time_human}"
 
   # Do not allow rootless login.
   # Note: Commented out since I am not sure if we need to do this on the office MBP or not
@@ -503,13 +514,22 @@ main() {
     git -C "${DOTFILES_DIR}" checkout -- 'files/--HOME--/.shellrc'
   fi
 
-  # Load all zsh config files for PATH and other env vars to take effect
-  # if/fi avoids the && pattern where (($+functions[...])) returning false
-  # (guard not yet defined on some paths) propagates a non-zero exit under the ERR trap.
-  if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
-  DEBUG=true load_zsh_configs
+   # Load all zsh config files for PATH and other env vars to take effect
+   # if/fi avoids the && pattern where (($+functions[...])) returning false
+   # (guard not yet defined on some paths) propagates a non-zero exit under the ERR trap.
+   if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
+   DEBUG=true load_zsh_configs
+   # ~/.zsh_plugins.zsh (the antidote bundle) is checked into the home git repo and was
+   # symlinked by install-dotfiles.rb above, so it is present on both vanilla OS and
+   # pre-configured machines. .zshrc sources the bundle, which defines zsh-defer, and
+   # then defers .aliases loading to the next ZLE idle event. In a non-interactive
+   # script context there is no ZLE idle event, so the deferred callback never fires.
+   # Source .aliases directly to make its functions (ensure_keybase_logged_in,
+   # build_keybase_repo_url, etc.) available in this process.
+   # The is_aliases_sourced guard inside .aliases prevents double-loading.
+   load_file_if_exists "${HOME}/.aliases"
 
-  _install_homebrew
+   _install_homebrew
 
   _set_default_shell
 
@@ -525,7 +545,7 @@ main() {
 
   if is_non_zero_string "${KEYBASE_USERNAME}"; then
     section_header "$(yellow 'Cloning') $(purple 'keybase') repos"
-    # Login into Keybase.
+    # Login into Keybase
     step_start
     ensure_keybase_logged_in || return 1
     step_end
@@ -586,24 +606,24 @@ main() {
   # Resurrect tracked repos.
   _current_section='Resurrect tracked repos'
   if command_exists resurrect_tracked_repos; then
-    # HACKTAG: Can take a long time on FIRST_INSTALL (same as install_mise_versions). Running in background to be non-blocking
+    # HACKTAG: Can take a long time on FIRST_INSTALL, so running in background to be non-blocking
     resurrect_tracked_repos &|
   else
     _record_error "Skipping resurrecting tracked repos since '$(yellow 'resurrect_tracked_repos')' couldn't be found in the PATH; Please run it manually"
   fi
 
+  # Note: This is also called from within 'resurrect_tracked_repos', but this redundant call at least processes the git repos in the ${HOME}, ${PERSONAL_PROFILES_DIR} and the ${DOTFILES_DIR} folders as a "first pass" while that background job is still running
   _current_section='Allow all direnv configs'
   if command_exists allow_all_direnv_configs; then
-    # HACKTAG: Can take a long time on FIRST_INSTALL (same as install_mise_versions). Running in background to be non-blocking
-    allow_all_direnv_configs &|
+    allow_all_direnv_configs
   else
     _record_error "Skipping registering all direnv configs since '$(yellow 'allow_all_direnv_configs')' couldn't be found in the PATH; Please run it manually"
   fi
 
+  # Note: This is also called from within 'resurrect_tracked_repos', but this redundant call at least processes the git repos in the ${HOME}, ${PERSONAL_PROFILES_DIR} and the ${DOTFILES_DIR} folders as a "first pass" while that background job is still running
   _current_section='Install mise versions'
   if command_exists install_mise_versions; then
-    # HACKTAG: For some reason this exits with an error code and can also take a long time on FIRST_INSTALL. Need to investigate a better fix
-    install_mise_versions &|
+    install_mise_versions
   else
     _record_error "Skipping installation of languages since '$(yellow 'install_mise_versions')' couldn't be found in the PATH; Please run it manually"
   fi

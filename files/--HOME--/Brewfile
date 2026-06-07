@@ -75,7 +75,6 @@ brew 'jaq'
 brew 'mole'
 brew 'moreutils'
 brew 'ncdu'
-brew 'opencode'
 brew 'pandoc'
 brew 'prettyping'
 brew 'ripgrep'
@@ -93,7 +92,7 @@ cask 'google-chrome@beta'
 cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'" if ::OS::Mac::version >= 14
 cask 'keepassxc@beta'
 cask 'keycastr', postinstall: "\"#{setup_login_items_script}\" -a 'Keycastr'"
- cask 'keyclu', postinstall: "\"#{setup_login_items_script}\" -a 'KeyClu'" if is_arm
+cask 'keyclu', postinstall: "\"#{setup_login_items_script}\" -a 'KeyClu'" if is_arm
 cask 'mechvibes', postinstall: "\"#{setup_login_items_script}\" -a 'Mechvibes'"
 cask 'onlyoffice'
 cask 'protonvpn', postinstall: "\"#{setup_login_items_script}\" -a 'ProtonVPN'"
@@ -106,6 +105,14 @@ cask 'zed@preview',
                "ln -sf \"${HOMEBREW_PREFIX}/bin/zed-preview\" \"${HOMEBREW_PREFIX}/bin/zed\""
 cask 'zen@twilight'
 cask 'zoom'
+
+# local AI coding tools
+tap 'jundot/omlx', 'git@github.com/jundot/omlx'
+# Note: Switched to using omlx instead of ollama on Apple M* laptop
+# reference: https://www.agileguy.ca/opencode-fully-local/
+# brew 'ollama', link: true, restart_service: :changed
+brew 'omlx', restart_service: :changed if is_arm
+brew 'opencode'
 
 # brew 'mas'
 # mas 'PDFgear', id: 6469021132
@@ -214,7 +221,6 @@ cask 'windows-app'    # replacement for microsoft-remote-desktop
 # cask 'netspot'
 # cask 'ngrok'
 # cask 'notunes'
-# cask 'ollama-app', restart_service: :changed
 # cask 'onyx' # if !is_beta_os && ::OS::Mac::version < 26
 # cask 'silicon' if is_arm
 # cask 'tempbox'

@@ -1,0 +1,23 @@
+# environment variables while using ollama
+# reference: https://markaicode.com/ollama-environment-variables-configuration-guide/
+
+# Keep loaded indefinitely (best for single-model setups) (default: 5m)
+export OLLAMA_KEEP_ALIVE=-1
+
+# Enable FlashAttention (recommended for supported GPUs) - 87-98% less attention memory
+export OLLAMA_FLASH_ATTENTION=1
+
+# Halves KV cache memory
+export OLLAMA_KV_CACHE_TYPE=q8_0
+
+export OLLAMA_CONTEXT_LENGTH=2048
+
+# Reduce concurrent processing (best for single users)
+export OLLAMA_NUM_PARALLEL=1
+
+# Limit models in memory (Prevents GPU contention)
+# For low-memory systems (8–16 GB RAM)
+export OLLAMA_MAX_LOADED_MODELS=1
+
+# [Security] Only allow from localhost
+export OLLAMA_HOST=0.0.0.0:11434

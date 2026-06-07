@@ -297,6 +297,19 @@ delete_caches() {
 # PERSONAL_CONFIGS_DIR, then runs post-clone operations (restore-mtime, git
 # maintenance register/start, allow_all_direnv_configs, install_mise_versions).
 resurrect_tracked_repos() {
+  # Increment script depth and register decrement trap. This ensures that when
+  # called directly from the command line, this function acts as the outermost
+  # script (depth 1, prints banners). When called from fresh-install-of-osx.sh
+  # (which already incremented to depth 1), this increments to depth 2 and
+  # suppresses nested script banners from resurrect-repositories.rb.
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  # Shell functions cannot set EXIT traps — they only fire on process exit, not
+  # function return. The manual decrement at the end is the correct pattern for
+  # functions. Scripts use 'trap _decrement_script_depth EXIT'.
+
+  local script_start_time="${EPOCHSECONDS}"
+  print_script_start
+
   if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
     # TODO: Add the github.com host to the known_hosts file so that the script is not blocked for user input
     # ssh-keyscan -H -t ED25519 github.com >> "${SSH_CONFIGS_DIR}/known_hosts"
@@ -315,10 +328,14 @@ resurrect_tracked_repos() {
 
   # post-clone operations for installing system dependencies
   section_header2 "$(yellow 'Running post-clone operations')"
-  if command_exists all; then
-    all restore-mtime -c
-    all maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
-    all maintenance start
+  # 'all' (alias: FOLDER='${HOME}' MAXDEPTH=7 rug → run-all.sh git) requires .aliases
+  # to be loaded so the alias is defined. Use the underlying command directly to avoid
+  # that dependency — this function is called from fresh-install as a background job
+  # where the sourcing order may differ.
+  if command_exists 'run-all.sh'; then
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git restore-mtime -c
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git maintenance start
   fi
   # Collect repo ancestor dirs once and share across both post-clone operations
   # to avoid running the expensive find traversal twice.
@@ -331,6 +348,10 @@ resurrect_tracked_repos() {
 
   unset _SHARED_REPO_DIRS
   regenerate_repo_aliases
+
+  print_script_summary "${script_start_time}" 'Finished resurrecting tracked repos'
+  # Manual decrement — EXIT trap does not fire on function return in shell functions.
+  _decrement_script_depth
 }
 
 # Populates the caller-declared 'all_dirs' array with deduplicated ancestor
