@@ -1,5 +1,5 @@
 ---
-applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install.sh"
+applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install.rb"
 ---
 
 # Fresh Install Instructions
@@ -116,7 +116,7 @@ On a vanilla OS, the order of availability is:
 4. dotfiles repo cloned → `.shellrc`/`.aliases` symlinked
 5. `install-dotfiles.rb` creates symlinks
 6. `brew bundle install` installs tools
-7. `post-brew-install.sh` runs (antidote, mise versions, etc.)
+7. `post-brew-install.rb` runs (antidote, mise versions, etc.)
 
 Functions needed **before step 4** must live in `.shellrc`, not `.aliases`.
 `.shellrc` is curl-downloaded and must stay lean — only put functions in it
@@ -145,9 +145,9 @@ Extract into a single conditional.
 
 ## Antidote in Fresh Install
 
-`update_antidote_and_regenerate_plugin_bundle` is called from `post-brew-install.sh`.
+`Antidote.update_and_regenerate_bundle` is called from `post-brew-install.rb`.
 It does NOT need to be called separately in `fresh-install` for either mode —
-`post-brew-install` handles both cases.
+`post-brew-install.rb` handles both cases.
 
 When sourcing `antidote.zsh` inside fresh-install, use `load_file_if_exists` since
 antidote may not be installed yet on a vanilla OS.

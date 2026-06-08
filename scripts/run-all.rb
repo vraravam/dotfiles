@@ -30,7 +30,7 @@ include Logging
 # Helpers
 # ---------------------------------------------------------------------------
 
-def find_git_repos(folder:, mindepth:, maxdepth:, filter:)
+def _find_git_repos(folder:, mindepth:, maxdepth:, filter:)
   seen = {}
   results = []
 
@@ -58,6 +58,8 @@ def find_git_repos(folder:, mindepth:, maxdepth:, filter:)
 
   results
 end
+
+private :_find_git_repos
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -106,7 +108,7 @@ puts "#{'Finding git repos starting in folder'.yellow} '#{folder.cyan}' " \
      "for a min depth of #{mindepth.to_s.cyan} and max depth of #{maxdepth.to_s.cyan}"
 puts "#{'Filtering with:'.yellow} #{filter.cyan}" if filter
 
-dir_array = find_git_repos(folder: folder, mindepth: mindepth, maxdepth: maxdepth, filter: filter)
+dir_array = _find_git_repos(folder: folder, mindepth: mindepth, maxdepth: maxdepth, filter: filter)
 total = dir_array.length
 
 failed_repos = []

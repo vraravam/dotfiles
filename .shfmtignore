@@ -4,7 +4,6 @@
 #   - ${~pattern} (glob matching in [[ == ]] comparisons)
 files/--ZDOTDIR--/.zshrc
 scripts/capture-prefs.sh
-scripts/cleanup-browser-profiles.sh
 
 # shfmt fmt:off/on directives are not honoured inside loop bodies (shfmt bug);
 # one-liners like 'while true; do ...; done' and 'pushd || { ...; }' get expanded

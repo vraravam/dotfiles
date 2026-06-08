@@ -1,5 +1,5 @@
 ---
-applyTo: "**/.gitconfig,**/custom.gitattributes,**/add-upstream-git-config.sh"
+applyTo: "**/.gitconfig,**/custom.gitattributes,**/add-upstream-git-config.rb"
 ---
 
 # Git Configuration Instructions

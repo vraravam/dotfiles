@@ -180,12 +180,17 @@ module Logging
   # When omitted (e.g. early-exit paths inside methods that cannot access the
   # top-level start-time local), the duration line is skipped.
   #
+  # Accepts an optional +message+ to print before the warnings/errors sections.
+  # Mirrors the second parameter of the shell version.
+  #
   # @param start_time [Integer, nil] Unix epoch of script start, or nil to skip duration.
-  def print_script_summary(start_time = nil)
+  # @param message [String, nil] Optional success message to print before summary.
+  def print_script_summary(start_time = nil, message = nil)
     # outermost_script? encapsulates the _DOTFILES_SCRIPT_DEPTH check — see its
     # definition for the full rationale.
     return unless outermost_script?
 
+    info(message) unless nil_or_empty?(message)
     unless nil_or_empty?(step_warnings)
       section_header("#{script_name.cyan} #{("#{step_warnings.length} warning(s)").yellow}")
       step_warnings.each { |w| warn("  #{w}") }

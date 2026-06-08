@@ -126,6 +126,7 @@ export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
 export HOMEBREW_BAT=1
 export HOMEBREW_VERBOSE_USING_DOTS=1
 export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
+export HOMEBREW_BUNDLE_FILE_GLOBAL="${HOME}/Brewfile"
 export HOMEBREW_NO_ENV_HINTS=1
 # Note: If the number and size of downloads is large - allow up to 1hr for any single curl transfer.
 export HOMEBREW_CURL_EXTRA_CURL_ARGS='--connect-timeout 300 --max-time 3600'
@@ -613,7 +614,7 @@ print_script_duration() {
 #     at the top of main()). When non-empty, calls print_script_duration
 #     internally. This keeps it self-contained and usable by scripts that
 #     never call step_start/step_end (e.g. run-all.rb,
-#     cleanup-browser-profiles.sh) — those scripts do NOT push to
+#     cleanup-browser-profiles.rb) — those scripts do NOT push to
 #     _script_start_times and have no need to.
 #
 #   step_end
@@ -625,7 +626,7 @@ print_script_duration() {
 #     is correct.
 #
 # Consequence: if step_start/step_end are ever added to a script that
-# only calls print_script_summary (run-all.rb, cleanup-browser-profiles.sh),
+# only calls print_script_summary (run-all.rb, cleanup-browser-profiles.rb),
 # that script must also push its start epoch onto _script_start_times,
 # otherwise step_end will fall back to the current time and report 0s elapsed.
 typeset -a _script_start_times=()
@@ -1212,7 +1213,7 @@ load_zsh_configs() {
 
 # Prints a standardized usage message and exits.
 # Used by scripts in $DOTFILES_DIR/scripts/ that may be invoked during fresh-install
-# before install-dotfiles.rb has run (e.g. add-upstream-git-config.sh).
+# before install-dotfiles.rb has run (e.g. add-upstream-git-config.rb).
 # Usage: print_usage <script-name> <option-descriptions...>
 #
 # Example:

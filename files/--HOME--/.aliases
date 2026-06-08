@@ -568,44 +568,45 @@ fi
 # --------------------------------------------------------------------------
 
 if is_macos && command_exists brew; then
+  # List all casks that are outdated like a "dry-run" (and which have version marked as 'latest')
   alias bcg='brew outdated --greedy'
-  alias bcug='brew upgrade --greedy'
-  alias bupc='brew bundle check || brew bundle --cleanup || true; brew bundle cleanup -f || true; brew cleanup --prune=all || true; brew autoremove || true; brew upgrade || true; post-brew-install.sh || true'
 
-  # Regenerates the antidote static plugin bundle after antidote is installed or
-  # upgraded. Runs 'antidote update' in a clean zsh subshell, unshallows each
-  # bundle clone, then rewrites ANTIDOTE_PLUGIN_ZSH from the plugins.txt manifest.
-  # Called by post-brew-install.sh after every 'bupc' run and by software-updates-cron.sh.
+  # Upgrades all casks that are outdated (and which have version marked as 'latest')
+  alias bcug='brew upgrade --greedy'
+
+  # Upgrades and cleans up all regular outdated casks and libs (non-greedy), then
+  # runs post-brew-install.rb to regenerate antidote bundles and perform cleanup.
+  bupc() {
+    local _SCRIPT_NAME='bupc'
+    local _current_section='(init)'
+    local -a _step_warnings=()
+    local -a _step_errors=()
+    export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+    # Shell functions cannot set EXIT traps — they only fire on process exit, not
+    # function return. The manual decrement at the end is the correct pattern for
+    # functions. Scripts use 'trap _decrement_script_depth EXIT'.
+
+    local start_time="${EPOCHSECONDS}"
+    print_script_start
+
+    brew bundle check || brew bundle install --cleanup --force || true
+    brew bundle cleanup --force || true
+    brew cleanup --prune=all || true
+    brew autoremove || true
+    brew upgrade || true
+    post-brew-install.rb || true
+
+    print_script_summary "${start_time}"
+    # Manual decrement — EXIT trap does not fire on function return in shell functions.
+    _decrement_script_depth
+  }
+
+  # Thin wrapper that delegates to Ruby Antidote.update_and_regenerate_bundle.
+  # Updates all installed antidote plugins, unshallows their git repos, and
+  # regenerates the static bundle file.
+  # Called by post-brew-install.rb after every 'bupc' run and by software-updates-cron.sh.
   update_antidote_and_regenerate_plugin_bundle() {
-    if is_non_empty_file "${ANTIDOTE_ZSH}" && is_non_empty_file "${ANTIDOTE_PLUGIN_TXT}"; then
-      if ! is_directory_empty "${ANTIDOTE_HOME}"; then
-        # Run antidote command in a clean zsh subshell — no .zshrc, no extended_glob,
-        # no color variables. This prevents ANSI escape sequences from being
-        # misinterpreted as glob patterns inside antidote's internal eval calls.
-        zsh -f -c 'source "$1"; antidote update' -- "${ANTIDOTE_ZSH}" ||
-          _record_warning 'antidote update failed'
-        # antidote clones with --depth 1 (shallow). Convert each bundle to a full clone
-        # immediately after update so subsequent runs take the normal fetch path and never
-        # trigger --unshallow again (which fails on large repos like ohmyzsh).
-        local bundle_dir
-        for bundle_dir in "${ANTIDOTE_HOME}"/github.com/*/*(N-/); do
-          is_git_repo "${bundle_dir}" || continue
-          # Disable fsck on fetch — some repos (e.g. ohmyzsh) have objects with
-          # zero-padded file modes that fail the remote fsck check during --unshallow.
-          git -C "${bundle_dir}" config --local fetch.fsckObjects false 2>/dev/null
-          git -C "${bundle_dir}" pull-unshallow -q 2>/dev/null ||
-            warn "Could not unshallow '$(yellow "${bundle_dir}")' — will retry on next update"
-        done
-      fi
-      # Run antidote command in a clean zsh subshell — no .zshrc, no extended_glob,
-      # no color variables. This prevents ANSI escape sequences from being
-      # misinterpreted as glob patterns inside antidote's internal eval calls.
-      zsh -f -c 'source "$1"; antidote bundle <"$2"' -- "${ANTIDOTE_ZSH}" "${ANTIDOTE_PLUGIN_TXT}" >"${ANTIDOTE_PLUGIN_ZSH}" &&
-        success "antidote bundle regenerated at '$(yellow "${ANTIDOTE_PLUGIN_ZSH}")'" ||
-        warn 'Failed to regenerate antidote bundle'
-    else
-      debug "Skipping antidote bundle regeneration: antidote not found at '$(yellow "${ANTIDOTE_ZSH}")' or '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is missing"
-    fi
+    ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'antidote'; Antidote.update_and_regenerate_bundle"
   }
 
   # Audits and auto-styles a Homebrew cask formula for contribution readiness.
@@ -816,31 +817,6 @@ with_cron_suspended() {
 # --------------------------------------------------------------------------
 # 3k. Keybase helpers
 # --------------------------------------------------------------------------
-
-# Ensures keybase is installed and the current user is logged in.
-# Returns 1 (non-zero) on failure so callers can decide whether to exit or continue.
-ensure_keybase_logged_in() {
-  if ! command_exists keybase; then
-    error "'keybase' command not found in the PATH. Aborting!!!"
-    return 1
-  fi
-  debug "$(yellow 'Logging into keybase')"
-  # Note: avoid `keybase status | grep -q` under set -o pipefail — grep -q exits after
-  # the first match, sending SIGPIPE to keybase (exit 141); pipefail surfaces that
-  # instead of grep's 0, inverting the condition. $() buffers all output first, avoiding SIGPIPE.
-  if is_non_zero_string "$(keybase status --json 2>/dev/null | \grep '"logged_in":true')"; then
-    debug "Skipping keybase login since '$(yellow "${KEYBASE_USERNAME}")' is already logged in"
-  elif ! keybase login; then
-    error 'Could not login into keybase. Retry after logging in.'
-    return 1
-  fi
-}
-
-# Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
-# Usage: build_keybase_repo_url <repo-name>
-build_keybase_repo_url() {
-  echo "keybase://private/${KEYBASE_USERNAME}/${1}"
-}
 
 # Runs 'keybase git gc --force' on the named repo. Whether this actually
 # reclaims space on the remote is unverified — use as a best-effort compaction step.

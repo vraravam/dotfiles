@@ -3,6 +3,63 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of changelog:
 
 
+### 3.1.11
+
+#### Converted shell scripts to Ruby for improved maintainability
+
+* *[scripts/cleanup-browser-profiles.sh → scripts/cleanup-browser-profiles.rb]* Converted 239-line shell script to 205-line Ruby implementation. Ruby provides cleaner file operations (`Dir.glob`, `FileUtils`), safer path construction (`Pathname.join`), structured error aggregation (`Logging.record_warning`), and browser profile metadata handling via hashes. The Ruby version delays `.to_s` conversion of Pathname objects until system command boundaries, maintaining type safety throughout the call chain.
+* *[scripts/add-upstream-git-config.sh → scripts/add-upstream-git-config.rb]* Converted 129-line shell script to 120-line Ruby implementation. Ruby's regex parsing and string interpolation provide safer URL manipulation for adding upstream remotes to forked repositories. Uses new `GitHelpers` utility module for git operations.
+* *[scripts/post-brew-install.sh → scripts/post-brew-install.rb]* Converted 33-line shell script to 49-line Ruby implementation. Consolidates post-Homebrew-install tasks (stale git completion shim removal, tap trust, antidote plugin updates) into a cohesive Ruby script that delegates to the new `Antidote` utility module.
+
+#### Created centralized environment variable utilities
+
+* *[scripts/utilities/env_vars.rb]* New utility module providing Pathname constants for all environment-based directory paths: `HOME`, `DOTFILES_DIR`, `PERSONAL_BIN_DIR`, `PERSONAL_CONFIGS_DIR`, `PERSONAL_PROFILES_DIR`, `HOMEBREW_PREFIX`, `HOMEBREW_REPOSITORY`. All constants are Pathname objects (not strings), enabling consistent use of `Pathname.join()` across Ruby scripts. Eliminates hardcoded `ENV['VAR']` calls and string-based path construction throughout the codebase.
+* *[scripts/utilities/path_utils.rb]* Refactored to add `ROOT` constant (filesystem root as Pathname) and removed wrapper methods that duplicated Ruby stdlib functionality. Uses `File::SEPARATOR` internally for cross-platform compatibility.
+
+#### Created Antidote utility module for plugin management
+
+* *[scripts/utilities/antidote.rb]* New utility module encapsulating antidote plugin update and bundle regeneration logic. Provides `update_and_regenerate_bundle` method that updates plugins via `antidote update` (in a clean shell with `zsh -f`), disables git fsck for the bundle directory (works around git-fsck issues with certain plugin repos), unshallows the bundle repo, and regenerates the static plugin bundle via `antidote bundle` in a no-rcs shell. Replaces inline implementation previously in `post-brew-install.sh` and shell function `update_antidote_and_regenerate_plugin_bundle`.
+
+#### Refactored Ruby scripts to use EnvVars and Pathname consistently
+
+* *[scripts/install-dotfiles.rb, scripts/resurrect-repositories.rb, scripts/run-all.rb]* Updated to use `EnvVars::DOTFILES_DIR`, `EnvVars::HOME`, etc. instead of `ENV['DOTFILES_DIR']` calls. Adopted `Pathname.join()` for all path construction, delaying `.to_s` conversion until system command boundaries (`system()`, `Open3.capture3()`). Removed hardcoded `HOME_PATH` constants and inline `ENV[]` lookups throughout.
+* *[scripts/utilities/cron.rb]* Updated to use `EnvVars::HOME` and Pathname objects consistently. Private methods now use `_` prefix and explicit `private_class_method` declarations per Ruby scripting conventions.
+
+#### Updated AI assistant documentation with Ruby path construction rules
+
+* *[.github/instructions/ruby-scripting.instructions.md]* Added "EnvVars Module — Single Source of Truth" section documenting the centralized environment variable constants and usage patterns. Added "Pathname vs String" subsection explaining when to use `Pathname.join()`, when to call `.to_s`, and how string interpolation auto-converts Pathname objects. Added "Path Construction" section documenting `File.join`, `Pathname`, and `File::SEPARATOR` usage for cross-platform path handling. Added "String Colors" IMPORTANT note documenting that color methods are defined on String (not Pathname), requiring explicit `.to_s` conversion before applying color methods to Pathname objects.
+* *[.github/instructions/ruby-scripting.instructions.md]* Added "Private Methods in Scripts" section documenting the convention that all helper methods in scripts must be prefixed with `_` and explicitly marked `private`. Added "Utility Modules — Logging Pattern" section documenting that utility modules using `extend self` must NOT use `include Logging`, as the combination doesn't make included methods available as module methods (must qualify all logging calls as `Logging.debug`, `Logging.info`, etc.).
+* *[.github/instructions/ruby-scripting.instructions.md]* Added "Ruby 2.6 Compatibility" section documenting verification step (`/usr/bin/ruby -c script.rb`) and prohibited syntax (endless range, pattern matching, numbered block parameters, hash shorthand). Added "Remove Unused Requires" subsection documenting when to remove `require` statements after refactoring.
+* *[.github/instructions/shell-scripting.instructions.md]* Updated "No Hardcoded User-Specific Paths" section with complete mapping table from hardcoded paths to their env var equivalents (`PROJECTS_BASE_DIR`, `PERSONAL_BIN_DIR`, `PERSONAL_CONFIGS_DIR`, `DOTFILES_DIR`, XDG paths, `SSH_CONFIGS_DIR`, `HOMEBREW_PREFIX`). Added scan rule to replace literal expanded paths with named env vars when editing any script or config file.
+
+#### Shell function delegation to Ruby utilities
+
+* *[files/--HOME--/.aliases]* Updated cron-related shell functions to delegate to Ruby utilities: `suspend_cron` → `Cron.suspend`, `resume_cron` → `Cron.resume`, `with_cron_suspended` → `Cron.with_cron_suspended` (one-line Ruby invocations). Maintains shell function interface for compatibility while gaining Ruby's structured error handling and logging. Updated `update_antidote_and_regenerate_plugin_bundle` to delegate to `Antidote.update_and_regenerate_bundle`.
+* *[files/--HOME--/.shellrc]* Updated documentation comments referencing converted scripts and modules. Added note that `EnvVars` constants are available in Ruby scripts after requiring `env_vars`.
+
+#### Updated installation and usage documentation
+
+* *[Extras.md]* Updated script references from `.sh` to `.rb` extensions for converted scripts (`cleanup-browser-profiles.rb`, `add-upstream-git-config.rb`, `post-brew-install.rb`). Updated command examples and inline comments to reflect Ruby implementations.
+* *[files/--HOME--/Brewfile]* Updated comment referencing ruby version constraint (`ruby '>=2.6.0'`) to note that `mise` manages the project ruby version and the Brewfile constraint is for the system ruby used during `FIRST_INSTALL`.
+* *[.shfmtignore]* Removed `cleanup-browser-profiles.sh` entry (script no longer exists after Ruby conversion).
+
+#### Fixed curl retry configuration for fresh-install bootstrap
+
+* *[.github/instructions/fresh-install.instructions.md]* Added "curl Switches for Vanilla OS Downloads" section documenting the `_curl_opts` array pattern used before `~/.curlrc` is symlinked. Defined array once near top of `main`, expanded into each `curl` invocation. Guards initialization with `[[ ! -f "${HOME}/.curlrc" ]]` so flags are only injected when needed. Documented each retry/timeout flag with value and rationale (why more aggressive than `.curlrc` defaults for bootstrap). Moved bootstrap `curl` flags documentation from git-config.instructions.md to the correct location (fresh-install context).
+* *[.github/instructions/git-config.instructions.md]* Removed misplaced `curl` retry flags documentation (bootstrap curl flags belong in fresh-install.instructions.md, not git-config context). Retained git-specific rules only.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts.
+* Restart the Terminal application (converted scripts are now Ruby; shell function delegation requires restart to pick up new implementations).
+* Verify all Ruby scripts parse with system ruby:
+
+  ```zsh
+  cd "${DOTFILES_DIR}/scripts"
+  for rb in *.rb utilities/*.rb; do /usr/bin/ruby -c "${rb}" || echo "FAILED: ${rb}"; done
+  ```
+
+
 ### 3.1.10
 
 #### Converted `run-all.sh` and `recreate-repo.sh` into ruby

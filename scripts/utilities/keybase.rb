@@ -5,9 +5,9 @@ require 'open3'
 require_relative 'logging'
 require_relative 'path_utils'
 
-# Keybase helpers that replicate ensure_keybase_logged_in from .aliases § 3k.
-# These are only needed by scripts that interact with Keybase git repos
-# (recreate-repo.rb).
+# Keybase helpers for login, repo creation/deletion, and URL validation.
+# These are used by scripts that interact with Keybase git repos (recreate-repo.rb)
+# and by fresh-install-of-osx.sh (_ensure_keybase_logged_in delegates to ensure_logged_in).
 module Keybase
   extend self
 
@@ -17,7 +17,7 @@ module Keybase
 
   # Ensures keybase is installed and the current user is logged in.
   # Returns false on failure so callers can decide whether to abort or continue.
-  # Mirrors ensure_keybase_logged_in in .aliases.
+  # Called by fresh-install-of-osx.sh (_ensure_keybase_logged_in) and recreate-repo.rb.
   #
   # @return [Boolean] true if logged in, false otherwise.
   def ensure_logged_in

@@ -2,12 +2,12 @@
 
 Reference documentation for the utility scripts bundled in this repo. Each section describes what a script does and how to invoke it. For the internal architecture — how the logging system works, the `.shellrc` vs `.aliases` split, startup optimisation, cron safety, and more — see the [Technical Deep Dive](TechnicalDeepDive.md).
 
-## add-upstream-git-config.sh
+## add-upstream-git-config.rb
 
 When you fork a repo, you need an `upstream` remote pointing to the original so you can fetch and rebase against it. This script adds that remote automatically, deriving the upstream URL from the existing `origin` URL by substituting the owner username — so you do not have to look up or copy-paste the URL manually. The new remote is always named `upstream`.
 
   ```zsh
-  add-upstream-git-config.sh -d <target-folder> -u <upstream-repo-owner>
+  add-upstream-git-config.rb -d <target-folder> -u <upstream-repo-owner>
   ```
 
 ## capture-prefs.sh
@@ -22,9 +22,9 @@ Three data files govern which domains are processed and how:
 
 See [Technical Deep Dive § 11](TechnicalDeepDive.md#11-capture-prefssh-architecture) for how key stripping, XML plist conversion, and cron-safe export work internally.
 
-## cleanup-browser-profiles.sh
+## cleanup-browser-profiles.rb
 
-This script is used to cleanup browser profiles folders (delete cache, session and other files that will anyways be recreated when you restart that browser). It can be safely invoked even if that browser is running (in which case it will skip processing after printing a warning to quit that application).
+Cleans up browser profile folders by vacuuming SQLite databases larger than 10 MB and deleting known cache/session files. Skips processing if the target browser is currently running (prints a warning to quit that application first).
 
 The lists of files and directories to clean are maintained in [`scripts/data/cleanup-browser-files.txt`](scripts/data/cleanup-browser-files.txt) and [`scripts/data/cleanup-browser-dirs.txt`](scripts/data/cleanup-browser-dirs.txt).
 
@@ -92,9 +92,9 @@ Never reverse the order — running `capture-prefs.sh -i` before `osx-defaults.s
 
 See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-two-phase-preference-architecture) for the full architectural rationale and ordering constraint.
 
-## post-brew-install.sh
+## post-brew-install.rb
 
-This script is a collection of commands that need to be run after `brew bundle` to set up proper command-line usage of some GUI apps (VSCode, Rancher, etc.), remove conflicting zsh completion files, and clean up legacy executable paths. It is called automatically by `fresh-install-of-osx.sh` after `brew bundle` completes. It can also be run manually at any time — it is idempotent.
+This script runs post-bundle cleanup and plugin setup that cannot live in the Brewfile itself. It removes conflicting zsh completion files, trusts known taps, and updates antidote plugins. It is called automatically by `fresh-install-of-osx.sh` after `brew bundle` completes. It can also be run manually at any time — it is idempotent.
 
 ## recreate-repo.rb
 

@@ -222,7 +222,7 @@ _clone_dot_files_repo() {
       fi
       append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
       # Setup the DOTFILES_DIR repo's upstream if it doesn't already point to UPSTREAM_GH_USERNAME's repo
-      add-upstream-git-config.sh -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || _record_warning 'Failed to add upstream git config for dotfiles repo'
+      add-upstream-git-config.rb -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || _record_warning 'Failed to add upstream git config for dotfiles repo'
     else
       error 'Failed to clone dotfiles repo'
       exit 1
@@ -316,7 +316,7 @@ _install_homebrew() {
   load_zsh_configs
   # Note: run the post-brew-install script once more (in case it wasn't run by the brew lifecycle due to any error)
   # Note: When running with FIRST_INSTALL, some errors might come on a vanilla OS - warn and continue instead of failing.
-  post-brew-install.sh || { is_first_install && _record_warning 'post-brew-install encountered errors; continuing...'; }
+  post-brew-install.rb || { is_first_install && _record_warning 'post-brew-install encountered errors; continuing...'; }
 
   if is_first_install; then
     trap '_cleanup_and_exit "${LINENO}"' ERR
@@ -363,13 +363,30 @@ _set_default_shell() {
   step_end
 }
 
+# Ensures keybase is installed and the current user is logged in.
+# Thin wrapper that delegates to Ruby Keybase.ensure_logged_in.
+# Returns non-zero on failure so callers can check the exit code.
+_ensure_keybase_logged_in() {
+  if ! command_exists keybase; then
+    error "'keybase' command not found in the PATH. Aborting!!!"
+    return 1
+  fi
+  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
+}
+
+# Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
+# Usage: _build_keybase_repo_url <repo-name>
+_build_keybase_repo_url() {
+  echo "keybase://private/${KEYBASE_USERNAME}/${1}"
+}
+
 # Clone the Keybase home repo (private configs)
 _clone_home_repo() {
   _current_section='Clone home repo'
   step_start
   section_header2 "$(yellow 'Cloning') $(purple 'home') repo"
   if is_non_zero_string "${KEYBASE_HOME_REPO_NAME}"; then
-    if clone_repo_into "$(build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME}")" "${HOME}"; then
+    if clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME}")" "${HOME}"; then
       # Reset ssh keys' permissions so that git doesn't complain when using them
       set_ssh_folder_permissions
 
@@ -390,7 +407,7 @@ _clone_profiles_repo() {
   step_start
   section_header2 "$(yellow 'Cloning') $(purple 'profiles') repo"
   if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
-    if ! clone_repo_into "$(build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"; then
+    if ! clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"; then
       _record_error 'Failed to clone profiles repo'
     fi
   else
@@ -524,8 +541,8 @@ main() {
    # pre-configured machines. .zshrc sources the bundle, which defines zsh-defer, and
    # then defers .aliases loading to the next ZLE idle event. In a non-interactive
    # script context there is no ZLE idle event, so the deferred callback never fires.
-   # Source .aliases directly to make its functions (ensure_keybase_logged_in,
-   # build_keybase_repo_url, etc.) available in this process.
+   # Source .aliases directly to make its functions (resurrect_tracked_repos, etc.)
+   # available in this process.
    # The is_aliases_sourced guard inside .aliases prevents double-loading.
    load_file_if_exists "${HOME}/.aliases"
 
@@ -547,7 +564,7 @@ main() {
     section_header "$(yellow 'Cloning') $(purple 'keybase') repos"
     # Login into Keybase
     step_start
-    ensure_keybase_logged_in || return 1
+    _ensure_keybase_logged_in || return 1
     step_end
 
     _clone_home_repo

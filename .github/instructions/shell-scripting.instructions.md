@@ -117,6 +117,78 @@ Exception: `*-common.sh` scripts use `${CALLER_SCRIPT:-${0:t}}` instead of
 `${_SCRIPT_NAME}` so the wrapper script's name appears in usage output — see
 § **`exec`-Wrapper Scripts**.
 
+## Shell Functions as First-Class Entry Points
+
+When a shell function (not a script file) acts as a command-line entry point
+and nests calls to other functions or Ruby/shell scripts, it must follow the
+same infrastructure pattern as top-level scripts:
+
+```zsh
+my_command() {
+  local _SCRIPT_NAME='my_command'
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  # Shell functions cannot set EXIT traps — they only fire on process exit, not
+  # function return. The manual decrement at the end is the correct pattern for
+  # functions. Scripts use 'trap _decrement_script_depth EXIT'.
+
+  local start_time="${EPOCHSECONDS}"
+  print_script_start
+
+  # ... command logic, calling other scripts/functions ...
+
+  print_script_summary "${start_time}"
+  # Manual decrement — EXIT trap does not fire on function return in shell functions.
+  _decrement_script_depth
+}
+```
+
+### Required elements
+
+1. **`_SCRIPT_NAME`**: Set as a local variable to the function name. This is
+   read by `print_script_start` and `print_script_summary` to prefix output.
+   In a script file, this is set at script scope via `_SCRIPT_NAME="${0:t}"`;
+   in a function, it must be set explicitly as a local.
+
+2. **`start_time`**: Capture `${EPOCHSECONDS}` before calling `print_script_start`
+   and pass it to `print_script_summary` at the end. This allows the summary to
+   compute and display the total duration.
+
+3. **Script depth tracking**: Increment `_DOTFILES_SCRIPT_DEPTH` at the start
+   and manually call `_decrement_script_depth` at the end (after
+   `print_script_summary`). Shell functions **cannot** use EXIT traps — traps
+   only fire on process exit, not function return. The manual decrement is the
+   correct pattern for functions. Scripts use `trap _decrement_script_depth EXIT`.
+
+4. **Deferred collection infrastructure**: Initialize `_current_section`,
+   `_step_warnings`, and `_step_errors` so any nested calls that use
+   `_record_warning` or `_record_error` have a valid context.
+
+### When to apply this pattern
+
+Use this pattern when:
+- The function is invoked directly by the user from the command line (not just
+  an internal helper)
+- The function calls other scripts (Ruby or shell) that also use
+  `print_script_start`/`print_script_summary`
+- The function performs a multi-step workflow where timing and summary output
+  are valuable
+
+Do NOT use this pattern for:
+- Simple wrapper functions that just delegate to a single command
+- Internal helper functions not invoked directly by users
+- Functions that complete instantly (no meaningful timing to display)
+
+### Example: `bupc` function
+
+The `bupc` function (in `.aliases`) upgrades Homebrew packages and calls
+`post-brew-install.rb`. It follows this pattern so that:
+- `bupc` is recognized as the outermost script
+- `post-brew-install.rb` detects it is nested and suppresses its own output
+- The final summary shows the total time for the entire `bupc` operation
+
 ## Intentional Omission of `set -euo pipefail`
 
 All shell scripts use `set -euo pipefail` **except** when a script's logic

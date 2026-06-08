@@ -21,25 +21,23 @@
 $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 
 require 'cli_parser'
+require 'env_vars'
 require 'fileutils'
 require 'find'
 require 'logging'
+require 'path_utils'
 require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
+require 'string'
 
 include Logging
 
 # --- Constants ---
 ENV_VAR_REGEX = /--(.*?)--/.freeze # For interpolating environment variables like --VAR--
-CUSTOM_GIT_FILENAME_PATTERN = /custom\.git/.freeze # For matching source filenames like custom.gitignore, custom.gitattributes
-CUSTOM_GIT_STRING_TO_REPLACE = 'custom.git' # String to be replaced in paths
+CUSTOM_GIT_PREFIX = 'custom.git' # Prefix in source filenames (custom.gitignore, custom.gitattributes) that gets replaced with '.git'
 DOT_GIT_REPLACEMENT_TARGET = '.git' # Target string for replacement (e.g., custom.gitignore -> .gitignore)
 
 IGNORED_FILENAMES = ['.DS_Store'].freeze # Filenames to ignore during processing
 IGNORED_FILE_PATTERNS = [/\.zwc/].freeze # File patterns to ignore (matches anywhere in path)
-
-ROOT_PATH = Pathname.new(File::SEPARATOR)
-HOME_PATH = Pathname.new(ENV.fetch('HOME')).expand_path
-DOTFILES_ROOT_PATH = Pathname.new(__dir__).join('..', 'files').expand_path
 
 # Parse command-line options
 options = { dry_run: false, verbose: false, force: false }
@@ -98,27 +96,27 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
 
   STATS.processed += 1
 
-  info("Processing '#{source_path}' --> '#{target_path}'") if dry_run || verbose
+  info("Processing '#{source_path.yellow}' --> '#{target_path.yellow}'") if dry_run || verbose
 
   # Ensure target directory exists
   FileUtils.mkdir_p(target_pn.dirname) unless dry_run
 
   if target_pn.exist? && FileUtils.identical?(target_pn, source_pn) # Avoid moving if they are already the same file (e.g., if the user re-runs the script without changes)
-    debug("  Target '#{target_path}' and source '#{source_path}' are identical.".blue) if dry_run || verbose
+    debug("  Target '#{target_path.yellow}' and source '#{source_path.yellow}' are identical.".blue) if dry_run || verbose
     STATS.skipped += 1
     return
   end
 
-  is_custom_git = source_pn.basename.to_s.match?(CUSTOM_GIT_FILENAME_PATTERN)
+  is_custom_git = source_pn.basename.to_s.include?(CUSTOM_GIT_PREFIX)
   first_install = ENV.fetch('FIRST_INSTALL', '').strip != ''
 
   # Check target status before deciding action
   if target_pn.symlink?
-    info("  Target '#{target_path}' exists as a symlink, will overwrite.") if verbose
+    info("  Target '#{target_path.yellow}' exists as a symlink, will overwrite.") if verbose
     STATS.updated += 1
   elsif target_pn.exist? # It exists and is not a symlink (real file/dir)
     if force
-      info("  Forcefully overwriting existing file '#{target_path}'") if verbose
+      info("  Forcefully overwriting existing file '#{target_path.yellow}'") if verbose
       FileUtils.rm_rf(target_pn) unless dry_run
     elsif is_custom_git && !first_install
       # mtime-based resolution: whichever file was modified more recently is authoritative.
@@ -126,34 +124,34 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
       target_mtime = target_pn.mtime
       source_mtime = source_pn.mtime
       if target_mtime > source_mtime
-        info("  Target '#{target_path}' is newer (#{target_mtime} > #{source_mtime}); adopting it into repo and re-copying")
+        info("  Target '#{target_path.yellow}' is newer (#{target_mtime} > #{source_mtime}); adopting it into repo and re-copying")
         FileUtils.mv(target_pn, source_pn, force: true) unless dry_run
       else
-        info("  Source '#{source_path}' is newer or same age (#{source_mtime} >= #{target_mtime}); overwriting target") if verbose
+        info("  Source '#{source_path.yellow}' is newer or same age (#{source_mtime} >= #{target_mtime}); overwriting target") if verbose
         FileUtils.rm_rf(target_pn) unless dry_run
       end
     else
       # FIRST_INSTALL, or a non-custom-git file: target is always authoritative — move it into repo.
-      info("  Moving existing file '#{target_path}' to '#{source_path}' (it will become the new version in your dotfiles repo)") if verbose
+      info("  Moving existing file '#{target_path.yellow}' to '#{source_path.yellow}' (it will become the new version in your dotfiles repo)") if verbose
       FileUtils.mv(target_pn, source_pn, force: true) unless dry_run
     end
     STATS.updated += 1
   else
     # Target does not exist, no backup needed
-    info("  Target '#{target_path}' does not exist, creating new link/copy.") if verbose
+    info("  Target '#{target_path.yellow}' does not exist, creating new link/copy.") if verbose
     STATS.created += 1
   end
 
   # Create symlink or copy file for files matching 'custom.git'
   if is_custom_git # Special handling for git files: copy instead of symlink
-    info("  Copying '#{source_path}' to '#{target_path}'")
+    info("  Copying '#{source_path.yellow}' to '#{target_path.yellow}'")
     FileUtils.cp(source_pn, target_pn) unless dry_run
   else
-    info("  Creating symlink from '#{source_path}' to '#{target_path}'")
+    info("  Creating symlink from '#{source_path.yellow}' to '#{target_path.yellow}'")
     FileUtils.ln_sf(source_pn, target_pn) unless dry_run
   end
 rescue StandardError => e
-  warn("Failed during processing of '#{source_path}' -> '#{target_path}': #{e.message}")
+  warn("Failed during processing of '#{source_path.yellow}' -> '#{target_path.yellow}': #{e.message}")
   warn(Array(e.backtrace).join("\n"))
   STATS.errors += 1
 end
@@ -190,11 +188,13 @@ def _ensure_ssh_include_line
   end
 end
 
+private :_interpolate_path, :_process_dotfile, :_ensure_ssh_include_line
+
 info('Starting to install dotfiles')
 warn('[DRY-RUN MODE]') if options[:dry_run]
 
 # NOTE: cannot use Dir.glob since that doesn't handle hidden files
-Find.find(DOTFILES_ROOT_PATH) do |source_path_str|
+Find.find(EnvVars::DOTFILES_DIR.join('files')) do |source_path_str|
   source_pn = Pathname.new(source_path_str)
 
   # Skip directories and ignored files/patterns
@@ -203,8 +203,8 @@ Find.find(DOTFILES_ROOT_PATH) do |source_path_str|
   next if IGNORED_FILE_PATTERNS.any? { |pattern| source_pn.to_s.match?(pattern) }
 
   # git doesn't handle symlinks well for its core config, handle separately
-  relative_path_str = source_pn.relative_path_from(DOTFILES_ROOT_PATH).to_s
-  transformed_relative_path_str = relative_path_str.gsub(CUSTOM_GIT_STRING_TO_REPLACE, DOT_GIT_REPLACEMENT_TARGET)
+  relative_path_str = source_pn.relative_path_from(EnvVars::DOTFILES_DIR.join('files')).to_s
+  transformed_relative_path_str = relative_path_str.gsub(CUSTOM_GIT_PREFIX, DOT_GIT_REPLACEMENT_TARGET)
 
   interpolated_target_str = _interpolate_path(transformed_relative_path_str, source_pn.to_s)
   next unless interpolated_target_str # Skip if env var interpolation failed
@@ -212,7 +212,7 @@ Find.find(DOTFILES_ROOT_PATH) do |source_path_str|
   # since some env var might already contain the full path from the root...
   # Pathname#join correctly handles cases where interpolated_target_str might already be an absolute path.
   # if the target path is still relative after interpolation, then we should treat it as relative to the root directory
-  target_pn = ROOT_PATH.join(interpolated_target_str)
+  target_pn = PathUtils::ROOT.join(interpolated_target_str)
   _process_dotfile(source_pn, target_pn, **options)
 end
 

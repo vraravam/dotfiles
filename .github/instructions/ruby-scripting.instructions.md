@@ -15,7 +15,19 @@ Scripts in `$PERSONAL_BIN_DIR` may target newer versions but prefer 2.6 compat.
 Do NOT use:
 - Endless range `(1..)` — use `(1..Float::INFINITY)` or avoid
 - Pattern matching (`case x in`) — Ruby 3.0+
-- Numbered block parameters (`_1`) — Ruby 2.7+
+- Numbered block parameters (`_1`, `_2`) — Ruby 2.7+
+- Rightward assignment (`=> variable`) — Ruby 3.0+
+- Hash shorthand syntax (`{x:, y:}`) — Ruby 3.1+
+
+### Verification
+
+After editing any Ruby file, verify it parses with Ruby 2.6:
+
+```bash
+/usr/bin/ruby -c path/to/script.rb
+```
+
+This command must succeed with no syntax errors. Run it before formatting.
 
 ## Requires
 
@@ -28,6 +40,49 @@ require 'hash_ext'
 # Good — only require what this file uses
 require 'logging'
 ```
+
+### Remove Unused Requires
+
+After refactoring, always remove `require` and `require_relative` statements
+that are no longer used. A require is unused when:
+- The module/class is never referenced in the file
+- Methods from the module are no longer called
+- Constants from the module are not accessed
+
+Scan for unused requires when:
+- Replacing method calls with constants from a different module
+- Extracting functionality to a new module
+- Removing code that was the only user of a require
+
+```ruby
+# BAD — path_utils no longer used after switching to EnvVars constants
+require 'path_utils'
+require 'env_vars'
+
+home = EnvVars::HOME_DIR  # path_utils not needed
+
+# Good — only require what is actually used
+require 'env_vars'
+
+home = EnvVars::HOME_DIR
+
+# BAD — inside utilities/, logging no longer used after removing all log calls
+require_relative 'logging'
+require_relative 'env_vars'
+
+EnvVars::HOME_DIR  # logging not needed
+
+# Good — only require_relative what is actually used
+require_relative 'env_vars'
+
+EnvVars::HOME_DIR
+```
+
+This rule applies equally to both `require` and `require_relative` statements.
+
+Exception: `require 'pathname'` must remain even when not directly referenced
+in the file body if the file defines Pathname constants at module level — the
+require makes Pathname available to the constant initializers.
 
 ### `require` vs `require_relative`
 
@@ -133,6 +188,197 @@ msg = "Done: #{count} files"
 # BAD — double quotes on strings with no interpolation (unnecessary)
 sep = "------"
 raise "File not found"
+```
+
+## Path Construction
+
+Never use hardcoded `/` for path separators. Always use Ruby's cross-platform
+path utilities to ensure Windows compatibility.
+
+### File.join for Path Construction
+
+Use `File.join` for constructing paths from segments:
+
+```ruby
+# BAD — hardcoded '/' breaks on Windows
+path = "#{home}/.config/dotfiles"
+file = dir + '/scripts/data/cleanup-browser-files.txt'
+
+# Good — File.join uses the platform's separator
+path = File.join(home, '.config', 'dotfiles')
+file = File.join(dir, 'scripts', 'data', 'cleanup-browser-files.txt')
+```
+
+### Pathname for Complex Path Operations
+
+Use `Pathname` from stdlib for path manipulation (dirname, basename, expand_path, etc.):
+
+```ruby
+require 'pathname'
+
+# Good — Pathname handles platform differences
+path = Pathname.new(folder).expand_path
+parent = path.dirname
+name = path.basename
+```
+
+### File::SEPARATOR for Explicit Separators
+
+Only use `File::SEPARATOR` when you genuinely need the separator character itself
+(e.g., splitting a PATH environment variable). For path construction, prefer `File.join`:
+
+```ruby
+# Rare case where SEPARATOR is needed:
+paths = env_path.split(File::SEPARATOR)
+
+# But for building paths, use File.join:
+full_path = File.join(base, 'subdir', 'file.txt')
+```
+
+### Cross-Platform Considerations
+
+- `File.join` automatically uses `\` on Windows and `/` on Unix
+- `Pathname` methods are platform-aware
+- Hardcoded `/` will break on Windows (paths like `C:\Users\...`)
+- This applies to all path operations: construction, joining, splitting
+
+## EnvVars Module — Single Source of Truth
+
+The `EnvVars` module (`scripts/utilities/env_vars.rb`) is the single source of
+truth for all environment-based directory paths. All constants are **Pathname
+objects**, not strings.
+
+### Available Constants
+
+```ruby
+EnvVars::HOME                    # $HOME as Pathname
+EnvVars::DOTFILES_DIR            # $DOTFILES_DIR as Pathname
+EnvVars::PERSONAL_BIN_DIR        # $PERSONAL_BIN_DIR as Pathname
+EnvVars::PERSONAL_CONFIGS_DIR    # $PERSONAL_CONFIGS_DIR as Pathname
+EnvVars::PERSONAL_PROFILES_DIR   # $PERSONAL_PROFILES_DIR as Pathname
+EnvVars::HOMEBREW_PREFIX         # $HOMEBREW_PREFIX as Pathname
+EnvVars::HOMEBREW_REPOSITORY     # $HOMEBREW_REPOSITORY as Pathname
+```
+
+### Usage Pattern — Pathname.join()
+
+Always use `Pathname#join()` to build paths from EnvVars constants. This returns
+a Pathname object, maintaining type consistency throughout the call chain:
+
+```ruby
+# Good — returns Pathname, can chain further operations
+config_file = EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-files.txt')
+nested = EnvVars::HOME.join('.config', 'zsh', 'completions')
+
+# BAD — converts to String too early, loses Pathname methods
+config_file = File.join(EnvVars::DOTFILES_DIR.to_s, 'scripts', 'data', 'cleanup-browser-files.txt')
+```
+
+### Delay .to_s Until System Command Boundaries
+
+Keep Pathname objects throughout your code. Only convert to String when passing
+to system commands (`system`, `Open3.capture3`, etc.) or functions that explicitly
+require String arguments:
+
+```ruby
+# Good — Pathname throughout, .to_s only at system boundary
+profile_folder = EnvVars::HOME.join('.config', 'browser', 'Profile 1')
+if File.directory?(profile_folder)  # File methods accept Pathname
+  du_out, = Open3.capture3('du', '-sh', profile_folder.to_s)  # .to_s at boundary
+end
+
+# BAD — premature .to_s
+profile_folder = EnvVars::HOME.join('.config', 'browser', 'Profile 1').to_s
+if File.directory?(profile_folder)
+  du_out, = Open3.capture3('du', '-sh', profile_folder)
+end
+```
+
+### String Interpolation Auto-Converts
+
+Ruby's string interpolation automatically calls `.to_s` on Pathname objects:
+
+```ruby
+# Both are equivalent — interpolation calls .to_s automatically
+puts "Processing #{EnvVars::HOME}"
+puts "Processing #{EnvVars::HOME.to_s}"
+
+# Color methods also work via interpolation
+info "Processing '#{EnvVars::HOME.join('dotfiles').cyan}'"
+```
+
+### Function Parameters — Accept Pathname
+
+When writing functions that operate on paths, accept Pathname parameters and
+return Pathname when building new paths:
+
+```ruby
+# Good — accepts Pathname, returns Pathname
+def build_config_path(base_dir)
+  base_dir.join('config', 'settings.yml')
+end
+
+# Call site — pass Pathname, receive Pathname
+config = build_config_path(EnvVars::HOME)
+File.read(config)  # File.read accepts Pathname
+
+# BAD — forces caller to convert
+def build_config_path(base_dir_str)
+  File.join(base_dir_str, 'config', 'settings.yml')  # returns String
+end
+```
+
+### When to Use .to_s
+
+Only convert to String in these situations:
+
+1. **System commands**: `system()`, `Open3.capture3()`, backticks
+2. **String-only APIs**: rare APIs that explicitly document String-only parameters
+3. **String manipulation**: when you need String methods like `.gsub`, `.split`
+
+```ruby
+# 1. System commands
+system('git', '-C', repo_path.to_s, 'status')
+
+# 2. String manipulation (need .gsub)
+display_path = folder.to_s.gsub(EnvVars::HOME.to_s, '~')
+
+# 3. String concatenation (but prefer Pathname.join instead)
+# BAD
+path = EnvVars::HOME.to_s + '/' + 'file.txt'
+# Good
+path = EnvVars::HOME.join('file.txt')
+```
+
+### PathUtils::ROOT for Filesystem Root
+
+When building paths from the filesystem root `/`, use `PathUtils::ROOT`:
+
+```ruby
+require 'path_utils'
+
+# Good — cross-platform filesystem root
+system_path = PathUtils::ROOT.join('etc', 'hosts')
+
+# BAD — hardcoded Unix root
+system_path = Pathname.new('/etc/hosts')
+```
+
+`PathUtils::ROOT` uses `File::SEPARATOR` internally and works on Windows (`C:\`).
+
+### Never Hardcode Derived Paths
+
+Never hardcode paths that derive from HOME or other env vars. Always use the
+EnvVars constant:
+
+```ruby
+# BAD — hardcoded
+config_dir = Pathname.new(ENV['HOME']).join('.config')
+dotfiles = Pathname.new("#{ENV['HOME']}/.config/dotfiles")
+
+# Good — use EnvVars
+config_dir = EnvVars::HOME.join('.config')
+dotfiles = EnvVars::DOTFILES_DIR  # already includes .config/dotfiles
 ```
 
 ## Conditionals — Trailing Style for Single Statements
@@ -293,6 +539,22 @@ Color methods are defined on `String` in `utilities/string.rb`. They:
 method — the substitution happens inside. Only call it explicitly for bare
 `puts`/`print` call sites that display paths without any color method.
 
+**IMPORTANT**: Color methods are defined on `String`, not `Pathname`. Always
+call `.to_s` on Pathname objects before applying color methods:
+
+```ruby
+# BAD — color methods don't exist on Pathname
+profile_folder = EnvVars::HOME.join('.config')
+info "Processing '#{profile_folder.cyan}'"  # NoMethodError: undefined method `cyan' for #<Pathname>
+
+# Good — convert to String first
+info "Processing '#{profile_folder.to_s.cyan}'"
+
+# Also good — assign to a variable after converting
+folder_path = profile_folder.to_s.cyan
+info "Processing '#{folder_path}'"
+```
+
 ### Available methods
 
 | Method | ANSI | Typical use |
@@ -343,7 +605,7 @@ module MyModule
     _private_helper(arg)
   end
 
-  # Private helpers — prefix with _ OR use private
+  # Private helpers — prefix with _ AND use private_class_method
   def self._private_helper(arg)
     # ...
   end
@@ -359,9 +621,53 @@ class MyClass
 
   private
 
-  def internal_method; end
+  def _internal_helper; end
 end
 ```
+
+## Private Methods in Scripts
+
+All top-level helper methods in scripts that are not part of the main execution
+flow must be marked `private` and prefixed with `_`:
+
+```ruby
+# BAD — helper not marked private, no _ prefix
+def read_pattern_file(file)
+  # ...
+end
+
+def process_item(item)
+  # ...
+end
+
+# main execution
+items.each { |item| process_item(item) }
+
+# Good — helpers marked private with _ prefix
+def _read_pattern_file(file)
+  # ...
+end
+
+def _process_item(item)
+  # ...
+end
+
+private :_read_pattern_file, :_process_item
+
+# main execution
+items.each { |item| _process_item(item) }
+```
+
+Rules:
+- **All** helper methods that are not the main entry point must be prefixed with `_`
+- **All** methods prefixed with `_` must be explicitly marked `private`
+- Place the `private` declaration immediately after the last helper method definition
+- List all private methods on one or more lines (comma-separated)
+- Main execution code (option parsing, main logic) comes after the `private` declaration
+
+Exception: Very short scripts (< 50 lines) with a single helper may omit the
+`private` declaration if the `_` prefix makes the intent clear, but prefer
+being explicit.
 
 ## Utility Modules — Logging Pattern
 

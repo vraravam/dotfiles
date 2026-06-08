@@ -3,6 +3,7 @@
 require 'fileutils'
 require 'open3'
 
+require_relative 'env_vars'
 require_relative 'logging'
 
 # Cron management helpers that replicate the shell functions split across
@@ -18,6 +19,10 @@ module Cron
   # Note: Logging methods must be qualified (Logging.debug, Logging.info, etc.)
   # because 'include Logging' + 'extend self' doesn't make included methods
   # available as module methods.
+
+  # The canonical crontab.txt file path. This is the source of truth for the
+  # user's cron schedule, stored in PERSONAL_CONFIGS_DIR.
+  CRONTAB_FILE = EnvVars::PERSONAL_CONFIGS_DIR.join('crontab.txt').to_s.freeze
 
   # ---------------------------------------------------------------------------
   # Core primitives (mirror .shellrc § 1h)
@@ -42,7 +47,7 @@ module Cron
   def suspend_cron
     Logging.debug 'Suspending cron jobs...'
     backup_file = cron_backup_file
-    src_file = File.join(ENV.fetch('PERSONAL_CONFIGS_DIR', ''), 'crontab.txt')
+    src_file = CRONTAB_FILE
 
     # Attempt to capture the active crontab into the backup file.
     crontab_output, _err, cron_status = Open3.capture3('crontab', '-l')
@@ -85,28 +90,24 @@ module Cron
   # schedule. Called by recron only when crontab.txt does not already exist
   # (bootstrap / first-install path). Mirrors _create_crontab in .aliases.
   def create_crontab(file)
-    homebrew_prefix = ENV.fetch('HOMEBREW_PREFIX', '/opt/homebrew')
     shell = ENV.fetch('SHELL', '/bin/zsh')
     username = ENV.fetch('USERNAME', ENV.fetch('USER', ''))
-    home = ENV.fetch('HOME', '')
-    personal_bin = ENV.fetch('PERSONAL_BIN_DIR', '')
-    dotfiles_dir = ENV.fetch('DOTFILES_DIR', '')
 
     # PATH line must have no inline comment — crontab treats '#' as part of the
     # value, corrupting the last directory entry and causing 'command not found'.
     path = [
-      "#{homebrew_prefix}/bin",
+      EnvVars::HOMEBREW_PREFIX.join('bin').to_s,
       '/usr/local/bin',
       '/usr/bin',
       '/bin',
       '/usr/sbin',
       '/sbin',
-      personal_bin,
-      "#{dotfiles_dir}/scripts"
+      EnvVars::PERSONAL_BIN_DIR.to_s,
+      EnvVars::DOTFILES_DIR.join('scripts').to_s
     ].join(':')
 
-    cron_cmd = "#{dotfiles_dir}/scripts/software-updates-cron.sh"
-    log_file = "#{home}/software-updates-cron.log"
+    cron_cmd = EnvVars::DOTFILES_DIR.join('scripts', 'software-updates-cron.sh').to_s
+    log_file = EnvVars::HOME.join('software-updates-cron.log').to_s
 
     File.open(file, 'w') do |f|
       f.puts '# Reference: https://crontab.guru/'
@@ -118,7 +119,7 @@ module Cron
       f.puts '# Env'
       f.puts "SHELL=\"#{shell}\""
       f.puts "USERNAME=\"#{username}\""
-      f.puts "HOME=\"#{home}\""
+      f.puts "HOME=\"#{EnvVars::HOME}\""
       f.puts '# PATH: homebrew + system utils + personal bin + dotfiles scripts ' \
              '(needed for chronic, run-all.rb, capture-prefs.sh etc.)'
       f.puts "PATH=#{path}"
@@ -137,12 +138,11 @@ module Cron
   # Mirrors recron in .aliases.
   def recron
     Logging.debug 'Setting up crontab'
-    cron_file = File.join(ENV.fetch('PERSONAL_CONFIGS_DIR', ''), 'crontab.txt')
-    unless File.file?(cron_file)
-      Logging.debug "'#{cron_file}' not found — seeding from template"
-      create_crontab(cron_file)
+    unless File.file?(CRONTAB_FILE)
+      Logging.debug "'#{CRONTAB_FILE}' not found — seeding from template"
+      create_crontab(CRONTAB_FILE)
     end
-    restore_cron(cron_file)
+    restore_cron(CRONTAB_FILE)
     Logging.success 'Crontab set up successfully'
   end
 

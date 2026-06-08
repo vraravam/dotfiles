@@ -1,14 +1,25 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# Shared path and command utilities for Ruby scripts across all scripts
+require 'pathname'
+
+# Command and path manipulation utilities for Ruby scripts.
+#
+# For environment variable paths (HOME, DOTFILES_DIR, etc.), use EnvVars instead.
 #
 # Usage:
 #   require 'path_utils'
 
-# Module for common file, path, and command utilities
+# Module for command existence checks, path segment extraction, and path constants.
 module PathUtils
   extend self
+
+  # Filesystem root as a Pathname object. Use for joining relative paths that should
+  # be resolved from the filesystem root rather than the current working directory.
+  #
+  # @example
+  #   PathUtils::ROOT.join('.config', 'file.txt')  # => Pathname('/config/file.txt')
+  ROOT = Pathname.new(File::SEPARATOR).freeze
 
   # Checks if a command exists in the system PATH.
   # Mirrors command_exists() from .shellrc.

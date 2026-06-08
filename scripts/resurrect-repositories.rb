@@ -12,12 +12,11 @@
 $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 
 require 'cli_parser'
-require 'enumerable_ext'
+require 'env_vars'
 require 'fileutils'
 require 'git_helpers'
 require 'logging'
 require 'open3'
-require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
 require 'set'
 require 'shellwords'
 require 'yaml'
@@ -55,8 +54,6 @@ FOLDER_KEY_NAME = 'folder' # Key name in YAML for the repository folder
 REMOTE_KEY_NAME = 'remote' # Key name for the primary remote
 OTHER_REMOTES_KEY_NAME = 'other_remotes' # Key name for additional remotes
 POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
-
-HOME_PATH = Pathname.new(ENV.fetch('HOME')).expand_path
 
 # Converts a number to a string and right-justifies it with spaces to a width of 2.
 #
@@ -352,7 +349,7 @@ def _verify_all(repositories, discovered_count, filter, ref_folder: nil)
   end
 
   # _find_git_repos_from_disk already returns a sorted unique array; _apply_filter preserves uniqueness.
-  local_folders = _apply_filter(_find_git_repos_from_disk(ref_folder_path || HOME_PATH.to_s), filter).sort
+  local_folders = _apply_filter(_find_git_repos_from_disk(ref_folder_path || EnvVars::HOME.to_s), filter).sort
 
   # Convert to Sets for O(1) membership checks on the symmetric difference
   yml_set = Set.new(yml_folders)
@@ -374,6 +371,10 @@ def _verify_all(repositories, discovered_count, filter, ref_folder: nil)
     success('Everything is kosher!')
   end
 end
+
+private :_justify, :_find_and_replace_env_var, :_find_and_reverse_replace_env_var,
+        :_report_git_failure, :_find_git_repos_from_disk, :_read_git_repos_from_file,
+        :_apply_filter, :_generate_each, :_resurrect_each, :_verify_all
 
 # main program
 filter = (ENV['FILTER'] || '').strip

@@ -1,9 +1,6 @@
 # frozen_string_literal: true
 
-require 'pathname'  # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
-
-# Cached once at load time; HOME does not change during the lifetime of a script.
-HOME_PATH_STR = Pathname.new(ENV.fetch('HOME')).expand_path.to_s.freeze
+require_relative 'env_vars'
 
 class String
   # Wraps the string in the ANSI escape sequence for +code+, after replacing
@@ -21,7 +18,7 @@ class String
   # This is the Ruby equivalent of _colorize() in .shellrc — both are the single
   # centralised implementation point that all public color functions delegate to.
   # Why call replace_home_path_with_tilde directly here rather than inlining
-  # gsub(HOME_PATH_STR, '~'): Ruby method calls have no fork overhead, so calling
+  # gsub(EnvVars::HOME.to_s, '~'): Ruby method calls have no fork overhead, so calling
   # the utility method keeps the substitution logic in one place. The shell's
   # _colorize inlines ${2//${HOME}/~} instead because replace_home_with_tilde
   # prints via 'echo' and capturing it would require a $(...) subshell fork.
@@ -48,7 +45,7 @@ class String
   #
   # @return [String]
   def replace_home_path_with_tilde
-    gsub(HOME_PATH_STR, '~')
+    gsub(EnvVars::HOME.to_s, '~')
   end
 
   # @return [String] The string in black.
