@@ -58,7 +58,7 @@ module Cron
       Logging.debug "Backed up existing crontab to '#{backup_file.to_s.cyan}'"
     elsif src_file.file?
       # No active crontab (e.g. FIRST_INSTALL) but a known-good crontab.txt exists.
-      src_file.cp(backup_file)
+      FileUtils.cp(src_file.to_s, backup_file.to_s)
       Logging.debug "Seeded cron backup from '#{src_file.to_s.cyan}'"
     else
       backup_file.write('')

@@ -3,6 +3,31 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 
+### 3.1.17
+
+#### Moved all post-install logic to Brewfile postinstall hooks
+
+* *[files/--HOME--/Brewfile]* Added postinstall hooks to formulae and taps that require post-installation actions. `brew 'antidote'` now includes `postinstall: "ruby -e \"\\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'antidote'; Antidote.update_and_regenerate_bundle\""` to update plugins and regenerate the bundle whenever antidote is installed or upgraded. `brew 'git-extras'` now includes `postinstall: "rm -rf \"${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git\" 2>/dev/null || true"` to remove the stale Homebrew git completion shim that conflicts with git-extras completions. `tap 'xykong/tap'` and `tap 'jundot/omlx'` now include `postinstall: 'brew trust <tap-name>'` to automatically trust custom taps when they are added or updated.
+* *[scripts/fresh-install-of-osx.sh]* Added tap trusting logic before `brew bundle` runs (lines 274-295). Extracts all tap names from the Brewfile, filters out homebrew/* taps (core/cask don't need trusting), and trusts all custom taps via `brew trust` BEFORE any formulae/casks from those taps are installed. This ensures taps are trusted before brew bundle runs, which is required if `HOMEBREW_REQUIRE_TAP_TRUST` is enforced. Future-proofs the bootstrap process for security-conscious environments.
+* *[scripts/post-brew-install.rb]* Deleted entirely. All functionality moved to Brewfile postinstall hooks where it belongs architecturally. Antidote plugin updates handled by antidote formula postinstall. Stale git completion shim removal handled by git-extras postinstall. Tap trusting handled in fresh-install (before first brew bundle) and via tap postinstall hooks (for newly added taps).
+* *[files/--HOME--/.aliases]* Removed `post-brew-install.rb` call from `bupc` function (line 510). Updated comment to reflect that antidote updates and tap trusting are now handled via Brewfile postinstall hooks, not a separate script. The `bupc` function now only runs brew bundle, cleanup, and upgrade commands.
+* *[scripts/utilities/antidote.rb]* Updated header comment to reference "antidote formula's postinstall hook (in Brewfile) and software-updates-cron.sh" instead of "post-brew-install.rb and software-updates-cron.rb". No functional changes.
+
+#### Architectural benefits
+
+* ✅ **Correct timing**: Taps trusted before brew bundle runs (required for HOMEBREW_REQUIRE_TAP_TRUST). Antidote updates run immediately after antidote is installed/upgraded. Stale git shim removed immediately after git-extras is installed.
+* ✅ **Tighter coupling**: Each formula/tap handles its own post-install needs via postinstall hooks. No separate orchestration script needed.
+* ✅ **Self-documenting**: Brewfile shows what happens when each package is installed. Clear pattern for users to follow when adding new formulae/taps.
+* ✅ **DRY**: No hardcoded tap names or duplicate logic. Each tap declares its own trust requirement.
+* ✅ **User-friendly**: When adding a new custom tap to the Brewfile, copy the postinstall pattern: `tap 'user/tap', postinstall: 'brew trust user/tap'`.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts.
+* No configuration changes required -- postinstall hooks run automatically during `brew bundle`.
+* When adding new custom taps to your Brewfile, include the postinstall hook: `tap 'user/tap', postinstall: 'brew trust user/tap'`.
+* Quit & Restart the Terminal application.
+
 ### 3.1.16
 
 #### Normalized output format and script timing across module methods

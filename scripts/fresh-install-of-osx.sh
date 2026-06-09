@@ -271,6 +271,29 @@ _install_homebrew() {
   # Ensure homebrew's environment variables are set correctly for this session.
   eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
 
+  # Trust all custom taps defined in the Brewfile before running brew bundle.
+  # This ensures taps are trusted before any formulae/casks from those taps are
+  # installed, which is required if HOMEBREW_REQUIRE_TAP_TRUST is enforced.
+  # Extract tap names from Brewfile, skip homebrew/* taps, and trust custom taps.
+  if command_exists brew; then
+    local -a custom_taps
+    custom_taps=()
+    while IFS= read -r tap_line; do
+      # Extract tap name from lines like: tap 'xykong/tap' or tap 'jundot/omlx', 'git@...'
+      local tap_name
+      tap_name=$(echo "${tap_line}" | sed -E "s/^tap[[:space:]]*'([^']+)'.*/\1/")
+      # Skip homebrew/* taps (core/cask) - they don't need trusting
+      if [[ "${tap_name}" != homebrew/* ]]; then
+        custom_taps+=("${tap_name}")
+      fi
+    done < <(grep "^tap " "${HOMEBREW_BUNDLE_FILE}")
+
+    if is_non_empty_array custom_taps; then
+      info "Trusting custom taps: $(yellow "${custom_taps[*]}")"
+      brew trust "${custom_taps[@]}" || true  # Don't fail if trust fails
+    fi
+  fi
+
   # Note: Temporarily disable the ERR trap since brew commands may fail on a vanilla OS (e.g. rate limits, missing deps).
   if is_first_install; then
     trap - ERR
@@ -314,9 +337,6 @@ _install_homebrew() {
 
   # Note: load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)
   load_zsh_configs
-  # Note: run the post-brew-install script once more (in case it wasn't run by the brew lifecycle due to any error)
-  # Note: When running with FIRST_INSTALL, some errors might come on a vanilla OS - warn and continue instead of failing.
-  post-brew-install.rb || { is_first_install && _record_warning 'post-brew-install encountered errors; continuing...'; }
 
   if is_first_install; then
     trap '_cleanup_and_exit "${LINENO}"' ERR

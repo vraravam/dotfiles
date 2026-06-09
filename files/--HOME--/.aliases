@@ -487,8 +487,8 @@ if is_macos && command_exists brew; then
   # Upgrades all casks that are outdated (and which have version marked as 'latest')
   alias bcug='brew upgrade --greedy'
 
-  # Upgrades and cleans up all regular outdated casks and libs (non-greedy), then
-  # runs post-brew-install.rb to regenerate antidote bundles and perform cleanup.
+  # Upgrades and cleans up all regular outdated casks and libs (non-greedy).
+  # Antidote updates and tap trusting are handled via Brewfile postinstall hooks.
   bupc() {
     local _SCRIPT_NAME='bupc'
     local _current_section='(init)'
@@ -507,7 +507,6 @@ if is_macos && command_exists brew; then
     brew cleanup --prune=all || true
     brew autoremove || true
     brew upgrade || true
-    post-brew-install.rb || true
 
     print_script_summary "${start_time}"
     # Manual decrement -- EXIT trap does not fire on function return in shell functions.
@@ -517,7 +516,8 @@ if is_macos && command_exists brew; then
   # Thin wrapper that delegates to Ruby Antidote.update_and_regenerate_bundle.
   # Updates all installed antidote plugins, unshallows their git repos, and
   # regenerates the static bundle file.
-  # Called by post-brew-install.rb after every 'bupc' run and by software-updates-cron.sh.
+  # Called by the antidote formula's postinstall hook in Brewfile (whenever
+  # antidote is installed/upgraded) and by software-updates-cron.sh (periodic updates).
   update_antidote_and_regenerate_plugin_bundle() {
     ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'antidote'; Antidote.update_and_regenerate_bundle"
   }
