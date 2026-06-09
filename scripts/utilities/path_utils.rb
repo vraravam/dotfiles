@@ -46,4 +46,26 @@ module PathUtils
   def extract_path_segment_at(folder, index = -1)
     File.dirname(folder).split(File::SEPARATOR)[index]
   end
+
+  # Yields Pathname objects for each match from Dir.glob, converting strings to Pathname.
+  # Dir.glob returns strings; this helper immediately converts them so callers work with
+  # Pathname throughout without repeated Pathname.new() at every call site.
+  #
+  # @param pattern [Pathname, String] Glob pattern (can be Pathname with embedded pattern).
+  # @param flags [Integer] Optional Dir.glob flags (e.g., File::FNM_CASEFOLD).
+  # @yield [pathname] Each matched path as a Pathname object.
+  # @yieldparam pathname [Pathname]
+  # @return [void]
+  #
+  # @example
+  #   PathUtils.glob_pathnames(base_dir.join('**', '*.txt')) do |file|
+  #     puts file.size  # file is already a Pathname
+  #   end
+  def glob_pathnames(pattern, flags = 0)
+    return unless block_given?
+
+    Dir.glob(pattern, flags).each do |path_str|
+      yield Pathname.new(path_str)
+    end
+  end
 end

@@ -189,12 +189,6 @@ main() {
     step_end
   fi
 
-  # Collect repo ancestor dirs once and share across both post-clone operations
-  # to avoid running the expensive find traversal twice.
-  local -a all_dirs
-  _collect_repo_ancestor_dirs
-  _SHARED_REPO_DIRS=("${all_dirs[@]}")
-
   _current_section='Allow all direnv configs'
   step_start
   section_header "$(yellow 'Allow all direnv configs')"
@@ -206,8 +200,6 @@ main() {
   section_header "$(yellow 'Install languages using mise')"
   install_mise_versions
   step_end
-
-  unset _SHARED_REPO_DIRS
 
   _current_section='Regenerate repo aliases'
   step_start

@@ -179,8 +179,8 @@ def _ensure_ssh_include_line
     if File.foreach(default_ssh_config).any? { |l| l.strip == include_line }
       success("'#{include_line}' already present in '#{default_ssh_config.to_s.cyan}'")
     else
-      info("Adding '#{include_line}' to '#{default_ssh_config.to_s.cyan}'")
-      File.write(default_ssh_config, "\n#{include_line}\n", mode: 'a')
+      info("Adding '#{include_line.purple}' to '#{default_ssh_config.to_s.cyan}'")
+      default_ssh_config.write("\n#{include_line}\n", mode: 'a')
     end
   rescue StandardError => e
     warn("Failed processing SSH config '#{default_ssh_config.to_s.cyan}': #{e.message}")

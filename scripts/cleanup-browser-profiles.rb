@@ -27,8 +27,8 @@ include Logging
 # Reads non-blank, non-comment lines from +file+ into an Array.
 # Mirrors _read_pattern_file from the shell version.
 def _read_pattern_file(file)
-  return [] unless File.file?(file)
-  File.readlines(file).each_with_object([]) do |line, arr|
+  return [] unless file.file?
+  file.readlines.each_with_object([]) do |line, arr|
     stripped = line.chomp.strip
     next if stripped.empty? || stripped.start_with?('#')
     arr << stripped
@@ -69,7 +69,7 @@ def vacuum_browser_profile_folder(browser_name, profile_folder, dry_run:)
     return
   end
 
-  unless File.directory?(profile_folder)
+  unless profile_folder.directory?
     info "Skipping '#{profile_folder.to_s.cyan}' -- directory does not exist"
     return
   end
@@ -88,20 +88,20 @@ def vacuum_browser_profile_folder(browser_name, profile_folder, dry_run:)
     vacuumed = 0
     failed_dbs = []
 
-    Dir.glob(File.join(profile_folder, '**', '*.sqlite')).each do |db_file|
+    PathUtils.glob_pathnames(profile_folder.join('**', '*.sqlite')) do |db_file|
       db_count += 1
-      db_size = File.size(db_file) rescue 0
+      db_size = db_file.size rescue 0
       next if db_size <= 10 * 1024 * 1024 # skip if <= 10 MB
 
       if dry_run
         size_mb = db_size / 1_048_576
-        info "[DRY-RUN] Would vacuum: '#{db_file.cyan}' (#{size_mb.to_s.purple}MB)"
+        info "[DRY-RUN] Would vacuum: '#{db_file.to_s.cyan}' (#{size_mb.to_s.purple}MB)"
       else
-        info "Vacuuming: '#{db_file.cyan}'"
-        if system('sqlite3', db_file, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;', out: File::NULL, err: File::NULL)
+        info "Vacuuming: '#{db_file.to_s.cyan}'"
+        if system('sqlite3', db_file.to_s, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;', out: File::NULL, err: File::NULL)
           vacuumed += 1
         else
-          failed_dbs << db_file
+          failed_dbs << db_file.to_s
         end
       end
     end
@@ -120,14 +120,14 @@ def vacuum_browser_profile_folder(browser_name, profile_folder, dry_run:)
 
   unless file_patterns.empty?
     file_patterns.each do |pattern|
-      items_to_delete.concat(Dir.glob(File.join(profile_folder, '**', pattern), File::FNM_CASEFOLD))
+      items_to_delete.concat(Dir.glob(profile_folder.join('**', pattern), File::FNM_CASEFOLD))
     end
   end
 
   unless dir_patterns.empty?
     dir_patterns.each do |pattern|
-      Dir.glob(File.join(profile_folder, '**', pattern), File::FNM_CASEFOLD).each do |path|
-        items_to_delete << path if File.directory?(path)
+      PathUtils.glob_pathnames(profile_folder.join('**', pattern), File::FNM_CASEFOLD) do |path_pn|
+        items_to_delete << path_pn.to_s if path_pn.directory?
       end
     end
   end
@@ -143,7 +143,8 @@ def vacuum_browser_profile_folder(browser_name, profile_folder, dry_run:)
     deleted = 0
     items_to_delete.each do |path|
       begin
-        File.directory?(path) ? FileUtils.rm_rf(path) : File.delete(path)
+        path_pn = Pathname.new(path)
+        path_pn.directory? ? FileUtils.rm_rf(path_pn) : path_pn.delete
         deleted += 1
       rescue StandardError => e
         record_warning("Failed to delete '#{path.cyan}': #{e.message}")

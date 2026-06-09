@@ -95,12 +95,13 @@ module GitHelpers
   # Returns true if +path+ contains a .git directory or file (worktree/submodule).
   # Mirrors is_git_repo in .shellrc.
   #
-  # @param path [String] Path to check.
+  # @param path [String, Pathname] Path to check.
   # @return [Boolean]
   def git_repo?(path)
     return false if nil_or_empty?(path)
     # .git can be a directory (normal clone) or a file (worktree / submodule).
-    File.exist?(File.join(path, '.git'))
+    path = Pathname.new(path) unless path.is_a?(Pathname)
+    path.join('.git').exist?
   end
 
   private

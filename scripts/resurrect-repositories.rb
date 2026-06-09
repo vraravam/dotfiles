@@ -130,15 +130,7 @@ def _find_git_repos_from_disk(path)
   cmd = ['find', path.to_s, '-name', '.git', '-type', 'd', '-not', '-regex', '.*/\\..*/\\.git', '-prune', '-print0']
   stdout_str, stderr_str, status = Open3.capture3(*cmd)
 
-  unless nil_or_empty?(stderr_str)
-    meaningful_errors = stderr_str.each_line.map(&:strip).reject do |line|
-      nil_or_empty?(line) ||
-        line.include?('Permission denied') ||
-        line.include?('No such file or directory')
-      # Add other common noisy messages if needed
-    end
-    record_warning("Issues encountered while searching for git repositories:\n#{meaningful_errors.join("\n")}") if meaningful_errors.any?
-  end
+  filter_and_warn_stderr(stderr_str, context: 'Issues encountered while searching for git repositories')
 
   if status.success? || !nil_or_empty?(stdout_str.strip) # Process output if command was successful or if there's any output despite error
     stdout_str.split("\0").map { |git_path| File.dirname(git_path) }.uniq.sort
@@ -301,15 +293,13 @@ def _resurrect_each(repo, idx, total)
     _report_git_failure("Failed to fetch all remotes and tags for repo '#{folder.cyan}'", status, stderr)
   end
 
-  return unless repo[POST_CLONE_KEY_NAME].is_a?(Array)
+  return unless repo[POST_CLONE_KEY_NAME].is_a?(Array) && !repo[POST_CLONE_KEY_NAME].empty?
 
   # Post-clone command failures are non-fatal -- repository is usable, just missing post-setup steps
   section_header2('Running post-clone commands')
-  # Use begin/ensure so the process working directory is always restored even if a command
-  # raises an unexpected exception mid-loop.
-  original_dir = Dir.pwd
-  begin
-    Dir.chdir(folder)
+  # Dir.chdir with a block automatically restores the original directory when the block exits,
+  # even if an exception is raised -- no manual cleanup needed.
+  Dir.chdir(folder) do
     repo[POST_CLONE_KEY_NAME].each do |command_str|
       debug("Executing: #{command_str.dump}")
       _stdout, stderr, status = Open3.capture3(command_str)
@@ -317,8 +307,6 @@ def _resurrect_each(repo, idx, total)
         _report_git_failure("Post-clone command #{command_str.dump} failed for repo '#{folder.cyan}'", status, stderr)
       end
     end
-  ensure
-    Dir.chdir(original_dir)
   end
 end
 

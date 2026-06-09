@@ -4,6 +4,7 @@ require 'open3'
 
 require_relative 'env_vars'
 require_relative 'logging'
+require_relative 'path_utils'
 
 # Shared antidote plugin-manager helpers used by both post-brew-install.rb
 # and software-updates-cron.rb.
@@ -36,21 +37,20 @@ module Antidote
     plugin_zsh = EnvVars::ANTIDOTE_PLUGIN_ZSH
     antidote_home = EnvVars::ANTIDOTE_HOME
 
-    unless File.file?(antidote_zsh) && File.size(antidote_zsh) > 0 &&
-           File.file?(plugin_txt) && File.size(plugin_txt) > 0
+    unless antidote_zsh.file? && !antidote_zsh.empty? && plugin_txt.file? && !plugin_txt.empty?
       Logging.debug "Skipping antidote bundle regeneration: antidote not found at '#{antidote_zsh.cyan}' " \
                     "or plugin list '#{plugin_txt.cyan}' is missing"
       return
     end
 
-    if File.directory?(antidote_home) && !Dir.empty?(antidote_home)
+    if antidote_home.directory? && !Dir.empty?(antidote_home)
       system('zsh', '-f', '-c', 'source "$1"; antidote update', '--', antidote_zsh.to_s)
-      Dir.glob(antidote_home.join('github.com', '*', '*')).each do |bundle_dir|
-        next unless File.directory?(bundle_dir)
-        next unless File.exist?(File.join(bundle_dir, '.git'))
-        system('git', '-C', bundle_dir, 'config', '--local', 'fetch.fsckObjects', 'false',
+      PathUtils.glob_pathnames(antidote_home.join('github.com', '*', '*')) do |bundle_dir|
+        next unless bundle_dir.directory?
+        next unless bundle_dir.join('.git').directory?
+        system('git', '-C', bundle_dir.to_s, 'config', '--local', 'fetch.fsckObjects', 'false',
                out: File::NULL, err: File::NULL)
-        system('git', '-C', bundle_dir, 'pull-unshallow', '-q',
+        system('git', '-C', bundle_dir.to_s, 'pull-unshallow', '-q',
                out: File::NULL, err: File::NULL)
       end
     end
@@ -59,10 +59,10 @@ module Antidote
     # so no shell redirect (<) is needed -- array form avoids a shell layer.
     bundle_content, _err, status = Open3.capture3(
       'zsh', '-f', '-c', 'source "$1"; antidote bundle', '--', antidote_zsh.to_s,
-      stdin_data: File.read(plugin_txt)
+      stdin_data: plugin_txt.read
     )
     if status.success?
-      File.write(plugin_zsh, bundle_content)
+      plugin_zsh.write(bundle_content)
       Logging.success "antidote bundle regenerated at '#{plugin_zsh.to_s.yellow}'"
     else
       Logging.record_warning('Failed to regenerate antidote bundle')

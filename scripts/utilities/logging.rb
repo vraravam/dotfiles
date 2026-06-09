@@ -167,6 +167,31 @@ module Logging
     warn(message)
   end
 
+  # Filters out common noise from stderr output (permission denied, file not found, etc.)
+  # and records a warning only if meaningful errors remain. Use this when a command is
+  # expected to produce some non-fatal stderr noise that should not clutter the logs.
+  #
+  # @param stderr [String] Raw stderr output from a command.
+  # @param context [String] Context message prefix for the warning (e.g., "Issues during git search").
+  # @param ignore_patterns [Array<String>] Additional patterns to ignore beyond the defaults.
+  # @return [void]
+  #
+  # @example
+  #   stdout, stderr, status = Open3.capture3('find', path, '-name', '.git')
+  #   filter_and_warn_stderr(stderr, context: 'Issues while searching for git repos')
+  def filter_and_warn_stderr(stderr, context:, ignore_patterns: [])
+    return if nil_or_empty?(stderr)
+
+    default_noise = ['Permission denied', 'No such file or directory']
+    all_patterns = default_noise + ignore_patterns
+
+    meaningful_errors = stderr.each_line.map(&:strip).reject do |line|
+      nil_or_empty?(line) || all_patterns.any? { |pattern| line.include?(pattern) }
+    end
+
+    record_warning("#{context}:\n#{meaningful_errors.join("\n")}") if meaningful_errors.any?
+  end
+
   # Prints a grouped summary of all collected warnings and errors, prefixing
   # each section header with the script name, then prints the total duration.
   # Mirrors print_script_summary in .shellrc. No macOS notification -- callers

@@ -2,6 +2,7 @@
 
 require 'fileutils'
 require 'open3'
+require 'pathname'
 
 require_relative 'env_vars'
 require_relative 'logging'
@@ -22,7 +23,7 @@ module Cron
 
   # The canonical crontab.txt file path. This is the source of truth for the
   # user's cron schedule, stored in PERSONAL_CONFIGS_DIR.
-  CRONTAB_FILE = EnvVars::PERSONAL_CONFIGS_DIR.join('crontab.txt').to_s.freeze
+  CRONTAB_FILE = EnvVars::PERSONAL_CONFIGS_DIR.join('crontab.txt')
 
   # ---------------------------------------------------------------------------
   # Core primitives (mirror .shellrc § 1h)
@@ -32,12 +33,13 @@ module Cron
   # Warns and returns early if the file does not exist.
   # Mirrors restore_cron in .shellrc.
   def restore_cron(cron_file)
-    unless File.file?(cron_file)
-      Logging.warn "No '#{cron_file.cyan}' found; returning without any processing"
+    cron_file = Pathname.new(cron_file) unless cron_file.is_a?(Pathname)
+    unless cron_file.file?
+      Logging.warn "No '#{cron_file.to_s.cyan}' found; returning without any processing"
       return
     end
-    FileUtils.mkdir_p(File.dirname(cron_file))
-    raise "Failed to restore crontab from '#{cron_file.cyan}'" unless system('crontab', cron_file)
+    FileUtils.mkdir_p(cron_file.dirname)
+    raise "Failed to restore crontab from '#{cron_file.to_s.cyan}'" unless system('crontab', cron_file.to_s)
   end
 
   # Backs up the current crontab to the path in ENV['_DOTFILES_CRON_BACKUP_FILE']
@@ -52,14 +54,14 @@ module Cron
     # Attempt to capture the active crontab into the backup file.
     crontab_output, _err, cron_status = Open3.capture3('crontab', '-l')
     if cron_status.success? && !crontab_output.empty?
-      File.write(backup_file, crontab_output)
-      Logging.debug "Backed up existing crontab to '#{backup_file.cyan}'"
-    elsif File.file?(src_file)
+      backup_file.write(crontab_output)
+      Logging.debug "Backed up existing crontab to '#{backup_file.to_s.cyan}'"
+    elsif src_file.file?
       # No active crontab (e.g. FIRST_INSTALL) but a known-good crontab.txt exists.
-      FileUtils.cp(src_file, backup_file)
-      Logging.debug "Seeded cron backup from '#{src_file.cyan}'"
+      src_file.cp(backup_file)
+      Logging.debug "Seeded cron backup from '#{src_file.to_s.cyan}'"
     else
-      File.write(backup_file, '')
+      backup_file.write('')
       Logging.debug 'No existing crontab or crontab.txt; created empty backup'
     end
 
@@ -73,13 +75,13 @@ module Cron
   def resume_cron
     Logging.debug 'Resuming cron jobs...'
     backup_file = cron_backup_file
-    if File.file?(backup_file) && File.size(backup_file) > 0
+    if backup_file.file? && !backup_file.empty?
       restore_cron(backup_file)
       Logging.success 'Cron jobs resumed from backup'
     else
       Logging.info 'No cron backup to restore; skipping'
     end
-    File.delete(backup_file) if File.exist?(backup_file)
+    backup_file.delete if backup_file.exist?
   end
 
   # ---------------------------------------------------------------------------
@@ -92,6 +94,7 @@ module Cron
   def create_crontab(file)
     shell = EnvVars::SHELL
     username = EnvVars::USER
+    file = Pathname.new(file) unless file.is_a?(Pathname)
 
     # PATH line must have no inline comment -- crontab treats '#' as part of the
     # value, corrupting the last directory entry and causing 'command not found'.
@@ -109,7 +112,7 @@ module Cron
     cron_cmd = EnvVars::DOTFILES_DIR.join('scripts', 'software-updates-cron.sh').to_s
     log_file = EnvVars::HOME.join('software-updates-cron.log').to_s
 
-    File.open(file, 'w') do |f|
+    file.open(mode: 'w') do |f|
       f.puts '# Reference: https://crontab.guru/'
       f.puts
       f.puts "# Note: 'chronic' is a utility installed using 'moreutils' from homebrew " \
@@ -138,8 +141,8 @@ module Cron
   # Mirrors recron in .aliases.
   def recron
     Logging.debug 'Setting up crontab'
-    unless File.file?(CRONTAB_FILE)
-      Logging.debug "'#{CRONTAB_FILE.cyan}' not found -- seeding from template"
+    unless CRONTAB_FILE.file?
+      Logging.debug "'#{CRONTAB_FILE.to_s.cyan}' not found -- seeding from template"
       create_crontab(CRONTAB_FILE)
     end
     restore_cron(CRONTAB_FILE)
@@ -159,7 +162,7 @@ module Cron
       yield
       recron
       backup = cron_backup_file
-      File.delete(backup) if File.exist?(backup)
+      backup.delete if backup.exist?
     rescue StandardError
       resume_cron
       raise
@@ -178,8 +181,9 @@ module Cron
   # internally -- Ruby scripts may not have sourced .shellrc, so fall back to
   # the same default path the shell function uses.
   def cron_backup_file
-    ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do
-      File.join(ENV.fetch('TMPDIR', '/tmp'), 'crontab_backup')
+    backup_path = ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do
+      Pathname.new(ENV.fetch('TMPDIR', '/tmp')).join('crontab_backup').to_s
     end
+    Pathname.new(backup_path)
   end
 end

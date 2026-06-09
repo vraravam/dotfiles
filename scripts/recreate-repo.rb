@@ -49,6 +49,7 @@ if nil_or_empty?(options[:folder])
 end
 
 folder = options[:folder].chomp('/')
+folder_pn = Pathname.new(folder)
 force = options[:force]
 dry_run = options[:dry_run]
 
@@ -61,7 +62,7 @@ end
 
 # The profiles repo is always force-squashed.
 profiles_repo_name = EnvVars::KEYBASE_PROFILES_REPO_NAME
-force = true if profiles_repo_name && File.basename(folder) == profiles_repo_name
+force = true if profiles_repo_name && folder_pn.basename.to_s == profiles_repo_name
 
 unless GitHelpers.git_repo?(folder)
   error "'#{folder}' is not a git repo. Please specify the root of a git repo. Aborting."
@@ -104,21 +105,21 @@ operation = lambda do
   if force
     require 'fileutils'
     if dry_run
-      info "Would remove: '#{File.join(folder, '.git').cyan}'"
+      info "Would remove: '#{folder_pn.join('.git').to_s.cyan}'"
       info "Would run: git -C '#{folder.cyan}' init --ref-format=reftable ."
       info "Would run: git -C '#{folder.cyan}' remote add origin '#{git_url.cyan}'"
       info "Would run: git -C '#{folder.cyan}' config user.name '#{user_name}'" unless nil_or_empty?(user_name)
       info "Would run: git -C '#{folder.cyan}' config user.email '#{user_email}'" unless nil_or_empty?(user_email)
-      info "Would delete: '#{File.join(folder, '.git', 'index.lock').cyan}' (if exists)"
+      info "Would delete: '#{folder_pn.join('.git', 'index.lock').to_s.cyan}' (if exists)"
       info "Would run: git -C '#{folder.cyan}' add -A ."
       info "Would run: git -C '#{folder.cyan}' commit -qm 'Initial commit: <timestamp>'"
     else
-      FileUtils.rm_rf(File.join(folder, '.git'))
+      FileUtils.rm_rf(folder_pn.join('.git'))
       system('git', '-C', folder, 'init', '--ref-format=reftable', '.')
       system('git', '-C', folder, 'remote', 'add', 'origin', git_url)
       system('git', '-C', folder, 'config', 'user.name', user_name) unless nil_or_empty?(user_name)
       system('git', '-C', folder, 'config', 'user.email', user_email) unless nil_or_empty?(user_email)
-      File.delete(File.join(folder, '.git', 'index.lock')) rescue nil
+      folder_pn.join('.git', 'index.lock').delete rescue nil
       system('git', '-C', folder, 'add', '-A', '.')
       timestamp = MacOS.current_timestamp
       system('git', '-C', folder, 'commit', '-qm', "Initial commit: #{timestamp}")
@@ -145,7 +146,7 @@ operation = lambda do
   if dry_run
     debug 'Would stage all files and amend commit'
   else
-    File.delete(File.join(folder, '.git', 'index.lock')) rescue nil
+    folder_pn.join('.git', 'index.lock').delete rescue nil
     system('git', '-C', folder, 'add', '-A', '.')
     system('git', '-C', folder, 'amq')
   end
@@ -163,7 +164,7 @@ operation = lambda do
   else
     debug "#{'Pushing'.yellow} from '#{folder.cyan}' to '#{git_url.cyan}'"
     system('git', '-C', folder, 'push', '--progress', '-fu', 'origin', branch)
-    File.delete(File.join(folder, '.git', 'index.lock')) rescue nil
+    folder_pn.join('.git', 'index.lock').delete rescue nil
     success "Git repo in '#{folder.cyan}' recreated and pushed to '#{git_url.cyan}'"
   end
 end

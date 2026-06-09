@@ -30,10 +30,10 @@ include Logging
 increment_script_depth
 start_time = print_script_start
 
-stale_shim = EnvVars::HOMEBREW_REPOSITORY.join('share', 'zsh', 'site-functions', '_git').to_s
-if File.exist?(stale_shim)
+stale_shim = EnvVars::HOMEBREW_REPOSITORY.join('share', 'zsh', 'site-functions', '_git')
+if stale_shim.exist?
   FileUtils.rm_rf(stale_shim)
-  debug "Removed stale git completion shim: '#{stale_shim.cyan}'"
+  debug "Removed stale git completion shim: '#{stale_shim.to_s.cyan}'"
 end
 
 section_header2 'Trusting taps from the Brewfile'

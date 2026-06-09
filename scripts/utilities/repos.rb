@@ -109,7 +109,8 @@ module Repos
     # Filter to dirs that actually have a mise config, then sort by depth so
     # parents come before children (shallower paths have fewer separators).
     dirs_with_config = all_dirs.select do |dir|
-      MISE_CONFIG_FILES.any? { |cfg| File.file?(File.join(dir, cfg)) }
+      dir_pn = Pathname.new(dir)
+      MISE_CONFIG_FILES.any? { |cfg| dir_pn.join(cfg).file? }
     end
     sorted = dirs_with_config.sort_by { |d| d.count(File::SEPARATOR) }
 
@@ -149,7 +150,7 @@ module Repos
 
     # Filter to dirs with .envrc, sort parents before children.
     dirs_with_envrc = all_dirs
-      .select { |dir| File.file?(File.join(dir, '.envrc')) }
+      .select { |dir| Pathname.new(dir).join('.envrc').file? }
       .sort_by { |d| d.count(File::SEPARATOR) }
 
     total = dirs_with_envrc.length
@@ -178,12 +179,12 @@ module Repos
   #   or older than PROJECTS_BASE_DIR.
   def regenerate_repo_aliases(force: false)
     projects_base = EnvVars::PROJECTS_BASE_DIR
-    return unless File.directory?(projects_base)
+    return unless projects_base.directory?
 
     cache_file = EnvVars::XDG_CACHE_HOME.join('repo-aliases-cache.zsh')
 
-    cache_stale = !File.file?(cache_file) ||
-                  File.mtime(projects_base) > File.mtime(cache_file)
+    cache_stale = !cache_file.file? ||
+                  projects_base.mtime > cache_file.mtime
 
     unless force || cache_stale
       return
@@ -219,7 +220,7 @@ module Repos
       end
     end
 
-    File.open(cache_file, 'w') do |f|
+    cache_file.open('w') do |f|
       parent_folders.each do |folder_path|
         relative = folder_path.sub("#{projects_base_str}#{File::SEPARATOR}", '')
         # Alias name: replace path separator with '-'; value: sets FOLDER for run-all.rb.
@@ -229,7 +230,7 @@ module Repos
     end
 
     if force
-      count = File.readlines(cache_file).length
+      count = cache_file.readlines.length
       Logging.success "Repo aliases cache regenerated (#{count.to_s.green} aliases)"
     end
   end
