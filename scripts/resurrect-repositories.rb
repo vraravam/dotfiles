@@ -329,10 +329,10 @@ end
 # @param repositories [Array<Hash>] An array of repository configurations from the YAML file.
 # @param discovered_count [Integer] Total count of repos before any filter was applied, used for the summary log.
 # @param filter [String] A filter string (regex) to apply to repository paths before comparison.
-# @param ref_folder [String, nil] Optional base directory to scope the comparison to.
+# @param ref_folder [String, nil] Optional base directory to scope the comparison to (already expanded).
 # @return [void] Exits with 1 if discrepancies are found.
 def _verify_all(repositories, discovered_count, filter, ref_folder: nil)
-  ref_folder_path = ref_folder ? File.expand_path(ref_folder) : nil
+  ref_folder_path = ref_folder
 
   # Get folder paths from the YAML configuration (already filtered by FILTER if it was set).
   # filter_map polyfill in enumerable_ext.rb covers Ruby 2.6 (system Ruby on vanilla macOS).
@@ -377,7 +377,7 @@ private :_justify, :_find_and_replace_env_var, :_find_and_reverse_replace_env_va
         :_apply_filter, :_generate_each, :_resurrect_each, :_verify_all
 
 # main program
-filter = ENV.fetch('FILTER', '').strip
+filter = EnvVars.filter
 
 # Increment script depth and register at_exit decrement. print_script_start checks
 # outermost_script? to decide whether to print the banner.
@@ -433,7 +433,7 @@ elsif options[:check]
   config_file = File.expand_path(options[:check])
   puts("#{'Config file:'.yellow} '#{config_file.cyan}'")
   puts("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
-  reference_folder = ENV.fetch('REF_FOLDER', nil)&.then { |f| File.expand_path(f) }
+  reference_folder = EnvVars.ref_folder
   puts("#{'Reference folder:'.yellow} '#{reference_folder.cyan}'") unless nil_or_empty?(reference_folder)
   repositories = _read_git_repos_from_file(config_file)
   discovered_count = repositories.length

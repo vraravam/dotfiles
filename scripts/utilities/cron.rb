@@ -90,8 +90,8 @@ module Cron
   # schedule. Called by recron only when crontab.txt does not already exist
   # (bootstrap / first-install path). Mirrors _create_crontab in .aliases.
   def create_crontab(file)
-    shell = ENV.fetch('SHELL', '/bin/zsh')
-    username = ENV.fetch('USERNAME', ENV.fetch('USER', ''))
+    shell = EnvVars::SHELL
+    username = EnvVars::USER
 
     # PATH line must have no inline comment -- crontab treats '#' as part of the
     # value, corrupting the last directory entry and causing 'command not found'.

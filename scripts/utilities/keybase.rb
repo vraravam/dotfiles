@@ -2,6 +2,7 @@
 
 require 'open3'
 
+require_relative 'env_vars'
 require_relative 'logging'
 require_relative 'path_utils'
 
@@ -74,9 +75,12 @@ module Keybase
 
   private
 
+  # Returns the configured Keybase username.
+  # Raises an error if KEYBASE_USERNAME is not set, since Keybase operations require it.
+  #
+  # @return [String] the username
+  # @raise [RuntimeError] if KEYBASE_USERNAME is nil or empty
   def username
-    ENV.fetch('KEYBASE_USERNAME') do
-      raise 'ENV[KEYBASE_USERNAME] is not set -- was .shellrc sourced?'
-    end
+    EnvVars::KEYBASE_USERNAME || raise('KEYBASE_USERNAME is not set. Set it in .shellrc if you want to use Keybase functionality.')
   end
 end

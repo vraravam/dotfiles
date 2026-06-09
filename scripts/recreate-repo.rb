@@ -14,6 +14,7 @@ $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 
 require 'cli_parser'
 require 'cron'
+require 'env_vars'
 require 'git_helpers'
 require 'keybase'
 require 'logging'
@@ -38,7 +39,7 @@ parser = CliParser.parse('<options>') do |opts|
     options[:dry_run] = true
   end
   opts.separator ''
-  opts.separator "  eg: #{File.basename(__FILE__).cyan} -f -d #{ENV.fetch('HOME', '~')}"
+  opts.separator "  eg: #{File.basename(__FILE__).cyan} -f -d #{EnvVars::HOME}"
   opts.separator "  eg: #{File.basename(__FILE__).cyan} -d $PERSONAL_PROFILES_DIR"
   opts.separator "  eg: #{File.basename(__FILE__).cyan} -n -d ~/dev/my-repo  # dry-run"
 end
@@ -59,8 +60,8 @@ if dry_run
 end
 
 # The profiles repo is always force-squashed.
-profiles_repo_name = ENV.fetch('KEYBASE_PROFILES_REPO_NAME', '')
-force = true if File.basename(folder) == profiles_repo_name
+profiles_repo_name = EnvVars::KEYBASE_PROFILES_REPO_NAME
+force = true if profiles_repo_name && File.basename(folder) == profiles_repo_name
 
 unless GitHelpers.git_repo?(folder)
   error "'#{folder}' is not a git repo. Please specify the root of a git repo. Aborting."

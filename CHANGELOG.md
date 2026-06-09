@@ -3,6 +3,23 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 
+### 3.1.13
+
+#### Centralized environment variable access via EnvVars module
+
+* *[scripts/utilities/env_vars.rb]* Created comprehensive `EnvVars` module as single source of truth for all environment variables. Added 15 path constants (Pathname objects): `HOME`, `DOTFILES_DIR`, `PERSONAL_BIN_DIR`, `PERSONAL_CONFIGS_DIR`, `PERSONAL_PROFILES_DIR`, `PROJECTS_BASE_DIR`, `XDG_CACHE_HOME`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_STATE_HOME`, `HOMEBREW_PREFIX`, `HOMEBREW_REPOSITORY`, `SSH_CONFIGS_DIR`, `ANTIDOTE_HOME`, `ANTIDOTE_ZSH`, `ANTIDOTE_PLUGIN_ZSH`, `ANTIDOTE_PLUGIN_TXT`. Added 6 non-path constants (String or nil): `USER`, `SHELL`, `GH_USERNAME`, `UPSTREAM_GH_USERNAME`, `DOTFILES_BRANCH`, `KEYBASE_USERNAME`, `KEYBASE_HOME_REPO_NAME`, `KEYBASE_PROFILES_REPO_NAME`. Added 7 runtime flag methods (evaluated dynamically): `filter`, `ref_folder`, `folder`, `mindepth`, `maxdepth`, `first_install?`, `debug?`. All constants are frozen; methods evaluate ENV on each access. Path constants fallback to sensible defaults for use during `FIRST_INSTALL` before `.shellrc` is sourced. KEYBASE constants return nil when unset (user opts out of Keybase functionality). Predicate methods use `?` suffix per Ruby convention.
+* *[scripts/utilities/antidote.rb, cron.rb, keybase.rb, repos.rb, install-dotfiles.rb, run-all.rb, resurrect-repositories.rb, recreate-repo.rb]* Replaced 20 `ENV.fetch` calls with `EnvVars` constants/methods. Eliminated duplicate `.strip`, `File.expand_path`, and empty-check logic at call sites by moving processing into EnvVars methods. Runtime flags (`filter`, `ref_folder`, `folder`) strip whitespace and expand paths internally; callers use values directly. Boolean predicates (`first_install?`, `debug?`) follow Ruby naming convention. Inlined single-use `first_install` local variable in install-dotfiles.rb. Added nil guard in recreate-repo.rb: `force = true if profiles_repo_name && File.basename(folder) == profiles_repo_name`.
+* *[files/--HOME--/.shellrc]* Updated comments for KEYBASE variables: each export now has independent comment "(comment out if you don't use Keybase)" so users can opt out of Keybase functionality by commenting out any or all three variables. Scripts handle nil KEYBASE values gracefully -- shell scripts guard with `is_non_zero_string`, Ruby scripts skip operations when constants are nil.
+* *[scripts/utilities/keybase.rb]* Updated `username` method error message: "KEYBASE_USERNAME is not set. Set it in .shellrc if you want to use Keybase functionality." Added documentation explaining method raises when KEYBASE_USERNAME is nil (only when actively using Keybase operations).
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts.
+* All ENV.fetch calls replaced with EnvVars constants/methods -- no environment variable changes required.
+* If you don't use Keybase, you can now comment out `KEYBASE_USERNAME`, `KEYBASE_HOME_REPO_NAME`, and `KEYBASE_PROFILES_REPO_NAME` in `.shellrc` -- all scripts will skip Keybase operations gracefully.
+* Restart the Terminal application.
+
+
 ### 3.1.12
 
 #### Unified color standard across all scripts

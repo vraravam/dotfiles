@@ -22,6 +22,7 @@
 $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 
 require 'cli_parser'
+require 'env_vars'
 require 'logging'
 require 'repos'
 
@@ -54,11 +55,10 @@ end
 
 cmd_parts = ARGV.dup
 
-folder = ENV.fetch('FOLDER', Dir.pwd)
-filter = ENV.fetch('FILTER', nil)
-filter = nil if filter&.empty?
-mindepth = ENV.fetch('MINDEPTH', '1').to_i
-maxdepth = ENV.fetch('MAXDEPTH', '4').to_i
+folder = EnvVars.folder || Dir.pwd
+filter = EnvVars.filter
+mindepth = EnvVars.mindepth
+maxdepth = EnvVars.maxdepth
 
 # ---------------------------------------------------------------------------
 # Main
@@ -93,7 +93,7 @@ dir_array.each_with_index do |dir, idx|
   # builtins defined in the user's shell config. The command string is passed to
   # the shell via -c, which is safe here because cmd_parts comes from ARGV (user
   # is running this script interactively and controls the command).
-  shell = ENV.fetch('SHELL', '/bin/zsh')
+  shell = EnvVars::SHELL
   cmd_string = cmd_parts.join(' ')
   result = Dir.chdir(dir) { system(shell, '-c', cmd_string) }
 

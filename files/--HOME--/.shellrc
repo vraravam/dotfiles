@@ -58,7 +58,7 @@ export XDG_STATE_HOME="${XDG_STATE_HOME:-"${HOME}/.local/state"}"
 # The github username where the setup scripts are downloaded from
 export GH_USERNAME='vraravam'
 
-# Keybase username
+# Keybase username (comment out if you don't use Keybase)
 export KEYBASE_USERNAME='avijayr'
 # --------------------------------------------------------------------------------
 
@@ -82,10 +82,10 @@ export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev/configs"
 # Use ${USER} (zsh/PAM builtin) instead of $(whoami) to avoid forking a subprocess on every shell start.
 export PERSONAL_PROFILES_DIR="${HOME}/personal/${USER}/browser-profiles"
 
-# Keybase home repo name
+# Keybase home repo name (comment out if you don't use Keybase)
 export KEYBASE_HOME_REPO_NAME='home'
 
-# Keybase profiles repo name
+# Keybase profiles repo name (comment out if you don't use Keybase)
 export KEYBASE_PROFILES_REPO_NAME='profiles'
 
 # SSH folder

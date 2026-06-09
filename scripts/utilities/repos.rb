@@ -191,7 +191,7 @@ module Repos
 
     if force
       Logging.info 'Regenerating repo aliases cache...'
-    elsif ENV.fetch('DEBUG', nil)
+    elsif EnvVars.debug?
       Logging.debug 'Regenerating repo aliases cache (stale or missing)'
     end
 

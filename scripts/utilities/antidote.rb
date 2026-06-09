@@ -2,6 +2,7 @@
 
 require 'open3'
 
+require_relative 'env_vars'
 require_relative 'logging'
 
 # Shared antidote plugin-manager helpers used by both post-brew-install.rb
@@ -24,17 +25,16 @@ module Antidote
   # available as module methods.
 
   # Updates all installed antidote plugins, unshallows their git repos,
-  # and regenerates the static bundle file. Reads all paths from ENV vars
-  # set by .shellrc:
+  # and regenerates the static bundle file. Reads all paths from EnvVars:
   #   ANTIDOTE_ZSH        path to antidote.zsh
   #   ANTIDOTE_PLUGIN_TXT path to the .zsh_plugins.txt input file
   #   ANTIDOTE_PLUGIN_ZSH path to the generated .zsh_plugins.zsh bundle
   #   ANTIDOTE_HOME       directory where antidote clones plugins
   def update_and_regenerate_bundle
-    antidote_zsh = ENV.fetch('ANTIDOTE_ZSH', '')
-    plugin_txt = ENV.fetch('ANTIDOTE_PLUGIN_TXT', '')
-    plugin_zsh = ENV.fetch('ANTIDOTE_PLUGIN_ZSH', '')
-    antidote_home = ENV.fetch('ANTIDOTE_HOME', '')
+    antidote_zsh = EnvVars::ANTIDOTE_ZSH
+    plugin_txt = EnvVars::ANTIDOTE_PLUGIN_TXT
+    plugin_zsh = EnvVars::ANTIDOTE_PLUGIN_ZSH
+    antidote_home = EnvVars::ANTIDOTE_HOME
 
     unless File.file?(antidote_zsh) && File.size(antidote_zsh) > 0 &&
            File.file?(plugin_txt) && File.size(plugin_txt) > 0
@@ -44,8 +44,8 @@ module Antidote
     end
 
     if File.directory?(antidote_home) && !Dir.empty?(antidote_home)
-      system('zsh', '-f', '-c', 'source "$1"; antidote update', '--', antidote_zsh)
-      Dir.glob(File.join(antidote_home, 'github.com', '*', '*')).each do |bundle_dir|
+      system('zsh', '-f', '-c', 'source "$1"; antidote update', '--', antidote_zsh.to_s)
+      Dir.glob(antidote_home.join('github.com', '*', '*')).each do |bundle_dir|
         next unless File.directory?(bundle_dir)
         next unless File.exist?(File.join(bundle_dir, '.git'))
         system('git', '-C', bundle_dir, 'config', '--local', 'fetch.fsckObjects', 'false',
@@ -58,12 +58,12 @@ module Antidote
     # antidote bundle reads the plugin list from stdin; pass it via stdin_data
     # so no shell redirect (<) is needed -- array form avoids a shell layer.
     bundle_content, _err, status = Open3.capture3(
-      'zsh', '-f', '-c', 'source "$1"; antidote bundle', '--', antidote_zsh,
+      'zsh', '-f', '-c', 'source "$1"; antidote bundle', '--', antidote_zsh.to_s,
       stdin_data: File.read(plugin_txt)
     )
     if status.success?
       File.write(plugin_zsh, bundle_content)
-      Logging.success "antidote bundle regenerated at '#{plugin_zsh.yellow}'"
+      Logging.success "antidote bundle regenerated at '#{plugin_zsh.to_s.yellow}'"
     else
       Logging.record_warning('Failed to regenerate antidote bundle')
     end

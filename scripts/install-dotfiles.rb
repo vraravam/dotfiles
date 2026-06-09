@@ -108,7 +108,6 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
   end
 
   is_custom_git = source_pn.basename.to_s.include?(CUSTOM_GIT_PREFIX)
-  first_install = ENV.fetch('FIRST_INSTALL', '').strip != ''
 
   # Check target status before deciding action
   if target_pn.symlink?
@@ -118,7 +117,7 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
     if force
       info("  Forcefully overwriting existing file '#{target_path}'") if verbose
       FileUtils.rm_rf(target_pn) unless dry_run
-    elsif is_custom_git && !first_install
+    elsif is_custom_git && !EnvVars.first_install?
       # mtime-based resolution: whichever file was modified more recently is authoritative.
       # On a tie, source wins (repo is authoritative on re-runs).
       target_mtime = target_pn.mtime
@@ -163,7 +162,7 @@ end
 def _ensure_ssh_include_line
   # Use Pathname for correct path joining -- plain String + 'name' is string concatenation,
   # not path joining, which would produce a broken path if SSH_CONFIGS_DIR has no trailing slash.
-  ssh_folder = Pathname.new(ENV.fetch('SSH_CONFIGS_DIR')).expand_path
+  ssh_folder = EnvVars::SSH_CONFIGS_DIR
   global_config_link = ssh_folder.join('global_config')
 
   unless global_config_link.exist? && global_config_link.symlink?
