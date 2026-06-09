@@ -2,13 +2,13 @@
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
-# Re-source guard is inside .shellrc itself — safe to call unconditionally.
+# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
 source "${HOME}/.shellrc"
 
 # Stages and commits all changed files in the specified repo without prompting.
 # Intended for repos that track auto-generated state (e.g. preference exports) where
 # the caller does not need to review individual changes before committing.
-# Internal helper — not intended to be called directly.
+# Internal helper -- not intended to be called directly.
 _update_repo() {
   if ! is_git_repo "${1}"; then
     warn "Skipping updating the repo since '$(yellow "${1}")' doesn't exist or is not a git repo"

@@ -12,7 +12,7 @@ require_relative 'logging'
 #
 # The split between .shellrc and .aliases exists for bootstrap reasons: shell
 # needs suspend_cron before the dotfiles repo is cloned. Ruby scripts never
-# have that constraint — the full interface lives here.
+# have that constraint -- the full interface lives here.
 module Cron
   extend self
 
@@ -33,11 +33,11 @@ module Cron
   # Mirrors restore_cron in .shellrc.
   def restore_cron(cron_file)
     unless File.file?(cron_file)
-      Logging.warn "No '#{cron_file}' found; returning without any processing"
+      Logging.warn "No '#{cron_file.cyan}' found; returning without any processing"
       return
     end
     FileUtils.mkdir_p(File.dirname(cron_file))
-    raise "Failed to restore crontab from '#{cron_file}'" unless system('crontab', cron_file)
+    raise "Failed to restore crontab from '#{cron_file.cyan}'" unless system('crontab', cron_file)
   end
 
   # Backs up the current crontab to the path in ENV['_DOTFILES_CRON_BACKUP_FILE']
@@ -53,11 +53,11 @@ module Cron
     crontab_output, _err, cron_status = Open3.capture3('crontab', '-l')
     if cron_status.success? && !crontab_output.empty?
       File.write(backup_file, crontab_output)
-      Logging.debug "Backed up existing crontab to '#{backup_file}'"
+      Logging.debug "Backed up existing crontab to '#{backup_file.cyan}'"
     elsif File.file?(src_file)
       # No active crontab (e.g. FIRST_INSTALL) but a known-good crontab.txt exists.
       FileUtils.cp(src_file, backup_file)
-      Logging.debug "Seeded cron backup from '#{src_file}'"
+      Logging.debug "Seeded cron backup from '#{src_file.cyan}'"
     else
       File.write(backup_file, '')
       Logging.debug 'No existing crontab or crontab.txt; created empty backup'
@@ -93,7 +93,7 @@ module Cron
     shell = ENV.fetch('SHELL', '/bin/zsh')
     username = ENV.fetch('USERNAME', ENV.fetch('USER', ''))
 
-    # PATH line must have no inline comment — crontab treats '#' as part of the
+    # PATH line must have no inline comment -- crontab treats '#' as part of the
     # value, corrupting the last directory entry and causing 'command not found'.
     path = [
       EnvVars::HOMEBREW_PREFIX.join('bin').to_s,
@@ -125,7 +125,7 @@ module Cron
       f.puts "PATH=#{path}"
       f.puts
       f.puts "# Note: Need to use the full path to scripts inside the sub-shell since that's not a logged-in shell"
-      # Wrap with zsh -c so tee is inside chronic's scope — chronic must see both
+      # Wrap with zsh -c so tee is inside chronic's scope -- chronic must see both
       # the shell script and tee together to suppress output on success.
       f.puts "0   *   *   *   *   chronic zsh -c '#{cron_cmd} 2>&1 | tee -a #{log_file}'"
     end
@@ -139,7 +139,7 @@ module Cron
   def recron
     Logging.debug 'Setting up crontab'
     unless File.file?(CRONTAB_FILE)
-      Logging.debug "'#{CRONTAB_FILE}' not found — seeding from template"
+      Logging.debug "'#{CRONTAB_FILE.cyan}' not found -- seeding from template"
       create_crontab(CRONTAB_FILE)
     end
     restore_cron(CRONTAB_FILE)
@@ -175,7 +175,7 @@ module Cron
   # The path to the temporary crontab backup file. Written by suspend_cron,
   # read by resume_cron, and deleted by recron / resume_cron on success.
   # Mirrors _DOTFILES_CRON_BACKUP_FILE in .shellrc, which sets this var
-  # internally — Ruby scripts may not have sourced .shellrc, so fall back to
+  # internally -- Ruby scripts may not have sourced .shellrc, so fall back to
   # the same default path the shell function uses.
   def cron_backup_file
     ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do

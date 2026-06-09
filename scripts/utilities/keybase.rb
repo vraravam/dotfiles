@@ -32,7 +32,7 @@ module Keybase
     # keybase status --json returns a JSON blob; parse for logged_in:true.
     status_json, = Open3.capture3('keybase', 'status', '--json')
     if status_json.include?('"logged_in":true')
-      Logging.debug "Skipping keybase login — '#{username}' is already logged in"
+      Logging.debug "Skipping keybase login -- '#{username.purple}' is already logged in"
       return true
     end
 
@@ -76,7 +76,7 @@ module Keybase
 
   def username
     ENV.fetch('KEYBASE_USERNAME') do
-      raise 'ENV[KEYBASE_USERNAME] is not set — was .shellrc sourced?'
+      raise 'ENV[KEYBASE_USERNAME] is not set -- was .shellrc sourced?'
     end
   end
 end

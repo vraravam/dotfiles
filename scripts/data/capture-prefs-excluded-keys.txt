@@ -10,13 +10,13 @@
 #   - In addition to name patterns, any top-level key whose plist value type is
 #     <date> is always stripped regardless of key name (type-based rule in the
 #     Ruby pass). Date-valued keys are inherently ephemeral OS/app timestamps.
-#   - | is used as the delimiter — it never appears in bundle IDs (reverse-DNS)
+#   - | is used as the delimiter -- it never appears in bundle IDs (reverse-DNS)
 #     or plist key names, and is safe to edit in any text editor.
 #   - The special domain * applies patterns to every domain (global patterns).
 #
 # These keys are stripped from the exported plist before git staging (export)
 # and from a temp copy before writing to the system (import). The script silently
-# skips patterns that match no keys — stale entries are harmless but confusing;
+# skips patterns that match no keys -- stale entries are harmless but confusing;
 # remove them when the key no longer exists in the domain.
 #
 # Denial criteria (same as capture-prefs-denied-list.txt):
@@ -32,34 +32,34 @@
 # See copilot-instructions.md § "Periodic recheck" for the full protocol.
 
 # ---------------------------------------------------------------------------
-# * (global — applied to every domain)
+# * (global -- applied to every domain)
 # ---------------------------------------------------------------------------
 # NSWindow Frame *: window frame coordinates keyed to monitor configuration
 # (criterion 4). The suffix encodes the window role and may vary across apps
-# but the pattern is universal — all such keys are display-geometry-specific.
+# but the pattern is universal -- all such keys are display-geometry-specific.
 # *|NSWindow Frame *
 # NSSplitView Subview Frames *: split-pane geometry keyed to monitor config
 # (criterion 4). Applies globally; per-domain entries (e.g. io.github.keycastr)
 # are superseded by this global pattern but kept for documentation.
 # *|NSSplitView Subview Frames *
-# *Date / *date: keys ending with "Date" or "date" — covers last-opened,
+# *Date / *date: keys ending with "Date" or "date" -- covers last-opened,
 # install, check-in, review-prompt, analytics, and similar per-device
 # timestamps (criterion 3). Supersedes individual date-key entries below.
 # But, we cannot use them (as a pattern) because they could cause app startup failures
 # *|*Date
 # *|*date
 # *Timestamp / *TimeStamp / *timestamp: keys ending with "Timestamp" or
-# "TimeStamp" — covers event/flush timestamps and sync watermarks (criterion 3).
+# "TimeStamp" -- covers event/flush timestamps and sync watermarks (criterion 3).
 # But, we cannot use them (as a pattern) because they could cause app startup failures
 # *|*Timestamp
 # *|*TimeStamp
 # *|*timestamp
-# *Time / *time: keys ending with "Time" or "time" — covers last-check,
+# *Time / *time: keys ending with "Time" or "time" -- covers last-check,
 # last-update, expiration, and similar per-device time records (criterion 3).
 # But, we cannot use them (as a pattern) because they could cause app startup failures
 # *|*Time
 # *|*time
-# *Identifier / *identifier: keys ending with "Identifier" — covers device UUIDs,
+# *Identifier / *identifier: keys ending with "Identifier" -- covers device UUIDs,
 # vendor identifiers, per-machine installation identifiers, CloudKit client
 # identifiers, and per-session tab/state identifiers (criteria 1, 2, 3).
 # But, we cannot use them (as a pattern) because they will also remove app identifier keys
@@ -92,19 +92,19 @@
 # ---------------------------------------------------------------------------
 # com.abhishek.Clocker
 # ---------------------------------------------------------------------------
-# SelectedCalendars: array of iCloud Calendar UUIDs — account-bound (criterion 2)
+# SelectedCalendars: array of iCloud Calendar UUIDs -- account-bound (criterion 2)
 # Not present on this machine; left here for documentation.
 # com.abhishek.Clocker|SelectedCalendars
 # defaultPreferences: array of binary NSKeyedArchiver blobs encoding per-timezone
-# config with embedded per-device timestamps — not portably decodable (criterion 3)
+# config with embedded per-device timestamps -- not portably decodable (criterion 3)
 # com.abhishek.Clocker|defaultPreferences
-# Timestamps and version stamps — ephemeral state overwritten on first launch.
+# Timestamps and version stamps -- ephemeral state overwritten on first launch.
 # StatusItemOcclusionLastAlertDate is superseded by the global *Date/*date
 # patterns above, but kept here for documentation.
 # com.abhishek.Clocker|StatusItemOcclusionLastAlertDate
 # analyticsLastSignalDate: per-device analytics ping timestamp (criterion 3).
 com.abhishek.Clocker|com.abhishek.analyticsLastSignalDate
-# iVersionLastChecked: update-check timestamp — date value not matched by the
+# iVersionLastChecked: update-check timestamp -- date value not matched by the
 # global *Date/*date patterns (criterion 3).
 com.abhishek.Clocker|iVersionLastChecked
 # iVersionLastVersionChecked, last-prompt, last-version: not currently present.
@@ -117,19 +117,19 @@ com.abhishek.Clocker|iVersionLastChecked
 # ---------------------------------------------------------------------------
 # com.apple.appstored
 # ---------------------------------------------------------------------------
-# LastAutoUpdateCompletion: timestamp of the last App Store auto-update run —
+# LastAutoUpdateCompletion: timestamp of the last App Store auto-update run --
 # ephemeral per-device state not matched by the global *Date/*date patterns
 # (criterion 3).
 com.apple.appstored|LastAutoUpdateCompletion
-# LastUpdatesCheck: timestamp of the last App Store update check — same criterion.
+# LastUpdatesCheck: timestamp of the last App Store update check -- same criterion.
 com.apple.appstored|LastUpdatesCheck
-# LastUpdatesPerform: timestamp of the last App Store update execution — same criterion.
+# LastUpdatesPerform: timestamp of the last App Store update execution -- same criterion.
 com.apple.appstored|LastUpdatesPerform
 
 # ---------------------------------------------------------------------------
 # com.apple.controlcenter
 # ---------------------------------------------------------------------------
-# LastPeriodicAnalyticsPostDate: timestamp of the last analytics ping —
+# LastPeriodicAnalyticsPostDate: timestamp of the last analytics ping --
 # ephemeral per-device state not matched by the global *Date/*date patterns
 # (criterion 3).
 com.apple.controlcenter|LastPeriodicAnalyticsPostDate
@@ -138,7 +138,7 @@ com.apple.controlcenter|LastPeriodicAnalyticsPostDate
 # com.apple.sharedfilelistd
 # ---------------------------------------------------------------------------
 # fixup* keys are one-time setup-wizard completion sentinels written by
-# sharedfilelistd on first boot — machine-specific (criterion 5). Importing
+# sharedfilelistd on first boot -- machine-specific (criterion 5). Importing
 # them onto a different machine causes the daemon to skip its first-boot setup.
 # com.apple.sharedfilelistd|fixupDesktopAndDocumentsCompleted
 # com.apple.sharedfilelistd|fixupFileProviderVolumeGroupsV2Completed
@@ -158,123 +158,123 @@ com.apple.controlcenter|LastPeriodicAnalyticsPostDate
 # com.sproutcube.Shortcat|telemetryIdentifier
 # NSStatusItem Preferred Position: menu bar pixel coordinate (criterion 4)
 # com.sproutcube.Shortcat|NSStatusItem Preferred Position *
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.sproutcube.Shortcat|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # io.github.keycastr
 # ---------------------------------------------------------------------------
 # default.textColor: binary NSKeyedArchiver blob encoding an NSColor with an
-# embedded ICC color profile — profile data is display-specific and cannot be
+# embedded ICC color profile -- profile data is display-specific and cannot be
 # reconstructed portably (criterion 4)
 # io.github.keycastr|default.textColor
 # NSStatusItem Preferred Position: menu bar pixel coordinate (criterion 4)
 # io.github.keycastr|NSStatusItem Preferred Position *
-# NSSplitView Subview Frames *: color panel split geometry — superseded by
+# NSSplitView Subview Frames *: color panel split geometry -- superseded by
 # global pattern above, kept for documentation (criterion 4)
 # io.github.keycastr|NSSplitView Subview Frames *
 # NSToolbar Configuration *: toolbar layout state (criterion 4)
 # io.github.keycastr|NSToolbar Configuration *
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 io.github.keycastr|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # asc.onlyoffice.ONLYOFFICE
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 asc.onlyoffice.ONLYOFFICE|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # ch.protonvpn.mac
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 ch.protonvpn.mac|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.0804Team.KeyClu
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.0804Team.KeyClu|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.brave.Browser
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.brave.Browser|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.brave.Browser.beta
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.brave.Browser.beta|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.brave.Browser.nightly
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.brave.Browser.nightly|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.cloudflare.1dot1dot1dot1.macos
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.cloudflare.1dot1dot1dot1.macos|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.ethanbills.DockDoor
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.ethanbills.DockDoor|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.googlecode.iterm2
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.googlecode.iterm2|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.lowtechguys.ZoomHider
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.lowtechguys.ZoomHider|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.macpaw.site.theunarchiver
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.macpaw.site.theunarchiver|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.mitchellh.ghostty
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.mitchellh.ghostty|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.ospfranco.sol
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.ospfranco.sol|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.stonerl.Thaw
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 com.stonerl.Thaw|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # theboringteam.boringnotch
 # ---------------------------------------------------------------------------
-# SULastCheckTime: Sparkle update-check timestamp — per-device ephemeral state (criterion 3)
+# SULastCheckTime: Sparkle update-check timestamp -- per-device ephemeral state (criterion 3)
 theboringteam.boringnotch|SULastCheckTime
 
 # ---------------------------------------------------------------------------
 # com.apple.knowledge-agent
 # ---------------------------------------------------------------------------
 # _DKThrottledActivityLast_* keys are per-device sync watermarks recording the
-# last time each Knowledge daemon activity ran — ephemeral CloudKit sync state
+# last time each Knowledge daemon activity ran -- ephemeral CloudKit sync state
 # that cannot be portably transplanted to another device (criterion 3).
 # Keys contain ':' characters; the Ruby/REXML path in _strip_excluded_keys
-# handles these correctly via File.fnmatch — PlistBuddy misinterprets ':' as a
+# handles these correctly via File.fnmatch -- PlistBuddy misinterprets ':' as a
 # path separator and must not be used directly on these keys.
 com.apple.knowledge-agent|_DKThrottledActivityLast_*

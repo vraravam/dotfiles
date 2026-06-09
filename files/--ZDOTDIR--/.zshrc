@@ -21,11 +21,11 @@
 # execute 'ZSH_PROFILE=true zsh -i -c exit' and run 'zprof' to get the details
 [[ -n "${ZSH_PROFILE:-}" ]] && zmodload zsh/zprof
 
-# Re-source guard is inside .shellrc itself — safe to call unconditionally.
+# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
 source "${HOME}/.shellrc"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Antidote — static plugin bundle
+# Antidote -- static plugin bundle
 #
 # antidote is a zsh plugin manager distributed as a zsh script (not a binary).
 # It is sourced from the brew-installed path to make the 'antidote' function
@@ -45,16 +45,16 @@ unset ZSH ZSH_CUSTOM
 load_file_if_exists "${ANTIDOTE_ZSH}"
 
 # Plugin option variables must be set before the bundle is sourced.
-# Pre-set iterm2_hostname to zsh's native $HOST (set from uname -n at shell init — no subprocess).
+# Pre-set iterm2_hostname to zsh's native $HOST (set from uname -n at shell init -- no subprocess).
 # The iterm2 shell integration checks [ -z "${iterm2_hostname:-}" ] and forks `hostname -f` if unset.
 # $HOST equals `hostname -f` on macOS and avoids the ~4ms subprocess cost on every shell start.
 iterm2_hostname="${HOST}"
 
-# zsh-autosuggestions — all options must be set before the antidote bundle is
+# zsh-autosuggestions -- all options must be set before the antidote bundle is
 # sourced; the plugin reads them at load time.
 #
 # USE_ASYNC: fetch suggestions in a background zpty process so ZLE never blocks
-# while waiting for a history/completion lookup — directly reduces first-keystroke
+# while waiting for a history/completion lookup -- directly reduces first-keystroke
 # and mid-typing latency.
 #
 # MANUAL_REBIND: skip the full ZLE widget rebind that autosuggestions performs on
@@ -66,11 +66,11 @@ iterm2_hostname="${HOST}"
 # suggestion is rarely useful anyway.
 #
 # HISTORY_IGNORE: skip history entries longer than 100 chars. Reduces regex
-# matching cost on large history files — long entries (URLs, one-liners) are
+# matching cost on large history files -- long entries (URLs, one-liners) are
 # almost never the intended suggestion target.
 #
 # STRATEGY=(history): use only the history strategy. The 'completion' strategy
-# spawns a zpty (pseudoterminal) on every suggestion request — ~10-30ms overhead
+# spawns a zpty (pseudoterminal) on every suggestion request -- ~10-30ms overhead
 # per lookup. History alone is faster and covers the vast majority of useful
 # suggestions; completion suggestions are better served by pressing Tab explicitly.
 export ZSH_AUTOSUGGEST_USE_ASYNC=1
@@ -86,7 +86,7 @@ zstyle ':omz:plugins:iterm2' shell-integration yes
 export ENABLE_CORRECTION='true'
 
 # Ensure XDG_CACHE_HOME exists before any cache writes below.  When delete_caches removes ~/.cache,
-# the subsequent cache-write redirections (>|) silently fail and leave caches empty — breaking fpath
+# the subsequent cache-write redirections (>|) silently fail and leave caches empty -- breaking fpath
 # updates and other lazy-loaded config that only runs through the cache file.
 ensure_dir_exists "${XDG_CACHE_HOME}"
 
@@ -97,7 +97,7 @@ ensure_dir_exists "${XDG_CACHE_HOME}"
   local brew_bin="${HOMEBREW_PREFIX}/bin/brew"
   local brew_shellenv_cache="${XDG_CACHE_HOME}/brew-shellenv-cache.zsh"
   # Use the brew binary's modification time as cache key (no need to run brew at all for the check)
-  if ! is_file "${brew_shellenv_cache}" || [[ "${brew_bin}" -nt "${brew_shellenv_cache}" ]]; then
+  if is_file_older_than "${brew_shellenv_cache}" "${brew_bin}"; then
     # Skip cache generation if brew is not yet installed (e.g. vanilla OS first-install)
     if ! is_executable "${brew_bin}"; then
       load_file_if_exists "${brew_shellenv_cache}"
@@ -118,7 +118,7 @@ ensure_dir_exists "${XDG_CACHE_HOME}"
       echo "export HOMEBREW_REPOSITORY='${brew_repo}';"
       echo "export INFOPATH='${brew_infopath}';"
       echo "export MANPATH='${brew_manpath}';"
-      # fpath assignment is sufficient — zsh keeps fpath and FPATH in sync automatically.
+      # fpath assignment is sufficient -- zsh keeps fpath and FPATH in sync automatically.
       # Exporting FPATH leaks it into child processes and launchd user-session environment;
       # typeset +x at the bottom of this file strips the export flag after all sources.
       echo "fpath=('${brew_prefix}/share/zsh/site-functions' \"\${fpath[@]}\");"
@@ -132,7 +132,7 @@ load_file_if_exists "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extr
 # compinit is deferred to after the antidote bundle and .aliases load (see
 # _deferred_compinit below). Deferring achieves two things:
 #   1. Saves ~10ms from time-to-first-prompt (compinit runs after the first
-#      ZLE idle event, before any keypress — invisible to the user).
+#      ZLE idle event, before any keypress -- invisible to the user).
 #   2. Fixes a fpath ordering bug: the antidote bundle adds zsh-completions/src
 #      and plugin fpath entries AFTER this point. Running compinit here means
 #      those entries are absent from both the staleness check and the dump,
@@ -149,7 +149,7 @@ compdef() { _compdef_queue+=("$*"); }
 # git.plugin.zsh line 3 runs: git_version="${${(As: :)$(git version 2>/dev/null)}[3]}"
 # and uses it for 4 conditional alias decisions (thresholds 2.8, 2.13, 2.30).
 # Since git is always well above those thresholds on this machine, we cache the version
-# string keyed on the git binary mtime — the same mtime-invalidation pattern used for
+# string keyed on the git binary mtime -- the same mtime-invalidation pattern used for
 # brew shellenv, mise activate, and starship init. Saves ~14ms on every shell startup.
 # (($+commands[git])) is a single O(1) hash probe; command_exists does 4.
 # .zshrc is zsh-only so the zsh arithmetic syntax is always safe here.
@@ -157,7 +157,7 @@ if (($+commands[git])); then
   () {
     local git_bin="${commands[git]}"
     local git_version_cache="${XDG_CACHE_HOME}/git-version-cache.zsh"
-    if ! is_file "${git_version_cache}" || [[ "${git_bin}" -nt "${git_version_cache}" ]]; then
+    if is_file_older_than "${git_version_cache}" "${git_bin}"; then
       local ver="${${(As: :)$(git version 2>/dev/null)}[3]}"
       echo "git_version=\"${ver}\"" >|"${git_version_cache}" 2>/dev/null
     fi
@@ -165,12 +165,12 @@ if (($+commands[git])); then
   }
 fi
 
-# Warn if plugins.txt is newer than the generated bundle — a reminder to run
+# Warn if plugins.txt is newer than the generated bundle -- a reminder to run
 # update_antidote_and_regenerate_plugin_bundle. Uses zsh's -nt (newer-than)
 # file test: pure built-in, no subprocess fork. Only fires when the user has
 # edited plugins.txt and not yet regenerated; silent on every normal startup.
-[[ "${ANTIDOTE_PLUGIN_TXT}" -nt "${ANTIDOTE_PLUGIN_ZSH}" ]] &&
-  warn "antidote: '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is newer than the bundle — run '$(cyan 'update_antidote_and_regenerate_plugin_bundle')' manually to regenerate it."
+is_file_older_than "${ANTIDOTE_PLUGIN_ZSH}" "${ANTIDOTE_PLUGIN_TXT}" &&
+  warn "antidote: '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is newer than the bundle -- run '$(cyan 'update_antidote_and_regenerate_plugin_bundle')' manually to regenerate it."
 
 # Source the pre-generated antidote static bundle.
 # On a vanilla OS (before brew installs antidote) this file is present because
@@ -187,10 +187,10 @@ fi
   load_file_if_exists "${ANTIDOTE_PLUGIN_ZSH}"
 }
 
-# Activate mise — the OMZ mise plugin referenced $ZSH_CACHE_DIR (undefined without OMZ)
+# Activate mise -- the OMZ mise plugin referenced $ZSH_CACHE_DIR (undefined without OMZ)
 # so it has been removed from $ANTIDOTE_PLUGIN_TXT and replaced with a direct activation here.
 #
-# Performance optimisation — cache `mise activate zsh` output to avoid forking the mise
+# Performance optimisation -- cache `mise activate zsh` output to avoid forking the mise
 # binary on every shell start (~5-10ms saving). Same pattern as the starship init cache
 # below. The cache is keyed on the mise binary mtime and regenerated only when mise itself
 # is updated (e.g. after `brew upgrade`).
@@ -198,11 +198,11 @@ if (($+commands[mise])); then
   () {
     local mise_bin="${commands[mise]}"
     local mise_activate_cache="${XDG_CACHE_HOME}/mise-activate-cache.zsh"
-    if ! is_file "${mise_activate_cache}" || [[ "${mise_bin}" -nt "${mise_activate_cache}" ]]; then
+    if is_file_older_than "${mise_activate_cache}" "${mise_bin}"; then
       # Generate the activation cache, but replace the bare '_mise_hook' call at the end
       # (which forks the mise binary once at startup to seed the environment) with a
-      # deferred version via zsh-defer. zsh-defer fires after the first idle ZLE event —
-      # before any command can be typed — so tools are active before the first keypress
+      # deferred version via zsh-defer. zsh-defer fires after the first idle ZLE event --
+      # before any command can be typed -- so tools are active before the first keypress
       # while saving ~25ms from time-to-first-prompt. Falls back to a synchronous call
       # when zsh-defer is not available (e.g. a vanilla OS before antidote is installed).
       # grep -v filters only the bare '_mise_hook' line; the function definition
@@ -218,24 +218,24 @@ fi
 
 # Initialize starship prompt (must be after plugins so it wins the PROMPT setup).
 #
-# Performance optimisation — cache `starship init zsh` output to avoid forking a
+# Performance optimisation -- cache `starship init zsh` output to avoid forking a
 # subprocess on every shell start (~10-15ms saving).  The cache is keyed on the
 # starship binary mtime and regenerated only when starship itself is updated
 # (e.g. after `brew upgrade`).
 #
 # NOTE: Deferring the source of the cache (via zsh-defer or a precmd hook) was
 # attempted but left PROMPT as a literal unexpanded string after the first
-# command. Starship's init output registers precmd hooks and sets promptsubst —
+# command. Starship's init output registers precmd hooks and sets promptsubst --
 # both require file-scope application to interact correctly with zsh's startup
 # sequence. The cache is therefore sourced directly at the top level; the ~5ms
 # cost of sourcing the pre-parsed .zwc bytecode is acceptable.
 if (($+commands[starship])); then
   () {
-    # $commands[] is an O(1) zsh hash lookup — no subprocess fork needed.
+    # $commands[] is an O(1) zsh hash lookup - no subprocess fork needed.
     local starship_bin="${commands[starship]}"
     local starship_init_cache="${XDG_CACHE_HOME}/starship-init-cache.zsh"
     # Regenerate the cache only when the starship binary is newer than the cache file.
-    if ! is_file "${starship_init_cache}" || [[ "${starship_bin}" -nt "${starship_init_cache}" ]]; then
+    if is_file_older_than "${starship_init_cache}" "${starship_bin}"; then
       # Strip the eager PROMPT2="$(...)" line that starship emits (double-quoted, forks
       # the binary at source time, ~9-15ms). Replace it with a lazy single-quoted form
       # so the fork only happens when the continuation prompt is actually displayed.
@@ -259,7 +259,7 @@ fi
 unset GIT_EDITOR
 # SSH sessions fall back to vi; local sessions prefer GUI editors.
 # EDITOR always delegates to wait-editor, which re-execs $GIT_EDITOR via POSIX
-# word-splitting — so '--wait' flags are passed correctly to GUI editors, and
+# word-splitting -- so '--wait' flags are passed correctly to GUI editors, and
 # vi (which blocks naturally) works without any special casing.
 if is_non_zero_string "${SSH_CONNECTION:-}"; then
   preferred_editors=('vi')
@@ -267,10 +267,10 @@ else
   preferred_editors=('zed --wait' 'code --wait' 'vi')
 fi
 for editor in "${preferred_editors[@]}"; do
-  # ${editor%% *} strips everything after the first space — pure zsh, no fork.
+  # ${editor%% *} strips everything after the first space -- pure zsh, no fork.
   # (($+commands[...])) is a single O(1) hash probe; command_exists does 4.
   # Safe here: .zshrc is zsh-only; all three candidates (zed, code, vi) are
-  # external binaries — $+commands is the right table to probe.
+  # external binaries -- $+commands is the right table to probe.
   if (($+commands[${editor%% *}])); then
     export GIT_EDITOR="${editor}"
     break
@@ -284,7 +284,7 @@ if is_zero_string "${GIT_EDITOR:-}"; then
   export GIT_EDITOR='vi'
 fi
 # EDITOR is always the wait-editor wrapper regardless of which editor was
-# selected — set once here rather than repeating it in every branch above.
+# selected -- set once here rather than repeating it in every branch above.
 export EDITOR='wait-editor'
 
 # For a full list of active aliases, run `alias`.
@@ -297,7 +297,7 @@ append_to_path_if_dir_exists '/usr/local/bin'
 append_to_path_if_dir_exists "${HOME}/.rd/bin"
 append_to_path_if_dir_exists "${HOME}/.cargo/bin"
 
-# Defer .aliases (963 lines of function/alias definitions — no ZLE hooks or setopts)
+# Defer .aliases (963 lines of function/alias definitions -- no ZLE hooks or setopts)
 # to after the first idle ZLE event. zsh-defer fires before any keypress, so all
 # aliases are available before the user can type. The same reasoning applies here
 # as for the deferred git plugin (431 lines), which was already the largest single
@@ -316,7 +316,7 @@ fi
 # check sees the full fpath (including zsh-completions/src and plugin dirs added
 # by the antidote bundle above). Removes the compdef stub, runs real compinit,
 # then replays any compdef calls captured by the stub during plugin loading.
-# Named function required (not anonymous ()) — zsh-defer needs a function name.
+# Named function required (not anonymous ()) -- zsh-defer needs a function name.
 # Unfunctioned at the end to avoid polluting the global function table.
 _deferred_compinit() {
   # Remove stub; compinit will define the real compdef.
@@ -326,7 +326,7 @@ _deferred_compinit() {
   if ! is_file "${ZSH_COMPDUMP}"; then
     stale=1
   else
-    # fpath now includes bundle entries — staleness check is accurate.
+    # fpath now includes bundle entries -- staleness check is accurate.
     for dir in "${fpath[@]}"; do
       if [[ -d "${dir}" && "${dir}" -nt "${ZSH_COMPDUMP}" ]]; then
         stale=1
@@ -350,7 +350,7 @@ _deferred_compinit() {
   # compinit calls 'zle -C complete-word ...' (and similar) which replaces the
   # ZLE widget wrappers that autosuggestions installed during its first precmd.
   # With ZSH_AUTOSUGGEST_MANUAL_REBIND=1, autosuggestions never re-wraps on
-  # subsequent precmds — calling bind_widgets here restores the wrapping so
+  # subsequent precmds -- calling bind_widgets here restores the wrapping so
   # that the suggestion region_highlight runs after fast-syntax-highlighting
   # and ghost text appears in the correct dim colour, not FSH's syntax colour.
   if (($+functions[_zsh_autosuggest_bind_widgets])); then
@@ -378,7 +378,7 @@ fi
 setopt append_history   # append history list to the history file
 # Set HISTSIZE and SAVEHIST symmetrically. Without explicit values zsh uses its
 # built-in defaults (HISTSIZE=50000, SAVEHIST=10000). The asymmetry silently
-# truncates the in-memory list when replaying a large history file — the extra
+# truncates the in-memory list when replaying a large history file -- the extra
 # entries are read from disk then immediately discarded. Matching values prevent
 # this; 50000 covers several years of typical usage without noticeable memory cost.
 export HISTSIZE=50000
@@ -398,7 +398,7 @@ setopt hist_reduce_blanks     # remove unnecessary blanks
 setopt hist_save_no_dups      # do not save duplicated command
 # inc_append_history is intentionally omitted: share_history (below) implies it.
 # Setting both is redundant and the zsh manual states share_history subsumes
-# inc_append_history — keep only the stronger option.
+# inc_append_history -- keep only the stronger option.
 setopt list_ambiguous
 setopt list_types             # if the file being listed is a directory, show a trailing slash
 setopt local_options
@@ -412,7 +412,7 @@ setopt pushd_ignore_dups # don’t push multiple copies of the same directory
 setopt pushd_silent      # do not print the directory stack after pushd or popd
 setopt share_history     # share history between different instances of the shell
 
-# Note: 'autoload -Uz colors && colors' was removed — none of the active plugins
+# Note: 'autoload -Uz colors && colors' was removed -- none of the active plugins
 # use $fg/$bg/$color from the colors function. Our own color vars ($BLUE, $RED, etc.)
 # are defined as $'\e[...' literals in .shellrc and don't depend on colors.
 
@@ -420,7 +420,7 @@ setopt share_history     # share history between different instances of the shel
 # zstyle ':completion:*:*:kill:*:processes' list-colors "=(#b) #([0-9]#)*=$color[cyan]=$color[red]"
 # zstyle ':completion:*' list-colors ${(s.:.)LS_COLORS}
 # zstyle ':completion:*' select-prompt '%SScrolling active: current selection at %p%s'
-# case insensitive path-completion — 2-tier matcher list:
+# case insensitive path-completion -- 2-tier matcher list:
 #   tier 1: case-insensitive exact match
 #   tier 2: case-insensitive with left/right anchored prefix matching
 # The original 4-tier list had tiers 2-4 all identical (l:|=* r:|=*), adding
@@ -445,8 +445,8 @@ zstyle ':completion:*:(rm|kill|diff):*' ignore-line yes
 # zstyle ':completion:*:(ssh|scp|sftp):*' hosts $knownhosts
 #
 # compctl (old pre-compsys completion system) calls were removed:
-#   compctl -k hosts ftp lftp ncftp ssh ...  — $hosts array was never defined (see above);
-#   compctl -K man_glob ... -- man           — custom man_glob function
+#   compctl -k hosts ftp lftp ncftp ssh ...  -- $hosts array was never defined (see above);
+#   compctl -K man_glob ... -- man           -- custom man_glob function
 # These conflicted silently with the compsys (_ssh, _man) completers loaded via
 # zsh-completions. compsys takes full ownership of all completions.
 # fuzzy matching
@@ -454,7 +454,7 @@ zstyle ':completion:*' completer _complete _match _approximate
 zstyle ':completion:*:match:*' original only
 zstyle ':completion:*:approximate:*' max-errors 1 numeric
 # Short-circuit the full matcher-list evaluation when Tab is pressed on a string
-# that exactly matches one candidate — avoids walking all tiers unnecessarily.
+# that exactly matches one candidate -- avoids walking all tiers unnecessarily.
 zstyle ':completion:*' accept-exact '(N)'
 # completion cache
 zstyle ':completion:*' use-cache on
@@ -468,15 +468,15 @@ zstyle ':completion:*:*:docker-*:*' option-stacking yes
 autoload -Uz _git
 
 # Option+arrow word navigation for Terminal.app. Terminal.app's "Use Option as Meta key" covers
-# Option+B/F but arrow keys still send \033[1;9D/C — map them explicitly to ZLE word motion.
+# Option+B/F but arrow keys still send \033[1;9D/C -- map them explicitly to ZLE word motion.
 # In iTerm2 the Natural Text Editing preset remaps these at the terminal level to \033b/\033f,
-# so zsh never receives \033[1;9D/C from iTerm2 — these bindings are safely inert there.
+# so zsh never receives \033[1;9D/C from iTerm2 -- these bindings are safely inert there.
 bindkey '\033[1;9D' backward-word
 bindkey '\033[1;9C' forward-word
 
 # predict-on (Ctrl+Xp) and incremental-complete-word (Ctrl+Xi) are disabled.
 # predict-on: aggressively fills the command line from history on every keystroke
-# when toggled on — overlaps with zsh-autosuggestions which already does this
+# when toggled on -- overlaps with zsh-autosuggestions which already does this
 # non-destructively via ghost text with no toggle required.
 # incremental-complete-word (Ctrl+Xi): narrows completions in real time as you type;
 # superseded by fzf-based tab completion. Neither adds startup overhead, but
@@ -492,10 +492,10 @@ bindkey '\033[1;9C' forward-word
 if (($+commands[brew])); then
   # Cache Homebrew bin/sbin and keg-only PATH/LDFLAGS/CPPFLAGS/PKG_CONFIG_PATH/MANPATH
   # to avoid ~42 stat syscalls per interactive startup. Keyed on the mtime of
-  # ${HOMEBREW_PREFIX}/opt/ — which changes on every brew install/remove — so new
+  # ${HOMEBREW_PREFIX}/opt/ -- which changes on every brew install/remove -- so new
   # keg-only installs are automatically reflected on the next shell start.
   #
-  # All entries are built directly from the filesystem — never derived from the current
+  # All entries are built directly from the filesystem -- never derived from the current
   # environment. This makes regeneration idempotent: running inside a shell that already
   # has keg-only vars set (e.g. OpenCode inheriting the user's PATH) produces the same
   # cache as running in a clean shell. The snapshot-and-delta approach this replaced was
@@ -510,8 +510,9 @@ if (($+commands[brew])); then
     local keg_cache="${XDG_CACHE_HOME}/keg-only-paths-cache.zsh"
     local opt_dir="${HOMEBREW_PREFIX}/opt"
 
-    # Cache hit: source pre-computed static exports — zero stat calls.
-    if is_file "${keg_cache}" && [[ "${keg_cache}" -nt "${opt_dir}" ]]; then
+    # Cache hit: source pre-computed static exports -- zero stat calls.
+    # Inverted logic: is_file_older_than returns true when regeneration needed, so negate it.
+    if ! is_file_older_than "${keg_cache}" "${opt_dir}"; then
       load_file_if_exists "${keg_cache}"
       return
     fi
@@ -521,7 +522,7 @@ if (($+commands[brew])); then
     # package's entries appear first (highest PATH priority). Within each package,
     # gnubin is prepended last so it wins over libexec/bin which wins over bin.
     # ldflags_new/cppflags_new/pkgconfig_new accumulate only keg-only contributions
-    # (not inherited environment values) — the keg-only block is their sole setter
+    # (not inherited environment values) -- the keg-only block is their sole setter
     # during startup, so these can be safely overwritten in the cache.
     local -a keg_paths=()
     local -a keg_manpath=()
@@ -529,7 +530,7 @@ if (($+commands[brew])); then
     local cppflags_new=''
     local pkgconfig_new=''
 
-    # Named function required — anonymous () cannot be called repeatedly in a loop.
+    # Named function required -- anonymous () cannot be called repeatedly in a loop.
     # Unfunctioned immediately after use to prevent global namespace pollution
     # (named functions defined inside () persist in the global table after return).
     _keg_collect() {
@@ -577,7 +578,7 @@ if (($+commands[brew])); then
 
     # Write static cache. Path/manpath entries are quoted for safe embedding.
     # LDFLAGS/CPPFLAGS/PKG_CONFIG_PATH are written as plain overwrites (no
-    # ${LDFLAGS} expansion) — they contain only keg-only contributions and are
+    # ${LDFLAGS} expansion) -- they contain only keg-only contributions and are
     # safe to overwrite because nothing else in the startup sequence sets them.
     {
       local -a qpaths=() qmanpath=()
@@ -640,12 +641,12 @@ if is_directory "${XDG_CONFIG_HOME}/zsh"; then
 
   # Dynamically autoload all files in the custom zsh functions directory.
   # Assumes the filename is the function name.
-  # :t extracts the basename — autoload expects the function name, not the full
+  # :t extracts the basename -- autoload expects the function name, not the full
   # path; passing the full path would define a function named e.g.
   # '~/.config/zsh/myfunc' which can never be invoked by short name.
   # Anonymous function scopes NULL_GLOB (no error when directory is empty) and
-  # keeps func_file local — no unset needed after the loop.
-  # Only extensionless files are registered — .zwc bytecode files share the same
+  # keeps func_file local -- no unset needed after the loop.
+  # Only extensionless files are registered -- .zwc bytecode files share the same
   # glob but are not function names; autoloading them would create useless entries
   # named 'cc.zwc' etc. in the function table.
   () {
@@ -677,12 +678,12 @@ manpath=("${manpath[@]:#}")
 # remove duplicates from some env vars
 typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPATH manpath PATH path PKG_CONFIG_PATH
 
-# fpath/FPATH and cdpath/CDPATH must NOT be exported — both are zsh-internal variables
+# fpath/FPATH and cdpath/CDPATH must NOT be exported -- both are zsh-internal variables
 # (autoload search path and cd search path respectively). Exporting them causes their
 # contents to leak into child processes and persist in the macOS launchd user-session
 # environment, where they are inherited by every new shell before any rc file runs.
 # All other *path vars in the typeset -gU line above (PATH, MANPATH, INFOPATH, CPPFLAGS,
-# LDFLAGS, PKG_CONFIG_PATH) are intentionally exported — child processes need them.
+# LDFLAGS, PKG_CONFIG_PATH) are intentionally exported -- child processes need them.
 typeset +x FPATH fpath cdpath CDPATH
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109

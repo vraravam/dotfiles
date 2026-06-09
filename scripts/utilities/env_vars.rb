@@ -45,6 +45,18 @@ module EnvVars
     ENV.fetch('PERSONAL_PROFILES_DIR', HOME.join('personal', ENV.fetch('USER', ENV.fetch('USERNAME', '')), 'browser-profiles'))
   ).expand_path.freeze
 
+  # Projects base directory (where all git repos live).
+  # Mirrors: export PROJECTS_BASE_DIR="${HOME}/dev"
+  PROJECTS_BASE_DIR = Pathname.new(
+    ENV.fetch('PROJECTS_BASE_DIR', HOME.join('dev'))
+  ).expand_path.freeze
+
+  # XDG cache directory (for cache files).
+  # Mirrors: export XDG_CACHE_HOME="${HOME}/.cache"
+  XDG_CACHE_HOME = Pathname.new(
+    ENV.fetch('XDG_CACHE_HOME', HOME.join('.cache'))
+  ).expand_path.freeze
+
   # Homebrew prefix directory.
   # Mirrors: export HOMEBREW_PREFIX (set by brew shellenv)
   HOMEBREW_PREFIX = Pathname.new(ENV.fetch('HOMEBREW_PREFIX', '/opt/homebrew')).expand_path.freeze

@@ -6,7 +6,7 @@ applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install
 
 These rules apply specifically to the bootstrap and installation scripts.
 
-## `fresh-install-of-osx.sh` — Idempotency Contract
+## `fresh-install-of-osx.sh` -- Idempotency Contract
 
 This script runs in **two modes**:
 1. **Vanilla OS** (`FIRST_INSTALL=1`): a fresh macOS with nothing installed.
@@ -20,9 +20,9 @@ Every section in `fresh-install-of-osx.sh` must be individually idempotent and
 must have an appropriate guard that **pre-empts the entire section** when its
 work is already done. This serves two purposes:
 
-1. **Correctness** — re-running on a pre-configured machine must not cause
+1. **Correctness** -- re-running on a pre-configured machine must not cause
    errors or undo existing state.
-2. **Speed** — on a pre-configured machine, sections that have nothing to do
+2. **Speed** -- on a pre-configured machine, sections that have nothing to do
    should be skipped immediately without executing any of the section's logic.
 
 The guard should be the **first thing** inside the section, before any logging
@@ -31,23 +31,23 @@ or setup work. Typical guard patterns:
 ```zsh
 # Skip if tool already installed
 if is_executable "brew"; then
-  info "Homebrew already installed — skipping."
+  info "Homebrew already installed -- skipping."
 else
   # ... install homebrew ...
 fi
 
 # Skip if dotfiles repo already cloned (is_git_repo checks both
-# non-empty string AND presence of .git directory — the else branch
+# non-empty string AND presence of .git directory -- the else branch
 # is NOT a simple negation of "directory exists").
 if is_git_repo "${DOTFILES_DIR}"; then
-  info "Dotfiles already cloned — skipping."
+  info "Dotfiles already cloned -- skipping."
 else
   # ... clone dotfiles ...
 fi
 
 # Skip if already configured (check sentinel file / flag)
 if is_file "${HOME}/.gitconfig"; then
-  info "Git config already present — skipping."
+  info "Git config already present -- skipping."
 else
   # ... configure git ...
 fi
@@ -79,7 +79,7 @@ curl "${_curl_opts[@]}" -fsSL <url>
 `parameter not set` error under `set -u` when `~/.curlrc` is already present.
 
 The guard uses the raw `[[ -f ... ]]` test rather than `is_file` because
-`_curl_opts` is initialised before `_download_and_source_shellrc` is called —
+`_curl_opts` is initialised before `_download_and_source_shellrc` is called --
 `.shellrc` (which defines `is_file`) has not been sourced yet at that point.
 
 The array is empty when `~/.curlrc` already exists (pre-configured machine),
@@ -94,23 +94,23 @@ regardless of `.curlrc` presence.
 | `--retry-max-time` | 120s | Cap total retry window; prevents infinite loops |
 | `--max-time` | 150s | Total transfer time limit; prevents silent hangs on a stalled connection |
 | `--connect-timeout` | 30s | Fail fast if the host is unreachable |
-| `--retry-connrefused` | — | Retry on connection refused, not just transient errors |
-| `-f` | — | Fail on HTTP errors (prevents piping garbage to zsh) |
-| `-s` | — | Silent — output is piped to zsh; a progress meter would interleave with script output and corrupt it |
-| `-S` | — | Show errors even under `-s` |
-| `-L` | — | Follow redirects (required for raw.githubusercontent.com) |
+| `--retry-connrefused` | -- | Retry on connection refused, not just transient errors |
+| `-f` | -- | Fail on HTTP errors (prevents piping garbage to zsh) |
+| `-s` | -- | Silent -- output is piped to zsh; a progress meter would interleave with script output and corrupt it |
+| `-S` | -- | Show errors even under `-s` |
+| `-L` | -- | Follow redirects (required for raw.githubusercontent.com) |
 
-Do NOT add `--retry-all-errors` — it causes the terminal app to close
+Do NOT add `--retry-all-errors` -- it causes the terminal app to close
 unexpectedly (known issue, tracked in `.curlrc` comments).
 
 The bootstrap command in `GettingStarted.md` is a one-liner run manually by
 the user before `fresh-install` exists locally, so it must carry the full flags
-inline — it cannot use `_curl_opts`.
+inline -- it cannot use `_curl_opts`.
 
 
 
 On a vanilla OS, the order of availability is:
-1. `/bin/zsh` only — no Homebrew, no dotfiles, no `.shellrc`
+1. `/bin/zsh` only -- no Homebrew, no dotfiles, no `.shellrc`
 2. `.shellrc` downloaded via `curl` and sourced
 3. Homebrew installed
 4. dotfiles repo cloned → `.shellrc`/`.aliases` symlinked
@@ -119,7 +119,7 @@ On a vanilla OS, the order of availability is:
 7. `post-brew-install.rb` runs (antidote, mise versions, etc.)
 
 Functions needed **before step 4** must live in `.shellrc`, not `.aliases`.
-`.shellrc` is curl-downloaded and must stay lean — only put functions in it
+`.shellrc` is curl-downloaded and must stay lean -- only put functions in it
 that are genuinely required before the dotfiles repo is cloned. See the
 `.shellrc` vs `.aliases` split section in `copilot-instructions.md` for the
 full rationale and decision rule.
@@ -146,7 +146,7 @@ Extract into a single conditional.
 ## Antidote in Fresh Install
 
 `Antidote.update_and_regenerate_bundle` is called from `post-brew-install.rb`.
-It does NOT need to be called separately in `fresh-install` for either mode —
+It does NOT need to be called separately in `fresh-install` for either mode --
 `post-brew-install.rb` handles both cases.
 
 When sourcing `antidote.zsh` inside fresh-install, use `load_file_if_exists` since
@@ -169,7 +169,7 @@ Re-enable after the sourcing. Add comment explaining why:
 
 ## `GIT_SSH_COMMAND`
 
-See `copilot-instructions.md` — Keybase / SSH section for full rationale.
+See `copilot-instructions.md` -- Keybase / SSH section for full rationale.
 Key rule: set at top of `main` when `FIRST_INSTALL` is true; unset immediately
 after `install-dotfiles.rb` runs (which symlinks `~/.gitconfig` into place).
 
@@ -183,20 +183,20 @@ The error trap must call `resume_cron` if `_DOTFILES_CRON_BACKUP_FILE` exists.
 
 ## Keybase Functions
 
-See `copilot-instructions.md` — Keybase / SSH section. Summary: both functions
+See `copilot-instructions.md` -- Keybase / SSH section. Summary: both functions
 live in `.aliases`, not `.shellrc`. Do not move them to `.shellrc`.
 
 ## `install_mise_versions` Duration
 
 The start time passed to `print_script_summary` must use epoch seconds
-(`$EPOCHSECONDS` or `date +%s`) — not a formatted wall-clock string.
+(`$EPOCHSECONDS` or `date +%s`) -- not a formatted wall-clock string.
 `print_script_summary` subtracts the start epoch from `$EPOCHSECONDS` at
 call time to compute the duration; a pre-formatted string breaks that arithmetic.
 
 ## Brewfile Truncation on `FIRST_INSTALL`
 
 On a vanilla OS run (`FIRST_INSTALL=1`), `brew bundle` is run only against the
-**base section** of the Brewfile — lines up to (but not including) the first
+**base section** of the Brewfile -- lines up to (but not including) the first
 line containing a `FIRST_INSTALL` guard. This keeps the initial install fast by
 skipping optional heavy packages.
 
@@ -210,5 +210,5 @@ brewfile_content="${brewfile_content%$'\n'*FIRST_INSTALL*}"  # strip the guard l
 ```
 
 On a pre-configured machine (no `FIRST_INSTALL`), the full Brewfile is used.
-Do not remove or rename the `FIRST_INSTALL` guard line in the Brewfile — it is
+Do not remove or rename the `FIRST_INSTALL` guard line in the Brewfile -- it is
 load-bearing for the vanilla OS install path.

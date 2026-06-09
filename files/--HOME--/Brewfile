@@ -21,7 +21,7 @@ is_arm = ::Hardware::CPU.arm?
 # TODO: Hardcoding of the dotfiles repo folder - since that env var is not available inside this env
 setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.sh"
 
-# These casks must come first — required for manual login during a vanilla OS installation.
+# These casks must come first -- required for manual login during a vanilla OS installation.
 cask 'font-meslo-lg-nerd-font'
 cask 'keybase',
   postinstall: "\"#{setup_login_items_script}\" -a 'Keybase' && " \

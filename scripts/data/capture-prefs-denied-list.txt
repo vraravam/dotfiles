@@ -13,7 +13,7 @@
 # Critical: device identity, credentials, machine UUIDs
 # ---------------------------------------------------------------------------
 
-# iMessage/FaceTime per-device NSUUIDs — hardware-bound
+# iMessage/FaceTime per-device NSUUIDs -- hardware-bound
 com.apple.ids.deviceproperties
 
 # iMessage/FaceTime identity registration state and per-device key generation
@@ -22,13 +22,13 @@ com.apple.identityservicesd
 # Device-unique metric ID (IDSKTAccountKeyFetchMetricDeviceIDDefault UUID)
 com.apple.ids
 
-# MDM enrollment tokens (PushToken, PushMagic, ProfileUUID) — corrupt MDM on import
+# MDM enrollment tokens (PushToken, PushMagic, ProfileUUID) -- corrupt MDM on import
 com.apple.configurationprofiles.user
 
-# Apple ID DSID, email, full name, AccountAlternateDSID — account-bound
+# Apple ID DSID, email, full name, AccountAlternateDSID -- account-bound
 MobileMeAccounts
 
-# AppleAccountIdentifier + DeviceIdentifier UUIDs — per-device and per-account
+# AppleAccountIdentifier + DeviceIdentifier UUIDs -- per-device and per-account
 com.apple.seeding
 
 # Per-device AirTag beacon UUIDs; keys embed hardware MAC addresses
@@ -40,10 +40,10 @@ com.apple.findmy.fmfcore.notbackedup
 # Same: publicAPSToken + per-account FMIPGarbageCollectorIdentityKey
 com.apple.findmy.fmipcore.notbackedup
 
-# kAssistantTeamIdentifier — binary device identity blob
+# kAssistantTeamIdentifier -- binary device identity blob
 com.apple.homed.notbackedup
 
-# registrySyncIdentifier UUID — machine-specific CloudKit sync identity
+# registrySyncIdentifier UUID -- machine-specific CloudKit sync identity
 com.apple.protectedcloudstorage.protectedcloudkeysyncing
 
 # iMessage device handle UUID + CloudKit sync state (DonatedRecentLiteHandlesFromDevice)
@@ -53,7 +53,7 @@ com.apple.madrid
 # Critical: printer presets keyed to specific IP addresses
 # ---------------------------------------------------------------------------
 
-# Hardcoded to IP 10.134.3.151 — meaningless on any other network/machine
+# Hardcoded to IP 10.134.3.151 -- meaningless on any other network/machine
 com.apple.print.custompresets.forprinter._10_134_3_151
 
 # Hardcoded to IP 10.134.3.152
@@ -108,10 +108,10 @@ com.apple.dataaccess.dataaccessd
 # UI session state: display-geometry-specific, zero portability value
 # ---------------------------------------------------------------------------
 
-# Window frame coords for login-screen panels — display-size-specific
+# Window frame coords for login-screen panels -- display-size-specific
 com.apple.loginwindow
 
-# Space topology with per-monitor display UUIDs — completely hardware-specific
+# Space topology with per-monitor display UUIDs -- completely hardware-specific
 com.apple.spaces
 
 # Timestamp watermarks for local analytics; not meaningful on a new machine

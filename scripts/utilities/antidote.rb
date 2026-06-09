@@ -8,7 +8,7 @@ require_relative 'logging'
 # and software-updates-cron.rb.
 #
 # Antidote must be driven through zsh because antidote itself is a zsh
-# function — there is no Ruby API for it. The update step and bundle
+# function -- there is no Ruby API for it. The update step and bundle
 # regeneration are therefore shell invocations, but the guard logic and
 # git maintenance calls are kept in Ruby to avoid an extra shell layer.
 #
@@ -38,8 +38,8 @@ module Antidote
 
     unless File.file?(antidote_zsh) && File.size(antidote_zsh) > 0 &&
            File.file?(plugin_txt) && File.size(plugin_txt) > 0
-      Logging.debug "Skipping antidote bundle regeneration: antidote not found at '#{antidote_zsh}' " \
-                    "or plugin list '#{plugin_txt}' is missing"
+      Logging.debug "Skipping antidote bundle regeneration: antidote not found at '#{antidote_zsh.cyan}' " \
+                    "or plugin list '#{plugin_txt.cyan}' is missing"
       return
     end
 
@@ -56,7 +56,7 @@ module Antidote
     end
 
     # antidote bundle reads the plugin list from stdin; pass it via stdin_data
-    # so no shell redirect (<) is needed — array form avoids a shell layer.
+    # so no shell redirect (<) is needed -- array form avoids a shell layer.
     bundle_content, _err, status = Open3.capture3(
       'zsh', '-f', '-c', 'source "$1"; antidote bundle', '--', antidote_zsh,
       stdin_data: File.read(plugin_txt)

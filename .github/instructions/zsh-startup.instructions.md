@@ -15,7 +15,7 @@ optimisation uses zsh-specific syntax, add a comment explaining why.
 ## Startup File Load Order
 
 ```
-.zshenv   → always, first (keep minimal — env vars only)
+.zshenv   → always, first (keep minimal -- env vars only)
 .zprofile → login shells (not used here)
 .zshrc    → interactive shells (heavy lifting)
 .zlogin   → after .zshrc, for post-init work (compilation, etc.)
@@ -27,10 +27,10 @@ Every `$(...)` command substitution in startup code forks a new process.
 Avoid them in the hot path:
 
 ```zsh
-# BAD — forks a subshell
+# BAD -- forks a subshell
 ARCH=$(uname -m)
 
-# Good — zsh built-in parameter expansion
+# Good -- zsh built-in parameter expansion
 ARCH="${MACHTYPE%%-*}"   # Note: returns 'arm' not 'arm64' on Apple Silicon
 # TODO: verify MACHTYPE gives correct arch string on all targets
 
@@ -44,10 +44,10 @@ CURRENT_USER="${USER}"
 ## Function Existence Check
 
 ```zsh
-# BAD — forks a subshell
+# BAD -- forks a subshell
 type is_shellrc_sourced > /dev/null 2>&1
 
-# Good — zsh built-in, no fork
+# Good -- zsh built-in, no fork
 (( $+functions[is_shellrc_sourced] ))
 ```
 
@@ -57,10 +57,10 @@ type is_shellrc_sourced > /dev/null 2>&1
 
 ```zsh
 # Cache file: ${XDG_CONFIG_HOME}/zsh/homebrew-shellenv-cache.zsh
-if [[ ! -f "${_brew_cache}" || "${_brew_bin}" -nt "${_brew_cache}" ]]; then
+if is_file_older_than "${_brew_cache}" "${_brew_bin}"; then
   "${_brew_bin}" shellenv >| "${_brew_cache}"
 fi
-source "${_brew_cache}"
+load_file_if_exists "${_brew_cache}"
 ```
 
 ## `source` vs `load_file_if_exists`
@@ -71,7 +71,7 @@ files (which always run after `.shellrc` is available), always prefer
 `load_file_if_exists` for optional files:
 
 ```zsh
-# Good — safe for files that may not exist yet (e.g., antidote bundle on first login)
+# Good -- safe for files that may not exist yet (e.g., antidote bundle on first login)
 load_file_if_exists "${ZDOTDIR}/.zsh_plugins.zsh"
 
 # Use source only when the file is guaranteed to exist
@@ -81,9 +81,9 @@ source "${HOME}/.shellrc"
 ## Antidote Plugin Manager
 
 Antidote replaces OMZ. Key rules:
-- `ANTIDOTE_HOME` uses `~/Library/Caches/antidote` — macOS-specific, comment near definition.
+- `ANTIDOTE_HOME` uses `~/Library/Caches/antidote` -- macOS-specific, comment near definition.
 - The generated bundle file must exist in the home git repo for vanilla OS installs.
-- Source the bundle with `load_file_if_exists "${ZDOTDIR}/.zsh_plugins.zsh"` — it
+- Source the bundle with `load_file_if_exists "${ZDOTDIR}/.zsh_plugins.zsh"` -- it
   may not exist on first login (before antidote has been run).
 - `ZSH` and `ZSH_CUSTOM` env vars from OMZ must be unset.
 - Run `antidote bundle` in a clean subshell: `zsh --no-rcs -c "antidote bundle < ..."`.
@@ -94,10 +94,10 @@ Antidote replaces OMZ. Key rules:
 Export path arrays with `typeset +x` (not `export`):
 
 ```zsh
-# BAD — exporting an array causes issues
+# BAD -- exporting an array causes issues
 export fpath=( ... )
 
-# Good — mark as not exported
+# Good -- mark as not exported
 typeset +x fpath
 fpath=( ... "${fpath[@]}" )
 ```
@@ -118,12 +118,12 @@ recompile_zsh_autoload_dir "${ZDOTDIR}/functions"
 
 antidote 2.1.0's source-detection check uses `[[ ":${ZSH_EVAL_CONTEXT}:" == *:file:* ]]`
 to distinguish sourced-library mode from CLI mode. When a file is loaded from `.zwc`
-bytecode, zsh sets the eval context token to `filecode` — not `file`. The `*:file:*`
+bytecode, zsh sets the eval context token to `filecode` -- not `file`. The `*:file:*`
 pattern does not match `filecode`, so the CLI branch fires, calls `exit 1`, and crashes
 every interactive shell startup.
 
 **Never add `recompile_zsh_scripts "${ANTIDOTE_ZSH}"` to `.zlogin`.** antidote.zsh must
-always be loaded from raw source. The same applies to `delete_caches` — it must purge any
+always be loaded from raw source. The same applies to `delete_caches` -- it must purge any
 pre-existing `antidote.zsh.zwc` (which `find -L "${HOMEBREW_PREFIX}"` now handles), but
 `.zlogin` must not recreate it.
 ```
@@ -134,13 +134,13 @@ Just delete and let zsh regenerate on next startup.
 ## `is_shellrc_sourced` Sentinel
 
 `.shellrc` defines `is_shellrc_sourced` as a sentinel. In `.zshrc` and other
-zsh files, source `.shellrc` unconditionally — the sentinel prevents double-loading:
+zsh files, source `.shellrc` unconditionally -- the sentinel prevents double-loading:
 
 ```zsh
 # Good
 source "${HOME}/.shellrc"
 
-# BAD — guard is already inside .shellrc
+# BAD -- guard is already inside .shellrc
 [[ "$(type is_shellrc_sourced)" == *function* ]] || source "${HOME}/.shellrc"
 ```
 
@@ -151,12 +151,12 @@ the antidote bundle is sourced**. Plugins read these variables at load time; set
 them after `load_file_if_exists "${ZDOTDIR}/.zsh_plugins.zsh"` has no effect:
 
 ```zsh
-# Good — set before bundle
+# Good -- set before bundle
 export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 unset ZSH ZSH_CUSTOM   # clear stale OMZ values before antidote loads OMZ libs
 load_file_if_exists "${ZDOTDIR}/.zsh_plugins.zsh"
 
-# BAD — too late, plugin already loaded
+# BAD -- too late, plugin already loaded
 load_file_if_exists "${ZDOTDIR}/.zsh_plugins.zsh"
 export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 ```
@@ -178,9 +178,9 @@ export ZSH_COMPDUMP="${XDG_CACHE_HOME}/zcompdump"
 () {
   autoload -Uz compinit
   if is_file "${ZSH_COMPDUMP}"; then
-    compinit -C -d "${ZSH_COMPDUMP}"   # fast path — skip audit on subsequent starts
+    compinit -C -d "${ZSH_COMPDUMP}"   # fast path -- skip audit on subsequent starts
   else
-    compinit -d "${ZSH_COMPDUMP}"      # first run — run audit to catch permission issues
+    compinit -d "${ZSH_COMPDUMP}"      # first run -- run audit to catch permission issues
   fi
 }
 ```

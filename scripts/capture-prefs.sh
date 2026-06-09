@@ -61,19 +61,19 @@ _notify_apps_needing_restart() {
 # Reads patterns from _excluded_by_domain (script-scoped associative array).
 # Uses ruby/REXML to enumerate top-level keys (handles keys with spaces safely
 # via null-byte separation) and PlistBuddy to delete matched keys.
-# Individual key deletions are non-fatal — a missing key is silently skipped.
+# Individual key deletions are non-fatal -- a missing key is silently skipped.
 _strip_excluded_keys() {
   local domain="${1}"
   local plist_file="${2}"
 
   # Merge domain-specific patterns with global '*' patterns (applied to every domain).
-  # Use (e) subscript flag for exact key lookup — without it, [*] and [${var}] where
+  # Use (e) subscript flag for exact key lookup -- without it, [*] and [${var}] where
   # var='*' expand to all associative array values instead of the literal '*' key.
   local _combined=''
   if is_non_zero_string "${_excluded_by_domain[(e)${domain}]:-}"; then
     _combined="${_excluded_by_domain[(e)${domain}]}"
   fi
-  # Use ['*'] literal here — (e) flag and quoted literal are both correct;
+  # Use ['*'] literal here -- (e) flag and quoted literal are both correct;
   # prefer the quoted literal form for clarity when the key is a constant.
    if is_non_zero_string "${_excluded_by_domain['*']:-}"; then
      if is_non_zero_string "${_combined}"; then
@@ -82,7 +82,7 @@ _strip_excluded_keys() {
        _combined="${_excluded_by_domain['*']}"
      fi
    fi
-  # No patterns for this domain (neither specific nor global) — nothing to strip.
+  # No patterns for this domain (neither specific nor global) -- nothing to strip.
   if is_zero_string "${_combined}"; then return 0; fi
 
   local -a patterns=("${(@f)_combined}")
@@ -93,7 +93,7 @@ _strip_excluded_keys() {
   #   1. Key name matches a shell glob pattern (File.fnmatch, '*' matches '/' and ':').
   #   2. The value element immediately following the key is a plist <date> node.
   #      Any top-level key whose value is a plist date is inherently ephemeral
-  #      (ISO 8601 timestamp written by the OS/app) — never a portable user pref.
+  #      (ISO 8601 timestamp written by the OS/app) -- never a portable user pref.
   #      This catches date-valued keys regardless of their name, providing a
   #      type-based safety net complementary to the name-pattern list.
   # File.fnmatch without FNM_PATHNAME allows '*' to match '/' and ':',
@@ -102,7 +102,7 @@ _strip_excluded_keys() {
   # separator in its key-path syntax, so keys whose names contain ':' (e.g.
   # _DKThrottledActivityLast_...:/app/mediaUsageActivityDate) are misinterpreted
   # as nested dict paths and silently not deleted.
-  # System Ruby (2.6+) is always available on macOS — no Homebrew dependency.
+  # System Ruby (2.6+) is always available on macOS -- no Homebrew dependency.
   /usr/bin/ruby -e '
     require "rexml/document"
     plist_file = ARGV.shift
@@ -166,12 +166,12 @@ main() {
   fi
 
   if is_zero_string "${PERSONAL_CONFIGS_DIR}"; then
-    _record_error "Required env var '$(yellow 'PERSONAL_CONFIGS_DIR')' is not defined."
+    _record_error "Required env var '$(purple 'PERSONAL_CONFIGS_DIR')' is not defined."
     print_script_summary
     return 1
   fi
   if is_zero_string "${DOTFILES_DIR}"; then
-    _record_error "Required env var '$(yellow 'DOTFILES_DIR')' is not defined."
+    _record_error "Required env var '$(purple 'DOTFILES_DIR')' is not defined."
     print_script_summary
     return 1
   fi
@@ -181,7 +181,7 @@ main() {
 
   # Kill/restart login-item apps on import only, and only when running interactively.
   # On import, apps must be stopped before writing so they cannot overwrite imported
-  # values when they quit. Cron skips this — killall would disrupt the user's running
+  # values when they quit. Cron skips this -- killall would disrupt the user's running
   # session, and 'open -a' would re-launch apps mid-session. On export, macOS cfprefsd
   # has already flushed current prefs to disk; killing apps is unnecessary.
   # The canonical app list lives in _MACOS_LOGIN_ITEM_APPS (.aliases § 3n).
@@ -201,7 +201,7 @@ main() {
 
   if [[ "${operation}" == 'export' ]]; then
     # Clean up old files before exporting new ones (this also handles the case where some entry has been removed from the list of domains).
-    # .defaults files are from a past version of this script that used a different extension — delete them too.
+    # .defaults files are from a past version of this script that used a different extension -- delete them too.
     # NULL_GLOB scoped to an anonymous function: expands unmatched patterns to nothing
     # rather than erroring. Inline (N) qualifiers confuse editor syntax highlighters
     # (they parse the qualifier as a function call, breaking highlighting for the rest
@@ -215,7 +215,7 @@ main() {
   if [[ "${operation}" == 'import' ]]; then
     # Warn if the backup predates the last change to osx-defaults.sh. When
     # osx-defaults.sh has been updated since the backup was taken, the backup
-    # may be missing settings that were added in that update — importing it
+    # may be missing settings that were added in that update -- importing it
     # would silently leave those new settings unset.
     # Both repos (dotfiles and personal configs) must be git repos for this
     # check to work. git log --format=%ct returns the Unix timestamp of the
@@ -225,7 +225,7 @@ main() {
     _backup_ts="$(git -C "${HOME}" log --format='%ct' -n1 -- "${target_dir}" 2>/dev/null || true)"
     if is_non_zero_string "${_osx_defaults_ts}" && is_non_zero_string "${_backup_ts}"; then
       if (( _backup_ts < _osx_defaults_ts )); then
-        warn "Backup predates the last change to osx-defaults.sh — some settings added since the backup may not be present."
+        warn "Backup predates the last change to osx-defaults.sh -- some settings added since the backup may not be present."
         warn "Consider running 'osx-defaults.sh -s' followed by 'capture-prefs.sh -e' on the source machine to refresh the backup first."
       fi
     fi
@@ -265,7 +265,7 @@ main() {
   done <"${denied_list_file}"
 
   # Load excluded-keys file into the script-scoped _excluded_by_domain map.
-  # Format: <domain>|<key-or-glob-pattern> — one entry per line.
+  # Format: <domain>|<key-or-glob-pattern> -- one entry per line.
   # Value is newline-separated patterns; consumed by _strip_excluded_keys.
   local _ex_line _ex_dom _ex_pat
   while IFS= read -r _ex_line; do
@@ -301,7 +301,7 @@ main() {
     app_array+=("${_line}")
   done <"${domains_file}"
   if is_empty_array app_array; then
-    info "No domains found in '$(yellow "${domains_file}")' — nothing to do."
+    info "No domains found in '$(cyan "${domains_file}")' -- nothing to do."
     return 0
   fi
 
@@ -310,31 +310,31 @@ main() {
   for app_pref in "${app_array[@]}"; do
     # Defensive guard: skip empty domain names (would produce a stale .plist file)
     if is_zero_string "${app_pref}"; then continue; fi
-    # Skip domains on the denied list — they contain machine-specific or account-bound
+    # Skip domains on the denied list -- they contain machine-specific or account-bound
     # data that is meaningless or harmful when exported/imported across machines.
     if ((${+_denied[${app_pref}]})); then
-      debug "Skipping denied domain '$(yellow "${app_pref}")' — contains machine-specific data (see capture-prefs-denied-list.txt)"
+      debug "Skipping denied domain '$(light_cyan "${app_pref}")' -- contains machine-specific data (see capture-prefs-denied-list.txt)"
       continue
     fi
-    debug "Processing $(cyan "${app_pref}")"
+    debug "Processing '$(light_cyan "${app_pref}")'"
     local target_file="${target_dir}/${app_pref}.plist"
     if [[ "${operation}" == 'export' ]]; then
       # Allow the loop to continue even if a specific defaults command fails
       if /usr/bin/defaults export "${app_pref}" "${target_file}"; then
         # Convert binary plist to XML for human-readable diffs in git.
-        # defaults import reads XML plist natively — no conversion needed on import.
+        # defaults import reads XML plist natively -- no conversion needed on import.
         # JSON is not used: plutil -convert json is lossy for <data> and <date> types,
         # and defaults import cannot round-trip JSON back to plist.
-        plutil -convert xml1 "${target_file}" || _record_warning "Failed to convert '${app_pref}' to XML plist"
+        plutil -convert xml1 "${target_file}" || _record_warning "Failed to convert '$(light_cyan "${app_pref}")' to XML plist"
         # Strip non-portable keys (device UUIDs, account credentials, ephemeral
         # sync state, display geometry) before the file is staged to git.
         _strip_excluded_keys "${app_pref}" "${target_file}"
-        # Delete the file if stripping left an empty dict — an empty plist has
+        # Delete the file if stripping left an empty dict -- an empty plist has
         # no value in git history and cannot be imported meaningfully.
         # grep -q inside 'if' is safe under set -e: 'if' consumes the exit code.
         if ! grep -q '<key>' "${target_file}" 2>/dev/null; then
           rm -f "${target_file}"
-          debug "Deleted empty plist for '$(yellow "${app_pref}")' — no keys remain after stripping"
+          debug "Deleted empty plist for '$(light_cyan "${app_pref}")' -- no keys remain after stripping"
         else
           (( _saved_count += 1 )) || true
         fi
@@ -342,19 +342,19 @@ main() {
         _record_warning "Failed to export '${app_pref}'"
       fi
     else
-      # Skip domains for which no exported plist exists — the app may not have
+      # Skip domains for which no exported plist exists -- the app may not have
       # been installed on the source machine when the export was run.
       if ! is_file "${target_file}"; then
-        debug "Skipping import of '$(yellow "${app_pref}")' — no exported plist found"
+        debug "Skipping import of '$(light_cyan "${app_pref}")' -- no exported plist found"
         continue
       fi
-      # Strip non-portable keys from a temp copy — the source file in target_dir
+      # Strip non-portable keys from a temp copy -- the source file in target_dir
       # must not be modified during import (it lives in the git repo).
       local _tmp_plist
       _tmp_plist="$(mktemp "${TMPDIR:-/tmp}/capture-prefs-XXXXXX")"
       cp "${target_file}" "${_tmp_plist}"
       _strip_excluded_keys "${app_pref}" "${_tmp_plist}"
-      /usr/bin/defaults import "${app_pref}" "${_tmp_plist}" || _record_warning "Failed to import '${app_pref}'"
+      /usr/bin/defaults import "${app_pref}" "${_tmp_plist}" || _record_warning "Failed to import '$(light_cyan "${app_pref}")'"
       rm -f "${_tmp_plist}"
     fi
   done
@@ -368,20 +368,20 @@ main() {
   else
     # Reload system services so imported preferences take effect immediately
     # without a logout. The imported domains include symbolichotkeys (keyboard
-    # shortcuts), controlcenter, dock, finder, and NSGlobalDomain — all of which
+    # shortcuts), controlcenter, dock, finder, and NSGlobalDomain -- all of which
     # require their owning process to be restarted to re-read the plist.
     # Restart system services that cache preferences. reload_macos_prefs
     # kills cfprefsd/Dock/Finder/SystemUIServer and calls activateSettings
-    # to flush com.apple.symbolichotkeys — see .aliases § 3n for details.
+    # to flush com.apple.symbolichotkeys -- see .aliases § 3n for details.
     reload_macos_prefs
-    success 'System services reloaded — most imported settings are now active.'
+    success 'System services reloaded -- most imported settings are now active.'
     _notify_apps_needing_restart
   fi
   local _saved_msg=''
   if [[ "${operation}" == 'export' ]]; then
-    _saved_msg=" — $(cyan "${_saved_count}") files saved after stripping"
+    _saved_msg=" -- $(purple "${_saved_count}") files saved after stripping"
   fi
-  success "Operation finished. Processed $(cyan "${#app_array[@]}") domains (denied-list entries skipped silently)${_saved_msg}."
+  success "Operation finished. Processed $(purple "${#app_array[@]}") domains (denied-list entries skipped silently)${_saved_msg}."
   print_script_summary
 }
 

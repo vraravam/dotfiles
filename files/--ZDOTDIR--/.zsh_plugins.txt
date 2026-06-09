@@ -4,21 +4,21 @@
 # Antidote reads this file and generates a static "${ANTIDOTE_PLUGIN_ZSH}" bundle.
 #
 # Deferral policy:
-#   kind:defer  — loads after the first prompt via romkatv/zsh-defer (zle -F).
+#   kind:defer  -- loads after the first prompt via romkatv/zsh-defer (zle -F).
 #                 zsh-defer reschedules itself if PENDING > 0 (bytes already in the
 #                 TTY buffer), so a fast typist can beat the idle window. Only use
 #                 kind:defer for plugins whose absence during the first interaction
 #                 is completely invisible (alias-only plugins, cosmetic hooks).
-#   NOT deferred — anything that affects the live typing experience: syntax
+#   NOT deferred -- anything that affects the live typing experience: syntax
 #                  highlighting, autosuggestions, history search, key bindings,
 #                  setopts, fpath population, and hooks that must fire on the first
 #                  command. The extra synchronous startup cost of these plugins is
 #                  the deliberate tradeoff for zero first-interaction latency.
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Oh-My-Zsh lib — only the pieces actually used; replaces loading all of OMZ
+# Oh-My-Zsh lib -- only the pieces actually used; replaces loading all of OMZ
 #
-# functions.zsh must come first — provides env_default (used by misc.zsh) and
+# functions.zsh must come first -- provides env_default (used by misc.zsh) and
 # omz_urlencode (used by termsupport.zsh).
 #   NOT deferred: required synchronously by misc.zsh and termsupport.zsh at
 #   load time; deferring it would defer everything that depends on it.
@@ -26,16 +26,16 @@
 ohmyzsh/ohmyzsh path:lib/functions.zsh
 
 # NOT deferred: sets WORDCHARS, setopts (auto_menu, complete_in_word,
-# always_to_end), and bindkey -M menuselect — all must be active before
+# always_to_end), and bindkey -M menuselect -- all must be active before
 # compinit runs and before the first Tab press.
 ohmyzsh/ohmyzsh path:lib/completion.zsh
 
-# NOT deferred: sets setopt correct_all — must be active before the first
+# NOT deferred: sets setopt correct_all -- must be active before the first
 # command so spell-correction works immediately. (Only 8 lines; zero cost.)
 ohmyzsh/ohmyzsh path:lib/correction.zsh
 
 # NOT deferred: registers arrow-key history search, Home/End, and other
-# key bindings via bindkey — must be active from the very first keystroke.
+# key bindings via bindkey -- must be active from the very first keystroke.
 ohmyzsh/ohmyzsh path:lib/key-bindings.zsh
 
 # NOT deferred: registers url-quote-magic via `zle -N self-insert` (a ZLE
@@ -44,7 +44,7 @@ ohmyzsh/ohmyzsh path:lib/key-bindings.zsh
 ohmyzsh/ohmyzsh path:lib/misc.zsh
 
 # DEFERRED: only registers precmd/preexec hooks for terminal window title and
-# CWD tracking — purely cosmetic. omz_urlencode (used inside) is already loaded
+# CWD tracking -- purely cosmetic. omz_urlencode (used inside) is already loaded
 # synchronously by functions.zsh above, so it is available when this fires.
 ohmyzsh/ohmyzsh path:lib/termsupport.zsh kind:defer
 
@@ -53,15 +53,15 @@ ohmyzsh/ohmyzsh path:lib/termsupport.zsh kind:defer
 # by eliminating the test-ls-args fork (ls /dev/null) on every shell startup.
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Oh-My-Zsh plugins — only the ones actively used
+# Oh-My-Zsh plugins -- only the ones actively used
 # ──────────────────────────────────────────────────────────────────────────────
 
-# DEFERRED: defines only ls/ll/la/… aliases — no ZLE hooks or setopts.
+# DEFERRED: defines only ls/ll/la/… aliases -- no ZLE hooks or setopts.
 # Safe to defer; aliases are available before any keypress is processed.
 ohmyzsh/ohmyzsh path:plugins/eza kind:defer
 
 # DEFERRED: the heaviest non-deferred plugin (431 lines of aliases/functions).
-# Purely alias definitions — no ZLE hooks or setopts. Biggest startup win.
+# Purely alias definitions -- no ZLE hooks or setopts. Biggest startup win.
 ohmyzsh/ohmyzsh path:plugins/git kind:defer
 
 # DEFERRED: sources iterm2_shell_integration.zsh which registers precmd/preexec
@@ -71,7 +71,7 @@ ohmyzsh/ohmyzsh path:plugins/git kind:defer
 ohmyzsh/ohmyzsh path:plugins/iterm2 kind:defer
 
 # DEFERRED: registers ESC-ESC → add-sudo via `zle -N` + `bindkey`.
-# Safe to defer because its absence is invisible — you can't press ESC-ESC
+# Safe to defer because its absence is invisible -- you can't press ESC-ESC
 # before the shell is interactive, and the binding is cosmetic (not required
 # for any first-command behaviour).
 ohmyzsh/ohmyzsh path:plugins/sudo kind:defer
@@ -96,7 +96,7 @@ zsh-users/zsh-completions path:src kind:fpath
 # cycling for any buffered input in that narrow window, which is acceptable.
 zsh-users/zsh-history-substring-search kind:defer
 
-# NOT deferred: the direnv hook must fire before any command — especially the
+# NOT deferred: the direnv hook must fire before any command -- especially the
 # very first `cd` or any command that depends on direnv-managed env vars.
 # direnv plugin: thin wrapper around 'eval "$(direnv export zsh)"'
 # mise is activated directly in .zshrc (the OMZ mise plugin referenced $ZSH_CACHE_DIR
@@ -111,7 +111,7 @@ ohmyzsh/ohmyzsh path:plugins/direnv
 zdharma-continuum/fast-syntax-highlighting
 
 # NOT deferred: hooks into ZLE to show ghost-text suggestions. Same reasoning
-# as FSH — the async suggestion fetch (ZSH_AUTOSUGGEST_USE_ASYNC) means it
+# as FSH -- the async suggestion fetch (ZSH_AUTOSUGGEST_USE_ASYNC) means it
 # doesn't block ZLE, so the only cost is the one-time load at startup.
 # Must be last so it wraps all other ZLE widgets.
 zsh-users/zsh-autosuggestions

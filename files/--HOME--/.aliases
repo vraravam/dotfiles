@@ -9,7 +9,7 @@
 # load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
 ################################################################################
 
-# Guard against re-sourcing — all call sites can unconditionally 'source ~/.aliases'
+# Guard against re-sourcing -- all call sites can unconditionally 'source ~/.aliases'
 # without needing their own check. This return is a no-op cost (single builtin).
 # ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
 # evaluated by non-zsh runtimes (e.g. direnv's sandbox).
@@ -23,7 +23,7 @@ is_aliases_sourced() {
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
 [[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
 
-# Re-source guard is inside .shellrc itself — safe to call unconditionally.
+# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
 source "${HOME}/.shellrc"
 
 # --------------------------------------------------------------------------
@@ -31,7 +31,7 @@ source "${HOME}/.shellrc"
 # --------------------------------------------------------------------------
 
 # Returns the last path segment of $1, stripping any trailing slash.
-# Uses pure-zsh nested expansion — safe here since .aliases is never sourced by bash.
+# Uses pure-zsh nested expansion -- safe here since .aliases is never sourced by bash.
 # Usage: extract_last_segment <path>
 extract_last_segment() {
   echo "${"${1%/}"##*/}"
@@ -42,7 +42,7 @@ extract_last_segment() {
 # config or data files with while+read loops.
 #
 # =~ (regex) is used rather than == (glob) because the comment-start pattern
-# '^[[:space:]]*#' requires an anchor — zsh extended globs cannot anchor at the
+# '^[[:space:]]*#' requires an anchor -- zsh extended globs cannot anchor at the
 # start of a string with [[:space:]]* in the same expression without extendedglob
 # side-effects. .aliases is never sourced by bash so zsh regex is safe here.
 #
@@ -78,7 +78,7 @@ parse_folder_and_switches() {
       folder="${arg}"
     fi
   done
-  # ${PWD} is a POSIX standard variable — always set in bash, zsh, and cron.
+  # ${PWD} is a POSIX standard variable -- always set in bash, zsh, and cron.
   # Avoids the $(pwd) subprocess fork that fires on every call when no folder arg
   # is given (the common case for push/pull/upreb/cc and similar autoload functions).
   folder="${folder:-${PWD}}"
@@ -152,13 +152,13 @@ require_env_var() {
 
 # --------------------------------------------------------------------------
 # GROUP 3: Ongoing Daily-Use Aliases & Functions
-# (Groups 1 and 2 are defined in .shellrc — bootstrap utilities and core predicates.)
+# (Groups 1 and 2 are defined in .shellrc -- bootstrap utilities and core predicates.)
 # Loaded after .shellrc via .zshrc. These are convenience wrappers, maintenance
 # tools, and project-specific helpers used during interactive shell sessions.
 # --------------------------------------------------------------------------
 
 # --------------------------------------------------------------------------
-# 3a. Shell defaults — extended flags on built-in commands
+# 3a. Shell defaults -- extended flags on built-in commands
 # --------------------------------------------------------------------------
 alias less="${aliases[less]:-less} -RF"
 alias cp="${aliases[cp]:-cp} -p"
@@ -168,7 +168,7 @@ alias fgrep="${aliases[fgrep]:-fgrep} -Hn --color=auto --exclude-dir={.zsh_sessi
 alias egrep="${aliases[egrep]:-egrep} -Hn --color=auto --exclude-dir={.zsh_sessions,.IdentityService,.Trash} --exclude={\".*history\",\".zcompdump*\",\"*.zwc*\",\".*.zwc*\"}"
 
 # --------------------------------------------------------------------------
-# 3b. Tool replacements — enhanced CLI tools
+# 3b. Tool replacements -- enhanced CLI tools
 # --------------------------------------------------------------------------
 # eza already defines 'll' - so skip if that's present
 ! command_exists eza && alias ll='ls -la'
@@ -178,6 +178,41 @@ command_exists prettyping && alias ping='prettyping --nolegend'
 command_exists bat && alias cat='bat'
 command_exists btop && alias top='btop'
 command_exists ncdu && alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'
+
+# --------------------------------------------------------------------------
+# Helper functions for delegating to Ruby utilities
+# --------------------------------------------------------------------------
+
+# Internal helper: calls a Ruby Repos module method with keyword arguments.
+# Eliminates duplication of $LOAD_PATH setup across repo wrapper functions.
+# Usage: _call_ruby_repos <method_name> <key1>=<value1> [<key2>=<value2> ...]
+# Example: _call_ruby_repos install_mise_versions first_install=true
+#          _call_ruby_repos regenerate_repo_aliases force=false
+_call_ruby_repos() {
+  local method="${1:-}"
+  if is_zero_string "${method}"; then
+    error '_call_ruby_repos: method name required'
+    return 1
+  fi
+  shift
+
+  local kwargs_str=""
+  if [[ $# -gt 0 ]]; then
+    # Build comma-separated list of keyword arguments: key1: value1, key2: value2
+    # Each arg is expected in "key=value" format
+    local -a kwargs_parts=()
+    for arg in "$@"; do
+      local key="${arg%%=*}"
+      local value="${arg#*=}"
+      kwargs_parts+=("${key}: ${value}")
+    done
+    # Join with ', '
+    local IFS=', '
+    kwargs_str="${kwargs_parts[*]}"
+  fi
+
+  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'repos'; Repos.${method}(${kwargs_str})"
+}
 
 # --------------------------------------------------------------------------
 # 3c. Multi-repo git shortcuts (via run-all.rb)
@@ -196,41 +231,14 @@ if command_exists 'run-all.rb'; then
   regenerate_repo_aliases() {
     is_directory "${PROJECTS_BASE_DIR}" || return 0
 
-    local force=0
-    [[ "${1-}" == "-f" ]] && force=1
+    local force_flag="false"
+    [[ "${1-}" == "-f" ]] && force_flag="true"
 
+    # Delegate to Ruby implementation in utilities/repos.rb
+    _call_ruby_repos regenerate_repo_aliases "force=${force_flag}"
+
+    # Load the generated cache
     local repo_alias_cache="${XDG_CACHE_HOME}/repo-aliases-cache.zsh"
-
-    if ((force))   || ! is_file "${repo_alias_cache}" || [[ "${PROJECTS_BASE_DIR}" -nt "${repo_alias_cache}" ]]; then
-      ((force))     && info "Regenerating repo aliases cache..."
-      ((!force))    && [[ -n "${DEBUG:-}" ]] && debug "Regenerating repo aliases cache (stale or missing)"
-
-      local -A seen_parent_folders
-      local -a parent_folders
-
-      # Process substitution + :h (no forks per iteration); associative array deduplicates without sort -u.
-      while IFS= read -r p; do
-        local ancestor="${p:h:h}" # parent of .git = repo root; parent of that = first ancestor to check
-        while [[ "${ancestor}" != "${PROJECTS_BASE_DIR}" && "${ancestor}" != "/" ]]; do
-          if is_zero_string "${seen_parent_folders[$ancestor]:-}"; then
-            seen_parent_folders[$ancestor]=1
-            parent_folders+=("${ancestor}")
-          fi
-          ancestor="${ancestor:h}"
-        done
-      done < <(find "${PROJECTS_BASE_DIR}" -maxdepth 6 -type d -name '.git')
-
-      {
-        for folder_path in "${parent_folders[@]}"; do
-          local relative_path="${folder_path#${PROJECTS_BASE_DIR}/}"
-          # Alias name: strip base dir prefix and replace '/' with '-'
-          echo "alias ${relative_path//\//-}=\"FOLDER='${folder_path}' MAXDEPTH=4 rug\""
-        done
-      } >|"${repo_alias_cache}"
-
-      ((force))   && success "Repo aliases cache regenerated and loaded (${#${(f)$(<"${repo_alias_cache}")}[@]} aliases)"
-    fi
-
     load_file_if_exists "${repo_alias_cache}"
   }
 
@@ -255,7 +263,7 @@ delete_caches() {
   # following) to avoid cycles in user home dirs. HOMEBREW_PREFIX must use -L so
   # that find descends into opt/<formula>/ directories, which are all symlinks to
   # Cellar/<formula>/<version>/. Without -L, stale .zwc files in those paths are
-  # silently skipped — antidote.zsh.zwc in particular must be purged so that
+  # silently skipped -- antidote.zsh.zwc in particular must be purged so that
   # antidote's ZSH_EVAL_CONTEXT source-detection check works correctly on next start.
   find "${HOME}" -maxdepth 10 \( -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' \) -prune -o -name '*.zwc*' -type f -print -delete || warn "find command failed in ${HOME}"
   # macOS find forbids -delete when -L is active (safety guard against deleting
@@ -312,7 +320,7 @@ resurrect_tracked_repos() {
   # (which already incremented to depth 1), this increments to depth 2 and
   # suppresses nested script banners from resurrect-repositories.rb.
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
-  # Shell functions cannot set EXIT traps — they only fire on process exit, not
+  # Shell functions cannot set EXIT traps -- they only fire on process exit, not
   # function return. The manual decrement at the end is the correct pattern for
   # functions. Scripts use 'trap _decrement_script_depth EXIT'.
 
@@ -348,30 +356,24 @@ resurrect_tracked_repos() {
       _step_warnings+=("[${_SCRIPT_NAME}][${_current_section}] ${msg}")
     fi
   else
-    debug "Skipping resurrecting of repositories since '$(yellow "${PERSONAL_CONFIGS_DIR}")' doesn't exist"
+    debug "Skipping resurrecting of repositories since '$(cyan "${PERSONAL_CONFIGS_DIR}")' doesn't exist"
   fi
 
   # post-clone operations for installing system dependencies
   section_header2 "$(yellow 'Running post-clone operations')"
   # 'all' (alias: FOLDER='${HOME}' MAXDEPTH=7 rug → run-all.rb git) requires .aliases
   # to be loaded so the alias is defined. Use the underlying command directly to avoid
-  # that dependency — this function is called from fresh-install as a background job
+  # that dependency -- this function is called from fresh-install as a background job
   # where the sourcing order may differ.
   if command_exists 'run-all.rb'; then
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git restore-mtime -c
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git maintenance start
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb 'git restore-mtime -c'
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb "git maintenance register --config-file '${HOME}/.gitconfig-oss.inc'"
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb 'git maintenance start'
   fi
-  # Collect repo ancestor dirs once and share across both post-clone operations
-  # to avoid running the expensive find traversal twice.
-  local -a all_dirs
-  _collect_repo_ancestor_dirs
-  _SHARED_REPO_DIRS=("${all_dirs[@]}")
 
   allow_all_direnv_configs
   install_mise_versions
 
-  unset _SHARED_REPO_DIRS
   regenerate_repo_aliases
 
   # Only print success message if there were no warnings/errors. print_script_summary
@@ -381,126 +383,37 @@ resurrect_tracked_repos() {
     summary_msg='Finished resurrecting tracked repos'
   fi
   print_script_summary "${script_start_time}" "${summary_msg}"
-  # Manual decrement — EXIT trap does not fire on function return in shell functions.
+  # Manual decrement -- EXIT trap does not fire on function return in shell functions.
   _decrement_script_depth
 }
 
-# Populates the caller-declared 'all_dirs' array with deduplicated ancestor
-# directories of every git repo found under HOME, DOTFILES_DIR, and
-# PROJECTS_BASE_DIR.  Callers must declare 'local -a all_dirs' before calling.
-# Respects FIRST_INSTALL (caps search depth to 3 to speed up vanilla-OS runs).
-_collect_repo_ancestor_dirs() {
-  local find_maxdepth=6
-  is_first_install && find_maxdepth=3
-
-  local -A _seen_dirs=()
-  all_dirs=()
-
-  while IFS= read -r git_dir; do
-    local dir="${git_dir:h}"  # strip the trailing /.git to get the repo root
-    while [[ "${dir}" != "/" ]]; do
-      if is_zero_string "${_seen_dirs[$dir]:-}"; then
-        _seen_dirs[$dir]=1
-        all_dirs+=("${dir}")
-      fi
-      [[ "${dir}" == "${HOME}" ]] && break  # stop after processing HOME
-      dir="${dir:h}"  # walk up one level
-    done
-  done < <(find "${HOME}" "${DOTFILES_DIR}" "${PROJECTS_BASE_DIR}" -maxdepth ${find_maxdepth} \( -name 'node_modules' -o -name '.cache' -o -name '.Trash' -o -name 'Library' -o -name 'Caches' \) -prune -o -type d -name '.git' -print 2>/dev/null)
-}
-
+# Internal helper: calls a Ruby Repos module method with optional arguments.
 # Installs any missing tool versions declared via mise config files (.mise.toml,
 # .tool-versions, etc.) across all git repos and their ancestor directories under
 # HOME, DOTFILES_DIR, and PROJECTS_BASE_DIR. Skips silently if mise is not in PATH.
+# Thin wrapper that delegates to Ruby Repos.install_mise_versions.
 install_mise_versions() {
-  section_header2 "$(yellow 'Installing mise in all git repos and ancestors')"
   if ! command_exists mise; then
     debug "Couldn't find 'mise' in the PATH; Skipping loading any mise configs"
     return 0
   fi
-
-  local -a all_dirs
-  if ((${+_SHARED_REPO_DIRS}))   && is_non_empty_array _SHARED_REPO_DIRS; then
-    all_dirs=("${_SHARED_REPO_DIRS[@]}")
-  else
-    _collect_repo_ancestor_dirs
-  fi
-
-  # Sort by depth so parents come before children, then filter to dirs with mise configs
-  local mise_configs=('.mise.toml' '.tool-versions' '.ruby-version' '.python-version' '.node-version' '.java-version' '.nvmrc')
-  local -a sorted_dirs
-  local dir cfg
-  for dir in "${(@on)all_dirs}"; do
-    for cfg in "${mise_configs[@]}"; do
-      if is_file "${dir}/${cfg}"; then
-        sorted_dirs+=("${dir}")
-        break
-      fi
-    done
-  done
-  local total=${#sorted_dirs}
-  local idx=0
-  # Single pass: --dry-run-code is checked once per dir.
-  # mise trust and mise install only run for dirs that actually need work —
-  # trust is a no-op on already-trusted dirs but is only needed before installation.
-  for dir in "${sorted_dirs[@]}"; do
-    # Use pre-increment: ((++idx)) evaluates to the incremented value (1 on first use),
-    # so it always exits 0. ((idx++)) evaluates to the pre-increment value (0 on first
-    # use), which exits 1 in zsh arithmetic and spuriously fires the ERR trap.
-    ((++idx))
-    if mise -C "${dir}" install --dry-run-code &>/dev/null; then
-      debug "[${idx}/${total}] '$(cyan "${dir}")' — all tools already installed"
-      continue
-    fi
-    info "[${idx}/${total}] installing mise tools in '$(cyan "${dir}")'"
-    mise -C "${dir}" trust -y -a
-    mise -C "${dir}" install
-  done
+  local first_install_flag="false"
+  is_first_install && first_install_flag="true"
+  _call_ruby_repos install_mise_versions "first_install=${first_install_flag}"
 }
 
 # Runs 'direnv allow' for every directory that has an .envrc file across all
 # git repos and their ancestor directories under HOME, DOTFILES_DIR, and
 # PROJECTS_BASE_DIR. Skips silently if direnv is not in PATH.
+# Thin wrapper that delegates to Ruby Repos.allow_all_direnv_configs.
 allow_all_direnv_configs() {
-  section_header2 "$(yellow 'Allowing direnv configs in all git repos and ancestors')"
   if ! command_exists direnv; then
     debug "Couldn't find 'direnv' in the PATH; Skipping allowing any direnv configs"
     return 0
   fi
-
-  local -a all_dirs
-  if ((${+_SHARED_REPO_DIRS}))   && is_non_empty_array _SHARED_REPO_DIRS; then
-    all_dirs=("${_SHARED_REPO_DIRS[@]}")
-  else
-    _collect_repo_ancestor_dirs
-  fi
-
-  # Sort by depth so parents come before children, then filter to dirs with .envrc configs
-  local -a sorted_dirs
-  local dir
-  for dir in "${(@on)all_dirs}"; do
-    if is_file "${dir}/.envrc"; then
-      sorted_dirs+=("${dir}")
-    fi
-  done
-
-  # direnv allow is idempotent and accepts a directory path — no pushd needed.
-  # direnv status always exits 0 regardless of allow state, so a pre-check cannot
-  # short-circuit this loop; just allow every dir unconditionally.
-  local total=${#sorted_dirs}
-  local idx=0
-  for dir in "${sorted_dirs[@]}"; do
-    # Use pre-increment: ((++idx)) evaluates to the incremented value (1 on first use),
-    # so it always exits 0. ((idx++)) evaluates to the pre-increment value (0 on first
-    # use), which exits 1 in zsh arithmetic and spuriously fires the ERR trap.
-    ((++idx))
-    info "[${idx}/${total}] allowing direnv for '$(cyan "${dir}")'"
-    if direnv allow "${dir}"; then
-      success "Successfully allowed direnv for '$(yellow "${dir}")'"
-    else
-      warn "Failed to allow direnv for '$(yellow "${dir}")'"
-    fi
-  done
+  local first_install_flag="false"
+  is_first_install && first_install_flag="true"
+  _call_ruby_repos allow_all_direnv_configs "first_install=${first_install_flag}"
 }
 
 # --------------------------------------------------------------------------
@@ -550,9 +463,9 @@ if is_macos; then
     local denied_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-denied-list.txt"
     defaults find "${1}" | \grep 'keys in domain' | while IFS="'" read -r _ field _; do
       # Check whether this domain is on the denied list before appending.
-      # grep -Fxq: fixed-string, whole-line, quiet — no subprocess output.
+      # grep -Fxq: fixed-string, whole-line, quiet -- no subprocess output.
       if grep -Fxq "${field}" "${denied_list_file}" 2>/dev/null; then
-        debug "Skipping '$(yellow "${field}")' — it is on the denied list (machine-specific data; see capture-prefs-denied-list.txt)"
+        debug "Skipping '$(yellow "${field}")' -- it is on the denied list (machine-specific data; see capture-prefs-denied-list.txt)"
       else
         print -- "${field}" >>"${allowed_list_file}"
       fi
@@ -582,7 +495,7 @@ if is_macos && command_exists brew; then
     local -a _step_warnings=()
     local -a _step_errors=()
     export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
-    # Shell functions cannot set EXIT traps — they only fire on process exit, not
+    # Shell functions cannot set EXIT traps -- they only fire on process exit, not
     # function return. The manual decrement at the end is the correct pattern for
     # functions. Scripts use 'trap _decrement_script_depth EXIT'.
 
@@ -597,7 +510,7 @@ if is_macos && command_exists brew; then
     post-brew-install.rb || true
 
     print_script_summary "${start_time}"
-    # Manual decrement — EXIT trap does not fire on function return in shell functions.
+    # Manual decrement -- EXIT trap does not fire on function return in shell functions.
     _decrement_script_depth
   }
 
@@ -640,7 +553,7 @@ time_shell_startup() {
   # Resolve via PATH so the result is the PATH-located binary, not a version
   # that may differ from what cron or a fresh login shell would use.
   shell_bin="$(which "$(basename "${1:-${SHELL}}")")"
-  # {1..10} brace expansion — no $(seq 1 10) subprocess fork.
+  # {1..10} brace expansion -- no $(seq 1 10) subprocess fork.
   local i
   for i in {1..10}; do /usr/bin/time "${shell_bin}" -i -c exit; done
 }
@@ -698,8 +611,8 @@ pdf_to_png() {
 # Usage: folder_size [folder-path]
 folder_size() {
   local folder="${1:-${PWD}}"
-  # du output is "<size>\t<path>"; capture once then strip with %% — no cut fork.
-  # ${folder:A} is the pure-zsh realpath equivalent — no realpath subprocess.
+  # du output is "<size>\t<path>"; capture once then strip with %% -- no cut fork.
+  # ${folder:A} is the pure-zsh realpath equivalent -- no realpath subprocess.
   # color functions apply tilde substitution automatically; no pre-substitution needed.
   local du_out
   du_out=$(/usr/bin/du -sh "${folder}" 2>/dev/null)
@@ -737,7 +650,7 @@ if command_exists tmux; then
 fi
 
 # Editor aliases
-# EDITOR='wait-editor' — a wrapper script that re-execs $GIT_EDITOR with word-splitting
+# EDITOR='wait-editor' -- a wrapper script that re-execs $GIT_EDITOR with word-splitting
 # so --wait is passed correctly to tools that exec() EDITOR directly (crontab, visudo, etc.).
 # GIT_EDITOR carries the full invocation with flags (e.g. 'zed --wait').
 if command_exists "${EDITOR:-}"; then
@@ -747,7 +660,7 @@ if command_exists "${EDITOR:-}"; then
     alias -s log="${EDITOR}"
   fi
 
-  # add a generic alias for editing files and folders — non-blocking (bare binary,
+  # add a generic alias for editing files and folders -- non-blocking (bare binary,
   # no --wait) so the shell prompt returns immediately after launching the editor.
   # Non-blocking: strip flags (e.g. 'zed --wait' → 'zed') via nested expansion.
   # Falls back to $EDITOR then 'vi' if GIT_EDITOR is unset (e.g. non-interactive shells).
@@ -819,7 +732,7 @@ with_cron_suspended() {
 # --------------------------------------------------------------------------
 
 # Runs 'keybase git gc --force' on the named repo. Whether this actually
-# reclaims space on the remote is unverified — use as a best-effort compaction step.
+# reclaims space on the remote is unverified -- use as a best-effort compaction step.
 # Usage: kbgc <repo-name>
 if command_exists keybase; then
   kbgc() {
@@ -921,7 +834,7 @@ _MACOS_LOGIN_ITEM_APPS=(
 
 # Sends SIGTERM to every app in _MACOS_LOGIN_ITEM_APPS. Called before writing
 # defaults so in-memory state is flushed to disk first.
-# Failures are silenced — apps that are not running are not an error.
+# Failures are silenced -- apps that are not running are not an error.
 kill_login_item_apps() {
   local _app
   for _app in "${_MACOS_LOGIN_ITEM_APPS[@]}"; do
@@ -935,7 +848,7 @@ kill_login_item_apps() {
 # apps dead.
 # Finder is launchd-managed: killall causes an immediate auto-relaunch with
 # fresh prefs. open -a would be a no-op since launchd already relaunched it
-# after kill_login_item_apps — so killall is used again here to force a
+# after kill_login_item_apps -- so killall is used again here to force a
 # second relaunch that reads the newly-written defaults.
 restart_login_item_apps() {
   local _app
@@ -946,12 +859,12 @@ restart_login_item_apps() {
 }
 
 # Turns the macOS automatic software update schedule off before reading/writing
-# plists. Guards with 'sudo -n true' so it is safe to call from cron — if sudo
+# plists. Guards with 'sudo -n true' so it is safe to call from cron -- if sudo
 # credentials are not cached (no terminal), warns and skips rather than hanging.
 # Must be paired with resume_softwareupdate_schedule (called from EXIT trap).
 suspend_softwareupdate_schedule() {
   if ! has_sudo_credentials; then
-    warn "suspend_softwareupdate_schedule: sudo credentials not available — skipping softwareupdate schedule suspension."
+    warn "suspend_softwareupdate_schedule: sudo credentials not available -- skipping softwareupdate schedule suspension."
     return 0
   fi
   keep_sudo_alive
@@ -960,13 +873,13 @@ suspend_softwareupdate_schedule() {
 
 # Turns the macOS automatic software update schedule back on. Called from the
 # EXIT trap in osx-defaults.sh and capture-prefs.sh so it runs on both normal
-# and error exits. Guards with 'sudo -n true' so it is safe to call from cron —
+# and error exits. Guards with 'sudo -n true' so it is safe to call from cron --
 # if sudo credentials are not cached (no terminal), warns and skips rather than
 # hanging. keep_sudo_alive's duplicate-loop guard makes it a no-op when the
 # background loop is already running.
 resume_softwareupdate_schedule() {
   if ! has_sudo_credentials; then
-    warn "resume_softwareupdate_schedule: sudo credentials not available — skipping softwareupdate schedule restoration."
+    warn "resume_softwareupdate_schedule: sudo credentials not available -- skipping softwareupdate schedule restoration."
     return 0
   fi
   keep_sudo_alive
@@ -975,8 +888,8 @@ resume_softwareupdate_schedule() {
 
 # Restarts the macOS system services that cache preferences so imported or
 # written defaults take effect immediately without a logout.
-# cfprefsd — flushes the global prefs cache (covers NSGlobalDomain).
-# activateSettings — the only supported way to flush com.apple.symbolichotkeys
+# cfprefsd -- flushes the global prefs cache (covers NSGlobalDomain).
+# activateSettings -- the only supported way to flush com.apple.symbolichotkeys
 #   (keyboard shortcut changes) without a logout.
 reload_macos_prefs() {
   local _reload_app

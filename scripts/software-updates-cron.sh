@@ -10,7 +10,7 @@
 
 _SCRIPT_NAME="${0:t}"
 
-# Re-source guard is inside .aliases itself — safe to call unconditionally.
+# Re-source guard is inside .aliases itself -- safe to call unconditionally.
 source "${HOME}/.aliases"
 
 # Run a single update step if the check command is available
@@ -29,7 +29,7 @@ _perform_update() {
     if eval "${update_cmd}"; then
       success "Successfully updated: '${title}'"
     else
-      # Tool update failures are warnings — the tool is still usable; only the upgrade failed.
+      # Tool update failures are warnings -- the tool is still usable; only the upgrade failed.
       _record_warning "Failed to update '${title}'"
     fi
     step_end
@@ -39,17 +39,17 @@ _perform_update() {
 }
 
 main() {
-  # LOCAL_TRAPS scopes the ERR trap to main() only — it is not inherited into called
+  # LOCAL_TRAPS scopes the ERR trap to main() only -- it is not inherited into called
   # functions. Without this, non-zero exits inside called functions (e.g. git sci
   # finding nothing to commit, st warning about a missing repo) fire the trap even
   # when the call site has '|| warn' or '|| true'.
   setopt LOCAL_TRAPS
 
   # Two separate accumulator arrays for non-fatal step issues:
-  #   _step_warnings — recoverable tool-level failures (e.g. a brew/mise/tldr update step failed)
-  #   _step_errors   — significant infrastructure failures (e.g. repo pull, capture-prefs, size limit)
+  #   _step_warnings -- recoverable tool-level failures (e.g. a brew/mise/tldr update step failed)
+  #   _step_errors   -- significant infrastructure failures (e.g. repo pull, capture-prefs, size limit)
   # _record_warning/_record_error/print_script_summary (all from .shellrc via .aliases) read/write
-  # these via zsh dynamic scoping — locals declared here are visible in all callees.
+  # these via zsh dynamic scoping -- locals declared here are visible in all callees.
   local _current_section='(init)'
   local -a _step_warnings=()
   local -a _step_errors=()
@@ -71,7 +71,7 @@ main() {
   local tracked_file f folder outdated_flat=''
   print_script_start
 
-  # brew doctor is skipped — too slow for cron jobs
+  # brew doctor is skipped -- too slow for cron jobs
   _perform_update 'brews' 'brew' 'brew bundle check || brew bundle'
 
   # This is typically run only in the ${HOME} folder so as to upgrade the software versions in the "global" sense
@@ -162,7 +162,7 @@ main() {
     # Use the equivalent direct invocation instead of the 'home pull' alias.
     # run-all.rb records a warning (not an error) per failing repo: a dirty skip is
     # an expected state in a personal repo, not a script failure.
-    FOLDER="${HOME}" FILTER='.bin|zsh|mise' MAXDEPTH=5 run-all.rb git pull-safe || _record_warning 'Some home repos could not be auto-updated — working tree may be dirty. Rebase manually.'
+    FOLDER="${HOME}" FILTER='.bin|zsh|mise' MAXDEPTH=5 run-all.rb git pull-safe || _record_warning 'Some home repos could not be auto-updated -- working tree may be dirty. Rebase manually.'
     step_end
 
     sleep 10 # so that GH doesn't throttle when we call a lot of times within a short time
@@ -175,7 +175,7 @@ main() {
     # 'git upreb' now aborts early if the working tree is dirty rather than failing mid-workflow
     # (after fetch+rebase but before push). A dirty skip exits non-zero so run-all.rb records
     # a per-repo warning. Not _record_error: a dirty skip is expected, not a script failure.
-    FOLDER="${PROJECTS_BASE_DIR}/oss" MAXDEPTH=4 run-all.rb git upreb && success 'Finished upreb for oss repos' || _record_warning 'Some oss repos could not be auto-updated — working tree may be dirty. Run upreb manually.'
+    FOLDER="${PROJECTS_BASE_DIR}/oss" MAXDEPTH=4 run-all.rb git upreb && success 'Finished upreb for oss repos' || _record_warning 'Some oss repos could not be auto-updated -- working tree may be dirty. Run upreb manually.'
     step_end
 
     _current_section='Restore mtime and register for maintenance'
@@ -183,9 +183,9 @@ main() {
     section_header "$(yellow 'Restoring mtime and registering for maintenance operations')"
     # Aliases ('all', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'all' alias.
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git restore-mtime -c
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git maintenance register --config-file "${HOME}/.gitconfig-oss.inc"
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb git maintenance start
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb 'git restore-mtime -c'
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb "git maintenance register --config-file '${HOME}/.gitconfig-oss.inc'"
+    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb 'git maintenance start'
     step_end
   fi
 
@@ -250,7 +250,7 @@ main() {
       debug 'No old session backups to prune'
     fi
   else
-    debug "Skipping session backup pruning — not a git repo: '$(yellow "${PERSONAL_PROFILES_DIR}")'"
+    debug "Skipping session backup pruning -- not a git repo: '$(yellow "${PERSONAL_PROFILES_DIR}")'"
   fi
   step_end
 
@@ -266,7 +266,7 @@ main() {
       profiles_size_human=$(du -sh "${PERSONAL_PROFILES_DIR}" 2>/dev/null | awk '{print $1}')
       # _record_error instead of error(): error() calls _dotfiles_notify() which would
       # send an immediate notification before the grouped summary at the end of main.
-      _record_error "Profiles repo is ${profiles_size_human} — exceeds 2GB threshold. Consider running: recreate-repo.rb -d \"${PERSONAL_PROFILES_DIR}\""
+      _record_error "Profiles repo is ${profiles_size_human} -- exceeds 2GB threshold. Consider running: recreate-repo.rb -d \"${PERSONAL_PROFILES_DIR}\""
     else
       debug "Profiles repo size within 2GB threshold"
     fi
@@ -278,7 +278,7 @@ main() {
   section_header "$(yellow 'Update home and profiles repos')"
   # source imports the function definition into this shell. The explicit call on
   # the next line is still required because the autoload script's zsh_eval_context
-  # guard ('*:file*' match) suppresses auto-execution when sourced — it only
+  # guard ('*:file*' match) suppresses auto-execution when sourced -- it only
   # runs automatically when the file is invoked directly, not when sourced.
   source "${XDG_CONFIG_HOME}/zsh/update_all_repos"
   update_all_repos && success 'Finished updating home and profiles repos' || _record_error 'Failed to update home and profiles repos'
@@ -289,7 +289,7 @@ main() {
   section_header "$(yellow 'Report status of all repos')"
   # source imports the function definition into this shell. The explicit call on
   # the next line is still required because the autoload script's zsh_eval_context
-  # guard ('*:file*' match) suppresses auto-execution when sourced — it only
+  # guard ('*:file*' match) suppresses auto-execution when sourced -- it only
   # runs automatically when the file is invoked directly, not when sourced.
   source "${XDG_CONFIG_HOME}/zsh/status_all_repos"
   status_all_repos || true
@@ -309,9 +309,9 @@ main() {
   if is_non_empty_array chrome_folders; then
     for folder in "${chrome_folders[@]}"; do
       if is_git_repo "${folder}"; then
-        section_header2 "$(yellow 'Updating chrome folder:') $(purple "${folder}")"
-        # Chrome folder update failures are warnings — CSS customisation is non-critical.
-        git -C "${folder}" pull -r && success "Successfully updated: '$(yellow "${folder}")'" || _record_warning "Failed to update chrome folder: '${folder}'"
+        section_header2 "$(yellow 'Updating chrome folder:') $(cyan "${folder}")"
+        # Chrome folder update failures are warnings -- CSS customisation is non-critical.
+        git -C "${folder}" pull -r && success "Successfully updated: '$(cyan "${folder}")'" || _record_warning "Failed to update chrome folder: '${folder}'"
       else
         debug "skipping update for non-repo: '$(yellow "${folder}")'"
       fi
@@ -332,8 +332,8 @@ main() {
     # warn (not _record_warning): outdated software is an advisory notice, not a step failure.
     # It is surfaced in the final notification separately via outdated_flat.
     if is_non_zero_string "${outdated}"; then
-      warn "Found some outdated softwares that need manual updating: $(yellow "${outdated}")"
-      # Replace newlines with ', ' — osascript notification cannot span multiple lines.
+      warn "Found some outdated softwares that need manual updating: $(purple "${outdated}")"
+      # Replace newlines with ', ' -- osascript notification cannot span multiple lines.
       # Stored in main-scoped outdated_flat so the final summary notification can include it.
       outdated_flat="${outdated//$'\n'/, }"
     fi
@@ -365,7 +365,7 @@ main() {
     done
     step_end
   else
-    debug 'ollama not found — skipping model pulls'
+    debug 'ollama not found -- skipping model pulls'
   fi
 
   # Print grouped summary of all collected warnings and errors (warnings first,
@@ -375,7 +375,7 @@ main() {
   local _notification_parts=()
   if is_non_empty_array _step_errors; then
     local _errors_summary
-    # Join with '; ' for the notification body — osascript cannot span multiple lines.
+    # Join with '; ' for the notification body -- osascript cannot span multiple lines.
     _errors_summary="${(j:; :)_step_errors}"
     _notification_parts+=("${#_step_errors[@]} error(s): ${_errors_summary}")
   fi
@@ -388,7 +388,7 @@ main() {
   local _msg _title_icon
   if is_non_empty_array _notification_parts; then
     _title_icon='⚠️'
-    _msg=" — ${(j: | :)_notification_parts}"
+    _msg=" -- ${(j: | :)_notification_parts}"
   else
     _title_icon='✅'
     _msg="."

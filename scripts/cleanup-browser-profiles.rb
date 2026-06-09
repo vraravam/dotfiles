@@ -42,13 +42,13 @@ def _browser_running?(browser_name)
 end
 
 # Formats a folder size for display. Returns colorized string with tilde-substituted
-# path and human-readable size. Color methods (.yellow, .cyan) handle tilde substitution
+# path and human-readable size. Color methods (.cyan) handle tilde substitution
 # automatically, so no manual HOME replacement is needed.
 # Mirrors folder_size() shell function behavior.
 def _folder_size(folder)
   du_out, = Open3.capture3('du', '-sh', folder.to_s)
   size = du_out.split("\t").first
-  "#{folder.to_s.yellow} --> #{size.cyan}"
+  "#{folder.to_s.cyan} --> #{size}"
 end
 
 private :_read_pattern_file, :_browser_running?, :_folder_size
@@ -65,12 +65,12 @@ def vacuum_browser_profile_folder(browser_name, profile_folder, dry_run:)
   dir_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-dirs.txt'))
 
   if _browser_running?(browser_name)
-    user_action "Shutdown '#{browser_name.yellow}' first — skipping processing for #{browser_name}"
+    user_action "Shutdown '#{browser_name.purple}' first -- skipping processing for '#{browser_name.purple}'"
     return
   end
 
   unless File.directory?(profile_folder)
-    info "Skipping '#{profile_folder.to_s.cyan}' — directory does not exist"
+    info "Skipping '#{profile_folder.to_s.cyan}' -- directory does not exist"
     return
   end
 
@@ -95,9 +95,9 @@ def vacuum_browser_profile_folder(browser_name, profile_folder, dry_run:)
 
       if dry_run
         size_mb = db_size / 1_048_576
-        info "[DRY-RUN] Would vacuum: '#{db_file.yellow}' (#{size_mb}MB)"
+        info "[DRY-RUN] Would vacuum: '#{db_file.cyan}' (#{size_mb.to_s.purple}MB)"
       else
-        info "Vacuuming: '#{db_file.yellow}'"
+        info "Vacuuming: '#{db_file.cyan}'"
         if system('sqlite3', db_file, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;', out: File::NULL, err: File::NULL)
           vacuumed += 1
         else
@@ -106,10 +106,10 @@ def vacuum_browser_profile_folder(browser_name, profile_folder, dry_run:)
       end
     end
 
-    info "  -> Processed #{vacuumed} of #{db_count} SQLite databases"
+    info "  -> Processed #{vacuumed.to_s.purple} of #{db_count.to_s.purple} SQLite databases"
     if failed_dbs.any?
-      failed_list = failed_dbs.map { |f| "    - #{f.cyan}" }.join("\n")
-      record_warning("sqlite3 vacuum failed for #{failed_dbs.size} database(s):\n#{failed_list}")
+      failed_list = failed_dbs.map { |f| "    - '#{f.red}'" }.join("\n")
+      record_warning("sqlite3 vacuum failed for #{failed_dbs.size.to_s.red} database(s):\n#{failed_list}")
     end
   end
 
@@ -136,8 +136,8 @@ def vacuum_browser_profile_folder(browser_name, profile_folder, dry_run:)
 
   if dry_run
     info '[DRY-RUN] Would delete the following files and directories:'
-    items_to_delete.first(20).each { |p| puts "  #{p.yellow}" }
-    info "  ... and #{items_to_delete.length - 20} more items" if items_to_delete.length > 20
+    items_to_delete.first(20).each { |p| puts "  '#{p.cyan}'" }
+    info "  ... and #{(items_to_delete.length - 20).to_s.purple} more items" if items_to_delete.length > 20
   elsif items_to_delete.any?
     info 'Deleting files and directories matching patterns...'
     deleted = 0
@@ -149,7 +149,7 @@ def vacuum_browser_profile_folder(browser_name, profile_folder, dry_run:)
         record_warning("Failed to delete '#{path.cyan}': #{e.message}")
       end
     end
-    info "  -> Deleted #{deleted} items"
+    info "  -> Deleted #{deleted.to_s.purple} items"
   end
 
   size_out, = Open3.capture3('du', '-sk', profile_folder.to_s)
@@ -168,7 +168,7 @@ def vacuum_browser_profile_folder(browser_name, profile_folder, dry_run:)
     end
   end
 
-  success "Successfully processed profile folder for '#{browser_name.yellow}'"
+  success "Successfully processed profile folder for '#{browser_name.purple}'"
 end
 
 # ---------------------------------------------------------------------------
@@ -188,7 +188,7 @@ end
 increment_script_depth
 start_time = print_script_start
 
-info 'Running in DRY-RUN mode — no changes will be made' if options[:dry_run]
+info 'Running in DRY-RUN mode -- no changes will be made' if options[:dry_run]
 
 browser_profiles = {
   'brave' => EnvVars::PERSONAL_PROFILES_DIR.join('BraveProfile'),

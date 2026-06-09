@@ -1,6 +1,51 @@
 As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scripts-to-your-own-settings) section, this repo and its scripts are aimed at developers/techies. If you are stuck or need help in any fashion, you can reach out to the [owner of the parent repo](https://github.com/vraravam) from where this was forked.
 
-For those who follow this repo, here's the changelog for ease of changelog:
+For those who follow this repo, here's the changelog for ease of adoption:
+
+
+### 3.1.12
+
+#### Unified color standard across all scripts
+
+* *[All Ruby and Shell scripts]* Applied consistent colorization rules across all logging output: paths/files → cyan, action verbs → yellow, labels/keys → yellow + colon, component names → yellow (or purple when context is already yellow), commands → cyan, domain identifiers → light_cyan, numeric values → green/red/purple (success/error/neutral), booleans → orange, error messages → red. Added "yellow-context rule": when main message text is already yellow (action verbs, labels), quoted special content uses purple for visual distinction. Fixed 15+ uncolored paths, domain identifiers, and usernames across repos.rb, antidote.rb, cron.rb, keybase.rb, capture-prefs.sh. Updated ruby-scripting.instructions.md and shell-scripting.instructions.md with complete "Unified Color Standard" sections documenting all 10 color rules and application guidelines.
+
+#### Consolidated regenerate_repo_aliases implementation
+
+* *[files/--HOME--/.aliases, scripts/utilities/repos.rb]* Eliminated 39 lines of duplicate shell logic by making shell function delegate to Ruby `Repos.regenerate_repo_aliases`. Ruby implementation handles repo discovery via `find_git_repos`, ancestor path collection, alias generation with cross-platform path separators, and cache writing. Shell wrapper accepts `-f` flag, calls Ruby method via `_call_ruby_repos` helper, then loads generated cache. Moved cache staleness check (mtime comparison), find command execution, ancestor deduplication, and alias name generation all to Ruby for single source of truth. Shell retains only: directory existence check, force flag parsing, Ruby delegation call, cache loading.
+
+#### Created Ruby delegation helpers for DRY
+
+* *[files/--HOME--/.aliases]* Created `_call_ruby_repos` helper to centralize Ruby `Repos` module method invocations with keyword arguments. Eliminates duplication of `$LOAD_PATH.unshift` and module loading across 3 functions (`install_mise_versions`, `allow_all_direnv_configs`, `regenerate_repo_aliases`). Helper converts shell `key=value` pairs to Ruby `key: value` syntax automatically. Reduced 3 functions × 15 lines to 3 functions × 1 line + 33-line helper. Pattern now matches `_call_ruby_cron` in .shellrc.
+* *[files/--HOME--/.shellrc, files/--HOME--/.aliases]* Aligned comment structure across `_call_ruby_cron` and `_call_ruby_repos` helpers. Both now document: "Internal helper: calls Ruby <Module> module method", "Eliminates duplication of $LOAD_PATH setup", usage line, and two example invocations. Updated `_call_ruby_cron` to use `is_zero_string` for consistency. Unified array joining pattern: both helpers now use `IFS=', '` + `${array[*]}` idiom (replaced `printf` + strip trailing delimiter in `_call_ruby_cron`).
+
+#### Extended EnvVars module with additional constants
+
+* *[scripts/utilities/env_vars.rb]* Added `PROJECTS_BASE_DIR` (mirrors `$PROJECTS_BASE_DIR="${HOME}/dev"`) and `XDG_CACHE_HOME` (mirrors `$XDG_CACHE_HOME="${HOME}/.cache"`) as Pathname constants. All constants now use sensible fallbacks and are frozen. Updated ruby-scripting.instructions.md "Available Constants" section to include both new constants.
+* *[scripts/utilities/repos.rb]* Replaced all `ENV.fetch('HOME', '')`, `ENV.fetch('DOTFILES_DIR', ...)`, `ENV.fetch('PROJECTS_BASE_DIR', ...)` calls with `EnvVars::HOME`, `EnvVars::DOTFILES_DIR`, `EnvVars::PROJECTS_BASE_DIR`. Kept `ENV.fetch('DEBUG', nil)` for non-path boolean flag. EnvVars is now single source of truth for all directory paths in repos.rb.
+
+#### Replaced ENV hash access with ENV.fetch
+
+* *[scripts/run-all.rb, scripts/resurrect-repositories.rb]* Replaced `ENV['SHELL'] || '/bin/zsh'` with `ENV.fetch('SHELL', '/bin/zsh')`, `(ENV['FILTER'] || '').strip` with `ENV.fetch('FILTER', '').strip`, `ENV['REF_FOLDER']&.then` with `ENV.fetch('REF_FOLDER', nil)&.then`. Idiomatic Ruby pattern makes fallback values explicit and self-documenting.
+
+#### Improved cross-platform path handling
+
+* *[scripts/utilities/repos.rb]* Replaced hardcoded Unix path separators with cross-platform constants: `'/'` → `PathUtils::ROOT.to_s` (4 occurrences), `'/'` → `File::SEPARATOR` in path manipulation (2 occurrences). Updated comments from "replace '/' with '-'" to "replace path separator with '-'". Ensures Windows compatibility (would use `'\\'` and `'C:\'` on Windows).
+* *[scripts/utilities/repos.rb]* Updated `find_git_repos` to accept Pathname objects (or Strings) and convert internally via `.map(&:to_s)` at system boundary (find command needs strings). Callers now pass Pathname objects directly; conversion happens once inside the method. Removed `.map(&:to_s)` and `.to_s` from call sites (2 occurrences). Updated docstring to reflect Pathname acceptance. Added `.compact` and `.reject { |f| f.empty? }` guards to reject nil and empty strings before processing. Added `.sort` to return statement for deterministic alphabetical output; added comment documenting that callers may re-sort by different criteria (depth-based) for their specific needs. Updated @return docstring to "deduplicated and sorted alphabetically".
+
+#### Fixed autoload race condition in autoload functions
+
+* *[files/--XDG_CONFIG_HOME--/zsh/cc, count, pull, push, st, upreb]* Added guard to prevent "command not found: dispatch_or_fallback" errors when opening multiple terminal tabs simultaneously. The race condition occurred because `.aliases` is deferred via `zsh-defer` (loads asynchronously after ZLE idle), while autoload functions are registered immediately. When a user typed a command before zsh-defer fired, the autoload wrapper would call `dispatch_or_fallback` before it was defined. Each wrapper now checks if `dispatch_or_fallback` exists; if not, it synchronously loads `.aliases` first. The re-source guard in `.aliases` prevents duplicate execution when zsh-defer fires later. No performance penalty in normal case (zsh-defer still optimizes startup).
+
+#### Replaced Unicode punctuation with ASCII equivalents
+
+* *[All shell scripts, Ruby scripts, and instruction files]* Replaced 659 em dashes (—, Unicode U+2014) with ASCII double dashes (--). Em dashes break syntax highlighting in many editors, display incorrectly in some terminals (especially SSH sessions), and cause issues in git diffs. Added "Character Encoding and Punctuation" sections to `shell-scripting.instructions.md` and `ruby-scripting.instructions.md` documenting the ASCII-only rule. Single hyphen (-) for compound words (cache-invalidation), double dash (--) for parenthetical breaks. Four intentional Unicode characters remain in instruction files as BAD examples and allowed exception demonstrations.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts.
+* Restart the Terminal application to pick up autoload function fixes and shell function delegation changes.
+* Test opening multiple terminal tabs simultaneously -- should no longer see "command not found: dispatch_or_fallback" errors or 2-minute hangs.
+* Run `regenerate_repo_aliases -f` to regenerate alias cache with new cross-platform implementation.
 
 
 ### 3.1.11

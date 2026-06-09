@@ -7,7 +7,7 @@
 # It can handle nested files.
 # If there is already a real file (not a symbolic link), then the script will move that file into this repo, and then create the corresponding symlink. This helps preserve the current settings from the user without forcefully overriding from my repo.
 # Special handling (copy instead of symlink) for 'custom.git*' files (.gitignore, .gitattributes, etc.):
-#   - On FIRST_INSTALL (FIRST_INSTALL env var is set): target always wins — moved into repo, then repo is copied back.
+#   - On FIRST_INSTALL (FIRST_INSTALL env var is set): target always wins -- moved into repo, then repo is copied back.
 #   - Otherwise: mtime determines the winner. Target newer → moved into repo. Source newer or same age → target overwritten.
 # To run it, just invoke by `install-dotfiles.rb` if this folder is already setup in the PATH
 
@@ -57,7 +57,7 @@ CliParser.parse('[options]') do |opts|
   end
 end
 
-# Statistics tracking — use a Struct so the intent (a mutable bag of counters) is explicit
+# Statistics tracking -- use a Struct so the intent (a mutable bag of counters) is explicit
 # and the constant itself is not a mutated Hash (which is misleading for a constant).
 Stats = Struct.new(:processed, :created, :updated, :skipped, :errors, keyword_init: true)
 STATS = Stats.new(processed: 0, created: 0, updated: 0, skipped: 0, errors: 0)
@@ -96,13 +96,13 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
 
   STATS.processed += 1
 
-  info("Processing '#{source_path.yellow}' --> '#{target_path.yellow}'") if dry_run || verbose
+  info("Processing '#{source_path}' --> '#{target_path}'") if dry_run || verbose
 
   # Ensure target directory exists
   FileUtils.mkdir_p(target_pn.dirname) unless dry_run
 
   if target_pn.exist? && FileUtils.identical?(target_pn, source_pn) # Avoid moving if they are already the same file (e.g., if the user re-runs the script without changes)
-    debug("  Target '#{target_path.yellow}' and source '#{source_path.yellow}' are identical.".blue) if dry_run || verbose
+    debug("  Target '#{target_path}' and source '#{source_path}' are identical.") if dry_run || verbose
     STATS.skipped += 1
     return
   end
@@ -112,11 +112,11 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
 
   # Check target status before deciding action
   if target_pn.symlink?
-    info("  Target '#{target_path.yellow}' exists as a symlink, will overwrite.") if verbose
+    info("  Target '#{target_path}' exists as a symlink, will overwrite.") if verbose
     STATS.updated += 1
   elsif target_pn.exist? # It exists and is not a symlink (real file/dir)
     if force
-      info("  Forcefully overwriting existing file '#{target_path.yellow}'") if verbose
+      info("  Forcefully overwriting existing file '#{target_path}'") if verbose
       FileUtils.rm_rf(target_pn) unless dry_run
     elsif is_custom_git && !first_install
       # mtime-based resolution: whichever file was modified more recently is authoritative.
@@ -124,34 +124,34 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
       target_mtime = target_pn.mtime
       source_mtime = source_pn.mtime
       if target_mtime > source_mtime
-        info("  Target '#{target_path.yellow}' is newer (#{target_mtime} > #{source_mtime}); adopting it into repo and re-copying")
+        info("  Target '#{target_path}' is newer (#{target_mtime} > #{source_mtime}); adopting it into repo and re-copying")
         FileUtils.mv(target_pn, source_pn, force: true) unless dry_run
       else
-        info("  Source '#{source_path.yellow}' is newer or same age (#{source_mtime} >= #{target_mtime}); overwriting target") if verbose
+        info("  Source '#{source_path}' is newer or same age (#{source_mtime} >= #{target_mtime}); overwriting target") if verbose
         FileUtils.rm_rf(target_pn) unless dry_run
       end
     else
-      # FIRST_INSTALL, or a non-custom-git file: target is always authoritative — move it into repo.
-      info("  Moving existing file '#{target_path.yellow}' to '#{source_path.yellow}' (it will become the new version in your dotfiles repo)") if verbose
+      # FIRST_INSTALL, or a non-custom-git file: target is always authoritative -- move it into repo.
+      info("  Moving existing file '#{target_path}' to '#{source_path}' (it will become the new version in your dotfiles repo)") if verbose
       FileUtils.mv(target_pn, source_pn, force: true) unless dry_run
     end
     STATS.updated += 1
   else
     # Target does not exist, no backup needed
-    info("  Target '#{target_path.yellow}' does not exist, creating new link/copy.") if verbose
+    info("  Target '#{target_path}' does not exist, creating new link/copy.") if verbose
     STATS.created += 1
   end
 
   # Create symlink or copy file for files matching 'custom.git'
   if is_custom_git # Special handling for git files: copy instead of symlink
-    info("  Copying '#{source_path.yellow}' to '#{target_path.yellow}'")
+    info("  Copying '#{source_path}' to '#{target_path}'")
     FileUtils.cp(source_pn, target_pn) unless dry_run
   else
-    info("  Creating symlink from '#{source_path.yellow}' to '#{target_path.yellow}'")
+    info("  Creating symlink from '#{source_path}' to '#{target_path}'")
     FileUtils.ln_sf(source_pn, target_pn) unless dry_run
   end
 rescue StandardError => e
-  warn("Failed during processing of '#{source_path.yellow}' -> '#{target_path.yellow}': #{e.message}")
+  warn("Failed during processing of '#{source_path}' -> '#{target_path}': #{e.message}")
   warn(Array(e.backtrace).join("\n"))
   STATS.errors += 1
 end
@@ -161,7 +161,7 @@ end
 #
 # @return [void]
 def _ensure_ssh_include_line
-  # Use Pathname for correct path joining — plain String + 'name' is string concatenation,
+  # Use Pathname for correct path joining -- plain String + 'name' is string concatenation,
   # not path joining, which would produce a broken path if SSH_CONFIGS_DIR has no trailing slash.
   ssh_folder = Pathname.new(ENV.fetch('SSH_CONFIGS_DIR')).expand_path
   global_config_link = ssh_folder.join('global_config')
@@ -178,7 +178,7 @@ def _ensure_ssh_include_line
   begin
     # Use File.foreach to stream the file line-by-line instead of loading it all into memory.
     if File.foreach(default_ssh_config).any? { |l| l.strip == include_line }
-      success("'#{include_line.yellow}' already present in '#{default_ssh_config.to_s.cyan}'")
+      success("'#{include_line}' already present in '#{default_ssh_config.to_s.cyan}'")
     else
       info("Adding '#{include_line}' to '#{default_ssh_config.to_s.cyan}'")
       File.write(default_ssh_config, "\n#{include_line}\n", mode: 'a')
@@ -219,15 +219,15 @@ end
 # Print statistics summary
 puts ''
 success('Summary:')
-puts "  Processed: #{STATS.processed}"
-puts "  Created:   #{STATS.created}"
-puts "  Updated:   #{STATS.updated}"
-puts "  Skipped:   #{STATS.skipped}"
+puts "  Processed: #{STATS.processed.to_s.purple}"
+puts "  Created:   #{STATS.created.to_s.green}"
+puts "  Updated:   #{STATS.updated.to_s.green}"
+puts "  Skipped:   #{STATS.skipped.to_s.purple}"
 puts "  Errors:    #{STATS.errors.positive? ? STATS.errors.to_s.red : STATS.errors}"
 
 _ensure_ssh_include_line
 
-warn("Since 'custom.git*' files are COPIED (not symlinked), always edit the repo source first. When re-running without FIRST_INSTALL set, the newer file wins — so a stale home-dir copy can silently overwrite repo changes if its mtime is newer.")
+warn("Since 'custom.git*' files are COPIED (not symlinked), always edit the repo source first. When re-running without FIRST_INSTALL set, the newer file wins -- so a stale home-dir copy can silently overwrite repo changes if its mtime is newer.")
 
 # Single exit point at end of script
 exit(1) if STATS.errors.positive?

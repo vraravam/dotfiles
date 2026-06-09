@@ -16,7 +16,7 @@
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
 [[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
 
-# Re-source guard is inside .shellrc itself — safe to call unconditionally.
+# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
 source "${HOME}/.shellrc"
 
 recompile_zsh_scripts() {
@@ -25,15 +25,15 @@ recompile_zsh_scripts() {
   # without resolving to the real path first.
   # The .zwc file lives next to the symlink (${1}.zwc), not next to the real file.
   local real="${1:A}"
-  if is_non_empty_file "${real}" && (! is_file "${1}.zwc" || [[ "${real}" -nt "${1}.zwc" ]]); then
-    # Bare echo — not routed through a color function, so tilde sub must be explicit.
+  if is_non_empty_file "${real}" && is_file_older_than "${1}.zwc" "${real}"; then
+    # Bare echo -- not routed through a color function, so tilde sub must be explicit.
     # Inline ${1//${HOME}/~} rather than replace_home_with_tilde: .shellrc is already
     # sourced above (line 20), so replace_home_with_tilde is available here. The inline
     # form is kept as a belt-and-suspenders measure against any future reordering.
     [[ -n "${DEBUG:-}" ]] && echo "recompiling '${1//${HOME}/~}'"
     # Remove any stale .zwc.old left by a previously failed zrecompile run before
     # attempting recompilation. zrecompile writes .zwc files read-only; if zcompile
-    # fails mid-write the .zwc.old backup is left behind — clean it up unconditionally.
+    # fails mid-write the .zwc.old backup is left behind -- clean it up unconditionally.
     rm -f "${1}.zwc.old" || true
     zrecompile -pq "${1}" &>/dev/null || true
     # Remove .zwc.old again in case this run moved the old file there before failing.
@@ -46,7 +46,7 @@ recompile_zsh_autoload_dir() {
   # find_in_folder_and_recompile only picks up *.sh / *.zsh; autoloaded functions
   # under e.g. XDG_CONFIG_HOME/zsh/ have no extension and would be missed without
   # this dedicated helper.
-  # NOTE: Do NOT replace this call with find_in_folder_and_recompile — that function
+  # NOTE: Do NOT replace this call with find_in_folder_and_recompile -- that function
   # matches only '*.sh' and '*.zsh' patterns, so it would silently skip every
   # extensionless autoload file (cc, count, pull, push, st, etc.) in this directory.
   local dir_to_scan="${1}"
@@ -63,7 +63,7 @@ recompile_zsh_autoload_dir() {
     setopt localoptions NULL_GLOB
     local f
     for f in "${dir_to_scan}"/*; do
-      # Skip files that already have an extension — those are handled elsewhere.
+      # Skip files that already have an extension -- those are handled elsewhere.
       if is_file "${f}" && [[ "${f:e}" == "" ]]; then
         recompile_zsh_scripts "${f}"
       fi
@@ -85,8 +85,8 @@ find_in_folder_and_recompile() {
   # XDG_CACHE_HOME, keyed by a sanitised form of the directory path.
   # The sentinel is touched after a successful scan so the next login is free.
   local sentinel="${XDG_CACHE_HOME}/zwc-sentinel-${dir_to_scan//\//-}"
-  if is_file "${sentinel}" && [[ "${sentinel}" -nt "${dir_to_scan}" ]]; then
-    # Bare echo — same reasoning as above: inline to avoid .shellrc load-order dependency.
+  if ! is_file_older_than "${sentinel}" "${dir_to_scan}"; then
+    # Bare echo -- same reasoning as above: inline to avoid .shellrc load-order dependency.
     [[ -n "${DEBUG:-}" ]] && echo "skipping recompile scan (unchanged): '${dir_to_scan//${HOME}/~}'"
     return
   fi
@@ -106,7 +106,7 @@ autoload -Uz zrecompile
 
 # zsh config files can be compiled to improve performance
 # Based from: https://github.com/romkatv/zsh-bench/blob/master/configs/ohmyzsh%2B/setup
-# Core startup files — grouped together regardless of whether they live in
+# Core startup files -- grouped together regardless of whether they live in
 # ZDOTDIR or HOME; all are sourced on every shell start and benefit equally
 # from bytecode compilation.
 recompile_zsh_scripts "${ZDOTDIR}/.zshenv"
@@ -151,7 +151,7 @@ recompile_zsh_autoload_dir "${XDG_CONFIG_HOME}/zsh"
 # rather than listing individual files so any new cache files added in future are
 # picked up automatically without needing to update this file.
 #
-# Note: XDG_CACHE_HOME is NOT guarded by the mtime sentinel in practice — .zshrc
+# Note: XDG_CACHE_HOME is NOT guarded by the mtime sentinel in practice -- .zshrc
 # always writes (or touches) cache files before .zlogin runs, so the sentinel
 # ('-nt' check) never passes and 'find' always executes. Running this in the
 # background avoids blocking the first prompt on login shells.

@@ -13,7 +13,7 @@
 # load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
 ################################################################################
 
-# Guard against re-sourcing — all call sites can unconditionally 'source ~/.shellrc'
+# Guard against re-sourcing -- all call sites can unconditionally 'source ~/.shellrc'
 # without needing their own check. This return is a no-op cost (single builtin).
 # ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
 # evaluated by non-zsh runtimes (e.g. direnv's sandbox).
@@ -42,7 +42,7 @@ export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-"${HOME}/.config"}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-"${HOME}/.local/share"}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-"${HOME}/.local/state"}"
 
-# zsh/datetime provides $EPOCHSECONDS and strftime — used by current_timestamp,
+# zsh/datetime provides $EPOCHSECONDS and strftime -- used by current_timestamp,
 # current_date, current_timestamp_for_filename, format_duration, step_start/end,
 # and print_script_start/duration defined later in this file.
 # Loaded here (once) so all downstream callers don't need their own zmodload.
@@ -104,7 +104,7 @@ export LC_ALL='en_US.UTF-8'
 export LESSCHARSET='utf-8'
 
 # MACHTYPE is not used here: on a vanilla macOS (Apple Silicon) it incorrectly
-# reports 'x86_64' instead of 'arm64' — a confirmed zsh/macOS bug discussed in
+# reports 'x86_64' instead of 'arm64' -- a confirmed zsh/macOS bug discussed in
 # Apple support forums. uname -m is the only reliable source on all machines.
 # The outer ${ARCH:-...} honours any value already exported by a parent process.
 export ARCH="${ARCH:-"$(uname -m)"}"
@@ -133,7 +133,7 @@ export HOMEBREW_CURL_EXTRA_CURL_ARGS='--connect-timeout 300 --max-time 3600'
 # TODO: Uncomment once this feature has stabilized
 # export HOMEBREW_VERIFY_ATTESTATIONS=1
 
-# Antidote plugin manager home — set explicitly so it is available before antidote.zsh
+# Antidote plugin manager home -- set explicitly so it is available before antidote.zsh
 # is sourced (e.g. in .zlogin). Mirrors antidote's own platform defaults (see get_dir()
 # in antidote.zsh): ~/Library/Caches/antidote on macOS, $XDG_CACHE_HOME/antidote on Linux.
 # Note: is_macos is not yet defined here; use $OSTYPE directly.
@@ -192,7 +192,7 @@ is_running_in_tty() {
 # Example: join_array my_arr
 #
 # NOTE: The delimiter is hardcoded as a literal in the (pj:...:) flag because zsh does
-# not expand variables inside parameter expansion flags — e.g. (pj:${delimiter}:) treats
+# not expand variables inside parameter expansion flags -- e.g. (pj:${delimiter}:) treats
 # ${delimiter} as a literal string rather than expanding it.
 join_array() {
   local -a arr=("${(@P)${1:?join_array: array name required}}")
@@ -203,14 +203,14 @@ join_array() {
 # Returns true if the current shell is zsh.
 # ${ZSH_VERSION-} uses the '-' operator: if ZSH_VERSION is unset, substitute
 # empty string; if set (even to empty), use its value. Combined with -n, this
-# is true only when ZSH_VERSION is set AND non-empty — which is always the case
+# is true only when ZSH_VERSION is set AND non-empty -- which is always the case
 # when running inside zsh, since zsh unconditionally sets it to a version string.
 is_zsh() {
   [[ -n "${ZSH_VERSION-}" ]]
 }
 
 # Replaces the value of HOME with '~' to shorten displayed paths.
-# Pure-zsh parameter expansion — no subprocess fork.
+# Pure-zsh parameter expansion -- no subprocess fork.
 #
 # Color functions apply tilde substitution automatically via _colorize, so any
 # path passed through a color function is display-ready without an explicit call
@@ -218,14 +218,14 @@ is_zsh() {
 #   - Bare echo/printf call sites that display paths WITHOUT a color wrapper.
 #   - Plain-text segments in section headers (not passed through a color function).
 #
-# NOTE: when searching for all substitution sites, also grep for '_colorize' —
+# NOTE: when searching for all substitution sites, also grep for '_colorize' --
 # it centralises the inline expansion ${2//${HOME}/~} (see comment there for why
 # it is inlined rather than calling this function).
 replace_home_with_tilde() {
   echo "${1//${HOME}/~}"
 }
 
-# Remove trailing slash if present. Pure parameter expansion — no subprocess.
+# Remove trailing slash if present. Pure parameter expansion -- no subprocess.
 strip_trailing_slash() {
   echo "${1%\/}"
 }
@@ -263,7 +263,7 @@ if ! is_running_in_tty; then
   LIGHT_GRAY=''
   WHITE=''
 else
-  # Variables are assigned as $'\e[...' literals — avoids $(colorize ...) subshell
+  # Variables are assigned as $'\e[...' literals -- avoids $(colorize ...) subshell
   # forks on every shell start.
   NC=$'\e[0m'         # No Color
   BLACK=$'\e[0;30m'
@@ -284,7 +284,7 @@ else
   WHITE=$'\e[1;37m'
 fi
 
-# Single implementation point for all color functions — mirrors the private
+# Single implementation point for all color functions -- mirrors the private
 # colorize() method in string.rb. Applies tilde substitution AND wraps in ANSI
 # codes; public color functions below are one-line delegators.
 # $1 = ANSI color variable (e.g. ${YELLOW}), $2 = string to colorize.
@@ -295,7 +295,7 @@ fi
 # subshell fork on every call. The inline expansion is a no-fork zsh built-in.
 _colorize() { printf "${1}${2//${HOME}/~}${NC}"; }
 
-# Color functions — ordered by ANSI SGR code (matches variable declarations above).
+# Color functions -- ordered by ANSI SGR code (matches variable declarations above).
 black()        { _colorize "${BLACK}"        "${1}"; }
 dark_gray()    { _colorize "${DARK_GRAY}"    "${1}"; }
 red()          { _colorize "${RED}"          "${1}"; }
@@ -320,7 +320,7 @@ white()        { _colorize "${WHITE}"        "${1}"; }
 # Usage: success|info|warn|debug <message>
 
 # Send a macOS notification center alert. Safe to call even if osascript is absent.
-# Strips ANSI escape codes from the message before passing to osascript — osascript
+# Strips ANSI escape codes from the message before passing to osascript -- osascript
 # has no terminal and would display raw escape sequences as literal characters.
 # Named with leading underscore to avoid collision with any system or plugin command
 # named 'notify' (e.g. mise's command_not_found_handler) which would return 127
@@ -329,14 +329,14 @@ white()        { _colorize "${WHITE}"        "${1}"; }
 _dotfiles_notify() {
   local _msg="${1}"
   local _title="${2:-Dotfiles}"
-  # Use is_executable rather than command_exists — osascript is a fixed macOS
+  # Use is_executable rather than command_exists -- osascript is a fixed macOS
   # system binary at a known path, and is_executable checks the file directly
   # ([[ -x ]]) rather than searching functions/aliases/builtins/PATH.
   if is_executable '/usr/bin/osascript'; then
-    # Strip ANSI escape sequences inline using zsh parameter expansion — no subshell fork.
+    # Strip ANSI escape sequences inline using zsh parameter expansion -- no subshell fork.
     # (S) = shortest match; ## = one-or-more (requires extendedglob); replaces all occurrences globally.
     # Pattern: ESC + '[' + zero-or-more digits/semicolons + final letter (e.g. \e[0;31m).
-    # local_options scopes extendedglob to this function only — avoids affecting callers.
+    # local_options scopes extendedglob to this function only -- avoids affecting callers.
     # A sed subshell was avoided here because the ERR trap (set in cron scripts) is inherited
     # into $(...) subshells, and shell functions are not available inside them.
     setopt local_options extendedglob
@@ -385,7 +385,7 @@ user_action() {
   # Prints a message prompting the user to perform a manual step (e.g. restart
   # an app, run a command, open a URL). Distinct from warn (which signals an
   # unexpected problem) and info (which is purely informational). Suppressed
-  # in direnv subshells — direnv runs headlessly and cannot act on prompts.
+  # in direnv subshells -- direnv runs headlessly and cannot act on prompts.
   # if/else avoids a bare '|| echo' where is_non_zero_string returning 1 could
   # trigger an ERR trap in callers running under set -e.
   if ! is_non_zero_string "${DIRENV_IN_ENVRC:-}"; then
@@ -408,7 +408,7 @@ debug() {
 error() {
   # Inline substitution rather than a color function: the message body is output
   # as plain text (no color wrapper) and also passed to _dotfiles_notify, which receives
-  # a raw string — ANSI codes would appear as literal escape characters there.
+  # a raw string -- ANSI codes would appear as literal escape characters there.
   local _msg="${1//${HOME}/~}"
   echo "❌ $(red '**ERROR**') ${_msg} 🤓"
   _dotfiles_notify "${_msg} 🤓" "❌ Error" || true
@@ -421,8 +421,8 @@ error() {
 # Usage: print_chars_for_length [char] [length]
 print_chars_for_length() {
   local char="${1:--}"  # default to using '-'
-  # ${COLUMNS} is a zsh special variable updated on SIGWINCH — no tput fork needed.
-  # Fallback to 80 when COLUMNS is 0 (e.g. cron — no terminal attached).
+  # ${COLUMNS} is a zsh special variable updated on SIGWINCH -- no tput fork needed.
+  # Fallback to 80 when COLUMNS is 0 (e.g. cron -- no terminal attached).
   local final_length=${2:=$((${COLUMNS:-80} / 4))}
   printf "${char}%.0s" {1..${final_length}}
 }
@@ -431,7 +431,7 @@ print_chars_for_length() {
 # Usage: _section_header_impl <header> <char> <glyph> <color_fn> <indent>
 _section_header_impl() {
   # Inline substitution rather than a color function: the header is output as
-  # plain text between the two colored padding segments — it has no color wrapper,
+  # plain text between the two colored padding segments -- it has no color wrapper,
   # so color functions cannot apply tilde sub on its behalf.
   local header="${1//${HOME}/~}"
   local char="${2}"
@@ -439,14 +439,14 @@ _section_header_impl() {
   local color_fn="${4}"
   local indent="${5:-}"
   local indent_len=${#indent}
-  # ${COLUMNS} is a zsh special variable — no tput subprocess fork needed.
-  # Fallback to 80 when COLUMNS is 0 (e.g. cron — no terminal attached).
+  # ${COLUMNS} is a zsh special variable -- no tput subprocess fork needed.
+  # Fallback to 80 when COLUMNS is 0 (e.g. cron -- no terminal attached).
   local viewport_length=${COLUMNS:-80}
   local header_length=${#header}
   local final_length=$(((viewport_length - header_length - indent_len) / 2 - 10))
 
   # Pre-compute the padding string once to avoid calling print_chars_for_length
-  # twice via $(...) — each $(...) call forks a subshell.
+  # twice via $(...) -- each $(...) call forks a subshell.
   local padding
   printf -v padding "${char}%.0s" {1..${final_length}}
   echo "${indent}$(${color_fn} "${padding}") ${glyph} ${header} $(${color_fn} "${padding}")"
@@ -496,10 +496,10 @@ current_timestamp_for_filename() {
 
 # Prints a timestamped "Script started at" banner. Call at the top of main() and
 # capture $EPOCHSECONDS before calling to pass to print_script_summary later.
-# Only prints when this is the outermost script — nested subprocess scripts
+# Only prints when this is the outermost script -- nested subprocess scripts
 # stay silent so the outer script's banner is unambiguous in cron output.
 print_script_start() {
-  # is_outermost_script || return 0: safe under set -e — both branches resolve
+  # is_outermost_script || return 0: safe under set -e -- both branches resolve
   # to exit 0 (|| only fires when is_outermost_script returns 1, and return 0
   # exits with 0). Avoids the && pattern where the false branch returns 1.
   is_outermost_script || return 0
@@ -510,9 +510,9 @@ print_script_start() {
 
 # Prints a "Script finished at / Total duration" banner.
 # Usage: print_script_duration <start_epoch_seconds>
-# If start_epoch_seconds is empty or omitted, returns silently — safe to call
+# If start_epoch_seconds is empty or omitted, returns silently -- safe to call
 # unconditionally when the start time may not have been captured.
-# Only prints when this is the outermost script — see print_script_start.
+# Only prints when this is the outermost script -- see print_script_start.
 print_script_duration() {
   is_outermost_script || return 0
   local start_time_seconds="${1:-}"
@@ -535,7 +535,7 @@ print_script_duration() {
 # that source it. Documented here in one place to make the relationships
 # between them clear.
 #
-# CONVENTION — three tiers, same _ prefix for tiers 2 and 3:
+# CONVENTION -- three tiers, same _ prefix for tiers 2 and 3:
 #
 #   _DOTFILES_* ALL_CAPS  (exported env var)
 #     Internal infrastructure. Inherited by subprocesses via export.
@@ -552,7 +552,7 @@ print_script_duration() {
 #     Examples: _step_warnings, _step_errors, _current_section.
 #
 # The declaration context (typeset -a at file scope vs. local inside main())
-# and surrounding comments distinguish tiers 2 and 3 — no additional naming
+# and surrounding comments distinguish tiers 2 and 3 -- no additional naming
 # difference is needed.
 #
 # --- Collection-pattern locals (tier 3) ---
@@ -604,17 +604,17 @@ print_script_duration() {
 # --------------------------------------------------------------------------
 
 # Dynamically-scoped locals (_step_warnings, _step_errors, _current_section) are declared
-# with 'local' inside each script's main() — no top-level initialisation needed here.
+# with 'local' inside each script's main() -- no top-level initialisation needed here.
 
 # Non-exported globals: step-timing stacks used by step_start/step_end.
-# Two consumers, two mechanisms — intentionally separate:
+# Two consumers, two mechanisms -- intentionally separate:
 #
 #   print_script_summary [start_time]
 #     Takes its start time as an optional argument (a local variable captured
 #     at the top of main()). When non-empty, calls print_script_duration
 #     internally. This keeps it self-contained and usable by scripts that
 #     never call step_start/step_end (e.g. run-all.rb,
-#     cleanup-browser-profiles.rb) — those scripts do NOT push to
+#     cleanup-browser-profiles.rb) -- those scripts do NOT push to
 #     _script_start_times and have no need to.
 #
 #   step_end
@@ -733,16 +733,16 @@ _record_error() {
 #
 # Accepts an optional start time (epoch seconds from $EPOCHSECONDS, captured
 # before print_script_start). When provided, calls print_script_duration
-# internally — no separate call needed. Omit when no start time is available
+# internally -- no separate call needed. Omit when no start time is available
 # (e.g. early-exit paths before the start epoch was captured).
 # Accepts an optional info message as $2. When provided, it is printed via
-# info before the warnings/errors list — use this instead of a bare info/success
+# info before the warnings/errors list -- use this instead of a bare info/success
 # call immediately before print_script_summary. Guarded with ${2:-} so omitting
 # it is safe under set -u.
 # Only prints when this is the outermost script in a nested call chain.
-# _SCRIPT_NAME is read directly via zsh dynamic scoping — no argument needed.
+# _SCRIPT_NAME is read directly via zsh dynamic scoping -- no argument needed.
 print_script_summary() {
-  # is_outermost_script || return 0: safe under set -e — see print_script_start.
+  # is_outermost_script || return 0: safe under set -e -- see print_script_start.
   is_outermost_script || return 0
   local _pss_start_time="${1:-}"
   local _pss_msg="${2:-}"
@@ -761,15 +761,15 @@ print_script_summary() {
     done
   fi
   if (($+_step_errors)) && is_non_empty_array _step_errors; then
-    _section_header_impl "$(cyan "${_pss_title}") $(red "${#_step_errors[@]} error(s) — manual attention needed")" '-' '⏳' 'light_red'
+    _section_header_impl "$(cyan "${_pss_title}") $(red "${#_step_errors[@]} error(s) -- manual attention needed")" '-' '⏳' 'light_red'
     local _pse
     for _pse in "${_step_errors[@]}"; do
       warn "  ${_pse}"
     done
   fi
   # Send exactly one notification when there are issues to report, gated solely
-  # on whether errors/warnings were collected — independent of the title source.
-  # Success notifications are intentionally omitted — the user can see success in
+  # on whether errors/warnings were collected -- independent of the title source.
+  # Success notifications are intentionally omitted -- the user can see success in
   # the terminal. Notifications are reserved for failures that warrant attention,
   # especially in headless/cron contexts. Scripts with custom success notifications
   # (e.g. fresh-install, software-updates-cron) handle them outside this function.
@@ -807,6 +807,25 @@ is_file() {
   is_non_zero_string "${1}" && [[ -f "${1}" ]]
 }
 
+# Returns true if target file ($1) is missing or older than source file ($2).
+# Uses the shell's built-in -nt (newer-than) test which compares modification times.
+# Common pattern: if is_file_older_than "$cache" "$source"; then regenerate_cache; fi
+#
+# Arguments:
+#   $1 - target file path (typically a cache file)
+#   $2 - source file path (typically a binary or config file)
+#
+# Returns:
+#   0 (true) if target is missing or source is newer (regeneration needed)
+#   1 (false) if target exists and is newer than or same age as source (cache valid)
+#
+# Examples:
+#   if is_file_older_than "$cache" "$binary"; then "$binary" --generate-cache; fi
+#   if is_file_older_than "${git_version_cache}" "${git_bin}"; then cache_git_version; fi
+is_file_older_than() {
+  [[ ! -f "${1}" || "${2}" -nt "${1}" ]]
+}
+
 # Returns true if $1 is a non-empty path pointing to a directory.
 is_directory() {
   is_non_zero_string "${1}" && [[ -d "${1}" ]]
@@ -818,7 +837,7 @@ is_non_empty_file() {
 }
 
 is_directory_empty() {
-  # $(ls -A) kept intentionally — the pure-zsh glob alternative (*(ND[1])) cannot
+  # $(ls -A) kept intentionally -- the pure-zsh glob alternative (*(ND[1])) cannot
   # be used here because .shellrc is sourced by direnv in bash, and bash has no
   # zsh glob qualifiers.  A ZSH_VERSION branch was considered but rejected: the
   # function is only called a handful of times (e.g. set_ssh_folder_permissions),
@@ -829,16 +848,16 @@ is_directory_empty() {
 # Creates $1 (and any intermediate directories) if it does not already exist.
 # Warns and skips silently if $1 is empty or unset.
 # Guards with is_directory to avoid forking mkdir when the directory already
-# exists — the common case on every shell startup (e.g. XDG_CACHE_HOME).
+# exists -- the common case on every shell startup (e.g. XDG_CACHE_HOME).
 ensure_dir_exists() {
   if is_non_zero_string "${1}"; then
     is_directory "${1}" || mkdir -pv "${1}"
   else
-    warn "Skipping creation of the directory since '$(yellow "${1}")' is not defined"
+    warn "Skipping creation of the directory since '$(purple "${1}")' is not defined"
   fi
 }
 
-# Ruby load path for shared utilities — add both dotfiles and personal bin to RUBYLIB
+# Ruby load path for shared utilities -- add both dotfiles and personal bin to RUBYLIB
 # so Ruby scripts can use 'require' instead of 'require_relative' for shared utilities.
 # Only add directories that exist.
 # Guarded by is_zsh: the array join syntax '${(j.:.)array}' is zsh-only and when direnv
@@ -854,14 +873,14 @@ if is_zsh; then
 fi
 
 # Returns true if $1 is a non-empty path whose direct child .git directory exists.
-# Checks the repo root explicitly — does not work from nested sub-directories by design.
+# Checks the repo root explicitly -- does not work from nested sub-directories by design.
 is_git_repo() {
   is_non_zero_string "${1}" && is_directory "${1}/.git"
   # git -C "${1}" rev-parse --is-inside-work-tree &>/dev/null  # alternative that works from any nested sub-directory
 }
 
 # Returns the git config value for <key> in [folder] (defaults to $PWD).
-# Returns an empty string silently if the key is not set — callers decide whether that is an error.
+# Returns an empty string silently if the key is not set -- callers decide whether that is an error.
 # Usage: get_git_config_value <key> [folder]
 get_git_config_value() {
   local key="${1}" folder="${2:-${PWD}}"
@@ -870,7 +889,7 @@ get_git_config_value() {
 
 # Sources $1 if it is a non-empty path pointing to a regular file; warns otherwise.
 load_file_if_exists() {
-  is_file "${1}" && source "${1}" || warn "Couldn't load file: '$(yellow "${1}")'"
+  is_file "${1}" && source "${1}" || warn "Couldn't load file: '$(cyan "${1}")'"
 }
 
 # delete_directory_if_exists() {
@@ -897,7 +916,7 @@ is_linux() {
 # Returns true if FIRST_INSTALL is set to a non-empty value.
 # ${FIRST_INSTALL:-} uses the ':-' operator: if FIRST_INSTALL is unset OR empty,
 # substitute empty string; if set and non-empty, use its value. Combined with -n,
-# this is true only when FIRST_INSTALL holds a real value — treating unset and
+# this is true only when FIRST_INSTALL holds a real value -- treating unset and
 # set-but-empty identically. This is intentional: only a deliberate non-empty
 # assignment (e.g. FIRST_INSTALL=true) should activate vanilla-OS behaviour.
 # Note: two occurrences in fresh-install-of-osx.sh use the raw form because
@@ -916,7 +935,7 @@ is_windows() {
 # _DOTFILES_SCRIPT_DEPTH is exported and incremented by each main() that uses
 # the deferred-collection pattern. Subprocesses inherit the counter but their
 # increments do not propagate back to the parent. Defaults to 0 when unset so
-# standalone scripts (which never set the counter) are treated as outermost —
+# standalone scripts (which never set the counter) are treated as outermost --
 # consistent with the ':-0' used in the increment expression in each main().
 is_outermost_script() {
   [[ ${_DOTFILES_SCRIPT_DEPTH:-0} -le 1 ]]
@@ -945,7 +964,7 @@ has_sudo_credentials() {
 
 # Append helpers: each adds $1 to the named variable only if $1 is an
 # existing directory. No-op if the directory does not exist. Safe to call
-# multiple times — the underlying path arrays deduplicate in zsh.
+# multiple times -- the underlying path arrays deduplicate in zsh.
 append_to_path_if_dir_exists() {
   is_directory "${1}" && path+="${1}"
 }
@@ -962,7 +981,7 @@ append_to_fpath_if_dir_exists() {
 
 # Asks for the administrator password upfront and keeps it alive until the calling script
 # finishes. Uses a background loop that refreshes sudo every 60 seconds.
-# Safe to call multiple times — skips silently if the background loop is already running.
+# Safe to call multiple times -- skips silently if the background loop is already running.
 keep_sudo_alive() {
   # Avoid duplicate background loops (e.g. when child scripts also call this)
   if is_non_zero_string "${KEEP_SUDO_ALIVE_PID:-}" && kill -0 "${KEEP_SUDO_ALIVE_PID}" 2>/dev/null; then
@@ -980,11 +999,11 @@ keep_sudo_alive() {
 # Requires git 2.45+; silently skips on older git (e.g. the system git on a
 # vanilla macOS, which does not support 'git refs migrate'). After migration
 # it removes stale loose-ref files that 'git refs migrate' may leave behind in
-# .git/refs/heads/, .git/refs/tags/, and .git/refs/remotes/ — those stale
+# .git/refs/heads/, .git/refs/tags/, and .git/refs/remotes/ -- those stale
 # files confuse some git operations even though the canonical refs now live in
 # the reftable directory.
 # Usage: migrate_git_repo_to_reftable [repo-dir]
-#   repo-dir defaults to $PWD when omitted — use this to migrate the repo in
+#   repo-dir defaults to $PWD when omitted -- use this to migrate the repo in
 #   the current directory without having to specify the path explicitly.
 migrate_git_repo_to_reftable() {
   local repo_dir="${1:-${PWD}}"
@@ -997,10 +1016,10 @@ migrate_git_repo_to_reftable() {
   if [[ "${ref_format}" == 'reftable' ]]; then return 0; fi
 
   # 'git refs migrate' requires git 2.45+. On older git (vanilla macOS system
-  # git) this returns non-zero; skip silently — fresh-install calls this again
+  # git) this returns non-zero; skip silently -- fresh-install calls this again
   # after Homebrew's modern git is on PATH.
   if ! git -C "${repo_dir}" refs migrate --ref-format=reftable 2>/dev/null; then
-    debug "git refs migrate unavailable (requires git 2.45+) — skipping reftable migration for '$(yellow "${repo_dir}")'"
+    debug "git refs migrate unavailable (requires git 2.45+) -- skipping reftable migration for '$(yellow "${repo_dir}")'"
     return 0
   fi
 
@@ -1018,12 +1037,12 @@ migrate_git_repo_to_reftable() {
   }
   _remove_loose_reftable_refs
   # Named functions defined inside another function persist in the global table
-  # after the outer function returns — unfunction immediately after use to avoid
+  # after the outer function returns -- unfunction immediately after use to avoid
   # polluting the global namespace in non-subshell call sites (e.g. direct
   # interactive calls, clone_repo_into from fresh-install-of-osx.sh).
   unfunction _remove_loose_reftable_refs
 
-  success "Migrated '$(yellow "${repo_dir}")' refs to reftable format"
+  success "Migrated '$(cyan "${repo_dir}")' refs to reftable format"
 }
 
 # Clones a git repo into a temp folder, moves the .git dir into the real target
@@ -1032,7 +1051,7 @@ migrate_git_repo_to_reftable() {
 # repo, runs fetch-unshallow instead. Always updates submodules afterwards.
 # Usage: clone_repo_into <repo-url> <target-folder> [branch]
 clone_repo_into() {
-  local start_time=${EPOCHSECONDS}  # $EPOCHSECONDS from zsh/datetime — no $(date +%s) fork
+  local start_time=${EPOCHSECONDS}  # $EPOCHSECONDS from zsh/datetime -- no $(date +%s) fork
   local target_folder="${2}"
   ensure_dir_exists "${target_folder}"
   if ! is_git_repo "${target_folder}"; then
@@ -1042,7 +1061,7 @@ clone_repo_into() {
     # Note: Do not use --depth while cloning since that messes up when using upstream to rebase from
     GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q -c init.defaultRefFormat=reftable "${1}" .
     if [[ $? -ne 0 ]]; then
-      warn "Failed to clone '$(yellow "${1}")' into '$(yellow "${target_folder}")'"
+      warn "Failed to clone '$(cyan "${1}")' into '$(cyan "${target_folder}")'"
       return 1
     fi
 
@@ -1063,7 +1082,7 @@ clone_repo_into() {
     # that were cloned with system git.
     migrate_git_repo_to_reftable "${target_folder}"
 
-    success "Successfully cloned '$(yellow "${1}")' into '$(yellow "${target_folder}")'"
+    success "Successfully cloned '$(cyan "${1}")' into '$(cyan "${target_folder}")'"
 
     local target_branch="${3:-}"
     if is_non_zero_string "${target_branch}"; then
@@ -1073,12 +1092,12 @@ clone_repo_into() {
       [[ "${checked_out_branch}" != "${target_branch}" ]] && error "'${target_branch}' is not equal to the branch that was checked out: '${checked_out_branch}'; something is wrong. Please correct before retrying!"
     fi
   else
-    # is_git_repo = (is_non_zero_string && is_directory .git) — logical complement of the if above,
+    # is_git_repo = (is_non_zero_string && is_directory .git) -- logical complement of the if above,
     # so this else is exhaustive and the condition check is redundant.
     debug "Fetching '$(yellow "${target_folder}")' since it's already a git repo"
     git -C "${target_folder}" fetch-unshallow
-    success "Successfully fetched '$(yellow "${1}")' into '$(yellow "${target_folder}")'"
-    # Only warn if FETCH_HEAD has commits not yet in HEAD — fetch-unshallow always
+    success "Successfully fetched '$(cyan "${1}")' into '$(cyan "${target_folder}")'"
+    # Only warn if FETCH_HEAD has commits not yet in HEAD -- fetch-unshallow always
     # runs but may bring in nothing new (repo already up to date).
     local incoming_count
     incoming_count="$(git -C "${target_folder}" rev-list HEAD..FETCH_HEAD --count 2>/dev/null || echo 0)"
@@ -1087,7 +1106,7 @@ clone_repo_into() {
     fi
   fi
 
-  # Always update submodules after clone or pull — new commits may introduce submodule changes.
+  # Always update submodules after clone or pull -- new commits may introduce submodule changes.
   GIT_SSH_COMMAND="ssh -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=3" git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
   local end_time=${EPOCHSECONDS}  # no $(date +%s) fork
   local duration=$((end_time - start_time))
@@ -1106,16 +1125,16 @@ set_ssh_folder_permissions() {
   ensure_dir_exists "${SSH_CONFIGS_DIR}"
   # Set directory permissions first
   if ! chmod 700 "${SSH_CONFIGS_DIR}"; then
-    warn "Failed to set permissions on '$(yellow "${SSH_CONFIGS_DIR}")'"
+    warn "Failed to set permissions on '$(cyan "${SSH_CONFIGS_DIR}")'"
     return
   fi
 
   if ! is_directory_empty "${SSH_CONFIGS_DIR}"; then
-    find "${SSH_CONFIGS_DIR}" -type f -exec chmod 600 {} \; && success "Ensured correct permissions for '$(yellow "${SSH_CONFIGS_DIR}")' and files within it." || warn "Failed to set file permissions in '$(yellow "${SSH_CONFIGS_DIR}")'"
+    find "${SSH_CONFIGS_DIR}" -type f -exec chmod 600 {} \; && success "Ensured correct permissions for '$(cyan "${SSH_CONFIGS_DIR}")' and files within it." || warn "Failed to set file permissions in '$(cyan "${SSH_CONFIGS_DIR}")'"
 
-    find "${SSH_CONFIGS_DIR}" -maxdepth 1 -name "id_*" ! -name '*.*' -type f -exec ssh-add -q "{}" \; && success "Added ssh identity files from '$(yellow "${SSH_CONFIGS_DIR}")'." || warn "Failed to add ssh identity files from '$(yellow "${SSH_CONFIGS_DIR}")'"
+    find "${SSH_CONFIGS_DIR}" -maxdepth 1 -name "id_*" ! -name '*.*' -type f -exec ssh-add -q "{}" \; && success "Added ssh identity files from '$(cyan "${SSH_CONFIGS_DIR}")'." || warn "Failed to add ssh identity files from '$(cyan "${SSH_CONFIGS_DIR}")'"
   else
-    warn "'$(yellow "${SSH_CONFIGS_DIR}")' exists but is empty. No file permissions to set."
+    warn "'$(cyan "${SSH_CONFIGS_DIR}")' exists but is empty. No file permissions to set."
   fi
 }
 
@@ -1145,24 +1164,34 @@ eval_shellenv() {
 # shell environment has been set up.  See the matching section in .aliases for
 # those functions and a fuller explanation of the split.
 # --------------------------------------------------------------------------
+# Helper functions for delegating to Ruby utilities
+# --------------------------------------------------------------------------
 
-# Internal helper: calls a Ruby Cron module method with optional arguments.
+# Internal helper: calls a Ruby Cron module method with positional arguments.
 # Eliminates duplication of $LOAD_PATH setup across cron wrapper functions.
 # Usage: _call_ruby_cron <method_name> [args...]
+# Example: _call_ruby_cron create_crontab "/path/to/file"
+#          _call_ruby_cron recron
 _call_ruby_cron() {
   local method="${1:-}"
-  if [[ -z "${method}" ]]; then
+  if is_zero_string "${method}"; then
     error '_call_ruby_cron: method name required'
     return 1
   fi
   shift
+
   local args_str=""
   if [[ $# -gt 0 ]]; then
-    # Build comma-separated list of single-quoted Ruby string literals using printf.
-    # printf "'%s', " expands to "'arg1', 'arg2', 'arg3', " then strip trailing ', '
-    printf -v args_str "'%s', " "$@"
-    args_str="${args_str%, }"
+    # Build comma-separated list of single-quoted Ruby string literals.
+    local -a args_parts=()
+    for arg in "$@"; do
+      args_parts+=("'${arg}'")
+    done
+    # Join with ', '
+    local IFS=', '
+    args_str="${args_parts[*]}"
   fi
+
   ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'cron'; Cron.${method}(${args_str})"
 }
 
@@ -1202,11 +1231,11 @@ load_zsh_configs() {
   local file_list=('.zshenv' '.zshrc' '.zlogin')
   for file in "${file_list[@]}"; do
     # ${ZDOTDIR} is safe to use here: this function is defined inside .shellrc,
-    # so .shellrc must have already run — and .shellrc initialises ZDOTDIR at
+    # so .shellrc must have already run -- and .shellrc initialises ZDOTDIR at
     # line 38 (export ZDOTDIR="${ZDOTDIR:-"${HOME}"}") before this function is
     # ever defined. ZDOTDIR is therefore always set correctly, even in cron or
     # fresh-install subshell contexts where .zshenv has not been sourced.
-    debug "load_zsh_configs: loading '$(yellow "${ZDOTDIR}/${file}")'"
+    debug "load_zsh_configs: loading '$(cyan "${ZDOTDIR}/${file}")'"
     load_file_if_exists "${ZDOTDIR}/${file}"
   done
 }

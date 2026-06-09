@@ -55,7 +55,7 @@ increment_script_depth
 start_time = print_script_start
 
 if dry_run
-  info '🔍 DRY RUN MODE — No changes will be made'.red
+  info '🔍 DRY RUN MODE -- No changes will be made'.red
 end
 
 # The profiles repo is always force-squashed.
@@ -73,15 +73,15 @@ user_name = GitHelpers.config_value('user.name', folder: folder)
 user_email = GitHelpers.config_value('user.email', folder: folder)
 branch = GitHelpers.current_branch(folder: folder)
 
-info "#{'Squash commits (will lose history!):'.yellow} '#{force.to_s.cyan}'"
-info "#{'Dry run:'.yellow} '#{dry_run.to_s.cyan}'"
-info "#{'Repo url:'.yellow} '#{git_url.to_s.cyan}'"
-info "#{'User name:'.yellow} '#{user_name.to_s.cyan}'"
-info "#{'User email:'.yellow} '#{user_email.to_s.cyan}'"
-info "#{'Branch:'.yellow} '#{branch.to_s.cyan}'"
+info "#{'Squash commits (will lose history!):'.yellow} #{force.to_s.orange}"
+info "#{'Dry run:'.yellow} #{dry_run.to_s.orange}"
+info "#{'Repo url:'.yellow} '#{git_url.cyan}'"
+info "#{'User name:'.yellow} '#{user_name.cyan}'"
+info "#{'User email:'.yellow} '#{user_email.cyan}'"
+info "#{'Branch:'.yellow} '#{branch.cyan}'"
 
 if [git_url, user_name, user_email, branch].any? { |v| nil_or_empty?(v) }
-  error "One or more required git metadata values are missing for '#{folder.yellow}' — see above"
+  error "One or more required git metadata values are missing for '#{folder.cyan}' -- see above"
 end
 
 # Before destroying git history, ensure Keybase is reachable so we do not end
@@ -103,14 +103,14 @@ operation = lambda do
   if force
     require 'fileutils'
     if dry_run
-      info "Would remove: '#{File.join(folder, '.git').yellow}'"
-      info "Would run: git -C '#{folder.yellow}' init --ref-format=reftable ."
-      info "Would run: git -C '#{folder.yellow}' remote add origin '#{git_url.yellow}'"
-      info "Would run: git -C '#{folder.yellow}' config user.name '#{user_name.yellow}'" unless nil_or_empty?(user_name)
-      info "Would run: git -C '#{folder.yellow}' config user.email '#{user_email.yellow}'" unless nil_or_empty?(user_email)
-      info "Would delete: '#{File.join(folder, '.git', 'index.lock').yellow}' (if exists)"
-      info "Would run: git -C '#{folder.yellow}' add -A ."
-      info "Would run: git -C '#{folder.yellow}' commit -qm 'Initial commit: <timestamp>'"
+      info "Would remove: '#{File.join(folder, '.git').cyan}'"
+      info "Would run: git -C '#{folder.cyan}' init --ref-format=reftable ."
+      info "Would run: git -C '#{folder.cyan}' remote add origin '#{git_url.cyan}'"
+      info "Would run: git -C '#{folder.cyan}' config user.name '#{user_name}'" unless nil_or_empty?(user_name)
+      info "Would run: git -C '#{folder.cyan}' config user.email '#{user_email}'" unless nil_or_empty?(user_email)
+      info "Would delete: '#{File.join(folder, '.git', 'index.lock').cyan}' (if exists)"
+      info "Would run: git -C '#{folder.cyan}' add -A ."
+      info "Would run: git -C '#{folder.cyan}' commit -qm 'Initial commit: <timestamp>'"
     else
       FileUtils.rm_rf(File.join(folder, '.git'))
       system('git', '-C', folder, 'init', '--ref-format=reftable', '.')
@@ -127,7 +127,7 @@ operation = lambda do
     # that's when we've destroyed local history. Without force, we're just
     # compressing and pushing existing commits - no remote recreation needed.
     if Keybase.keybase_url?(git_url)
-      debug "#{'Recreating'.blue} '#{git_url.yellow}'"
+      debug "#{'Recreating'.yellow} '#{git_url.cyan}'"
       repo_name = git_url.sub(/\/\z/, '').split('/').last
       if dry_run
         info "Would delete keybase repo: '#{repo_name.yellow}'"
@@ -152,7 +152,7 @@ operation = lambda do
   if dry_run
     debug 'Would compress (reflog + gc)'
   else
-    debug "#{'Compressing'.blue} '#{folder.yellow}'"
+    debug "#{'Compressing'.yellow} '#{folder.cyan}'"
     system('git', '-C', folder, 'rfc')
     system('git', '-C', folder, 'cc')
   end
@@ -160,10 +160,10 @@ operation = lambda do
   if dry_run
     debug 'Would push to remote'
   else
-    debug "#{'Pushing'.blue} from '#{folder.yellow}' to '#{git_url.yellow}'"
+    debug "#{'Pushing'.yellow} from '#{folder.cyan}' to '#{git_url.cyan}'"
     system('git', '-C', folder, 'push', '--progress', '-fu', 'origin', branch)
     File.delete(File.join(folder, '.git', 'index.lock')) rescue nil
-    success "Git repo in '#{folder.yellow}' recreated and pushed to '#{git_url.yellow}'"
+    success "Git repo in '#{folder.cyan}' recreated and pushed to '#{git_url.cyan}'"
   end
 end
 

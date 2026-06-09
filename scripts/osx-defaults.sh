@@ -28,7 +28,7 @@ source "${HOME}/.aliases"
 
 usage() {
   print_usage "${_SCRIPT_NAME}" \
-    "$(yellow '[-s]') --> $(yellow '-s') (optional) Run in silent/auto mode without interactive prompts"
+    "$(yellow '[-s]') --> $(purple '-s') (optional) Run in silent/auto mode without interactive prompts"
 }
 
 # Script-level flag for silent mode; set by main() when -s is passed
@@ -109,7 +109,7 @@ main() {
   # settings we're about to change
   osascript -e 'tell application "System Preferences" to quit'
 
-  # Login-item apps are killed upfront (SIGTERM — graceful shutdown) so their
+  # Login-item apps are killed upfront (SIGTERM -- graceful shutdown) so their
   # running instance cannot overwrite our defaults writes when it quits.
   # The EXIT trap restarts them on any exit path (normal or error), ensuring
   # the user is never left with login-item apps dead.
@@ -206,7 +206,7 @@ main() {
   fi
 
   # dontAutoLoad must be written to the ByHost preference file (identified by
-  # hardware UUID) — not to the regular com.apple.systemuiserver domain. The
+  # hardware UUID) -- not to the regular com.apple.systemuiserver domain. The
   # ByHost path is what SystemUIServer reads on startup to skip certain menu
   # extras regardless of which user is logged in.
   local domain
@@ -297,7 +297,7 @@ main() {
 
   if ask 'Set preferred languages to English (India, US) and clear recent places' 'Y'; then
     defaults write -g NSLinguisticDataAssetsRequested -array 'en_IN' 'en_US' 'en'
-    # Suppress error when the key doesn't exist — delete is a no-op in that case.
+    # Suppress error when the key doesn't exist -- delete is a no-op in that case.
     defaults delete NSGlobalDomain NSNavRecentPlaces 2>/dev/null || true
   fi
 
@@ -352,7 +352,7 @@ main() {
 
   # Bluetooth trackpad (com.apple.driver.AppleBluetoothMultitouch.trackpad) and
   # built-in trackpad (com.apple.AppleMultitouchTrackpad) share the same gesture
-  # keys — both domains must be written to keep wired and wireless behaviour in sync.
+  # keys -- both domains must be written to keep wired and wireless behaviour in sync.
   if ask 'Enable trackpad gestures (tap-to-click, three-finger drag, etc.)' 'Y'; then
     defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -int 1
     defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad DragLock -int 0
@@ -377,7 +377,7 @@ main() {
     defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadTwoFingerFromRightEdgeSwipeGesture -int 3
     defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad USBMouseStopsTrackpad -int 0
     defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad UserPreferences -int 1
-    # Built-in trackpad — same gesture settings applied to the internal hardware domain.
+    # Built-in trackpad -- same gesture settings applied to the internal hardware domain.
     defaults write com.apple.AppleMultitouchTrackpad Clicking -bool true
     defaults write com.apple.AppleMultitouchTrackpad DragLock -int 0
     defaults write com.apple.AppleMultitouchTrackpad Dragging -int 0
@@ -1062,7 +1062,7 @@ main() {
   # Spotlight
   # ---------------------------------------------------------------------------
   # Initial default seeded here. The user may enable/disable categories via
-  # System Settings > Spotlight afterward — re-running osx-defaults.sh will
+  # System Settings > Spotlight afterward -- re-running osx-defaults.sh will
   # reset them.
 
   if ask 'Configure Spotlight search category ordering' 'Y'; then
@@ -1123,7 +1123,7 @@ main() {
   # ---------------------------------------------------------------------------
 
   if ask 'Terminal.app settings' 'Y'; then
-    # Top-level Terminal.app defaults — initial defaults seeded here so the user
+    # Top-level Terminal.app defaults -- initial defaults seeded here so the user
     # can change them via the UI afterward without osx-defaults.sh resetting them.
     defaults write com.apple.Terminal NewWindowWorkingDirectoryBehavior -int 2
     defaults write com.apple.Terminal SecureKeyboardEntry -bool false
@@ -1143,12 +1143,12 @@ main() {
       /usr/libexec/PlistBuddy -c "Delete :'Window Settings':'${profile}':columnCount" "${HOME}/Library/Preferences/com.apple.Terminal.plist" 2>/dev/null || true
       /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':columnCount integer 120" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
       # Profiles > Text > Font. Terminal stores Font as NSArchiver binary data, so osascript is used
-      # instead of PlistBuddy — it sets font name/size as first-class properties on the settings set.
+      # instead of PlistBuddy -- it sets font name/size as first-class properties on the settings set.
       # PostScript name: MesloLGSNF-Italic (from MesloLGS Nerd Font Italic).
       osascript -e "tell application \"Terminal\" to set font name of settings set \"${profile}\" to \"MesloLGSNF-Italic\""
       osascript -e "tell application \"Terminal\" to set font size of settings set \"${profile}\" to 13"
       # Profiles > Keyboard > "Use Option as Meta key": makes Option+B/F send \033b/\033f for readline
-      # word navigation. Option+arrow keys still send \033[1;9D/C — those need bindkey in .zshrc.
+      # word navigation. Option+arrow keys still send \033[1;9D/C -- those need bindkey in .zshrc.
       /usr/libexec/PlistBuddy -c "Delete :'Window Settings':'${profile}':useOptionAsMetaKey" "${HOME}/Library/Preferences/com.apple.Terminal.plist" 2>/dev/null || true
       /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':useOptionAsMetaKey bool true" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
       # Profiles > Shell > "When the shell exits": 0=don't close, 1=close if exited cleanly, 2=always close.
@@ -1292,7 +1292,7 @@ main() {
 
     # All PlistBuddy calls in this block write to the same plist; capture path once.
     local _iterm_plist="${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
-    # Profiles > Text > Font. Stored as "PostScriptName Size" plain string — no binary encoding needed.
+    # Profiles > Text > Font. Stored as "PostScriptName Size" plain string -- no binary encoding needed.
     # PostScript name: MesloLGSNF-Italic (from MesloLGS Nerd Font Italic).
     /usr/libexec/PlistBuddy -c "Set :'New Bookmarks':0:'Normal Font' 'MesloLGSNF-Italic 13'" "${_iterm_plist}"
     # Profiles > General > Command > Login shell. The 'Custom Command' key defaults to 'Custom Shell'
@@ -1494,7 +1494,7 @@ main() {
     /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Working Directory'" "${_iterm_plist}" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Working Directory' string '${HOME}'" "${_iterm_plist}"
 
-    # Profiles > Keys — modifier key behavior for Option keys
+    # Profiles > Keys -- modifier key behavior for Option keys
     # 0 = normal (do not send escape sequences for Option key combos; rely on Keyboard Map).
     /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Option Key Sends'" "${_iterm_plist}" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Option Key Sends' integer 0" "${_iterm_plist}"
@@ -1549,7 +1549,7 @@ main() {
     defaults write ch.protonvpn.mac ConnectOnDemand -bool true
     defaults write ch.protonvpn.mac EarlyAccess -bool true
     # Firewall and alternativeRouting are user-configurable network preferences,
-    # not session/account state — safe to codify.
+    # not session/account state -- safe to codify.
     defaults write ch.protonvpn.mac Firewall -bool false
     defaults write ch.protonvpn.mac NSInitialToolTipDelay -int 500
     defaults write ch.protonvpn.mac RememberLoginAfterUpdate -bool true
@@ -1595,8 +1595,8 @@ main() {
   # Clocker
   # ---------------------------------------------------------------------------
   if ask 'Clocker settings' 'Y'; then
-    # Skip: SelectedCalendars (iCloud Calendar UUIDs — denial criterion #2) and
-    # defaultPreferences (binary NSData blobs — not portably expressible).
+    # Skip: SelectedCalendars (iCloud Calendar UUIDs -- denial criterion #2) and
+    # defaultPreferences (binary NSData blobs -- not portably expressible).
     defaults write com.abhishek.Clocker 'com.abhishek.menubarCompactMode' -int 0
     defaults write com.abhishek.Clocker 'com.abhishek.shouldDefaultToCompactMode' -bool true
     defaults write com.abhishek.Clocker defaultTheme -int 2
@@ -1652,7 +1652,7 @@ main() {
   # Written to each profile dir that exists at the time the script runs. Nightly and
   # other profiles are skipped if they have not been created yet.
   local _firefox_user_js_content
-  _firefox_user_js_content='// Written by osx-defaults.sh — do not edit by hand; re-run the script to update.
+  _firefox_user_js_content='// Written by osx-defaults.sh -- do not edit by hand; re-run the script to update.
 // Firefox overwrites prefs.js on every launch; this file is re-applied at startup.
 user_pref("browser.contentblocking.category", "strict");
 user_pref("browser.ctrlTab.sortByRecentlyUsed", true);
@@ -1714,7 +1714,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # MechVibes has no defaults key for login-item status.
   if ask 'MechVibes settings' 'Y'; then
-    # Skip: NSStatusItem Preferred Position Item-0 — menu bar pixel coordinate (criterion 4).
+    # Skip: NSStatusItem Preferred Position Item-0 -- menu bar pixel coordinate (criterion 4).
     defaults write com.electron.mechvibes NSFullScreenMenuItemEverywhere -bool false
     defaults write com.electron.mechvibes NSTreatUnknownArgumentsAsOpen -bool false
   fi
@@ -1725,7 +1725,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # KeyCastr has no defaults key for login-item status.
   if ask 'KeyCastr settings' 'Y'; then
-    # Skip: default.textColor — binary NSKeyedArchiver blob with embedded ICC profile;
+    # Skip: default.textColor -- binary NSKeyedArchiver blob with embedded ICC profile;
     # not portably expressible as a defaults write argument.
     defaults write io.github.keycastr SUEnableAutomaticChecks -bool true
     defaults write io.github.keycastr SUSendProfileInfo -bool false
@@ -1801,7 +1801,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # Shortcat has no defaults key for login-item status.
   if ask 'Shortcat settings' 'Y'; then
-    # Skip: telemetryIdentifier — device UUID (denial criterion #1).
+    # Skip: telemetryIdentifier -- device UUID (denial criterion #1).
     # KeyboardShortcuts_* keys are plain JSON strings encoding key codes and modifiers.
     defaults write com.sproutcube.Shortcat 'KeyboardShortcuts_click' -string '{"carbonModifiers":0,"carbonKeyCode":36}'
     defaults write com.sproutcube.Shortcat 'KeyboardShortcuts_debugElement' -string '{"carbonModifiers":256,"carbonKeyCode":119}'
@@ -1820,9 +1820,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # Sol has no defaults key for login-item status.
   if ask 'Sol settings' 'Y'; then
-    # Skip: NSWindow Frame * (display geometry — denial criterion #4),
-    # SUHasLaunchedBefore (one-time setup sentinel — denial criterion #5),
-    # SULastCheckTime (ephemeral timestamp — denial criterion #3),
+    # Skip: NSWindow Frame * (display geometry -- denial criterion #4),
+    # SUHasLaunchedBefore (one-time setup sentinel -- denial criterion #5),
+    # SULastCheckTime (ephemeral timestamp -- denial criterion #3),
     # SUUpdateGroupIdentifier (internal Sparkle grouping ID, not user-configurable).
     defaults write com.ospfranco.sol RCTI18nUtil_makeRTLFlipLeftAndRightStyles -bool true
     defaults write com.ospfranco.sol SUAutomaticallyUpdate -bool true
@@ -1834,10 +1834,10 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Stats
   # ---------------------------------------------------------------------------
   if ask 'Stats settings' 'Y'; then
-    # Skip: id, remote_id (device UUIDs — denial criterion #1), ble_*, sensor_*, *_ts
-    # (ephemeral sync state — denial criterion #3), remote_tokens_migrated_to_keychain,
-    # Clock_list (per-entry UUIDs — denial criterion #1), version, NSStatusItem
-    # Preferred/Restore Position (display geometry — denial criterion #4).
+    # Skip: id, remote_id (device UUIDs -- denial criterion #1), ble_*, sensor_*, *_ts
+    # (ephemeral sync state -- denial criterion #3), remote_tokens_migrated_to_keychain,
+    # Clock_list (per-entry UUIDs -- denial criterion #1), version, NSStatusItem
+    # Preferred/Restore Position (display geometry -- denial criterion #4).
     defaults write eu.exelban.Stats 'BAT_mini_alignment' -string 'right'
     defaults write eu.exelban.Stats 'BAT_mini_color' -string 'system'
     defaults write eu.exelban.Stats 'BAT_mini_label' -bool true
@@ -1932,10 +1932,10 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # Thaw has no defaults key for login-item status.
   if ask 'Thaw settings' 'Y'; then
-    # Skip: Hotkeys (all values are null — app treats missing key identically, and
+    # Skip: Hotkeys (all values are null -- app treats missing key identically, and
     # PlistBuddy cannot write NSNull portably), MenuBarAppearanceConfigurationV2,
     # MenuBarItemManager.*, DisplayIceBarConfigurations (all contain per-display UUIDs
-    # — denial criterion #4), hasMigrated* flags (one-time migration sentinels).
+    # -- denial criterion #4), hasMigrated* flags (one-time migration sentinels).
     # IceIcon is stored as raw bytes but the JSON content is fully portable; writing
     # as -string causes macOS to store it as NSString, which Thaw reads correctly.
     defaults write com.stonerl.Thaw AutoRehide -bool true
@@ -1978,7 +1978,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
       defaults write "${_zen_bundle}" NSTreatUnknownArgumentsAsOpen -bool false
     done
 
-    # user.js written to the Zen profile dir (same mechanism as Firefox — see comment there).
+    # user.js written to the Zen profile dir (same mechanism as Firefox -- see comment there).
     local _zen_profiles_root="${HOME}/Library/Application Support/Zen/Profiles"
     if is_directory "${_zen_profiles_root}"; then
       local _zen_profile_dir
@@ -2140,7 +2140,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Show Contact Reflection:
   # defaults write com.apple.AddressBook reflection -boolean
   # com.apple.AddressBook is sandbox-restricted on modern macOS; writes fail with
-  # "Could not write domain" even as the file owner. Suppress the error — the
+  # "Could not write domain" even as the file owner. Suppress the error -- the
   # settings are effectively read-only via this path on current OS versions.
   defaults write com.apple.AddressBook ABBirthDayVisible -bool true 2>/dev/null || true
   defaults write com.apple.AddressBook ABDefaultAddressCountryCode -string in 2>/dev/null || true
@@ -2201,8 +2201,8 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Turn off spotlight indexing for all volumes (to pre-empt any issues with the system settings pane)
   sudo mdutil -Eda &>/dev/null && sudo mdutil -ai off &>/dev/null
 
-  user_action "Grant Full Disk Access to 'Terminal' and 'iTerm': System Settings → Privacy & Security → Full Disk Access → add 'Terminal.app' and 'iTerm.app' (cannot be automated — TCC is SIP-protected)."
-  user_action "Manually adjust the Finder sidebar content (which folders appear in Favorites): stored in LSSharedFileList binary files — not scriptable via defaults."
+  user_action "Grant Full Disk Access to 'Terminal' and 'iTerm': System Settings → Privacy & Security → Full Disk Access → add 'Terminal.app' and 'iTerm.app' (cannot be automated -- TCC is SIP-protected)."
+  user_action "Manually adjust the Finder sidebar content (which folders appear in Favorites): stored in LSSharedFileList binary files -- not scriptable via defaults."
   user_action "The following apps have to be manually quit and restarted for their settings to be reloaded:
   'Terminal' and 'iTerm' (since one of these might be running this script),
   'ProtonVPN' (force-quitting may drop the VPN connection),

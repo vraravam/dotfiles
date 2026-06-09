@@ -10,12 +10,12 @@ class String
   #
   # Design: color methods apply tilde substitution so callers never need to
   # pre-substitute before passing a path to .yellow, .cyan, etc. Logging methods
-  # (success/info/warn/debug/error) do NOT apply substitution — they rely on
+  # (success/info/warn/debug/error) do NOT apply substitution -- they rely on
   # color methods having already done so for any colorized path segments.
   # Bare puts/print call sites that display paths WITHOUT a color method must
   # still call replace_home_path_with_tilde explicitly.
   #
-  # This is the Ruby equivalent of _colorize() in .shellrc — both are the single
+  # This is the Ruby equivalent of _colorize() in .shellrc -- both are the single
   # centralised implementation point that all public color functions delegate to.
   # Why call replace_home_path_with_tilde directly here rather than inlining
   # gsub(EnvVars::HOME.to_s, '~'): Ruby method calls have no fork overhead, so calling

@@ -2,11 +2,11 @@
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
-# Re-source guard is inside .shellrc itself — safe to call unconditionally.
+# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
 source "${HOME}/.shellrc"
 # st is a required dependency; source it to make the function available without
 # triggering its self-invocation (zsh_eval_context guard in st prevents execution when sourced).
-# Note: load_file_if_exists is intentionally NOT used — st is required, not optional.
+# Note: load_file_if_exists is intentionally NOT used -- st is required, not optional.
 source "${XDG_CONFIG_HOME}/zsh/st"
 
 # Reports status of the following repos: HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, ZenProfile chrome folder

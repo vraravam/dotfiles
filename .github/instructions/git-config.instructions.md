@@ -16,10 +16,10 @@ as its first argument, defaulting to `'.'` if omitted. Use `git -C "${1:-.}"` fo
 every git call inside the alias body.
 
 ```ini
-# Good — accepts optional dir; defaults to current directory
+# Good -- accepts optional dir; defaults to current directory
 my-alias = "!f() { git -C \"${1:-.}\" some-command; }; f"
 
-# BAD — hardcodes current directory; cannot be called with an explicit path
+# BAD -- hardcodes current directory; cannot be called with an explicit path
 my-alias = !git some-command
 ```
 
@@ -27,16 +27,16 @@ This allows callers to pass the path directly (`git my-alias /path/to/repo`) as
 an alternative to `git -C /path/to/repo my-alias`. Both forms are equivalent.
 
 **Do NOT combine both forms.** `git -C <path1> my-alias <path2>` is undefined
-behaviour — the explicit arg wins and `-C <path1>` is silently ignored. Use one
+behaviour -- the explicit arg wins and `-C <path1>` is silently ignored. Use one
 or the other:
 
-- `git -C <path> my-alias` — git-native; preferred for interactive use and
+- `git -C <path> my-alias` -- git-native; preferred for interactive use and
   scripting that already has the path in a variable passed to `-C`.
-- `git my-alias <path>` — explicit arg; preferred for callers like `run-all.rb`
+- `git my-alias <path>` -- explicit arg; preferred for callers like `run-all.rb`
   that set cwd via `cd` and invoke the alias with no args (leaving `${1:-.}` to
   default to `.`), or when constructing a command string where `-C` is awkward.
 
-### Exceptions — aliases where `${1}` already has a fixed meaning
+### Exceptions -- aliases where `${1}` already has a fixed meaning
 
 Do **not** add a `<dir>` argument when the first argument already has an
 established meaning:
@@ -54,7 +54,7 @@ established meaning:
 
 For these, `git -C <path> <alias>` is the only option.
 
-### `cc` — dir + flag coexistence
+### `cc` -- dir + flag coexistence
 
 `cc` accepts both a dir and flags. Since flags always start with `-`, detect the
 dir at the top of the function body by checking whether `${1}` starts with `-`:
@@ -72,16 +72,16 @@ Always quote variable expansions to prevent word-splitting on values that could
 contain spaces:
 
 ```ini
-# BAD — unquoted, breaks on paths with spaces
+# BAD -- unquoted, breaks on paths with spaces
 my-alias = !sh -c 'git -C $1 command' -
 
-# Good — quoted
+# Good -- quoted
 my-alias = !sh -c 'git -C "${1:-.}" command' -
 ```
 
 ### Brace Notation
 
-Always use `${var}` brace notation — never bare `$var` (except single-character
+Always use `${var}` brace notation -- never bare `$var` (except single-character
 special params `$?`, `$#`, `$@`, `$$`, etc.):
 
 ```ini
@@ -98,13 +98,13 @@ Under `set -u` (or any strict mode), bare `$1` fails when no argument is given.
 Always provide a default with `${1:-}` (empty default) or a meaningful fallback:
 
 ```ini
-# BAD — fails if no argument supplied
+# BAD -- fails if no argument supplied
 my-alias = !sh -c 'git checkout $1' -
 
-# Good — empty default, safe when no arg
+# Good -- empty default, safe when no arg
 my-alias = !sh -c 'git checkout "${1:-}"' -
 
-# Good — meaningful fallback (current dir)
+# Good -- meaningful fallback (current dir)
 my-alias = !sh -c 'git -C "${1:-.}" status' -
 ```
 
@@ -114,10 +114,10 @@ Use single quotes for static strings with no variable expansion inside the alias
 value. Use double quotes only when the string contains variable references:
 
 ```ini
-# Good — static string, single quotes
+# Good -- static string, single quotes
 my-alias = !sh -c 'printf "no args\n"' -
 
-# Good — variable expansion, double quotes required
+# Good -- variable expansion, double quotes required
 my-alias = "!f() { printf '%s\n' \"${1:-}\"; }; f"
 ```
 
@@ -129,10 +129,10 @@ Aliases that use shell commands must use `!sh -c '...' -` to properly handle
 the `-C <dir>` flag:
 
 ```ini
-# BAD — does not honour -C
+# BAD -- does not honour -C
 my-alias = !git some-command
 
-# Good — honours -C via $1 defaulting to current dir
+# Good -- honours -C via $1 defaulting to current dir
 my-alias = !sh -c 'git -C "${1:-.}" some-command' -
 ```
 
@@ -153,7 +153,7 @@ correct convention for `!sh -c '...' -` aliases:
 my-alias = !sh -c 'git -C "${1:-.}" command' -
 ```
 
-Do NOT use `$0` for user arguments — `$0` is always `-` (the script name
+Do NOT use `$0` for user arguments -- `$0` is always `-` (the script name
 passed as the trailing argument to `sh -c`).
 
 ### `!f()` Named Function Pattern
@@ -181,7 +181,7 @@ st = status --short --branch
 fetch-unshallow = !sh -c 'git -C "${1:-.}" rev-parse --is-shallow-repository | grep -q true && git -C "${1:-.}" fetch --unshallow || git -C "${1:-.}" fetch' -
 ```
 
-## `git sci` (Smart Commit — Non-Interactive)
+## `git sci` (Smart Commit -- Non-Interactive)
 
 `git sci "<message>"` is fully non-interactive. It takes a commit message as
 its argument and decides whether to create a new commit or amend the last one:
@@ -190,7 +190,7 @@ its argument and decides whether to create a new commit or amend the last one:
 - Amends (`git amq`) if already ahead of remote and not diverged.
 - Creates a new commit (`git ci "<message>"`) otherwise.
 
-Use `git diff --cached --quiet` to check for staged changes — not
+Use `git diff --cached --quiet` to check for staged changes -- not
 `git status --porcelain | grep "to unstage"`. The latter is locale-dependent
 and breaks for non-English git installations.
 
@@ -210,23 +210,23 @@ sci = "!sh -c '\
 Both paths are non-interactive: `git amq` = `commit --amend --no-edit --quiet`;
 `git ci "<msg>"` = `commit -m "<msg>"`.
 
-## `git pull-safe` and `git upreb` — Dirty-Tree Guard for Cron
+## `git pull-safe` and `git upreb` -- Dirty-Tree Guard for Cron
 
 Aliases that rebase (or rebase + push) must check for a clean working tree
 **before** doing any destructive work. `rebase.autoStash = true` is not
-sufficient: it stashes, rebases, then tries to pop the stash — if the stash
+sufficient: it stashes, rebases, then tries to pop the stash -- if the stash
 conflicts with the rebased commits, the repo is left in a broken mid-operation
 state.
 
 The correct pattern is an **early exit**: check first, do nothing if dirty.
 
-**`git pull-safe`** — fetch all remotes, rebase onto `@{u}` only if clean:
+**`git pull-safe`** -- fetch all remotes, rebase onto `@{u}` only if clean:
 
 ```ini
 pull-safe = "!f() { git -C \"${1:-.}\" fetch --all; if git -C \"${1:-.}\" diff --quiet && git -C \"${1:-.}\" diff --cached --quiet; then git -C \"${1:-.}\" rebase '@{u}'; else printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' \"${1:-.}\" >&2; exit 1; fi; }; f"
 ```
 
-**`git upreb`** — abort before touching anything if dirty (a mid-workflow
+**`git upreb`** -- abort before touching anything if dirty (a mid-workflow
 failure after fetch+rebase but before push would leave the repo in a worse
 state than doing nothing):
 
@@ -236,13 +236,13 @@ upreb = "!f() { if git diff --quiet && git diff --cached --quiet; then <full wor
 
 Rules:
 - Use `git diff --quiet && git diff --cached --quiet` to check both unstaged
-  and staged changes. Never use `git status --porcelain` for this — it is
+  and staged changes. Never use `git status --porcelain` for this -- it is
   locale-dependent.
 - Exit non-zero on dirty so callers (e.g. `run-all.rb`) surface a warning.
 - Print to **stderr** (`>&2`) so the message appears in cron logs without
   polluting stdout that callers might parse.
 - In cron scripts that call these via `run-all.rb`, use `_record_warning`
-  (not `_record_error`) for the outer failure — a dirty skip is an expected
+  (not `_record_error`) for the outer failure -- a dirty skip is an expected
   state in a personal repo, not a script failure.
 
 ## `git size`
@@ -255,29 +255,29 @@ containing spaces:
 size = !printf '==> Size of repository at %s: %s\n' "$(git rev-parse --show-toplevel)" "$(du -sh "$(git rev-parse --show-toplevel)/.git" | cut -f1)"
 ```
 
-## `git cc` and `git rfc` — Reflog Expiry Without Stash Loss
+## `git cc` and `git rfc` -- Reflog Expiry Without Stash Loss
 
 `git reflog expire --all` covers `refs/stash` and will discard stashes.
 **Never use `--all`** in `reflog expire`. Instead, enumerate refs explicitly
 using `git for-each-ref`:
 
 ```ini
-# BAD — discards stashes
+# BAD -- discards stashes
 rfc = reflog expire --expire=now --all
 
-# Good — preserves refs/stash; excludes refs/tags (tags have no reflogs in any
-# repo — git only maintains reflogs for HEAD and branches — passing them always
+# Good -- preserves refs/stash; excludes refs/tags (tags have no reflogs in any
+# repo -- git only maintains reflogs for HEAD and branches -- passing them always
 # produces "reflog could not be found" errors)
 rfc = "!f() { refs=$(git for-each-ref --format='%(refname)' refs/heads refs/remotes); [ -n \"${refs}\" ] && git reflog expire --expire=now --expire-unreachable=now --stale-fix ${refs}; }; f"
 ```
 
-The same rule applies inside `git cc` — the `reflog expire` step must use
+The same rule applies inside `git cc` -- the `reflog expire` step must use
 `git for-each-ref` enumeration of `refs/heads` and `refs/remotes` only. `refs/tags`
-must be excluded — tags have no reflogs in any repo (git only maintains reflogs for
+must be excluded -- tags have no reflogs in any repo (git only maintains reflogs for
 `HEAD` and branches), and passing them to `git reflog expire` always produces
 "reflog could not be found" errors for every tag.
 
-## `[delta]` — Diff Rendering
+## `[delta]` -- Diff Rendering
 
 `delta` is configured under `[delta]` in `~/.gitconfig`. Key rules:
 
@@ -289,9 +289,9 @@ must be excluded — tags have no reflogs in any repo (git only maintains reflog
   background, adjust `minus-emph-style`'s background proportionally.
 - **`line-fill-method = ansi`**: extends the diff background color to the full
   terminal width. The default (`spaces`) only colors actual characters, leaving
-  the rest of the line with the terminal's default background — which looks
+  the rest of the line with the terminal's default background -- which looks
   inconsistent on wide terminals.
-- Do not revert `minus-style` / `plus-style` back to bare `"red"` / `"green"` —
+- Do not revert `minus-style` / `plus-style` back to bare `"red"` / `"green"` --
   those were the original values and they dropped syntax highlighting.
 
 ---
@@ -310,5 +310,5 @@ Binary file types must be marked binary:
 *.zwc  binary
 ```
 
-XML plist files (`*.plist`) exported by `capture-prefs.sh` are text — no
+XML plist files (`*.plist`) exported by `capture-prefs.sh` are text -- no
 `binary` attribute needed. Do not add `*.plist binary` or `*.defaults binary`.

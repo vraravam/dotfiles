@@ -45,7 +45,7 @@ start_time = print_script_start
 debug "#{'Adding new upstream to:'.yellow} '#{target_folder.cyan}'"
 
 unless GitHelpers.git_repo?(target_folder)
-  info "'#{target_folder.cyan}' is not a git repo — skipping."
+  info "'#{target_folder.cyan}' is not a git repo -- skipping."
   print_script_summary(start_time)
   exit 0
 end
@@ -53,7 +53,7 @@ end
 # Check if an 'upstream' remote already exists.
 existing_upstream = GitHelpers.remote_url(folder: target_folder, name: 'upstream')
 if existing_upstream
-  info "Remote 'upstream' already exists for '#{target_folder.cyan}': '#{existing_upstream.cyan}' — skipping."
+  info "Remote 'upstream' already exists for '#{target_folder.cyan}': '#{existing_upstream.cyan}' -- skipping."
   print_script_summary(start_time)
   exit 0
 end
@@ -93,7 +93,7 @@ end
 new_repo_url += '.git' unless new_repo_url.end_with?('.git')
 
 if cloned_owner == upstream_owner
-  info "Origin owner ('#{cloned_owner.cyan}') and upstream owner are the same — no change needed."
+  info "Origin owner ('#{cloned_owner.cyan}') and upstream owner are the same -- no change needed."
   print_script_summary(start_time)
   exit 0
 end

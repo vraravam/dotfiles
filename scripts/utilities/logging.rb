@@ -36,7 +36,7 @@ module Logging
   # Semantic log-level helpers
   # These mirror success/info/warn/debug/error from .shellrc.
   #
-  # These methods do NOT apply tilde substitution — color methods (.yellow,
+  # These methods do NOT apply tilde substitution -- color methods (.yellow,
   # .cyan, etc.) do so automatically on their arguments. Logging methods are
   # pure formatters: prefix + message. Bare puts/print call sites that display
   # paths without a color method must call replace_home_path_with_tilde explicitly.
@@ -104,7 +104,7 @@ module Logging
 
   # Sub-level section header for steps nested inside a top-level section_header.
   # Mirrors section_header2 in .shellrc: '-' padding, '🔷' glyph, cyan colour,
-  # 2-space indent. Does NOT update current_section — sub-steps belong to the
+  # 2-space indent. Does NOT update current_section -- sub-steps belong to the
   # enclosing top-level section for record_warning / record_error attribution.
   def section_header2(header)
     _section_header_impl(header, char: '-', glyph: '🔷', color: :cyan, indent: '  ')
@@ -116,7 +116,7 @@ module Logging
   # print_script_duration. This deviates from the shell version (which cannot
   # return a value) but eliminates the two-call pattern and ensures the logged
   # timestamp and the in-memory start time are identical.
-  # Only prints when this is the outermost script — see outermost_script?.
+  # Only prints when this is the outermost script -- see outermost_script?.
   #
   # @return [Integer] Unix epoch of the logged start time.
   def print_script_start
@@ -144,7 +144,7 @@ module Logging
   # These mirror _record_warning, _record_error, and print_script_summary from
   # .shellrc. Each entry is prefixed with [script_name][current_section] for
   # traceability. print_script_summary prints collected issues grouped by type.
-  # No macOS notification is sent — osascript is not appropriate for library code.
+  # No macOS notification is sent -- osascript is not appropriate for library code.
   # ---------------------------------------------------------------------------
 
   # Sets the current logical section name, used as context in record_warning /
@@ -169,7 +169,7 @@ module Logging
 
   # Prints a grouped summary of all collected warnings and errors, prefixing
   # each section header with the script name, then prints the total duration.
-  # Mirrors print_script_summary in .shellrc. No macOS notification — callers
+  # Mirrors print_script_summary in .shellrc. No macOS notification -- callers
   # that need one must handle it themselves.
   #
   # Accepts an optional +start_time+ (Unix epoch returned by +print_script_start+).
@@ -186,7 +186,7 @@ module Logging
   # @param start_time [Integer, nil] Unix epoch of script start, or nil to skip duration.
   # @param message [String, nil] Optional success message to print before summary.
   def print_script_summary(start_time = nil, message = nil)
-    # outermost_script? encapsulates the _DOTFILES_SCRIPT_DEPTH check — see its
+    # outermost_script? encapsulates the _DOTFILES_SCRIPT_DEPTH check -- see its
     # definition for the full rationale.
     return unless outermost_script?
 
@@ -196,7 +196,7 @@ module Logging
       step_warnings.each { |w| warn("  #{w}") }
     end
     unless nil_or_empty?(step_errors)
-      section_header("#{script_name.cyan} #{("#{step_errors.length} error(s) — manual attention needed").red}")
+      section_header("#{script_name.cyan} #{("#{step_errors.length} error(s) -- manual attention needed").red}")
       step_errors.each { |e| warn("  #{e}") }
     end
     print_script_duration(start_time) unless start_time.nil?
@@ -223,14 +223,14 @@ module Logging
   end
 
   # ---------------------------------------------------------------------------
-  # Script depth tracking — public API called by each script's main()
+  # Script depth tracking -- public API called by each script's main()
   # ---------------------------------------------------------------------------
 
   # Returns true when this is the outermost script in a nested call chain.
   # Mirrors is_outermost_script in .shellrc. _DOTFILES_SCRIPT_DEPTH is exported
   # and incremented by each script's main(); subprocess increments do not
   # propagate back to the parent. Defaults to 0 when unset so standalone scripts
-  # (which never set the counter) are treated as outermost — consistent with the
+  # (which never set the counter) are treated as outermost -- consistent with the
   # ':-0' used in the increment expression in each main().
   def outermost_script?
     _script_depth <= 1
@@ -264,7 +264,7 @@ module Logging
   #   print_operation_summary(10, successful_repos, failed_repos)
   #   print_operation_summary(5, successful_files, failed_files, item_label: 'files')
   def print_operation_summary(total, successful, failed, item_label: 'repositories')
-    # Only print when this is the outermost script — suppresses nested summaries
+    # Only print when this is the outermost script -- suppresses nested summaries
     # when called from a wrapper script/function that prints its own final summary.
     return unless outermost_script?
 
@@ -324,7 +324,7 @@ module Logging
   end
 
   # Returns the current terminal column width, falling back to 80.
-  # $stdout.winsize[1] reads the terminal dimensions via ioctl — no `tput cols` subprocess fork.
+  # $stdout.winsize[1] reads the terminal dimensions via ioctl -- no `tput cols` subprocess fork.
   # rescue 0 handles non-tty contexts (e.g. pipes, cron) gracefully.
   def terminal_width
     return @terminal_width if @terminal_width

@@ -4,11 +4,11 @@
 #
 # Thin wrapper used as $EDITOR for tools (crontab, visudo, fc, etc.) that
 # exec() the editor directly without shell parsing.  Those tools can only pass
-# a bare binary name — no flags.  This wrapper re-execs $GIT_EDITOR, which
+# a bare binary name -- no flags.  This wrapper re-execs $GIT_EDITOR, which
 # carries the full invocation including --wait (e.g. 'zed --wait'), so the
 # calling tool blocks until the editor window is closed.
 #
 # Intentional unquoted expansion of $GIT_EDITOR: we rely on POSIX word-
 # splitting so that 'zed --wait' becomes two separate exec() arguments.
 # shellcheck disable=SC2086
-exec ${GIT_EDITOR:?GIT_EDITOR is not set — cannot open editor in wait mode} "$@"
+exec ${GIT_EDITOR:?GIT_EDITOR is not set -- cannot open editor in wait mode} "$@"

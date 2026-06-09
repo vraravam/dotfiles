@@ -89,7 +89,7 @@ _cleanup_and_exit() {
 _setup_jio_dns() {
   local _org
   # Capture curl output into a variable first; then test with a glob match.
-  # Previously: curl ... | \grep -qi 'jio' — two processes + pipe.
+  # Previously: curl ... | \grep -qi 'jio' -- two processes + pipe.
   # Now: single curl fork, pure-zsh lowercase expansion (:l) + glob match.
   _org=$(curl -fsS https://ipinfo.io/org 2>/dev/null)
   if [[ "${_org:l}" == *jio* ]]; then
@@ -118,7 +118,7 @@ _download_and_source_shellrc() {
     info "Skipping downloading '$(yellow "${HOME}/.shellrc")' since this is not a first install"
   fi
   DEBUG=true source "${HOME}/.shellrc"
-  success "Successfully sourced '$(yellow "${HOME}/.shellrc")'"
+  success "Successfully sourced '$(cyan "${HOME}/.shellrc")'"
 }
 
 # Enable Touch ID for sudo command when running on the terminal
@@ -134,14 +134,14 @@ _approve_fingerprint_sudo() {
   [[ -n "$(/usr/sbin/ioreg -c AppleBiometricSensor  2>/dev/null | /usr/bin/grep AppleBiometricSensor)"  ]] && has_biometric_sensor=1  || true
   [[ -n "$(/usr/sbin/ioreg -c AppleBiometricServices 2>/dev/null | /usr/bin/grep AppleBiometricServices)" ]] && has_biometric_services=1 || true
   if [[ "${has_biometric_sensor}" == 0 && "${has_biometric_services}" == 0 ]]; then
-    info 'Touch ID hardware is not detected — skipping configuration.'
+    info 'Touch ID hardware is not detected -- skipping configuration.'
     step_end
     return 0  # Exit successfully as no action is needed
   fi
 
   local template_file='/etc/pam.d/sudo_local.template'
   if ! is_file "${template_file}"; then
-    warn "Template file '$(yellow "${template_file}")' not found! Skipping!"
+    warn "Template file '$(cyan "${template_file}")' not found! Skipping!"
     step_end
     return
   fi
@@ -149,12 +149,12 @@ _approve_fingerprint_sudo() {
   local target_file='/etc/pam.d/sudo_local'
   if ! is_file "${target_file}"; then
     if sudo sh -c "sed 's/^#auth/auth/' '${template_file}' > '${target_file}'"; then
-      success "Created new file: '$(yellow "${target_file}")'"
+      success "Created new file: '$(cyan "${target_file}")'"
     else
       error "Failed to create '${target_file}'"
     fi
   else
-    info "'$(yellow "${target_file}")' is already present — skipping."
+    info "'$(cyan "${target_file}")' is already present -- skipping."
   fi
   step_end
 }
@@ -186,7 +186,7 @@ _install_xcode_command_line_tools() {
 
     success 'Successfully installed xcode command-line tools'
   else
-    info 'Skipping installation of xcode command-line tools — already present.'
+    info 'Skipping installation of xcode command-line tools -- already present.'
   fi
   # Note: Duplicate the cleanup if the installation was cancelled and continued via the gui
   rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
@@ -209,7 +209,7 @@ _ensure_directories_exist() {
 _clone_dot_files_repo() {
   _current_section='Clone dotfiles repo'
   step_start
-  section_header "$(yellow 'Installing dotfiles') into '$(purple "${DOTFILES_DIR}")'"
+  section_header "$(yellow 'Installing dotfiles') into '$(cyan "${DOTFILES_DIR}")'"
   if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
     # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
     rm -rf "${ZDOTDIR}/.zshrc"
@@ -228,7 +228,7 @@ _clone_dot_files_repo() {
       exit 1
     fi
   else
-    info "Skipping cloning the dotfiles repo since '$(yellow "${DOTFILES_DIR}")' is either not defined or is already a git repo"
+    info "Skipping cloning the dotfiles repo since '$(cyan "${DOTFILES_DIR}")' is either not defined or is already a git repo"
   fi
   step_end
 }
@@ -237,7 +237,7 @@ _clone_dot_files_repo() {
 _install_homebrew() {
   _current_section='Install Homebrew'
   step_start
-  section_header "$(yellow 'Installing homebrew') into '$(yellow "${HOMEBREW_PREFIX}")'"
+  section_header "$(yellow 'Installing homebrew') into '$(cyan "${HOMEBREW_PREFIX}")'"
   if is_zero_string "${HOMEBREW_PREFIX}"; then
     error "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!"
     exit 1  # Irrecoverable failure
@@ -265,7 +265,7 @@ _install_homebrew() {
       exit 1
     fi
   else
-    info "Skipping installation of $(yellow 'homebrew') — already installed."
+    info "Skipping installation of $(yellow 'homebrew') -- already installed."
   fi
 
   # Ensure homebrew's environment variables are set correctly for this session.
@@ -329,7 +329,7 @@ _install_homebrew() {
 
 # Set the default login shell to Homebrew's zsh.
 # macOS ships with /bin/zsh but Homebrew's zsh is newer and managed independently.
-# chsh requires the target shell to be listed in /etc/shells — add it if absent.
+# chsh requires the target shell to be listed in /etc/shells -- add it if absent.
 # Without this, iTerm2's "Login shell" setting uses /bin/zsh (system) even when
 # /opt/homebrew/bin/zsh is on PATH, and $SHELL stays /bin/zsh after a fresh install.
 _set_default_shell() {
@@ -340,7 +340,7 @@ _set_default_shell() {
   local _brew_zsh="${HOMEBREW_PREFIX}/bin/zsh"
 
   if ! is_executable "${_brew_zsh}"; then
-    _record_error "Homebrew zsh not found at '$(yellow "${_brew_zsh}")' — skipping default shell change."
+    _record_error "Homebrew zsh not found at '$(cyan "${_brew_zsh}")' -- skipping default shell change."
     step_end
     return 1
   fi
@@ -350,14 +350,14 @@ _set_default_shell() {
     info "Adding '$(yellow "${_brew_zsh}")' to /etc/shells"
     echo "${_brew_zsh}" | sudo tee -a /etc/shells >/dev/null
   else
-    info "'$(yellow "${_brew_zsh}")' already in /etc/shells — skipping."
+    info "'$(yellow "${_brew_zsh}")' already in /etc/shells -- skipping."
   fi
 
   if [[ "${SHELL}" == "${_brew_zsh}" ]]; then
-    info "Default shell is already '$(yellow "${_brew_zsh}")' — skipping."
+    info "Default shell is already '$(yellow "${_brew_zsh}")' -- skipping."
   else
     chsh -s "${_brew_zsh}"
-    success "Default shell changed to '$(yellow "${_brew_zsh}")'."
+    success "Default shell changed to '$(cyan "${_brew_zsh}")'."
   fi
 
   step_end
@@ -384,7 +384,7 @@ _build_keybase_repo_url() {
 _clone_home_repo() {
   _current_section='Clone home repo'
   step_start
-  section_header2 "$(yellow 'Cloning') $(purple 'home') repo"
+  section_header2 "$(yellow 'Cloning') '$(cyan "${KEYBASE_HOME_REPO_NAME}")' repo"
   if is_non_zero_string "${KEYBASE_HOME_REPO_NAME}"; then
     if clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME}")" "${HOME}"; then
       # Reset ssh keys' permissions so that git doesn't complain when using them
@@ -396,7 +396,7 @@ _clone_home_repo() {
       _record_error 'Failed to clone home repo'
     fi
   else
-    info "Skipping cloning of home repo since the '$(yellow 'KEYBASE_HOME_REPO_NAME')' env var hasn't been set"
+    info "Skipping cloning of home repo since the '$(purple 'KEYBASE_HOME_REPO_NAME')' env var hasn't been set"
   fi
   step_end
 }
@@ -405,19 +405,19 @@ _clone_home_repo() {
 _clone_profiles_repo() {
   _current_section='Clone profiles repo'
   step_start
-  section_header2 "$(yellow 'Cloning') $(purple 'profiles') repo"
+  section_header2 "$(yellow 'Cloning') '$(cyan "${KEYBASE_PROFILES_REPO_NAME}")' repo"
   if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
     if ! clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"; then
       _record_error 'Failed to clone profiles repo'
     fi
   else
-    info "Skipping cloning of profiles repo since either the '$(yellow 'KEYBASE_PROFILES_REPO_NAME')' or the '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
+    info "Skipping cloning of profiles repo since either the '$(purple 'KEYBASE_PROFILES_REPO_NAME')' or the '$(purple 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
   fi
   step_end
 }
 
 main() {
-  # Suspend cron early before .shellrc or .aliases are available — neither
+  # Suspend cron early before .shellrc or .aliases are available -- neither
   # suspend_cron nor with_cron_suspended can be called yet, so the backup and
   # removal are done inline here. Even after both files are sourced, the
   # with_cron_suspended wrapper is not appropriate: the suspend/resume scope
@@ -448,31 +448,31 @@ main() {
   # Note: defined as an array so it expands correctly without word-splitting issues.
   # Note: local -a initialises to an empty array (not unset), so "${_curl_opts[@]}"
   #       expands to nothing safely under set -u when ~/.curlrc is already present.
-  # Note: --retry-all-errors is intentionally omitted — it causes the terminal app to close.
-  # Raw -f used here — .shellrc has not been sourced yet when _curl_opts is initialized, so is_file is unavailable.
+  # Note: --retry-all-errors is intentionally omitted -- it causes the terminal app to close.
+  # Raw -f used here -- .shellrc has not been sourced yet when _curl_opts is initialized, so is_file is unavailable.
   local -a _curl_opts
   if [[ ! -f "${HOME}/.curlrc" ]]; then
     _curl_opts=(--retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused)
   fi
 
   # Two separate accumulator arrays for non-fatal step issues:
-  #   _step_warnings — minor issues the step recovered from (e.g. a tool sub-step failed but install continued)
-  #   _step_errors   — significant failures that require manual attention (e.g. a tool was not found)
+  #   _step_warnings -- minor issues the step recovered from (e.g. a tool sub-step failed but install continued)
+  #   _step_errors   -- significant failures that require manual attention (e.g. a tool was not found)
   # _record_warning/_record_error/_cleanup_and_exit/print_script_summary (all from .shellrc) read/write
-  # these via zsh dynamic scoping — locals declared here are visible in all callees.
+  # these via zsh dynamic scoping -- locals declared here are visible in all callees.
   local _current_section='(init)'
   local -a _step_warnings=()
   local -a _step_errors=()
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
   # Note: Cannot load from shellrc since that file won't be present in a new machine (vanilla OS)
-  # $EPOCHSECONDS is provided by the zsh/datetime built-in module — always available, no fork.
+  # $EPOCHSECONDS is provided by the zsh/datetime built-in module -- always available, no fork.
   # Capture start epoch into both a local variable and _script_start_times.
   # The local is passed explicitly to print_script_summary at the end of main.
   # _script_start_times is used by step_end (called throughout this script) to
   # compute the "total elapsed" column independently of the local variable.
   # Both are required; see the design note above step_timing_init in .shellrc.
   local script_start_time
-  # zmodload called directly — .shellrc has not been sourced yet when this runs, so the load is not delegated.
+  # zmodload called directly -- .shellrc has not been sourced yet when this runs, so the load is not delegated.
   # A subsequent zmodload in .shellrc is a no-op in zsh.
   zmodload zsh/datetime
   script_start_time="${EPOCHSECONDS}"
@@ -517,7 +517,7 @@ main() {
   append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
   install-dotfiles.rb
 
-  # ~/.gitconfig is now symlinked by install-dotfiles.rb — core.sshCommand is in effect.
+  # ~/.gitconfig is now symlinked by install-dotfiles.rb -- core.sshCommand is in effect.
   # Unset GIT_SSH_COMMAND immediately so it no longer overrides core.sshCommand.
   # Must happen before any subsequent git operations (e.g. the diff/checkout below).
   unset GIT_SSH_COMMAND
@@ -561,7 +561,7 @@ main() {
   step_end
 
   if is_non_zero_string "${KEYBASE_USERNAME}"; then
-    section_header "$(yellow 'Cloning') $(purple 'keybase') repos"
+    section_header "$(yellow 'Cloning') '$(cyan 'keybase')' repos"
     # Login into Keybase
     step_start
     _ensure_keybase_logged_in || return 1
@@ -584,14 +584,14 @@ main() {
     osx-defaults.sh -s
     success 'Successfully baselines preferences'
   else
-    _record_error "Skipping baselining of preferences since '$(yellow 'osx-defaults.sh')' couldn't be found in the PATH; Please baseline manually and follow it up with re-import of the backed-up preferences"
+    _record_error "Skipping baselining of preferences since '$(purple 'osx-defaults.sh')' couldn't be found in the PATH; Please baseline manually and follow it up with re-import of the backed-up preferences"
   fi
 
   if command_exists 'capture-prefs.sh'; then
     capture-prefs.sh -i
     success 'Successfully restored preferences from backup'
   else
-    _record_error "Skipping importing of preferences since '$(yellow 'capture-prefs.sh')' couldn't be found in the PATH; Please set it up manually"
+    _record_error "Skipping importing of preferences since '$(purple 'capture-prefs.sh')' couldn't be found in the PATH; Please set it up manually"
   fi
 
   if is_directory '/Applications/Sol.app' && ! pgrep -x 'Sol' &>/dev/null; then
@@ -616,7 +616,7 @@ main() {
     rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
     recron
   else
-    _record_error "Skipping setting up of cron jobs since '$(yellow 'recron')' couldn't be found; Please set it up manually"
+    _record_error "Skipping setting up of cron jobs since '$(purple 'recron')' couldn't be found; Please set it up manually"
   fi
   step_end
 
@@ -626,7 +626,7 @@ main() {
     # HACKTAG: Can take a long time on FIRST_INSTALL, so running in background to be non-blocking
     resurrect_tracked_repos &|
   else
-    _record_error "Skipping resurrecting tracked repos since '$(yellow 'resurrect_tracked_repos')' couldn't be found in the PATH; Please run it manually"
+    _record_error "Skipping resurrecting tracked repos since '$(purple 'resurrect_tracked_repos')' couldn't be found in the PATH; Please run it manually"
   fi
 
   # Note: This is also called from within 'resurrect_tracked_repos', but this redundant call at least processes the git repos in the ${HOME}, ${PERSONAL_PROFILES_DIR} and the ${DOTFILES_DIR} folders as a "first pass" while that background job is still running
@@ -634,7 +634,7 @@ main() {
   if command_exists allow_all_direnv_configs; then
     allow_all_direnv_configs
   else
-    _record_error "Skipping registering all direnv configs since '$(yellow 'allow_all_direnv_configs')' couldn't be found in the PATH; Please run it manually"
+    _record_error "Skipping registering all direnv configs since '$(purple 'allow_all_direnv_configs')' couldn't be found in the PATH; Please run it manually"
   fi
 
   # Note: This is also called from within 'resurrect_tracked_repos', but this redundant call at least processes the git repos in the ${HOME}, ${PERSONAL_PROFILES_DIR} and the ${DOTFILES_DIR} folders as a "first pass" while that background job is still running
@@ -642,7 +642,7 @@ main() {
   if command_exists install_mise_versions; then
     install_mise_versions
   else
-    _record_error "Skipping installation of languages since '$(yellow 'install_mise_versions')' couldn't be found in the PATH; Please run it manually"
+    _record_error "Skipping installation of languages since '$(purple 'install_mise_versions')' couldn't be found in the PATH; Please run it manually"
   fi
 
   # To install the latest versions of the hex, rebar and phoenix packages
@@ -659,13 +659,13 @@ main() {
   # dotnet tool install -g dotnet-format
 
   # Print grouped summary of all collected warnings and errors, print duration,
-  # then send exactly one notification. Exit code is unchanged (0) — the summary
+  # then send exactly one notification. Exit code is unchanged (0) -- the summary
   # is informational only.
   print_script_summary "${script_start_time}" '** Finished auto installation process **'
   local _notification_parts=()
   if is_non_empty_array _step_errors; then
     local _errors_summary
-    # Join with '; ' for the notification body — osascript cannot span multiple lines.
+    # Join with '; ' for the notification body -- osascript cannot span multiple lines.
     _errors_summary="${(j:; :)_step_errors}"
     _notification_parts+=("${#_step_errors[@]} error(s): ${_errors_summary}")
   fi
@@ -677,7 +677,7 @@ main() {
   if is_non_empty_array _notification_parts; then
     local _notification_body
     _notification_body="${(j: | :)_notification_parts}"
-    _dotfiles_notify "Install done — ${_notification_body}" "⚠️ Fresh Install" || true
+    _dotfiles_notify "Install done -- ${_notification_body}" "⚠️ Fresh Install" || true
   else
     _dotfiles_notify "Fresh install completed successfully." "✅ Fresh Install Done" || true
   fi

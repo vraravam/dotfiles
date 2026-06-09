@@ -92,7 +92,7 @@ end
 # @return [String] The string with the first matching env-var value replaced by its placeholder,
 #   or the original string if no configured env-var value is non-empty and a prefix of +folder+.
 def _find_and_reverse_replace_env_var(folder)
-  # NOTE: List order matters — more specific (deeper) paths must come before their parents.
+  # NOTE: List order matters -- more specific (deeper) paths must come before their parents.
   # e.g. PROJECTS_BASE_DIR (a sub-path of HOME) must precede HOME; otherwise HOME would
   # match first and leave the PROJECTS_BASE_DIR-specific portion unexpanded.
   env_vars = %w[PROJECTS_BASE_DIR HOME]
@@ -237,7 +237,7 @@ def _resurrect_each(repo, idx, total)
 
   existing_remotes = {} # Store existing remotes {name => url}
   # NOTE: clone_repo_into is a shell function defined in .shellrc, which is sourced
-  # automatically via .zshenv on every zsh invocation — so a login shell (`-l`) is
+  # automatically via .zshenv on every zsh invocation -- so a login shell (`-l`) is
   # sufficient; no explicit `source .shellrc` is needed.
   # The remote URL and folder come from a trusted YAML config authored by the user,
   # but we still use `/bin/zsh -lc` explicitly (rather than a bare string passed to
@@ -246,7 +246,7 @@ def _resurrect_each(repo, idx, total)
   stdout_str, stderr_str, status = Open3.capture3({ 'FORCE_COLOR' => '1' }, '/bin/zsh', '-lc', clone_command)
   print stdout_str
   unless status.success?
-    # Clone failure is fatal — cannot proceed without a cloned repository
+    # Clone failure is fatal -- cannot proceed without a cloned repository
     error_message = "Failed to clone '#{repo[REMOTE_KEY_NAME]}' into '#{folder}' (status: #{status.exitstatus})"
     error_message += "\nClone command STDERR:\n#{stderr_str}" unless nil_or_empty?(stderr_str.strip)
     raise error_message
@@ -258,16 +258,16 @@ def _resurrect_each(repo, idx, total)
   if cloned_origin_url
     existing_remotes[ORIGIN_NAME] = cloned_origin_url
     if cloned_origin_url != repo[REMOTE_KEY_NAME]
-      # Verification failure is fatal — wrong URL means wrong code
+      # Verification failure is fatal -- wrong URL means wrong code
       raise "Cloned origin URL '#{cloned_origin_url}' differs from config '#{repo[REMOTE_KEY_NAME]}' for '#{folder}'"
     end
   else
-    # Verification failure is fatal — cannot confirm clone succeeded
+    # Verification failure is fatal -- cannot confirm clone succeeded
     raise "Could not verify origin remote URL after cloning '#{folder}'"
   end
 
   # Add missing 'other_remotes'
-  # Remote configuration failures are non-fatal — origin is correct, just can't add/update additional remotes
+  # Remote configuration failures are non-fatal -- origin is correct, just can't add/update additional remotes
   section_header2('Remote configuration')
   GitHelpers.each_remote(folder: folder) do |name, url|
     existing_remotes[name] = url
@@ -294,7 +294,7 @@ def _resurrect_each(repo, idx, total)
     end
   end
 
-  # Fetch failures are non-fatal — repository exists and is usable, just couldn't pull latest changes
+  # Fetch failures are non-fatal -- repository exists and is usable, just couldn't pull latest changes
   section_header2('Fetching all remotes and tags...')
   _stdout, stderr, status = GitHelpers.fetch_all(folder: folder)
   unless status.success?
@@ -303,7 +303,7 @@ def _resurrect_each(repo, idx, total)
 
   return unless repo[POST_CLONE_KEY_NAME].is_a?(Array)
 
-  # Post-clone command failures are non-fatal — repository is usable, just missing post-setup steps
+  # Post-clone command failures are non-fatal -- repository is usable, just missing post-setup steps
   section_header2('Running post-clone commands')
   # Use begin/ensure so the process working directory is always restored even if a command
   # raises an unexpected exception mid-loop.
@@ -359,8 +359,8 @@ def _verify_all(repositories, discovered_count, filter, ref_folder: nil)
 
   puts('')
   info('Summary'.yellow)
-  puts("  Discovered repositories: #{discovered_count}")
-  puts("  After filter:            #{repositories.length}") unless nil_or_empty?(filter)
+  puts("  Discovered repositories: #{discovered_count.to_s.purple}")
+  puts("  After filter:            #{repositories.length.to_s.purple}") unless nil_or_empty?(filter)
   puts("  Verified entries:        #{common_repos.length.to_s.green}")
   puts("  Common repositories:\n  #{common_repos.map(&:cyan).join("\n  ")}")
   if diff_repos.any?
@@ -377,7 +377,7 @@ private :_justify, :_find_and_replace_env_var, :_find_and_reverse_replace_env_va
         :_apply_filter, :_generate_each, :_resurrect_each, :_verify_all
 
 # main program
-filter = (ENV['FILTER'] || '').strip
+filter = ENV.fetch('FILTER', '').strip
 
 # Increment script depth and register at_exit decrement. print_script_start checks
 # outermost_script? to decide whether to print the banner.
@@ -398,8 +398,8 @@ if options[:generate]
 
   puts('')
   info('Summary'.yellow)
-  puts("  Discovered repositories: #{discovered_count}")
-  puts("  After filter:            #{repositories.length}") unless nil_or_empty?(filter)
+  puts("  Discovered repositories: #{discovered_count.to_s.purple}")
+  puts("  After filter:            #{repositories.length.to_s.purple}") unless nil_or_empty?(filter)
   puts("  Generated entries:       #{generated.length.to_s.green}")
 elsif options[:resurrect]
   section_header('Resurrecting repositories')
@@ -412,7 +412,7 @@ elsif options[:resurrect]
   failed_repos = []
   repositories.each.with_index(1) do |repo, idx|
     folder = repo[FOLDER_KEY_NAME]
-    info("[#{_justify(idx)} of #{_justify(repositories.length)}] #{'Resurrecting'.yellow}: '#{folder.cyan}'")
+    info("[#{_justify(idx).to_s.purple} of #{_justify(repositories.length).to_s.purple}] #{'Resurrecting'.yellow}: '#{folder.cyan}'")
     begin
       _resurrect_each(repo, idx, repositories.length)
       successful_repos << folder
@@ -433,7 +433,7 @@ elsif options[:check]
   config_file = File.expand_path(options[:check])
   puts("#{'Config file:'.yellow} '#{config_file.cyan}'")
   puts("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
-  reference_folder = ENV['REF_FOLDER']&.then { |f| File.expand_path(f) }
+  reference_folder = ENV.fetch('REF_FOLDER', nil)&.then { |f| File.expand_path(f) }
   puts("#{'Reference folder:'.yellow} '#{reference_folder.cyan}'") unless nil_or_empty?(reference_folder)
   repositories = _read_git_repos_from_file(config_file)
   discovered_count = repositories.length
