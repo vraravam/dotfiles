@@ -99,10 +99,6 @@ module EnvVars
   HOMEBREW_PREFIX = Pathname.new(ENV.fetch('HOMEBREW_PREFIX', '/opt/homebrew')).expand_path.freeze
   HOMEBREW_REPOSITORY = Pathname.new(ENV.fetch('HOMEBREW_REPOSITORY', HOMEBREW_PREFIX)).expand_path.freeze
 
-  # SSH configuration directory.
-  # Mirrors: export SSH_CONFIGS_DIR="${HOME}/.ssh"
-  SSH_CONFIGS_DIR = Pathname.new(ENV.fetch('SSH_CONFIGS_DIR', HOME.join('.ssh'))).expand_path.freeze
-
   # Antidote plugin manager paths.
   # Mirrors: ANTIDOTE_* exports in .shellrc (platform-specific and brew-dependent)
   # Note: On macOS ANTIDOTE_HOME defaults to ~/Library/Caches/antidote, on Linux to $XDG_CACHE_HOME/antidote

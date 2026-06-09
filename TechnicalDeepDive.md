@@ -360,7 +360,7 @@ Files matching `custom.git*` (e.g. `custom.gitignore`, `custom.gitattributes`) a
 
 ### SSH `Include` injection
 
-After symlinking, `install-dotfiles.rb` ensures the line `Include "./global_config"` is present in `${SSH_CONFIGS_DIR}/config`. This is a post-symlink step — do not add it manually or duplicate the guard elsewhere.
+After symlinking, `install-dotfiles.rb` ensures the line `Include "./global_config"` is present in `${HOME}/.ssh/config`. This is a post-symlink step — do not add it manually or duplicate the guard elsewhere.
 
 ---
 

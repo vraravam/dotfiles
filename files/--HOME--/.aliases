@@ -329,7 +329,7 @@ resurrect_tracked_repos() {
 
   if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
     # TODO: Add the github.com host to the known_hosts file so that the script is not blocked for user input
-    # ssh-keyscan -H -t ED25519 github.com >> "${SSH_CONFIGS_DIR}/known_hosts"
+    # ssh-keyscan -H -t ED25519 github.com >> "${HOME}/.ssh/known_hosts"
 
     # resurrect repositories that are in the repo catalogues
     section_header2 "$(yellow 'Resurrecting all tracked git repos')"
@@ -667,7 +667,7 @@ if command_exists "${EDITOR:-}"; then
   alias edit="${${GIT_EDITOR:-${EDITOR:-vi}}%% *}"
 
   # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
-  alias edit-gist='edit "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${SSH_CONFIGS_DIR}" "${HOME}/.mise.toml" "${PERSONAL_PROFILES_DIR}/.gitignore"'
+  alias edit-gist='edit "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${HOME}/.ssh" "${HOME}/.mise.toml" "${PERSONAL_PROFILES_DIR}/.gitignore"'
 fi
 
 # --------------------------------------------------------------------------

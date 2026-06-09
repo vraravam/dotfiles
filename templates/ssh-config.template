@@ -1,35 +1,37 @@
 # Template for SSH client configuration.
-# File location: ${SSH_CONFIGS_DIR}/config
+# file location: ~/.ssh/config
+
 # Note: `install-dotfiles.rb` automatically inserts the final Include line below — you
 # do not need to add it manually. If this file is created after
 # `fresh-install-of-osx.sh` has already run, re-run `install-dotfiles.rb` so it
 # can insert the Include line.
 
-# file location: ${SSH_CONFIGS_DIR}/config
-
 # Note:
 # To generate new SSH keys (replace all placeholders with your values):
-#   ssh-keygen -t ed25519 -a 100 -b 4096 -f "${SSH_CONFIGS_DIR}/id_ed25519-<company-name>" -q -N '' -C "<you>@<company-name>.com"
-#   ssh-keygen -t rsa -a 100 -b 4096 -f "${SSH_CONFIGS_DIR}/id_rsa-personal" -q -N '' -C "<you>@<personal-email-provider>.com"
+#   ssh-keygen -t ed25519 -a 100 -b 4096 -f ~/.ssh/id_ed25519-<company-name> -q -N '' -C "<you>@<company-name>.com"
+#   ssh-keygen -t rsa -a 100 -b 4096 -f ~/.ssh/id_rsa-personal -q -N '' -C "<you>@<personal-email-provider>.com"
 #
 # To add the generated keys to the SSH agent:
-#   ssh-add "${SSH_CONFIGS_DIR}/id_ed25519-<company-name>"
-#   ssh-add "${SSH_CONFIGS_DIR}/id_rsa-personal"
+#   ssh-add ~/.ssh/id_ed25519-<company-name>
+#   ssh-add ~/.ssh/id_rsa-personal
 
-# **Note:** some tools invoke ssh commands without the zsh env loaded. Due to that, we need to use relative or hardcoded paths instead of custom env vars in this file
+# **IMPORTANT:** SSH config does NOT support bash-style variable expansion like ${VAR:-default}.
+# SSH only understands simple ${VAR} or ~ (home directory). Since many tools invoke ssh
+# commands without the zsh environment loaded, this file MUST use hardcoded paths like
+# ~/.ssh/id_rsa-personal instead of variable references.
 
 # Default GitHub identity (used when cloning via git@github.com directly - unless you use github-personal, etc while cloning)
 Host github.com
-  IdentityFile "./id_rsa-personal"
+  IdentityFile ~/.ssh/id_rsa-personal
 
 # Personal GitHub account (explicit alias — used with url rewriting in gitconfig-inc.template)
 Host github-personal
   HostName github.com
-  IdentityFile "./id_rsa-personal"
+  IdentityFile ~/.ssh/id_rsa-personal
 
 # <company-name> GitHub account (explicit alias — used with url rewriting in gitconfig-inc.template)
 Host github-<company-name>
   HostName github.com
-  IdentityFile "./id_ed25519-<company-name>"
+  IdentityFile ~/.ssh/id_ed25519-<company-name>
 
-Include "./global_config"
+Include ~/.ssh/global_config

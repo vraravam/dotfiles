@@ -160,9 +160,7 @@ end
 #
 # @return [void]
 def _ensure_ssh_include_line
-  # Use Pathname for correct path joining -- plain String + 'name' is string concatenation,
-  # not path joining, which would produce a broken path if SSH_CONFIGS_DIR has no trailing slash.
-  ssh_folder = EnvVars::SSH_CONFIGS_DIR
+  ssh_folder = EnvVars::HOME.join('.ssh').expand_path.freeze
   global_config_link = ssh_folder.join('global_config')
 
   unless global_config_link.exist? && global_config_link.symlink?
@@ -173,11 +171,11 @@ def _ensure_ssh_include_line
   default_ssh_config = ssh_folder.join('config')
   FileUtils.touch(default_ssh_config) unless default_ssh_config.exist?
 
-  include_line = 'Include "./global_config"'
+  include_line = 'Include ~/.ssh/global_config'
   begin
     # Use File.foreach to stream the file line-by-line instead of loading it all into memory.
     if File.foreach(default_ssh_config).any? { |l| l.strip == include_line }
-      success("'#{include_line}' already present in '#{default_ssh_config.to_s.cyan}'")
+      success("'#{include_line.purple}' already present in '#{default_ssh_config.to_s.cyan}'")
     else
       info("Adding '#{include_line.purple}' to '#{default_ssh_config.to_s.cyan}'")
       default_ssh_config.write("\n#{include_line}\n", mode: 'a')

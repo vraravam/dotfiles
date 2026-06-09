@@ -574,7 +574,7 @@ main() {
     info "Skipping cloning of any keybase repo since '$(yellow 'KEYBASE_USERNAME')' has not been set"
   fi
 
-  if is_file "${SSH_CONFIGS_DIR}/known_hosts.old"; then rm -f "${SSH_CONFIGS_DIR}/known_hosts.old"; fi
+  if is_file "${HOME}/.ssh/known_hosts.old"; then rm -f "${HOME}/.ssh/known_hosts.old"; fi
 
   # Restore the preferences from the older machine into the new one.
   _current_section='Restore preferences'

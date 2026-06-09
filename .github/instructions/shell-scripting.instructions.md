@@ -404,7 +404,6 @@ repository -- scripts, config files, and Brewfile Ruby expressions alike.
 | `"${HOME}/.local/bin"` | `"${XDG_BIN_HOME}"` |
 | `"${HOME}/.local/share"` | `"${XDG_DATA_HOME}"` |
 | `"${HOME}/.local/state"` | `"${XDG_STATE_HOME}"` |
-| `"${HOME}/.ssh"` | `"${SSH_CONFIGS_DIR}"` |
 | `/opt/homebrew` or `/usr/local` | `"${HOMEBREW_PREFIX}"` |
 
 `${HOME}` itself is always acceptable -- it is a standard shell variable, not a

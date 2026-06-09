@@ -441,7 +441,7 @@ zstyle ':completion:*:functions' ignored-patterns '_*'
 zstyle ':completion:*:(rm|kill|diff):*' ignore-line yes
 # hosts completion for some commands
 # local knownhosts
-# knownhosts=( ${${${${(f)"$(<${SSH_CONFIGS_DIR}/known_hosts)"}:#[0-9]*}%%\ *}%%,*} )
+# knownhosts=( ${${${${(f)"$(<${HOME}/.ssh/known_hosts)"}:#[0-9]*}%%\ *}%%,*} )
 # zstyle ':completion:*:(ssh|scp|sftp):*' hosts $knownhosts
 #
 # compctl (old pre-compsys completion system) calls were removed:

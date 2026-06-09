@@ -21,7 +21,7 @@
   email = <your-email>
 
 # For seamless URL rewriting across multiple GitHub/GitLab accounts (requires
-# ${SSH_CONFIGS_DIR}/config host aliases to be configured — see templates/ssh-config.template):
+# ${HOME}/.ssh/config host aliases to be configured — see templates/ssh-config.template):
 # [url "git@github-personal:"]
 #   insteadOf = git@github.com:
 #   insteadOf = https://github.com/

@@ -3,6 +3,40 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 
+### 3.1.15
+
+#### Fixed SSH config variable expansion causing git-over-SSH failures
+
+* *[templates/ssh-config.template]* Replaced all `${SSH_CONFIGS_DIR:-"${HOME}/.ssh"}` variable expansion syntax with hardcoded `~/.ssh/` paths. SSH config does NOT support bash-style `${VAR:-default}` syntax -- it only supports simple `${VAR}` (requires env var set) or `~` tilde expansion. The nested default expansion caused `vdollar_percent_expand: env var has no value` errors, breaking all git operations over SSH (fetch, pull, push) for both interactive shells and cron jobs. Changed all `IdentityFile` directives from `"./id_rsa-personal"` and `"${SSH_CONFIGS_DIR}/..."` to `~/.ssh/id_rsa-personal` format. Changed `Include` directive from `"./global_config"` to `~/.ssh/global_config`. Updated comment examples (ssh-keygen, ssh-add commands) to use `~/.ssh/` paths instead of variable references. Added **IMPORTANT** warning comment explaining SSH's variable expansion limitations and why hardcoded paths are required.
+* *[files/--HOME--/.shellrc]* Removed `export SSH_CONFIGS_DIR="${HOME}/.ssh"` -- variable is no longer used anywhere. Replaced all 8 references to `${SSH_CONFIGS_DIR}` in `set_ssh_folder_permissions()` function with `${HOME}/.ssh` literal. Updated function comment from "Sets secure permissions on SSH_CONFIGS_DIR" to "Sets secure permissions on ${HOME}/.ssh". Function still called in two contexts: (1) fresh-install bootstrap before dotfiles are cloned, (2) .envrc subshells (bash-parseable, no .aliases).
+* *[files/--HOME--/.aliases]* Replaced 2 references to `${SSH_CONFIGS_DIR}` with `${HOME}/.ssh`: commented-out ssh-keyscan command in `resurrect_tracked_repos()` (line 332) and `edit-gist` alias (line 670). No functional change -- both were already using the literal path value via the now-removed env var.
+* *[files/--ZDOTDIR--/.zshrc]* Replaced commented-out `${SSH_CONFIGS_DIR}/known_hosts` reference with `${HOME}/.ssh/known_hosts` in hosts completion example (line 444). No functional change -- code was already commented out.
+* *[scripts/fresh-install-of-osx.sh]* Replaced `${SSH_CONFIGS_DIR}/known_hosts.old` with `${HOME}/.ssh/known_hosts.old` in cleanup check (line 577). Functional change: now uses literal path instead of env var.
+* *[scripts/install-dotfiles.rb]* Replaced `ssh_config_dir = ENV.fetch('SSH_CONFIGS_DIR', "#{home}/.ssh")` with `ssh_config_dir = File.join(home, '.ssh')` (lines 330-331). Removed env var lookup -- now always uses `~/.ssh` directly. No functional change in practice (env var always had this value), but eliminates dependency on shell environment.
+* *[scripts/utilities/env_vars.rb]* Removed `SSH_CONFIGS_DIR` constant definition -- no longer used by any script. Constant was `Pathname.new(ENV.fetch('SSH_CONFIGS_DIR', File.join(HOME, '.ssh')))`. All scripts now use `${HOME}/.ssh` or `File.join(home, '.ssh')` directly.
+* *[TechnicalDeepDive.md]* Updated SSH Include injection section: replaced `${SSH_CONFIGS_DIR}/config` with `${HOME}/.ssh/config` in documentation (line 363). Reflects removal of `SSH_CONFIGS_DIR` env var.
+* *[templates/gitconfig-inc.template]* Updated comment: replaced `${SSH_CONFIGS_DIR}/config` with `~/.ssh/config` in sshCommand documentation (line 8). Clarifies that SSH config path is hardcoded, not variable-based.
+* *[.github/instructions/shell-scripting.instructions.md]* Removed `${HOME}/.ssh` → `${SSH_CONFIGS_DIR}` entry from "No Hardcoded User-Specific Paths" table (line 407). The env var no longer exists; `${HOME}/.ssh` is now the correct literal to use.
+* *[.github/model-instructions.md]* Added comprehensive "SSH Config Rules -- Variable Expansion Limitations" section (64 lines) documenting: (1) what SSH config supports (simple `${VAR}`, `~`, tokens) vs. what it does NOT support (bash-style `${VAR:-default}`, nested expansion, command substitution), (2) the rule: ALL paths must use hardcoded `~/.ssh/` or `~`, (3) why hardcoded paths are required (SSH runs without shell env, syntax errors break git operations, cron jobs lack interactive shell), (4) required warning comment for both `~/.ssh/config` and `templates/ssh-config.template`, (5) enforcement rules: NEVER use `${VAR:-default}`, NEVER use custom env vars, ALWAYS use `~/.ssh/`, VERIFY with `ssh -G github.com`. Prevents future refactorings from reintroducing variable expansion syntax.
+
+#### Adopting these changes
+
+* **Critical fix**: If you see `vdollar_percent_expand: env var ${VAR} has no value` errors or git-over-SSH operations failing, this release fixes it.
+* Rebase from upstream, resolve conflicts.
+* **Your `~/.ssh/config` must be updated manually** -- `install-dotfiles.rb` does not overwrite existing SSH config files. Two options:
+  1. **Quick fix** (if you only have standard GitHub hosts): Replace all `${SSH_CONFIGS_DIR:-...}` and `${SSH_CONFIGS_DIR}` references with `~/.ssh/` in your `~/.ssh/config`. Example:
+     ```bash
+     # Backup first
+     cp ~/.ssh/config ~/.ssh/config.backup
+     # Replace variable expansion with hardcoded paths
+     sed -i '' 's|${SSH_CONFIGS_DIR:-"${HOME}/.ssh"}|~/.ssh|g' ~/.ssh/config
+     sed -i '' 's|${SSH_CONFIGS_DIR}|~/.ssh|g' ~/.ssh/config
+     ```
+  2. **Clean slate** (if you use the template): Delete your existing `~/.ssh/config` and let `install-dotfiles.rb` create it from the template, then add your custom Host entries back.
+* **Verify SSH config parses correctly**: `ssh -G github.com` (should show no `vdollar_percent_expand` errors).
+* **Test git-over-SSH**: `git ls-remote git@github.com:vraravam/dotfiles.git` (should connect without errors).
+* No shell restart required -- SSH config is read on every ssh invocation.
+
 ### 3.1.14
 
 #### Comprehensive Pathname refactoring across all Ruby scripts

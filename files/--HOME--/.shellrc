@@ -87,9 +87,6 @@ export KEYBASE_HOME_REPO_NAME='home'
 
 # Keybase profiles repo name (comment out if you don't use Keybase)
 export KEYBASE_PROFILES_REPO_NAME='profiles'
-
-# SSH folder
-export SSH_CONFIGS_DIR="${HOME}/.ssh"
 # --------------------------------------------------------------------------------
 
 # ------------- Env vars for upstream setup (SHOULD NOT be changed) --------------
@@ -1113,7 +1110,7 @@ clone_repo_into() {
   debug "Process took ${duration} seconds"
 }
 
-# Sets secure permissions on SSH_CONFIGS_DIR (700 on the directory, 600 on all
+# Sets secure permissions on ${HOME}/.ssh (700 on the directory, 600 on all
 # files) and adds any bare identity files (id_*) to the ssh-agent keychain.
 # Kept in .shellrc for two independent reasons:
 #   1. Bootstrap: called in fresh-install-of-osx.sh before install-dotfiles.rb
@@ -1122,19 +1119,19 @@ clone_repo_into() {
 #      subshell); .aliases contains zsh-only syntax and cannot be sourced in bash.
 set_ssh_folder_permissions() {
   info "$(yellow 'Setting ssh config file permissions')"
-  ensure_dir_exists "${SSH_CONFIGS_DIR}"
+  ensure_dir_exists "${HOME}/.ssh"
   # Set directory permissions first
-  if ! chmod 700 "${SSH_CONFIGS_DIR}"; then
-    warn "Failed to set permissions on '$(cyan "${SSH_CONFIGS_DIR}")'"
+  if ! chmod 700 "${HOME}/.ssh"; then
+    warn "Failed to set permissions on '$(cyan "${HOME}/.ssh")'"
     return
   fi
 
-  if ! is_directory_empty "${SSH_CONFIGS_DIR}"; then
-    find "${SSH_CONFIGS_DIR}" -type f -exec chmod 600 {} \; && success "Ensured correct permissions for '$(cyan "${SSH_CONFIGS_DIR}")' and files within it." || warn "Failed to set file permissions in '$(cyan "${SSH_CONFIGS_DIR}")'"
+  if ! is_directory_empty "${HOME}/.ssh"; then
+    find "${HOME}/.ssh" -type f -exec chmod 600 {} \; && success "Ensured correct permissions for '$(cyan "${HOME}/.ssh")' and files within it." || warn "Failed to set file permissions in '$(cyan "${HOME}/.ssh")'"
 
-    find "${SSH_CONFIGS_DIR}" -maxdepth 1 -name "id_*" ! -name '*.*' -type f -exec ssh-add -q "{}" \; && success "Added ssh identity files from '$(cyan "${SSH_CONFIGS_DIR}")'." || warn "Failed to add ssh identity files from '$(cyan "${SSH_CONFIGS_DIR}")'"
+    find "${HOME}/.ssh" -maxdepth 1 -name "id_*" ! -name '*.*' -type f -exec ssh-add -q "{}" \; && success "Added ssh identity files from '$(cyan "${HOME}/.ssh")'." || warn "Failed to add ssh identity files from '$(cyan "${HOME}/.ssh")'"
   else
-    warn "'$(cyan "${SSH_CONFIGS_DIR}")' exists but is empty. No file permissions to set."
+    warn "'$(cyan "${HOME}/.ssh")' exists but is empty. No file permissions to set."
   fi
 }
 
