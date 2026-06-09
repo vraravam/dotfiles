@@ -308,6 +308,42 @@ module Logging
     failed.each { |item| puts "    - '#{item.red}'" }
   end
 
+  # Prints a summary of processing results from a hash returned by
+  # CollectionProcessor.process_items or similar iteration helpers.
+  #
+  # This is a convenience wrapper around print_operation_summary that unpacks
+  # the results hash and adds skipped-count display.
+  #
+  # @param results [Hash] Results hash with keys:
+  #   - :total [Integer] Total items processed (excludes skipped)
+  #   - :successful [Array<String>] Successful item names
+  #   - :failed [Array<String>] Failed item names
+  #   - :skipped [Integer] Count of skipped items (optional)
+  # @param item_label [String] What to call each item (default: 'repositories')
+  #
+  # @example
+  #   results = CollectionProcessor.process_items(...) { |item| ... }
+  #   print_results_summary(results)
+  #   print_results_summary(results, item_label: 'files')
+  def print_results_summary(results, item_label: 'repositories')
+    print_operation_summary(
+      results[:total],
+      results[:successful],
+      results[:failed],
+      item_label: item_label
+    )
+
+    info "  Skipped: #{results[:skipped].to_s.purple}" if results[:skipped]&.positive?
+  end
+
+  # Sets the script name override. Use this in module methods that act as
+  # standalone entry points (e.g., GitWorkspace.install_mise_versions) where
+  # $PROGRAM_NAME would be '-e' or unhelpful. Must be public so module methods
+  # can call it before increment_script_depth.
+  def script_name=(name)
+    @script_name = name
+  end
+
   # ---------------------------------------------------------------------------
   # Private implementation details
   # ---------------------------------------------------------------------------
@@ -315,8 +351,10 @@ module Logging
   private
 
   # The name of the currently running script, mirroring _SCRIPT_NAME in shell.
+  # Can be overridden by setting @script_name (used by module methods that act
+  # as entry points, where $PROGRAM_NAME would be '-e' or unhelpful).
   def script_name
-    File.basename($PROGRAM_NAME)
+    @script_name || File.basename($PROGRAM_NAME)
   end
 
   # Returns the current value of _DOTFILES_SCRIPT_DEPTH as an integer,

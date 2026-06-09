@@ -12,6 +12,7 @@
 $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 
 require 'cli_parser'
+require 'collection_processor'
 require 'env_vars'
 require 'fileutils'
 require 'git_helpers'
@@ -54,14 +55,6 @@ FOLDER_KEY_NAME = 'folder' # Key name in YAML for the repository folder
 REMOTE_KEY_NAME = 'remote' # Key name for the primary remote
 OTHER_REMOTES_KEY_NAME = 'other_remotes' # Key name for additional remotes
 POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
-
-# Converts a number to a string and right-justifies it with spaces to a width of 2.
-#
-# @param num [Numeric] The number to format.
-# @return [String] The formatted string.
-def _justify(num)
-  num.to_s.rjust(2, ' ')
-end
 
 # Expands environment variables in a string.
 # Handles multiple ${VAR} patterns. If an environment variable is not set,
@@ -360,7 +353,7 @@ def _verify_all(repositories, discovered_count, filter, ref_folder: nil)
   end
 end
 
-private :_justify, :_find_and_replace_env_var, :_find_and_reverse_replace_env_var,
+private :_find_and_replace_env_var, :_find_and_reverse_replace_env_var,
         :_report_git_failure, :_find_git_repos_from_disk, :_read_git_repos_from_file,
         :_apply_filter, :_generate_each, :_resurrect_each, :_verify_all
 
@@ -396,26 +389,22 @@ elsif options[:resurrect]
   puts("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
   repositories = _read_git_repos_from_file(config_file)
   repositories = _apply_filter(repositories, filter)
-  successful_repos = []
-  failed_repos = []
-  repositories.each.with_index(1) do |repo, idx|
-    folder = repo[FOLDER_KEY_NAME]
-    info("[#{_justify(idx).to_s.purple} of #{_justify(repositories.length).to_s.purple}] #{'Resurrecting'.yellow}: '#{folder.cyan}'")
-    begin
-      _resurrect_each(repo, idx, repositories.length)
-      successful_repos << folder
-    rescue StandardError => e
-      record_error("Resurrection failed for '#{folder.cyan}': #{e.message}")
-      failed_repos << folder
-    end
+
+  results = CollectionProcessor.process_items(
+    repositories,
+    item_name_proc: ->(repo) { repo[FOLDER_KEY_NAME] },
+    operation_desc: 'Resurrecting'
+  ) do |repo, idx, total|
+    _resurrect_each(repo, idx, total)
+    true
   end
 
-  print_operation_summary(repositories.length, successful_repos, failed_repos)
+  print_results_summary(results)
   print_script_summary(script_start_time)
   # Set @has_failures flag if any repos failed. The exit code at the end of the
-  # script (line ~447) checks this flag and exits with code 1, which propagates
-  # to the calling shell for error detection in loops.
-  @has_failures = true if failed_repos.any?
+  # script checks this flag and exits with code 1, which propagates to the calling
+  # shell for error detection in loops.
+  @has_failures = true if results[:failed].any?
 elsif options[:check]
   section_header('Verifying repositories')
   config_file = File.expand_path(options[:check])

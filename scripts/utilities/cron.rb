@@ -140,6 +140,17 @@ module Cron
   # Edit crontab.txt directly to change the schedule; recron will pick it up.
   # Mirrors recron in .aliases.
   def recron
+    # Only set script name and increment depth if we're at depth 0 (not yet
+    # incremented by a caller). Shell wrappers don't increment, so standalone
+    # calls start at 0. Nested Ruby calls will be at depth >= 1, so they skip
+    # script name override and timing infrastructure entirely.
+    current_depth = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+    if current_depth.zero?
+      Logging.script_name = 'recron'
+      Logging.increment_script_depth
+      script_start_time = Logging.print_script_start
+    end
+
     Logging.debug 'Setting up crontab'
     unless CRONTAB_FILE.file?
       Logging.debug "'#{CRONTAB_FILE.to_s.cyan}' not found -- seeding from template"
@@ -147,6 +158,8 @@ module Cron
     end
     restore_cron(CRONTAB_FILE)
     Logging.success 'Crontab set up successfully'
+
+    Logging.print_script_summary(script_start_time) if current_depth.zero?
   end
 
   # Wraps a block in the cron bracket: suspend cron, yield, call recron to

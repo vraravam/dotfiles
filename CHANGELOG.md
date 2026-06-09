@@ -3,6 +3,22 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 
+### 3.1.16
+
+#### Normalized output format and script timing across module methods
+
+* *[scripts/utilities/git_workspace.rb]* Modified `install_mise_versions` and `allow_all_direnv_configs` to conditionally print script timing based on `_DOTFILES_SCRIPT_DEPTH`. Both methods now check `current_depth = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i` and only call `increment_script_depth` and `print_script_start`/`print_script_summary` when `current_depth.zero?`. Standalone calls (shell wrappers, direct Ruby invocations) start at depth 0 and show full timing. Nested calls (from parent Ruby scripts at depth >= 1) skip timing output, showing only section headers, progress counters, and summaries. Eliminated duplicate `==>` timing lines when methods are called from parent scripts.
+* *[scripts/utilities/cron.rb]* Applied same conditional timing pattern to `recron` method. Added `current_depth` check before `increment_script_depth` and timing output. Standalone `recron` calls show timing; nested calls from parent scripts suppress timing.
+* *[scripts/utilities/logging.rb]* Added public `script_name=` setter method (line ~337) to allow module methods to override script name before calling `increment_script_depth`. Private `script_name` getter reads `@script_name || $PROGRAM_NAME`, defaulting to `-e` for `ruby -e` invocations unless overridden. All three module methods now call `Logging.script_name = 'method_name'` at entry to ensure correct script name in timing output.
+* *[files/--HOME--/.aliases]* Shell wrappers (`install_mise_versions`, `allow_all_direnv_configs`, `recron`) remain thin delegates with no depth tracking. Ruby module methods handle all depth and timing logic internally. Removed duplicate `_call_ruby_cron` definition -- already exists in `.shellrc` (line 1172). Shell functions delegate to Ruby methods via `_call_ruby_cron` helper.
+* **Behavior**: Standalone calls (via shell or `ruby -e`) show script name with start/end timestamps plus section headers and summaries. Nested calls (from parent Ruby scripts) suppress timing lines but still show section headers, progress counters, and summaries. Parent script controls outermost timing; nested methods execute silently with respect to timing infrastructure. Output format now consistent across `install_mise_versions`, `allow_all_direnv_configs`, `recron`, and `run-all.rb`.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts.
+* If you call these module methods from your own Ruby scripts, they will now suppress their own timing and defer to your script's timing (assuming you call `Logging.increment_script_depth` at your script's entry point).
+* Quit & Restart the Terminal application or run `unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases` to reload in each open terminal window/tab.
+
 ### 3.1.15
 
 #### Fixed SSH config variable expansion causing git-over-SSH failures

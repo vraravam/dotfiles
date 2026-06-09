@@ -1,17 +1,24 @@
 # frozen_string_literal: true
 
+require_relative 'collection_processor'
 require_relative 'env_vars'
 require_relative 'logging'
 require_relative 'path_utils'
 
-# Repo discovery and maintenance helpers. Shell functions in .aliases delegate
-# to these Ruby methods (install_mise_versions, allow_all_direnv_configs,
-# regenerate_repo_aliases).
+# Git workspace discovery and developer environment setup. Shell functions in
+# .aliases delegate to these Ruby methods (install_mise_versions,
+# allow_all_direnv_configs, regenerate_repo_aliases).
+#
+# Responsibilities:
+# - Finding git repositories within a directory tree
+# - Installing mise tool versions across repos
+# - Authorizing direnv configs across repos
+# - Generating shell aliases for quick repo navigation
 #
 # The +shared_dirs:+ keyword argument allows callers (Ruby scripts, not shell)
 # to optimize by collecting ancestor dirs once and passing to multiple methods,
 # avoiding repeated find traversals.
-module Repos
+module GitWorkspace
   extend self
 
   # Directories that are always excluded from repo searches (huge, rarely contain repos)
@@ -36,6 +43,10 @@ module Repos
   # paths (directories containing .git). Supports filtering, depth control, and
   # directory pruning.
   #
+  # Delegates to CollectionProcessor.find_directories_matching for the low-level
+  # find operation, adding git-specific defaults and semantics (search for .git
+  # directories, return their parents as repo roots, prune common repo cruft).
+  #
   # @param folders [Array<String, Pathname>, String, Pathname] Root directory/directories to search
   # @param mindepth [Integer] Minimum search depth (default: 1)
   # @param maxdepth [Integer] Maximum search depth (default: 6)
@@ -45,43 +56,18 @@ module Repos
   # @param skip_symlinks [Boolean] Skip repo roots that are symlinks (default: true)
   # @return [Array<String>] Repo root paths, deduplicated and sorted alphabetically
   def find_git_repos(folders:, mindepth: 1, maxdepth: 6, filter: nil, additional_prune: [], skip_symlinks: true)
-    # Convert Pathname objects to strings, rejecting nil and empty strings
-    folders = Array(folders).compact.map(&:to_s).reject { |f| f.empty? }
-    prune = DEFAULT_PRUNE_DIRS + Array(additional_prune)
+    prune_dirs = DEFAULT_PRUNE_DIRS + Array(additional_prune)
 
-    # Build prune expression: ( -name dir1 -o -name dir2 ... ) -prune -o
-    prune_expr = prune.empty? ? [] : ['('] + prune.flat_map { |d| ['-o', '-name', d] }.drop(1) + [')', '-prune', '-o']
-
-    find_cmd = [
-      'find', *folders,
-      '-mindepth', mindepth.to_s,
-      '-maxdepth', maxdepth.to_s,
-      *prune_expr,
-      '-type', 'd',
-      '-name', '.git',
-      '-print'
-    ]
-
-    seen = {}
-    results = []
-    filter_re = filter.is_a?(Regexp) ? filter : (filter ? Regexp.new(filter) : nil)
-
-    IO.popen(find_cmd, err: File::NULL) do |io|
-      io.each_line do |line|
-        # Repo root = parent of .git directory
-        repo_root = File.dirname(line.chomp)
-        next if filter_re && !repo_root.match?(filter_re)
-        next if seen[repo_root]
-        next if skip_symlinks && File.symlink?(repo_root)
-
-        seen[repo_root] = true
-        results << repo_root
-      end
-    end
-
-    # Return sorted for deterministic output. Callers may re-sort by different
-    # criteria (e.g., depth) for their specific needs.
-    results.sort
+    CollectionProcessor.find_directories_matching(
+      folders: folders,
+      name_pattern: '.git',
+      mindepth: mindepth,
+      maxdepth: maxdepth,
+      filter: filter,
+      prune_dirs: prune_dirs,
+      skip_symlinks: skip_symlinks,
+      transform_result: ->(git_dir) { File.dirname(git_dir) }
+    )
   end
 
   # ---------------------------------------------------------------------------
@@ -97,6 +83,17 @@ module Repos
   #   the same script). Pass nil to trigger collection internally.
   # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
   def install_mise_versions(shared_dirs: nil, first_install: false)
+    # Only set script name and increment depth if we're at depth 0 (not yet
+    # incremented by a caller). Shell wrappers don't increment, so standalone
+    # calls start at 0. Nested Ruby calls will be at depth >= 1, so they skip
+    # script name override and timing infrastructure entirely.
+    current_depth = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+    if current_depth.zero?
+      Logging.script_name = 'install_mise_versions'
+      Logging.increment_script_depth
+      script_start_time = Logging.print_script_start
+    end
+
     Logging.section_header2 'Installing mise in all git repos and ancestors'
 
     unless PathUtils.command_exists?('mise')
@@ -114,18 +111,17 @@ module Repos
     end
     sorted = dirs_with_config.sort_by { |d| d.count(File::SEPARATOR) }
 
-    total = sorted.length
-    sorted.each_with_index do |dir, idx|
-      # --dry-run-code exits 0 when all tools are installed, non-zero otherwise.
-      if system('mise', '-C', dir, 'install', '--dry-run-code',
-                out: File::NULL, err: File::NULL)
-        Logging.debug "[#{(idx + 1).to_s.purple}/#{total.to_s.purple}] '#{dir.cyan}' -- all tools already installed"
-        next
-      end
-      Logging.info "[#{(idx + 1).to_s.purple}/#{total.to_s.purple}] installing mise tools in '#{dir.cyan}'"
+    # Use CollectionProcessor for unified progress logging and error tracking
+    results = CollectionProcessor.process_items(
+      sorted,
+      operation_desc: 'Installing mise tools'
+    ) do |dir, _idx, _total|
       system('mise', '-C', dir, 'trust', '-y', '-a')
       system('mise', '-C', dir, 'install')
     end
+
+    Logging.print_results_summary(results)
+    Logging.print_script_summary(script_start_time) if current_depth.zero?
   end
 
   # ---------------------------------------------------------------------------
@@ -139,6 +135,17 @@ module Repos
   # @param shared_dirs [Array<String>, nil] See install_mise_versions.
   # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
   def allow_all_direnv_configs(shared_dirs: nil, first_install: false)
+    # Only set script name and increment depth if we're at depth 0 (not yet
+    # incremented by a caller). Shell wrappers don't increment, so standalone
+    # calls start at 0. Nested Ruby calls will be at depth >= 1, so they skip
+    # script name override and timing infrastructure entirely.
+    current_depth = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+    if current_depth.zero?
+      Logging.script_name = 'allow_all_direnv_configs'
+      Logging.increment_script_depth
+      script_start_time = Logging.print_script_start
+    end
+
     Logging.section_header2 'Allowing direnv configs in all git repos and ancestors'
 
     unless PathUtils.command_exists?('direnv')
@@ -153,15 +160,16 @@ module Repos
       .select { |dir| Pathname.new(dir).join('.envrc').file? }
       .sort_by { |d| d.count(File::SEPARATOR) }
 
-    total = dirs_with_envrc.length
-    dirs_with_envrc.each_with_index do |dir, idx|
-      Logging.info "[#{(idx + 1).to_s.purple}/#{total.to_s.purple}] allowing direnv for '#{dir.cyan}'"
-      if system('direnv', 'allow', dir)
-        Logging.success "Successfully allowed direnv for '#{dir.cyan}'"
-      else
-        Logging.warn "Failed to allow direnv for '#{dir.cyan}'"
-      end
+    # Use CollectionProcessor for unified progress logging and error tracking
+    results = CollectionProcessor.process_items(
+      dirs_with_envrc,
+      operation_desc: 'Allowing direnv in'
+    ) do |dir, _idx, _total|
+      system('direnv', 'allow', dir)
     end
+
+    Logging.print_results_summary(results)
+    Logging.print_script_summary(script_start_time) if current_depth.zero?
   end
 
   # ---------------------------------------------------------------------------

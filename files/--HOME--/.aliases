@@ -211,7 +211,7 @@ _call_ruby_repos() {
     kwargs_str="${kwargs_parts[*]}"
   fi
 
-  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'repos'; Repos.${method}(${kwargs_str})"
+  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'git_workspace'; GitWorkspace.${method}(${kwargs_str})"
 }
 
 # --------------------------------------------------------------------------
@@ -234,7 +234,7 @@ if command_exists 'run-all.rb'; then
     local force_flag="false"
     [[ "${1-}" == "-f" ]] && force_flag="true"
 
-    # Delegate to Ruby implementation in utilities/repos.rb
+    # Delegate to Ruby implementation in utilities/git_workspace.rb
     _call_ruby_repos regenerate_repo_aliases "force=${force_flag}"
 
     # Load the generated cache
@@ -387,11 +387,11 @@ resurrect_tracked_repos() {
   _decrement_script_depth
 }
 
-# Internal helper: calls a Ruby Repos module method with optional arguments.
+# Internal helper: calls a Ruby GitWorkspace module method with optional arguments.
 # Installs any missing tool versions declared via mise config files (.mise.toml,
 # .tool-versions, etc.) across all git repos and their ancestor directories under
 # HOME, DOTFILES_DIR, and PROJECTS_BASE_DIR. Skips silently if mise is not in PATH.
-# Thin wrapper that delegates to Ruby Repos.install_mise_versions.
+# Thin wrapper that delegates to Ruby GitWorkspace.install_mise_versions.
 install_mise_versions() {
   if ! command_exists mise; then
     debug "Couldn't find 'mise' in the PATH; Skipping loading any mise configs"
@@ -405,7 +405,7 @@ install_mise_versions() {
 # Runs 'direnv allow' for every directory that has an .envrc file across all
 # git repos and their ancestor directories under HOME, DOTFILES_DIR, and
 # PROJECTS_BASE_DIR. Skips silently if direnv is not in PATH.
-# Thin wrapper that delegates to Ruby Repos.allow_all_direnv_configs.
+# Thin wrapper that delegates to Ruby GitWorkspace.allow_all_direnv_configs.
 allow_all_direnv_configs() {
   if ! command_exists direnv; then
     debug "Couldn't find 'direnv' in the PATH; Skipping allowing any direnv configs"

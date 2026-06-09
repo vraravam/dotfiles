@@ -22,9 +22,10 @@
 $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 
 require 'cli_parser'
+require 'collection_processor'
 require 'env_vars'
+require 'git_workspace'
 require 'logging'
-require 'repos'
 
 include Logging
 
@@ -67,27 +68,27 @@ maxdepth = EnvVars.maxdepth
 increment_script_depth
 start_time = print_script_start
 
-section_header 'Running commands in git repositories'
+section_header2 'Running commands in git repositories'
 
 info "#{'Finding git repos starting in folder'.yellow} '#{folder.cyan}' " \
      "for a min depth of #{mindepth} and max depth of #{maxdepth}"
 info "#{'Filtering with:'.yellow} '#{filter.cyan}'" if filter
 
-dir_array = Repos.find_git_repos(
+dir_array = GitWorkspace.find_git_repos(
   folders: folder,
   mindepth: mindepth,
   maxdepth: maxdepth,
   filter: filter,
   skip_symlinks: true
 )
-total = dir_array.length
 
-failed_repos = []
-successful_repos = []
+info "Found #{dir_array.length.to_s.purple} repositories"
+puts ''
 
-dir_array.each_with_index do |dir, idx|
-  info "[#{(idx + 1).to_s.purple} of #{total.to_s.purple}] '#{cmd_parts.join(' ').cyan}' in '#{dir.cyan}'"
-
+results = CollectionProcessor.process_items(
+  dir_array,
+  operation_desc: "Running '#{cmd_parts.join(' ').purple}' #{'in'.yellow}"
+) do |dir, idx, total|
   # Invoke the user's shell to execute the command, mirroring the shell version's
   # `(cd dir && eval "$@")`. This gives access to shell functions, aliases, and
   # builtins defined in the user's shell config. The command string is passed to
@@ -95,16 +96,10 @@ dir_array.each_with_index do |dir, idx|
   # is running this script interactively and controls the command).
   shell = EnvVars::SHELL
   cmd_string = cmd_parts.join(' ')
-  result = Dir.chdir(dir) { system(shell, '-c', cmd_string) }
-
-  if result
-    successful_repos << dir
-  else
-    failed_repos << dir
-  end
+  Dir.chdir(dir) { system(shell, '-c', cmd_string) }
 end
 
-print_operation_summary(total, successful_repos, failed_repos)
+print_results_summary(results)
 print_script_summary(start_time)
 
-exit 1 unless failed_repos.empty?
+exit 1 unless results[:failed].empty?
