@@ -1505,6 +1505,62 @@ value on exit, which is correct for sourced scripts (subprocess scripts discard
 their env on exit regardless). See `TechnicalDeepDive.md` § 6 for the full
 rationale on why the decrement is applied even for subprocess-only scripts.
 
+### Dual Purpose: Nesting Suppression AND Auto-Indentation
+
+`_DOTFILES_SCRIPT_DEPTH` serves two purposes:
+
+1. **Suppression**: Only outermost scripts (depth ≤ 1) print start/summary banners
+2. **Auto-indentation**: ALL logging functions automatically indent based on depth
+
+All logging functions (`info`, `warn`, `success`, `error`, `debug`, `user_action`)
+and section headers call `$(_log_indent)` internally, which returns `2 * depth`
+spaces. This creates visual hierarchy that matches the call stack:
+
+```zsh
+# Standalone script (depth 0 → 1)
+main() {
+  export _DOTFILES_SCRIPT_DEPTH=1
+  info "Processing items..."  # 2-space indent (depth 1)
+}
+
+# Nested subprocess (depth 1 → 2)
+info "Parent message"         # 2-space indent
+system('child-script.sh')     # Child logs at 4-space indent (depth 2)
+info "Back to parent"         # 2-space indent
+```
+
+**NEVER manually prepend spaces to log messages.** The depth counter handles all
+indentation automatically:
+
+```zsh
+# BAD -- manual indent (old pattern, removed during refactoring)
+info "  -> Processed ${count} items"
+
+# Good -- auto-indent (current pattern)
+info "-> Processed ${count} items"
+```
+
+The `$(_log_indent)` helper is defined in `.shellrc` and should not be called
+directly from scripts -- it is an internal utility for logging functions.
+
+### Bulleted Lists: Current Depth + 1
+
+`join_array` automatically indents list items one level deeper than the current
+depth, creating subordinate structure:
+
+```zsh
+# At depth 1 (2 spaces)
+info "Failed items:"
+join_array failed_items  # Items at depth 2 (4 spaces)
+```
+
+### External Tool Output -- Intentionally Unindented
+
+External tools (`git`, `mise`, `sqlite3`) invoked via `system()` print at column 0.
+This is intentional -- wrapping their output would add complexity for minimal UX
+benefit. Tool output remains visually distinct from our structured logging.
+
+
 ## Edit Checklist -- Run After Every Change
 
 After every edit to a shell script, follow these steps **in order**:

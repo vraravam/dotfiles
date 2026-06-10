@@ -41,7 +41,7 @@ usage() {
 # paths containing spaces or special characters are handled safely.
 # Returns 0 if already registered or registration succeeded; 1 on failure.
 _register_smappservice() {
-  local app_path="${1}"
+  local app_path="${1:?_register_smappservice: app_path required}"
   APP_PATH="${app_path}" swift - <<'SWIFT' 2>/dev/null
 import Foundation
 import ServiceManagement
@@ -80,7 +80,9 @@ SWIFT
 # $3 = hidden flag: "true" suppresses the Dock icon at launch.
 # Skips silently when the app is already in the login items list.
 _register_legacy() {
-  local name="${1}" app_path="${2}" hidden="${3}"
+  local name="${1:?_register_legacy: name required}"
+  local app_path="${2:?_register_legacy: app_path required}"
+  local hidden="${3:?_register_legacy: hidden required}"
   local all_login_items found
   all_login_items=$(osascript -e 'tell application "System Events" to get the name of every login item' 2>/dev/null || true)
   found="${${(M)${(f)all_login_items}:#(#i)*${name}*}[1]}"

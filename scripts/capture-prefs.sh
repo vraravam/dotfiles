@@ -63,8 +63,8 @@ _notify_apps_needing_restart() {
 # via null-byte separation) and PlistBuddy to delete matched keys.
 # Individual key deletions are non-fatal -- a missing key is silently skipped.
 _strip_excluded_keys() {
-  local domain="${1}"
-  local plist_file="${2}"
+  local domain="${1:?_strip_excluded_keys: domain required}"
+  local plist_file="${2:?_strip_excluded_keys: plist_file required}"
 
   # Merge domain-specific patterns with global '*' patterns (applied to every domain).
   # Use (e) subscript flag for exact key lookup -- without it, [*] and [${var}] where

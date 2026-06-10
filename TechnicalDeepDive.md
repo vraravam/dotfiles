@@ -214,11 +214,74 @@ The helpers `_record_warning` and `_record_error` (defined in `.shellrc`) append
 
 `print_script_summary` is called once at the end of `main()`. It prints all collected warnings then errors, and if any errors were collected it fires exactly one `_dotfiles_notify` with a consolidated message.
 
-### Nesting depth counter and outermost-script guard
+### Nesting depth counter and dual-purpose indentation
 
 `_DOTFILES_SCRIPT_DEPTH` is an exported integer that tracks call depth across subprocess boundaries. It defaults to `0` when unset; each `main()` increments it on entry and decrements it on exit via an EXIT trap.
 
-`is_outermost_script` (shell) and `outermost_script?` (Ruby) check `_DOTFILES_SCRIPT_DEPTH <= 1`. Both `print_script_start` and `print_script_summary` (and `print_script_duration` via the latter) call this predicate and return early when depth > 1. This ensures that only the outermost script prints its start/finish banners and final summary — nested subprocess scripts stay silent so their output does not interleave with or duplicate the outer script's.
+The depth counter serves **two purposes**:
+
+1. **Banner suppression**: `is_outermost_script` (shell) and `outermost_script?` (Ruby) check `_DOTFILES_SCRIPT_DEPTH <= 1`. Both `print_script_start` and `print_script_summary` call this predicate and return early when depth > 1, ensuring only the outermost script prints its start/finish banners and final summary.
+
+2. **Automatic indentation**: All logging functions (`info`, `warn`, `success`, `error`, `debug`, `user_action`) and section headers automatically prepend `2 * depth` spaces to their output, creating visual hierarchy that matches the call stack.
+
+#### How depth-based indentation works
+
+Every script starts at depth 0, increments to 1 in `main()`, and logs at depth 1:
+
+```zsh
+# Standalone script
+main() {
+  export _DOTFILES_SCRIPT_DEPTH=1  # 0 → 1
+  info "Processing items..."         # Logs with 2-space indent
+}
+```
+
+When a script calls another script as a subprocess, the child inherits the parent's depth and increments further:
+
+```zsh
+# Parent script at depth 1
+info "Starting batch process..."    # 2-space indent
+
+# Child subprocess
+system('other-script.sh')           # Inherits depth=1, increments to 2
+  # Child's info messages            # 4-space indent
+  # Child's banners suppressed        # depth > 1
+
+# Back to parent at depth 1
+success "Batch complete"             # 2-space indent
+```
+
+This creates clear visual hierarchy:
+- **Depth 0**: Script not yet started (no output)
+- **Depth 1**: Standalone script or outermost script's main content (2-space indent)
+- **Depth 2**: First-level subprocess (4-space indent, banners suppressed)
+- **Depth 3+**: Deeper nesting (6+ space indent, banners suppressed)
+
+#### No manual indentation needed
+
+Call sites never manually prepend spaces to log messages. The depth counter handles all indentation automatically:
+
+```zsh
+# Before refactoring (manual indent)
+info "  -> Processed ${count} items"
+
+# After refactoring (auto-indent)
+info "-> Processed ${count} items"  # Depth adds the indent
+```
+
+#### Bulleted lists: depth + 1
+
+The `join_array` helper (shell) automatically indents list items one level deeper than the current depth, creating subordinate visual structure:
+
+```zsh
+# At depth 1 (2 spaces)
+info "Failed items:"
+join_array failed_items  # Items indented 4 spaces (depth + 1)
+```
+
+#### External tool output — intentionally not indented
+
+External tools (`git`, `mise`, `sqlite3`) invoked via `system()` print directly to stdout/stderr at column 0. This is intentional — wrapping their output would add complexity (signal handling, streaming, exit code preservation) for minimal UX benefit. Tool output remains visually distinct from our structured logging.
 
 #### Why subprocess scripts also decrement
 

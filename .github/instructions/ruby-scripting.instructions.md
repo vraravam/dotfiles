@@ -286,13 +286,13 @@ require String arguments:
 # Good -- Pathname throughout, .to_s only at system boundary
 profile_folder = EnvVars::HOME.join('.config', 'browser', 'Profile 1')
 if File.directory?(profile_folder)  # File methods accept Pathname
-  du_out, = Open3.capture3('du', '-sh', profile_folder.to_s)  # .to_s at boundary
+  du_out, = Open3.capture3('du', '-sk', profile_folder.to_s)  # .to_s at boundary
 end
 
 # BAD -- premature .to_s
 profile_folder = EnvVars::HOME.join('.config', 'browser', 'Profile 1').to_s
 if File.directory?(profile_folder)
-  du_out, = Open3.capture3('du', '-sh', profile_folder)
+  du_out, = Open3.capture3('du', '-sk', profile_folder)
 end
 ```
 
@@ -305,8 +305,8 @@ Ruby's string interpolation automatically calls `.to_s` on Pathname objects:
 puts "Processing #{EnvVars::HOME}"
 puts "Processing #{EnvVars::HOME.to_s}"
 
-# Color methods also work via interpolation
-info "Processing '#{EnvVars::HOME.join('dotfiles').cyan}'"
+# Color methods require explicit .to_s (they're defined on String, not Pathname)
+info "Processing '#{EnvVars::HOME.join('dotfiles').to_s.cyan}'"
 ```
 
 ### Function Parameters -- Accept Pathname
@@ -1059,6 +1059,56 @@ Logging.print_script_summary(script_start_time)
 
 No macOS notification is sent from Ruby -- `osascript` is not appropriate for
 library code. Scripts that need a notification must handle it themselves.
+
+#### Dual Purpose: Nesting Suppression AND Auto-Indentation
+
+`_DOTFILES_SCRIPT_DEPTH` serves two purposes:
+
+1. **Suppression**: Only outermost scripts (depth ≤ 1) print start/summary banners
+2. **Auto-indentation**: ALL logging methods automatically indent based on depth
+
+All logging methods (`info`, `warn`, `success`, `error`, `debug`, `user_action`)
+and section headers call `log_indent` internally, which returns `'  ' * depth`.
+This creates visual hierarchy that matches the call stack:
+
+```ruby
+# Standalone script (depth 0 → 1)
+Logging.increment_script_depth  # depth now 1
+info "Processing items..."      # 2-space indent (depth 1)
+
+# Nested subprocess (depth 1 → 2)
+info "Parent message"                 # 2-space indent
+system('child-script.rb')             # Child logs at 4-space indent (depth 2)
+info "Back to parent"                 # 2-space indent
+```
+
+**NEVER manually prepend spaces to log messages.** The depth counter handles all
+indentation automatically:
+
+```ruby
+# BAD -- manual indent (old pattern, removed during refactoring)
+info "  -> Processed #{count} items"
+
+# Good -- auto-indent (current pattern)
+info "-> Processed #{count} items"
+```
+
+The `log_indent` helper is defined in `logging.rb` and should not be called
+directly from scripts -- it is an internal utility for logging methods.
+
+### External Tool Output -- Intentionally Unindented
+
+External tools (`git`, `mise`, `sqlite3`, `keybase`, etc.) invoked via `system()`
+or `Open3.capture3()` print at column 0. This is intentional -- wrapping their
+output would add complexity for minimal UX benefit. Tool output remains visually
+distinct from our structured logging.
+
+**Examples of system calls that produce unindented tool output**:
+- `run-all.rb`: `system(shell, '-c', cmd_string)` -- user commands
+- `git_workspace.rb`: `system('mise', ...)`, `system('direnv', ...)`
+- `keybase.rb`: `system('keybase', 'login')`
+- `recreate-repo.rb`: `system('git', '-C', folder, 'init', ...)`
+
 
 ### Argument-parse failures -- use `warn`, not `error`
 

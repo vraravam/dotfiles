@@ -3,6 +3,99 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 
+### 3.1.19 - Tested on vanilla macos Tahoe 26.6
+
+#### git clone uses shallow clone if FIRST_INSTALL is set
+
+* *[files/--HOME--/.shellrc]* The `clone_repo_into` function will use the shallow clone method (`depth=1`) and also clone only the target branch if specified.
+* *[scripts/fresh-install-of-osx.sh]* Simplified the `brew trust` logic to trust taps from the `Brewfile`.
+* *[scripts/fresh-install-of-osx.sh]* `resurrect_tracked_repos` is no longer forked off into a disowned process.
+* *[scripts/fresh-install-of-osx.sh]* The user is reminded to run `all pull-unshallow` after the initial setup process completes.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts.
+* Quit & Restart the Terminal application.
+
+
+### 3.1.18
+
+#### Unified semantic indentation system for all logging output
+
+* *[files/--HOME--/.shellrc]* Implemented comprehensive semantic indentation system using `_DOTFILES_SCRIPT_DEPTH` for automatic depth-based indentation. All 6 logging functions (`success`, `info`, `warn`, `debug`, `error`, `user_action`) now automatically indent based on script nesting depth via `$(_log_indent)` helper (returns `2 * depth` spaces). Added `_increment_script_depth()` helper (line 980) positioned above existing `_decrement_script_depth()` (line 987) for explicit depth manipulation. Updated `_section_header_impl()` to use auto-indent via `_log_indent`, eliminating manual indent parameter from `section_header2()`. Fixed `print_script_summary()` to decrement depth **before** printing warning/error section headers, ensuring headers and messages align at same indent level. Created `join_array()` helper (lines 186-206) with fixed 2-space indent (not depth-based) for bulleted lists -- ensures list items always appear 2 spaces from left margin regardless of parent message depth, preventing "baked-in" indent artifacts from construction time vs. print time depth differences.
+
+* *[scripts/utilities/logging.rb]* Applied identical semantic indentation to Ruby implementation. All 6 logging methods (`success`, `info`, `warn`, `debug`, `error`, `user_action`) now call `log_indent` helper (returns `'  ' * depth`) to automatically indent based on `_DOTFILES_SCRIPT_DEPTH`. Updated `_section_header_impl` to use auto-indent. Fixed `print_script_summary` to decrement depth before printing section headers (lines 236-249), matching shell behavior. Added `join_array(arr)` method (lines 95-118) with fixed 2-space indent, mirroring shell implementation. Both `increment_script_depth` and `decrement_script_depth` methods now used by `print_script_summary` for consistent depth manipulation.
+
+* *[scripts/resurrect-repositories.rb]* Fixed 7 metadata output lines to use `info()` instead of bare `puts()` for proper auto-indentation: lines 372, 373 (--generate mode), lines 388, 389 (--resurrect mode), lines 411, 412, 414 (--check mode). Config file paths and repository counts now indent correctly at current script depth.
+
+* *[scripts/cleanup-browser-profiles.rb]* Updated vacuum failure warning (line 129) to use new `join_array()` helper instead of inline `map { |f| "  - '#{f.red}'" }.join("\n")` pattern. Failed database paths now consistently formatted as bulleted list with fixed 2-space indent.
+
+* *[scripts/install-dotfiles.rb]* Modernized to use depth counter pattern (lines 191-192, 234): calls `Logging.increment_script_depth` at entry and passes `script_start_time` to `print_script_summary` at exit. Now 100% adoption across all 11 Ruby scripts in the repository.
+
+* *[scripts/osx-defaults.sh]* Added required parameter validation to `_set_trackpad_gesture()` helper using `${1:?...}` pattern (line 2156). Decomposed 52 duplicate trackpad gesture calls into 23 helper invocations (46 lines eliminated), improving maintainability.
+
+* *[scripts/capture-prefs.sh]* Added required parameter validation to `_strip_excluded_keys()` using `${1:?...}` pattern (line 108).
+
+* *[scripts/setup-login-item.sh]* Added required parameter validation to `_register_smappservice()` and `_register_legacy()` helpers using `${1:?...}` pattern (lines 42, 66).
+
+* *[scripts/software-updates-cron.sh]* Added required parameter validation to `_perform_update()` using `${1:?...}` pattern (line 134).
+
+* *[scripts/utilities/collection_processor.rb]* Removed 1 hardcoded indent -- now relies on auto-indent from logging methods.
+
+* *[TechnicalDeepDive.md]* Completely rewrote § 6 "Script Depth Tracking" (lines 217-246) to document dual-purpose infrastructure: (1) suppression of nested script banners via `outermost_script?` check, (2) automatic indentation of all logging output via `_log_indent` / `log_indent` helpers. Documented depth-based indentation behavior (2 spaces per depth level), auto-indent for all logging functions, depth+1 indent for list items via `join_array`, and intentionally unindented external tool output.
+
+* *[.github/instructions/shell-scripting.instructions.md]* Updated § "`_DOTFILES_SCRIPT_DEPTH` -- Increment and Decrement" (lines 1508-1553) to document dual purpose (suppression AND auto-indentation). Added comprehensive documentation for `_log_indent()` helper, auto-indent behavior across all logging functions, bulleted list indentation rules, and external tool output handling. Added instructions to never manually prepend spaces to log messages.
+
+* *[.github/instructions/ruby-scripting.instructions.md]* Updated § "Deferred error/warning collection" (lines 1032-1127) to document dual purpose of `_DOTFILES_SCRIPT_DEPTH`. Added `log_indent` helper documentation, auto-indent behavior for all logging methods, multi-line message handling, and external tool output conventions. Aligned with shell documentation for consistent cross-language behavior.
+
+* *[files/--ZDOTDIR--/.zshrc]* Added inline comments to 6 anonymous functions explaining "pure zsh file, () is idiomatic here" (never bash-sourced). Fixed "zsh - defer" spacing to "zsh-defer" (2 occurrences). Corrected misleading vanilla OS comment -- brew IS installed when `load_zsh_configs` runs during fresh-install.
+
+* *[.github/model-instructions.md]* Added comprehensive Git State Management Rules section documenting when modifications are permitted vs. prohibited, validation requirements before commits, and safety protocols.
+
+#### Visual hierarchy and output consistency
+
+**Standalone script output** (depth 0 → 1):
+```
+================ ⏳ script_name ================
+  ℹ️  **INFO** Processing items...
+  ✅ **SUCCESS** Done
+```
+
+**Nested subprocess output** (depth 1 → 2, banners suppressed):
+```
+    ℹ️  **INFO** Nested operation
+```
+
+**Summary warnings** (depth decremented to 0 before printing):
+```
+******************************************************************
+---------- ⏳ script_name 1 warning(s) ----------
+⚠️ **WARN** [script_name][section] Failed to process 1 file(s):
+  - ~/path/to/file.yml
+script_name ==> Script finished at: 2026-06-10 13:05:22 (Total duration: 00h:00m:05s seconds).
+```
+
+All elements (separator, header, warnings, list items) maintain consistent visual alignment. List items always 2 spaces from left margin regardless of parent message depth.
+
+#### Architectural benefits
+
+* ✅ **Zero manual indentation**: All logging functions auto-indent based on call stack depth. No more hardcoded `"  "` prefixes scattered through codebase.
+* ✅ **Visual hierarchy**: Indentation automatically reflects script nesting -- outermost at 2 spaces, nested subprocess at 4 spaces, etc.
+* ✅ **Consistent cross-language**: Shell and Ruby implementations identical. Same helpers, same formulas, same output format.
+* ✅ **Fixed list indentation**: `join_array()` always uses 2-space indent, eliminating "baked-in" indent artifacts when messages constructed at one depth but printed at another.
+* ✅ **DRY principle**: Depth manipulation extracted into `_increment_script_depth` / `_decrement_script_depth` helpers. No inline arithmetic scattered through code.
+* ✅ **Aligned summaries**: Warning/error section headers print at same indent as their messages (decrement happens before header, not after).
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts.
+* No configuration changes required -- all indentation now automatic.
+* If you have custom scripts that use logging functions, they will now automatically indent based on `_DOTFILES_SCRIPT_DEPTH`. Ensure your scripts call `export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))` at entry and `trap _decrement_script_depth EXIT` (shell) or `Logging.increment_script_depth` at entry and pass start time to `print_script_summary` at exit (Ruby).
+* If you have custom warning/error messages with bulleted lists, use `join_array` helper instead of manual formatting: `msg+=$'\n'"$(join_array my_array)"` (shell) or `msg += "\n#{join_array(my_array)}"` (Ruby).
+* Quit & Restart the Terminal application or run `unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
+; unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases` in each open terminal window/tab.
+
+
 ### 3.1.17
 
 #### Moved all post-install logic to Brewfile postinstall hooks
@@ -28,6 +121,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 * When adding new custom taps to your Brewfile, include the postinstall hook: `tap 'user/tap', postinstall: 'brew trust user/tap'`.
 * Quit & Restart the Terminal application.
 
+
 ### 3.1.16
 
 #### Normalized output format and script timing across module methods
@@ -43,6 +137,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 * Rebase from upstream, resolve conflicts.
 * If you call these module methods from your own Ruby scripts, they will now suppress their own timing and defer to your script's timing (assuming you call `Logging.increment_script_depth` at your script's entry point).
 * Quit & Restart the Terminal application or run `unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases` to reload in each open terminal window/tab.
+
 
 ### 3.1.15
 
@@ -77,6 +172,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 * **Verify SSH config parses correctly**: `ssh -G github.com` (should show no `vdollar_percent_expand` errors).
 * **Test git-over-SSH**: `git ls-remote git@github.com:vraravam/dotfiles.git` (should connect without errors).
 * No shell restart required -- SSH config is read on every ssh invocation.
+
 
 ### 3.1.14
 

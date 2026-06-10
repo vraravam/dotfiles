@@ -183,18 +183,27 @@ is_running_in_tty() {
   [[ -t 0 ]] || is_non_zero_string "${FORCE_COLOR:-}"
 }
 
-# Joins array elements into a bulleted list string, each on a new line with a 2-space
-# indent and '- ' prefix: e.g. "  - item1\n  - item2".
+# Joins array elements into a bulleted list string, each on a new line with
+# 2-space indent and '- ' prefix.
 # Usage: join_array <array_name>
 # Example: join_array my_arr
 #
-# NOTE: The delimiter is hardcoded as a literal in the (pj:...:) flag because zsh does
-# not expand variables inside parameter expansion flags -- e.g. (pj:${delimiter}:) treats
-# ${delimiter} as a literal string rather than expanding it.
+# Output: "  - item1\n  - item2"
+# The 2-space indent is fixed, not depth-based, because list items should always
+# be subordinate to their parent message text by exactly 2 spaces regardless of
+# how deeply nested the parent message is.
 join_array() {
   local -a arr=("${(@P)${1:?join_array: array name required}}")
   is_empty_array arr && return
-  echo $'\n  - '"${(pj:\n  - :)arr}"
+  # Fixed 2-space indent for list items
+  local base_indent='  '
+  # Build formatted array with indent prefix, then join with newlines
+  local -a formatted=()
+  local item
+  for item in "${arr[@]}"; do
+    formatted+=("${base_indent}- ${item}")
+  done
+  echo "${(j:\n:)formatted}"
 }
 
 # Returns true if the current shell is zsh.
@@ -343,39 +352,41 @@ _dotfiles_notify() {
   fi
 }
 
+# Returns true if logging should be suppressed in the current context.
+# Currently checks if running inside a direnv subshell, where most logging
+# is unwanted noise. Future extensions: CI environment checks, log level filtering.
+# DIRENV_IN_ENVRC=1 is set by direnv during .envrc evaluation and survives
+# strict_env (unlike DIRENV_DIR). Used by info/success/warn/user_action/debug.
+# error() always prints regardless of context -- critical failures must be visible.
+_should_suppress_log() {
+  is_non_zero_string "${DIRENV_IN_ENVRC:-}"
+}
+
+# Returns the depth-based indent string (2 spaces per depth level).
+# Used by all logging functions to auto-indent output based on script nesting.
+_log_indent() {
+  printf '%*s' $((${_DOTFILES_SCRIPT_DEPTH:-0} * 2)) ''
+}
+
 success() {
-  # Suppressed when running inside a direnv subshell. DIRENV_IN_ENVRC=1 is set by
-  # direnv during .envrc evaluation and survives strict_env (unlike DIRENV_DIR).
-  # Cron, CI, and interactive shells are unaffected.
+  # Suppressed when running inside a direnv subshell (see _should_suppress_log).
   # Use error for messages that must always be visible regardless of context.
-  # if/else avoids a bare '|| echo' where is_non_zero_string returning 1 could
-  # trigger an ERR trap in callers running under set -e.
-  if ! is_non_zero_string "${DIRENV_IN_ENVRC:-}"; then
-    echo "✅ $(green '**SUCCESS**') ${1}"
-  fi
+  _should_suppress_log && return 0
+  echo "$(_log_indent)✅ $(green '**SUCCESS**') ${1}"
 }
 
 info() {
-  # Suppressed when running inside a direnv subshell. DIRENV_IN_ENVRC=1 is set by
-  # direnv during .envrc evaluation and survives strict_env (unlike DIRENV_DIR).
-  # Cron, CI, and interactive shells are unaffected.
+  # Suppressed when running inside a direnv subshell (see _should_suppress_log).
   # Use error for messages that must always be visible regardless of context.
-  # if/else avoids a bare '|| echo' where is_non_zero_string returning 1 could
-  # trigger an ERR trap in callers running under set -e.
-  if ! is_non_zero_string "${DIRENV_IN_ENVRC:-}"; then
-    echo "ℹ️ $(cyan '**INFO**') ${1}"
-  fi
+  _should_suppress_log && return 0
+  echo "$(_log_indent)ℹ️ $(cyan '**INFO**') ${1}"
 }
 
 warn() {
-  # Suppressed when running inside a direnv subshell. DIRENV_IN_ENVRC=1 is set by
-  # direnv during .envrc evaluation and survives strict_env (unlike DIRENV_DIR).
+  # Suppressed when running inside a direnv subshell (see _should_suppress_log).
   # Use error for messages that must always be visible regardless of context.
-  # if/else avoids a bare '|| echo' where is_non_zero_string returning 1 could
-  # trigger an ERR trap in callers running under set -e.
-  if ! is_non_zero_string "${DIRENV_IN_ENVRC:-}"; then
-    echo "⚠️ $(light_red '**WARN**') ${1}"
-  fi
+  _should_suppress_log && return 0
+  echo "$(_log_indent)⚠️ $(light_red '**WARN**') ${1}"
 }
 
 user_action() {
@@ -383,23 +394,17 @@ user_action() {
   # an app, run a command, open a URL). Distinct from warn (which signals an
   # unexpected problem) and info (which is purely informational). Suppressed
   # in direnv subshells -- direnv runs headlessly and cannot act on prompts.
-  # if/else avoids a bare '|| echo' where is_non_zero_string returning 1 could
-  # trigger an ERR trap in callers running under set -e.
-  if ! is_non_zero_string "${DIRENV_IN_ENVRC:-}"; then
-    echo "➡️ $(yellow '**ACTION**') ${1}"
-  fi
+  _should_suppress_log && return 0
+  echo "$(_log_indent)➡️ $(yellow '**ACTION**') ${1}"
 }
 
 debug() {
-  # Suppressed when running inside a direnv subshell. DIRENV_IN_ENVRC=1 is set by
-  # direnv during .envrc evaluation and survives strict_env (unlike DIRENV_DIR).
-  # Cron, CI, and interactive shells are unaffected.
+  # Hidden by default; only visible when DEBUG=true is set in the environment.
+  # Also suppressed when running inside a direnv subshell (see _should_suppress_log).
   # Use error for messages that must always be visible regardless of context.
-  # if/else avoids a bare '|| echo' where is_non_zero_string returning 1 could
-  # trigger an ERR trap in callers running under set -e.
-  if ! is_non_zero_string "${DIRENV_IN_ENVRC:-}"; then
-    echo "⚙️ $(light_purple '**DEBUG**') ${1}"
-  fi
+  [[ -z "${DEBUG:-}" ]] && return 0
+  _should_suppress_log && return 0
+  echo "$(_log_indent)⚙️ $(light_purple '**DEBUG**') ${1}"
 }
 
 error() {
@@ -407,10 +412,37 @@ error() {
   # as plain text (no color wrapper) and also passed to _dotfiles_notify, which receives
   # a raw string -- ANSI codes would appear as literal escape characters there.
   local _msg="${1//${HOME}/~}"
-  echo "❌ $(red '**ERROR**') ${_msg} 🤓"
+  echo "$(_log_indent)❌ $(red '**ERROR**') ${_msg} 🤓"
   _dotfiles_notify "${_msg} 🤓" "❌ Error" || true
   return 1
 }
+
+# --------------------------------------------------------------------------
+# 1c. Terminal and section header constants
+# --------------------------------------------------------------------------
+
+# Terminal width fallback when COLUMNS is unavailable (cron, non-TTY contexts).
+# Standard assumption: 80-column terminal is the baseline for readability.
+# Guard with typeset check to avoid "read-only variable" error on re-source.
+# Uses [[ -z ... ]] for bash compatibility (.shellrc is sourced by direnv in bash).
+if [[ -z "${_FALLBACK_TERMINAL_WIDTH:-}" ]]; then
+  readonly _FALLBACK_TERMINAL_WIDTH=80
+  readonly _HEADER_WIDTH_NUMERATOR=3
+  readonly _HEADER_WIDTH_DENOMINATOR=4
+  readonly _HEADER_MIN_PADDING=10
+fi
+
+# Section header sizing constants for padding calculation.
+# Headers use 3/4 of terminal width minus text length for balanced visual weight.
+# Defined in the same guard block above to keep related constants together.
+
+# Minimum padding between header text and terminal edges (in characters).
+# Prevents headers from touching screen edges; maintains visual breathing room.
+# Defined in the same guard block above to keep related constants together.
+
+# --------------------------------------------------------------------------
+# 1d. Section header helpers
+# --------------------------------------------------------------------------
 
 # Prints <char> repeated <length> times to stdout. Used by section header
 # helpers to generate padding lines. Defaults to '-' for the char and a
@@ -419,13 +451,13 @@ error() {
 print_chars_for_length() {
   local char="${1:--}"  # default to using '-'
   # ${COLUMNS} is a zsh special variable updated on SIGWINCH -- no tput fork needed.
-  # Fallback to 80 when COLUMNS is 0 (e.g. cron -- no terminal attached).
-  local final_length=${2:=$((${COLUMNS:-80} / 4))}
+  # Fallback to _FALLBACK_TERMINAL_WIDTH when COLUMNS is 0 (e.g. cron -- no terminal attached).
+  local final_length=${2:=$((${COLUMNS:-${_FALLBACK_TERMINAL_WIDTH}} / _HEADER_WIDTH_DENOMINATOR))}
   printf "${char}%.0s" {1..${final_length}}
 }
 
-# Internal helper shared by section_header and section_header2.
-# Usage: _section_header_impl <header> <char> <glyph> <color_fn> <indent>
+# Internal helper shared by section_header.
+# Usage: _section_header_impl <header> <char> <glyph> <color_fn>
 _section_header_impl() {
   # Inline substitution rather than a color function: the header is output as
   # plain text between the two colored padding segments -- it has no color wrapper,
@@ -434,13 +466,15 @@ _section_header_impl() {
   local char="${2}"
   local glyph="${3}"
   local color_fn="${4}"
-  local indent="${5:-}"
+  # Auto-indent based on script depth
+  local indent
+  indent="$(_log_indent)"
   local indent_len=${#indent}
   # ${COLUMNS} is a zsh special variable -- no tput subprocess fork needed.
-  # Fallback to 80 when COLUMNS is 0 (e.g. cron -- no terminal attached).
-  local viewport_length=${COLUMNS:-80}
+  # Fallback to _FALLBACK_TERMINAL_WIDTH when COLUMNS is 0 (e.g. cron -- no terminal attached).
+  local viewport_length=${COLUMNS:-${_FALLBACK_TERMINAL_WIDTH}}
   local header_length=${#header}
-  local final_length=$(((viewport_length - header_length - indent_len) / 2 - 10))
+  local final_length=$(((viewport_length * _HEADER_WIDTH_NUMERATOR / _HEADER_WIDTH_DENOMINATOR - header_length - indent_len) / 2 - _HEADER_MIN_PADDING))
 
   # Pre-compute the padding string once to avoid calling print_chars_for_length
   # twice via $(...) -- each $(...) call forks a subshell.
@@ -454,9 +488,10 @@ section_header() {
 }
 
 # Sub-level section header: used for steps nested inside a top-level section_header.
-# Uses '-' padding, a '🔷' glyph, cyan colour, and 2-space indent to visually subordinate it.
+# Uses '-' padding, a '🔷' glyph, and cyan colour to visually subordinate it.
+# Indentation is automatic via _log_indent in _section_header_impl.
 section_header2() {
-  _section_header_impl "${1}" '-' '🔷' 'cyan' '  '
+  _section_header_impl "${1}" '-' '🔷' 'cyan'
 }
 
 # Formats a duration given in seconds into a human-readable string "HH:MM:SS".
@@ -745,24 +780,30 @@ print_script_summary() {
   local _pss_msg="${2:-}"
   local _pss_title="${_SCRIPT_NAME:-}"
 
-  local viewport_length=${COLUMNS:-80}
-  local final_length=$(((viewport_length) * 3 / 4))
+  local viewport_length=${COLUMNS:-${_FALLBACK_TERMINAL_WIDTH}}
+  local final_length=$(((viewport_length * _HEADER_WIDTH_NUMERATOR / _HEADER_WIDTH_DENOMINATOR)))
   echo $(dark_gray "$(print_chars_for_length '*' ${final_length})")
 
   if is_non_zero_string "${_pss_msg}"; then info "${_pss_msg}"; fi
   if (($+_step_warnings)) && is_non_empty_array _step_warnings; then
+    # Temporarily decrement depth so both header and warnings print one level less indented
+    _decrement_script_depth
     _section_header_impl "$(cyan "${_pss_title}") $(yellow "${#_step_warnings[@]} warning(s)")" '-' '⏳' 'orange'
     local _psw
     for _psw in "${_step_warnings[@]}"; do
-      warn "  ${_psw}"
+      warn "${_psw}"
     done
+    _increment_script_depth
   fi
   if (($+_step_errors)) && is_non_empty_array _step_errors; then
+    # Temporarily decrement depth so both header and errors print one level less indented
+    _decrement_script_depth
     _section_header_impl "$(cyan "${_pss_title}") $(red "${#_step_errors[@]} error(s) -- manual attention needed")" '-' '⏳' 'light_red'
     local _pse
     for _pse in "${_step_errors[@]}"; do
-      warn "  ${_pse}"
+      warn "${_pse}"
     done
+    _increment_script_depth
   fi
   # Send exactly one notification when there are issues to report, gated solely
   # on whether errors/warnings were collected -- independent of the title source.
@@ -936,6 +977,13 @@ is_windows() {
 # consistent with the ':-0' used in the increment expression in each main().
 is_outermost_script() {
   [[ ${_DOTFILES_SCRIPT_DEPTH:-0} -le 1 ]]
+}
+
+# Increments _DOTFILES_SCRIPT_DEPTH by 1. Does not guard against overflow since
+# depth > 100 would indicate a bug (infinite recursion). Used internally by
+# print_script_summary to temporarily adjust depth.
+_increment_script_depth() {
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
 }
 
 # Decrements _DOTFILES_SCRIPT_DEPTH, guarding against underflow. Called from

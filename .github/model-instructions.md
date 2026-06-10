@@ -127,9 +127,13 @@ fi
 
 The Git‑related rules in `git-config.instructions.md` are unchanged.  Both editors honour the same commit and push restrictions.
 
-### Git Staging Rules — Mandatory
+### Git State Management Rules — Mandatory
 
-**DO NOT stage, unstage, add, or reset files without explicit permission from the user.**
+**DO NOT modify Git state (staging area, commits, branches, remotes) without explicit permission from the user.**
+
+#### Staging Rules
+
+**DO NOT stage, unstage, add, or reset files without explicit permission.**
 
 When reviewing changes:
 - Use `git status` and `git diff` to inspect changes
@@ -142,6 +146,7 @@ When reviewing changes:
 - `git add .` — stages all changes in current directory
 - `git reset <file>` — unstages a file
 - `git restore --staged <file>` — unstages a file
+- `git checkout -- <file>` — discards unstaged changes
 - `git rm <file>` — stages a deletion
 - Any other command that modifies the index/staging area
 
@@ -158,6 +163,33 @@ When reviewing changes:
 4. Only after explicit permission: run `git add` commands
 
 **Exception:** When the user explicitly says "stage everything", "commit all changes", or similar clear intent to modify staging state, then `git add -A` is permitted.
+
+#### Commit Rules
+
+**DO NOT create, amend, or modify commits without explicit permission.**
+
+**Prohibited without permission:**
+- `git commit` — creates a new commit
+- `git commit -a` — stages and commits all tracked changes
+- `git commit --amend` — modifies the last commit
+- `git rebase` — rewrites commit history
+- `git reset --soft/--mixed/--hard` — moves HEAD and potentially discards commits
+- `git cherry-pick` — applies commits from other branches
+- Any other command that creates or modifies commits
+
+**Why this matters:**
+- Commits are permanent snapshots in the repository history
+- Commit messages must be authored by the user, not generated automatically
+- Users may want to review staged changes before committing
+- The timing of commits is part of the user's workflow
+
+**Correct workflow:**
+1. Make edits and stage files (with explicit permission)
+2. Show `git diff --cached` to display what will be committed
+3. Ask the user if they want to commit and what message to use
+4. Only after explicit permission: run `git commit` with user-provided message
+
+**Exception:** When the user explicitly says "commit with message X", "create a commit", or similar clear intent, then `git commit` is permitted.
 
 ## SSH Config Rules — Variable Expansion Limitations
 

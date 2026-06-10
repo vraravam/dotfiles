@@ -24,11 +24,11 @@ require 'pathname'  # System Ruby on a vanilla macOS is 2.6; Pathname must be re
 #   puts EnvVars::USER                              # String (always set)
 #   puts EnvVars::KEYBASE_USERNAME                  # String or nil
 #
-  #   # Runtime flag methods (evaluated dynamically)
-  #   if EnvVars.debug?                               # Boolean
-  #     folder = EnvVars.folder || Dir.pwd            # String (expanded path) or nil
-  #     filter = EnvVars.filter                       # String (stripped) or nil
-  #   end
+#   # Runtime flag methods (evaluated dynamically)
+#   if EnvVars.debug?                               # Boolean
+#     folder = EnvVars.folder || Dir.pwd            # String (expanded path) or nil
+#     filter = EnvVars.filter                       # String (stripped) or nil
+#   end
 module EnvVars
   # Current user's login name.
   # Mirrors: $USER (always set by the shell)
@@ -181,5 +181,16 @@ module EnvVars
   # Mirrors: export DEBUG=1 (set manually for debugging)
   def self.debug?
     !ENV.fetch('DEBUG', '').empty?
+  end
+
+  # Returns true if logging output should be suppressed.
+  # Currently checks if running inside a direnv subshell, where most logging
+  # is unwanted noise. Future extensions: CI environment checks, log level filtering.
+  # DIRENV_IN_ENVRC=1 is set by direnv during .envrc evaluation and survives
+  # strict_env (unlike DIRENV_DIR). Used by info/success/warn/user_action/debug.
+  # error() always prints regardless of context -- critical failures must be visible.
+  # Mirrors: _should_suppress_log() in .shellrc
+  def self.suppress_log?
+    !ENV.fetch('DIRENV_IN_ENVRC', '').empty?
   end
 end

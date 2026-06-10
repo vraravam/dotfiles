@@ -200,7 +200,7 @@ module CollectionProcessor
       end
 
       if dry_run
-        Logging.info "  [DRY RUN] Would process '#{item_name.cyan}'"
+        Logging.info "[DRY RUN] Would process '#{item_name.cyan}'"
         successful << item_name
         next
       end

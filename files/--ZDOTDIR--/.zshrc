@@ -93,6 +93,8 @@ ensure_dir_exists "${XDG_CACHE_HOME}"
 # Cache brew shellenv to avoid running the brew binary on every shell startup (it's slow due to Ruby startup).
 # The cache is invalidated when the brew binary itself changes (i.e. after brew upgrades).
 # The cache pre-evaluates path_helper so sourcing it is a pure-zsh operation (no subprocesses).
+# Anonymous function scopes variables to avoid polluting global namespace; this is a pure zsh
+# file (never bash-sourced), so () syntax is idiomatic and correct here.
 () {
   local brew_bin="${HOMEBREW_PREFIX}/bin/brew"
   local brew_shellenv_cache="${XDG_CACHE_HOME}/brew-shellenv-cache.zsh"
@@ -154,6 +156,7 @@ compdef() { _compdef_queue+=("$*"); }
 # (($+commands[git])) is a single O(1) hash probe; command_exists does 4.
 # .zshrc is zsh-only so the zsh arithmetic syntax is always safe here.
 if (($+commands[git])); then
+  # Anonymous function scopes git version cache locals; pure zsh file, () is idiomatic here.
   () {
     local git_bin="${commands[git]}"
     local git_version_cache="${XDG_CACHE_HOME}/git-version-cache.zsh"
@@ -181,6 +184,8 @@ is_file_older_than "${ANTIDOTE_PLUGIN_ZSH}" "${ANTIDOTE_PLUGIN_TXT}" &&
 # $3 without a default, which crashes under NOUNSET (set -u). The fresh-install
 # script runs with `set -euo pipefail`, so NOUNSET is active when load_zsh_configs
 # sources this file. Suspend NOUNSET for the duration of the bundle source only.
+# Anonymous function scopes the LOCAL_OPTIONS change; this is a pure zsh file
+# (never bash-sourced), so () syntax is idiomatic and correct here.
 () {
   setopt LOCAL_OPTIONS
   unsetopt NOUNSET
@@ -195,6 +200,7 @@ is_file_older_than "${ANTIDOTE_PLUGIN_ZSH}" "${ANTIDOTE_PLUGIN_TXT}" &&
 # below. The cache is keyed on the mise binary mtime and regenerated only when mise itself
 # is updated (e.g. after `brew upgrade`).
 if (($+commands[mise])); then
+  # Anonymous function scopes cache-related locals; pure zsh file, () is idiomatic here.
   () {
     local mise_bin="${commands[mise]}"
     local mise_activate_cache="${XDG_CACHE_HOME}/mise-activate-cache.zsh"
@@ -230,6 +236,7 @@ fi
 # sequence. The cache is therefore sourced directly at the top level; the ~5ms
 # cost of sourcing the pre-parsed .zwc bytecode is acceptable.
 if (($+commands[starship])); then
+  # Anonymous function scopes starship cache locals; pure zsh file, () is idiomatic here.
   () {
     # $commands[] is an O(1) zsh hash lookup - no subprocess fork needed.
     local starship_bin="${commands[starship]}"
@@ -306,7 +313,7 @@ append_to_path_if_dir_exists "${HOME}/.cargo/bin"
 # Caveat: autoload functions in ${XDG_CONFIG_HOME}/zsh/ call dispatch_or_fallback
 # (defined in .aliases). In practice zsh-defer fires well before any keypress;
 # the risk only exists for scripted terminals that send input before ZLE is idle.
-if (( $+functions[zsh-defer] )); then
+if (($+functions[zsh-defer])); then
   zsh-defer load_file_if_exists "${HOME}/.aliases"
 else
   load_file_if_exists "${HOME}/.aliases"
@@ -334,7 +341,7 @@ _deferred_compinit() {
       fi
     done
   fi
-  if (( stale )); then
+  if ((stale)); then
     compinit -d "${ZSH_COMPDUMP}"
   else
     compinit -C -d "${ZSH_COMPDUMP}"
@@ -358,7 +365,7 @@ _deferred_compinit() {
   fi
   unfunction _deferred_compinit
 }
-if (( $+functions[zsh-defer] )); then
+if (($+functions[zsh-defer])); then
   zsh-defer _deferred_compinit
 else
   _deferred_compinit
@@ -503,9 +510,9 @@ if (($+commands[brew])); then
   # and inherited LDFLAGS caused doubled flags.
   #
   # Safe in all contexts: (($+commands[brew])) is zsh-only, but .zshrc is never
-  # sourced by bash or on vanilla OS (before dotfiles are installed). On a vanilla OS
-  # run of load_zsh_configs, brew is absent so the guard is false and the block is
-  # skipped entirely.
+  # sourced by bash. On vanilla OS, this runs during fresh-install after brew is
+  # installed -- the guard passes and keg-only paths are cached normally.
+  # Anonymous function scopes keg-only path computation locals; pure zsh file, () is idiomatic here.
   () {
     local keg_cache="${XDG_CACHE_HOME}/keg-only-paths-cache.zsh"
     local opt_dir="${HOMEBREW_PREFIX}/opt"
@@ -649,6 +656,7 @@ if is_directory "${XDG_CONFIG_HOME}/zsh"; then
   # Only extensionless files are registered -- .zwc bytecode files share the same
   # glob but are not function names; autoloading them would create useless entries
   # named 'cc.zwc' etc. in the function table.
+  # Anonymous function scopes NULL_GLOB and loop variable; pure zsh file, () is idiomatic here.
   () {
     setopt localoptions NULL_GLOB
     local func_file

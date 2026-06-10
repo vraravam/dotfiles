@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require_relative 'env_vars'
 require_relative 'string'
 
 # Logging helpers that replicate the shell functions defined in .shellrc
@@ -36,6 +37,9 @@ module Logging
   # Semantic log-level helpers
   # These mirror success/info/warn/debug/error from .shellrc.
   #
+  # All logging functions automatically prepend indentation based on
+  # _DOTFILES_SCRIPT_DEPTH. Multi-line messages have each line indented.
+  #
   # These methods do NOT apply tilde substitution -- color methods (.yellow,
   # .cyan, etc.) do so automatically on their arguments. Logging methods are
   # pure formatters: prefix + message. Bare puts/print call sites that display
@@ -45,36 +49,84 @@ module Logging
   # behaviour is omitted here since it is inappropriate for library code.
   # ---------------------------------------------------------------------------
 
+  # Returns the depth-based indent string (2 spaces per depth level).
+  # Used by all logging functions to auto-indent output based on script nesting.
+  def log_indent
+    '  ' * ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+  end
+
   def success(message)
-    puts "✅ #{'**SUCCESS**'.green} #{message}"
+    # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
+    # Use error for messages that must always be visible regardless of context.
+    return if EnvVars.suppress_log?
+    indent = log_indent
+    message.to_s.each_line { |line| puts "#{indent}✅ #{'**SUCCESS**'.green} #{line.chomp}" }
   end
 
   def info(message)
-    puts "ℹ️  #{'**INFO**'.cyan} #{message}"
+    # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
+    # Use error for messages that must always be visible regardless of context.
+    return if EnvVars.suppress_log?
+    indent = log_indent
+    message.to_s.each_line { |line| puts "#{indent}ℹ️  #{'**INFO**'.cyan} #{line.chomp}" }
   end
 
   def warn(message)
-    puts "⚠️  #{'**WARN**'.light_red} #{message}"
+    # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
+    # Use error for messages that must always be visible regardless of context.
+    return if EnvVars.suppress_log?
+    indent = log_indent
+    message.to_s.each_line { |line| puts "#{indent}⚠️  #{'**WARN**'.light_red} #{line.chomp}" }
   end
 
   def debug(message)
-    puts "⚙️  #{'**DEBUG**'.light_purple} #{message}"
+    # Hidden by default; only visible when DEBUG env var is set.
+    # Also suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
+    # Use error for messages that must always be visible regardless of context.
+    return unless EnvVars.debug?
+    return if EnvVars.suppress_log?
+    indent = log_indent
+    message.to_s.each_line { |line| puts "#{indent}⚙️  #{'**DEBUG**'.light_purple} #{line.chomp}" }
   end
 
   # Prints a message prompting the user to perform a manual step (e.g. restart
   # an app, run a command, open a URL). Distinct from warn (unexpected problem)
-  # and info (purely informational). Mirrors user_action() in .shellrc.
+  # and info (purely informational). Suppressed in direnv subshells -- direnv
+  # runs headlessly and cannot act on prompts. Mirrors user_action() in .shellrc.
   def user_action(message)
-    puts "➡️  #{'**ACTION**'.yellow} #{message}"
+    return if EnvVars.suppress_log?
+    indent = log_indent
+    message.to_s.each_line { |line| puts "#{indent}➡️  #{'**ACTION**'.yellow} #{line.chomp}" }
   end
 
   # Prints the error message and raises a +RuntimeError+ with that message,
   # terminating the current execution path unless rescued by the caller.
+  # error() always prints regardless of context -- critical failures must be visible.
   # @raise [RuntimeError]
   def error(message)
+    indent = log_indent
     msg = message.to_s.replace_home_path_with_tilde
-    puts "❌ #{'**ERROR**'.red} #{msg} 🤓"
+    msg.each_line { |line| puts "#{indent}❌ #{'**ERROR**'.red} #{line.chomp} 🤓" }
     raise msg
+  end
+
+  # Joins array elements into a bulleted list string, each on a new line with
+  # 2-space indent and '- ' prefix.
+  #
+  # Usage: join_array(my_array)
+  # Example: join_array(['file1.yml', 'file2.yml'])
+  #
+  # Output: "  - file1.yml\n  - file2.yml"
+  #
+  # The 2-space indent is fixed, not depth-based, because list items should always
+  # be subordinate to their parent message text by exactly 2 spaces regardless of
+  # how deeply nested the parent message is.
+  #
+  # @param arr [Array] The array to join.
+  # @return [String] The formatted list string, or empty string if array is empty.
+  def join_array(arr)
+    return '' if nil_or_empty?(arr)
+    arr.map { |item| "  - #{item}" }.join("\n")
   end
 
   # ---------------------------------------------------------------------------
@@ -97,17 +149,19 @@ module Logging
   #   echo "$(light_blue $(print_chars_for_length '=' …)) ⏳ ${header} $(light_blue …)"
   # Also sets current_section to +header+ so that subsequent record_warning /
   # record_error entries are automatically attributed to this section.
+  # Automatically indents based on _DOTFILES_SCRIPT_DEPTH.
   def section_header(header)
     @current_section = header
     _section_header_impl(header, char: '=', glyph: '⏳', color: :light_blue)
   end
 
   # Sub-level section header for steps nested inside a top-level section_header.
-  # Mirrors section_header2 in .shellrc: '-' padding, '🔷' glyph, cyan colour,
-  # 2-space indent. Does NOT update current_section -- sub-steps belong to the
-  # enclosing top-level section for record_warning / record_error attribution.
+  # Mirrors section_header2 in .shellrc: '-' padding, '🔷' glyph, cyan colour.
+  # Indentation is automatic via log_indent in _section_header_impl.
+  # Does NOT update current_section -- sub-steps belong to the enclosing
+  # top-level section for record_warning / record_error attribution.
   def section_header2(header)
-    _section_header_impl(header, char: '-', glyph: '🔷', color: :cyan, indent: '  ')
+    _section_header_impl(header, char: '-', glyph: '🔷', color: :cyan)
   end
 
   # Prints the script start timestamp, prefixed with the script name. Mirrors:
@@ -217,12 +271,18 @@ module Logging
 
     info(message) unless nil_or_empty?(message)
     unless nil_or_empty?(step_warnings)
+      # Temporarily decrement depth so both header and warnings print one level less indented
+      decrement_script_depth
       section_header("#{script_name.cyan} #{("#{step_warnings.length} warning(s)").yellow}")
-      step_warnings.each { |w| warn("  #{w}") }
+      step_warnings.each { |w| warn(w) }
+      increment_script_depth
     end
     unless nil_or_empty?(step_errors)
+      # Temporarily decrement depth so both header and errors print one level less indented
+      decrement_script_depth
       section_header("#{script_name.cyan} #{("#{step_errors.length} error(s) -- manual attention needed").red}")
-      step_errors.each { |e| warn("  #{e}") }
+      step_errors.each { |e| warn(e) }
+      increment_script_depth
     end
     print_script_duration(start_time) unless start_time.nil?
   end
@@ -333,7 +393,7 @@ module Logging
       item_label: item_label
     )
 
-    info "  Skipped: #{results[:skipped].to_s.purple}" if results[:skipped]&.positive?
+    info "Skipped: #{results[:skipped].to_s.purple}" if results[:skipped]&.positive?
   end
 
   # Sets the script name override. Use this in module methods that act as
@@ -366,17 +426,18 @@ module Logging
   # Shared implementation for section_header and section_header2. Mirrors
   # _section_header_impl in .shellrc: centres the header between repeated-char
   # padding, coloured by +color+, prefixed with +glyph+, and optionally indented.
+  # Automatically indents based on _DOTFILES_SCRIPT_DEPTH.
   #
   # @param header [String] The header text to display.
-  # @param char   [String] Padding character ('=' for top-level, '-' for sub-level).
+  # @param char   [String] Padding character ('=' for headers).
   # @param glyph  [String] Emoji glyph displayed before the header.
-  # @param color  [Symbol] Color method to apply to padding (e.g. :light_blue, :cyan).
-  # @param indent [String] Leading indent string (empty for top-level, '  ' for sub-level).
-  def _section_header_impl(header, char:, glyph:, color:, indent: '')
+  # @param color  [Symbol] Color method to apply to padding (e.g. :light_blue).
+  def _section_header_impl(header, char:, glyph:, color:)
+    depth_indent = log_indent
     header_str = header.replace_home_path_with_tilde
-    padding_length = [((terminal_width - header_str.length - indent.length) / 2) - 10, 1].max
+    padding_length = [((terminal_width - header_str.length - depth_indent.length) / 2) - 10, 1].max
     pad = print_chars_for_length(char: char, length: padding_length).send(color)
-    puts "#{indent}#{pad} #{glyph} #{header_str} #{pad}"
+    puts "#{depth_indent}#{pad} #{glyph} #{header_str} #{pad}"
   end
 
   # Per-includer stacks stored as instance variables so that each object (or

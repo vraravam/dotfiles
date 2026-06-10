@@ -187,6 +187,10 @@ end
 
 private :_interpolate_path, :_process_dotfile, :_ensure_ssh_include_line
 
+# Depth counter and script start banner
+Logging.increment_script_depth
+script_start_time = Logging.print_script_start
+
 info('Starting to install dotfiles')
 warn('[DRY-RUN MODE]') if options[:dry_run]
 
@@ -225,6 +229,9 @@ puts "  Errors:    #{STATS.errors.positive? ? STATS.errors.to_s.red : STATS.erro
 _ensure_ssh_include_line
 
 warn("Since 'custom.git*' files are COPIED (not symlinked), always edit the repo source first. When re-running without FIRST_INSTALL set, the newer file wins -- so a stale home-dir copy can silently overwrite repo changes if its mtime is newer.")
+
+# Script end banner with duration
+Logging.print_script_summary(script_start_time)
 
 # Single exit point at end of script
 exit(1) if STATS.errors.positive?

@@ -15,9 +15,9 @@ source "${HOME}/.aliases"
 
 # Run a single update step if the check command is available
 _perform_update() {
-  local title="${1}"
-  local check_cmd="${2}"
-  local update_cmd="${3}"
+  local title="${1:?_perform_update: title required}"
+  local check_cmd="${2:?_perform_update: check_cmd required}"
+  local update_cmd="${3:?_perform_update: update_cmd required}"
 
   if command_exists "${check_cmd}"; then
     # Update section tracker before running so _record_warning can include it in the summary.

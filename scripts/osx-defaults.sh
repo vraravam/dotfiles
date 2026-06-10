@@ -72,6 +72,23 @@ ask() {
   done
 }
 
+# Writes a trackpad gesture setting to both Bluetooth and built-in trackpad domains.
+# Bluetooth trackpad (com.apple.driver.AppleBluetoothMultitouch.trackpad) and
+# built-in trackpad (com.apple.AppleMultitouchTrackpad) share the same gesture
+# keys -- both domains must be written to keep wired and wireless behaviour in sync.
+#
+# Arguments:
+#   $1 - key name (e.g., 'Clicking', 'TrackpadPinch')
+#   $2 - value to write
+#   $3 - type flag (default: -int), can be -bool, -string, etc.
+_set_trackpad_gesture() {
+  local key="${1:?_set_trackpad_gesture: key required}"
+  local value="${2:?_set_trackpad_gesture: value required}"
+  local type="${3:--int}"
+  defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad "${key}" "${type}" "${value}"
+  defaults write com.apple.AppleMultitouchTrackpad "${key}" "${type}" "${value}"
+}
+
 main() {
   auto='N'
   local _current_section='(init)'
@@ -350,63 +367,41 @@ main() {
   # Trackpad, mouse, keyboard, Bluetooth accessories, and input
   # ---------------------------------------------------------------------------
 
-  # Bluetooth trackpad (com.apple.driver.AppleBluetoothMultitouch.trackpad) and
-  # built-in trackpad (com.apple.AppleMultitouchTrackpad) share the same gesture
-  # keys -- both domains must be written to keep wired and wireless behaviour in sync.
   if ask 'Enable trackpad gestures (tap-to-click, three-finger drag, etc.)' 'Y'; then
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Clicking -int 1
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad DragLock -int 0
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Dragging -int 0
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadCornerSecondaryClick -int 0
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFiveFingerPinchGesture -int 2
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerHorizSwipeGesture -int 2
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerPinchGesture -int 2
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerVertSwipeGesture -int 2
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadHandResting -int 1
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadHorizScroll -int 1
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadMomentumScroll -int 1
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadPinch -int 1
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadRightClick -int 1
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadRotate -int 1
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadScroll -int 1
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerDrag -int 0
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerHorizSwipeGesture -int 2
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerTapGesture -int 0
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerVertSwipeGesture -int 2
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadTwoFingerDoubleTapGesture -int 1
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadTwoFingerFromRightEdgeSwipeGesture -int 3
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad USBMouseStopsTrackpad -int 0
-    defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad UserPreferences -int 1
-    # Built-in trackpad -- same gesture settings applied to the internal hardware domain.
+    # Settings shared between Bluetooth and built-in trackpads
+    _set_trackpad_gesture Clicking 1
+    _set_trackpad_gesture DragLock 0
+    _set_trackpad_gesture Dragging 0
+    _set_trackpad_gesture TrackpadCornerSecondaryClick 0
+    _set_trackpad_gesture TrackpadFiveFingerPinchGesture 2
+    _set_trackpad_gesture TrackpadFourFingerHorizSwipeGesture 2
+    _set_trackpad_gesture TrackpadFourFingerPinchGesture 2
+    _set_trackpad_gesture TrackpadFourFingerVertSwipeGesture 2
+    _set_trackpad_gesture TrackpadHandResting 1
+    _set_trackpad_gesture TrackpadHorizScroll 1
+    _set_trackpad_gesture TrackpadMomentumScroll 1
+    _set_trackpad_gesture TrackpadPinch 1
+    _set_trackpad_gesture TrackpadRightClick 1
+    _set_trackpad_gesture TrackpadRotate 1
+    _set_trackpad_gesture TrackpadScroll 1
+    _set_trackpad_gesture TrackpadThreeFingerDrag 0
+    _set_trackpad_gesture TrackpadThreeFingerHorizSwipeGesture 2
+    _set_trackpad_gesture TrackpadThreeFingerVertSwipeGesture 2
+    _set_trackpad_gesture TrackpadTwoFingerDoubleTapGesture 1
+    _set_trackpad_gesture TrackpadTwoFingerFromRightEdgeSwipeGesture 3
+    _set_trackpad_gesture USBMouseStopsTrackpad 0
+    _set_trackpad_gesture UserPreferences 1
+
+    # Built-in trackpad-only settings (not applicable to Bluetooth trackpad)
     defaults write com.apple.AppleMultitouchTrackpad Clicking -bool true
-    defaults write com.apple.AppleMultitouchTrackpad DragLock -int 0
-    defaults write com.apple.AppleMultitouchTrackpad Dragging -int 0
     defaults write com.apple.AppleMultitouchTrackpad FirstClickThreshold -int 1
     defaults write com.apple.AppleMultitouchTrackpad ForceSuppressed -int 0
     defaults write com.apple.AppleMultitouchTrackpad SecondClickThreshold -int 1
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadCornerSecondaryClick -int 0
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadFiveFingerPinchGesture -int 2
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerHorizSwipeGesture -int 2
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerPinchGesture -int 2
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerVertSwipeGesture -int 2
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadHandResting -int 1
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadHorizScroll -int 1
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadMomentumScroll -int 1
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadPinch -int 1
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadRightClick -int 1
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadRotate -int 1
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadScroll -int 1
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag -int 0
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGesture -int 2
     defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerTapGesture -int 2
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerVertSwipeGesture -int 2
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadTwoFingerDoubleTapGesture -int 1
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadTwoFingerFromRightEdgeSwipeGesture -int 3
-    defaults write com.apple.AppleMultitouchTrackpad USBMouseStopsTrackpad -int 0
-    defaults write com.apple.AppleMultitouchTrackpad UserPreferences -int 1
+
     # System Settings > Trackpad > Tap to click: this host-level key is what the
     # Settings UI reads to show the toggle state. All three writes are required:
-    # the two domain writes above configure the hardware drivers; this one tells
+    # the helper writes above configure the hardware drivers; this one tells
     # the UI the user has enabled tap-to-click.
     defaults -currentHost write -g com.apple.mouse.tapBehavior -int 1
   fi

@@ -369,8 +369,8 @@ script_start_time = print_script_start
 if options[:generate]
   section_header('Generating repository configuration')
   discovery_dir = File.expand_path(options[:generate])
-  puts("#{'Discovering repos under discovery directory:'.yellow} '#{discovery_dir.cyan}'")
-  puts("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
+  info("#{'Discovering repos under discovery directory:'.yellow} '#{discovery_dir.cyan}'")
+  info("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
   repositories = _find_git_repos_from_disk(discovery_dir)
   discovered_count = repositories.length
   repositories = _apply_filter(repositories, filter)
@@ -385,8 +385,8 @@ if options[:generate]
 elsif options[:resurrect]
   section_header('Resurrecting repositories')
   config_file = File.expand_path(options[:resurrect])
-  puts("#{'Config file:'.yellow} '#{config_file.cyan}'")
-  puts("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
+  info("#{'Config file:'.yellow} '#{config_file.cyan}'")
+  info("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
   repositories = _read_git_repos_from_file(config_file)
   repositories = _apply_filter(repositories, filter)
 
@@ -408,10 +408,10 @@ elsif options[:resurrect]
 elsif options[:check]
   section_header('Verifying repositories')
   config_file = File.expand_path(options[:check])
-  puts("#{'Config file:'.yellow} '#{config_file.cyan}'")
-  puts("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
+  info("#{'Config file:'.yellow} '#{config_file.cyan}'")
+  info("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
   reference_folder = EnvVars.ref_folder
-  puts("#{'Reference folder:'.yellow} '#{reference_folder.cyan}'") unless nil_or_empty?(reference_folder)
+  info("#{'Reference folder:'.yellow} '#{reference_folder.cyan}'") unless nil_or_empty?(reference_folder)
   repositories = _read_git_repos_from_file(config_file)
   discovered_count = repositories.length
   repositories = _apply_filter(repositories, filter)
