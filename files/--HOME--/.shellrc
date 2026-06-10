@@ -422,23 +422,15 @@ error() {
 # --------------------------------------------------------------------------
 
 # Terminal width fallback when COLUMNS is unavailable (cron, non-TTY contexts).
+# Terminal width and section header sizing constants.
 # Standard assumption: 80-column terminal is the baseline for readability.
-# Guard with typeset check to avoid "read-only variable" error on re-source.
-# Uses [[ -z ... ]] for bash compatibility (.shellrc is sourced by direnv in bash).
-if [[ -z "${_FALLBACK_TERMINAL_WIDTH:-}" ]]; then
-  readonly _FALLBACK_TERMINAL_WIDTH=80
-  readonly _HEADER_WIDTH_NUMERATOR=3
-  readonly _HEADER_WIDTH_DENOMINATOR=4
-  readonly _HEADER_MIN_PADDING=10
-fi
-
-# Section header sizing constants for padding calculation.
 # Headers use 3/4 of terminal width minus text length for balanced visual weight.
-# Defined in the same guard block above to keep related constants together.
-
-# Minimum padding between header text and terminal edges (in characters).
-# Prevents headers from touching screen edges; maintains visual breathing room.
-# Defined in the same guard block above to keep related constants together.
+# Minimum padding of 10 characters prevents headers from touching screen edges.
+# Exported so subprocesses (run-all.rb → git commands → section_header) can access them.
+export _FALLBACK_TERMINAL_WIDTH=80
+export _HEADER_WIDTH_NUMERATOR=3
+export _HEADER_WIDTH_DENOMINATOR=4
+export _HEADER_MIN_PADDING=10
 
 # --------------------------------------------------------------------------
 # 1d. Section header helpers
@@ -1094,6 +1086,8 @@ migrate_git_repo_to_reftable() {
 # location, and does an initial checkout there. Works around git's refusal to
 # clone into a non-empty directory (e.g. HOME). If the target is already a git
 # repo, runs fetch-unshallow instead. Always updates submodules afterwards.
+# On FIRST_INSTALL (vanilla OS), uses --depth=1 for a shallow clone to save time
+# and bandwidth; repos can be unshallowed later via fetch-unshallow/pull-unshallow.
 # Usage: clone_repo_into <repo-url> <target-folder> [branch]
 clone_repo_into() {
   local start_time=${EPOCHSECONDS}  # $EPOCHSECONDS from zsh/datetime -- no $(date +%s) fork
@@ -1103,8 +1097,22 @@ clone_repo_into() {
     # Since git does not allow cloning into a non-empty folder (like the home folder), clone into a temp folder, then copy the .git folder into the real target location, and do a checkout
     local tmp_folder
     tmp_folder="$(mktemp -d)"
-    # Note: Do not use --depth while cloning since that messes up when using upstream to rebase from
-    GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q -c init.defaultRefFormat=reftable "${1}" .
+    # Use shallow clone during FIRST_INSTALL to save time and bandwidth on large repos.
+    # Repos can be unshallowed later via git fetch-unshallow / git pull-unshallow.
+    # On pre-configured machines, clone full history (supports upstream rebase workflows).
+    local -a clone_args=()
+    local target_branch="${3:-}"
+    if is_non_zero_string "${FIRST_INSTALL:-}"; then
+      clone_args+=('--depth=1')
+      # If a target branch is specified, clone that branch directly to avoid the
+      # "branch not found" error when switching after a shallow clone (which only
+      # fetches the default branch). Without --branch, git switch would fail.
+      if is_non_zero_string "${target_branch}"; then
+        clone_args+=('--branch' "${target_branch}")
+      fi
+      debug "Using shallow clone (${clone_args[*]}) for FIRST_INSTALL mode"
+    fi
+    GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1}" .
     if [[ $? -ne 0 ]]; then
       warn "Failed to clone '$(cyan "${1}")' into '$(cyan "${target_folder}")'"
       return 1
@@ -1129,12 +1137,13 @@ clone_repo_into() {
 
     success "Successfully cloned '$(cyan "${1}")' into '$(cyan "${target_folder}")'"
 
-    local target_branch="${3:-}"
     if is_non_zero_string "${target_branch}"; then
-      git -C "${target_folder}" switch "${target_branch}"
-      local checked_out_branch
-      checked_out_branch="$(git -C "${target_folder}" branch --show-current)"
-      [[ "${checked_out_branch}" != "${target_branch}" ]] && error "'${target_branch}' is not equal to the branch that was checked out: '${checked_out_branch}'; something is wrong. Please correct before retrying!"
+      local current_branch
+      current_branch="$(git -C "${target_folder}" branch --show-current)"
+      if [[ "${current_branch}" != "${target_branch}" ]]; then
+        error "Branch mismatch: expected '$(cyan "${target_branch}")' but got '$(cyan "${current_branch}")' - something is wrong. Please correct before retrying!"
+        return 1
+      fi
     fi
   else
     # is_git_repo = (is_non_zero_string && is_directory .git) -- logical complement of the if above,

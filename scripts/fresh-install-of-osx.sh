@@ -274,23 +274,15 @@ _install_homebrew() {
   # Trust all custom taps defined in the Brewfile before running brew bundle.
   # This ensures taps are trusted before any formulae/casks from those taps are
   # installed, which is required if HOMEBREW_REQUIRE_TAP_TRUST is enforced.
-  # Extract tap names from Brewfile, skip homebrew/* taps, and trust custom taps.
+  # Use 'brew bundle list --taps' to extract tap names from Brewfile, skip homebrew/* taps.
   if command_exists brew; then
     local -a custom_taps
-    custom_taps=()
-    while IFS= read -r tap_line; do
-      # Extract tap name from lines like: tap 'xykong/tap' or tap 'jundot/omlx', 'git@...'
-      local tap_name
-      tap_name=$(echo "${tap_line}" | sed -E "s/^tap[[:space:]]*'([^']+)'.*/\1/")
-      # Skip homebrew/* taps (core/cask) - they don't need trusting
-      if [[ "${tap_name}" != homebrew/* ]]; then
-        custom_taps+=("${tap_name}")
-      fi
-    done < <(grep "^tap " "${HOMEBREW_BUNDLE_FILE}")
+    # Read tap names into array, excluding homebrew/* taps (core/cask don't need trusting)
+    custom_taps=($(brew bundle list --taps --file="${HOMEBREW_BUNDLE_FILE}" | \grep -v "^homebrew/"))
 
     if is_non_empty_array custom_taps; then
       info "Trusting custom taps: $(yellow "${custom_taps[*]}")"
-      brew trust "${custom_taps[@]}" || true  # Don't fail if trust fails
+      brew trust --tap -q "${custom_taps[@]}" || true  # Don't fail if trust fails
     fi
   fi
 
@@ -327,6 +319,9 @@ _install_homebrew() {
   fi
 
   if is_first_install; then
+    # Note: run this just in case the postinstall didn't work
+    update_antidote_and_regenerate_plugin_bundle
+
     # The base section is done; fork the full Brewfile install in the background so
     # optional/heavy packages install without blocking the rest of this run.
     # FIRST_INSTALL is unset in the subshell so brew bundle runs the complete Brewfile.
@@ -397,16 +392,16 @@ _ensure_keybase_logged_in() {
 # Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
 # Usage: _build_keybase_repo_url <repo-name>
 _build_keybase_repo_url() {
-  echo "keybase://private/${KEYBASE_USERNAME}/${1}"
+  echo "keybase://private/${KEYBASE_USERNAME:-}/${1}"
 }
 
 # Clone the Keybase home repo (private configs)
 _clone_home_repo() {
   _current_section='Clone home repo'
   step_start
-  section_header2 "$(yellow 'Cloning') '$(cyan "${KEYBASE_HOME_REPO_NAME}")' repo"
-  if is_non_zero_string "${KEYBASE_HOME_REPO_NAME}"; then
-    if clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME}")" "${HOME}"; then
+  section_header2 "$(yellow 'Cloning') '$(cyan "${KEYBASE_HOME_REPO_NAME:-}")' repo"
+  if is_non_zero_string "${KEYBASE_HOME_REPO_NAME:-}"; then
+    if clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME:-}")" "${HOME}"; then
       # Reset ssh keys' permissions so that git doesn't complain when using them
       set_ssh_folder_permissions
 
@@ -425,9 +420,9 @@ _clone_home_repo() {
 _clone_profiles_repo() {
   _current_section='Clone profiles repo'
   step_start
-  section_header2 "$(yellow 'Cloning') '$(cyan "${KEYBASE_PROFILES_REPO_NAME}")' repo"
-  if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
-    if ! clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME}")" "${PERSONAL_PROFILES_DIR}"; then
+  section_header2 "$(yellow 'Cloning') '$(cyan "${KEYBASE_PROFILES_REPO_NAME:-}")' repo"
+  if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME:-}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
+    if ! clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME:-}")" "${PERSONAL_PROFILES_DIR}"; then
       _record_error 'Failed to clone profiles repo'
     fi
   else
@@ -580,7 +575,7 @@ main() {
   migrate_git_repo_to_reftable "${DOTFILES_DIR}"
   step_end
 
-  if is_non_zero_string "${KEYBASE_USERNAME}"; then
+  if is_non_zero_string "${KEYBASE_USERNAME:-}"; then
     section_header "$(yellow 'Cloning') '$(cyan 'keybase')' repos"
     # Login into Keybase
     step_start
@@ -640,29 +635,15 @@ main() {
   fi
   step_end
 
-  # Resurrect tracked repos.
+  # Resurrect tracked repos. With shallow cloning (FIRST_INSTALL), large repos
+  # download much faster, making this call non-blocking enough to run in-line.
+  # resurrect_tracked_repos calls allow_all_direnv_configs and install_mise_versions
+  # internally, so no separate calls needed (removing previous duplicate "first pass" pattern).
   _current_section='Resurrect tracked repos'
   if command_exists resurrect_tracked_repos; then
-    # HACKTAG: Can take a long time on FIRST_INSTALL, so running in background to be non-blocking
-    resurrect_tracked_repos &|
+    resurrect_tracked_repos
   else
     _record_error "Skipping resurrecting tracked repos since '$(purple 'resurrect_tracked_repos')' couldn't be found in the PATH; Please run it manually"
-  fi
-
-  # Note: This is also called from within 'resurrect_tracked_repos', but this redundant call at least processes the git repos in the ${HOME}, ${PERSONAL_PROFILES_DIR} and the ${DOTFILES_DIR} folders as a "first pass" while that background job is still running
-  _current_section='Allow all direnv configs'
-  if command_exists allow_all_direnv_configs; then
-    allow_all_direnv_configs
-  else
-    _record_error "Skipping registering all direnv configs since '$(purple 'allow_all_direnv_configs')' couldn't be found in the PATH; Please run it manually"
-  fi
-
-  # Note: This is also called from within 'resurrect_tracked_repos', but this redundant call at least processes the git repos in the ${HOME}, ${PERSONAL_PROFILES_DIR} and the ${DOTFILES_DIR} folders as a "first pass" while that background job is still running
-  _current_section='Install mise versions'
-  if command_exists install_mise_versions; then
-    install_mise_versions
-  else
-    _record_error "Skipping installation of languages since '$(purple 'install_mise_versions')' couldn't be found in the PATH; Please run it manually"
   fi
 
   # To install the latest versions of the hex, rebar and phoenix packages
@@ -682,6 +663,11 @@ main() {
   # then send exactly one notification. Exit code is unchanged (0) -- the summary
   # is informational only.
   print_script_summary "${script_start_time}" '** Finished auto installation process **'
+  # On FIRST_INSTALL, remind user to unshallow repos to get full history.
+  if is_non_zero_string "${FIRST_INSTALL:-}"; then
+    user_action "Repositories were cloned shallow (--depth=1) to save time during the first installation process. Run '$(yellow 'all pull-unshallow')' to pull full history."
+  fi
+
   local _notification_parts=()
   if is_non_empty_array _step_errors; then
     local _errors_summary

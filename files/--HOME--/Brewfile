@@ -33,12 +33,9 @@ cask 'keybase',
 brew 'bash'
 brew 'curl'
 brew 'git'
-brew 'gmp'  # required for ruby installation
 brew 'grep'
 brew 'less'
-brew 'libyaml'  # required for ruby installation
 brew 'openssl'
-brew 'readline'  # required for ruby installation
 brew 'rsync'
 brew 'sqlite3'
 brew 'vim'
@@ -47,7 +44,7 @@ brew 'zsh'
 
 # formulae pulled in for base configs (if these are absent, you will get errors and things won't work)
 brew 'antidote',
-  postinstall: "ruby -e \"\\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'antidote'; Antidote.update_and_regenerate_bundle\""
+  postinstall: "[ -f '${HOME}/.aliases' ] && zsh -c 'source ${HOME}/.aliases && update_antidote_and_regenerate_plugin_bundle' || true"
 brew 'delta'
 brew 'direnv'
 brew 'eza'
@@ -63,7 +60,7 @@ cask 'iterm2'
 
 # FIRST_INSTALL: While re-imaging the OS or setting up for the first time, install only the bare minimum apps/utilities above this line so that the rest of the backup restoration can proceed faster.
 
-tap 'xykong/tap', postinstall: 'brew trust xykong/tap'
+tap 'xykong/tap'
 
 # formulae pulled in for advanced configs (these are optional, but still recommended)
 brew 'bat'
@@ -104,7 +101,7 @@ cask 'zen@twilight'
 cask 'zoom'
 
 # local AI coding tools
-tap 'jundot/omlx', 'git@github.com/jundot/omlx', postinstall: 'brew trust jundot/omlx'
+tap 'jundot/omlx', 'git@github.com/jundot/omlx'
 # Note: Switched to using omlx instead of ollama on Apple M* laptop
 # reference: https://www.agileguy.ca/opencode-fully-local/
 # brew 'ollama', link: true, restart_service: :changed

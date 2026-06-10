@@ -205,6 +205,7 @@ end
 # Resurrects a single repository based on its configuration.
 # This involves cloning if it doesn't exist, verifying the clone, ensuring remotes are
 # correctly configured, fetching all data, and running post-clone commands.
+# On FIRST_INSTALL, clone_repo_into uses --depth=1 automatically (shallow clone).
 #
 # @param repo [Hash] The repository configuration hash. Expected keys include
 #   `folder`, `remote`, `other_remotes` (optional), and `post_clone` (optional).
@@ -227,6 +228,7 @@ def _resurrect_each(repo, idx, total)
   # The remote URL and folder come from a trusted YAML config authored by the user,
   # but we still use `/bin/zsh -lc` explicitly (rather than a bare string passed to
   # capture3) to make the shell invocation unambiguous and to avoid surprises from $SHELL.
+  # clone_repo_into automatically uses --depth=1 (shallow clone) when FIRST_INSTALL is set.
   clone_command = "clone_repo_into #{repo[REMOTE_KEY_NAME].shellescape} #{folder.shellescape}"
   stdout_str, stderr_str, status = Open3.capture3({ 'FORCE_COLOR' => '1' }, '/bin/zsh', '-lc', clone_command)
   print stdout_str
