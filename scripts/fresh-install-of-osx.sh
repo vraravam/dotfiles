@@ -637,7 +637,7 @@ main() {
 
   # Resurrect tracked repos. With shallow cloning (FIRST_INSTALL), large repos
   # download much faster, making this call non-blocking enough to run in-line.
-  # resurrect_tracked_repos calls allow_all_direnv_configs and install_mise_versions
+  # resurrect_tracked_repos calls setup_dev_environment
   # internally, so no separate calls needed (removing previous duplicate "first pass" pattern).
   _current_section='Resurrect tracked repos'
   if command_exists resurrect_tracked_repos; then

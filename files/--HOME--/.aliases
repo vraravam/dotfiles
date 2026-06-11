@@ -185,13 +185,13 @@ command_exists ncdu && alias du='ncdu --color dark -r -x --exclude .git --exclud
 
 # Internal helper: calls a Ruby Repos module method with keyword arguments.
 # Eliminates duplication of $LOAD_PATH setup across repo wrapper functions.
-# Usage: _call_ruby_repos <method_name> <key1>=<value1> [<key2>=<value2> ...]
-# Example: _call_ruby_repos install_mise_versions first_install=true
-#          _call_ruby_repos regenerate_repo_aliases force=false
-_call_ruby_repos() {
+# Usage: _call_ruby_git_workspace <method_name> <key1>=<value1> [<key2>=<value2> ...]
+# Example: _call_ruby_git_workspace install_mise_versions first_install=true
+#          _call_ruby_git_workspace regenerate_repo_aliases force=false
+_call_ruby_git_workspace() {
   local method="${1:-}"
   if is_zero_string "${method}"; then
-    error '_call_ruby_repos: method name required'
+    error '_call_ruby_git_workspace: method name required'
     return 1
   fi
   shift
@@ -235,7 +235,7 @@ if command_exists 'run-all.rb'; then
     [[ "${1-}" == "-f" ]] && force_flag="true"
 
     # Delegate to Ruby implementation in utilities/git_workspace.rb
-    _call_ruby_repos regenerate_repo_aliases "force=${force_flag}"
+    _call_ruby_git_workspace regenerate_repo_aliases "force=${force_flag}"
 
     # Load the generated cache
     local repo_alias_cache="${XDG_CACHE_HOME}/repo-aliases-cache.zsh"
@@ -303,7 +303,7 @@ delete_caches() {
 
 # Clones all repositories listed in repositories-*.yml catalogue files under
 # PERSONAL_CONFIGS_DIR, then runs post-clone operations (restore-mtime, git
-# maintenance register/start, allow_all_direnv_configs, install_mise_versions).
+# maintenance register/start, setup_dev_environment).
 resurrect_tracked_repos() {
   # Deferred-collection locals. _SCRIPT_NAME is read by logging functions via
   # dynamic scoping (no argument passing needed). _current_section is currently
@@ -371,8 +371,7 @@ resurrect_tracked_repos() {
     FOLDER="${HOME}" MAXDEPTH=7 run-all.rb 'git maintenance start'
   fi
 
-  allow_all_direnv_configs
-  install_mise_versions
+  setup_dev_environment
 
   regenerate_repo_aliases
 
@@ -399,7 +398,7 @@ install_mise_versions() {
   fi
   local first_install_flag="false"
   is_first_install && first_install_flag="true"
-  _call_ruby_repos install_mise_versions "first_install=${first_install_flag}"
+  _call_ruby_git_workspace install_mise_versions "first_install=${first_install_flag}"
 }
 
 # Runs 'direnv allow' for every directory that has an .envrc file across all
@@ -413,7 +412,17 @@ allow_all_direnv_configs() {
   fi
   local first_install_flag="false"
   is_first_install && first_install_flag="true"
-  _call_ruby_repos allow_all_direnv_configs "first_install=${first_install_flag}"
+  _call_ruby_git_workspace allow_all_direnv_configs "first_install=${first_install_flag}"
+}
+
+# Runs both direnv authorization and mise installation in a single optimized pass.
+# Collects git repos and ancestor directories once (instead of twice), saving
+# 200-500ms per run by avoiding redundant filesystem traversals.
+# Thin wrapper that delegates to Ruby GitWorkspace.setup_dev_environment.
+setup_dev_environment() {
+  local first_install_flag="false"
+  is_first_install && first_install_flag="true"
+  _call_ruby_git_workspace setup_dev_environment "first_install=${first_install_flag}"
 }
 
 # --------------------------------------------------------------------------

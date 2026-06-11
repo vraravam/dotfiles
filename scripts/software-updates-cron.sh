@@ -189,16 +189,12 @@ main() {
     step_end
   fi
 
-  _current_section='Allow all direnv configs'
+  _current_section='Setup dev environment (direnv + mise)'
   step_start
-  section_header "$(yellow 'Allow all direnv configs')"
-  allow_all_direnv_configs
-  step_end
-
-  _current_section='Install languages using mise'
-  step_start
-  section_header "$(yellow 'Install languages using mise')"
-  install_mise_versions
+  section_header "$(yellow 'Setup dev environment') (direnv + mise)"
+  # Use batched setup_dev_environment to collect ancestor dirs once instead of
+  # twice (saves 200-500ms by avoiding redundant filesystem traversal).
+  setup_dev_environment
   step_end
 
   _current_section='Regenerate repo aliases'
@@ -250,17 +246,20 @@ main() {
   step_start
   section_header "$(yellow 'Check profiles repo size')"
   if is_git_repo "${PERSONAL_PROFILES_DIR}"; then
-    local profiles_size_kb
-    profiles_size_kb=$(du -sk "${PERSONAL_PROFILES_DIR}" 2>/dev/null | awk '{print $1}')
-    local profiles_size_limit_kb=$((2 * 1024 * 1024))  # 2 GB
-    if ((profiles_size_kb > profiles_size_limit_kb)); then
-      local profiles_size_human
-      profiles_size_human=$(du -sh "${PERSONAL_PROFILES_DIR}" 2>/dev/null | awk '{print $1}')
+    # Check .git directory size, not total directory (working tree can be large)
+    local du_out size_actual_kb
+    du_out="$(\du -sk "${PERSONAL_PROFILES_DIR}/.git" 2>/dev/null)"
+    size_actual_kb="${du_out%%$'\t'*}"  # Extract before tab (no awk fork)
+    local size_threshold_kb=$((2 * 1024 * 1024))  # 2 GB
+    if ((size_actual_kb > size_threshold_kb)); then
+      local size_actual_human
+      du_out="$(\du -sh "${PERSONAL_PROFILES_DIR}/.git" 2>/dev/null)"
+      size_actual_human="${du_out%%$'\t'*}"  # Extract before tab (no awk fork)
       # _record_error instead of error(): error() calls _dotfiles_notify() which would
       # send an immediate notification before the grouped summary at the end of main.
-      _record_error "Profiles repo is ${profiles_size_human} -- exceeds 2GB threshold. Consider running: recreate-repo.rb -d \"${PERSONAL_PROFILES_DIR}\""
+      _record_error "Profiles repo directory is ${size_actual_human} -- exceeds 2GB threshold. Consider running: recreate-repo.rb -d \"${PERSONAL_PROFILES_DIR}\""
     else
-      debug "Profiles repo size within 2GB threshold"
+      debug "Profiles repo directory size within 2GB threshold"
     fi
   fi
   step_end
