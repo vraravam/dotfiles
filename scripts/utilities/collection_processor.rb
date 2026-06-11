@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'set'
+
 require_relative 'logging'
 
 # Generic framework for processing collections of items (paths, hashes, objects)
@@ -49,29 +51,29 @@ module CollectionProcessor
   #
   # @example Find git repo roots (parents of .git dirs)
   #   repo_roots = CollectionProcessor.find_directories_matching(
-  #     folders: '/Users/me/projects',
+  #     dirs: '/Users/me/projects',
   #     name_pattern: '.git',
   #     transform_result: ->(git_dir) { File.dirname(git_dir) }
   #   )
   #
   # @example With pruning and filtering
   #   repos = CollectionProcessor.find_directories_matching(
-  #     folders: ['/Users/me/work', '/Users/me/oss'],
+  #     dirs: ['/Users/me/work', '/Users/me/oss'],
   #     name_pattern: '.git',
   #     prune_dirs: %w[node_modules .cache],
   #     filter: /my-project/,
   #     maxdepth: 4
   #   )
-  def find_directories_matching(folders:, name_pattern:, mindepth: 1, maxdepth: 6, filter: nil, prune_dirs: [], skip_symlinks: true, transform_result: nil)
+  def find_directories_matching(dirs:, name_pattern:, mindepth: 1, maxdepth: 6, filter: nil, prune_dirs: [], skip_symlinks: true, transform_result: nil)
     # Convert Pathname objects to strings, rejecting nil and empty strings
-    folders = Array(folders).compact.map(&:to_s).reject { |f| f.empty? }
+    dirs = Array(dirs).compact.map(&:to_s).reject { |f| f.empty? }
     prune = Array(prune_dirs)
 
     # Build prune expression: ( -name dir1 -o -name dir2 ... ) -prune -o
     prune_expr = prune.empty? ? [] : ['('] + prune.flat_map { |d| ['-o', '-name', d] }.drop(1) + [')', '-prune', '-o']
 
     find_cmd = [
-      'find', *folders,
+      'find', *dirs,
       '-mindepth', mindepth.to_s,
       '-maxdepth', maxdepth.to_s,
       *prune_expr,
@@ -80,7 +82,8 @@ module CollectionProcessor
       '-print'
     ]
 
-    seen = {}
+    # Use Set for O(1) membership checks instead of Hash (more semantically correct and memory efficient)
+    seen = Set.new
     results = []
     filter_re = filter.is_a?(Regexp) ? filter : (filter ? Regexp.new(filter) : nil)
 
@@ -92,9 +95,9 @@ module CollectionProcessor
 
         # Apply transform if provided (e.g., get parent directory)
         final_path = transform_result ? transform_result.call(path) : path
-        next if seen[final_path]
+        next if seen.include?(final_path)
 
-        seen[final_path] = true
+        seen.add(final_path)
         results << final_path
       end
     end
@@ -212,11 +215,17 @@ module CollectionProcessor
         if result
           successful << item_name
         else
+          # Caller should handle its own warning/error logging before returning false.
+          # run-all.rb always returns true and logs via record_warning before returning.
+          # resurrect-repositories.rb returns false for fatal failures (logs via record_error).
+          # Provide a fallback warning in case a future caller returns false without logging.
           failed << item_name
-          Logging.record_error("Processing failed for '#{item_name.cyan}'")
+          Logging.record_warning("Processing failed for '#{item_name.cyan}'")
         end
       rescue StandardError => e
         failed << item_name
+        # Exceptions are unexpected script errors (missing method, nil reference, etc.)
+        # Record as error with context. Callers should not rescue StandardError.
         Logging.record_error("Exception processing '#{item_name.cyan}': #{e.message}")
       end
     end

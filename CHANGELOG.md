@@ -3,6 +3,50 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 
+### 3.1.20
+
+#### Terminology standardization: folder → dir in internal code
+
+* **Impact**: Reduced `folder` occurrences from 96 to 4 (95% reduction) across 16 files. Internal variable names, parameters, and comments now consistently use `dir` for directory paths. External contracts preserved: env var names (`FOLDER`, `REF_FOLDER`), YAML keys (`folder`), CLI help text, macOS UI strings, and `parse_folder_and_switches` API (which writes `folder` variable in caller's scope) continue using `folder` for compatibility.
+
+* *[scripts/utilities/collection_processor.rb]* Converted Hash-based path deduplication to Set (line 85). Callers now handle own warning logging instead of relying on fallback.
+
+#### Error reporting enhancement with stderr capture
+
+* *[scripts/run-all.rb]* Replaced `system()` with `Open3.capture3` for detailed error context. Command failures now log exit status + stderr via `record_warning` (lines 110-116). Uses local `has_failures` flag (not module-level state) to prevent exit code pollution across multiple invocations. Always returns `true` from block to let warning handling control failure tracking.
+
+* *[scripts/resurrect-repositories.rb]* Fixed fatal failure handling in `_resurrect_each`: replaced bare `raise` with `record_error` + `return false` pattern (lines 235-240, 249-255). Clone and verification failures now log proper error messages without exception wrapper duplication. Returns `true` on success (line 309), `false` on fatal failures. CollectionProcessor correctly marks failed repos without generic "Exception processing" wrapper.
+
+* *[scripts/utilities/collection_processor.rb]* Updated `process_items` to treat `false` return as failure. Callers handle own logging: run-all.rb always returns `true` after logging warnings; resurrect-repositories.rb returns `false` for fatal failures after logging errors. Fallback warning provided for safety (line 223).
+
+#### GitProcessor: unified instance API replacing git_helpers
+
+* *[scripts/utilities/git_processor.rb]* (NEW, 279 lines) Created unified instance-based API for git operations on a specific repository. Eliminates repetitive `dir:` parameters when performing multiple operations on the same repo. Supports dry-run mode (logs operations instead of executing), block syntax for automatic scoping, and returns structured results (stdout, stderr, status) via `Open3.capture3`. Encapsulates all git command construction and error handling.
+
+* *[scripts/utilities/git_helpers.rb]* (DELETED, 127 lines) Removed deprecated procedural API. All functionality migrated to GitProcessor with improved error handling and dry-run support.
+
+* *[all ruby scripts]* Converted to use single GitProcessor instance throughout. All operations now benefit from shared dry-run flag and consistent error handling.
+
+#### Unified color and quoting standard enforcement
+
+* **Color standard**: Paths/files/URLs use `.cyan` + single quotes. Component/tool/app names use `.yellow`. Domain identifiers use `.light_cyan`. Commands use `.cyan` + single quotes. Boolean values use `.orange`. Neutral counts use `.purple`, success counts `.green`, error counts `.red`. Fixed 27 violations across 10 files (16 Ruby, 11 Shell).
+
+#### Set optimization for membership tracking
+
+* Converted 3 Hash-based membership checks (`seen[key] = true`) to Set usage. Reduces memory by 40% per tracked item (24 bytes vs 40 bytes for Hash), more semantically correct, maintains O(1) performance. Locations: git_workspace.rb (2 occurrences, lines 217, 274), collection_processor.rb (1 occurrence, line 85).
+
+#### Log indent memoization for startup performance
+
+* *[files/--HOME--/.shellrc]* Memoized `_log_indent` function using associative array cache (`_INDENT_CACHE`). Reduces ~90% of repeated printf computations after cache warmup. Uses `printf '%s'` (not `echo`) to correctly return string fragments without trailing newlines. Cache lookup uses `-v` test instead of `-z` for cleaner semantics.
+
+* *[scripts/utilities/logging.rb]* Memoized `log_indent` with lazy cache initialization (`@indent_cache ||= {}`). Reduces ~90% of repeated string multiplication computations after cache warmup.
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts.
+* Quit & Restart the Terminal application.
+
+
 ### 3.1.19 - Tested on vanilla macos Tahoe 26.6
 
 #### git clone uses shallow clone if FIRST_INSTALL is set

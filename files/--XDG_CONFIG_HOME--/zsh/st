@@ -11,9 +11,9 @@ _st() {
   local folder
   local -a switches
   parse_folder_and_switches "$@"
-  section_header2 "$(yellow 'Checking') $(purple "${folder}")"
+  section_header2 "$(yellow 'Status') '$(cyan "${folder}")'"
   if ! is_git_repo "${folder}"; then
-    warn "Skipping finding status of the repo since '$(yellow "${folder}")' doesn't exist or is not a git repo"
+    warn "Skipping status of the repo since '$(cyan "${folder}")' doesn't exist or is not a git repo"
   else
     git -C "${folder}" st "${switches[@]}" || true
   fi
@@ -23,7 +23,7 @@ st() {
   # Guard against race condition when .aliases is deferred via zsh-defer: if
   # dispatch_or_fallback doesn't exist yet (multiple tabs opening simultaneously),
   # load .aliases synchronously now. The re-source guard in .aliases makes this safe.
-  if ! (( $+functions[dispatch_or_fallback] )); then
+  if ! (($+functions[dispatch_or_fallback])); then
     source "${HOME}/.aliases"
   fi
   dispatch_or_fallback st _st "$@"

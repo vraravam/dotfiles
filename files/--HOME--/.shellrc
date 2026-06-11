@@ -50,6 +50,12 @@ export XDG_STATE_HOME="${XDG_STATE_HOME:-"${HOME}/.local/state"}"
 # Guard with ZSH_VERSION: direnv evaluates .shellrc in bash, which has no zmodload.
 [[ -n "${ZSH_VERSION-}" ]] && zmodload zsh/datetime
 
+# Memoization cache for _log_indent: associative array depth → indent string.
+# Avoids repeated printf calls for the same depth. Zsh associative arrays are
+# only available in zsh; bash compatibility is not required (bash never calls
+# _log_indent since logging functions are zsh-only).
+typeset -A _INDENT_CACHE
+
 # Note: Change these as per your settings. Removing or commenting out a variable
 # will leave it unset in all shells started after the next login, which will cause
 # any alias, script, or operation that depends on it to be silently skipped.
@@ -364,8 +370,13 @@ _should_suppress_log() {
 
 # Returns the depth-based indent string (2 spaces per depth level).
 # Used by all logging functions to auto-indent output based on script nesting.
+# Memoized to avoid repeated printf calls for the same depth.
 _log_indent() {
-  printf '%*s' $((${_DOTFILES_SCRIPT_DEPTH:-0} * 2)) ''
+  local depth="${_DOTFILES_SCRIPT_DEPTH:-0}"
+  if [[ ! -v "_INDENT_CACHE[${depth}]" ]]; then
+    _INDENT_CACHE[${depth}]="$(printf '%*s' $((depth * 2)) '')"
+  fi
+  printf '%s' "${_INDENT_CACHE[${depth}]}"
 }
 
 success() {
@@ -1027,7 +1038,11 @@ keep_sudo_alive() {
   step_start
   section_header2 "$(yellow 'Keeping sudo alive till this script has finished')"
   sudo -v
-  while true; do has_sudo_credentials; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+  while true; do
+                 has_sudo_credentials
+                                       sleep 60
+                                                 kill -0 "$$" || exit
+  done                                                                      2>/dev/null &
   export KEEP_SUDO_ALIVE_PID=$!
   step_end
 }

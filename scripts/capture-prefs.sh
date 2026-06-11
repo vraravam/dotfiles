@@ -236,21 +236,21 @@ main() {
   # Define the location of the domains list
   local domains_file="${DOTFILES_DIR}/scripts/data/capture-prefs-allowed-list.txt"
   if ! is_file "${domains_file}"; then
-    _record_error "Domains list file not found: ${domains_file}"
+    _record_error "Domains list file not found: '$(cyan "${domains_file}")'"
     print_script_summary
     return 1
   fi
 
   local denied_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-denied-list.txt"
   if ! is_file "${denied_list_file}"; then
-    _record_error "Denied list file not found: ${denied_list_file}"
+    _record_error "Denied list file not found: '$(cyan "${denied_list_file}")'"
     print_script_summary
     return 1
   fi
 
   local excluded_keys_file="${DOTFILES_DIR}/scripts/data/capture-prefs-excluded-keys.txt"
   if ! is_file "${excluded_keys_file}"; then
-    _record_error "Excluded keys file not found: ${excluded_keys_file}"
+    _record_error "Excluded keys file not found: '$(cyan "${excluded_keys_file}")'"
     print_script_summary
     return 1
   fi
@@ -305,7 +305,7 @@ main() {
     return 0
   fi
 
-  info "Running operation: $(green "${operation}")"
+  info "Running operation: '$(yellow "${operation}")'"
   local app_pref
   for app_pref in "${app_array[@]}"; do
     # Defensive guard: skip empty domain names (would produce a stale .plist file)
@@ -339,7 +339,7 @@ main() {
           (( _saved_count += 1 )) || true
         fi
       else
-        _record_warning "Failed to export '${app_pref}'"
+        _record_warning "Failed to export '$(light_cyan "${app_pref}")'"
       fi
     else
       # Skip domains for which no exported plist exists -- the app may not have
@@ -363,7 +363,7 @@ main() {
   # Run this *after* the loop finishes exporting all files.
   if [[ "${operation}" == 'export' ]]; then
     # Explicitly specify the git repo in the home folder, so that this script can be run from any folder
-    git -C "${HOME}" add "${target_dir}" || _record_warning "Failed to git add '${target_dir}'"
+    git -C "${HOME}" add "${target_dir}" || _record_warning "Failed to git add '$(cyan "${target_dir}")'"
     success "Export complete. Staged changes in '$(cyan "${target_dir}")'."
   else
     # Reload system services so imported preferences take effect immediately

@@ -74,31 +74,31 @@ def _format_size(kb)
   end
 end
 
-# Returns folder size in kilobytes.
-# @param folder [Pathname, String] The folder to measure
+# Returns dir size in kilobytes.
+# @param dir [Pathname, String] The dir to measure
 # @return [Integer] Size in KB
-def _folder_size(folder)
-  du_out, = Open3.capture3('du', '-sk', folder.to_s)
+def _dir_size(dir)
+  du_out, = Open3.capture3('du', '-sk', dir.to_s)
   du_out.split("\t").first.to_i
 end
 
-# Returns true if the profile should be skipped (browser running or folder missing).
-def _should_skip_profile?(browser_name, profile_folder)
+# Returns true if the profile should be skipped (browser running or dir missing).
+def _should_skip_profile?(browser_name, profile_dir)
   if _browser_running?(browser_name)
-    user_action "Shutdown '#{browser_name.purple}' first -- skipping processing for '#{browser_name.purple}'"
+    user_action "Shutdown '#{browser_name.yellow}' first -- skipping processing for '#{browser_name.yellow}'"
     return true
   end
 
-  unless profile_folder.directory?
-    info "Skipping '#{profile_folder.to_s.cyan}' -- directory does not exist"
+  unless profile_dir.directory?
+    info "Skipping '#{profile_dir.to_s.cyan}' -- directory does not exist"
     return true
   end
 
   false
 end
 
-# Vacuums all SQLite databases in the profile folder larger than 10MB.
-def _vacuum_sqlite_databases(profile_folder, dry_run)
+# Vacuums all SQLite databases in the profile dir larger than 10MB.
+def _vacuum_sqlite_databases(profile_dir, dry_run)
   return unless PathUtils.command_exists?('sqlite3')
 
   min_db_size = _mb_to_bytes(10)
@@ -106,7 +106,7 @@ def _vacuum_sqlite_databases(profile_folder, dry_run)
   vacuumed = 0
   failed_dbs = []
 
-  PathUtils.glob_pathnames(profile_folder.join('**', '*.sqlite')) do |db_file|
+  PathUtils.glob_pathnames(profile_dir.join('**', '*.sqlite')) do |db_file|
     db_count += 1
     db_size = db_file.size rescue 0
     next if db_size <= min_db_size
@@ -119,7 +119,7 @@ def _vacuum_sqlite_databases(profile_folder, dry_run)
       if system('sqlite3', db_file.to_s, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;', out: File::NULL, err: File::NULL)
         vacuumed += 1
       else
-        failed_dbs << db_file.to_s
+        failed_dbs << db_file
       end
     end
   end
@@ -127,25 +127,25 @@ def _vacuum_sqlite_databases(profile_folder, dry_run)
   info "-> Processed #{vacuumed.to_s.purple} of #{db_count.to_s.purple} SQLite databases"
   if failed_dbs.any?
     # Apply red color to each path, then format as bulleted list
-    colored_paths = failed_dbs.map { |f| "'#{f.red}'" }
+    colored_paths = failed_dbs.map { |f| "'#{f.to_s.red}'" }
     record_warning("sqlite3 vacuum failed for #{failed_dbs.size.to_s.red} database(s):\n#{join_array(colored_paths)}")
   end
 end
 
 # Finds and deletes files and directories matching cleanup patterns.
-def _delete_items(profile_folder, file_patterns, dir_patterns, dry_run)
+def _delete_items(profile_dir, file_patterns, dir_patterns, dry_run)
   # Find all items to delete
   items_to_delete = []
 
   unless file_patterns.empty?
     file_patterns.each do |pattern|
-      items_to_delete.concat(Dir.glob(profile_folder.join('**', pattern), File::FNM_CASEFOLD))
+      items_to_delete.concat(Dir.glob(profile_dir.join('**', pattern), File::FNM_CASEFOLD))
     end
   end
 
   unless dir_patterns.empty?
     dir_patterns.each do |pattern|
-      PathUtils.glob_pathnames(profile_folder.join('**', pattern), File::FNM_CASEFOLD) do |path_pn|
+      PathUtils.glob_pathnames(profile_dir.join('**', pattern), File::FNM_CASEFOLD) do |path_pn|
         items_to_delete << path_pn.to_s if path_pn.directory?
       end
     end
@@ -180,44 +180,44 @@ def _delete_items(profile_folder, file_patterns, dir_patterns, dry_run)
 end
 
 private :_read_pattern_file, :_browser_running?, :_kb_to_bytes, :_mb_to_bytes, :_bytes_to_mb,
-        :_format_size, :_folder_size, :_should_skip_profile?, :_vacuum_sqlite_databases, :_delete_items
+        :_format_size, :_dir_size, :_should_skip_profile?, :_vacuum_sqlite_databases, :_delete_items
 
 # Vacuums SQLite databases larger than 10 MB and deletes known cache/session
-# files from +profile_folder+. Skips if the browser process is running.
+# files from +profile_dir+. Skips if the browser process is running.
 #
 # @param browser_name   [String] Process name used for the pgrep check.
-# @param profile_folder [Pathname, String] Root of the browser profile directory.
+# @param profile_dir [Pathname, String] Root of the browser profile directory.
 # @param dry_run        [Boolean] When true, reports actions without performing them.
-def vacuum_browser_profile_folder(browser_name, profile_folder, dry_run:)
-  profile_folder = Pathname.new(profile_folder) unless profile_folder.is_a?(Pathname)
+def vacuum_browser_profile_dir(browser_name, profile_dir, dry_run:)
+  profile_dir = Pathname.new(profile_dir) unless profile_dir.is_a?(Pathname)
   file_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-files.txt'))
   dir_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-dirs.txt'))
 
-  return if _should_skip_profile?(browser_name, profile_folder)
+  return if _should_skip_profile?(browser_name, profile_dir)
 
-  section_header "#{'Vacuuming'.yellow} '#{browser_name.purple}' in '#{profile_folder.to_s.cyan}'..."
+  section_header "#{'Vacuuming'.yellow} '#{browser_name.yellow}' in '#{profile_dir.to_s.cyan}'..."
 
   # Measure size before cleanup (only for actual runs)
   size_before_kb = 0
   unless dry_run
-    size_before_kb = _folder_size(profile_folder)
-    info "--> Size before: '#{profile_folder.to_s.cyan}' --> #{_format_size(size_before_kb)}"
+    size_before_kb = _dir_size(profile_dir)
+    info "--> Size before: '#{profile_dir.to_s.cyan}' --> #{_format_size(size_before_kb)}"
   end
 
   # Vacuum SQLite databases
-  _vacuum_sqlite_databases(profile_folder, dry_run)
+  _vacuum_sqlite_databases(profile_dir, dry_run)
 
   # Find and delete files/directories matching cleanup patterns
-  _delete_items(profile_folder, file_patterns, dir_patterns, dry_run)
+  _delete_items(profile_dir, file_patterns, dir_patterns, dry_run)
 
   # Report space savings (only for actual runs)
   unless dry_run
-    size_after_kb = _folder_size(profile_folder)
-    info "--> Size after: '#{profile_folder.to_s.cyan}' --> #{_format_size(size_after_kb)}"
+    size_after_kb = _dir_size(profile_dir)
+    info "--> Size after: '#{profile_dir.to_s.cyan}' --> #{_format_size(size_after_kb)}"
     info "-> Space saved: #{_format_size(size_before_kb - size_after_kb)}"
   end
 
-  success "Successfully processed profile folder for '#{browser_name.purple}'"
+  success "Successfully processed profile dir for '#{browser_name.yellow}'"
 end
 
 # ---------------------------------------------------------------------------
@@ -247,8 +247,8 @@ browser_profiles = {
   'zen' => EnvVars::PERSONAL_PROFILES_DIR.join('ZenProfile')
 }
 
-browser_profiles.each do |browser_name, profile_folder|
-  vacuum_browser_profile_folder(browser_name, profile_folder, dry_run: options[:dry_run])
+browser_profiles.each do |browser_name, profile_dir|
+  vacuum_browser_profile_dir(browser_name, profile_dir, dry_run: options[:dry_run])
 end
 
 print_script_summary(start_time, 'Finished cleaning up browser profiles')

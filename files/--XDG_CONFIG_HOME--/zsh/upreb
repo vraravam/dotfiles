@@ -7,16 +7,16 @@
 # Re-source guard is inside .shellrc itself -- safe to call unconditionally.
 source "${HOME}/.shellrc"
 
-# Rebases all locally checked-out branches of the specified folder against their upstream,
-# then pushes each branch. Defaults to the current directory if no folder is specified.
+# Rebases all locally checked-out branches of the specified dir against their upstream,
+# then pushes each branch. Defaults to the current directory if no dir is specified.
 _upreb() {
-  local folder="${1:-${PWD}}"
-  section_header2 "$(yellow 'Upreb-ing') $(purple "${folder}")"
+  local dir="${1:-${PWD}}"
+  section_header2 "$(yellow 'Upreb-ing') $(purple "${dir}")"
 
   local current_branch
-  current_branch="$(git -C "${folder}" br)"
+  current_branch="$(git -C "${dir}" br)"
   info "current branch: $(yellow "${current_branch}")"
-  local local_branches=("${(@f)$(git -C "${folder}" branch --format='%(refname:short)')}")
+  local local_branches=("${(@f)$(git -C "${dir}" branch --format='%(refname:short)')}")
   if is_non_empty_array local_branches; then
     # remove the current_branch from the list of branches
     local_branches=("${(@)local_branches:#${current_branch}}")
@@ -26,20 +26,20 @@ _upreb() {
     local branch
     for branch in "${local_branches[@]}"; do
       debug "processing: $(yellow "${branch}")"
-      git -C "${folder}" switch "${branch}"
-      git -C "${folder}" upreb || true
+      git -C "${dir}" switch "${branch}"
+      git -C "${dir}" upreb || true
       # If incoming and outgoing commit counts are identical AND git diff @{u}
       # produces no diffs, the branch has diverged symmetrically with no content
       # difference (e.g. remote was force-pushed/rebased). Safe to rebase silently.
       local incoming outgoing
-      incoming="$(git -C "${folder}" rev-list HEAD..@{u} --count 2>/dev/null || echo 0)"
-      outgoing="$(git -C "${folder}" rev-list @{u}..HEAD --count 2>/dev/null || echo 0)"
+      incoming="$(git -C "${dir}" rev-list HEAD..@{u} --count 2>/dev/null || echo 0)"
+      outgoing="$(git -C "${dir}" rev-list @{u}..HEAD --count 2>/dev/null || echo 0)"
       if [[ "${incoming}" -gt 0 && "${incoming}" -eq "${outgoing}" ]] &&
-        git -C "${folder}" diff @{u} --quiet 2>/dev/null; then
+        git -C "${dir}" diff @{u} --quiet 2>/dev/null; then
         info "Symmetric diverge with no content diff -- rebasing $(yellow "${branch}") onto @{u}"
-        git -C "${folder}" rebase @{u} || true
+        git -C "${dir}" rebase @{u} || true
       fi
-      git -C "${folder}" push || true
+      git -C "${dir}" push || true
       echo "$(red "$(print_chars_for_length '-' $COLUMNS)")"
     done
   fi
@@ -49,7 +49,7 @@ upreb() {
   # Guard against race condition when .aliases is deferred via zsh-defer: if
   # dispatch_or_fallback doesn't exist yet (multiple tabs opening simultaneously),
   # load .aliases synchronously now. The re-source guard in .aliases makes this safe.
-  if ! (( $+functions[dispatch_or_fallback] )); then
+  if ! (($+functions[dispatch_or_fallback])); then
     source "${HOME}/.aliases"
   fi
   dispatch_or_fallback upreb _upreb "$@"

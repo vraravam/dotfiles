@@ -9,7 +9,7 @@ source "${HOME}/.shellrc"
 # Note: load_file_if_exists is intentionally NOT used -- st is required, not optional.
 source "${XDG_CONFIG_HOME}/zsh/st"
 
-# Reports status of the following repos: HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, ZenProfile chrome folder
+# Reports status of the following repos: HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, ZenProfile chrome dir
 status_all_repos() {
   st "${HOME}"
   st "${DOTFILES_DIR}"
@@ -17,11 +17,11 @@ status_all_repos() {
   # Use zsh glob qualifiers to only loop if matches exist and are directories
   # (N) nullglob: if no match, the pattern expands to nothing
   # (/): only match directories
-  local chrome_folders=("${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome(N/))
-  if is_non_empty_array chrome_folders; then
-    local folder
-    for folder in "${chrome_folders[@]}"; do
-      st "${folder}"
+  local chrome_dirs=("${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome(N/))
+  if is_non_empty_array chrome_dirs; then
+    local dir
+    for dir in "${chrome_dirs[@]}"; do
+      st "${dir}"
     done
   fi
 }

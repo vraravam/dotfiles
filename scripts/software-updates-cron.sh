@@ -27,14 +27,14 @@ _perform_update() {
     step_start
     section_header "$(yellow 'Updating') $(purple "${title}")"
     if eval "${update_cmd}"; then
-      success "Successfully updated: '${title}'"
+      success "Successfully updated: '$(yellow "${title}")'"
     else
       # Tool update failures are warnings -- the tool is still usable; only the upgrade failed.
-      _record_warning "Failed to update '${title}'"
+      _record_warning "Failed to update '$(yellow "${title}")'"
     fi
     step_end
   else
-    debug "Command not found: '${check_cmd}'"
+    debug "Command not found: '$(cyan "${check_cmd}")'"
   fi
 }
 
@@ -68,13 +68,13 @@ main() {
   local script_start_time
   script_start_time="${EPOCHSECONDS}"
   _script_start_times+=("${script_start_time}")
-  local tracked_file f folder outdated_flat=''
+  local tracked_file f outdated_flat=''
   print_script_start
 
   # brew doctor is skipped -- too slow for cron jobs
   _perform_update 'brews' 'brew' 'brew bundle check || brew bundle'
 
-  # This is typically run only in the ${HOME} folder so as to upgrade the software versions in the "global" sense
+  # This is typically run only in the ${HOME} dir so as to upgrade the software versions in the "global" sense
   _perform_update 'mise plugins' 'mise' 'mise plugins update && mise upgrade --bump' # && mise prune --tools --dry-run'
 
   _perform_update 'tldr database' 'tldr' 'tldr --update'
@@ -155,9 +155,9 @@ main() {
   success 'Finished independent updates.'
 
   if command_exists run-all.rb; then
-    _current_section='Update repos in home folder'
+    _current_section='Update repos in home dir'
     step_start
-    section_header "$(yellow 'Update non-keybase repos in home folder')"
+    section_header "$(yellow 'Update non-keybase repos in home dir')"
     # Aliases ('home', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'home pull' alias.
     # run-all.rb records a warning (not an error) per failing repo: a dirty skip is
@@ -167,9 +167,9 @@ main() {
 
     sleep 10 # so that GH doesn't throttle when we call a lot of times within a short time
 
-    _current_section='Upreb repos in oss folder'
+    _current_section='Upreb repos in oss dir'
     step_start
-    section_header "$(yellow 'Upreb repos in oss folder')"
+    section_header "$(yellow 'Upreb repos in oss dir')"
     # Aliases ('oss', 'rug') are not expanded in non-interactive shells (e.g. cron).
     # Use the equivalent direct invocation instead of the 'oss upreb' alias.
     # 'git upreb' now aborts early if the working tree is dirty rather than failing mid-workflow
@@ -235,7 +235,7 @@ main() {
 
     if is_non_empty_array old_backups; then
       for f in "${old_backups[@]}"; do
-        git -C "${PERSONAL_PROFILES_DIR}" rm --cached -q -- "${f}" && debug "Unpinned old session backup: $(yellow "${f}")"
+        git -C "${PERSONAL_PROFILES_DIR}" rm --cached -q -- "${f}" && debug "Unpinned old session backup: '$(cyan "${f}")'"
       done
       success "Pruned ${#old_backups[@]} session backup file(s) older than 7 days"
     else
@@ -287,28 +287,28 @@ main() {
   status_all_repos || true
   step_end
 
-  _current_section='Update chrome folders'
+  _current_section='Update chrome dirs'
   step_start
-  section_header "$(yellow 'Updating all browser profile chrome folders if they are git repos')"
+  section_header "$(yellow 'Updating all browser profile chrome dirs if they are git repos')"
   # Inline (N/) glob qualifiers break editor syntax highlighting (parsed as function calls).
   # Use localoptions NULL_GLOB in an anonymous function so unmatched globs expand to
   # nothing instead of erroring. The trailing / restricts matches to directories.
-  local -a chrome_folders
+  local -a chrome_dirs
   () {
     setopt localoptions NULL_GLOB
-    chrome_folders=("${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome/)
+    chrome_dirs=("${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome/)
   }
-  if is_non_empty_array chrome_folders; then
-    for folder in "${chrome_folders[@]}"; do
-      if is_git_repo "${folder}"; then
-        section_header2 "$(yellow 'Updating chrome folder:') $(cyan "${folder}")"
-        # Chrome folder update failures are warnings -- CSS customisation is non-critical.
-        git -C "${folder}" pull -r && success "Successfully updated: '$(cyan "${folder}")'" || _record_warning "Failed to update chrome folder: '${folder}'"
+  if is_non_empty_array chrome_dirs; then
+    for dir in "${chrome_dirs[@]}"; do
+      if is_git_repo "${dir}"; then
+        section_header2 "$(yellow 'Updating chrome dir:') $(cyan "${dir}")"
+        # Chrome dir update failures are warnings -- CSS customisation is non-critical.
+        git -C "${dir}" pull -r && success "Successfully updated: '$(cyan "${dir}")'" || _record_warning "Failed to update chrome dir: '$(cyan "${dir}")'"
       else
-        debug "skipping update for non-repo: '$(yellow "${folder}")'"
+        debug "skipping update for non-repo: '$(yellow "${dir}")'"
       fi
     done
-    success 'Finished updating chrome folders'
+    success 'Finished updating chrome dirs'
   fi
   step_end
 
@@ -324,7 +324,7 @@ main() {
     # warn (not _record_warning): outdated software is an advisory notice, not a step failure.
     # It is surfaced in the final notification separately via outdated_flat.
     if is_non_zero_string "${outdated}"; then
-      warn "Found some outdated softwares that need manual updating: $(purple "${outdated}")"
+      warn "Found some outdated softwares that need manual updating: '$(yellow "${outdated}")'"
       # Replace newlines with ', ' -- osascript notification cannot span multiple lines.
       # Stored in main-scoped outdated_flat so the final summary notification can include it.
       outdated_flat="${outdated//$'\n'/, }"
@@ -353,7 +353,7 @@ main() {
     )
     local model
     for model in "${ollama_models[@]}"; do
-      ollama pull "${model}" && success "Pulled model: '${model}'" || _record_warning "Failed to pull model: '${model}'"
+      ollama pull "${model}" && success "Pulled model: '$(yellow "${model}")'" || _record_warning "Failed to pull model: '$(yellow "${model}")'"
     done
     step_end
   else

@@ -51,8 +51,11 @@ module Logging
 
   # Returns the depth-based indent string (2 spaces per depth level).
   # Used by all logging functions to auto-indent output based on script nesting.
+  # Memoized to avoid repeated string multiplication for the same depth.
   def log_indent
-    '  ' * ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+    @indent_cache ||= {}
+    depth = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+    @indent_cache[depth] ||= '  ' * depth
   end
 
   def success(message)

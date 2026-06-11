@@ -2,14 +2,14 @@
 
 # frozen_string_literal: true
 
-# This script is used to install the dotfiles from this repo/folder structure to the user's home folder
+# This script is used to install the dotfiles from this repo/dir structure to the user's home dir
 # It can be invoked from any location as long as its in the PATH (and you don't need to specify the fully qualified name while invoking it).
 # It can handle nested files.
 # If there is already a real file (not a symbolic link), then the script will move that file into this repo, and then create the corresponding symlink. This helps preserve the current settings from the user without forcefully overriding from my repo.
 # Special handling (copy instead of symlink) for 'custom.git*' files (.gitignore, .gitattributes, etc.):
 #   - On FIRST_INSTALL (FIRST_INSTALL env var is set): target always wins -- moved into repo, then repo is copied back.
 #   - Otherwise: mtime determines the winner. Target newer → moved into repo. Source newer or same age → target overwritten.
-# To run it, just invoke by `install-dotfiles.rb` if this folder is already setup in the PATH
+# To run it, just invoke by `install-dotfiles.rb` if this dir is already setup in the PATH
 
 # It assumes the following:
 #   1. Ruby language is present in the system prior to this script being run.
@@ -42,7 +42,7 @@ IGNORED_FILE_PATTERNS = [/\.zwc/].freeze # File patterns to ignore (matches anyw
 # Parse command-line options
 options = { dry_run: false, verbose: false, force: false }
 CliParser.parse('[options]') do |opts|
-  opts.separator 'Installs dotfiles from this repo into the home folder by creating symlinks (or copying for custom.git* files).'
+  opts.separator 'Installs dotfiles from this repo into the home dir by creating symlinks (or copying for custom.git* files).'
   opts.separator 'For non-custom-git files: if a real file already exists at the target it is moved into the repo first, then symlinked.'
   opts.separator 'For custom.git* files: on FIRST_INSTALL the target always wins; otherwise mtime determines which version is authoritative.'
   opts.separator ''
@@ -160,24 +160,24 @@ end
 #
 # @return [void]
 def _ensure_ssh_include_line
-  ssh_folder = EnvVars::HOME.join('.ssh').expand_path.freeze
-  global_config_link = ssh_folder.join('global_config')
+  ssh_dir = EnvVars::HOME.join('.ssh').expand_path.freeze
+  global_config_link = ssh_dir.join('global_config')
 
   unless global_config_link.exist? && global_config_link.symlink?
     warn("Skipping SSH config update because '#{global_config_link.to_s.cyan}' does not exist or is not a symlink.")
     return
   end
 
-  default_ssh_config = ssh_folder.join('config')
+  default_ssh_config = ssh_dir.join('config')
   FileUtils.touch(default_ssh_config) unless default_ssh_config.exist?
 
   include_line = 'Include ~/.ssh/global_config'
   begin
     # Use File.foreach to stream the file line-by-line instead of loading it all into memory.
     if File.foreach(default_ssh_config).any? { |l| l.strip == include_line }
-      success("'#{include_line.purple}' already present in '#{default_ssh_config.to_s.cyan}'")
+      success("'#{include_line.cyan}' already present in '#{default_ssh_config.to_s.cyan}'")
     else
-      info("Adding '#{include_line.purple}' to '#{default_ssh_config.to_s.cyan}'")
+      info("Adding '#{include_line.cyan}' to '#{default_ssh_config.to_s.cyan}'")
       default_ssh_config.write("\n#{include_line}\n", mode: 'a')
     end
   rescue StandardError => e

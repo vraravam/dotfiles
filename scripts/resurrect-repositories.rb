@@ -15,7 +15,7 @@ require 'cli_parser'
 require 'collection_processor'
 require 'env_vars'
 require 'fileutils'
-require 'git_helpers'
+require 'git_processor'
 require 'logging'
 require 'open3'
 require 'set'
@@ -30,8 +30,8 @@ parser = CliParser.parse('[-g <folder>] [-r <config-file>] [-c <config-file>]') 
   opts.separator ''
   opts.separator 'Options:'.purple
   opts.on('-g', '--generate FOLDER', 'Generate configuration from FOLDER onto stdout (usually on current laptop)',
-          "  Note: this option will not handle 'post_clone' commands in the generated yaml structure") do |folder|
-    options[:generate] = folder
+          "  Note: this option will not handle 'post_clone' commands in the generated yaml structure") do |dir|
+    options[:generate] = dir
   end
   opts.on('-r', '--resurrect CONFIG_FILE', "Resurrect 'known' codebases from CONFIG_FILE (usually on fresh laptop)") do |file|
     options[:resurrect] = file
@@ -45,13 +45,11 @@ parser = CliParser.parse('[-g <folder>] [-r <config-file>] [-c <config-file>]') 
   opts.separator "  #{'REF_FOLDER'.yellow}  can be used to apply a filter when verifying against a specific yaml file"
 end
 
-if options.empty? || options.size > 1
-  parser.abort_with_usage('Exactly one of -g, -r, or -c must be specified.')
-end
+parser.abort_with_usage('Exactly one of -g, -r, or -c must be specified.') if options.empty? || options.size > 1
 
 # Constants
 ORIGIN_NAME = 'origin' # Standard name for the primary remote
-FOLDER_KEY_NAME = 'folder' # Key name in YAML for the repository folder
+FOLDER_KEY_NAME = 'folder' # Key name in YAML for the repository dir
 REMOTE_KEY_NAME = 'remote' # Key name for the primary remote
 OTHER_REMOTES_KEY_NAME = 'other_remotes' # Key name for additional remotes
 POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
@@ -60,15 +58,15 @@ POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
 # Handles multiple ${VAR} patterns. If an environment variable is not set,
 # the placeholder ${VAR} is kept and a warning is printed (not accumulated in summary).
 #
-# @param folder [Object] The value in which to expand `${VAR}` patterns.
+# @param dir [Object] The value in which to expand `${VAR}` patterns.
 #   Non-String values and strings without `${` are returned unchanged.
 # @return [Object] The string with all matching `${VAR}` patterns expanded,
 #   or the original object if it was not a String or did not contain `${...}` patterns.
-def _find_and_replace_env_var(folder)
-  # Early exit if folder is not a string or doesn't contain the pattern
-  return folder unless folder.is_a?(String) && folder.include?('${')
+def _find_and_replace_env_var(dir)
+  # Early exit if dir is not a string or doesn't contain the pattern
+  return dir unless dir.is_a?(String) && dir.include?('${')
 
-  folder.gsub(/\$\{(.*?)\}/) do |match|
+  dir.gsub(/\$\{(.*?)\}/) do |match|
     key = Regexp.last_match(1)
     ENV.fetch(key) do
       warn("Environment variable '#{key}' not set. Keeping placeholder '#{match}'.")
@@ -81,10 +79,10 @@ end
 # so that generated YAML references env vars rather than hard-coded paths.
 # Only the first matching env-var prefix is replaced (first-match-wins).
 #
-# @param folder [String] The string in which to substitute env-var values back to placeholders.
+# @param dir [String] The string in which to substitute env-var values back to placeholders.
 # @return [String] The string with the first matching env-var value replaced by its placeholder,
-#   or the original string if no configured env-var value is non-empty and a prefix of +folder+.
-def _find_and_reverse_replace_env_var(folder)
+#   or the original string if no configured env-var value is non-empty and a prefix of +dir+.
+def _find_and_reverse_replace_env_var(dir)
   # NOTE: List order matters -- more specific (deeper) paths must come before their parents.
   # e.g. PROJECTS_BASE_DIR (a sub-path of HOME) must precede HOME; otherwise HOME would
   # match first and leave the PROJECTS_BASE_DIR-specific portion unexpanded.
@@ -92,9 +90,9 @@ def _find_and_reverse_replace_env_var(folder)
   env_vars.each do |env_var|
     value = ENV[env_var]
     next if nil_or_empty?(value)
-    return folder.sub(value, "${#{env_var}}").strip if folder.start_with?(value)
+    return dir.sub(value, "${#{env_var}}").strip if dir.start_with?(value)
   end
-  folder
+  dir
 end
 
 # Reports a git operation failure by recording a warning with the operation description,
@@ -115,7 +113,7 @@ end
 #
 # @param path [String] The base path to search for Git repositories.
 # @return [Array<String>] A sorted, deduplicated array of absolute paths to the root
-#   directories of discovered Git repositories (i.e. the parent of each +.git+ folder).
+#   directories of discovered Git repositories (i.e. the parent of each +.git+ dir).
 #   Returns an empty array on failure.
 def _find_git_repos_from_disk(path)
   # Using array form for command execution safety if path contains special characters
@@ -142,7 +140,7 @@ rescue StandardError => e # Catch other potential errors during command executio
 end
 
 # Reads repository configurations from a YAML file.
-# It filters for active repositories and expands environment variables in folder paths.
+# It filters for active repositories and expands environment variables in dir paths.
 #
 # @param filename [String] The path to the YAML configuration file.
 # @return [Array<Hash>] An array of repository configuration hashes.
@@ -154,14 +152,14 @@ def _read_git_repos_from_file(filename)
     else
       # Provide more context for the warning
       repo_identifier = repo[REMOTE_KEY_NAME] || repo.inspect # Use remote URL or full inspect if no remote
-      record_warning("Repository entry '#{repo_identifier}' has invalid or missing '#{FOLDER_KEY_NAME}'. Skipping environment variable expansion for its folder.")
+      record_warning("Repository entry '#{repo_identifier.cyan}' has invalid or missing '#{FOLDER_KEY_NAME}'. Skipping environment variable expansion for its dir.")
     end
   end
   repositories
 end
 
 # Applies a filter to a list of repositories or repository paths.
-# The filter is a regular expression string matched against the repository folder path.
+# The filter is a regular expression string matched against the repository dir path.
 #
 # @param repos [Array<String, Hash>] An array of repository paths (Strings)
 #   or repository configuration hashes (where each hash is expected to have a `FOLDER_KEY_NAME` key).
@@ -180,24 +178,26 @@ def _apply_filter(repos, filter)
 end
 
 # Generates a hash containing information about a single Git repository.
-# This includes its folder path, active status, primary remote URL, and other remotes.
+# This includes its dir path, active status, primary remote URL, and other remotes.
 #
-# @param folder [String] The path to the Git repository directory.
+# @param dir [String] The path to the Git repository directory.
 # @return [Hash] A hash with repository details (folder, active, remote, other_remotes).
 #                The 'post_clone' key is intentionally not added here as per the script's design for generation.
-def _generate_each(folder)
-  hash = { folder: _find_and_reverse_replace_env_var(folder), active: true }
+def _generate_each(dir)
+  hash = { folder: _find_and_reverse_replace_env_var(dir), active: true }
 
-  # Get origin URL using GitHelpers
-  hash[:remote] = GitHelpers.remote_url(folder: folder) || ''
+  # Get origin URL and other remotes using GitProcessor
+  GitProcessor.new(dir: dir) do |git|
+    hash[:remote] = git.remote_url || ''
 
-  # Collect other remotes (excluding origin)
-  other_remotes = {}
-  GitHelpers.each_remote(folder: folder) do |name, url|
-    other_remotes[name] = url unless name == ORIGIN_NAME
+    # Collect other remotes (excluding origin)
+    other_remotes = {}
+    git.each_remote do |name, url|
+      other_remotes[name] = url unless name == ORIGIN_NAME
+    end
+
+    hash[OTHER_REMOTES_KEY_NAME] = other_remotes unless nil_or_empty?(other_remotes)
   end
-
-  hash[OTHER_REMOTES_KEY_NAME] = other_remotes unless nil_or_empty?(other_remotes)
 
   hash.transform_keys(&:to_s)
 end
@@ -211,15 +211,13 @@ end
 #   `folder`, `remote`, `other_remotes` (optional), and `post_clone` (optional).
 # @param idx [Integer] The index of the current repository in the processing list (for logging).
 # @param total [Integer] The total number of repositories to process (for logging).
-# @return [void]
-# @raise [StandardError] Raises an exception for fatal failures (clone failure, verification
-#   failure) which abort processing of this repo. Non-fatal failures (remote configuration,
-#   fetch, post-clone commands) are logged as warnings but do not abort processing.
-#   The caller's rescue block catches exceptions to mark the repo as failed and continue
-#   processing remaining repos.
+# @return [Boolean] Returns false for fatal failures (clone failure, verification failure)
+#   which abort processing of this repo and mark it as failed. Returns true for success,
+#   or when non-fatal failures (remote configuration, fetch, post-clone commands) are
+#   logged as warnings but allow the repo to complete processing.
 def _resurrect_each(repo, idx, total)
-  folder = repo[FOLDER_KEY_NAME] # Assumed to be an absolute, resolved path
-  FileUtils.mkdir_p(folder)
+  dir = repo[FOLDER_KEY_NAME] # Assumed to be an absolute, resolved path
+  FileUtils.mkdir_p(dir)
 
   existing_remotes = {} # Store existing remotes {name => url}
   # NOTE: clone_repo_into is a shell function defined in .shellrc, which is sourced
@@ -229,34 +227,38 @@ def _resurrect_each(repo, idx, total)
   # but we still use `/bin/zsh -lc` explicitly (rather than a bare string passed to
   # capture3) to make the shell invocation unambiguous and to avoid surprises from $SHELL.
   # clone_repo_into automatically uses --depth=1 (shallow clone) when FIRST_INSTALL is set.
-  clone_command = "clone_repo_into #{repo[REMOTE_KEY_NAME].shellescape} #{folder.shellescape}"
+  clone_command = "clone_repo_into #{repo[REMOTE_KEY_NAME].shellescape} #{dir.shellescape}"
   stdout_str, stderr_str, status = Open3.capture3({ 'FORCE_COLOR' => '1' }, '/bin/zsh', '-lc', clone_command)
   print stdout_str
   unless status.success?
-    # Clone failure is fatal -- cannot proceed without a cloned repository
-    error_message = "Failed to clone '#{repo[REMOTE_KEY_NAME]}' into '#{folder}' (status: #{status.exitstatus})"
+    # Clone failure is fatal for this repo -- cannot proceed without a cloned repository
+    error_message = "Failed to clone '#{repo[REMOTE_KEY_NAME].cyan}' into '#{dir.cyan}' (status: #{status.exitstatus})"
     error_message += "\nClone command STDERR:\n#{stderr_str}" unless nil_or_empty?(stderr_str.strip)
-    raise error_message
+    record_error(error_message)
+    return false
   end
 
-  # After cloning, verify the origin URL
+  # After cloning, verify the origin URL using GitProcessor
+  git = GitProcessor.new(dir: dir)
   section_header2('Clone verification')
-  cloned_origin_url = GitHelpers.remote_url(folder: folder, name: ORIGIN_NAME)
+  cloned_origin_url = git.remote_url(name: ORIGIN_NAME)
   if cloned_origin_url
     existing_remotes[ORIGIN_NAME] = cloned_origin_url
     if cloned_origin_url != repo[REMOTE_KEY_NAME]
-      # Verification failure is fatal -- wrong URL means wrong code
-      raise "Cloned origin URL '#{cloned_origin_url}' differs from config '#{repo[REMOTE_KEY_NAME]}' for '#{folder}'"
+      # Verification failure is fatal for this repo -- wrong URL means wrong code
+      record_error("Cloned origin URL '#{cloned_origin_url.cyan}' differs from config '#{repo[REMOTE_KEY_NAME].cyan}' for '#{dir.cyan}'")
+      return false
     end
   else
-    # Verification failure is fatal -- cannot confirm clone succeeded
-    raise "Could not verify origin remote URL after cloning '#{folder}'"
+    # Verification failure is fatal for this repo -- cannot confirm clone succeeded
+    record_error("Could not verify origin remote URL after cloning '#{dir.cyan}'")
+    return false
   end
 
   # Add missing 'other_remotes'
   # Remote configuration failures are non-fatal -- origin is correct, just can't add/update additional remotes
   section_header2('Remote configuration')
-  GitHelpers.each_remote(folder: folder) do |name, url|
+  git.each_remote do |name, url|
     existing_remotes[name] = url
   end
   debug("Existing remotes: #{existing_remotes.keys.join(', ')}") unless nil_or_empty?(existing_remotes)
@@ -266,16 +268,16 @@ def _resurrect_each(repo, idx, total)
         if existing_remotes[name] != remote
           # Remote exists but URL is different
           info("Updating remote '#{name}' URL from '#{existing_remotes[name]}' to '#{remote}'")
-          _stdout, stderr, status = GitHelpers.set_remote_url(name, remote, folder: folder)
+          _stdout, stderr, status = git.set_remote_url(name, remote)
           unless status.success?
-            _report_git_failure("Failed to update URL for remote '#{name}' in repo '#{folder.cyan}'", status, stderr)
+            _report_git_failure("Failed to update URL for remote '#{name}' in repo '#{dir.cyan}'", status, stderr)
           end
         end
       else
         info("Adding remote '#{name}' -> '#{remote}'")
-        _stdout, stderr, status = GitHelpers.add_remote(name, remote, folder: folder)
+        _stdout, stderr, status = git.add_remote(name, remote)
         unless status.success?
-          _report_git_failure("Failed to add remote '#{name}' for repo '#{folder.cyan}'", status, stderr)
+          _report_git_failure("Failed to add remote '#{name}' for repo '#{dir.cyan}'", status, stderr)
         end
       end
     end
@@ -283,9 +285,9 @@ def _resurrect_each(repo, idx, total)
 
   # Fetch failures are non-fatal -- repository exists and is usable, just couldn't pull latest changes
   section_header2('Fetching all remotes and tags...')
-  _stdout, stderr, status = GitHelpers.fetch_all(folder: folder)
+  _stdout, stderr, status = git.fetch_all
   unless status.success?
-    _report_git_failure("Failed to fetch all remotes and tags for repo '#{folder.cyan}'", status, stderr)
+    _report_git_failure("Failed to fetch all remotes and tags for repo '#{dir.cyan}'", status, stderr)
   end
 
   return unless repo[POST_CLONE_KEY_NAME].is_a?(Array) && !repo[POST_CLONE_KEY_NAME].empty?
@@ -294,15 +296,17 @@ def _resurrect_each(repo, idx, total)
   section_header2('Running post-clone commands')
   # Dir.chdir with a block automatically restores the original directory when the block exits,
   # even if an exception is raised -- no manual cleanup needed.
-  Dir.chdir(folder) do
+  Dir.chdir(dir) do
     repo[POST_CLONE_KEY_NAME].each do |command_str|
       debug("Executing: #{command_str.dump}")
       _stdout, stderr, status = Open3.capture3(command_str)
       unless status.success?
-        _report_git_failure("Post-clone command #{command_str.dump} failed for repo '#{folder.cyan}'", status, stderr)
+        _report_git_failure("Post-clone command #{command_str.dump} failed for repo '#{dir.cyan}'", status, stderr)
       end
     end
   end
+
+  true # Success -- repo cloned and configured (non-fatal warnings may have been logged)
 end
 
 # Verifies that the repositories defined in the configuration file match
@@ -312,31 +316,29 @@ end
 # @param repositories [Array<Hash>] An array of repository configurations from the YAML file.
 # @param discovered_count [Integer] Total count of repos before any filter was applied, used for the summary log.
 # @param filter [String] A filter string (regex) to apply to repository paths before comparison.
-# @param ref_folder [String, nil] Optional base directory to scope the comparison to (already expanded).
+# @param ref_dir [String, nil] Optional base directory to scope the comparison to (already expanded).
 # @return [void] Exits with 1 if discrepancies are found.
-def _verify_all(repositories, discovered_count, filter, ref_folder: nil)
-  ref_folder_path = ref_folder
-
-  # Get folder paths from the YAML configuration (already filtered by FILTER if it was set).
+def _verify_all(repositories, discovered_count, filter, ref_dir: nil)
+  # Get dir paths from the YAML configuration (already filtered by FILTER if it was set).
   # filter_map polyfill in enumerable_ext.rb covers Ruby 2.6 (system Ruby on vanilla macOS).
-  yml_folders = repositories.filter_map { |repo| repo[FOLDER_KEY_NAME] }.uniq.sort
-  if ref_folder_path
-    # If ref_folder is set, filter yml_folders to include only those starting with this path
-    # or exactly matching this path (if ref_folder itself is a repo path).
+  yml_dirs = repositories.filter_map { |repo| repo[FOLDER_KEY_NAME] }.uniq.sort
+  if ref_dir
+    # If ref_dir is set, filter yml_dirs to include only those starting with this path
+    # or exactly matching this path (if ref_dir itself is a repo path).
     # Ensure comparison is against a directory prefix by normalizing paths.
-    path_prefix_for_selection = ref_folder_path.chomp(File::SEPARATOR)
-    yml_folders = yml_folders.select do |folder|
-      normalized_folder = folder.chomp(File::SEPARATOR)
-      normalized_folder == path_prefix_for_selection || normalized_folder.start_with?(path_prefix_for_selection + File::SEPARATOR)
+    path_prefix_for_selection = ref_dir.chomp(File::SEPARATOR)
+    yml_dirs = yml_dirs.select do |dir|
+      normalized_dir = dir.chomp(File::SEPARATOR)
+      normalized_dir == path_prefix_for_selection || normalized_dir.start_with?(path_prefix_for_selection + File::SEPARATOR)
     end
   end
 
   # _find_git_repos_from_disk already returns a sorted unique array; _apply_filter preserves uniqueness.
-  local_folders = _apply_filter(_find_git_repos_from_disk(ref_folder_path || EnvVars::HOME.to_s), filter).sort
+  local_dirs = _apply_filter(_find_git_repos_from_disk(ref_dir || EnvVars::HOME), filter).sort
 
   # Convert to Sets for O(1) membership checks on the symmetric difference
-  yml_set = Set.new(yml_folders)
-  local_set = Set.new(local_folders)
+  yml_set = Set.new(yml_dirs)
+  local_set = Set.new(local_dirs)
   diff_repos = (local_set ^ yml_set).to_a.sort # ^ = symmetric difference
   common_repos = (local_set & yml_set).to_a.sort # & = intersection
 
@@ -398,7 +400,6 @@ elsif options[:resurrect]
     operation_desc: 'Resurrecting'
   ) do |repo, idx, total|
     _resurrect_each(repo, idx, total)
-    true
   end
 
   print_results_summary(results)
@@ -412,18 +413,18 @@ elsif options[:check]
   config_file = File.expand_path(options[:check])
   info("#{'Config file:'.yellow} '#{config_file.cyan}'")
   info("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
-  reference_folder = EnvVars.ref_folder
-  info("#{'Reference folder:'.yellow} '#{reference_folder.cyan}'") unless nil_or_empty?(reference_folder)
+  reference_dir = EnvVars.ref_folder
+  info("#{'Reference dir:'.yellow} '#{reference_dir.cyan}'") unless nil_or_empty?(reference_dir)
   repositories = _read_git_repos_from_file(config_file)
   discovered_count = repositories.length
   repositories = _apply_filter(repositories, filter)
-  _verify_all(repositories, discovered_count, filter, ref_folder: reference_folder)
+  _verify_all(repositories, discovered_count, filter, ref_dir: reference_dir)
 end
 
 print_script_summary(script_start_time)
 
-# Exit with appropriate code. Exit 1 if there were any failures (repos that
-# raised exceptions) OR any warnings (fetch failures, post-clone failures, etc.).
+# Exit with appropriate code. Exit 1 if there were any failures (repos with fatal
+# errors that returned false) OR any warnings (fetch failures, post-clone failures, etc.).
 # This is intentionally stricter than other scripts because the calling shell
 # function (resurrect_tracked_repos) needs to distinguish "clean success" from
 # "success with issues" to avoid printing "Successfully resurrected all tracked

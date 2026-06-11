@@ -35,14 +35,14 @@ module CliParser
 
   # Parse command-line options with automatic help handling and error reporting
   #
-  # @param banner [String] Usage banner text (e.g., "<folder> <output-file>")
+  # @param banner [String] Usage banner text (e.g., "<dir> <output-file>")
   # @yield [Parser] Block that defines the options
   # @return [Parser] The configured parser
   #
   # @example
-  #   CliParser.parse('<folder>') do |opts|
-  #     opts.separator 'Arguments:'
-  #     opts.separator '  <folder>  Target folder'
+  #   CliParser.parse('<dir>') do |opts|
+  #     opts.separator ''
+  #     opts.separator '  <dir>  Target dir'
   #     opts.on('-v', '--verbose', 'Verbose output') { |v| options[:verbose] = v }
   #   end
   def self.parse(banner)

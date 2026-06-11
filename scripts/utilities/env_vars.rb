@@ -26,7 +26,7 @@ require 'pathname'  # System Ruby on a vanilla macOS is 2.6; Pathname must be re
 #
 #   # Runtime flag methods (evaluated dynamically)
 #   if EnvVars.debug?                               # Boolean
-#     folder = EnvVars.folder || Dir.pwd            # String (expanded path) or nil
+#     dir = EnvVars.folder || Dir.pwd            # String (expanded path) or nil
 #     filter = EnvVars.filter                       # String (stripped) or nil
 #   end
 module EnvVars
@@ -147,14 +147,14 @@ module EnvVars
     ENV.fetch('FILTER', nil)&.then { |s| s.strip.empty? ? nil : s.strip }
   end
 
-  # Reference folder for repo verification (resurrect-repositories.rb).
+  # Reference dir for repo verification (resurrect-repositories.rb).
   # Mirrors: export REF_FOLDER (set temporarily for verification operations)
   # Returns nil when not set or empty (after stripping whitespace), otherwise returns expanded absolute path.
   def self.ref_folder
     ENV.fetch('REF_FOLDER', nil)&.then { |s| s.strip.empty? ? nil : File.expand_path(s.strip) }
   end
 
-  # Base folder for repo operations (run-all.rb).
+  # Base dir for repo operations (run-all.rb).
   # Mirrors: export FOLDER (set temporarily for run-all operations, defaults to current directory)
   # Returns nil when not set or empty (after stripping whitespace), otherwise returns expanded absolute path.
   def self.folder

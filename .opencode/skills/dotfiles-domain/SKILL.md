@@ -70,6 +70,14 @@ and companion script directories.
     quotes for static strings with no variable expansion. Always use `${var}`
     brace notation — never bare `$var`.
 
+12. **`parse_folder_and_switches` API contract**: This function (defined in
+    `.aliases`) writes into `folder` and `switches` variables in the caller's
+    scope. Autoload functions and shell scripts that call it MUST declare
+    `local folder` and `local -a switches` (NOT `local dir`). The function
+    name and variable names are part of the public API and cannot be changed
+    without breaking all callers. See `files/--XDG_CONFIG_HOME--/zsh/{push,pull,st,cc,count}`
+    for usage examples.
+
 ## Antidote (Replaces OMZ)
 
 Antidote is the zsh plugin manager (replaced oh-my-zsh):
@@ -128,6 +136,27 @@ run early must handle this.
 - Ruby scripts: `rufo` — run from `$HOME` (uses mise-managed Ruby), NOT from
   `$DOTFILES_DIR` (which is pinned to system Ruby 2.6).
 
+## GitProcessor Pattern: When to Apply Instance-Based Wrappers
+
+The GitProcessor pattern (instance-based API eliminating repetitive parameters)
+applies when ALL of these conditions hold:
+
+1. **Common tool** with many subcommands (e.g., git with 20+ operations)
+2. **Common flag/parameter** needed on every invocation (e.g., `-C dir`)
+3. **Shared state** across multiple operations (e.g., dry_run, error tracking)
+4. **Multiple operations per target** (5-10+ calls on the same repository)
+5. **Complex error handling** (parsing output, checking state, structured results)
+
+The pattern does NOT apply to:
+- Different tools with different flag positions (mise vs direnv)
+- Simple 1-2 call operations per target
+- Tools with simple exit-code-only error handling
+- Operations with no shared state
+
+Example of where it does NOT apply: mise/direnv in `git_workspace.rb` do single
+operations per directory with simple error handling. The current pattern
+(`system('mise', '-C', dir, 'install')`) is cleaner than wrapping.
+
 ---
 
 ## Documentation Update Routine
@@ -180,10 +209,31 @@ put it in one place and cross-reference from broader files where needed.
    version using the `####` sub-section format. Check whether an unpushed commit
    exists (`git log @{u}..HEAD`) before deciding whether to create a new version
    entry or extend the existing one.
-5a. When creating a commit, use the `####` sub-section goal headings from the
-   current CHANGELOG entry as the commit message, joined with semicolons. Omit
-   `Adopting these changes` — it is not a code change. Use `git next-version` to
-   confirm the version before finalising the CHANGELOG entry.
+5a. **CHANGELOG conciseness rule**: When describing a pattern that applies across
+    multiple files, state the pattern once with aggregate metrics (e.g., "95%
+    reduction across 16 files"). Only call out individual files if they have
+    unique behavior beyond the general pattern. Do NOT list every file when the
+    pattern description is sufficient.
+5b. **Commit message format**: Use the `####` sub-section goal headings from the
+    current CHANGELOG entry as section headers, with bulleted summaries under each.
+    Format: Title line (first section header), blank line, then for each section:
+    section header, blank line, 2-4 bullet points (`-` prefix), blank line.
+    End with `Total: N files changed, X insertions(+), Y deletions(-)` line.
+    Omit `Adopting these changes` section — it is not a code change.
+    Example structure:
+    ```
+    Title: First section header from CHANGELOG
+
+    - Key change 1
+    - Key change 2
+
+    Second section header
+
+    - Key change 3
+    - Key change 4
+
+    Total: N files changed, X insertions(+), Y deletions(-)
+    ```
 6. After all updates, verify no file now contains a stale or contradicted
    version of the same rule.
 
@@ -193,3 +243,7 @@ put it in one place and cross-reference from broader files where needed.
 - Temporal language ("currently", "as of this session", "now uses").
 - Implementation details that are already self-evident from reading the code.
 - Redundant duplication of a rule already present in the tightest file.
+
+### What does NOT belong in CHANGELOG or commit messages
+
+- Updates to AI assistant documentation files (`.github/model-instructions.md`, `.github/instructions/*.instructions.md`, `.opencode/skills/*/SKILL.md`). These are internal development aids, not user-facing changes. Document them only in the files themselves, never in CHANGELOG or commit messages.

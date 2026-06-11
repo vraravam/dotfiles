@@ -197,10 +197,10 @@ _install_xcode_command_line_tools() {
 _ensure_directories_exist() {
   step_start
   section_header "$(yellow 'Creating directories defined by various env vars')"
-  local -a folders=("${ANTIDOTE_HOME}" "${DOTFILES_DIR}" "${PROJECTS_BASE_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${PERSONAL_PROFILES_DIR}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_STATE_HOME}")
-  local folder
-  for folder in "${folders[@]}"; do
-    ensure_dir_exists "${folder}"
+  local -a dirs=("${ANTIDOTE_HOME}" "${DOTFILES_DIR}" "${PROJECTS_BASE_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${PERSONAL_PROFILES_DIR}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_STATE_HOME}")
+  local dir
+  for dir in "${dirs[@]}"; do
+    ensure_dir_exists "${dir}"
   done
   step_end
 }
@@ -281,7 +281,7 @@ _install_homebrew() {
     custom_taps=($(brew bundle list --taps --file="${HOMEBREW_BUNDLE_FILE}" | \grep -v "^homebrew/"))
 
     if is_non_empty_array custom_taps; then
-      info "Trusting custom taps: $(yellow "${custom_taps[*]}")"
+      info "Trusting custom taps: '$(yellow "${custom_taps[*]}")'"
       brew trust --tap -q "${custom_taps[@]}" || true  # Don't fail if trust fails
     fi
   fi
@@ -327,7 +327,7 @@ _install_homebrew() {
     # FIRST_INSTALL is unset in the subshell so brew bundle runs the complete Brewfile.
     local _full_bundle_log="${HOME}/brew-bundle-full-install.log"
     FIRST_INSTALL= brew bundle >>"${_full_bundle_log}"  2>&1 &|
-    info "Full Brewfile install running in background (log: $(yellow "${_full_bundle_log}"))"
+    info "Full Brewfile install running in background (log: '$(cyan "${_full_bundle_log}")')"
   fi
 
   # Note: load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)

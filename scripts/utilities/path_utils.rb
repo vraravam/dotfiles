@@ -34,17 +34,16 @@ module PathUtils
     system('which', command.to_s, out: File::NULL, err: File::NULL)
   end
 
-  # Extract a path segment at a given index from a folder path
+  # Extract a path segment at a given index from a dir path
   #
-  # @param folder [String] The folder path
-  # @param index [Integer] Which path component to extract (-1 for last, -2 for parent, etc.)
-  # @return [String] The extracted path segment
+  # @param dir [String] The dir path
+  # @param index [Integer] The segment index (default: -1, the last segment)
+  # @return [String, nil] The path segment at the index, or nil if index out of bounds
   #
   # @example
-  #   PathUtils.extract_path_segment_at('/home/user/projects/myapp/src')
-  #   # => 'myapp'
-  def extract_path_segment_at(folder, index = -1)
-    File.dirname(folder).split(File::SEPARATOR)[index]
+  #   PathUtils.extract_path_segment_at('/home/user/projects', -1)  # => 'projects'
+  def extract_path_segment_at(dir, index = -1)
+    File.dirname(dir).split(File::SEPARATOR)[index]
   end
 
   # Yields Pathname objects for each match from Dir.glob, converting strings to Pathname.

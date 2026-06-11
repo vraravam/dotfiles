@@ -54,19 +54,30 @@ module Keybase
   end
 
   # Deletes the named Keybase repo (irreversible). Passes -f to skip confirmation.
+  # Logs a warning if deletion fails (expected if repo doesn't exist).
   #
   # @param repo_name [String]
-  # @return [Boolean] true if the command succeeded.
-  def delete_repo(repo_name)
-    system('keybase', 'git', 'delete', '-f', repo_name)
+  # @param dry_run [Boolean] When true, logs the operation instead of executing.
+  # @return [void]
+  def delete_repo(repo_name, dry_run: false)
+    if dry_run
+      Logging.info "Would delete keybase repo: '#{repo_name.yellow}'"
+    else
+      Logging.record_warning("Failed to delete keybase repo '#{repo_name.yellow}' (it might not exist)") unless system('keybase', 'git', 'delete', '-f', repo_name)
+    end
   end
 
-  # Creates a new private Keybase repo.
+  # Creates a new private Keybase repo. Raises an error if creation fails.
   #
   # @param repo_name [String]
-  # @return [Boolean] true if the command succeeded.
-  def create_repo(repo_name)
-    system('keybase', 'git', 'create', repo_name)
+  # @param dry_run [Boolean] When true, logs the operation instead of executing.
+  # @return [void]
+  def create_repo(repo_name, dry_run: false)
+    if dry_run
+      Logging.info "Would create keybase repo: '#{repo_name.yellow}'"
+    else
+      Logging.error "Failed to create keybase repo '#{repo_name.yellow}'" unless system('keybase', 'git', 'create', repo_name)
+    end
   end
 
   # ---------------------------------------------------------------------------

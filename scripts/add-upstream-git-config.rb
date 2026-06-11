@@ -7,12 +7,12 @@
 # constructs the upstream URL by substituting the cloned owner's username
 # with the provided upstream owner. Supports SSH and HTTPS remote URL formats.
 #
-# Usage: add-upstream-git-config.rb -d <folder> -u <upstream-owner>
+# Usage: add-upstream-git-config.rb -d <dir> -u <upstream-owner>
 
 $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 
 require 'cli_parser'
-require 'git_helpers'
+require 'git_processor'
 require 'logging'
 
 include Logging
@@ -26,42 +26,42 @@ parser = CliParser.parse('<options>') do |opts|
   opts.separator 'Adds an upstream remote to a forked git repo.'
   opts.separator ''
   opts.separator 'Options:'.purple
-  opts.on('-d', '--dir DIR', 'Target repo folder (mandatory)') { |v| options[:folder] = v }
+  opts.on('-d', '--dir DIR', 'Target repo dir (mandatory)') { |v| options[:dir] = v }
   opts.on('-u', '--upstream OWNER', 'Upstream repo owner (mandatory)') { |v| options[:upstream_owner] = v }
   opts.separator ''
   opts.separator "  eg: #{File.basename(__FILE__).cyan} -d ~/projects/my-fork -u original-author"
 end
 
-if nil_or_empty?(options[:folder]) || nil_or_empty?(options[:upstream_owner])
-  parser.abort_with_usage('Missing required options: -d <folder> and -u <upstream-owner>')
-end
+parser.abort_with_usage('Missing required options: -d <dir> and -u <upstream-owner>') if nil_or_empty?(options[:dir]) || nil_or_empty?(options[:upstream_owner])
 
-target_folder = options[:folder]
+target_dir = options[:dir]
 upstream_owner = options[:upstream_owner]
 
 increment_script_depth
 start_time = print_script_start
 
-debug "#{'Adding new upstream to:'.yellow} '#{target_folder.cyan}'"
+debug "#{'Adding new upstream to:'.yellow} '#{target_dir.cyan}'"
 
-unless GitHelpers.git_repo?(target_folder)
-  info "'#{target_folder.cyan}' is not a git repo -- skipping."
+unless GitProcessor.repo?(target_dir)
+  info "'#{target_dir.cyan}' is not a git repo -- skipping."
   print_script_summary(start_time)
   exit 0
 end
 
+git = GitProcessor.new(dir: target_dir)
+
 # Check if an 'upstream' remote already exists.
-existing_upstream = GitHelpers.remote_url(folder: target_folder, name: 'upstream')
+existing_upstream = git.remote_url(name: 'upstream')
 if existing_upstream
-  info "Remote 'upstream' already exists for '#{target_folder.cyan}': '#{existing_upstream.cyan}' -- skipping."
+  info "Remote 'upstream' already exists for '#{target_dir.cyan}': '#{existing_upstream.cyan}' -- skipping."
   print_script_summary(start_time)
   exit 0
 end
 
 # Get the origin URL and parse it to reconstruct the upstream URL.
-origin_url = GitHelpers.remote_url(folder: target_folder)
+origin_url = git.remote_url
 unless origin_url
-  record_error("Could not retrieve URL for remote 'origin' in '#{target_folder.cyan}'.")
+  record_error("Could not retrieve URL for remote 'origin' in '#{target_dir.cyan}'.")
   print_script_summary(start_time)
   exit 1
 end
@@ -84,7 +84,7 @@ when /\Ahttps?:\/\/([^\/]+)\/([^\/]+)\/(.+)\z/
   repo_path = Regexp.last_match(3)
   new_repo_url = "#{protocol}://#{host}/#{upstream_owner}/#{repo_path}"
 else
-  record_error("Cannot parse origin remote URL format: #{origin_url.cyan}")
+  record_error("Cannot parse origin remote URL format: '#{origin_url.cyan}'")
   print_script_summary(start_time)
   exit 1
 end
@@ -99,7 +99,7 @@ if cloned_owner == upstream_owner
 end
 
 # Add the upstream remote.
-stdout, stderr, status = GitHelpers.add_remote('upstream', new_repo_url, folder: target_folder)
+stdout, stderr, status = git.add_remote('upstream', new_repo_url)
 unless status.success?
   record_error("Failed to add upstream remote '#{new_repo_url.cyan}'")
   debug "stderr: #{stderr}" unless nil_or_empty?(stderr)
@@ -108,7 +108,7 @@ unless status.success?
 end
 
 # Fetch all remotes, unshallowing if needed.
-stdout, stderr, status = GitHelpers.fetch_all(folder: target_folder, quiet: true)
+stdout, stderr, status = git.fetch_all(quiet: true)
 unless status.success?
   record_error("Failed to fetch upstream remote '#{new_repo_url.cyan}' after adding it.")
   debug "stderr: #{stderr}" unless nil_or_empty?(stderr)
@@ -116,5 +116,5 @@ unless status.success?
   exit 1
 end
 
-success "Successfully added and fetched upstream remote '#{new_repo_url.cyan}' to repo in '#{target_folder.cyan}'"
+success "Successfully added and fetched upstream remote '#{new_repo_url.cyan}' to repo in '#{target_dir.cyan}'"
 print_script_summary(start_time)

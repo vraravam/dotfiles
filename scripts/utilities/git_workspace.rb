@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require 'set'
+
 require_relative 'collection_processor'
 require_relative 'env_vars'
 require_relative 'logging'
@@ -47,7 +49,7 @@ module GitWorkspace
   # find operation, adding git-specific defaults and semantics (search for .git
   # directories, return their parents as repo roots, prune common repo cruft).
   #
-  # @param folders [Array<String, Pathname>, String, Pathname] Root directory/directories to search
+  # @param dirs [Array<String, Pathname>, String, Pathname] Root directory/directories to search
   # @param mindepth [Integer] Minimum search depth (default: 1)
   # @param maxdepth [Integer] Maximum search depth (default: 6)
   # @param filter [String, Regexp, nil] Only include repos matching this pattern
@@ -55,11 +57,11 @@ module GitWorkspace
   #   the defaults (node_modules, .cache, .Trash). Pass [] for no additional pruning.
   # @param skip_symlinks [Boolean] Skip repo roots that are symlinks (default: true)
   # @return [Array<String>] Repo root paths, deduplicated and sorted alphabetically
-  def find_git_repos(folders:, mindepth: 1, maxdepth: 6, filter: nil, additional_prune: [], skip_symlinks: true)
+  def find_git_repos(dirs:, mindepth: 1, maxdepth: 6, filter: nil, additional_prune: [], skip_symlinks: true)
     prune_dirs = DEFAULT_PRUNE_DIRS + Array(additional_prune)
 
     CollectionProcessor.find_directories_matching(
-      folders: folders,
+      dirs: dirs,
       name_pattern: '.git',
       mindepth: mindepth,
       maxdepth: maxdepth,
@@ -206,34 +208,35 @@ module GitWorkspace
 
     # Find all repo roots under PROJECTS_BASE_DIR
     repo_roots = find_git_repos(
-      folders: projects_base,
+      dirs: projects_base,
       maxdepth: 6,
       additional_prune: %w[Library Caches],  # Add to defaults (node_modules, .cache, .Trash)
       skip_symlinks: true
     )
 
-    # Collect parent folders (ancestors of repo roots, up to but not including PROJECTS_BASE_DIR)
-    seen = {}
-    parent_folders = []
+    # Collect parent dirs (ancestors of repo roots, up to but not including PROJECTS_BASE_DIR)
+    # Use Set for O(1) membership checks instead of Hash (more semantically correct and memory efficient)
+    seen = Set.new
+    parent_dirs = []
     projects_base_str = projects_base.to_s
 
     repo_roots.each do |repo_root|
       # First ancestor to alias = parent of repo root
       ancestor = File.dirname(repo_root)
       while ancestor != projects_base_str && ancestor != PathUtils::ROOT.to_s
-        break if seen[ancestor]
-        seen[ancestor] = true
-        parent_folders << ancestor
+        break if seen.include?(ancestor)
+        seen.add(ancestor)
+        parent_dirs << ancestor
         ancestor = File.dirname(ancestor)
       end
     end
 
     cache_file.open('w') do |f|
-      parent_folders.each do |folder_path|
-        relative = folder_path.sub("#{projects_base_str}#{File::SEPARATOR}", '')
+      parent_dirs.each do |dir_path|
+        relative = dir_path.sub("#{projects_base_str}#{File::SEPARATOR}", '')
         # Alias name: replace path separator with '-'; value: sets FOLDER for run-all.rb.
         alias_name = relative.gsub(File::SEPARATOR, '-')
-        f.puts "alias #{alias_name}=\"FOLDER='#{folder_path}' MAXDEPTH=4 rug\""
+        f.puts "alias #{alias_name}=\"FOLDER='#{dir_path}' MAXDEPTH=4 rug\""
       end
     end
 
@@ -258,26 +261,27 @@ module GitWorkspace
   # @return [Array<String>] Unique ancestor directory paths.
   def collect_ancestor_dirs(first_install: false)
     maxdepth = first_install ? 3 : 6
-    folders = [EnvVars::HOME, EnvVars::DOTFILES_DIR, EnvVars::PROJECTS_BASE_DIR]
+    dirs = [EnvVars::HOME, EnvVars::DOTFILES_DIR, EnvVars::PROJECTS_BASE_DIR]
 
     # Find all repo roots using the consolidated method
     repo_roots = find_git_repos(
-      folders: folders,
+      dirs: dirs,
       maxdepth: maxdepth,
       additional_prune: %w[Library Caches],  # Add to defaults (node_modules, .cache, .Trash)
       skip_symlinks: true
     )
 
     # Walk up from each repo root to HOME, collecting all ancestors
-    seen = {}
+    # Use Set for O(1) membership checks instead of Hash (more semantically correct and memory efficient)
+    seen = Set.new
     result = []
     home_str = EnvVars::HOME.to_s
 
     repo_roots.each do |repo_root|
       dir = repo_root
       while dir != PathUtils::ROOT.to_s
-        break if seen[dir]
-        seen[dir] = true
+        break if seen.include?(dir)
+        seen.add(dir)
         result << dir
         break if dir == home_str
         dir = File.dirname(dir)

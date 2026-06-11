@@ -15,19 +15,19 @@ _update_repo() {
     return 0 # Success, nothing to do
   fi
 
-  local folder
-  folder="$(strip_trailing_slash "${1}")"
+  local dir
+  dir="$(strip_trailing_slash "${1}")"
 
   local relative_path
-  relative_path="$(git -C "${folder}" relative-path "${2}")"
+  relative_path="$(git -C "${dir}" relative-path "${2}")"
   relative_path="${relative_path:-.}"
 
-  section_header2 "$(yellow 'Updating') $(purple "${folder}")"
-  rm -rfv "${folder}/.git/index.lock" "${folder}/.git/hooks"
+  section_header2 "$(yellow 'Updating') $(purple "${dir}")"
+  rm -rfv "${dir}/.git/index.lock" "${dir}/.git/hooks"
 
   local human_date
   current_timestamp human_date
-  git -C "${folder}" add "${relative_path}" && git -C "${folder}" sci "Incremental commit: ${human_date}" || true
+  git -C "${dir}" add "${relative_path}" && git -C "${dir}" sci "Incremental commit: ${human_date}" || true
 }
 
 # Updates the home and profiles repos
