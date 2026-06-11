@@ -20,11 +20,17 @@ module Keybase
   # Returns false on failure so callers can decide whether to abort or continue.
   # Called by fresh-install-of-osx.sh (_ensure_keybase_logged_in) and recreate-repo.rb.
   #
-  # @return [Boolean] true if logged in, false otherwise.
-  def ensure_logged_in
+  # @param dry_run [Boolean] When true, logs the operation instead of executing.
+  # @return [Boolean] true if logged in (or would log in), false otherwise.
+  def ensure_logged_in(dry_run: false)
     unless PathUtils.command_exists?('keybase')
       Logging.error "'keybase' command not found in PATH. Aborting."
       return false
+    end
+
+    if dry_run
+      Logging.info "Would ensure keybase login for '#{EnvVars::KEYBASE_USERNAME.purple}'"
+      return true
     end
 
     Logging.debug 'Logging into keybase'
@@ -33,7 +39,7 @@ module Keybase
     # keybase status --json returns a JSON blob; parse for logged_in:true.
     status_json, = Open3.capture3('keybase', 'status', '--json')
     if status_json.include?('"logged_in":true')
-      Logging.debug "Skipping keybase login -- '#{username.purple}' is already logged in"
+      Logging.debug "Skipping keybase login -- '#{EnvVars::KEYBASE_USERNAME.purple}' is already logged in"
       return true
     end
 
@@ -78,20 +84,5 @@ module Keybase
     else
       Logging.error "Failed to create keybase repo '#{repo_name.yellow}'" unless system('keybase', 'git', 'create', repo_name)
     end
-  end
-
-  # ---------------------------------------------------------------------------
-  # Private helpers
-  # ---------------------------------------------------------------------------
-
-  private
-
-  # Returns the configured Keybase username.
-  # Raises an error if KEYBASE_USERNAME is not set, since Keybase operations require it.
-  #
-  # @return [String] the username
-  # @raise [RuntimeError] if KEYBASE_USERNAME is nil or empty
-  def username
-    EnvVars::KEYBASE_USERNAME || raise('KEYBASE_USERNAME is not set. Set it in .shellrc if you want to use Keybase functionality.')
   end
 end

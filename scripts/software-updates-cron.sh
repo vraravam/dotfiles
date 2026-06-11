@@ -312,10 +312,20 @@ main() {
   fi
   step_end
 
-  _current_section='Check for outdated applications'
-  step_start
-  section_header "$(yellow 'Checking if any greedy applications are outdated')"
   if command_exists brew; then
+    _current_section='Check for outdated brew and brew applications'
+    step_start
+    section_header "$(yellow 'Check for outdated brew and brew applications')"
+
+    step_start
+    _current_section='Updating brew'
+    section_header2 "$(yellow 'Updating brew')"
+    brew update || true
+    step_end
+
+    step_start
+    _current_section='Updating brew applications'
+    section_header2 "$(yellow 'Updating brew applications')"
     local outdated
     # 'bcg' alias (brew outdated --greedy) is not expanded in non-interactive shells (cron).
     # '|| true' prevents grep -v from triggering the ERR trap when all lines are filtered out
@@ -329,6 +339,7 @@ main() {
       # Stored in main-scoped outdated_flat so the final summary notification can include it.
       outdated_flat="${outdated//$'\n'/, }"
     fi
+    step_end
   else
     debug 'skipping updating brews & casks'
   fi

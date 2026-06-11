@@ -257,9 +257,10 @@
   # sets tracking, pushes, updates submodules, and prunes gone branches — but only if the working
   # tree is clean. A dirty tree skips everything after the fetch to avoid a mid-workflow failure
   # (after rebase but before push) that would leave the repo in an inconsistent state.
-  # Callers (e.g. run-all.rb in cron) receive a non-zero exit and surface a warning.
+  # If no upstream remote exists, rebases from origin instead (gracefully falls back for non-fork repos).
+  # Callers (e.g. run-all.rb in cron) receive a non-zero exit and surface a warning on dirty tree.
   # Usage: git upreb [<dir>]
-  upreb = "!f() { git -C \"${1:-.}\" fetch --all; if git -C \"${1:-.}\" diff --quiet && git -C \"${1:-.}\" diff --cached --quiet; then git -C \"${1:-.}\" branch -u \"origin/$(git -C \"${1:-.}\" br)\" && ( git -C \"${1:-.}\" remote | grep -x upstream &>/dev/null ) && git -C \"${1:-.}\" rebase \"upstream/$(git -C \"${1:-.}\" br)\" --no-verify && git -C \"${1:-.}\" fetch upstream --tags && git -C \"${1:-.}\" push --progress --no-verify && git -C \"${1:-.}\" push --progress --tags --no-verify && git -C \"${1:-.}\" siu && git -C \"${1:-.}\" dlb; else printf 'Skipping rebase/push in %s: working tree has uncommitted changes. Run manually.\n' \"${1:-.}\" >&2; exit 1; fi; }; f"
+  upreb = "!f() { git -C \"${1:-.}\" fetch --all; if git -C \"${1:-.}\" diff --quiet && git -C \"${1:-.}\" diff --cached --quiet; then git -C \"${1:-.}\" branch -u \"origin/$(git -C \"${1:-.}\" br)\"; if git -C \"${1:-.}\" remote | grep -x upstream &>/dev/null; then git -C \"${1:-.}\" rebase \"upstream/$(git -C \"${1:-.}\" br)\" --no-verify && git -C \"${1:-.}\" fetch upstream --tags; else git -C \"${1:-.}\" rebase \"origin/$(git -C \"${1:-.}\" br)\" --no-verify; fi && git -C \"${1:-.}\" push --progress --no-verify && git -C \"${1:-.}\" push --progress --tags --no-verify && git -C \"${1:-.}\" siu && git -C \"${1:-.}\" dlb; else printf 'Skipping rebase/push in %s: working tree has uncommitted changes. Run manually.\n' \"${1:-.}\" >&2; exit 1; fi; }; f"
 
   # Prunes the local copy of remote-tracking branches deleted on origin.
   # Note: fetch.prune=true makes this a no-op after any fetch — useful as an explicit

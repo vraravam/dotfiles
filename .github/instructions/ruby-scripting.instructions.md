@@ -730,13 +730,15 @@ being explicit.
 
 ## Utility Modules -- Logging Pattern
 
-Utility modules in `scripts/utilities/` use `extend self` to make all methods
-available as module methods (e.g., `Cron.suspend_cron`). This allows them to be
-called from both Ruby scripts and shell wrappers.
+**CRITICAL RULE**: All utility modules in `scripts/utilities/` use `extend self`
+to make all methods available as module methods (e.g., `Cron.suspend_cron`,
+`Logging.debug`, `Logging.info`, etc.). This allows them to be called from both
+Ruby scripts and shell wrappers.
 
-**CRITICAL RULE**: Do NOT use `include Logging` in utility modules that use
-`extend self`. The combination `extend self` + `include Logging` does NOT make
-Logging's methods available as module methods.
+Do NOT use `include Logging` in utility modules. The combination `extend self` +
+`include Logging` does NOT make Logging's methods available as module methods.
+Always use fully-qualified method calls instead (e.g., `Logging.debug`,
+`Logging.info`).
 
 ```ruby
 # BAD -- Logging methods won't be available
@@ -767,14 +769,16 @@ end
 - Shell functions delegate to Ruby utilities via `ruby -e` (e.g., `suspend_cron` → `Cron.suspend_cron`)
 - Ruby scripts call utility modules directly (e.g., `Cron.with_cron_suspended { }`)
 - Both contexts need the same behavior
+- Qualified calls work everywhere: module methods, class methods, instance methods
 
-**Applies to:**
-- `scripts/utilities/cron.rb` - uses `Logging.debug`, `Logging.success`, etc.
-- `scripts/utilities/keybase.rb` - uses `Logging.debug`, `Logging.error`
-- Any future utility modules that need logging
+**This rule applies to ALL files in `scripts/utilities/`** including:
+- Modules with `extend self` (cron.rb, keybase.rb, antidote.rb, collection_processor.rb, etc.)
+- Classes (cli_parser.rb's Parser class, etc.)
+- Any other code structures
 
-**Exception:** Top-level scripts (not modules) can use `include Logging` because
-they execute in the main context where `include` works as expected.
+**Exception:** Top-level scripts in `scripts/` (not `scripts/utilities/`) can use
+`include Logging` because they execute in the main context where `include` works
+as expected.
 
 ## Option Parsing -- Use `CliParser`
 

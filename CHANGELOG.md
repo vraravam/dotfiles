@@ -3,6 +3,25 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 
+### 3.1.21
+
+#### Ruby utilities refactoring: qualified logging calls and pathname consistency
+
+* *[scripts/utilities/cli_parser.rb]* Removed unnecessary `include Logging` from Parser class (line 17). Already used qualified `Logging.warn` call. Added explanatory comment matching pattern in other utilities.
+
+* *[scripts/utilities/keybase.rb]* Removed redundant `username` private method. Now uses `EnvVars::KEYBASE_USERNAME` directly (line 36). Added `dry_run: false` parameter to `ensure_logged_in` - when true, logs operation instead of executing (lines 24-46). Matches dry-run pattern in `delete_repo` and `create_repo` methods.
+
+#### File operations converted to Pathname throughout
+
+* *[multiple ruby scripts]* Converted `File` operations to `Pathname`. Uses Pathname objects throughout.
+
+#### Eliminated redundant result arrays (Set optimization)
+
+* *[scripts/utilities/git_workspace.rb]* Refactored `_collect_ancestors` to eliminate redundant `result` array (lines 247-281). Now uses single Set for deduplication with `seen.to_a.map(&:to_s)` at return. Reduced from 29 lines to 21 lines (27% reduction). Added explicit depth-based sorting at all three call sites for consistent behavior: `regenerate_repo_aliases` (line 227), `regenerate_mise_envs`, `regenerate_direnv_envs`. Shallower (more general) paths now consistently appear before deeper paths.
+
+* *[scripts/utilities/collection_processor.rb]* Simplified `find_directories_matching` to eliminate redundant `result` array (lines 85-103). Now uses single Set with `seen.to_a.sort` at return. Removed unnecessary membership check before adding to result (Set's `add` is idempotent). Maintains sorted output for deterministic results.
+
+
 ### 3.1.20
 
 #### Terminology standardization: folder → dir in internal code

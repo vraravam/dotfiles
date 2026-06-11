@@ -82,9 +82,8 @@ module CollectionProcessor
       '-print'
     ]
 
-    # Use Set for O(1) membership checks instead of Hash (more semantically correct and memory efficient)
+    # Use Set for O(1) membership checks and deduplication
     seen = Set.new
-    results = []
     filter_re = filter.is_a?(Regexp) ? filter : (filter ? Regexp.new(filter) : nil)
 
     IO.popen(find_cmd, err: File::NULL) do |io|
@@ -95,16 +94,13 @@ module CollectionProcessor
 
         # Apply transform if provided (e.g., get parent directory)
         final_path = transform_result ? transform_result.call(path) : path
-        next if seen.include?(final_path)
-
         seen.add(final_path)
-        results << final_path
       end
     end
 
     # Return sorted for deterministic output. Callers may re-sort by different
     # criteria (e.g., depth) for their specific needs.
-    results.sort
+    seen.to_a.sort
   end
 
   # ---------------------------------------------------------------------------

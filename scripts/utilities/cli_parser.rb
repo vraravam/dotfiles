@@ -14,7 +14,9 @@ require_relative 'logging'
 module CliParser
   # OptionParser subclass that adds abort_with_usage as an instance method.
   class Parser < OptionParser
-    include Logging
+    # Note: Logging methods must be qualified (Logging.debug, Logging.info, etc.)
+    # because 'include Logging' + 'extend self' doesn't make included methods
+    # available as module methods.
 
     # Override OptionParser#warn to use Logging#warn instead of the default
     # behaviour which prepends the program name (e.g. "script: message").

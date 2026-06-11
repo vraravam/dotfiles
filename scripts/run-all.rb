@@ -70,7 +70,7 @@ start_time = print_script_start
 
 section_header2 'Running commands in git repositories'
 
-info "#{'Finding git repos starting in dir'.yellow} '#{dir.cyan}' " \
+info "#{'Finding git repos starting in dir'.yellow} '#{dir.to_s.cyan}' " \
      "for a min depth of #{mindepth} and max depth of #{maxdepth}"
 info "#{'Filtering with:'.yellow} '#{filter.cyan}'" if filter
 

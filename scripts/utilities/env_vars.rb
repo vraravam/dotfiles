@@ -149,16 +149,16 @@ module EnvVars
 
   # Reference dir for repo verification (resurrect-repositories.rb).
   # Mirrors: export REF_FOLDER (set temporarily for verification operations)
-  # Returns nil when not set or empty (after stripping whitespace), otherwise returns expanded absolute path.
+  # Returns nil when not set or empty (after stripping whitespace), otherwise returns expanded absolute Pathname.
   def self.ref_folder
-    ENV.fetch('REF_FOLDER', nil)&.then { |s| s.strip.empty? ? nil : File.expand_path(s.strip) }
+    ENV.fetch('REF_FOLDER', nil)&.then { |s| s.strip.empty? ? nil : Pathname.new(s.strip).expand_path }
   end
 
   # Base dir for repo operations (run-all.rb).
   # Mirrors: export FOLDER (set temporarily for run-all operations, defaults to current directory)
-  # Returns nil when not set or empty (after stripping whitespace), otherwise returns expanded absolute path.
+  # Returns nil when not set or empty (after stripping whitespace), otherwise returns expanded absolute Pathname.
   def self.folder
-    ENV.fetch('FOLDER', nil)&.then { |s| s.strip.empty? ? nil : File.expand_path(s.strip) }
+    ENV.fetch('FOLDER', nil)&.then { |s| s.strip.empty? ? nil : Pathname.new(s.strip).expand_path }
   end
 
   # Search depth limits for repo operations (run-all.rb).

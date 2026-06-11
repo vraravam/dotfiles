@@ -84,13 +84,7 @@ error "One or more required git metadata values are missing for '#{dir.cyan}' --
 
 # Before destroying git history, ensure Keybase is reachable so we do not end
 # up with a deleted local .git and no way to push.
-if Keybase.keybase_url?(git_url)
-  if dry_run
-    info 'Would check: Keybase login status'
-  else
-    exit 1 unless Keybase.ensure_logged_in
-  end
-end
+exit 1 if Keybase.keybase_url?(git_url) && !Keybase.ensure_logged_in(dry_run: dry_run)
 
 # Wrap the destructive operations in cron suspension so the cron job does not
 # fire mid-operation. recron regenerates the crontab on the success path;

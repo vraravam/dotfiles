@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'pathname'
 require 'set'
 
 require_relative 'collection_processor'
@@ -215,25 +216,19 @@ module GitWorkspace
     )
 
     # Collect parent dirs (ancestors of repo roots, up to but not including PROJECTS_BASE_DIR)
-    # Use Set for O(1) membership checks instead of Hash (more semantically correct and memory efficient)
-    seen = Set.new
-    parent_dirs = []
-    projects_base_str = projects_base.to_s
+    parent_dirs = _collect_ancestors(
+      repo_roots,
+      stop_at: Pathname.new(projects_base),
+      include_repo_root: false,
+      include_stop_boundary: false
+    )
 
-    repo_roots.each do |repo_root|
-      # First ancestor to alias = parent of repo root
-      ancestor = File.dirname(repo_root)
-      while ancestor != projects_base_str && ancestor != PathUtils::ROOT.to_s
-        break if seen.include?(ancestor)
-        seen.add(ancestor)
-        parent_dirs << ancestor
-        ancestor = File.dirname(ancestor)
-      end
-    end
+    # Sort by depth so shallower (more general) aliases come first in the cache file
+    sorted_dirs = parent_dirs.sort_by { |d| d.count(File::SEPARATOR) }
 
     cache_file.open('w') do |f|
-      parent_dirs.each do |dir_path|
-        relative = dir_path.sub("#{projects_base_str}#{File::SEPARATOR}", '')
+      sorted_dirs.each do |dir_path|
+        relative = dir_path.sub("#{projects_base}#{File::SEPARATOR}", '')
         # Alias name: replace path separator with '-'; value: sets FOLDER for run-all.rb.
         alias_name = relative.gsub(File::SEPARATOR, '-')
         f.puts "alias #{alias_name}=\"FOLDER='#{dir_path}' MAXDEPTH=4 rug\""
@@ -251,6 +246,39 @@ module GitWorkspace
   # ---------------------------------------------------------------------------
 
   private
+
+  # Collects all ancestor directories of the given repo roots, walking up to a
+  # specified boundary directory. Deduplicates using a Set for O(1) membership checks.
+  #
+  # @param repo_roots [Array<String>] Array of repository root paths
+  # @param stop_at [Pathname] Upper boundary directory (exclusive unless include_stop_boundary is true)
+  # @param include_repo_root [Boolean] When true, includes repo root itself in results;
+  #   when false, starts from parent of repo root
+  # @param include_stop_boundary [Boolean] When true, includes stop_at directory if reached;
+  #   when false, stops before stop_at
+  # @return [Array<String>] Deduplicated ancestor directory paths as strings
+  def _collect_ancestors(repo_roots, stop_at:, include_repo_root: false, include_stop_boundary: false)
+    seen = Set.new
+
+    repo_roots.each do |repo_root|
+      dir = Pathname.new(repo_root)
+      dir = dir.dirname unless include_repo_root
+
+      while dir != PathUtils::ROOT
+        # Stop before reaching stop_at (unless include_stop_boundary is true)
+        if dir == stop_at
+          seen.add(dir) if include_stop_boundary
+          break
+        end
+
+        break if seen.include?(dir)
+        seen.add(dir)
+        dir = dir.dirname
+      end
+    end
+
+    seen.to_a.map(&:to_s)
+  end
 
   # Finds all git repos under HOME, DOTFILES_DIR, and PROJECTS_BASE_DIR (up to
   # +find_maxdepth+ levels deep) and returns a deduplicated array of every ancestor
@@ -272,22 +300,11 @@ module GitWorkspace
     )
 
     # Walk up from each repo root to HOME, collecting all ancestors
-    # Use Set for O(1) membership checks instead of Hash (more semantically correct and memory efficient)
-    seen = Set.new
-    result = []
-    home_str = EnvVars::HOME.to_s
-
-    repo_roots.each do |repo_root|
-      dir = repo_root
-      while dir != PathUtils::ROOT.to_s
-        break if seen.include?(dir)
-        seen.add(dir)
-        result << dir
-        break if dir == home_str
-        dir = File.dirname(dir)
-      end
-    end
-
-    result
+    _collect_ancestors(
+      repo_roots,
+      stop_at: EnvVars::HOME,
+      include_repo_root: true,
+      include_stop_boundary: true
+    )
   end
 end

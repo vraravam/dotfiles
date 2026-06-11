@@ -18,6 +18,7 @@ require 'fileutils'
 require 'git_processor'
 require 'logging'
 require 'open3'
+require 'pathname'
 require 'set'
 require 'shellwords'
 require 'yaml'
@@ -124,7 +125,7 @@ def _find_git_repos_from_disk(path)
   filter_and_warn_stderr(stderr_str, context: 'Issues encountered while searching for git repositories')
 
   if status.success? || !nil_or_empty?(stdout_str.strip) # Process output if command was successful or if there's any output despite error
-    stdout_str.split("\0").map { |git_path| File.dirname(git_path) }.uniq.sort
+    stdout_str.split("\0").map { |git_path| Pathname.new(git_path).dirname.to_s }.uniq.sort
   else
     # This case means find command failed AND produced no output, a more critical failure.
     record_error("`find` command failed (status #{status.exitstatus}) and produced no output.")
@@ -372,7 +373,7 @@ script_start_time = print_script_start
 
 if options[:generate]
   section_header('Generating repository configuration')
-  discovery_dir = File.expand_path(options[:generate])
+  discovery_dir = Pathname.new(options[:generate]).expand_path.to_s
   info("#{'Discovering repos under discovery directory:'.yellow} '#{discovery_dir.cyan}'")
   info("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
   repositories = _find_git_repos_from_disk(discovery_dir)
@@ -388,7 +389,7 @@ if options[:generate]
   puts("  Generated entries:       #{generated.length.to_s.green}")
 elsif options[:resurrect]
   section_header('Resurrecting repositories')
-  config_file = File.expand_path(options[:resurrect])
+  config_file = Pathname.new(options[:resurrect]).expand_path.to_s
   info("#{'Config file:'.yellow} '#{config_file.cyan}'")
   info("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
   repositories = _read_git_repos_from_file(config_file)
@@ -410,7 +411,7 @@ elsif options[:resurrect]
   @has_failures = true if results[:failed].any?
 elsif options[:check]
   section_header('Verifying repositories')
-  config_file = File.expand_path(options[:check])
+  config_file = Pathname.new(options[:check]).expand_path.to_s
   info("#{'Config file:'.yellow} '#{config_file.cyan}'")
   info("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
   reference_dir = EnvVars.ref_folder
