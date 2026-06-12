@@ -176,6 +176,9 @@ main() {
     return 1
   fi
 
+  local script_start_time="${EPOCHSECONDS}"
+  print_script_start
+
   local target_dir="${PERSONAL_CONFIGS_DIR}/defaults"
   ensure_dir_exists "${target_dir}"
 
@@ -237,21 +240,21 @@ main() {
   local domains_file="${DOTFILES_DIR}/scripts/data/capture-prefs-allowed-list.txt"
   if ! is_file "${domains_file}"; then
     _record_error "Domains list file not found: '$(cyan "${domains_file}")'"
-    print_script_summary
+    print_script_summary "${script_start_time}"
     return 1
   fi
 
   local denied_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-denied-list.txt"
   if ! is_file "${denied_list_file}"; then
     _record_error "Denied list file not found: '$(cyan "${denied_list_file}")'"
-    print_script_summary
+    print_script_summary "${script_start_time}"
     return 1
   fi
 
   local excluded_keys_file="${DOTFILES_DIR}/scripts/data/capture-prefs-excluded-keys.txt"
   if ! is_file "${excluded_keys_file}"; then
     _record_error "Excluded keys file not found: '$(cyan "${excluded_keys_file}")'"
-    print_script_summary
+    print_script_summary "${script_start_time}"
     return 1
   fi
 
@@ -382,7 +385,7 @@ main() {
     _saved_msg=" -- $(purple "${_saved_count}") files saved after stripping"
   fi
   success "Operation finished. Processed $(purple "${#app_array[@]}") domains (denied-list entries skipped silently)${_saved_msg}."
-  print_script_summary
+  print_script_summary "${script_start_time}"
 }
 
 main "$@"

@@ -74,14 +74,6 @@ def _format_size(kb)
   end
 end
 
-# Returns dir size in kilobytes.
-# @param dir [Pathname, String] The dir to measure
-# @return [Integer] Size in KB
-def _dir_size(dir)
-  du_out, = Open3.capture3('du', '-sk', dir.to_s)
-  du_out.split("\t").first.to_i
-end
-
 # Returns true if the profile should be skipped (browser running or dir missing).
 def _should_skip_profile?(browser_name, profile_dir)
   if _browser_running?(browser_name)
@@ -180,7 +172,7 @@ def _delete_items(profile_dir, file_patterns, dir_patterns, dry_run)
 end
 
 private :_read_pattern_file, :_browser_running?, :_kb_to_bytes, :_mb_to_bytes, :_bytes_to_mb,
-        :_format_size, :_dir_size, :_should_skip_profile?, :_vacuum_sqlite_databases, :_delete_items
+        :_format_size, :_should_skip_profile?, :_vacuum_sqlite_databases, :_delete_items
 
 # Vacuums SQLite databases larger than 10 MB and deletes known cache/session
 # files from +profile_dir+. Skips if the browser process is running.
@@ -200,7 +192,7 @@ def vacuum_browser_profile_dir(browser_name, profile_dir, dry_run:)
   # Measure size before cleanup (only for actual runs)
   size_before_kb = 0
   unless dry_run
-    size_before_kb = _dir_size(profile_dir)
+    size_before_kb = PathUtils.dir_size_kb(profile_dir)
     info "--> Size before: '#{profile_dir.to_s.cyan}' --> #{_format_size(size_before_kb)}"
   end
 
@@ -212,7 +204,7 @@ def vacuum_browser_profile_dir(browser_name, profile_dir, dry_run:)
 
   # Report space savings (only for actual runs)
   unless dry_run
-    size_after_kb = _dir_size(profile_dir)
+    size_after_kb = PathUtils.dir_size_kb(profile_dir)
     info "--> Size after: '#{profile_dir.to_s.cyan}' --> #{_format_size(size_after_kb)}"
     info "-> Space saved: #{_format_size(size_before_kb - size_after_kb)}"
   end

@@ -252,7 +252,7 @@ invocations are acceptable. Quote all command substitutions to handle paths
 containing spaces:
 
 ```ini
-size = !printf '==> Size of repository at %s: %s\n' "$(git rev-parse --show-toplevel)" "$(du -sh "$(git rev-parse --show-toplevel)/.git" | cut -f1)"
+size = !printf '==> Size of repository at %s: %s\n' "$(git rev-parse --show-toplevel)" "$(/usr/bin/du -sh "$(git rev-parse --show-toplevel)/.git" | cut -f1)"
 ```
 
 ## `git cc` and `git rfc` -- Reflog Expiry Without Stash Loss

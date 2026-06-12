@@ -3,6 +3,7 @@
 require 'open3'
 
 require_relative 'env_vars'
+require_relative 'git_processor'
 require_relative 'logging'
 require_relative 'path_utils'
 
@@ -38,8 +39,8 @@ module Antidote
     antidote_home = EnvVars::ANTIDOTE_HOME
 
     unless antidote_zsh.file? && !antidote_zsh.empty? && plugin_txt.file? && !plugin_txt.empty?
-      Logging.debug "Skipping antidote bundle regeneration: antidote not found at '#{antidote_zsh.cyan}' " \
-                    "or plugin list '#{plugin_txt.cyan}' is missing"
+      Logging.debug "Skipping antidote bundle regeneration: antidote not found at '#{antidote_zsh.to_s.cyan}' " \
+                    "or plugin list '#{plugin_txt.to_s.cyan}' is missing"
       return
     end
 
@@ -47,7 +48,7 @@ module Antidote
       system('zsh', '-f', '-c', 'source "$1"; antidote update', '--', antidote_zsh.to_s)
       PathUtils.glob_pathnames(antidote_home.join('github.com', '*', '*')) do |bundle_dir|
         next unless bundle_dir.directory?
-        next unless bundle_dir.join('.git').directory?
+        next unless GitProcessor.repo?(bundle_dir)
         system('git', '-C', bundle_dir.to_s, 'config', '--local', 'fetch.fsckObjects', 'false',
                out: File::NULL, err: File::NULL)
         system('git', '-C', bundle_dir.to_s, 'pull-unshallow', '-q',
@@ -63,7 +64,7 @@ module Antidote
     )
     if status.success?
       plugin_zsh.write(bundle_content)
-      Logging.success "antidote bundle regenerated at '#{plugin_zsh.to_s.yellow}'"
+      Logging.success "antidote bundle regenerated at '#{plugin_zsh.to_s.cyan}'"
     else
       Logging.record_warning('Failed to regenerate antidote bundle')
     end

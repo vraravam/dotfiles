@@ -3,6 +3,7 @@
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
 # git command: st
+# Wrapper for git status with folder argument support.
 
 # Re-source guard is inside .shellrc itself -- safe to call unconditionally.
 source "${HOME}/.shellrc"
@@ -13,9 +14,9 @@ _st() {
   parse_folder_and_switches "$@"
   section_header2 "$(yellow 'Status') '$(cyan "${folder}")'"
   if ! is_git_repo "${folder}"; then
-    warn "Skipping status of the repo since '$(cyan "${folder}")' doesn't exist or is not a git repo"
+    warn "Skipping status -- '$(cyan "${folder}")' is not a git repo"
   else
-    git -C "${folder}" st "${switches[@]}" || true
+    git -C "${folder}" status "${switches[@]}" || true
   fi
 }
 

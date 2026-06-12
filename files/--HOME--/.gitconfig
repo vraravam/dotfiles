@@ -308,7 +308,7 @@
 
   # Prints the disk size of the current repo's .git directory.
   # Usage: git size [<dir>]
-  size = "!f() { root=$(git -C \"${1:-.}\" rev-parse --show-toplevel); printf '==> Size of repository at %s: %s\n' \"${root}\" \"$(du -sh \"${root}/.git\" | cut -f1)\"; }; f"
+  size = "!f() { root=$(git -C \"${1:-.}\" rev-parse --show-toplevel); printf '==> Size of repository at %s: %s\n' \"${root}\" \"$(/usr/bin/du -sh \"${root}/.git\" | cut -f1)\"; }; f"
 
   # Compresses the repo and reclaims disk space by pruning, repacking, and running gc.
   # Note: refs/stash is intentionally excluded from reflog expire to preserve stashes.

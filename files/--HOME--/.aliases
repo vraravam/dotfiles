@@ -144,7 +144,10 @@ require_env_var() {
   local var_name
   for var_name in "$@"; do
     if is_zero_string "${(P)var_name:-}"; then
-      warn "${var_name} must be set (source ~/.aliases first)"
+      warn "'$(yellow "${var_name}")' must be set in either '$(cyan "~/.shellrc")' or '$(cyan "~/.aliases")'
+  After adding, run:
+    - unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
+    - unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases"
       return 1
     fi
   done
@@ -435,9 +438,9 @@ setup_dev_environment() {
 # Usage: _free_wifi <interface>  (called via the free_wifi alias, e.g. free_wifi en0)
 _free_wifi() {
   local interface="${1}"
-  (ifconfig "${interface}" | \grep ether) &&
+  (ifconfig "${interface}" | /usr/bin/grep ether) &&
     (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig "${interface}" ether) &&
-    (ifconfig "${interface}" | \grep ether)
+    (ifconfig "${interface}" | /usr/bin/grep ether)
 }
 
 if is_macos; then
@@ -470,7 +473,7 @@ if is_macos; then
   find_and_append_prefs() {
     local allowed_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-allowed-list.txt"
     local denied_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-denied-list.txt"
-    defaults find "${1}" | \grep 'keys in domain' | while IFS="'" read -r _ field _; do
+    defaults find "${1}" | /usr/bin/grep 'keys in domain' | while IFS="'" read -r _ field _; do
       # Check whether this domain is on the denied list before appending.
       # grep -Fxq: fixed-string, whole-line, quiet -- no subprocess output.
       if grep -Fxq "${field}" "${denied_list_file}" 2>/dev/null; then
@@ -614,18 +617,6 @@ pdf_to_png() {
   local png="${pdf%.*}.png"
 
   magick -density 800 "${pdf}" -quality 100 "${png}"
-}
-
-# Shows disk usage of a folder in a colorized format. Defaults to the current directory.
-# Usage: folder_size [folder-path]
-folder_size() {
-  local folder="${1:-${PWD}}"
-  # du output is "<size>\t<path>"; capture once then strip with %% -- no cut fork.
-  # ${folder:A} is the pure-zsh realpath equivalent -- no realpath subprocess.
-  # color functions apply tilde substitution automatically; no pre-substitution needed.
-  local du_out
-  du_out=$(/usr/bin/du -sh "${folder}" 2>/dev/null)
-  echo "$(yellow "${folder:A}") --> $(cyan "${du_out%%$'\t'*}")"
 }
 
 # --------------------------------------------------------------------------
@@ -841,69 +832,37 @@ _MACOS_LOGIN_ITEM_APPS=(
   'Thaw'       # login item via Brewfile setup_login_items_script (SMAppService)
 )
 
-# Sends SIGTERM to every app in _MACOS_LOGIN_ITEM_APPS. Called before writing
-# defaults so in-memory state is flushed to disk first.
-# Failures are silenced -- apps that are not running are not an error.
+# Invokes a method on the MacOS Ruby module (scripts/utilities/macos.rb).
+# Used by the delegation functions below to eliminate repetitive ruby -e calls.
+#
+# Arguments:
+#   $1 - method name to call on MacOS module
+_call_ruby_macos() {
+  local method="${1:?_call_ruby_macos: method name required}"
+  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'macos'; MacOS.${method}"
+}
+
+# Delegates to MacOS.kill_login_item_apps (scripts/utilities/macos.rb).
 kill_login_item_apps() {
-  local _app
-  for _app in "${_MACOS_LOGIN_ITEM_APPS[@]}"; do
-    killall "${_app}" &>/dev/null || true
-  done
-  killall 'Finder' &>/dev/null || true  # launchd-managed; killall causes immediate relaunch
+  _call_ruby_macos 'kill_login_item_apps'
 }
 
-# Re-opens every app in _MACOS_LOGIN_ITEM_APPS. Called from an EXIT trap
-# after defaults writes complete so the user is never left with login-item
-# apps dead.
-# Finder is launchd-managed: killall causes an immediate auto-relaunch with
-# fresh prefs. open -a would be a no-op since launchd already relaunched it
-# after kill_login_item_apps -- so killall is used again here to force a
-# second relaunch that reads the newly-written defaults.
+# Delegates to MacOS.restart_login_item_apps (scripts/utilities/macos.rb).
 restart_login_item_apps() {
-  local _app
-  for _app in "${_MACOS_LOGIN_ITEM_APPS[@]}"; do
-    open -a "${_app}" &>/dev/null || true
-  done
-  killall 'Finder' &>/dev/null || true  # launchd-managed; killall causes immediate relaunch
+  _call_ruby_macos 'restart_login_item_apps'
 }
 
-# Turns the macOS automatic software update schedule off before reading/writing
-# plists. Guards with 'sudo -n true' so it is safe to call from cron -- if sudo
-# credentials are not cached (no terminal), warns and skips rather than hanging.
-# Must be paired with resume_softwareupdate_schedule (called from EXIT trap).
+# Delegates to MacOS.suspend_softwareupdate_schedule (scripts/utilities/macos.rb).
 suspend_softwareupdate_schedule() {
-  if ! has_sudo_credentials; then
-    warn "suspend_softwareupdate_schedule: sudo credentials not available -- skipping softwareupdate schedule suspension."
-    return 0
-  fi
-  keep_sudo_alive
-  sudo softwareupdate --schedule OFF
+  _call_ruby_macos 'suspend_softwareupdate_schedule'
 }
 
-# Turns the macOS automatic software update schedule back on. Called from the
-# EXIT trap in osx-defaults.sh and capture-prefs.sh so it runs on both normal
-# and error exits. Guards with 'sudo -n true' so it is safe to call from cron --
-# if sudo credentials are not cached (no terminal), warns and skips rather than
-# hanging. keep_sudo_alive's duplicate-loop guard makes it a no-op when the
-# background loop is already running.
+# Delegates to MacOS.resume_softwareupdate_schedule (scripts/utilities/macos.rb).
 resume_softwareupdate_schedule() {
-  if ! has_sudo_credentials; then
-    warn "resume_softwareupdate_schedule: sudo credentials not available -- skipping softwareupdate schedule restoration."
-    return 0
-  fi
-  keep_sudo_alive
-  sudo softwareupdate --schedule ON
+  _call_ruby_macos 'resume_softwareupdate_schedule'
 }
 
-# Restarts the macOS system services that cache preferences so imported or
-# written defaults take effect immediately without a logout.
-# cfprefsd -- flushes the global prefs cache (covers NSGlobalDomain).
-# activateSettings -- the only supported way to flush com.apple.symbolichotkeys
-#   (keyboard shortcut changes) without a logout.
+# Delegates to MacOS.reload_macos_prefs (scripts/utilities/macos.rb).
 reload_macos_prefs() {
-  local _reload_app
-  for _reload_app in 'cfprefsd' 'Dock' 'Finder' 'SystemUIServer'; do
-    killall "${_reload_app}" &>/dev/null || true
-  done
-  /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
+  _call_ruby_macos 'reload_macos_prefs'
 }

@@ -109,8 +109,28 @@ export LESSCHARSET='utf-8'
 # MACHTYPE is not used here: on a vanilla macOS (Apple Silicon) it incorrectly
 # reports 'x86_64' instead of 'arm64' -- a confirmed zsh/macOS bug discussed in
 # Apple support forums. uname -m is the only reliable source on all machines.
-# The outer ${ARCH:-...} honours any value already exported by a parent process.
-export ARCH="${ARCH:-"$(uname -m)"}"
+# Cache architecture detection to avoid uname -m fork on every .shellrc source.
+# Cached in XDG_CACHE_HOME, invalidated by delete_caches (e.g. after macOS upgrades).
+# This runs before HOMEBREW_PREFIX setup (line 118+) which depends on ARCH.
+# Note: XDG_CACHE_HOME is defined earlier (line 40), but the directory may not exist
+# yet during .zshenv (first source on vanilla OS). Cache write is guarded; cache read
+# works regardless. Saves ~2-3ms per shell startup.
+if [[ -z "${ARCH:-}" ]]; then
+  local arch_cache="${XDG_CACHE_HOME}/arch-cache.zsh"
+  if [[ -f "${arch_cache}" ]]; then
+    source "${arch_cache}"
+  else
+    ARCH="$(uname -m)"
+    # Guard cache write: XDG_CACHE_HOME dir may not exist yet during .zshenv on vanilla OS
+    if [[ -d "${XDG_CACHE_HOME}" ]]; then
+      {
+        echo "export ARCH='${ARCH}'"
+        echo "# Generated: $(uname -r)"
+      } >|"${arch_cache}" 2>/dev/null
+    fi
+    export ARCH
+  fi
+fi
 export ARCHFLAGS="-arch ${ARCH}"
 
 # Moving homebrew env vars here itself so that the initial homebrew installation
@@ -760,6 +780,89 @@ _record_error() {
   warn "${msg}"
 }
 
+# Returns true if _step_errors array exists and is non-empty.
+# Combines existence check (( ${+_step_errors} )) with is_non_empty_array.
+# Relies on zsh dynamic scoping: _step_errors must be declared in the calling scope.
+#
+# Usage:
+#   if _has_step_errors; then
+#     echo "Found ${#_step_errors[@]} error(s)"
+#   fi
+_has_step_errors() {
+  is_zsh && (( ${+_step_errors} )) && is_non_empty_array _step_errors
+}
+
+# Returns true if _step_warnings array exists and is non-empty.
+# Combines existence check (( ${+_step_warnings} )) with is_non_empty_array.
+# Relies on zsh dynamic scoping: _step_warnings must be declared in the calling scope.
+#
+# Usage:
+#   if _has_step_warnings; then
+#     echo "Found ${#_step_warnings[@]} warning(s)"
+#   fi
+_has_step_warnings() {
+  is_zsh && (( ${+_step_warnings} )) && is_non_empty_array _step_warnings
+}
+
+# Build formatted notification parts from _step_errors and _step_warnings arrays.
+# Populates the named array variable with strings formatted as "N error(s)" or
+# "N error(s): details", depending on the format argument.
+# Relies on zsh dynamic scoping: _step_errors and _step_warnings must be declared
+# in the calling scope (typically in main()).
+#
+# Arguments:
+#   $1 - name of array variable to populate (passed by name, not value)
+#   $2 - format: 'short' (counts only) or 'long' (counts + details) [default: long]
+#
+# Usage:
+#   local -a notification_parts
+#   _build_notification_parts notification_parts 'long'
+#   if is_non_empty_array notification_parts; then
+#     local body="${(j: | :)notification_parts}"
+#     _dotfiles_notify "Message: ${body}" "Title"
+#   fi
+#
+# POSIX compliance note: Uses eval to populate the target array by name. The
+# array values are double-quoted during eval to prevent word splitting. The
+# function assumes zsh; POSIX shells lack associative arrays and the (j::)
+# join operator, so full POSIX compliance is not achievable. The parameter
+# validation uses ${1:?} which is POSIX-compliant. Uses is_zsh utility to
+# guard zsh-only syntax.
+_build_notification_parts() {
+  local _bnp_array_name="${1:?_build_notification_parts: missing array name argument}"
+  local _bnp_format="${2:-long}"
+
+  # Clear the target array first (zsh syntax: arrayname=())
+  eval "${_bnp_array_name}=()"
+
+  # Build errors part
+  if _has_step_errors; then
+    if [[ "${_bnp_format}" == 'short' ]]; then
+      # Short format: just the count
+      eval "${_bnp_array_name}+=(\"${#_step_errors[@]} error(s)\")"
+    else
+      # Long format: count + details joined with '; '
+      # Use zsh array join: ${(j:; :)array}
+      local _bnp_errors_summary
+      _bnp_errors_summary="${(j:; :)_step_errors}"
+      eval "${_bnp_array_name}+=(\"${#_step_errors[@]} error(s): ${_bnp_errors_summary}\")"
+    fi
+  fi
+
+  # Build warnings part
+  if _has_step_warnings; then
+    if [[ "${_bnp_format}" == 'short' ]]; then
+      # Short format: just the count
+      eval "${_bnp_array_name}+=(\"${#_step_warnings[@]} warning(s)\")"
+    else
+      # Long format: count + details joined with '; '
+      local _bnp_warnings_summary
+      _bnp_warnings_summary="${(j:; :)_step_warnings}"
+      eval "${_bnp_array_name}+=(\"${#_step_warnings[@]} warning(s): ${_bnp_warnings_summary}\")"
+    fi
+  fi
+}
+
 # Print a grouped summary of all warnings and errors collected via _record_warning/_record_error.
 # Reads _step_warnings and _step_errors from the caller's scope via zsh dynamic scoping.
 # Must be called after shellrc is sourced (uses section_header and warn).
@@ -787,8 +890,14 @@ print_script_summary() {
   local final_length=$(((viewport_length * _HEADER_WIDTH_NUMERATOR / _HEADER_WIDTH_DENOMINATOR)))
   echo $(dark_gray "$(print_chars_for_length '*' ${final_length})")
 
-  if is_non_zero_string "${_pss_msg}"; then info "${_pss_msg}"; fi
-  if (($+_step_warnings)) && is_non_empty_array _step_warnings; then
+  if is_non_zero_string "${_pss_msg}"; then
+    if _has_step_warnings || _has_step_errors; then
+      info "⚠️ ${_pss_msg}"
+    else
+      success "✅ ${_pss_msg}"
+    fi
+  fi
+  if _has_step_warnings; then
     # Temporarily decrement depth so both header and warnings print one level less indented
     _decrement_script_depth
     _section_header_impl "$(cyan "${_pss_title}") $(yellow "${#_step_warnings[@]} warning(s)")" '-' '⏳' 'orange'
@@ -798,7 +907,7 @@ print_script_summary() {
     done
     _increment_script_depth
   fi
-  if (($+_step_errors)) && is_non_empty_array _step_errors; then
+  if _has_step_errors; then
     # Temporarily decrement depth so both header and errors print one level less indented
     _decrement_script_depth
     _section_header_impl "$(cyan "${_pss_title}") $(red "${#_step_errors[@]} error(s) -- manual attention needed")" '-' '⏳' 'light_red'
@@ -815,8 +924,7 @@ print_script_summary() {
   # especially in headless/cron contexts. Scripts with custom success notifications
   # (e.g. fresh-install, software-updates-cron) handle them outside this function.
   local -a _pss_parts=()
-  if (($+_step_errors))   && is_non_empty_array _step_errors; then   _pss_parts+=("${#_step_errors[@]} error(s)"); fi
-  if (($+_step_warnings)) && is_non_empty_array _step_warnings; then _pss_parts+=("${#_step_warnings[@]} warning(s)"); fi
+  _build_notification_parts _pss_parts 'short'
   if is_non_empty_array _pss_parts; then
     _dotfiles_notify "${_pss_title}: completed with ${(j: and :)_pss_parts}." "⚠️ ${_pss_title}" || true
   fi

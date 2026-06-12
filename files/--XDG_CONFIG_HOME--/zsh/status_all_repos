@@ -2,28 +2,14 @@
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
-# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
-source "${HOME}/.shellrc"
-# st is a required dependency; source it to make the function available without
-# triggering its self-invocation (zsh_eval_context guard in st prevents execution when sourced).
-# Note: load_file_if_exists is intentionally NOT used -- st is required, not optional.
-source "${XDG_CONFIG_HOME}/zsh/st"
+# Thin wrapper that delegates to Ruby GitWorkspace.status_all_repos.
+# Reports git status for HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, and chrome directories.
 
-# Reports status of the following repos: HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, ZenProfile chrome dir
+# Re-source guard is inside .aliases itself -- safe to call unconditionally.
+source "${HOME}/.aliases"
+
 status_all_repos() {
-  st "${HOME}"
-  st "${DOTFILES_DIR}"
-  st "${PERSONAL_PROFILES_DIR}"
-  # Use zsh glob qualifiers to only loop if matches exist and are directories
-  # (N) nullglob: if no match, the pattern expands to nothing
-  # (/): only match directories
-  local chrome_dirs=("${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome(N/))
-  if is_non_empty_array chrome_dirs; then
-    local dir
-    for dir in "${chrome_dirs[@]}"; do
-      st "${dir}"
-    done
-  fi
+  _call_ruby_git_workspace status_all_repos
 }
 
 # Run only when executed directly, not when sourced (e.g. to import the function into another script).

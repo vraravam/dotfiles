@@ -109,8 +109,8 @@ module Cron
       EnvVars::DOTFILES_DIR.join('scripts').to_s
     ].join(':')
 
-    cron_cmd = EnvVars::DOTFILES_DIR.join('scripts', 'software-updates-cron.sh').to_s
-    log_file = EnvVars::HOME.join('software-updates-cron.log').to_s
+    cron_cmd = EnvVars::DOTFILES_DIR.join('scripts', 'software-updates-cron.sh')
+    log_file = EnvVars::HOME.join('software-updates-cron.log')
 
     file.open(mode: 'w') do |f|
       f.puts '# Reference: https://crontab.guru/'

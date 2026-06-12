@@ -133,10 +133,13 @@ main() {
     return 1
   fi
 
+  local script_start_time="${EPOCHSECONDS}"
+  print_script_start
+
   local app_path="/Applications/${app_name}.app"
   if ! is_directory "${app_path}"; then
     info "Application '$(yellow "${app_path}")' not found -- skipping."
-    print_script_summary
+    print_script_summary "${script_start_time}"
     return 0
   fi
 
@@ -180,7 +183,7 @@ main() {
     fi
   fi
 
-  print_script_summary
+  print_script_summary "${script_start_time}"
 }
 
 main "$@"

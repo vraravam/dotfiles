@@ -271,6 +271,48 @@ Both `~/.ssh/config` and `templates/ssh-config.template` must have this comment 
 - If any modifications touch the zsh boot‑up files (`.zshenv`, `.zshrc`, `.zlogin`, `.aliases`, `.shellrc`, etc.) or other scripts that are sourced during a terminal start‑up, add a note that the user should quit and restart the Terminal/iTerm application to reload the configuration.
 - If the staged changes involve fresh‑install logic (e.g., modifications to `fresh-install-of-osx.sh` or related scripts), advise running the fresh‑install script in an idempotent manner, e.g. `./fresh-install-of-osx.sh` (it will guard against already‑configured machines).
 
+### Changelog Entry Structure
+
+When creating or editing CHANGELOG.md sections, follow these rules:
+
+1. **Group related changes by category** rather than listing individual files when multiple files share similar changes.
+   - Use `*[all ruby scripts]*` or `*[all zsh autoload scripts in files/--XDG_CONFIG_HOME--/zsh/]*` for changes that apply across multiple files with the same pattern.
+   - Example: Instead of separate bullets for `antidote.rb`, `cron.rb`, and `keybase.rb` when they all adopt the same pattern, write one bullet covering all affected files.
+
+2. **Keep essential technical details** while removing redundant specifics:
+   - Always include: line numbers, method names, key implementation details, specific behavior changes.
+   - Remove: repetitive file-by-file descriptions when a category description suffices.
+   - Example: Keep "`update_repo(dir)` - fetch all remotes and rebase onto upstream" but consolidate "uses `GitProcessor.repo?(path)` for validation" once rather than per file.
+
+3. **Use concise, high-level summaries** in the adoption section:
+   - Focus on user-visible actions (restart terminal, run a script).
+   - Remove implementation details that are already covered in the bullet points above.
+   - Combine related adoption steps into single bullets when possible.
+
+4. **Structure each version section consistently**:
+   - Version number header (e.g., `### 3.1.23`)
+   - Descriptive subheading summarizing the theme (e.g., `#### Backport utility enhancements and convert zsh autoload functions to Ruby`)
+   - Bullet points with specific changes (technical details with line numbers)
+   - `#### Adopting these changes` section with user action items
+
+**Example of good structure:**
+```markdown
+### 3.1.23
+
+#### Backport utility enhancements and convert zsh autoload functions to Ruby
+
+* *[scripts/utilities/git_workspace.rb]* Added four new public methods for git operations (lines 278-377): `update_repo(dir)` - fetch all remotes and rebase onto upstream; `update_all_repos` - update key repos (home, dotfiles, profiles) plus Chrome profile directories; `status_repo(dir)` - show status with custom formatting; `status_all_repos` - status check all repos. All methods use `GitProcessor.repo?(path)` for validation and return boolean success.
+
+* *[all ruby scripts]* Ensures consistency with single source of truth for git repo detection across all utility modules. Also found and fixed premature conversion of `Pathname` instances to `String` (maintain rich object as much as possible only convert to String at interpolation boundaries).
+
+* *[all zsh autoload scripts in files/--XDG_CONFIG_HOME--/zsh/]* Converted from shell script to a thin Ruby wrapper.
+
+#### Adopting these changes
+
+* Restart terminal to reload zsh autoload functions.
+* New Ruby methods are immediately available to shell scripts via `ruby -e` pattern.
+```
+
 
 ---
 

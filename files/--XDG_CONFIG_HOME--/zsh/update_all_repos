@@ -2,39 +2,14 @@
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
-# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
-source "${HOME}/.shellrc"
+# Thin wrapper that delegates to Ruby GitWorkspace.update_all_repos.
+# Stages and commits all changed files in HOME and PERSONAL_PROFILES_DIR repos.
 
-# Stages and commits all changed files in the specified repo without prompting.
-# Intended for repos that track auto-generated state (e.g. preference exports) where
-# the caller does not need to review individual changes before committing.
-# Internal helper -- not intended to be called directly.
-_update_repo() {
-  if ! is_git_repo "${1}"; then
-    warn "Skipping updating the repo since '$(yellow "${1}")' doesn't exist or is not a git repo"
-    return 0 # Success, nothing to do
-  fi
+# Re-source guard is inside .aliases itself -- safe to call unconditionally.
+source "${HOME}/.aliases"
 
-  local dir
-  dir="$(strip_trailing_slash "${1}")"
-
-  local relative_path
-  relative_path="$(git -C "${dir}" relative-path "${2}")"
-  relative_path="${relative_path:-.}"
-
-  section_header2 "$(yellow 'Updating') $(purple "${dir}")"
-  rm -rfv "${dir}/.git/index.lock" "${dir}/.git/hooks"
-
-  local human_date
-  current_timestamp human_date
-  git -C "${dir}" add "${relative_path}" && git -C "${dir}" sci "Incremental commit: ${human_date}" || true
-}
-
-# Updates the home and profiles repos
 update_all_repos() {
-  # use full-fledged path (based on env vars for consistency and maintenance)
-  _update_repo "${HOME}" "${PERSONAL_CONFIGS_DIR}/defaults"
-  _update_repo "${PERSONAL_PROFILES_DIR}" "${PERSONAL_PROFILES_DIR}"
+  _call_ruby_git_workspace update_all_repos
 }
 
 # Run only when executed directly, not when sourced (e.g. to import the function into another script).

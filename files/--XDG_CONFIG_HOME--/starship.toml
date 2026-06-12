@@ -256,17 +256,17 @@ style = "bg:green fg:black"
 ignore_timeout = true
 
 # ── Custom: git repo size ─────────────────────────────────────────────────────
-# Runs du -sh on the repo's .git folder (equivalent to the 'git size' alias).
+# Runs /usr/bin/du -sh on the repo's .git folder (equivalent to the 'git size' alias).
 # Two variants to match the dirty (yellow) or clean (green) git segment background.
 [custom.git_size]
-command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} du -sh {}/.git 2>/dev/null | cut -f1"
+command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} /usr/bin/du -sh {}/.git 2>/dev/null | cut -f1"
 when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
 format = "[ $output]($style)"
 style = "bg:green fg:black"
 ignore_timeout = true
 
 [custom.git_size_dirty]
-command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} du -sh {}/.git 2>/dev/null | cut -f1"
+command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} /usr/bin/du -sh {}/.git 2>/dev/null | cut -f1"
 when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
 format = "[ $output]($style)"
 style = "bg:yellow fg:black"

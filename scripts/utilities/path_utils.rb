@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require 'open3'
 require 'pathname'
 
 # Command and path manipulation utilities for Ruby scripts.
@@ -32,6 +33,32 @@ module PathUtils
   #   PathUtils.command_exists?('nosuchcommand')  # => false
   def command_exists?(command)
     system('which', command.to_s, out: File::NULL, err: File::NULL)
+  end
+
+  # Returns the size of a directory in kilobytes using du.
+  # Uses /usr/bin/du for reliability in cron/system contexts.
+  #
+  # @param dir [Pathname, String] Directory path to measure
+  # @return [Integer] Size in kilobytes
+  #
+  # @example
+  #   PathUtils.dir_size_kb(Pathname.new('/path/to/dir'))  # => 1024
+  def dir_size_kb(dir)
+    du_out, = Open3.capture3('/usr/bin/du', '-sk', dir.to_s)
+    du_out.split("\t").first.to_i
+  end
+
+  # Returns the size of a directory in human-readable format using du.
+  # Uses /usr/bin/du for reliability in cron/system contexts.
+  #
+  # @param dir [Pathname, String] Directory path to measure
+  # @return [String] Human-readable size (e.g., "1.5G", "234M", "4.2K")
+  #
+  # @example
+  #   PathUtils.dir_size_human(Pathname.new('/path/to/dir'))  # => "1.5G"
+  def dir_size_human(dir)
+    size_out, = Open3.capture3('/usr/bin/du', '-sh', dir.to_s)
+    size_out.split("\t").first
   end
 
   # Extract a path segment at a given index from a dir path

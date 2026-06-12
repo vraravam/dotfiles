@@ -3,6 +3,43 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 
+### 3.1.23
+
+#### Zsh startup performance fix: architecture cache optimization
+
+* *[files/--ZDOTDIR--/.zshrc]* Fixed arch cache to eliminate subprocess forks on cache hit (lines 93-112). Previous implementation ran `uname -r` and `sed` on every shell startup (~5-8ms overhead), negating the intended savings. New logic: cache hit = pure source (0 forks), cache miss = both uname calls. Removed automatic kernel version tracking; cache invalidation is now manual via `delete_caches` after macOS upgrades. Measured improvement: **~3.4ms per shell startup** (from ~60.6ms to ~57.2ms in profiling tests). Arch cache overhead reduced from 8.80ms (26.85% of startup) to 0.06ms (0.27% of startup) -- **147x speedup** for this block.
+
+#### Backport utility enhancements with shell delegation pattern and convert zsh autoload functions to Ruby
+
+* *[scripts/utilities/git_workspace.rb, scripts/utilities/macos.rb]* Backported from migration branch.
+
+* *[all ruby scripts]* Ensures consistency with single source of truth for git repo detection across all utility modules. Also found and fixed premature conversion of `Pathname` instances to `String` (maintain rich object as much as possible only convert to String at interpolation boundaries in log messages).
+
+* *[all zsh autoload scripts in files/--XDG_CONFIG_HOME--/zsh/]* Converted from shell script to a thin Ruby wrapper.
+
+* *[files/--XDG_CONFIG_HOME--/zsh/st]* Fixed infinite recursion bug where `git st` called itself instead of `git status` (line 24).
+
+* *[files/--HOME--/.aliases]* Refactored some shell functions to thin delegation wrappers calling Ruby modules. Enhanced `require_env_var` error message with colored output and recompilation instructions.
+
+* *[scripts/osx-defaults.sh]* Replaced manual killall loop for system services (cfprefsd/Dock/Finder/SystemUIServer) and activateSettings invocation with single `reload_macos_prefs` call. Application-specific killall calls (Chrome, Safari, Mail, etc.) remain.
+
+* *[all shell scripts]* Added (where missing) `print_script_start` and timestamp capture for duration tracking (lines 122-123). Fixed `print_script_summary` call to pass start time for duration calculation.
+
+#### ProfilesRepo module extraction
+
+* *[scripts/utilities/profiles_repo.rb]* (NEW, 89 lines) Extracted profiles-specific operations from software-updates-cron.sh for a cleaner ruby implementation. Both methods guard with `GitProcessor.repo?` check. Module uses qualified Logging calls per utility pattern.
+
+#### du command PATH hardening
+
+* *[6 files]* Replaced bare `du` with `/usr/bin/du` to prevent accidental shadowing by user-defined functions or aliases. Ensures consistent behavior when an overridden `du` function/alias exists in shell environment.
+
+#### Adopting these changes
+
+* Restart terminal to reload zsh autoload functions (`update_all_repos`, `status_all_repos`, `st`) and source updated `.aliases` for macOS delegation functions.
+* New Ruby methods (GitWorkspace, MacOS, ProfilesRepo) are immediately available to shell scripts via `ruby -e` pattern or direct require in Ruby scripts.
+* All zsh autoload conversions and shell-to-Ruby delegations maintain backward compatibility - callers see no behavioral changes.
+
+
 ### 3.1.22
 
 #### Performance optimizations: startup speed and cron efficiency

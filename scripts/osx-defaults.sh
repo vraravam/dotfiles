@@ -119,6 +119,9 @@ main() {
     return 1
   fi
 
+  local script_start_time="${EPOCHSECONDS}"
+  print_script_start
+
   # Ask for the administrator password upfront and keep it alive until this script has finished
   keep_sudo_alive
 
@@ -2164,15 +2167,17 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # ---------------------------------------------------------------------------
   # Kill affected applications
   # ---------------------------------------------------------------------------
+  # reload_macos_prefs handles core system services (cfprefsd/Dock/Finder/
+  # SystemUIServer) and calls activateSettings to flush symbolic hotkeys.
+  reload_macos_prefs
+
+  # Kill application-specific processes that are affected by the defaults writes above.
   local app_array=(
     'Activity Monitor'
     'Address Book'
     'App Store'      # com.apple.appstore / com.apple.commerce
     'Calendar'
-    'cfprefsd'
     'Contacts'
-    'Dock'
-    'Finder'
     'Google Chrome Beta'
     'Google Chrome Canary'
     'Google Chrome'
@@ -2181,17 +2186,11 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     'Safari'
     'ScreenSaverEngine' # com.apple.screensaver (password-on-wake settings)
     'SizeUp'
-    'SystemUIServer'
   )
   local app
   for app in "${app_array[@]}"; do
     killall "${app}" &>/dev/null || true
   done
-
-  # Re-activate symbolic hotkey settings so changes to AppleSymbolicHotKeys
-  # (e.g. disabling the Spotlight shortcuts) take effect immediately without a
-  # logout. activateSettings is the only supported way to flush this plist.
-  /System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings -u
 
   # Turn off spotlight indexing for all volumes (to pre-empt any issues with the system settings pane)
   sudo mdutil -Eda &>/dev/null && sudo mdutil -ai off &>/dev/null
@@ -2204,7 +2203,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   'Zoom' (force-quitting during a call would disconnect it),
   'Thunderbird',
   'KeePassXC'"
-  print_script_summary '' 'Done. Note that some of these changes require a logout/restart to take effect.'
+  print_script_summary "${script_start_time}" 'Done. Note that some of these changes require a logout/restart to take effect.'
 }
 
 main "$@"

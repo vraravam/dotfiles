@@ -1,10 +1,12 @@
 # frozen_string_literal: true
 
+require 'open3'
 require 'pathname'
 require 'set'
 
 require_relative 'collection_processor'
 require_relative 'env_vars'
+require_relative 'git_processor'
 require_relative 'logging'
 require_relative 'path_utils'
 
@@ -271,6 +273,142 @@ module GitWorkspace
       count = cache_file.readlines.length
       Logging.success "Repo aliases cache regenerated (#{count.to_s.green} aliases)"
     end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Repo update and status operations
+  # ---------------------------------------------------------------------------
+
+  # Stages and commits all changed files in a git repo without prompting.
+  # Intended for repos that track auto-generated state (e.g., preference exports)
+  # where the caller does not need to review individual changes before committing.
+  #
+  # @param repo_dir [Pathname, String] The repository directory
+  # @param relative_path [Pathname, String, nil] Optional relative path within
+  #   the repo to add (defaults to entire repo)
+  # @return [Boolean] true if successful, false if repo is invalid or git operations fail
+  def update_repo(repo_dir, relative_path: nil)
+    repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
+
+    unless GitProcessor.repo?(repo_dir)
+      Logging.warn "Skipping repo update -- '#{repo_dir.to_s.cyan}' is not a git repo"
+      return false
+    end
+
+    # Normalize relative path using git relative-path if provided
+    if relative_path
+      rel_str, status = Open3.capture2('git', '-C', repo_dir.to_s, 'relative-path', relative_path.to_s)
+      rel_path = status.success? ? rel_str.strip : '.'
+    else
+      rel_path = '.'
+    end
+
+    Logging.section_header2 "#{'Updating'.yellow} '#{repo_dir.to_s.cyan}'"
+
+    # Clean up lock files and hooks
+    index_lock = repo_dir.join('.git', 'index.lock')
+    hooks_dir = repo_dir.join('.git', 'hooks')
+    index_lock.delete if index_lock.file?
+    hooks_dir.rmtree if hooks_dir.directory?
+
+    # Stage and commit with timestamp
+    timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+    system('git', '-C', repo_dir.to_s, 'add', rel_path) &&
+      system('git', '-C', repo_dir.to_s, 'sci', "Incremental commit: #{timestamp}")
+  end
+
+  # Updates HOME and PERSONAL_PROFILES_DIR repos by staging and committing
+  # auto-generated content. Thin wrapper around update_repo for use by cron jobs.
+  #
+  # @return [Boolean] true if both repos updated successfully
+  def update_all_repos
+    home_success = update_repo(
+      EnvVars::HOME,
+      relative_path: EnvVars::PERSONAL_CONFIGS_DIR.join('defaults')
+    )
+
+    profiles_success = update_repo(
+      EnvVars::PERSONAL_PROFILES_DIR,
+      relative_path: nil
+    )
+
+    home_success && profiles_success
+  end
+
+  # Reports git status for a single repository.
+  #
+  # @param repo_dir [Pathname, String] The repository directory
+  # @param switches [Array<String>] Additional git status flags (optional)
+  # @return [Boolean] true if status retrieved successfully
+  def status_repo(repo_dir, switches: [])
+    repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
+
+    Logging.section_header2 "#{'Status'.yellow} '#{repo_dir.to_s.cyan}'"
+
+    unless GitProcessor.repo?(repo_dir)
+      Logging.warn "Skipping status -- '#{repo_dir.to_s.cyan}' is not a git repo"
+      return false
+    end
+
+    system('git', '-C', repo_dir.to_s, 'status', *switches)
+  end
+
+  # Reports git status for HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, and all
+  # chrome directories in browser profiles. Intended for quick status overview.
+  #
+  # @return [Boolean] true if all status checks succeeded
+  def status_all_repos
+    results = []
+
+    # Key repos
+    results << status_repo(EnvVars::HOME)
+    results << status_repo(EnvVars::DOTFILES_DIR)
+    results << status_repo(EnvVars::PERSONAL_PROFILES_DIR)
+
+    # Chrome directories in browser profiles
+    chrome_pattern = EnvVars::PERSONAL_PROFILES_DIR.join('*Profile', 'Profiles', 'DefaultProfile', 'chrome')
+    Dir.glob(chrome_pattern.to_s).map { |path| Pathname.new(path) }.select(&:directory?).each do |chrome_dir|
+      results << status_repo(chrome_dir)
+    end
+
+    results.all?
+  end
+
+  # Finds and updates all chrome folders in browser profiles that are git repos.
+  # Chrome folders live at *Profile/Profiles/DefaultProfile/chrome under
+  # PERSONAL_PROFILES_DIR. Only folders that are git repos are updated.
+  #
+  # @return [Boolean] true if all updates succeeded, false if any failed
+  def find_and_update_chrome_folders
+    unless EnvVars::PERSONAL_PROFILES_DIR.directory?
+      Logging.debug "Skipping chrome folder update -- PERSONAL_PROFILES_DIR not found: '#{EnvVars::PERSONAL_PROFILES_DIR}'"
+      return true
+    end
+
+    chrome_pattern = EnvVars::PERSONAL_PROFILES_DIR.join('*Profile', 'Profiles', 'DefaultProfile', 'chrome')
+    chrome_folders = Dir.glob(chrome_pattern.to_s).map { |path| Pathname.new(path) }.select(&:directory?)
+
+    return true if chrome_folders.empty?
+
+    results = []
+    chrome_folders.each do |folder_pn|
+      unless GitProcessor.repo?(folder_pn)
+        Logging.debug "Skipping non-repo chrome folder: '#{folder_pn.to_s.cyan}'"
+        next
+      end
+
+      Logging.section_header2 "#{'Updating chrome folder:'.yellow} '#{folder_pn.to_s.cyan}'"
+      if system('git', '-C', folder_pn.to_s, 'pull', '-r')
+        Logging.success "Successfully updated: '#{folder_pn.to_s.cyan}'"
+        results << true
+      else
+        Logging.record_warning("Failed to update chrome folder: '#{folder_pn.to_s.cyan}'")
+        results << false
+      end
+    end
+
+    Logging.success 'Finished updating chrome folders' if results.any?
+    results.all?
   end
 
   # ---------------------------------------------------------------------------

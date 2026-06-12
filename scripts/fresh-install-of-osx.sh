@@ -41,14 +41,14 @@ _cleanup_and_exit() {
   if (($+functions[print_script_summary])); then
     print_script_summary
   else
-    if (($+_step_warnings)) && [[ "${#_step_warnings[@]}" -gt 0 ]]; then
+    if _has_step_warnings; then
       echo '==> Collected warnings:'
       local _cae_w
       for _cae_w in "${_step_warnings[@]}"; do
         echo "  ⚠️  ${_cae_w}"
       done
     fi
-    if (($+_step_errors)) && [[ "${#_step_errors[@]}" -gt 0 ]]; then
+    if _has_step_errors; then
       echo '==> Collected errors:'
       local _cae_e
       for _cae_e in "${_step_errors[@]}"; do
@@ -89,7 +89,7 @@ _cleanup_and_exit() {
 _setup_jio_dns() {
   local _org
   # Capture curl output into a variable first; then test with a glob match.
-  # Previously: curl ... | \grep -qi 'jio' -- two processes + pipe.
+  # Previously: curl ... | /usr/bin/grep -qi 'jio' -- two processes + pipe.
   # Now: single curl fork, pure-zsh lowercase expansion (:l) + glob match.
   _org=$(curl -fsS https://ipinfo.io/org 2>/dev/null)
   if [[ "${_org:l}" == *jio* ]]; then
@@ -278,7 +278,7 @@ _install_homebrew() {
   if command_exists brew; then
     local -a custom_taps
     # Read tap names into array, excluding homebrew/* taps (core/cask don't need trusting)
-    custom_taps=($(brew bundle list --taps --file="${HOMEBREW_BUNDLE_FILE}" | \grep -v "^homebrew/"))
+    custom_taps=($(brew bundle list --taps --file="${HOMEBREW_BUNDLE_FILE}" | /usr/bin/grep -v "^homebrew/"))
 
     if is_non_empty_array custom_taps; then
       info "Trusting custom taps: '$(yellow "${custom_taps[*]}")'"
@@ -293,7 +293,7 @@ _install_homebrew() {
 
   # Taps are no longer used in the FIRST_INSTALL base Brewfile section.
   # The tap commands below are kept for reference in case a tap is needed again.
-  # \grep -E "^tap " "${HOMEBREW_BUNDLE_FILE}" | awk '{print $2}' | tr -d "'\"" | while read -r tap_name; do
+  # /usr/bin/grep -E "^tap " "${HOMEBREW_BUNDLE_FILE}" | awk '{print $2}' | tr -d "'\"" | while read -r tap_name; do
   #   brew tap "${tap_name}" || true
   # done
 
@@ -361,7 +361,7 @@ _set_default_shell() {
   fi
 
   # /etc/shells must list the shell before chsh will accept it.
-  if ! \grep -qxF "${_brew_zsh}" /etc/shells; then
+  if ! /usr/bin/grep -qxF "${_brew_zsh}" /etc/shells; then
     info "Adding '$(yellow "${_brew_zsh}")' to /etc/shells"
     echo "${_brew_zsh}" | sudo tee -a /etc/shells >/dev/null
   else
@@ -668,18 +668,8 @@ main() {
     user_action "Repositories were cloned shallow (--depth=1) to save time during the first installation process. Run '$(yellow 'all pull-unshallow')' to pull full history."
   fi
 
-  local _notification_parts=()
-  if is_non_empty_array _step_errors; then
-    local _errors_summary
-    # Join with '; ' for the notification body -- osascript cannot span multiple lines.
-    _errors_summary="${(j:; :)_step_errors}"
-    _notification_parts+=("${#_step_errors[@]} error(s): ${_errors_summary}")
-  fi
-  if is_non_empty_array _step_warnings; then
-    local _warnings_summary
-    _warnings_summary="${(j:; :)_step_warnings}"
-    _notification_parts+=("${#_step_warnings[@]} warning(s): ${_warnings_summary}")
-  fi
+  local -a _notification_parts=()
+  _build_notification_parts _notification_parts 'long'
   if is_non_empty_array _notification_parts; then
     local _notification_body
     _notification_body="${(j: | :)_notification_parts}"

@@ -286,13 +286,13 @@ require String arguments:
 # Good -- Pathname throughout, .to_s only at system boundary
 profile_folder = EnvVars::HOME.join('.config', 'browser', 'Profile 1')
 if File.directory?(profile_folder)  # File methods accept Pathname
-  du_out, = Open3.capture3('du', '-sk', profile_folder.to_s)  # .to_s at boundary
+  du_out, = Open3.capture3('/usr/bin/du', '-sk', profile_folder.to_s)  # .to_s at boundary
 end
 
 # BAD -- premature .to_s
 profile_folder = EnvVars::HOME.join('.config', 'browser', 'Profile 1').to_s
 if File.directory?(profile_folder)
-  du_out, = Open3.capture3('du', '-sk', profile_folder)
+  du_out, = Open3.capture3('/usr/bin/du', '-sk', profile_folder)
 end
 ```
 

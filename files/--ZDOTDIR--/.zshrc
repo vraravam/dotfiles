@@ -90,34 +90,6 @@ export ENABLE_CORRECTION='true'
 # updates and other lazy-loaded config that only runs through the cache file.
 ensure_dir_exists "${XDG_CACHE_HOME}"
 
-# Cache architecture detection to avoid uname -m fork on every shell startup.
-# The cache is invalidated when the kernel version changes (e.g. macOS upgrade).
-# Caching saves ~2-3ms per shell startup -- minor per-shell but accumulates over
-# 50-100 shells per day.
-() {
-  setopt localoptions NULL_GLOB
-  local arch_cache="${XDG_CACHE_HOME}/arch-cache.zsh"
-  local kernel_version kern_cache_ver
-
-  # Get current kernel version (still a fork, but only on cache miss)
-  kernel_version="$(uname -r)"
-
-  # If cache exists, source it and extract cached kernel version
-  if is_file "${arch_cache}"; then
-    source "${arch_cache}"
-    kern_cache_ver="$(sed -n 's/^# kernel: //p' "${arch_cache}" 2>/dev/null)"
-  fi
-
-  # Regenerate cache if missing or kernel version changed
-  if ! is_file "${arch_cache}" || [[ "${kern_cache_ver}" != "${kernel_version}" ]]; then
-    {
-      echo "export ARCH='$(uname -m)'"
-      echo "# kernel: ${kernel_version}"
-    } >|"${arch_cache}"
-    source "${arch_cache}"
-  fi
-}
-
 # Cache brew shellenv to avoid running the brew binary on every shell startup (it's slow due to Ruby startup).
 # The cache is invalidated when the brew binary itself changes (i.e. after brew upgrades).
 # The cache pre-evaluates path_helper so sourcing it is a pure-zsh operation (no subprocesses).
@@ -242,7 +214,7 @@ if (($+commands[mise])); then
       # grep -v filters only the bare '_mise_hook' line; the function definition
       # (_mise_hook() { ... }) and indented references are multi-line/indented and do not match.
       {
-        mise activate zsh 2>/dev/null | \grep -v '^_mise_hook$'
+        mise activate zsh 2>/dev/null | /usr/bin/grep -v '^_mise_hook$'
         printf '%s\n' 'if (( $+functions[zsh-defer] )); then zsh-defer _mise_hook; else _mise_hook; fi'
       } >|"${mise_activate_cache}"
     fi
@@ -276,7 +248,7 @@ if (($+commands[starship])); then
       # so the fork only happens when the continuation prompt is actually displayed.
       # PROMPT and RPROMPT are already lazy in starship's output; PROMPT2 is the only
       # outlier. The single-quoted form uses the same pattern as PROMPT/RPROMPT.
-      starship init zsh 2>/dev/null | \grep -v '^PROMPT2=' >|"${starship_init_cache}"
+      starship init zsh 2>/dev/null | /usr/bin/grep -v '^PROMPT2=' >|"${starship_init_cache}"
       printf "PROMPT2='\$(%s prompt --continuation)'\n" "${starship_bin}" >>"${starship_init_cache}"
     fi
     # Source directly at the top level (not deferred) so that 'setopt promptsubst'

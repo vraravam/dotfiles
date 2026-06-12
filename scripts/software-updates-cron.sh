@@ -6,12 +6,39 @@
 # These are commands that need to be periodically run to upgrade any installed softwares.
 # Rather than remembering each tool and its specific command invocation, this script comes handy.
 
-# Do not exit immediately if a command exits with a non-zero status since this is run within a cronjob
+# set -euo pipefail is intentionally omitted: cron runs without set -e because a
+# single failing step should not abort all subsequent steps. The ERR trap collects
+# failures for end-of-script notification instead.
 
 _SCRIPT_NAME="${0:t}"
 
 # Re-source guard is inside .aliases itself -- safe to call unconditionally.
 source "${HOME}/.aliases"
+
+# Thin wrapper to call Ruby ProfilesRepo methods. Handles keyword argument
+# forwarding (key: value syntax). Only used in this script.
+_call_ruby_profiles_repo() {
+  local method="${1:-}"
+  if is_zero_string "${method}"; then
+    error '_call_ruby_profiles_repo: method name required'
+    return 1
+  fi
+  shift
+
+  local kwargs_str=""
+  if [[ $# -gt 0 ]]; then
+    local -a kwargs_parts=()
+    for arg in "$@"; do
+      local key="${arg%%=*}"
+      local value="${arg#*=}"
+      kwargs_parts+=("${key}: ${value}")
+    done
+    local IFS=', '
+    kwargs_str="${kwargs_parts[*]}"
+  fi
+
+  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'profiles_repo'; ProfilesRepo.${method}(${kwargs_str})"
+}
 
 # Run a single update step if the check command is available
 _perform_update() {
@@ -72,10 +99,10 @@ main() {
   print_script_start
 
   # brew doctor is skipped -- too slow for cron jobs
-  _perform_update 'brews' 'brew' 'brew bundle check || brew bundle'
+  _perform_update 'brews' 'brew' 'brew update || true; brew bundle check || brew bundle'
 
   # This is typically run only in the ${HOME} dir so as to upgrade the software versions in the "global" sense
-  _perform_update 'mise plugins' 'mise' 'mise plugins update && mise upgrade --bump' # && mise prune --tools --dry-run'
+  _perform_update 'mise plugins' 'mise' 'mise self-update || true; mise plugins update && mise upgrade --bump' # && mise prune --tools --dry-run'
 
   _perform_update 'tldr database' 'tldr' 'tldr --update'
 
@@ -212,56 +239,13 @@ main() {
   _current_section='Prune old session backups'
   step_start
   section_header "$(yellow 'Prune old timestamped session backups from browser-profiles repo')"
-  if is_git_repo "${PERSONAL_PROFILES_DIR}"; then
-    local cutoff_date file_date
-    # Compute cutoff date string (7 days ago) using pure zsh arithmetic + current_date.
-    # YYYY-MM-DD strings sort lexicographically, so string comparison is correct.
-    strftime -s cutoff_date '%Y-%m-%d' $((EPOCHSECONDS - 7 * 24 * 3600))
-    # Pattern: zen-sessions-backup/zen-sessions-YYYY-MM-DD-HH.jsonlz4
-    local -a old_backups=()
-    while IFS= read -r tracked_file; do
-      # Extract the date portion: YYYY-MM-DD from the filename
-      file_date="${tracked_file:t:r:r}"        # strip dirs, strip .jsonlz4 → zen-sessions-YYYY-MM-DD-HH
-      file_date="${file_date#zen-sessions-}"   # → YYYY-MM-DD-HH
-      file_date="${file_date%%-[0-9][0-9]}"    # → YYYY-MM-DD
-      if [[ "${file_date}" < "${cutoff_date}" ]]; then
-        old_backups+=("${tracked_file}")
-      fi
-    done < <(git -C "${PERSONAL_PROFILES_DIR}" ls-files -- '*/zen-sessions-backup/zen-sessions-*.jsonlz4')
-
-    if is_non_empty_array old_backups; then
-      for f in "${old_backups[@]}"; do
-        git -C "${PERSONAL_PROFILES_DIR}" rm --cached -q -- "${f}" && debug "Unpinned old session backup: '$(cyan "${f}")'"
-      done
-      success "Pruned ${#old_backups[@]} session backup file(s) older than 7 days"
-    else
-      debug 'No old session backups to prune'
-    fi
-  else
-    debug "Skipping session backup pruning -- not a git repo: '$(yellow "${PERSONAL_PROFILES_DIR}")'"
-  fi
+  _call_ruby_profiles_repo prune_old_session_backups days=7 && success 'Finished pruning session backups' || _record_error 'Failed to prune session backups'
   step_end
 
   _current_section='Check profiles repo size'
   step_start
   section_header "$(yellow 'Check profiles repo size')"
-  if is_git_repo "${PERSONAL_PROFILES_DIR}"; then
-    # Check .git directory size, not total directory (working tree can be large)
-    local du_out size_actual_kb
-    du_out="$(\du -sk "${PERSONAL_PROFILES_DIR}/.git" 2>/dev/null)"
-    size_actual_kb="${du_out%%$'\t'*}"  # Extract before tab (no awk fork)
-    local size_threshold_kb=$((2 * 1024 * 1024))  # 2 GB
-    if ((size_actual_kb > size_threshold_kb)); then
-      local size_actual_human
-      du_out="$(\du -sh "${PERSONAL_PROFILES_DIR}/.git" 2>/dev/null)"
-      size_actual_human="${du_out%%$'\t'*}"  # Extract before tab (no awk fork)
-      # _record_error instead of error(): error() calls _dotfiles_notify() which would
-      # send an immediate notification before the grouped summary at the end of main.
-      _record_error "Profiles repo directory is ${size_actual_human} -- exceeds 2GB threshold. Consider running: recreate-repo.rb -d \"${PERSONAL_PROFILES_DIR}\""
-    else
-      debug "Profiles repo directory size within 2GB threshold"
-    fi
-  fi
+  _call_ruby_profiles_repo check_size_limit limit_gb=2 && success 'Profiles repo size check completed' || _record_error 'Failed to check profiles repo size'
   step_end
 
   _current_section='Update home and profiles repos'
@@ -289,47 +273,18 @@ main() {
   _current_section='Update chrome dirs'
   step_start
   section_header "$(yellow 'Updating all browser profile chrome dirs if they are git repos')"
-  # Inline (N/) glob qualifiers break editor syntax highlighting (parsed as function calls).
-  # Use localoptions NULL_GLOB in an anonymous function so unmatched globs expand to
-  # nothing instead of erroring. The trailing / restricts matches to directories.
-  local -a chrome_dirs
-  () {
-    setopt localoptions NULL_GLOB
-    chrome_dirs=("${PERSONAL_PROFILES_DIR}"/*Profile/Profiles/DefaultProfile/chrome/)
-  }
-  if is_non_empty_array chrome_dirs; then
-    for dir in "${chrome_dirs[@]}"; do
-      if is_git_repo "${dir}"; then
-        section_header2 "$(yellow 'Updating chrome dir:') $(cyan "${dir}")"
-        # Chrome dir update failures are warnings -- CSS customisation is non-critical.
-        git -C "${dir}" pull -r && success "Successfully updated: '$(cyan "${dir}")'" || _record_warning "Failed to update chrome dir: '$(cyan "${dir}")'"
-      else
-        debug "skipping update for non-repo: '$(yellow "${dir}")'"
-      fi
-    done
-    success 'Finished updating chrome dirs'
-  fi
+  _call_ruby_git_workspace find_and_update_chrome_folders && success 'Finished updating chrome dirs' || _record_warning 'Some chrome dir updates failed'
   step_end
 
   if command_exists brew; then
-    _current_section='Check for outdated brew and brew applications'
+    _current_section='Check for outdated brew applications'
     step_start
-    section_header "$(yellow 'Check for outdated brew and brew applications')"
-
-    step_start
-    _current_section='Updating brew'
-    section_header2 "$(yellow 'Updating brew')"
-    brew update || true
-    step_end
-
-    step_start
-    _current_section='Updating brew applications'
-    section_header2 "$(yellow 'Updating brew applications')"
+    section_header "$(yellow 'Check for outdated brew applications')"
     local outdated
     # 'bcg' alias (brew outdated --greedy) is not expanded in non-interactive shells (cron).
     # '|| true' prevents grep -v from triggering the ERR trap when all lines are filtered out
     # (grep -v exits 1 when no lines pass the filter).
-    outdated="$(brew outdated --greedy | \grep -v -iE 'homebrew|Downloading' || true)"
+    outdated="$(brew outdated --greedy | /usr/bin/grep -v -iE 'homebrew|Downloading' || true)"
     # warn (not _record_warning): outdated software is an advisory notice, not a step failure.
     # It is surfaced in the final notification separately via outdated_flat.
     if is_non_zero_string "${outdated}"; then
@@ -374,18 +329,8 @@ main() {
   # then errors), print duration, then send exactly one notification regardless
   # of how many steps had issues.
   print_script_summary "${script_start_time}" 'Finished software updates'
-  local _notification_parts=()
-  if is_non_empty_array _step_errors; then
-    local _errors_summary
-    # Join with '; ' for the notification body -- osascript cannot span multiple lines.
-    _errors_summary="${(j:; :)_step_errors}"
-    _notification_parts+=("${#_step_errors[@]} error(s): ${_errors_summary}")
-  fi
-  if is_non_empty_array _step_warnings; then
-    local _warnings_summary
-    _warnings_summary="${(j:; :)_step_warnings}"
-    _notification_parts+=("${#_step_warnings[@]} warning(s): ${_warnings_summary}")
-  fi
+  local -a _notification_parts=()
+  _build_notification_parts _notification_parts 'long'
   # Build notification message and title, then append outdated packages if any.
   local _msg _title_icon
   if is_non_empty_array _notification_parts; then

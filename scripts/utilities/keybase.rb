@@ -51,6 +51,14 @@ module Keybase
     true
   end
 
+  # Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
+  #
+  # @param repo_name [String]
+  # @return [String] keybase://private/username/repo_name
+  def build_repo_url(repo_name)
+    "keybase://private/#{username}/#{repo_name}"
+  end
+
   # Returns true if the URL is a Keybase git repo URL (keybase://...).
   #
   # @param url [String]
