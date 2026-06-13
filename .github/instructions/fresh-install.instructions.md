@@ -1,12 +1,12 @@
 ---
-applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install.rb"
+applyTo: "**/fresh-install-of-osx.rb,**/install-dotfiles.rb,**/post-brew-install.rb"
 ---
 
 # Fresh Install Instructions
 
 These rules apply specifically to the bootstrap and installation scripts.
 
-## `fresh-install-of-osx.sh` -- Idempotency Contract
+## `fresh-install-of-osx.rb` -- Idempotency Contract
 
 This script runs in **two modes**:
 1. **Vanilla OS** (`FIRST_INSTALL=1`): a fresh macOS with nothing installed.
@@ -16,7 +16,7 @@ Every function and code path MUST work correctly in both modes.
 
 ### Section-Level Idempotency and Guards
 
-Every section in `fresh-install-of-osx.sh` must be individually idempotent and
+Every section in `fresh-install-of-osx.rb` must be individually idempotent and
 must have an appropriate guard that **pre-empts the entire section** when its
 work is already done. This serves two purposes:
 

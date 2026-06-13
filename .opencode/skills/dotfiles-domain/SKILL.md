@@ -30,7 +30,7 @@ and companion script directories.
 | `files/--ZDOTDIR--/.zshrc` | Interactive zsh config |
 | `files/--ZDOTDIR--/.zshenv` | Env vars for all shell types |
 | `files/--ZDOTDIR--/.zlogin` | Post-startup work (compilation, etc.) |
-| `scripts/fresh-install-of-osx.sh` | Bootstrap: vanilla OS + idempotent re-run |
+| `scripts/fresh-install-of-osx.rb` | Bootstrap: vanilla OS + idempotent re-run |
 | `scripts/utilities/logging.rb` | Ruby logging module |
 | `scripts/utilities/string.rb` | String color extensions |
 | `scripts/utilities/cli_parser.rb` | Ruby CLI option parser |
@@ -39,7 +39,7 @@ and companion script directories.
 
 ## Critical Rules (Never Violate)
 
-1. **`fresh-install-of-osx.sh` must be idempotent** — works on vanilla OS
+1. **`fresh-install-of-osx.rb` must be idempotent** — works on vanilla OS
    AND pre-configured machine. Check `FIRST_INSTALL` env var for first-run-only logic.
 
 2. **Do not use bare `echo`** in scripts — use `info`/`warn`/`success`/`error`/`debug`.

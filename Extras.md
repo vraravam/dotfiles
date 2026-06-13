@@ -28,7 +28,7 @@ Cleans up browser profile folders by vacuuming SQLite databases larger than 10 M
 
 The lists of files and directories to clean are maintained in [`scripts/data/cleanup-browser-files.txt`](scripts/data/cleanup-browser-files.txt) and [`scripts/data/cleanup-browser-dirs.txt`](scripts/data/cleanup-browser-dirs.txt).
 
-## fresh-install-of-osx.sh
+## fresh-install-of-osx.rb
 
 This is the main setup script for a fresh macOS installation. It is idempotent (see [Technical Deep Dive § 1.4](TechnicalDeepDive.md#14-idempotency)) and can be run multiple times safely. The script:
 
@@ -57,7 +57,7 @@ Run `${DOTFILES_DIR}/scripts/install-dotfiles.rb` to symlink all dotfiles from t
 
 See [Technical Deep Dive § 9](TechnicalDeepDive.md#9-install-dotfilesrb-mechanics) for conflict resolution rules, mtime tie-breaking, and `FIRST_INSTALL` behaviour.
 
-## osx-defaults.sh
+## osx-defaults.rb
 
 Codifies a **partial baseline** of macOS system and application preferences as a repeatable script. It kills affected apps upfront (graceful SIGTERM), applies all `defaults write` calls, then restarts them via an EXIT trap — so the settings take effect immediately without a logout.
 
@@ -65,7 +65,7 @@ Codifies a **partial baseline** of macOS system and application preferences as a
 
 Preferences are managed in two ordered phases on every fresh install. The order is load-bearing:
 
-**Phase 1 — `osx-defaults.sh -s` (baseline seed)**
+**Phase 1 — `osx-defaults.rb -s` (baseline seed)**
 
 Seeds known-good starting values for settings the user has not yet configured via the UI on a fresh machine. It is intentionally incomplete — it only codifies defaults where a specific starting value is worth establishing. It does **not** attempt to capture every preference.
 
@@ -73,28 +73,28 @@ Seeds known-good starting values for settings the user has not yet configured vi
 
 Imports the preferences the user previously exported from their old machine via `capture-prefs.rb -e`. Because this runs *after* phase 1, every UI-configured value overwrites the corresponding baseline. The user's deliberate choices always win.
 
-`fresh-install-of-osx.sh` enforces this order:
+`fresh-install-of-osx.rb` enforces this order:
 
 ```zsh
-osx-defaults.sh -s    # phase 1 — seed baseline
+osx-defaults.rb -s    # phase 1 — seed baseline
 capture-prefs.rb -i   # phase 2 — UI-configured values override on top
 ```
 
-Never reverse the order — running `capture-prefs.rb -i` before `osx-defaults.sh -s` would cause `osx-defaults.sh` to overwrite the user's restored preferences.
+Never reverse the order — running `capture-prefs.rb -i` before `osx-defaults.rb -s` would cause `osx-defaults.rb` to overwrite the user's restored preferences.
 
 ### What belongs where
 
 | Preference type | Where it goes |
 |---|---|
-| One-time baseline the user will never change via UI | `osx-defaults.sh` |
-| Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` (not `osx-defaults.sh`) |
+| One-time baseline the user will never change via UI | `osx-defaults.rb` |
+| Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` (not `osx-defaults.rb`) |
 | Ephemeral state (window positions, sync cursors, UUIDs) | `capture-prefs-excluded-keys.txt` or `-denied-list.txt` — nowhere else |
 
 See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-two-phase-preference-architecture) for the full architectural rationale and ordering constraint.
 
 ## post-brew-install.rb
 
-This script runs post-bundle cleanup and plugin setup that cannot live in the Brewfile itself. It removes conflicting zsh completion files, trusts known taps, and updates antidote plugins. It is called automatically by `fresh-install-of-osx.sh` after `brew bundle` completes. It can also be run manually at any time — it is idempotent.
+This script runs post-bundle cleanup and plugin setup that cannot live in the Brewfile itself. It removes conflicting zsh completion files, trusts known taps, and updates antidote plugins. It is called automatically by `fresh-install-of-osx.rb` after `brew bundle` completes. It can also be run manually at any time — it is idempotent.
 
 ## recreate-repo.rb
 
@@ -161,12 +161,12 @@ You can control the search scope and filtering using environment variables:
 
 **Note**: Any shell command can be run — not just git commands. Each command executes in the context of the git repository root, giving you access to the repo's files and structure.
 
-## setup-login-item.sh
+## setup-login-item.rb
 
-Some apps must be registered as macOS login items programmatically after installation — the System Settings UI is not scriptable in a repeatable way. This script handles that registration so `fresh-install-of-osx.sh` can set up login items unattended. It is also safe to run manually at any time.
+Some apps must be registered as macOS login items programmatically after installation — the System Settings UI is not scriptable in a repeatable way. This script handles that registration so `fresh-install-of-osx.rb` can set up login items unattended. It is also safe to run manually at any time.
 
   ```zsh
-  setup-login-item.sh -a <app-name>
+  setup-login-item.rb -a <app-name>
   ```
 
 ## software-updates-cron.rb

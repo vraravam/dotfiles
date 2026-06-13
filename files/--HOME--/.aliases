@@ -319,7 +319,7 @@ resurrect_tracked_repos() {
 
   # Increment script depth and register decrement trap. This ensures that when
   # called directly from the command line, this function acts as the outermost
-  # script (depth 1, prints banners). When called from fresh-install-of-osx.sh
+  # script (depth 1, prints banners). When called from fresh-install-of-osx.rb
   # (which already incremented to depth 1), this increments to depth 2 and
   # suppresses nested script banners from resurrect-repositories.rb.
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
@@ -677,7 +677,7 @@ fi
 # template stored in the dotfiles repo.  These functions reference DOTFILES_DIR,
 # HOMEBREW_PREFIX, and PERSONAL_CONFIGS_DIR, so they are only safe to call
 # after the dotfiles repo has been cloned and the full shell environment is set
-# up (i.e. from within an interactive shell or late in fresh-install-of-osx.sh).
+# up (i.e. from within an interactive shell or late in fresh-install-of-osx.rb).
 #
 # The lower-level primitives (_DOTFILES_CRON_BACKUP_FILE, restore_cron, suspend_cron,
 # resume_cron) live in .shellrc so they are available the moment .shellrc is
@@ -813,12 +813,12 @@ build_me() {
 # 3n. macOS prefs helpers
 # --------------------------------------------------------------------------
 
-# Canonical list of login-item apps managed by osx-defaults.sh and
+# Canonical list of login-item apps managed by osx-defaults.rb and
 # capture-prefs.rb. Both scripts kill these apps before writing defaults so
 # the running instance cannot overwrite writes on quit, and restart them on
 # exit via an EXIT trap.
 # Keep in sync with the Brewfile setup_login_items_script entries and the
-# defaults-write login-key sections in osx-defaults.sh.
+# defaults-write login-key sections in osx-defaults.rb.
 _MACOS_LOGIN_ITEM_APPS=(
   'Clocker'    # startAtLogin = true (com.abhishek.Clocker)
   'DockDoor'   # login item via Brewfile setup_login_items_script (SMAppService)

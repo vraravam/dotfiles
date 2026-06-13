@@ -3,7 +3,7 @@
 
 # Note: `install-dotfiles.rb` automatically inserts the final Include line below — you
 # do not need to add it manually. If this file is created after
-# `fresh-install-of-osx.sh` has already run, re-run `install-dotfiles.rb` so it
+# `fresh-install-of-osx.rb` has already run, re-run `install-dotfiles.rb` so it
 # can insert the Include line.
 
 # Note:

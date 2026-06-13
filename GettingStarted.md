@@ -14,21 +14,21 @@ On your local machine:
 The meta script to setup the macos machine from a vanilla OS can be run using the following command:
 
 ```zsh
-export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true'; curl --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh" | zsh 2>&1 | tee "${HOME}/fresh-install-of-osx.log"; unset FIRST_INSTALL
+export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true'; curl --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.rb" | ruby 2>&1 | tee "${HOME}/fresh-install-of-osx.log"; unset FIRST_INSTALL
 ```
 
-This script can be run in an idempotent manner, and will setup [antidote](https://antidote.sh/), [homebrew](https://brew.sh), the dotfiles (this repo), etc. It automatically applies the two-phase macOS preference setup in order: `osx-defaults.sh -s` (baseline defaults) followed by `capture-prefs.rb -i` (UI-configured overrides from your previous machine). To test changes on a branch before merging, see [How to test changes in your fork](README.md#how-to-test-changes-in-your-fork-before-raising-a-pull-request).
+This script can be run in an idempotent manner, and will setup [antidote](https://antidote.sh/), [homebrew](https://brew.sh), the dotfiles (this repo), etc. It automatically applies the two-phase macOS preference setup in order: `osx-defaults.rb -s` (baseline defaults) followed by `capture-prefs.rb -i` (UI-configured overrides from your previous machine). To test changes on a branch before merging, see [How to test changes in your fork](README.md#how-to-test-changes-in-your-fork-before-raising-a-pull-request).
 
 All these scripts are optimized for fast loading of the shell so that the user can work almost immediately upon starting the app.
 
 ### Preference restoration: two-phase sequence
 
-The script seeds and restores macOS preferences in two ordered phases automatically as part of `fresh-install-of-osx.sh`:
+The script seeds and restores macOS preferences in two ordered phases automatically as part of `fresh-install-of-osx.rb`:
 
-1. **`osx-defaults.sh -s`** — seeds a partial baseline of known-good starting values.
+1. **`osx-defaults.rb -s`** — seeds a partial baseline of known-good starting values.
 2. **`capture-prefs.rb -i`** — imports preferences exported from your previous machine, overriding the baseline where they overlap.
 
-If you have not yet exported preferences from a previous machine, skip step 2 for now and run `capture-prefs.rb -i` once your old machine's export is available. See [Extras.md — osx-defaults.sh](Extras.md#osx-defaultssh) for full details.
+If you have not yet exported preferences from a previous machine, skip step 2 for now and run `capture-prefs.rb -i` once your old machine's export is available. See [Extras.md — osx-defaults.rb](Extras.md#osx-defaultsrb) for full details.
 
 **Important Note** After the above script has completed running successfully, you need to do the following *manually* (items marked *optional* are based on your preferences):
 

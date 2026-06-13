@@ -15,7 +15,7 @@
 #   1. Ruby language is present in the system prior to this script being run.
 
 # Ensure utilities/ is on the load path so 'require' works regardless of whether
-# RUBYLIB is set. This is necessary during FIRST_INSTALL (fresh-install-of-osx.sh)
+# RUBYLIB is set. This is necessary during FIRST_INSTALL (fresh-install-of-osx.rb)
 # where the dotfiles repo is cloned after .shellrc is first sourced, so RUBYLIB does
 # not yet include this directory when install-dotfiles.rb is first invoked.
 $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))

@@ -90,7 +90,7 @@ If you want to capture data from your current mac, please follow the instruction
 
 # 🏗️ Complete setup
 
-The backup strategy is split into 2 stages - both of which are run by the [same script](scripts/fresh-install-of-osx.sh). The [basic "getting started"](GettingStarted.md) provides the instructions for the most common/basic setup. This covers everything that a typical user might need - without the need to backup other parts of the existing laptop.
+The backup strategy is split into 2 stages - both of which are run by the [same script](scripts/fresh-install-of-osx.rb). The [basic "getting started"](GettingStarted.md) provides the instructions for the most common/basic setup. This covers everything that a typical user might need - without the need to backup other parts of the existing laptop.
 
 The "advanced" setup captures application preferences (both system and custom apps) and backs them up into an _encrypted remote repository_. This requires [Keybase](https://keybase.io/) for the encrypted private storage. **Keybase is entirely optional** — if you skip it, everything else (dotfiles, Homebrew packages, zsh config, mise language versions, cron jobs) still works. Simply comment out the `KEYBASE_*` environment variables in `files/--HOME--/.shellrc` and the script will skip the Keybase-dependent steps silently.
 

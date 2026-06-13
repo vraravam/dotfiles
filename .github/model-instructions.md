@@ -269,7 +269,7 @@ Both `~/.ssh/config` and `templates/ssh-config.template` must have this comment 
   ```
 - If any new files have been added or existing files have been deleted/renamed in the `files` folder, then add instructions to run `install-dotfiles.rb`.
 - If any modifications touch the zsh boot‑up files (`.zshenv`, `.zshrc`, `.zlogin`, `.aliases`, `.shellrc`, etc.) or other scripts that are sourced during a terminal start‑up, add a note that the user should quit and restart the Terminal/iTerm application to reload the configuration.
-- If the staged changes involve fresh‑install logic (e.g., modifications to `fresh-install-of-osx.sh` or related scripts), advise running the fresh‑install script in an idempotent manner, e.g. `./fresh-install-of-osx.sh` (it will guard against already‑configured machines).
+- If the staged changes involve fresh‑install logic (e.g., modifications to `fresh-install-of-osx.rb` or related scripts), advise running the fresh‑install script in an idempotent manner, e.g. `./fresh-install-of-osx.rb` (it will guard against already‑configured machines).
 
 ### Changelog Entry Structure
 

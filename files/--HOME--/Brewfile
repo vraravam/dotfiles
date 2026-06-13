@@ -19,7 +19,7 @@ is_arm = ::Hardware::CPU.arm?
 # is_beta_os = ::OS::Mac::full_version.unsupported_release?
 
 # TODO: Hardcoding of the dotfiles repo folder - since that env var is not available inside this env
-setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.sh"
+setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.rb"
 
 # These casks must come first -- required for manual login during a vanilla OS installation.
 cask 'font-meslo-lg-nerd-font'

@@ -19,7 +19,7 @@ If you are setting up a new machine for the first time, start with [GettingStart
 9. [`install-dotfiles.rb` Mechanics](#9-install-dotfilesrb-mechanics)
 10. [Per-Project Script Overrides](#10-per-project-script-overrides)
 11. [`capture-prefs.rb` Architecture](#11-capture-prefsrb-architecture)
-12. [`osx-defaults.sh` and `capture-prefs.rb` — Two-Phase Preference Architecture](#12-osx-defaultssh-and-capture-prefsrb--two-phase-preference-architecture)
+12. [`osx-defaults.rb` and `capture-prefs.rb` — Two-Phase Preference Architecture](#12-osx-defaultsrb-and-capture-prefsrb--two-phase-preference-architecture)
 
 ---
 
@@ -41,9 +41,9 @@ Where possible, syntax is kept POSIX-compatible so that scripts remain portable 
 
 ### 1.4 Idempotency
 
-`fresh-install-of-osx.sh` — the main bootstrap — must work correctly both on a **vanilla macOS** and on a **fully configured machine**. Every section has a guard at the very top that short-circuits the entire section when its work is already done. Re-running on a configured machine is therefore fast: only sections with outstanding work execute their logic.
+`fresh-install-of-osx.rb` — the main bootstrap — must work correctly both on a **vanilla macOS** and on a **fully configured machine**. Every section has a guard at the very top that short-circuits the entire section when its work is already done. Re-running on a configured machine is therefore fast: only sections with outstanding work execute their logic.
 
-The `FIRST_INSTALL` environment variable signals a vanilla OS run. Logic that only makes sense on a blank slate (e.g. downloading `.shellrc` via `curl` before the dotfiles repo exists) is guarded with `is_first_install` (a utility function in `.shellrc` that wraps `[[ -n "${FIRST_INSTALL:-}" ]]`). Two occurrences in `fresh-install-of-osx.sh` use the raw form directly because they run before `.shellrc` has been sourced.
+The `FIRST_INSTALL` environment variable signals a vanilla OS run. Logic that only makes sense on a blank slate (e.g. downloading `.shellrc` via `curl` before the dotfiles repo exists) is guarded with `is_first_install` (a utility function in `.shellrc` that wraps `[[ -n "${FIRST_INSTALL:-}" ]]`). Two occurrences in `fresh-install-of-osx.rb` use the raw form directly because they run before `.shellrc` has been sourced.
 
 ---
 
@@ -56,9 +56,9 @@ files/
   --XDG_CONFIG_HOME--/   symlinked into $XDG_CONFIG_HOME
   --PERSONAL_PROFILES_DIR--/  .envrc for direnv
 scripts/
-  fresh-install-of-osx.sh
+  fresh-install-of-osx.rb
   capture-prefs.rb
-  osx-defaults.sh
+  osx-defaults.rb
   utilities/             shared Ruby modules (logging, string, cli_parser, …)
   data/                  plain-text data files read by scripts at runtime
 ```
@@ -85,7 +85,7 @@ To add a new dotfile, drop it under the appropriate `files/--VAR--/` directory. 
 
 ### Why the split exists
 
-`.shellrc` is downloaded via `curl` early in `fresh-install-of-osx.sh`, **before** the dotfiles repo has been cloned and before `install-dotfiles.rb` has created symlinks. It must therefore stay lean — it holds only the functions that are genuinely needed in that pre-clone window.
+`.shellrc` is downloaded via `curl` early in `fresh-install-of-osx.rb`, **before** the dotfiles repo has been cloned and before `install-dotfiles.rb` has created symlinks. It must therefore stay lean — it holds only the functions that are genuinely needed in that pre-clone window.
 
 `.aliases` is available only after the dotfiles repo is cloned and `install-dotfiles.rb` has run. Everything that does not need to exist before that point lives in `.aliases`.
 
@@ -482,20 +482,20 @@ Kill/restart is therefore scoped to: always on import; interactive (TTY) export 
 
 ---
 
-## 12. `osx-defaults.sh` and `capture-prefs.rb` — Two-Phase Preference Architecture
+## 12. `osx-defaults.rb` and `capture-prefs.rb` — Two-Phase Preference Architecture
 
-macOS preferences are managed in two distinct, ordered phases. The order is load-bearing: phase 2 always wins over phase 1 by design. Both phases are invoked automatically by `fresh-install-of-osx.sh` in sequence.
+macOS preferences are managed in two distinct, ordered phases. The order is load-bearing: phase 2 always wins over phase 1 by design. Both phases are invoked automatically by `fresh-install-of-osx.rb` in sequence.
 
-### Phase 1 — `osx-defaults.sh -s` (baseline seed)
+### Phase 1 — `osx-defaults.rb -s` (baseline seed)
 
-`osx-defaults.sh` writes a curated, partial baseline of `defaults write` calls. "Partial" is intentional — it only codifies settings where a known-good starting value is worth establishing on a fresh machine. It does not attempt to replicate every preference the user has ever configured.
+`osx-defaults.rb` writes a curated, partial baseline of `defaults write` calls. "Partial" is intentional — it only codifies settings where a known-good starting value is worth establishing on a fresh machine. It does not attempt to replicate every preference the user has ever configured.
 
 The baseline is appropriate for:
 - System settings the user has never changed via the UI (Dock behaviour, Finder display options, keyboard shortcuts).
 - App settings that are purely scriptable and have no meaningful UI-side equivalent (disabling analytics, enabling developer menus).
 
 The baseline is **not** appropriate for:
-- Any setting the user configures through the app's UI over time. Writing those here means `osx-defaults.sh -s` would reset them to stale values on every fresh-install, defeating the purpose of phase 2.
+- Any setting the user configures through the app's UI over time. Writing those here means `osx-defaults.rb -s` would reset them to stale values on every fresh-install, defeating the purpose of phase 2.
 - Ephemeral state (window coordinates, last-opened directory, migration sentinels, A/B experiment assignments). Apps manage these themselves.
 
 ### Phase 2 — `capture-prefs.rb -i` (UI-configured overrides)
@@ -505,21 +505,21 @@ The baseline is **not** appropriate for:
 ### Why the order is load-bearing
 
 ```zsh
-osx-defaults.sh -s    # phase 1 — write baseline
+osx-defaults.rb -s    # phase 1 — write baseline
 capture-prefs.rb -i   # phase 2 — overwrite with UI-configured values
 ```
 
-Reversing the order causes `osx-defaults.sh` to overwrite the user's restored preferences with stale baseline values — exactly the wrong outcome. `fresh-install-of-osx.sh` encodes this order and must not be changed without understanding this constraint.
+Reversing the order causes `osx-defaults.rb` to overwrite the user's restored preferences with stale baseline values — exactly the wrong outcome. `fresh-install-of-osx.rb` encodes this order and must not be changed without understanding this constraint.
 
 ### Decision rule for new preference code
 
 | Preference type | Where it goes |
 |---|---|
-| One-time baseline the user will not change via UI | `osx-defaults.sh` |
-| Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` — not `osx-defaults.sh` |
+| One-time baseline the user will not change via UI | `osx-defaults.rb` |
+| Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` — not `osx-defaults.rb` |
 | Ephemeral state the app manages itself | `capture-prefs-excluded-keys.txt` or `-denied-list.txt` — nowhere else |
 
-See [Extras.md — osx-defaults.sh](Extras.md#osx-defaultssh) for the adopter-facing summary.
+See [Extras.md — osx-defaults.rb](Extras.md#osx-defaultsrb) for the adopter-facing summary.
 
 ---
 
