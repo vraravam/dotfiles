@@ -474,7 +474,7 @@ The script-scoped `_excluded_by_domain` associative array is populated at startu
 
 ### Cron export scoping
 
-`capture-prefs.sh -e` (export) is called from `software-updates-cron.sh`. In this context:
+`capture-prefs.sh -e` (export) is called from `software-updates-cron.rb`. In this context:
 - Killing login-item apps is wrong — the user may be actively using them.
 - Re-launching them via `open -a` is worse — apps restart mid-session without the user's knowledge.
 

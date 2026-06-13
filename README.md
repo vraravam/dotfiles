@@ -94,7 +94,7 @@ The backup strategy is split into 2 stages - both of which are run by the [same 
 
 The "advanced" setup captures application preferences (both system and custom apps) and backs them up into an _encrypted remote repository_. This requires [Keybase](https://keybase.io/) for the encrypted private storage. **Keybase is entirely optional** — if you skip it, everything else (dotfiles, Homebrew packages, zsh config, mise language versions, cron jobs) still works. Simply comment out the `KEYBASE_*` environment variables in `files/--HOME--/.shellrc` and the script will skip the Keybase-dependent steps silently.
 
-If you want to automate the repetitive running of these scripts/commands, you can use the system-level cronjobs to set this up, the details of which can be found in the [Extras](Extras.md#software-updates-cronsh) file, by which you can reduce more manual efforts.
+If you want to automate the repetitive running of these scripts/commands, you can use the system-level cronjobs to set this up, the details of which can be found in the [Extras](Extras.md#software-updates-cronrb) file, by which you can reduce more manual efforts.
 
 # 🎯 Finally...
 
@@ -117,7 +117,7 @@ For a deeper understanding of how the scripts work internally — the logging sy
 
 # 🔄 Ongoing tasks to keep your backup up-to-date on a regular basis
 
-The backup strategy is **not a one-off activity**. It will require you to take snapshots from time-to-time. Similarly, adherance to maintainence of the "catalogs" will need to be strictly upheld for the backup strategy to be effective. Most of the generic maintenance tasks can be automated using cronjobs, the details of which can be found in the [Extras](Extras.md#software-updates-cronsh) file.
+The backup strategy is **not a one-off activity**. It will require you to take snapshots from time-to-time. Similarly, adherance to maintainence of the "catalogs" will need to be strictly upheld for the backup strategy to be effective. Most of the generic maintenance tasks can be automated using cronjobs, the details of which can be found in the [Extras](Extras.md#software-updates-cronrb) file.
 
 # 🧰 Extras/Details
 

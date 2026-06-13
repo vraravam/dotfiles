@@ -9,6 +9,7 @@ require_relative 'env_vars'
 require_relative 'git_processor'
 require_relative 'logging'
 require_relative 'path_utils'
+require_relative 'profiles_repo'
 
 # Git workspace discovery and developer environment setup. Shell functions in
 # .aliases delegate to these Ruby methods (install_mise_versions,
@@ -187,7 +188,7 @@ module GitWorkspace
   # compared to calling install_mise_versions and allow_all_direnv_configs
   # independently.
   #
-  # Designed for callers that need both operations (e.g., software-updates-cron.sh).
+  # Designed for callers that need both operations (e.g., software-updates-cron.rb).
   # Single-operation callers should continue using the individual methods.
   #
   # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
@@ -366,48 +367,8 @@ module GitWorkspace
     results << status_repo(EnvVars::PERSONAL_PROFILES_DIR)
 
     # Chrome directories in browser profiles
-    chrome_pattern = EnvVars::PERSONAL_PROFILES_DIR.join('*Profile', 'Profiles', 'DefaultProfile', 'chrome')
-    Dir.glob(chrome_pattern.to_s).map { |path| Pathname.new(path) }.select(&:directory?).each do |chrome_dir|
-      results << status_repo(chrome_dir)
-    end
+    results.concat(ProfilesRepo.find_chrome_folders.map { |chrome_dir| status_repo(chrome_dir) })
 
-    results.all?
-  end
-
-  # Finds and updates all chrome folders in browser profiles that are git repos.
-  # Chrome folders live at *Profile/Profiles/DefaultProfile/chrome under
-  # PERSONAL_PROFILES_DIR. Only folders that are git repos are updated.
-  #
-  # @return [Boolean] true if all updates succeeded, false if any failed
-  def find_and_update_chrome_folders
-    unless EnvVars::PERSONAL_PROFILES_DIR.directory?
-      Logging.debug "Skipping chrome folder update -- PERSONAL_PROFILES_DIR not found: '#{EnvVars::PERSONAL_PROFILES_DIR}'"
-      return true
-    end
-
-    chrome_pattern = EnvVars::PERSONAL_PROFILES_DIR.join('*Profile', 'Profiles', 'DefaultProfile', 'chrome')
-    chrome_folders = Dir.glob(chrome_pattern.to_s).map { |path| Pathname.new(path) }.select(&:directory?)
-
-    return true if chrome_folders.empty?
-
-    results = []
-    chrome_folders.each do |folder_pn|
-      unless GitProcessor.repo?(folder_pn)
-        Logging.debug "Skipping non-repo chrome folder: '#{folder_pn.to_s.cyan}'"
-        next
-      end
-
-      Logging.section_header2 "#{'Updating chrome folder:'.yellow} '#{folder_pn.to_s.cyan}'"
-      if system('git', '-C', folder_pn.to_s, 'pull', '-r')
-        Logging.success "Successfully updated: '#{folder_pn.to_s.cyan}'"
-        results << true
-      else
-        Logging.record_warning("Failed to update chrome folder: '#{folder_pn.to_s.cyan}'")
-        results << false
-      end
-    end
-
-    Logging.success 'Finished updating chrome folders' if results.any?
     results.all?
   end
 

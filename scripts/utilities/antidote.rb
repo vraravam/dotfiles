@@ -8,7 +8,7 @@ require_relative 'logging'
 require_relative 'path_utils'
 
 # Shared antidote plugin-manager helpers used by the antidote formula's
-# postinstall hook (in Brewfile) and software-updates-cron.sh.
+# postinstall hook (in Brewfile) and software-updates-cron.rb.
 #
 # Antidote must be driven through zsh because antidote itself is a zsh
 # function -- there is no Ruby API for it. The update step and bundle
@@ -44,7 +44,7 @@ module Antidote
       return
     end
 
-    if antidote_home.directory? && !Dir.empty?(antidote_home)
+    if antidote_home.directory? && !antidote_home.empty?
       system('zsh', '-f', '-c', 'source "$1"; antidote update', '--', antidote_zsh.to_s)
       PathUtils.glob_pathnames(antidote_home.join('github.com', '*', '*')) do |bundle_dir|
         next unless bundle_dir.directory?

@@ -169,7 +169,7 @@ Some apps must be registered as macOS login items programmatically after install
   setup-login-item.sh -a <app-name>
   ```
 
-## software-updates-cron.sh
+## software-updates-cron.rb
 
 There are so many tools installed, and some of them require their local caches/dbs/configs/etc to be updated from time to time. Rather than remembering each tool and its invocation (for updates), this script is a single place where any new tooling is added so that I don't need to remember the incantation for each separately.
 Run the following command to generate and update your crontab:

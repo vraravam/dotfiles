@@ -3,6 +3,34 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 
+### 3.1.24
+
+#### Converted `software-updates-cron` to ruby
+
+* *[scripts/software-updates-cron.rb]* (NEW, 264 lines) Complete Ruby implementation replacing shell version. Eliminates `_call_ruby_profiles_repo` workaround pattern - calls ProfilesRepo methods directly. Uses utilities: Antidote, EnvVars, GitWorkspace, Logging, MacOS, PathUtils, ProfilesRepo. All functionality from shell version preserved: brew/mise/tldr/git-ignore/claude updates, antidote plugin regeneration, bat cache, zen-browser tag cleanup, ollama model pulls, repo updates (home/oss/maintenance), dev environment setup, repo aliases, app preferences capture, session backup pruning, profiles repo size check, chrome folder updates, outdated package detection. Fixed escaped quotes in git maintenance commands (lines 115-117) - removed `\"` that caused "command not found" errors. Calls GitWorkspace methods directly for update_all_repos and status_all_repos instead of sourcing zsh autoload scripts.
+
+#### Rationale
+
+* **Eliminates shell→Ruby boundary overhead**: ProfilesRepo methods called directly instead of subprocess wrapper pattern.
+* **Better error handling**: Native Ruby exceptions instead of shell exit codes.
+* **Simpler crontab invocation**: Direct `ruby` call (no `zsh -c` wrapper needed).
+* **Unified logging infrastructure**: All output through Logging module (no format conversion).
+* **Better maintainability**: All ProfilesRepo logic stays in Ruby (prune, size check, chrome updates).
+* **Correct module placement**: Chrome folders are browser profile-specific, belong in ProfilesRepo alongside other PERSONAL_PROFILES_DIR operations.
+* **DRY principle**: Chrome folder pattern defined once in `find_chrome_folders`, used by both `update_chrome_folders` and `status_all_repos`.
+* **Performance**: <0.2% difference vs shell version (negligible).
+
+#### Adopting these changes
+
+* Run the following to regenerate crontab with new Ruby script path:
+  ```zsh
+    _create_crontab "${PERSONAL_CONFIGS_DIR}/crontab.txt"
+    recron
+  ```
+
+* Monitor next 1-2 cron cycles for correct operation (check `~/software-updates-cron.log`).
+
+
 ### 3.1.23
 
 #### Zsh startup performance fix: architecture cache optimization

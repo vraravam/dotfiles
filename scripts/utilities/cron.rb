@@ -109,7 +109,7 @@ module Cron
       EnvVars::DOTFILES_DIR.join('scripts').to_s
     ].join(':')
 
-    cron_cmd = EnvVars::DOTFILES_DIR.join('scripts', 'software-updates-cron.sh')
+    cron_cmd = EnvVars::DOTFILES_DIR.join('scripts', 'software-updates-cron.rb')
     log_file = EnvVars::HOME.join('software-updates-cron.log')
 
     file.open(mode: 'w') do |f|
@@ -128,9 +128,10 @@ module Cron
       f.puts "PATH=#{path}"
       f.puts
       f.puts "# Note: Need to use the full path to scripts inside the sub-shell since that's not a logged-in shell"
-      # Wrap with zsh -c so tee is inside chronic's scope -- chronic must see both
-      # the shell script and tee together to suppress output on success.
-      f.puts "0   *   *   *   *   chronic zsh -c '#{cron_cmd} 2>&1 | tee -a #{log_file}'"
+      f.puts '# chronic suppresses output on success (exit 0), outputs everything on failure (exit non-zero).'
+      f.puts '# Success runs write timestamp to ~/.software-updates-last-success for audit trail.'
+      f.puts '# Check: cat ~/.software-updates-last-success to see last successful run.'
+      f.puts "0   *   *   *   *   chronic ruby #{cron_cmd} 2>&1 | tee -a #{log_file}"
     end
   end
 

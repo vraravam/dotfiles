@@ -85,4 +85,49 @@ module ProfilesRepo
       Logging.debug "Profiles repo .git directory size within #{limit_gb}GB threshold"
     end
   end
+
+  # Finds and updates all browser profile chrome folders that are git repositories.
+  # Chrome folders are expected at: PERSONAL_PROFILES_DIR/*Profile/Profiles/DefaultProfile/chrome
+  # Each chrome folder is updated via `git pull -r` if it's a valid git repo.
+  #
+  # @return [void]
+  def update_chrome_folders
+    unless EnvVars::PERSONAL_PROFILES_DIR.directory?
+      Logging.debug "Skipping chrome folder update -- PERSONAL_PROFILES_DIR not found: '#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}'"
+      return
+    end
+
+    chrome_folders = find_chrome_folders
+    return if chrome_folders.empty?
+
+    chrome_folders.each do |folder_pn|
+      unless GitProcessor.repo?(folder_pn)
+        Logging.debug "Skipping non-repo chrome folder: '#{folder_pn.to_s.cyan}'"
+        next
+      end
+
+      Logging.section_header2 "#{'Updating chrome folder:'.yellow} '#{folder_pn.to_s.cyan}'"
+      if system('git', '-C', folder_pn.to_s, 'pull', '-r')
+        Logging.success "Successfully updated: '#{folder_pn.to_s.cyan}'"
+      else
+        Logging.record_warning("Failed to update chrome folder: '#{folder_pn}'")
+      end
+    end
+
+    Logging.success 'Finished updating chrome folders'
+  end
+
+  # Finds all chrome folders in browser profiles under PERSONAL_PROFILES_DIR.
+  # Chrome folders are located at *Profile/Profiles/DefaultProfile/chrome.
+  # Returns only directories, not files.
+  #
+  # @return [Array<Pathname>] Array of chrome folder paths as Pathname objects
+  def find_chrome_folders
+    chrome_folders = []
+    chrome_pattern = EnvVars::PERSONAL_PROFILES_DIR.join('*Profile', 'Profiles', 'DefaultProfile', 'chrome')
+    PathUtils.glob_pathnames(chrome_pattern) do |path_pn|
+      chrome_folders << path_pn if path_pn.directory?
+    end
+    chrome_folders
+  end
 end

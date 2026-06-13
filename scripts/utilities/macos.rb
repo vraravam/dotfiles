@@ -4,6 +4,8 @@ require 'open3'
 require 'pathname'
 
 require_relative 'logging'
+require_relative 'path_utils'
+require_relative 'string'
 
 # macOS-specific system operations: login-item app management, softwareupdate
 # schedule control, preference reload, and notification display.
@@ -18,7 +20,7 @@ module MacOS
 
   # Login-item apps that are killed before defaults writes and restarted after.
   # Keep in sync with Brewfile setup_login_items_script entries and
-  # defaults-write login-key sections in osx-defaults.rb.
+  # defaults-write login-key sections in osx-defaults.sh.
   LOGIN_ITEM_APPS = [
     'Clocker',   # startAtLogin = true (com.abhishek.Clocker)
     'DockDoor',  # login item via Brewfile setup_login_items_script (SMAppService)
@@ -86,7 +88,7 @@ module MacOS
   end
 
   # Turns the macOS automatic software update schedule back on. Called from the
-  # EXIT trap in osx-defaults.rb and capture-prefs.rb so it runs on both normal
+  # EXIT trap in osx-defaults.sh and capture-prefs.sh so it runs on both normal
   # and error exits. Guards with sudo check so it is safe to call from cron --
   # if sudo credentials are not cached (no terminal), warns and skips rather than
   # hanging. keep_sudo_alive's duplicate-loop guard makes it a no-op when the
@@ -133,7 +135,6 @@ module MacOS
   #
   # @return [String] Comma-separated list of outdated apps, or empty string
   def check_and_notify_outdated_apps
-    require_relative 'path_utils'
     return '' unless PathUtils.command_exists?('brew')
 
     outdated_raw, = Open3.capture3('brew', 'outdated', '--greedy')
@@ -143,8 +144,7 @@ module MacOS
 
     return '' if outdated.empty?
 
-    require_relative 'string'
-    Logging.warn "Found outdated software: #{outdated.join(', ').yellow}"
+    Logging.warn "Found outdated software needing manual update: #{outdated.join(', ').yellow}"
     outdated.join(', ')
   end
 
