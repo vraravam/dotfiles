@@ -1,4 +1,4 @@
-# Domains that must NOT be exported/imported by capture-prefs.sh.
+# Domains that must NOT be exported/imported by capture-prefs.rb.
 #
 # These contain machine-specific identifiers, account-bound credentials,
 # hardware UUIDs, MDM tokens, or ephemeral CloudKit cache state that is either

@@ -36,12 +36,21 @@
   f = !git ls-files | grep -i
 
   # Prints the relative path of the given path from the repo root.
-  # If no argument is given, prints the relative path of the current directory.
+  # If no argument is given, prints the relative path of the current directory (prefixed with './' or '.' for repo root).
+  # If argument is a relative path, it's resolved from the current directory, then normalized (with './' prefix).
+  # If argument is an absolute path, it's normalized (with './' prefix).
+  # Returns error if path is outside the repo or cannot be resolved.
   # Usage: git relative-path [<path>]
-  # Example: git relative-path /abs/path/to/repo/src/foo.ts  =>  src/foo.ts  (if cwd is repo)
-  # Example: git relative-path ./src/foo.ts                  =>  src/foo.ts  (if cwd is repo)
-  # Example: git relative-path                               =>  src  (if cwd is repo/src)
-  relative-path = "!bash -c 'root=$(git rev-parse --show-toplevel); case ${0} in bash|sh) abs=${PWD} ;; *) abs=$(realpath \"${0}\") ;; esac; rel=${abs#${root}}; echo \"${rel#/}\"'"
+  # Example: git relative-path /abs/path/to/repo/src/foo.ts     =>  ./src/foo.ts  (absolute path, with ./ prefix)
+  # Example: git relative-path ./src/foo.ts                     =>  ./src/foo.ts  (relative path from repo root, with ./ prefix)
+  # Example: git relative-path src/foo.ts                       =>  ./src/foo.ts  (relative path from repo root, with ./ prefix)
+  # Example: git relative-path utilities/git_processor.rb       =>  ./scripts/utilities/git_processor.rb  (relative from repo/scripts, with ./ prefix)
+  # Example: git relative-path                                  =>  .  (no args at repo root)
+  # Example: git relative-path                                  =>  ./scripts/utilities  (no args at repo/scripts/utilities)
+  # Example: git relative-path /tmp/file.txt                    =>  error: path "/tmp/file.txt" is outside repo
+  # Example: git relative-path /nonexistent.txt                 =>  error: cannot resolve path "/nonexistent.txt"
+  relative-path = "!bash -c 'case \"${0}\" in bash|sh) prefix=\"${GIT_PREFIX%/}\"; if [ -z \"${prefix}\" ]; then echo \".\"; else echo \"./${prefix}\"; fi ;; *) root=$(git rev-parse --show-toplevel); case \"${0}\" in /*) abs=$(realpath \"${0}\" 2>/dev/null) ;; *) abs=$(realpath \"${root}/${GIT_PREFIX}${0}\" 2>/dev/null) ;; esac; if [ -z \"${abs}\" ]; then printf \"error: cannot resolve path \\\"%s\\\"\\\\n\" \"${0}\" >&2; exit 1; fi; rel=${abs#${root}}; if [ \"${rel}\" = \"${abs}\" ] || [ \"${rel}\" = \"${abs}/\" ]; then printf \"error: path \\\"%s\\\" is outside repo\\\\n\" \"${0}\" >&2; exit 1; fi; echo \"./${rel#/}\" ;; esac'"
+  relative-path = "!bash -c 'case \"${0}\" in bash|sh) prefix=\"${GIT_PREFIX%/}\"; if [ -z \"${prefix}\" ]; then echo \".\"; else echo \"./${prefix}\"; fi ;; *) root=$(git rev-parse --show-toplevel); case \"${0}\" in /*) abs=$(realpath \"${0}\" 2>/dev/null) ;; *) abs=$(realpath \"${root}/${GIT_PREFIX}${0}\" 2>/dev/null) ;; esac; if [ -z \"${abs}\" ]; then printf \"error: cannot resolve path \\\"%s\\\"\\n\" \"${0}\" >&2; exit 1; fi; rel=${abs#${root}}; if [ \"${rel}\" = \"${abs}\" ] || [ \"${rel}\" = \"${abs}/\" ]; then printf \"error: path \\\"%s\\\" is outside repo\\n\" \"${0}\" >&2; exit 1; fi; echo \"./${rel#/}\" ;; esac'"
 
   # Prints the next patch version derived from the most recent tag (via 'git describe --tags').
   # Tags with only two segments (e.g. '3.1') are treated as '3.1.0' -> '3.1.1'.

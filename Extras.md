@@ -10,7 +10,7 @@ When you fork a repo, you need an `upstream` remote pointing to the original so 
   add-upstream-git-config.rb -d <target-folder> -u <upstream-repo-owner>
   ```
 
-## capture-prefs.sh
+## capture-prefs.rb
 
 This script exports or imports the preferences of known applications (both system and custom-installed) using the `defaults` command. Use `-e` to export from the current machine into the dotfiles repo, and `-i` to import into a new machine.
 
@@ -69,18 +69,18 @@ Preferences are managed in two ordered phases on every fresh install. The order 
 
 Seeds known-good starting values for settings the user has not yet configured via the UI on a fresh machine. It is intentionally incomplete — it only codifies defaults where a specific starting value is worth establishing. It does **not** attempt to capture every preference.
 
-**Phase 2 — `capture-prefs.sh -i` (UI-configured overrides)**
+**Phase 2 — `capture-prefs.rb -i` (UI-configured overrides)**
 
-Imports the preferences the user previously exported from their old machine via `capture-prefs.sh -e`. Because this runs *after* phase 1, every UI-configured value overwrites the corresponding baseline. The user's deliberate choices always win.
+Imports the preferences the user previously exported from their old machine via `capture-prefs.rb -e`. Because this runs *after* phase 1, every UI-configured value overwrites the corresponding baseline. The user's deliberate choices always win.
 
 `fresh-install-of-osx.sh` enforces this order:
 
 ```zsh
 osx-defaults.sh -s    # phase 1 — seed baseline
-capture-prefs.sh -i   # phase 2 — UI-configured values override on top
+capture-prefs.rb -i   # phase 2 — UI-configured values override on top
 ```
 
-Never reverse the order — running `capture-prefs.sh -i` before `osx-defaults.sh -s` would cause `osx-defaults.sh` to overwrite the user's restored preferences.
+Never reverse the order — running `capture-prefs.rb -i` before `osx-defaults.sh -s` would cause `osx-defaults.sh` to overwrite the user's restored preferences.
 
 ### What belongs where
 
@@ -176,6 +176,30 @@ Run the following command to generate and update your crontab:
 
   ```zsh
   recron
+  ```
+
+The script uses `chronic` (from `moreutils`) to suppress output on successful runs and only produce output when there are errors or warnings. Two files track execution state:
+
+**Success marker**: `~/.software-updates-last-success`
+- Logs timestamp and duration for each successful run (no errors or warnings)
+- Provides an audit trail to verify cron is running correctly
+- Each successful execution appends one line
+
+**Error log**: `~/software-updates-cron.log`
+- Written only when there are errors or warnings (via `chronic` + `tee`)
+- Contains full output of failed runs for debugging
+- Appends to the log (older entries preserved)
+
+To check when the last successful run completed:
+
+  ```zsh
+  cat ~/.software-updates-last-success
+  ```
+
+To check for recent errors:
+
+  ```zsh
+  tail -50 ~/software-updates-cron.log
   ```
 
 See [Technical Deep Dive § 8](TechnicalDeepDive.md#8-cron-safety-mechanisms) for how cron safety, `sudo` guards, and TTY detection work internally.

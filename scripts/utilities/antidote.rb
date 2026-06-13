@@ -49,10 +49,10 @@ module Antidote
       PathUtils.glob_pathnames(antidote_home.join('github.com', '*', '*')) do |bundle_dir|
         next unless bundle_dir.directory?
         next unless GitProcessor.repo?(bundle_dir)
-        system('git', '-C', bundle_dir.to_s, 'config', '--local', 'fetch.fsckObjects', 'false',
-               out: File::NULL, err: File::NULL)
-        system('git', '-C', bundle_dir.to_s, 'pull-unshallow', '-q',
-               out: File::NULL, err: File::NULL)
+        GitProcessor.new(dir: bundle_dir) do |git|
+          git.config_set('fetch.fsckObjects', 'false')
+          git.run_alias('pull-unshallow', '-q')
+        end
       end
     end
 

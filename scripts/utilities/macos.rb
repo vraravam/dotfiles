@@ -43,6 +43,16 @@ module MacOS
     Time.now.strftime('%Y-%m-%d %H:%M:%S')
   end
 
+  # Checks if the script is running in a TTY (terminal) context.
+  # Returns true when stdout is a TTY or FORCE_COLOR env var is set.
+  # Used to gate interactive operations (app kill/restart, prompts, etc.)
+  # that should not run in cron or non-interactive contexts.
+  #
+  # @return [Boolean] true if running in TTY context
+  def running_in_tty?
+    $stdout.tty? || EnvVars.force_color?
+  end
+
   # Sends SIGTERM to every app in LOGIN_ITEM_APPS. Called before writing
   # defaults so in-memory state is flushed to disk first.
   # Failures are silenced -- apps that are not running are not an error.
@@ -79,16 +89,11 @@ module MacOS
   #
   # @return [void]
   def suspend_softwareupdate_schedule
-    unless _has_sudo_credentials
-      Logging.warn 'suspend_softwareupdate_schedule: sudo credentials not available -- skipping'
-      return
-    end
-    _keep_sudo_alive
-    system('sudo', 'softwareupdate', '--schedule', 'OFF')
+    _set_softwareupdate_schedule('OFF', 'suspend')
   end
 
   # Turns the macOS automatic software update schedule back on. Called from the
-  # EXIT trap in osx-defaults.sh and capture-prefs.sh so it runs on both normal
+  # EXIT trap in osx-defaults.sh and capture-prefs.rb so it runs on both normal
   # and error exits. Guards with sudo check so it is safe to call from cron --
   # if sudo credentials are not cached (no terminal), warns and skips rather than
   # hanging. keep_sudo_alive's duplicate-loop guard makes it a no-op when the
@@ -96,12 +101,7 @@ module MacOS
   #
   # @return [void]
   def resume_softwareupdate_schedule
-    unless _has_sudo_credentials
-      Logging.warn 'resume_softwareupdate_schedule: sudo credentials not available -- skipping'
-      return
-    end
-    _keep_sudo_alive
-    system('sudo', 'softwareupdate', '--schedule', 'ON')
+    _set_softwareupdate_schedule('ON', 'resume')
   end
 
   # Reloads macOS system preferences by killing preference-related processes
@@ -153,6 +153,21 @@ module MacOS
   # ---------------------------------------------------------------------------
 
   private
+
+  # Sets the macOS automatic software update schedule to ON or OFF.
+  # Checks for sudo credentials, starts keep-alive thread, and runs softwareupdate.
+  #
+  # @param state [String] 'ON' or 'OFF'
+  # @param action [String] 'suspend' or 'resume' (for log messages)
+  # @return [void]
+  def _set_softwareupdate_schedule(state, action)
+    unless _has_sudo_credentials
+      Logging.warn "#{action}_softwareupdate_schedule: sudo credentials not available -- skipping"
+      return
+    end
+    _keep_sudo_alive
+    system('sudo', 'softwareupdate', '--schedule', state)
+  end
 
   # Checks if sudo credentials are cached (non-interactive sudo is possible).
   # Uses 'sudo -n true' which succeeds if credentials are cached, fails otherwise.

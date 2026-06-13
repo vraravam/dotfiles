@@ -75,9 +75,9 @@ module Keybase
   # @return [void]
   def delete_repo(repo_name, dry_run: false)
     if dry_run
-      Logging.info "Would delete keybase repo: '#{repo_name.yellow}'"
+      Logging.info "Would delete keybase repo: #{repo_name.yellow}"
     else
-      Logging.record_warning("Failed to delete keybase repo '#{repo_name.yellow}' (it might not exist)") unless system('keybase', 'git', 'delete', '-f', repo_name)
+      Logging.record_warning("Failed to delete keybase repo #{repo_name.yellow} (it might not exist)") unless system('keybase', 'git', 'delete', '-f', repo_name)
     end
   end
 
@@ -88,9 +88,9 @@ module Keybase
   # @return [void]
   def create_repo(repo_name, dry_run: false)
     if dry_run
-      Logging.info "Would create keybase repo: '#{repo_name.yellow}'"
+      Logging.info "Would create keybase repo: #{repo_name.yellow}"
     else
-      Logging.error "Failed to create keybase repo '#{repo_name.yellow}'" unless system('keybase', 'git', 'create', repo_name)
+      Logging.error "Failed to create keybase repo #{repo_name.yellow}" unless system('keybase', 'git', 'create', repo_name)
     end
   end
 end

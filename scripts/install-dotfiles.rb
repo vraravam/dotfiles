@@ -99,9 +99,9 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
   info("Processing '#{source_path}' --> '#{target_path}'") if dry_run || verbose
 
   # Ensure target directory exists
-  FileUtils.mkdir_p(target_pn.dirname) unless dry_run
+  target_pn.dirname.mkpath unless dry_run
 
-  if target_pn.exist? && FileUtils.identical?(target_pn, source_pn) # Avoid moving if they are already the same file (e.g., if the user re-runs the script without changes)
+  if target_pn.exist? && File.identical?(target_pn, source_pn) # Avoid moving if they are already the same file (e.g., if the user re-runs the script without changes)
     debug("  Target '#{target_path}' and source '#{source_path}' are identical.") if dry_run || verbose
     STATS.skipped += 1
     return
@@ -116,7 +116,7 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
   elsif target_pn.exist? # It exists and is not a symlink (real file/dir)
     if force
       info("  Forcefully overwriting existing file '#{target_path}'") if verbose
-      FileUtils.rm_rf(target_pn) unless dry_run
+      target_pn.rmtree unless dry_run
     elsif is_custom_git && !EnvVars.first_install?
       # mtime-based resolution: whichever file was modified more recently is authoritative.
       # On a tie, source wins (repo is authoritative on re-runs).
@@ -127,7 +127,7 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
         FileUtils.mv(target_pn, source_pn, force: true) unless dry_run
       else
         info("  Source '#{source_path}' is newer or same age (#{source_mtime} >= #{target_mtime}); overwriting target") if verbose
-        FileUtils.rm_rf(target_pn) unless dry_run
+        target_pn.rmtree unless dry_run
       end
     else
       # FIRST_INSTALL, or a non-custom-git file: target is always authoritative -- move it into repo.
@@ -169,12 +169,12 @@ def _ensure_ssh_include_line
   end
 
   default_ssh_config = ssh_dir.join('config')
-  FileUtils.touch(default_ssh_config) unless default_ssh_config.exist?
+  default_ssh_config.write('') unless default_ssh_config.exist?
 
   include_line = 'Include ~/.ssh/global_config'
   begin
-    # Use File.foreach to stream the file line-by-line instead of loading it all into memory.
-    if File.foreach(default_ssh_config).any? { |l| l.strip == include_line }
+    # Use Pathname#each_line to stream the file line-by-line instead of loading it all into memory.
+    if default_ssh_config.each_line.any? { |l| l.strip == include_line }
       success("'#{include_line.cyan}' already present in '#{default_ssh_config.to_s.cyan}'")
     else
       info("Adding '#{include_line.cyan}' to '#{default_ssh_config.to_s.cyan}'")

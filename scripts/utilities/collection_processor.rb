@@ -144,7 +144,7 @@ module CollectionProcessor
   #     repo_paths,
   #     operation_desc: 'Running git status'
   #   ) do |repo_path, idx, total|
-  #     system('git', '-C', repo_path, 'status')
+  #     GitProcessor.new(dir: repo_path).status
   #   end
   #   puts "Processed #{results[:total]}, #{results[:failed].length} failed"
   #

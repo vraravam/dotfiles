@@ -13,7 +13,6 @@ $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 
 require 'cli_parser'
 require 'env_vars'
-require 'fileutils'
 require 'logging'
 require 'open3'
 require 'path_utils'
@@ -29,9 +28,7 @@ include Logging
 def _read_pattern_file(file)
   return [] unless file.file?
   file.readlines.each_with_object([]) do |line, arr|
-    stripped = line.chomp.strip
-    next if stripped.empty? || stripped.start_with?('#')
-    arr << stripped
+    arr << line.chomp.strip unless line.comment_or_empty?
   end
 end
 
@@ -162,7 +159,7 @@ def _delete_items(profile_dir, file_patterns, dir_patterns, dry_run)
   items_to_delete.each do |path|
     begin
       path_pn = Pathname.new(path)
-      path_pn.directory? ? FileUtils.rm_rf(path_pn) : path_pn.delete
+      path_pn.directory? ? path_pn.rmtree : path_pn.delete
       deleted += 1
     rescue StandardError => e
       record_warning("Failed to delete '#{path.cyan}': #{e.message}")
@@ -172,7 +169,8 @@ def _delete_items(profile_dir, file_patterns, dir_patterns, dry_run)
 end
 
 private :_read_pattern_file, :_browser_running?, :_kb_to_bytes, :_mb_to_bytes, :_bytes_to_mb,
-        :_format_size, :_should_skip_profile?, :_vacuum_sqlite_databases, :_delete_items
+        :_format_size, :_should_skip_profile?, :_vacuum_sqlite_databases, :_delete_items,
+        :_vacuum_browser_profile_dir
 
 # Vacuums SQLite databases larger than 10 MB and deletes known cache/session
 # files from +profile_dir+. Skips if the browser process is running.
@@ -180,7 +178,7 @@ private :_read_pattern_file, :_browser_running?, :_kb_to_bytes, :_mb_to_bytes, :
 # @param browser_name   [String] Process name used for the pgrep check.
 # @param profile_dir [Pathname, String] Root of the browser profile directory.
 # @param dry_run        [Boolean] When true, reports actions without performing them.
-def vacuum_browser_profile_dir(browser_name, profile_dir, dry_run:)
+def _vacuum_browser_profile_dir(browser_name, profile_dir, dry_run:)
   profile_dir = Pathname.new(profile_dir) unless profile_dir.is_a?(Pathname)
   file_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-files.txt'))
   dir_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-dirs.txt'))
@@ -240,7 +238,7 @@ browser_profiles = {
 }
 
 browser_profiles.each do |browser_name, profile_dir|
-  vacuum_browser_profile_dir(browser_name, profile_dir, dry_run: options[:dry_run])
+  _vacuum_browser_profile_dir(browser_name, profile_dir, dry_run: options[:dry_run])
 end
 
 print_script_summary(start_time, 'Finished cleaning up browser profiles')

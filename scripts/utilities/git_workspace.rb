@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'open3'
 require 'pathname'
 require 'set'
 
@@ -93,7 +92,7 @@ module GitWorkspace
     # incremented by a caller). Shell wrappers don't increment, so standalone
     # calls start at 0. Nested Ruby calls will be at depth >= 1, so they skip
     # script name override and timing infrastructure entirely.
-    current_depth = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+    current_depth = EnvVars.script_depth
     if current_depth.zero?
       Logging.script_name = 'install_mise_versions'
       Logging.increment_script_depth
@@ -145,7 +144,7 @@ module GitWorkspace
     # incremented by a caller). Shell wrappers don't increment, so standalone
     # calls start at 0. Nested Ruby calls will be at depth >= 1, so they skip
     # script name override and timing infrastructure entirely.
-    current_depth = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+    current_depth = EnvVars.script_depth
     if current_depth.zero?
       Logging.script_name = 'allow_all_direnv_configs'
       Logging.increment_script_depth
@@ -193,7 +192,7 @@ module GitWorkspace
   #
   # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
   def setup_dev_environment(first_install: false)
-    current_depth = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+    current_depth = EnvVars.script_depth
     if current_depth.zero?
       Logging.script_name = 'setup_dev_environment'
       Logging.increment_script_depth
@@ -296,14 +295,6 @@ module GitWorkspace
       return false
     end
 
-    # Normalize relative path using git relative-path if provided
-    if relative_path
-      rel_str, status = Open3.capture2('git', '-C', repo_dir.to_s, 'relative-path', relative_path.to_s)
-      rel_path = status.success? ? rel_str.strip : '.'
-    else
-      rel_path = '.'
-    end
-
     Logging.section_header2 "#{'Updating'.yellow} '#{repo_dir.to_s.cyan}'"
 
     # Clean up lock files and hooks
@@ -312,10 +303,18 @@ module GitWorkspace
     index_lock.delete if index_lock.file?
     hooks_dir.rmtree if hooks_dir.directory?
 
-    # Stage and commit with timestamp
-    timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
-    system('git', '-C', repo_dir.to_s, 'add', rel_path) &&
-      system('git', '-C', repo_dir.to_s, 'sci', "Incremental commit: #{timestamp}")
+    # Stage and commit with timestamp (use block form for multiple operations)
+    GitProcessor.new(dir: repo_dir) do |git|
+      # Normalize relative path (may raise if path is invalid/outside repo)
+      rel_path = relative_path ? git.relative_path(relative_path) : '.'
+      git.add(rel_path)
+      timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+      git.run_alias('sci', "Incremental commit: #{timestamp}")
+    end
+  rescue RuntimeError => e
+    # relative_path raises RuntimeError if path is invalid or outside repo
+    Logging.warn "Skipping repo update -- #{e.message}"
+    false
   end
 
   # Updates HOME and PERSONAL_PROFILES_DIR repos by staging and committing
@@ -351,7 +350,8 @@ module GitWorkspace
       return false
     end
 
-    system('git', '-C', repo_dir.to_s, 'status', *switches)
+    _out, _err, status = GitProcessor.new(dir: repo_dir).status(*switches)
+    status.success?
   end
 
   # Reports git status for HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, and all

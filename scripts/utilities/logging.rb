@@ -54,7 +54,7 @@ module Logging
   # Memoized to avoid repeated string multiplication for the same depth.
   def log_indent
     @indent_cache ||= {}
-    depth = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+    depth = EnvVars.script_depth
     @indent_cache[depth] ||= '  ' * depth
   end
 
@@ -321,14 +321,14 @@ module Logging
   # (which never set the counter) are treated as outermost -- consistent with the
   # ':-0' used in the increment expression in each main().
   def outermost_script?
-    _script_depth <= 1
+    EnvVars.script_depth <= 1
   end
 
   # Increments _DOTFILES_SCRIPT_DEPTH and registers an at_exit hook to
   # decrement it on exit (clean or error). Call once at script start, before
   # any logging calls. Mirrors the export + trap pattern in shell scripts.
   def increment_script_depth
-    ENV['_DOTFILES_SCRIPT_DEPTH'] = (_script_depth + 1).to_s
+    ENV['_DOTFILES_SCRIPT_DEPTH'] = (EnvVars.script_depth + 1).to_s
     at_exit { decrement_script_depth }
   end
 
@@ -336,7 +336,7 @@ module Logging
   # automatically by the at_exit hook registered in increment_script_depth.
   # Mirrors _decrement_script_depth in .shellrc.
   def decrement_script_depth
-    depth = _script_depth
+    depth = EnvVars.script_depth
     ENV['_DOTFILES_SCRIPT_DEPTH'] = (depth - 1).to_s if depth > 0
   end
 
@@ -418,12 +418,6 @@ module Logging
   # as entry points, where $PROGRAM_NAME would be '-e' or unhelpful).
   def script_name
     @script_name || File.basename($PROGRAM_NAME)
-  end
-
-  # Returns the current value of _DOTFILES_SCRIPT_DEPTH as an integer,
-  # defaulting to 0 when unset. Single point of truth for reading the counter.
-  def _script_depth
-    ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
   end
 
   # Shared implementation for section_header and section_header2. Mirrors

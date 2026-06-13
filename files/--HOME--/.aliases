@@ -691,11 +691,11 @@ fi
 # Seeds the given file with the standard crontab header and the
 # software-updates-cron schedule. Called by recron only when crontab.txt
 # does not already exist (bootstrap / first-install path).
-# Usage: _create_crontab <output-file-path>
-_create_crontab() {
+# Usage: create_crontab <output-file-path>
+create_crontab() {
   local file="${1:-}"
   if is_zero_string "${file}"; then
-    error "_create_crontab requires an output file path as its first argument."
+    error "create_crontab requires an output file path as its first argument."
     return 1
   fi
   _call_ruby_cron create_crontab "${file}"
@@ -814,7 +814,7 @@ build_me() {
 # --------------------------------------------------------------------------
 
 # Canonical list of login-item apps managed by osx-defaults.sh and
-# capture-prefs.sh. Both scripts kill these apps before writing defaults so
+# capture-prefs.rb. Both scripts kill these apps before writing defaults so
 # the running instance cannot overwrite writes on quit, and restart them on
 # exit via an EXIT trap.
 # Keep in sync with the Brewfile setup_login_items_script entries and the

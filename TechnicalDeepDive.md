@@ -18,8 +18,8 @@ If you are setting up a new machine for the first time, start with [GettingStart
 8. [Cron Safety Mechanisms](#8-cron-safety-mechanisms)
 9. [`install-dotfiles.rb` Mechanics](#9-install-dotfilesrb-mechanics)
 10. [Per-Project Script Overrides](#10-per-project-script-overrides)
-11. [`capture-prefs.sh` Architecture](#11-capture-prefssh-architecture)
-12. [`osx-defaults.sh` and `capture-prefs.sh` — Two-Phase Preference Architecture](#12-osx-defaultssh-and-capture-prefssh--two-phase-preference-architecture)
+11. [`capture-prefs.rb` Architecture](#11-capture-prefsrb-architecture)
+12. [`osx-defaults.sh` and `capture-prefs.rb` — Two-Phase Preference Architecture](#12-osx-defaultssh-and-capture-prefsrb--two-phase-preference-architecture)
 
 ---
 
@@ -57,7 +57,7 @@ files/
   --PERSONAL_PROFILES_DIR--/  .envrc for direnv
 scripts/
   fresh-install-of-osx.sh
-  capture-prefs.sh
+  capture-prefs.rb
   osx-defaults.sh
   utilities/             shared Ruby modules (logging, string, cli_parser, …)
   data/                  plain-text data files read by scripts at runtime
@@ -390,7 +390,7 @@ else
 fi
 ```
 
-In `capture-prefs.sh`: export from cron must not kill login-item apps — the user might be actively using them. Import always kills/restarts because the user explicitly triggered it.
+In `capture-prefs.rb`: export from cron must not kill login-item apps — the user might be actively using them. Import always kills/restarts because the user explicitly triggered it.
 
 ### `COLUMNS` — always use `${COLUMNS:-80}`
 
@@ -447,11 +447,11 @@ The same dispatch mechanism applies to `launch_me`, `debug_me`, and `build_me` �
 
 ---
 
-## 11. `capture-prefs.sh` Architecture
+## 11. `capture-prefs.rb` Architecture
 
 ### Why XML plist (not binary, not JSON)
 
-`defaults export` produces binary plist by default. `capture-prefs.sh` immediately converts to XML (`plutil -convert xml1`) for two reasons:
+`defaults export` produces binary plist by default. `capture-prefs.rb` immediately converts to XML (`plutil -convert xml1`) for two reasons:
 
 1. **Diffability**: XML plist is human-readable and produces meaningful git diffs. Binary plist diffs are useless.
 2. **Round-trip fidelity**: `defaults import` reads XML plist natively. Converting via JSON is lossy — `<data>` blobs become base64 strings and `<date>` values become RFC 3339 strings that `defaults import` cannot round-trip. Some domains contain `<data>`-encoded values for legitimate portable keys (e.g. split-view frame strings).
@@ -474,7 +474,7 @@ The script-scoped `_excluded_by_domain` associative array is populated at startu
 
 ### Cron export scoping
 
-`capture-prefs.sh -e` (export) is called from `software-updates-cron.rb`. In this context:
+`capture-prefs.rb -e` (export) is called from `software-updates-cron.rb`. In this context:
 - Killing login-item apps is wrong — the user may be actively using them.
 - Re-launching them via `open -a` is worse — apps restart mid-session without the user's knowledge.
 
@@ -482,7 +482,7 @@ Kill/restart is therefore scoped to: always on import; interactive (TTY) export 
 
 ---
 
-## 12. `osx-defaults.sh` and `capture-prefs.sh` — Two-Phase Preference Architecture
+## 12. `osx-defaults.sh` and `capture-prefs.rb` — Two-Phase Preference Architecture
 
 macOS preferences are managed in two distinct, ordered phases. The order is load-bearing: phase 2 always wins over phase 1 by design. Both phases are invoked automatically by `fresh-install-of-osx.sh` in sequence.
 
@@ -498,15 +498,15 @@ The baseline is **not** appropriate for:
 - Any setting the user configures through the app's UI over time. Writing those here means `osx-defaults.sh -s` would reset them to stale values on every fresh-install, defeating the purpose of phase 2.
 - Ephemeral state (window coordinates, last-opened directory, migration sentinels, A/B experiment assignments). Apps manage these themselves.
 
-### Phase 2 — `capture-prefs.sh -i` (UI-configured overrides)
+### Phase 2 — `capture-prefs.rb -i` (UI-configured overrides)
 
-`capture-prefs.sh -i` imports the `.plist` files previously exported from the user's old machine via `capture-prefs.sh -e`. Because this runs *after* phase 1, every imported value overwrites the corresponding baseline value. The user's deliberate, UI-configured choices always win.
+`capture-prefs.rb -i` imports the `.plist` files previously exported from the user's old machine via `capture-prefs.rb -e`. Because this runs *after* phase 1, every imported value overwrites the corresponding baseline value. The user's deliberate, UI-configured choices always win.
 
 ### Why the order is load-bearing
 
 ```zsh
 osx-defaults.sh -s    # phase 1 — write baseline
-capture-prefs.sh -i   # phase 2 — overwrite with UI-configured values
+capture-prefs.rb -i   # phase 2 — overwrite with UI-configured values
 ```
 
 Reversing the order causes `osx-defaults.sh` to overwrite the user's restored preferences with stale baseline values — exactly the wrong outcome. `fresh-install-of-osx.sh` encodes this order and must not be changed without understanding this constraint.

@@ -9,7 +9,7 @@ require_relative 'logging'
 
 # Cron management helpers that replicate the shell functions split across
 # .shellrc (suspend_cron, resume_cron, restore_cron) and .aliases
-# (_create_crontab, recron, with_cron_suspended).
+# (create_crontab, recron, with_cron_suspended).
 #
 # The split between .shellrc and .aliases exists for bootstrap reasons: shell
 # needs suspend_cron before the dotfiles repo is cloned. Ruby scripts never
@@ -38,7 +38,7 @@ module Cron
       Logging.warn "No '#{cron_file.to_s.cyan}' found; returning without any processing"
       return
     end
-    FileUtils.mkdir_p(cron_file.dirname)
+    cron_file.dirname.mkpath
     raise "Failed to restore crontab from '#{cron_file.to_s.cyan}'" unless system('crontab', cron_file.to_s)
   end
 
@@ -48,7 +48,7 @@ module Cron
   # known-good state. Mirrors suspend_cron in .shellrc.
   def suspend_cron
     Logging.debug 'Suspending cron jobs...'
-    backup_file = cron_backup_file
+    backup_file = EnvVars.cron_backup_file
     src_file = CRONTAB_FILE
 
     # Attempt to capture the active crontab into the backup file.
@@ -74,7 +74,7 @@ module Cron
   # crontab.txt), does nothing. Mirrors resume_cron in .shellrc.
   def resume_cron
     Logging.debug 'Resuming cron jobs...'
-    backup_file = cron_backup_file
+    backup_file = EnvVars.cron_backup_file
     if backup_file.file? && !backup_file.empty?
       restore_cron(backup_file)
       Logging.success 'Cron jobs resumed from backup'
@@ -90,7 +90,7 @@ module Cron
 
   # Seeds +file+ with the standard crontab header and the software-updates-cron
   # schedule. Called by recron only when crontab.txt does not already exist
-  # (bootstrap / first-install path). Mirrors _create_crontab in .aliases.
+  # (bootstrap / first-install path). Mirrors create_crontab in .aliases.
   def create_crontab(file)
     shell = EnvVars::SHELL
     username = EnvVars::USER
@@ -124,7 +124,7 @@ module Cron
       f.puts "USERNAME=\"#{username}\""
       f.puts "HOME=\"#{EnvVars::HOME}\""
       f.puts '# PATH: homebrew + system utils + personal bin + dotfiles scripts ' \
-             '(needed for chronic, run-all.rb, capture-prefs.sh etc.)'
+             '(needed for chronic, run-all.rb, capture-prefs.rb etc.)'
       f.puts "PATH=#{path}"
       f.puts
       f.puts "# Note: Need to use the full path to scripts inside the sub-shell since that's not a logged-in shell"
@@ -145,7 +145,7 @@ module Cron
     # incremented by a caller). Shell wrappers don't increment, so standalone
     # calls start at 0. Nested Ruby calls will be at depth >= 1, so they skip
     # script name override and timing infrastructure entirely.
-    current_depth = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+    current_depth = EnvVars.script_depth
     if current_depth.zero?
       Logging.script_name = 'recron'
       Logging.increment_script_depth
@@ -175,29 +175,11 @@ module Cron
     begin
       yield
       recron
-      backup = cron_backup_file
+      backup = EnvVars.cron_backup_file
       backup.delete if backup.exist?
     rescue StandardError
       resume_cron
       raise
     end
-  end
-
-  # ---------------------------------------------------------------------------
-  # Private helpers
-  # ---------------------------------------------------------------------------
-
-  private
-
-  # The path to the temporary crontab backup file. Written by suspend_cron,
-  # read by resume_cron, and deleted by recron / resume_cron on success.
-  # Mirrors _DOTFILES_CRON_BACKUP_FILE in .shellrc, which sets this var
-  # internally -- Ruby scripts may not have sourced .shellrc, so fall back to
-  # the same default path the shell function uses.
-  def cron_backup_file
-    backup_path = ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do
-      Pathname.new(ENV.fetch('TMPDIR', '/tmp')).join('crontab_backup').to_s
-    end
-    Pathname.new(backup_path)
   end
 end

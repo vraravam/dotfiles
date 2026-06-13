@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'open3'
 require 'time'
 
 require_relative 'env_vars'
@@ -32,31 +31,33 @@ module ProfilesRepo
     end
 
     cutoff = (Time.now - days * 24 * 3600).strftime('%Y-%m-%d')
+    pruned_count = 0
 
-    tracked_out, = Open3.capture3(
-      'git', '-C', EnvVars::PERSONAL_PROFILES_DIR.to_s,
-      'ls-files', '--', '*/zen-sessions-backup/zen-sessions-*.jsonlz4'
-    )
-    tracked = tracked_out.split("\n")
+    GitProcessor.new(dir: EnvVars::PERSONAL_PROFILES_DIR) do |git|
+      tracked = git.ls_files('*/zen-sessions-backup/zen-sessions-*.jsonlz4')
 
-    old_backups = tracked.select do |tracked_file|
-      basename = File.basename(tracked_file, '.*')  # strip .jsonlz4
-      basename = File.basename(basename, '.*')      # strip potential second ext
-      date_part = basename.sub('zen-sessions-', '').sub(/-\d{2}\z/, '')
-      date_part < cutoff
+      old_backups = tracked.select do |tracked_file|
+        tracked_path = Pathname.new(tracked_file)
+        basename = tracked_path.basename('.*').to_s  # strip .jsonlz4
+        basename = Pathname.new(basename).basename('.*').to_s  # strip potential second ext
+        date_part = basename.sub('zen-sessions-', '').sub(/-\d{2}\z/, '')
+        date_part < cutoff
+      end
+
+      if old_backups.empty?
+        Logging.debug 'No old session backups to prune'
+        return
+      end
+
+      old_backups.each do |f|
+        git.rm_cached(f, quiet: true)
+        Logging.debug "Unpinned old session backup: #{f.yellow}"
+      end
+
+      pruned_count = old_backups.length
     end
 
-    if old_backups.empty?
-      Logging.debug 'No old session backups to prune'
-      return
-    end
-
-    old_backups.each do |f|
-      system('git', '-C', EnvVars::PERSONAL_PROFILES_DIR.to_s, 'rm', '--cached', '-q', '--', f)
-      Logging.debug "Unpinned old session backup: #{f.yellow}"
-    end
-
-    Logging.success "Pruned #{old_backups.length} session backup file(s) older than #{days} days"
+    Logging.success "Pruned #{pruned_count} session backup file(s) older than #{days} days"
   end
 
   # Checks the size of the profiles repo .git directory and records an error
@@ -107,7 +108,8 @@ module ProfilesRepo
       end
 
       Logging.section_header2 "#{'Updating chrome folder:'.yellow} '#{folder_pn.to_s.cyan}'"
-      if system('git', '-C', folder_pn.to_s, 'pull', '-r')
+      _out, _err, status = GitProcessor.new(dir: folder_pn).pull(rebase: true)
+      if status.success?
         Logging.success "Successfully updated: '#{folder_pn.to_s.cyan}'"
       else
         Logging.record_warning("Failed to update chrome folder: '#{folder_pn}'")

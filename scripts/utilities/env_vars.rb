@@ -30,6 +30,26 @@ require 'pathname'  # System Ruby on a vanilla macOS is 2.6; Pathname must be re
 #     filter = EnvVars.filter                       # String (stripped) or nil
 #   end
 module EnvVars
+  # ---------------------------------------------------------------------------
+  # Private helpers (must be defined before constants that use them)
+  # ---------------------------------------------------------------------------
+
+  # Normalizes an optional string environment variable.
+  # Returns nil when value is unset, nil, or empty after stripping whitespace.
+  # Returns the stripped string otherwise.
+  #
+  # Used for env vars where empty and unset are semantically identical (the
+  # feature is disabled or absent). Prevents returning empty strings that would
+  # pass truthiness checks but fail nil_or_empty? checks.
+  def self._normalize_optional_string(value)
+    value&.then { |s| s.strip.empty? ? nil : s.strip }
+  end
+  private_class_method :_normalize_optional_string
+
+  # ---------------------------------------------------------------------------
+  # Non-path variables (String objects)
+  # ---------------------------------------------------------------------------
+
   # Current user's login name.
   # Mirrors: $USER (always set by the shell)
   USER = ENV.fetch('USER', ENV.fetch('USERNAME', '')).freeze
@@ -94,6 +114,10 @@ module EnvVars
     ENV.fetch('XDG_STATE_HOME', HOME.join('.local', 'state'))
   ).expand_path.freeze
 
+  # Zsh dotfiles directory.
+  # Mirrors: export ZDOTDIR="${ZDOTDIR:-"${HOME}"}" in .shellrc
+  ZDOTDIR = Pathname.new(ENV.fetch('ZDOTDIR', HOME)).expand_path.freeze
+
   # Homebrew paths.
   # Mirrors: HOMEBREW_* exports (set by brew shellenv)
   HOMEBREW_PREFIX = Pathname.new(ENV.fetch('HOMEBREW_PREFIX', '/opt/homebrew')).expand_path.freeze
@@ -126,13 +150,13 @@ module EnvVars
   # Keybase username.
   # Mirrors: export KEYBASE_USERNAME (set in .shellrc or manually)
   # Returns nil when not set or empty (if user does not want Keybase functionality), otherwise returns stripped string.
-  KEYBASE_USERNAME = ENV.fetch('KEYBASE_USERNAME', nil)&.then { |s| s.strip.empty? ? nil : s.strip }
+  KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', nil))
 
   # Keybase repository names for encrypted backups.
   # Mirrors: export KEYBASE_*_REPO_NAME (set in .shellrc or manually)
   # Returns nil when not set or empty (if user does not want Keybase functionality), otherwise returns stripped string.
-  KEYBASE_HOME_REPO_NAME = ENV.fetch('KEYBASE_HOME_REPO_NAME', nil)&.then { |s| s.strip.empty? ? nil : s.strip }
-  KEYBASE_PROFILES_REPO_NAME = ENV.fetch('KEYBASE_PROFILES_REPO_NAME', nil)&.then { |s| s.strip.empty? ? nil : s.strip }
+  KEYBASE_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_HOME_REPO_NAME', nil))
+  KEYBASE_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_PROFILES_REPO_NAME', nil))
 
   # ---------------------------------------------------------------------------
   # Runtime flags and temporary operation variables (evaluated dynamically)
@@ -144,21 +168,21 @@ module EnvVars
   # Mirrors: export FILTER (set temporarily for filtering operations)
   # Returns nil when not set or empty (after stripping whitespace), otherwise returns stripped string.
   def self.filter
-    ENV.fetch('FILTER', nil)&.then { |s| s.strip.empty? ? nil : s.strip }
+    _normalize_optional_string(ENV.fetch('FILTER', nil))
   end
 
   # Reference dir for repo verification (resurrect-repositories.rb).
   # Mirrors: export REF_FOLDER (set temporarily for verification operations)
   # Returns nil when not set or empty (after stripping whitespace), otherwise returns expanded absolute Pathname.
   def self.ref_folder
-    ENV.fetch('REF_FOLDER', nil)&.then { |s| s.strip.empty? ? nil : Pathname.new(s.strip).expand_path }
+    _normalize_optional_string(ENV.fetch('REF_FOLDER', nil))&.then { |s| Pathname.new(s).expand_path }
   end
 
   # Base dir for repo operations (run-all.rb).
   # Mirrors: export FOLDER (set temporarily for run-all operations, defaults to current directory)
   # Returns nil when not set or empty (after stripping whitespace), otherwise returns expanded absolute Pathname.
   def self.folder
-    ENV.fetch('FOLDER', nil)&.then { |s| s.strip.empty? ? nil : Pathname.new(s.strip).expand_path }
+    _normalize_optional_string(ENV.fetch('FOLDER', nil))&.then { |s| Pathname.new(s).expand_path }
   end
 
   # Search depth limits for repo operations (run-all.rb).
@@ -181,6 +205,31 @@ module EnvVars
   # Mirrors: export DEBUG=1 (set manually for debugging)
   def self.debug?
     !ENV.fetch('DEBUG', '').empty?
+  end
+
+  # Returns true if FORCE_COLOR is set (used by color output methods).
+  # Mirrors: FORCE_COLOR env var (standard convention for forcing color output)
+  def self.force_color?
+    !ENV.fetch('FORCE_COLOR', '').strip.empty?
+  end
+
+  # Current script depth (incremented by increment_script_depth).
+  # Mirrors: _DOTFILES_SCRIPT_DEPTH (managed by logging.rb and shell scripts)
+  # Returns 0 when unset (not yet incremented by any script).
+  def self.script_depth
+    ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+  end
+
+  # Cron backup file path (used by suspend_cron/resume_cron).
+  # Mirrors: _DOTFILES_CRON_BACKUP_FILE (set by suspend_cron in .shellrc)
+  # Falls back to TMPDIR/crontab_backup when not set.
+  # Returns Pathname so callers can use Pathname methods directly.
+  def self.cron_backup_file
+    Pathname.new(
+      ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do
+        File.join(ENV.fetch('TMPDIR', '/tmp'), 'crontab_backup')
+      end
+    )
   end
 
   # Returns true if logging output should be suppressed.

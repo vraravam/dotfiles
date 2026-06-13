@@ -1,6 +1,6 @@
 # capture-prefs-excluded-keys.txt
 #
-# Per-domain key exclusions for capture-prefs.sh.
+# Per-domain key exclusions for capture-prefs.rb.
 #
 # Format: <domain>|<key-or-glob-pattern>
 #   - One entry per line.

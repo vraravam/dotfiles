@@ -95,4 +95,14 @@ class String
 
   # @return [String] The string in white.
   def white; colorize('1;37'); end
+
+  # Checks if the string should be skipped when reading config/data files.
+  # Returns true for empty lines (after stripping) or comment lines (starting with '#').
+  # Common pattern when parsing text files with comments.
+  #
+  # @return [true, false]
+  def comment_or_empty?
+    stripped = strip
+    stripped.empty? || stripped.start_with?('#')
+  end
 end

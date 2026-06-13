@@ -11,7 +11,7 @@
 # calls return non-zero when a setting is unsupported on the current OS version,
 # which is expected and must not abort the script.
 
-# This script handles settings that cannot be managed by capture-prefs.sh alone,
+# This script handles settings that cannot be managed by capture-prefs.rb alone,
 # or that require mechanisms other than a plain 'defaults write':
 #   - sudo / pmset / systemsetup / scutil calls
 #   - defaults -currentHost writes (host-specific pref domain)

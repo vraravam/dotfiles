@@ -602,11 +602,11 @@ main() {
     _record_error "Skipping baselining of preferences since '$(purple 'osx-defaults.sh')' couldn't be found in the PATH; Please baseline manually and follow it up with re-import of the backed-up preferences"
   fi
 
-  if command_exists 'capture-prefs.sh'; then
-    capture-prefs.sh -i
+  if command_exists 'capture-prefs.rb'; then
+    capture-prefs.rb -i
     success 'Successfully restored preferences from backup'
   else
-    _record_error "Skipping importing of preferences since '$(purple 'capture-prefs.sh')' couldn't be found in the PATH; Please set it up manually"
+    _record_error "Skipping importing of preferences since '$(purple 'capture-prefs.rb')' couldn't be found in the PATH; Please set it up manually"
   fi
 
   if is_directory '/Applications/Sol.app' && ! pgrep -x 'Sol' &>/dev/null; then

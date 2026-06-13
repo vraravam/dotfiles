@@ -94,7 +94,7 @@ Antidote is the zsh plugin manager (replaced oh-my-zsh):
 Cron functions are split intentionally:
 
 - **`.shellrc`**: `suspend_cron`, `resume_cron` — needed before dotfiles cloned.
-- **`.aliases`**: `_create_crontab`, `recron`, higher-level helpers — only
+- **`.aliases`**: `create_crontab`, `recron`, higher-level helpers — only
   needed after dotfiles installed.
 
 Scripts that need cron functions: source the tightest file that has them.

@@ -169,6 +169,151 @@ require_relative 'string'
 include Logging
 ```
 
+## Environment Variables
+
+Always use `ENV.fetch` instead of `ENV['...']` for environment variable access:
+
+```ruby
+# BAD -- ENV['VAR'] returns nil if VAR is unset; easy to miss in code
+value = ENV['FORCE_COLOR']
+if !value.to_s.strip.empty?
+  # ...
+end
+
+# Good -- ENV.fetch with default value
+value = ENV.fetch('FORCE_COLOR', '')
+if !value.strip.empty?
+  # ...
+end
+
+# Good -- ENV.fetch with nil default when you want to check presence
+value = ENV.fetch('OPTIONAL_VAR', nil)
+if value
+  # ...
+end
+
+# Good -- ENV.fetch without default raises KeyError if missing (use for required vars)
+api_key = ENV.fetch('API_KEY')  # Raises if API_KEY not set
+```
+
+**Why `ENV.fetch` is better:**
+- **Explicit defaults**: `ENV.fetch('VAR', '')` makes it clear the default is empty string
+- **Intentional failure**: `ENV.fetch('VAR')` without default raises KeyError for required vars
+- **No `.to_s` needed**: When using a default, you get the type you specify
+- **Catches typos**: `ENV['VARNAME']` silently returns nil for typos; `ENV.fetch('VARNAME')` raises
+
+**When to use each form:**
+```ruby
+# Optional var with default value
+color = ENV.fetch('FORCE_COLOR', '')
+
+# Optional var where nil vs empty matters
+value = ENV.fetch('OPTIONAL', nil)
+
+# Required var (should crash if missing)
+token = ENV.fetch('GITHUB_TOKEN')
+
+# Setting env vars (ENV['VAR'] = value is fine for writes)
+ENV['MY_VAR'] = 'value'  # OK -- this is a write, not a read
+```
+
+### Move String Literal ENV.fetch Calls to EnvVars Module
+
+All `ENV.fetch('STRING_LITERAL', ...)` calls must be moved to the `EnvVars` module
+(`scripts/utilities/env_vars.rb`). Only dynamic variable names (where the env var
+name is itself a variable) should remain as inline `ENV.fetch` calls.
+
+```ruby
+# BAD -- string literal ENV.fetch scattered in codebase
+def running_in_tty?
+  $stdout.tty? || !ENV.fetch('FORCE_COLOR', '').strip.empty?
+end
+
+def script_depth
+  ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+end
+
+# Good -- centralized in EnvVars module
+module EnvVars
+  # Returns true if FORCE_COLOR is set (used by color output methods).
+  def self.force_color?
+    !ENV.fetch('FORCE_COLOR', '').strip.empty?
+  end
+
+  # Current script depth (incremented by increment_script_depth).
+  def self.script_depth
+    ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+  end
+end
+
+# Usage in other files
+def running_in_tty?
+  $stdout.tty? || EnvVars.force_color?
+end
+
+def script_depth
+  EnvVars.script_depth
+end
+```
+
+**EnvVars Structure -- Constants vs Methods:**
+
+- **Pathname env vars → Constants**: Path variables that never change at runtime are
+  Pathname constants (e.g., `HOME`, `DOTFILES_DIR`, `XDG_CACHE_HOME`) because Pathname
+  objects are immutable and the path resolution is expensive -- freeze once at load time.
+
+- **Non-Pathname env vars → Methods**: All non-Pathname env vars must be methods
+  (e.g., `force_color?`, `script_depth`, `debug?`) so they are re-evaluated on
+  each access. This allows them to reflect runtime changes (e.g., script depth
+  increments, debug flag toggled mid-execution).
+
+- **Methods can return Pathname**: Methods that compute paths dynamically (e.g.,
+  `cron_backup_file`) should return Pathname objects directly so callers don't need
+  to wrap the result. This keeps Pathname usage consistent throughout the codebase.
+
+```ruby
+# Good -- Pathname constants (expensive to construct, immutable, never change)
+HOME = Pathname.new(ENV.fetch('HOME', '~')).expand_path.freeze
+DOTFILES_DIR = Pathname.new(ENV.fetch('DOTFILES_DIR', HOME.join('.config', 'dotfiles'))).expand_path.freeze
+
+# Good -- Non-Pathname methods (evaluated on each call)
+def self.force_color?
+  !ENV.fetch('FORCE_COLOR', '').strip.empty?
+end
+
+def self.script_depth
+  ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+end
+
+# Good -- Methods can return Pathname when appropriate
+def self.cron_backup_file
+  Pathname.new(
+    ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do
+      File.join(ENV.fetch('TMPDIR', '/tmp'), 'crontab_backup')
+    end
+  )
+end
+
+# BAD -- non-Pathname as constant (won't reflect runtime changes)
+SCRIPT_DEPTH = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i  # frozen at load time
+```
+
+**Exceptions** -- inline `ENV.fetch` IS correct when:
+- The env var name is dynamic (variable, not literal): `ENV.fetch(var_name, '')`
+- Setting env vars: `ENV['VAR'] = value`
+- Inside `env_vars.rb` itself (the centralization target)
+
+**Why centralize:**
+- **Single source of truth**: All env var defaults and access patterns in one place
+- **DRY**: Repeated `ENV.fetch('SAME_VAR', 'same_default')` across files is duplication
+- **Discoverability**: New developers see all env vars used by the system in one file
+- **Type safety**: EnvVars can provide typed accessors (`.to_i`, `Pathname.new()`, etc.)
+- **Documentation**: Comments in EnvVars document what each var is for
+
+**Scan rule**: When adding/editing code, search for `ENV.fetch('` with a string
+literal. If it's not in `env_vars.rb`, move it there. Use methods for non-Pathname
+values, constants only for Pathname objects.
+
 ## Quoting
 
 Prefer **single quotes** for static strings with no interpolation. Use **double
@@ -531,6 +676,161 @@ command_str = repo['post_clone']  # e.g., "npm install && npm run build"
 Open3.capture3(command_str)       # Shell interprets the string as the user intended
 ```
 
+### Invoking Ruby Scripts from Ruby
+
+**When to use subprocess vs direct module call:**
+
+| Scenario | Approach | Reason |
+|----------|----------|--------|
+| Utility module (utilities/*.rb) | Direct call: `GitWorkspace.update_all_repos` | Module is designed to be called directly; no subprocess overhead |
+| CLI script with own lifecycle | Subprocess: `system(RbConfig.ruby, script_path, '-e')` | Script manages traps, logging init, depth tracking - let it run independently |
+| Simple function extraction | Direct call after refactoring into module | Prefer extracting to module over subprocess |
+
+**When calling via subprocess**, use `RbConfig.ruby` instead of hardcoded `'ruby'`:
+
+```ruby
+# BAD -- hardcoded 'ruby' may invoke a different Ruby than the parent
+system('ruby', script_path, '-e')
+
+# Good -- RbConfig.ruby uses the same interpreter as the parent process
+require 'rbconfig'
+system(RbConfig.ruby, script_path, '-e')
+```
+
+**Why subprocess is appropriate for CLI scripts:**
+- Script has its own `at_exit` hooks and EXIT traps
+- Script calls `increment_script_depth` / `print_script_start` / `print_script_summary`
+- Script has option parsing with CliParser
+- Script manages its own error collection (`@step_warnings`, `@step_errors`)
+
+**Example of appropriate subprocess use:**
+```ruby
+# software-updates-cron.rb calling capture-prefs.rb
+# capture-prefs.rb is a complete CLI script with its own lifecycle
+capture_prefs_script = Pathname.new(__dir__).join('capture-prefs.rb')
+system(RbConfig.ruby, capture_prefs_script.to_s, '-e')
+```
+
+**Why `RbConfig.ruby` matters:**
+- `/usr/bin/ruby` is system Ruby 2.6 (macOS default)
+- Homebrew Ruby (if installed) may be in `$PATH` and used by shebangs
+- `RbConfig.ruby` returns the path to the **currently running** interpreter
+- Child script uses same version/environment as parent (consistent behavior)
+
+## GitProcessor Usage Patterns
+
+`GitProcessor` (in `utilities/git_processor.rb`) provides a consistent API for
+all git operations. It handles dry-run mode, error reporting, and directory
+context automatically.
+
+### Block Form vs Instance Form
+
+**Use block form when:**
+- Performing multiple consecutive git operations in the same scope
+- Operations are localized side effects (add, commit, tag, etc.)
+- Don't need return values outside the block
+
+```ruby
+# Good -- multiple operations, block form
+GitProcessor.new(dir: repo_dir) do |git|
+  git.add('.')
+  timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+  git.commit("Update: #{timestamp}")
+  git.push(branch: 'main')
+end
+
+# Good -- localized side effect, block form
+GitProcessor.new(dir: EnvVars::PERSONAL_PROFILES_DIR) do |git|
+  old_backups.each { |f| git.rm_cached(f, quiet: true) }
+end
+
+# Good -- multiple operations including relative_path (rescue outside block)
+GitProcessor.new(dir: repo_dir) do |git|
+  rel_path = relative_path ? git.relative_path(relative_path) : '.'
+  git.add(rel_path)
+  timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+  git.run_alias('sci', "Incremental commit: #{timestamp}")
+end
+rescue RuntimeError => e
+  Logging.warn "Skipping update -- #{e.message}"
+  false
+```
+
+**Use instance form when:**
+- Only calling a single method (chain directly instead of block overhead)
+- Operations spread across conditionals/branches
+- Need return values outside the block's scope
+
+```ruby
+# Good -- single method call, chain directly
+status = GitProcessor.new(dir: repo_dir).status(*switches)
+
+# Good -- return value needed outside block
+git = GitProcessor.new(dir: folder_pn)
+_out, _err, status = git.pull(rebase: true)
+if status.success?
+  success "Updated successfully"
+else
+  record_warning "Failed to update"
+end
+
+# Good -- operations across branches
+git = GitProcessor.new(dir: repo_dir)
+if needs_fetch?
+  git.fetch
+end
+if needs_rebase?
+  git.rebase
+end
+```
+
+**Exception for single calls in blocks:**
+When there's only one git operation inside another block (like an `each` loop),
+prefer chaining over nested blocks for readability:
+
+```ruby
+# Good -- single operation, chain directly (avoids nested block)
+chrome_folders.each do |folder_pn|
+  status = GitProcessor.new(dir: folder_pn).pull(rebase: true)
+  log_result(status)
+end
+
+# BAD -- unnecessary nested block for single operation
+chrome_folders.each do |folder_pn|
+  GitProcessor.new(dir: folder_pn) do |git|
+    status = git.pull(rebase: true)
+    log_result(status)
+  end
+end
+```
+
+### Exception Handling
+
+Some GitProcessor methods can raise exceptions:
+- `relative_path(path)` raises `RuntimeError` if path is invalid or outside repo
+
+When using these methods, wrap the block (or call) in a `rescue` clause:
+
+```ruby
+# Good -- rescue outside block when relative_path may raise
+GitProcessor.new(dir: repo_dir) do |git|
+  rel_path = git.relative_path(some_path)
+  git.add(rel_path)
+end
+rescue RuntimeError => e
+  Logging.warn "Skipping operation -- #{e.message}"
+  return false
+```
+
+### Scan Rule
+
+When adding/editing git operations:
+1. Check if there are 2+ consecutive git calls → use block form
+2. Check if only 1 git call → use instance form with chaining
+3. Check if return value needed in outer scope → use instance form
+4. Check if inside another block (each, if/else) with single git call → use chaining
+5. Check if using `relative_path` → add `rescue RuntimeError` clause
+
 ## String Colors
 
 Color methods are defined on `String` in `utilities/string.rb`. They:
@@ -727,6 +1027,35 @@ Rules:
 Exception: Very short scripts (< 50 lines) with a single helper may omit the
 `private` declaration if the `_` prefix makes the intent clear, but prefer
 being explicit.
+
+### Scan Rule: Check for Missing Private Declarations
+
+When editing any Ruby script, scan for helper methods that should be private:
+
+1. **Find all method definitions**: `grep -n "^def " <script.rb>`
+2. **Identify helpers**: Methods called from main execution but not the entry point
+3. **Check each helper**:
+   - Does it have `_` prefix? If not, rename it
+   - Is it listed in a `private` declaration? If not, add it
+4. **Update all call sites** to use the `_` prefixed name
+5. **Add/update `private` declaration** immediately after the last helper definition
+
+Common patterns requiring private helpers:
+- Methods called from option parsing or main execution block
+- Methods called in loops (`each`, `map`, etc.) over collections
+- Memoized query methods (`_exporting?`, `_importing?`, `_run_all_available?`)
+- File loaders, validators, formatters called by main logic
+
+Example scan:
+```bash
+# Find public helpers (methods without _ prefix)
+grep "^def [^_]" scripts/my-script.rb
+# → Should only show the script's entry point (if any)
+# → Everything else needs _ prefix + private declaration
+```
+
+When you find a helper without `_` prefix or `private` declaration, fix it
+immediately before proceeding with other changes.
 
 ## Utility Modules -- Logging Pattern
 
@@ -989,7 +1318,7 @@ end
 
 ```ruby
 # Allowed -- precondition checks before processing
-unless GitHelpers.git_repo?(folder)
+unless GitProcessor.repo?(folder)
   error "'#{folder}' is not a git repo. Aborting."
 end
 
@@ -1288,6 +1617,272 @@ The only Unicode allowed in Ruby scripts:
   output, but not in comments or code)
 
 When in doubt, use ASCII.
+
+## Memoization
+
+Use memoization (`||=`) to cache expensive or repeated operations. Common candidates:
+- Methods called multiple times with the same result per script execution
+- Shell command existence checks (`command_exists?`)
+- Boolean flag queries that compare strings (`operation == 'export'`)
+- Expensive computations that don't change during script lifetime
+
+### Memoized Helper Pattern
+
+For repeated checks across multiple helper methods, extract a memoized helper:
+
+```ruby
+# BAD -- repeated expensive check (4 calls = 4 shell invocations)
+def update_home_repos
+  return unless PathUtils.command_exists?('run-all.rb')
+  # ...
+end
+
+def upreb_oss_repos
+  return unless PathUtils.command_exists?('run-all.rb')
+  # ...
+end
+
+def restore_mtime
+  return unless PathUtils.command_exists?('run-all.rb')
+  # ...
+end
+
+# main
+if PathUtils.command_exists?('run-all.rb')
+  update_home_repos
+end
+
+# Good -- single memoized check (4 calls = 1 shell invocation)
+def _run_all_available?
+  @_run_all_available ||= PathUtils.command_exists?('run-all.rb')
+end
+
+def _update_home_repos
+  return unless _run_all_available?
+  # ...
+end
+
+def _upreb_oss_repos
+  return unless _run_all_available?
+  # ...
+end
+
+def _restore_mtime
+  return unless _run_all_available?
+  # ...
+end
+
+private :_run_all_available?, :_update_home_repos, :_upreb_oss_repos, :_restore_mtime
+
+# main
+if _run_all_available?
+  _update_home_repos
+end
+```
+
+### Memoized Boolean Query Pattern
+
+For repeated string comparisons that determine script mode/behavior:
+
+```ruby
+# BAD -- repeated string comparison (7 occurrences in one script)
+if operation == 'export'
+  export_logic
+end
+
+if operation == 'import'
+  import_logic
+end
+
+if operation == 'export'
+  more_export_logic
+end
+
+# Good -- memoized query (comparison happens once, cached forever)
+def _exporting?
+  @_exporting ||= @operation == 'export'
+end
+
+def _importing?
+  @_importing ||= @operation == 'import'
+end
+
+private :_exporting?, :_importing?
+
+if _exporting?
+  export_logic
+end
+
+if _importing?
+  import_logic
+end
+
+if _exporting?
+  more_export_logic
+end
+```
+
+### When NOT to Memoize
+
+Do NOT memoize when:
+- The method is only called once per script execution
+- The value can change during script execution (ENV vars that might be modified, file system state)
+- The operation is already cheap (simple arithmetic, string concatenation, hash lookup)
+- The method has side effects (logging, file I/O, system calls that must run every time)
+
+```ruby
+# BAD -- memoizing dynamic state
+def _files_exist?
+  @_files_exist ||= Dir.glob('*.txt').any?  # file system can change between calls
+end
+
+# BAD -- memoizing single-use check
+def _valid_argument?
+  @_valid_argument ||= ARGV.first && ARGV.first.start_with?('--')  # only checked once
+end
+
+# Good -- don't memoize dynamic state
+def files_exist?
+  Dir.glob('*.txt').any?  # check fresh each time
+end
+
+# Good -- don't memoize single-use check (no benefit)
+if ARGV.first && ARGV.first.start_with?('--')
+  # ...
+end
+```
+
+### Scan Rule: Identify Memoization Opportunities
+
+When editing a Ruby script, look for:
+
+1. **Repeated method calls in guards**: Same `command_exists?`, `File.exist?`, or boolean check at top of 3+ methods
+2. **Repeated string comparisons**: `@var == 'value'` appearing 3+ times across the script
+3. **Command existence checks**: `PathUtils.command_exists?('tool')` called multiple times
+4. **Operation mode checks**: Comparing an operation/mode variable repeatedly
+
+Example scan:
+```bash
+# Find repeated method calls
+rg "command_exists?\|File\.exist?\|\.any?\|\.empty?" script.rb | sort | uniq -c | sort -rn
+
+# Find repeated string comparisons
+rg "@\w+ == ['\"]" script.rb | sort | uniq -c | sort -rn
+```
+
+When you find a pattern repeated 3+ times:
+1. Extract a memoized helper with `_` prefix
+2. Add to `private` declaration
+3. Replace all occurrences with the helper call
+4. Verify the value doesn't change during script execution
+
+### Instance Variables for Memoization
+
+Memoization in top-level scripts uses instance variables (`@var`). This works because:
+- Top-level script code runs in the context of `main` (an Object instance)
+- Instance variables persist for the script's lifetime
+- Each script execution gets a fresh `main` object (clean slate)
+
+```ruby
+# Top-level script (not a class/module)
+def _run_all_available?
+  @_run_all_available ||= PathUtils.command_exists?('run-all.rb')
+end
+
+# Instance variable @_run_all_available persists in main's context
+# First call: checks command, caches result
+# Subsequent calls: returns cached result immediately
+```
+
+In utility modules using `extend self`, memoization uses `@` instance variables on the module singleton:
+
+```ruby
+module MyUtility
+  extend self
+
+  def expensive_check
+    @_expensive_check ||= some_expensive_operation
+  end
+end
+
+# @_expensive_check lives on MyUtility's singleton, persists across calls
+```
+
+## Variable Scoping
+
+Always declare variables in the innermost scope where they are used. This improves
+garbage collection, clarifies intent, and prevents accidental reuse.
+
+### Move variables inside blocks when they're only used there
+
+```ruby
+# BAD -- variable declared outside block but only used inside
+timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+GitProcessor.new(dir: repo_dir) do |git|
+  git.add(path)
+  git.run_alias('sci', "Commit: #{timestamp}")
+end
+
+# Good -- variable scoped to block
+GitProcessor.new(dir: repo_dir) do |git|
+  timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+  git.add(path)
+  git.run_alias('sci', "Commit: #{timestamp}")
+end
+```
+
+### Declare variables in the branch where they're used
+
+```ruby
+# BAD -- variable declared before if/else but only used in one branch
+target_file = target_dir.join("#{name}.plist")
+if operation == 'export'
+  export_file(target_file)
+else
+  # Import branch doesn't use target_file initially
+  unless target_file.file?
+    next
+  end
+  import_file(target_file)
+end
+
+# Good -- declare in each branch where needed
+if operation == 'export'
+  target_file = target_dir.join("#{name}.plist")
+  export_file(target_file)
+else
+  target_file = target_dir.join("#{name}.plist")
+  unless target_file.file?
+    next
+  end
+  import_file(target_file)
+end
+```
+
+### Combine intermediate variables when they're only used once
+
+```ruby
+# BAD -- unnecessary intermediate variable
+bat_config_dir, = Open3.capture3('bat', '--config-dir')
+bat_config_dir_pn = Pathname.new(bat_config_dir.strip)
+bat_syntax_dir_pn = bat_config_dir_pn.join('syntaxes')
+
+# Good -- combine when intermediate is only used once
+bat_config_dir, = Open3.capture3('bat', '--config-dir')
+bat_syntax_dir_pn = Pathname.new(bat_config_dir.strip).join('syntaxes')
+```
+
+### Check scoping when refactoring
+
+When refactoring code:
+1. Look for variables declared at function/class scope
+2. Check if they're only used within a single block (if/else, loop, GitProcessor block)
+3. Move them to the innermost scope where they're used
+4. Eliminate intermediate variables that are only used once
+
+**Scan rule:** After editing any Ruby file, search for variables declared before
+blocks (`do |var|`, `if/else`, `each`) and verify they're used outside the block.
+If not, move them inside.
 
 ## Executable Permission
 

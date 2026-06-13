@@ -93,11 +93,10 @@ info 'Would suspend cron jobs' if dry_run
 
 operation = lambda do
   if force
-    require 'fileutils'
     if dry_run
       info "Would remove: '#{dir_pn.join('.git').to_s.cyan}'"
     else
-      FileUtils.rm_rf(dir_pn.join('.git'))
+      dir_pn.join('.git').rmtree
     end
     git.init
     git.add_remote('origin', git_url)

@@ -102,7 +102,7 @@ The softwares in the `files/--HOME--/Brewfile` will be run with the bare minimum
 
 Once the above is done, and if you have setup the [keybase](https://keybase.io)-based home repo, browser profiles repo, etc - you can then re-import your exported preferences from the [pre-requisites section](#-pre-requisites).
 
-Of course, you will have to manually take snapshots of your machine for backup from time-to-time as an _ongoing activity_. This can be done using the `scripts/capture-prefs.sh` script and pushing into the remote repo of your home folder. (More details can be found in the next section.)
+Of course, you will have to manually take snapshots of your machine for backup from time-to-time as an _ongoing activity_. This can be done using the `scripts/capture-prefs.rb` script and pushing into the remote repo of your home folder. (More details can be found in the next section.)
 
 As a summary, these files will typically have changes between your setup and mine:
 

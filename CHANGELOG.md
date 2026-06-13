@@ -3,6 +3,58 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 
+### 3.1.25
+
+#### Converted `capture-prefs` to Ruby
+
+* *[scripts/capture-prefs.rb]* (NEW, 363 lines) Complete Ruby implementation replacing 391-line shell version. Eliminates shell→Ruby boundary for MacOS module calls. Direct GitProcessor usage for git operations. Self-validating file loaders with early abort on missing files. Memoized operation queries eliminate repeated string comparisons. Uses Set for domains collection (O(1) operations, automatic deduplication). Extracted private helpers with `_` prefix for modularity. Uses other utility modules for encapsulation and reuse.
+
+#### Memoization optimization and private method enforcement (Ruby scripts)
+
+* *[all ruby scripts]* Added memoized helper methods. Enforced privacy pattern with `_` prefix (signals internal-only), `private` declaration prevents external use. Centralized all `ENV.fetch` into EnvVars module; added new methods into GitProcessor; used Pathname optimization throughout; removed pass-through wrappers that were doing ruby→shell→ruby jumps.
+
+#### Documentation enhancements
+
+* *[.github/instructions/ruby-scripting.instructions.md]* Added "Memoization" section (lines 1621-1810, +190 lines) documenting: memoized helper pattern (repeated command checks), memoized boolean query pattern (operation mode flags), when NOT to memoize (dynamic state, single-use, cheap operations), scan rule with bash commands (`rg "command_exists?" | uniq -c`), instance variable mechanics for top-level scripts vs modules. Added "Scan Rule: Check for Missing Private Declarations" subsection (lines 1031-1065, +29 lines) with 5-step audit procedure (`grep "^def [^_]" script.rb`), common patterns requiring private helpers, instruction to fix immediately before other changes. Total +219 lines.
+
+#### Shell and git configuration fixes
+
+* *[files/--HOME--/.gitconfig]* Fixed `git relative-path` alias to use `$GIT_PREFIX` instead of `git rev-parse --show-prefix` (which always returns empty in alias context). Returns `.` for repo root, `./path` for subdirectories. Validates paths are within repo boundary with descriptive error messages. Works correctly with `git -C <dir>` invocation pattern.
+
+* *[files/--HOME--/.aliases, files/--HOME--/.shellrc, .opencode/skills/dotfiles-domain/SKILL.md]* Renamed `_create_crontab` → `create_crontab` (removed `_` prefix since it's a public helper called by recron, not a private script helper). Updated all references in comments and documentation.
+
+* *[files/--HOME--/custom.gitignore]* Added `/.software-updates-last-success` to global ignore list since this is written to for every successful cron run. Success timestamp file is intentionally excluded from home repo tracking.
+
+#### Ruby delegation pattern improvements and colorization fixes
+
+* *[scripts/utilities/git_processor.rb]* Added `migrate_to_reftable` class method (46 lines) mirroring shell `migrate_git_repo_to_reftable` function. Handles git 2.45+ reftable migration with silent fallback on older git. Includes loose refs cleanup.
+
+* *[files/--HOME--/.shellrc]* Invoked the above ruby implementation via `_call_ruby_git_processor` helper following established `_call_ruby_cron` pattern. Single implementation in Ruby, shell just delegates.
+
+* *[scripts/capture-prefs.rb]* Fixed git.add path handling (line 350) - use `git.relative_path(target_dir)` to convert absolute path to repo-relative before calling `git.add()`. `target_dir` is `PERSONAL_CONFIGS_DIR/defaults` (absolute), GitProcessor repo root is HOME, git add requires relative paths.
+
+#### Rationale
+
+* **Shell→Ruby conversion**: Eliminates subprocess overhead for MacOS module calls. Direct GitProcessor usage removes git command string construction. Native Ruby exceptions vs shell exit codes. Self-validating loaders abort early on missing files. Better maintainability - all plist operations in single language.
+* **Performance**: Memoization eliminates 3 shell invocations per cron run in software-updates-cron (~30ms savings). Memoized boolean queries in capture-prefs (7 `operation == 'export'` → 1 `_exporting?` check). Set data structure for domains (O(1) operations vs O(n) array lookups).
+* **Encapsulation**: Private method discipline (18 methods across 3 scripts) enforces API boundaries. Memoized helpers provide single source of truth for repeated checks.
+* **Documentation**: 219 lines of guidance with concrete scan procedures (`grep`, `rg` commands) ensures pattern consistency across future edits.
+* **DRY**: Memoization pattern eliminates code duplication. Boolean query pattern eliminates repeated string comparisons. `_call_ruby_git_processor` helper centralizes Ruby delegation logic - adds 29 lines but eliminates 40 lines of duplicated shell logic, enables reuse for future GitProcessor wrappers.
+* **Consistency**: `_call_ruby_git_processor` follows established `_call_ruby_cron` pattern (keyword args vs positional args). Unified color standard applied - URLs/commands cyan without quotes, components/tools yellow without quotes, paths cyan with quotes.
+* **Correctness**: `git.relative_path()` fixes path boundary bug in capture-prefs. Recursive directory removal in `migrate_to_reftable` handles nested git refs. Explicit `$LOAD_PATH` setup (not relying on `RUBYLIB`) makes wrappers more robust.
+* **Vanilla OS compatibility**: Verified `RUBYLIB` available at all `migrate_git_repo_to_reftable` call sites (line 529 after line 515 `.shellrc` source, line 575 after line 553 `load_zsh_configs`). Ruby implementation handles git < 2.45 gracefully (silent skip, retry after Homebrew install).
+
+#### Adopting these changes
+
+* Rebase from upstream, resolve conflicts.
+* Run the following commands in each terminal tab/window/panel (or) Quit & Restart the Terminal application.
+
+  ```zsh
+      unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
+      unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
+  ```
+
+
 ### 3.1.24
 
 #### Converted `software-updates-cron` to ruby

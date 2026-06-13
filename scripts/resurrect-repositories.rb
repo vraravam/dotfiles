@@ -14,7 +14,6 @@ $LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
 require 'cli_parser'
 require 'collection_processor'
 require 'env_vars'
-require 'fileutils'
 require 'git_processor'
 require 'logging'
 require 'open3'
@@ -89,7 +88,7 @@ def _find_and_reverse_replace_env_var(dir)
   # match first and leave the PROJECTS_BASE_DIR-specific portion unexpanded.
   env_vars = %w[PROJECTS_BASE_DIR HOME]
   env_vars.each do |env_var|
-    value = ENV[env_var]
+    value = ENV.fetch(env_var, nil)
     next if nil_or_empty?(value)
     return dir.sub(value, "${#{env_var}}").strip if dir.start_with?(value)
   end
@@ -146,7 +145,8 @@ end
 # @param filename [String] The path to the YAML configuration file.
 # @return [Array<Hash>] An array of repository configuration hashes.
 def _read_git_repos_from_file(filename)
-  repositories = Array(YAML.safe_load(File.read(filename))).select { |repo| repo['active'] }
+  filename = Pathname.new(filename) unless filename.is_a?(Pathname)
+  repositories = Array(YAML.safe_load(filename.read)).select { |repo| repo['active'] }
   repositories.each do |repo|
     if repo[FOLDER_KEY_NAME].is_a?(String)
       repo[FOLDER_KEY_NAME] = _find_and_replace_env_var(repo[FOLDER_KEY_NAME].strip)
@@ -218,7 +218,7 @@ end
 #   logged as warnings but allow the repo to complete processing.
 def _resurrect_each(repo, idx, total)
   dir = repo[FOLDER_KEY_NAME] # Assumed to be an absolute, resolved path
-  FileUtils.mkdir_p(dir)
+  Pathname.new(dir).mkpath
 
   existing_remotes = {} # Store existing remotes {name => url}
   # NOTE: clone_repo_into is a shell function defined in .shellrc, which is sourced

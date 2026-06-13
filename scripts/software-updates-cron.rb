@@ -35,9 +35,15 @@ include Logging
 # Step helpers
 # ---------------------------------------------------------------------------
 
+# Returns true if run-all.rb is available in PATH (memoized).
+# Cached to avoid repeated `command -v` lookups across multiple helper calls.
+def _run_all_available?
+  @_run_all_available ||= PathUtils.command_exists?('run-all.rb')
+end
+
 # Runs the block guarded by a check for +check_cmd+. Records a warning on
 # failure rather than aborting so all steps run regardless of earlier failures.
-def perform_update(title, check_cmd, &block)
+def _perform_update(title, check_cmd, &block)
   unless PathUtils.command_exists?(check_cmd)
     debug "Command not found: '#{check_cmd}'"
     return
@@ -56,8 +62,8 @@ end
 # Home / OSS repo update helpers
 # ---------------------------------------------------------------------------
 
-def update_home_repos
-  return unless PathUtils.command_exists?('run-all.rb')
+def _update_home_repos
+  return unless _run_all_available?
 
   section_header 'Update repos in home folder'.yellow
 
@@ -67,8 +73,8 @@ def update_home_repos
   end
 end
 
-def upreb_oss_repos
-  return unless PathUtils.command_exists?('run-all.rb')
+def _upreb_oss_repos
+  return unless _run_all_available?
 
   section_header 'Upreb repos in oss folder'.yellow
 
@@ -81,8 +87,8 @@ def upreb_oss_repos
   end
 end
 
-def restore_mtime_and_register_maintenance
-  return unless PathUtils.command_exists?('run-all.rb')
+def _restore_mtime_and_register_maintenance
+  return unless _run_all_available?
 
   section_header 'Restore mtime and register for maintenance'.yellow
 
@@ -94,6 +100,8 @@ def restore_mtime_and_register_maintenance
   system(env, 'run-all.rb', 'git maintenance start')
 end
 
+private :_run_all_available?, :_perform_update, :_update_home_repos, :_upreb_oss_repos, :_restore_mtime_and_register_maintenance
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -103,20 +111,20 @@ start_time = print_script_start
 
 # Brew update: use bundle check before full bundle to avoid reinstalling
 # already-installed formulae on every cron run.
-perform_update('brews', 'brew') do
+_perform_update('brews', 'brew') do
   # Update brew itself first to get latest formula definitions
   system('brew', 'update') || true
   # 'brew bundle check' exits 0 when everything is installed -- skip the full
   # bundle install in that case to avoid re-checking every formula every hour.
   system('brew', 'bundle', 'check') || system('brew', 'bundle')
 end
-perform_update('mise plugins', 'mise') do
+_perform_update('mise plugins', 'mise') do
   # mise binary is upgraded using homebrew
   system('mise', 'plugins', 'update') && system('mise', 'upgrade', '--bump')
 end
-perform_update('tldr database', 'tldr') { system('tldr', '--update') }
-perform_update('git-ignore database', 'git-ignore-io') { system('git', 'ignore-io', '--update-list') }
-perform_update('claude-code', 'claude') { system('claude', 'update') }
+_perform_update('tldr database', 'tldr') { system('tldr', '--update') }
+_perform_update('git-ignore database', 'git-ignore-io') { system('git', 'ignore-io', '--update-list') }
+_perform_update('claude-code', 'claude') { system('claude', 'update') }
 
 # Antidote plugin update
 section_header "#{'Updating'.yellow} #{'antidote plugins'.purple} and regenerating plugin bundle"
@@ -127,10 +135,8 @@ if PathUtils.command_exists?('bat')
   section_header "#{'Updating'.yellow} #{'bat'.purple} cache"
 
   bat_config_dir, = Open3.capture3('bat', '--config-dir')
-  bat_config_dir_pn = Pathname.new(bat_config_dir.strip)
-  bat_syntax_dir_pn = bat_config_dir_pn.join('syntaxes')
-  require 'fileutils'
-  FileUtils.mkdir_p(bat_syntax_dir_pn)
+  bat_syntax_dir_pn = Pathname.new(bat_config_dir.strip).join('syntaxes')
+  bat_syntax_dir_pn.mkpath
 
   system(
     'curl', '--retry', '3', '--retry-delay', '5', '-fsSL',
@@ -144,14 +150,11 @@ end
 zen_desktop = EnvVars::PROJECTS_BASE_DIR.join('oss', 'zen-browser-desktop')
 if GitProcessor.repo?(zen_desktop)
   section_header "#{"Remove 'twilight' tag from".yellow} #{'zen-browser-desktop'.purple} repo"
-  twilight_exists = system(
-    'git', '-C', zen_desktop.to_s, 'rev-parse', '-q', '--verify', 'refs/tags/twilight',
-    out: File::NULL, err: File::NULL
-  )
-  if twilight_exists
-    # 'delete-tag' is not a git built-in -- delete the tag directly.
-    system('git', '-C', zen_desktop.to_s, 'tag', '-d', 'twilight') &&
-      success("Deleted 'twilight' tag.")
+  GitProcessor.new(dir: zen_desktop) do |git|
+    if git.tag_exists?('twilight')
+      git.delete_tag('twilight')
+      success("Deleted #{'twilight'.purple} tag.")
+    end
   end
 end
 
@@ -184,11 +187,11 @@ end
 success 'Finished independent updates.'
 
 # Repo updates
-if PathUtils.command_exists?('run-all.rb')
-  update_home_repos
+if _run_all_available?
+  _update_home_repos
   sleep 10  # Avoid GitHub rate-limiting between bursts of API calls.
-  upreb_oss_repos
-  restore_mtime_and_register_maintenance
+  _upreb_oss_repos
+  _restore_mtime_and_register_maintenance
 end
 
 section_header 'Setup dev environment'.yellow
@@ -198,8 +201,8 @@ section_header 'Regenerate repo aliases'.yellow
 GitWorkspace.regenerate_repo_aliases
 
 section_header 'Capture app preferences'.yellow
-capture_prefs_script = Pathname.new(__dir__).join('capture-prefs.sh')
-if system(capture_prefs_script.to_s, '-e')
+capture_prefs_script = Pathname.new(__dir__).join('capture-prefs.rb')
+if system(RbConfig.ruby, capture_prefs_script.to_s, '-e')
   success 'Finished capturing app preferences'
 else
   record_error('Failed to capture app preferences')
@@ -263,7 +266,8 @@ MacOS.notify("Done at #{now} (took #{duration})#{msg}", "#{title_icon} Software 
 # Write success marker file for audit trail when run completes without errors/warnings
 if step_errors.empty? && step_warnings.empty?
   success_marker = EnvVars::HOME.join('.software-updates-last-success')
-  success_marker.write("#{now} (took #{duration})")
+  # Append to file (creates if doesn't exist), each run on a new line
+  success_marker.write("#{now} (took #{duration})\n", mode: 'a')
 end
 
 # Single exit point: exit non-zero if there were errors or warnings.

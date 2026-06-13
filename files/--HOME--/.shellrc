@@ -789,7 +789,7 @@ _record_error() {
 #     echo "Found ${#_step_errors[@]} error(s)"
 #   fi
 _has_step_errors() {
-  is_zsh && (( ${+_step_errors} )) && is_non_empty_array _step_errors
+  is_zsh && ((${+_step_errors}))   && is_non_empty_array _step_errors
 }
 
 # Returns true if _step_warnings array exists and is non-empty.
@@ -801,7 +801,7 @@ _has_step_errors() {
 #     echo "Found ${#_step_warnings[@]} warning(s)"
 #   fi
 _has_step_warnings() {
-  is_zsh && (( ${+_step_warnings} )) && is_non_empty_array _step_warnings
+  is_zsh && ((${+_step_warnings}))   && is_non_empty_array _step_warnings
 }
 
 # Build formatted notification parts from _step_errors and _step_warnings arrays.
@@ -1038,7 +1038,11 @@ get_git_config_value() {
 
 # Sources $1 if it is a non-empty path pointing to a regular file; warns otherwise.
 load_file_if_exists() {
-  is_file "${1}" && source "${1}" || warn "Couldn't load file: '$(cyan "${1}")'"
+  if is_file "${1}"; then
+    source "${1}"
+  else
+    warn "Couldn't load file: '$(cyan "${1}")'"
+  fi
 }
 
 # delete_directory_if_exists() {
@@ -1165,44 +1169,9 @@ keep_sudo_alive() {
 # Usage: migrate_git_repo_to_reftable [repo-dir]
 #   repo-dir defaults to $PWD when omitted -- use this to migrate the repo in
 #   the current directory without having to specify the path explicitly.
+# Thin wrapper: delegates to GitProcessor.migrate_to_reftable (Ruby implementation).
 migrate_git_repo_to_reftable() {
-  local repo_dir="${1:-${PWD}}"
-  if ! is_git_repo "${repo_dir}"; then return 0; fi
-
-  # git rev-parse --show-ref-format was added in git 2.45; fall back to 'files'
-  # on older git so the guard below correctly detects a non-reftable repo.
-  local ref_format
-  ref_format="$(git -C "${repo_dir}" rev-parse --show-ref-format 2>/dev/null || echo 'files')"
-  if [[ "${ref_format}" == 'reftable' ]]; then return 0; fi
-
-  # 'git refs migrate' requires git 2.45+. On older git (vanilla macOS system
-  # git) this returns non-zero; skip silently -- fresh-install calls this again
-  # after Homebrew's modern git is on PATH.
-  if ! git -C "${repo_dir}" refs migrate --ref-format=reftable 2>/dev/null; then
-    debug "git refs migrate unavailable (requires git 2.45+) -- skipping reftable migration for '$(yellow "${repo_dir}")'"
-    return 0
-  fi
-
-  # 'git refs migrate' writes all refs to the reftable directory and should
-  # clear loose refs, but may leave behind empty files in the legacy
-  # .git/refs/{heads,tags,remotes}/ trees. Remove them so they cannot shadow
-  # the canonical reftable entries.
-  # Named helper instead of anonymous '()': bash can parse 'name() {}' at file
-  # load time; '()' is a parse-time error in bash even inside 'if is_zsh'.
-  # setopt is a runtime-only issue in bash and this function is never called
-  # from bash, so no is_zsh guard is needed.
-  _remove_loose_reftable_refs() {
-    setopt localoptions NULL_GLOB
-    rm -f "${repo_dir}/.git/refs/heads/"* "${repo_dir}/.git/refs/tags/"* "${repo_dir}/.git/refs/remotes/"*
-  }
-  _remove_loose_reftable_refs
-  # Named functions defined inside another function persist in the global table
-  # after the outer function returns -- unfunction immediately after use to avoid
-  # polluting the global namespace in non-subshell call sites (e.g. direct
-  # interactive calls, clone_repo_into from fresh-install-of-osx.sh).
-  unfunction _remove_loose_reftable_refs
-
-  success "Migrated '$(cyan "${repo_dir}")' refs to reftable format"
+  _call_ruby_git_processor migrate_to_reftable folder="${1:-${PWD}}"
 }
 
 # Clones a git repo into a temp folder, moves the .git dir into the real target
@@ -1335,7 +1304,7 @@ eval_shellenv() {
 # debug/info/success/warn/error) so they are guaranteed to be available the
 # moment .shellrc is sourced on any machine.
 #
-# The higher-level cron helpers (_create_crontab, recron) live in .aliases
+# The higher-level cron helpers (create_crontab, recron) live in .aliases
 # because they reference DOTFILES_DIR, HOMEBREW_PREFIX, and other variables
 # that are only meaningful after the dotfiles repo has been cloned and the full
 # shell environment has been set up.  See the matching section in .aliases for
@@ -1370,6 +1339,35 @@ _call_ruby_cron() {
   fi
 
   ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'cron'; Cron.${method}(${args_str})"
+}
+
+# Internal helper: calls a Ruby GitProcessor class method with keyword arguments.
+# Eliminates duplication of $LOAD_PATH setup across git wrapper functions.
+# Usage: _call_ruby_git_processor <method_name> <key1>=<value1> [<key2>=<value2> ...]
+# Example: _call_ruby_git_processor migrate_to_reftable folder="${PWD}"
+_call_ruby_git_processor() {
+  local method="${1:-}"
+  if is_zero_string "${method}"; then
+    error '_call_ruby_git_processor: method name required'
+    return 1
+  fi
+  shift
+
+  local kwargs_str=""
+  if [[ $# -gt 0 ]]; then
+    # Build comma-separated list of keyword arguments (key: 'value').
+    local -a kwargs_parts=()
+    for kwarg in "$@"; do
+      local key="${kwarg%%=*}"
+      local value="${kwarg#*=}"
+      kwargs_parts+=("${key}: '${value}'")
+    done
+    # Join with ', '
+    local IFS=', '
+    kwargs_str="${kwargs_parts[*]}"
+  fi
+
+  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'git_processor'; GitProcessor.${method}(${kwargs_str})"
 }
 
 # Loads a cron file into the system crontab. Shared by suspend_cron/resume_cron

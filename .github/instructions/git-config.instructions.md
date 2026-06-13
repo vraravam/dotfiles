@@ -310,5 +310,5 @@ Binary file types must be marked binary:
 *.zwc  binary
 ```
 
-XML plist files (`*.plist`) exported by `capture-prefs.sh` are text -- no
+XML plist files (`*.plist`) exported by `capture-prefs.rb` are text -- no
 `binary` attribute needed. Do not add `*.plist binary` or `*.defaults binary`.
