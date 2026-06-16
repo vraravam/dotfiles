@@ -16,18 +16,17 @@
 # - Failure: full output to log (chronic passes through when exit non-zero)
 # - Check last success: cat ~/.software-updates-last-success
 
-$LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
-
-require 'antidote'
-require 'env_vars'
-require 'git_workspace'
-require 'logging'
-require 'macos'
 require 'open3'
-require 'path_utils'
-require 'profiles_repo'
 require 'rbconfig'
 require 'shellwords'
+
+require_relative 'utilities/antidote'
+require_relative 'utilities/env_vars'
+require_relative 'utilities/git_workspace'
+require_relative 'utilities/logging'
+require_relative 'utilities/macos'
+require_relative 'utilities/path_utils'
+require_relative 'utilities/profiles_repo'
 
 include Logging
 
@@ -165,13 +164,15 @@ if PathUtils.command_exists?('ollama')
   # reference: https://popularaitools.ai/blog/run-gemma-4-locally-opencode-2026
   # Note: This list is up-to-date as of 2026-06-06
   ollama_models = [
+    # 'gemma4:e2b-mlx',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - doesn't edit, only single file for suggestions
+    'qwen2.5-coder:14b',   # Qwen 2.5 Coder 14B: strong coding model
+    # 'rafw007/gemma4-e4b-claude-coder',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - not sure if this runs via opencode, trying now
     # 'deepseek-coder-v2',
     # 'gpt-oss:20b',
-    # 'qwen3.5:9b-q8_0', # Qwen 3.5 9B (Q8): strong reasoning model
-    'qwen2.5-coder:14b', # Qwen 2.5 Coder 14B: strong coding model
-    'gemma3:12b'        # Gemma 3 12B: free coding model
-  # 'gemma4:26b',        # Gemma 4 26B: free coding model
-  # 'codestral:22b',     # TODO: Need to research
+    # 'qwen3.5:9b-q8_0',   # Qwen 3.5 9B (Q8): strong reasoning model
+    # 'mdq100/qwen3.5-coder:35b',
+    # 'gemma3:12b'         # Gemma 3 12B: free coding model
+    # 'codestral:22b',     # TODO: Need to research
   ]
   ollama_models.each do |model|
     if system('ollama', 'pull', model)

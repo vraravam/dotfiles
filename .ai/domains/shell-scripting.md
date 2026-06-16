@@ -1,17 +1,19 @@
 ---
-applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/**,**/scripts/**"
+applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**"
 ---
 
 # Shell Script Instructions
 
+> Part of the [tool-agnostic instruction set](../instructions.md) for this repository.
+
 Apply these rules when writing or editing any shell script in this repository.
 
 Syntax choices follow the decision-making priority defined in
-`copilot-instructions.md` (startup speed + maintainability first; POSIX and
+[`instructions.md`](../instructions.md) (startup speed + maintainability first; POSIX and
 zsh built-ins where they do not conflict with those). Document the tradeoff in
 a comment when they conflict.
 
-## Script Skeleton
+## Script Template
 
 ```zsh
 #!/usr/bin/env zsh
@@ -117,6 +119,319 @@ Exception: `*-common.sh` scripts use `${CALLER_SCRIPT:-${0:t}}` instead of
 `${_SCRIPT_NAME}` so the wrapper script's name appears in usage output -- see
 § **`exec`-Wrapper Scripts**.
 
+## Logging
+
+Use the logging functions from `.shellrc` (`debug`, `info`, `success`, `warn`,
+`error`, `user_action`). Never use bare `echo` except for `usage()` output and
+code that runs before `.shellrc` is sourced.
+
+See [`logging-conventions.md`](./logging-conventions.md) for complete rules on:
+- Message prefixes (`[script][section]`) for RCA
+- Deferred error/warning collection
+- Color standards
+
+| Level | Function | When to use |
+|---|---|---|
+| `debug` | `debug` | Expected-absent tools or optional steps that are silently skipped (e.g. "mise not in PATH -- skipping"). Hidden by default; visible with `DEBUG=true`. |
+| `info` | `info` | Normal progress messages and idempotency guards ("already installed -- skipping"). Suppressed in direnv subshells. |
+| `success` | `success` | An operation completed successfully (e.g. "Successfully sourced ~/.shellrc"). Suppressed in direnv subshells. |
+| `warn` | `warn` | Argument-parsing failures (`?`/`:` getopts cases) followed by `usage; return 1`; non-fatal operation failures the script recovers from. |
+| `error` | `error` | Unexpected mid-script operation failures that need attention and warrant a macOS notification. **Calls `_dotfiles_notify` -- do NOT use for arg-parse failures in interactive scripts** (notification on every typo is bad UX). |
+| `user_action` | `user_action` | Manual steps the user must perform after the script exits (restart an app, run a command, open a URL). Distinct from `warn` (unexpected problem) and `info` (purely informational). |
+
+### Argument-parse failures -- use `warn`, not `error`
+
+```zsh
+while getopts ":fh" opt; do
+  case "${opt}" in
+    f) flag=true ;;
+    h) usage; return 0 ;;
+    :) warn "Option -${OPTARG} requires an argument."; usage; return 1 ;;
+    ?) warn "Unknown option: -${OPTARG}"; usage; return 1 ;;
+  esac
+done
+```
+
+`error` is intentionally avoided here: it calls `_dotfiles_notify` which fires a
+macOS notification pop-up. Triggering a notification because the user typed a
+bad flag is poor UX for any interactive script.
+
+### Idempotency guard messages -- use `info`, not `warn`
+
+```zsh
+if is_executable "brew"; then
+  info "Homebrew already installed -- skipping."
+else
+  # install ...
+fi
+```
+
+These are expected, non-problematic states. `warn` implies something is wrong;
+`info` correctly signals "nothing to do here".
+
+### Expected-absent tools -- use `debug`, not `warn`
+
+```zsh
+if ! command_exists mise; then
+  debug "mise not in PATH -- skipping mise config loading."
+  return 0
+fi
+```
+
+If a tool is known to be optionally present, its absence is not a warning.
+
+### Action items for the user -- use `user_action`, not `warn`
+
+```zsh
+user_action "Restart iTerm2 to apply the new font settings."
+user_action "Run 'bupc' to update Homebrew packages."
+```
+
+These are follow-up instructions, not warnings about something that went wrong.
+
+### Deferred Error/Warning Collection
+
+`_record_warning` both stores the warning AND prints it immediately. Use it for
+warnings where immediate feedback is valuable (e.g., per-item failures in a loop).
+
+For **aggregated summary messages** computed after processing multiple items
+(e.g., "Failed to process N files" with a list), append directly to
+`_step_warnings` to avoid duplicate output (immediate print + summary):
+
+```zsh
+# Immediate warning -- print now AND in summary (typical case)
+for item in "${items[@]}"; do
+  if ! process_item "${item}"; then
+    _record_warning "Failed to process ${item}"
+  fi
+done
+
+# Summary-only warning -- only in final summary (aggregated message)
+if is_non_empty_array failed_files; then
+  local msg="Failed to process ${#failed_files[@]} file(s):"
+  msg+=$'\n'"$(join_array failed_files)"
+  _step_warnings+=("[${_SCRIPT_NAME}][${_current_section}] ${msg}")
+fi
+```
+
+The direct append pattern is the exception, not the rule. Use it only when:
+- The message is computed/aggregated after processing multiple items
+- Showing it immediately would be confusing or redundant
+- The message is only meaningful in the context of the final summary
+
+The pattern mirrors Ruby's `record_warning` (immediate) vs direct append to
+`@step_warnings` (summary-only).
+
+## Script Depth Tracking
+
+See [`script-depth-tracking.md`](./script-depth-tracking.md) for complete details on `_DOTFILES_SCRIPT_DEPTH`.
+
+**Quick summary for shell**:
+- Increment on entry: `export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))`
+- Decrement on exit: `trap '_decrement_script_depth' EXIT`
+- Dual purpose: nesting suppression (outermost only prints banners) + auto-indentation (2 spaces per depth)
+- Never manually indent log messages
+- Bulleted lists: `join_array` auto-indents one level deeper
+- External tool output intentionally unindented
+
+## Path Constants
+
+See [`path-constants.md`](./path-constants.md) for complete rules on environment variables, path construction, and avoiding hardcoded paths.
+
+**Quick summary for shell**:
+- Always use `${VAR}` with braces (not bare `$VAR`)
+- Always quote: `"${DOTFILES_DIR}/scripts"`
+- Never hardcode derived paths: use `${XDG_CONFIG_HOME}` not `"${HOME}/.config"`
+- Available constants: `${DOTFILES_DIR}`, `${PERSONAL_BIN_DIR}`, `${XDG_CONFIG_HOME}`, etc.
+
+### `${var}` Brace Notation
+
+Always use `${var}` brace notation (not bare `$var`) to unambiguously delimit
+the variable name. This prevents accidental concatenation bugs and makes the
+boundary of the variable name visually clear:
+
+```zsh
+# Good
+echo "${HOME}/.config"
+local path="${DOTFILES_DIR}/scripts"
+info "Repo: ${repo_name}_backup"   # without braces, _backup would be part of name
+
+# BAD
+echo "$HOME/.config"
+local path="$DOTFILES_DIR/scripts"
+```
+
+Exception: `$?`, `$#`, `$@`, `$*`, `$$`, `$!`, `$-` -- the single-character
+special parameters do not need braces.
+
+## Option Parsing -- `getopts` vs Long Flags
+
+Use `getopts` for all short-option (`-f`, `-h`) parsing. `getopts` cannot
+handle long flags (`--flag`). When long options are needed, use manual
+`while/case` with `shift`:
+
+```zsh
+while [[ $# -gt 0 ]]; do
+  case "${1}" in
+    --port)
+      port="${2:?--port requires an argument}"
+      shift 2
+      ;;
+    -h | --help)
+      usage
+      return 0
+      ;;
+    *)
+      error "Unknown option: ${1}"
+      usage
+      return 1
+      ;;
+  esac
+done
+```
+
+The `${2:?message}` expansion aborts with the message if `$2` is unset or
+empty -- use it for required flag arguments.
+
+## Quoting and Variable References
+
+### Always Quote Variables
+
+Always quote variables to prevent word-splitting and glob expansion when the
+value is used in a context where it could contain spaces:
+
+```zsh
+# Good -- quoted, safe if value contains spaces
+cp "${src_file}" "${dest_dir}/"
+is_file "${config_path}"
+info "Processing ${filename}"
+
+# BAD -- unquoted, breaks if value contains spaces
+cp $src_file $dest_dir/
+is_file $config_path
+info "Processing $filename"
+```
+
+### Single Quotes vs Double Quotes
+
+Prefer **single quotes** for static strings that contain no variable references
+or command substitutions. Use **double quotes** when the string contains a
+variable reference or needs escape interpretation:
+
+```zsh
+# Good -- single quotes for static strings
+local sep='------'
+grep -q 'pattern'
+error 'File not found'
+
+# Good -- double quotes when expanding variables
+local msg="Processing ${repo_name}"
+source "${HOME}/.shellrc"
+info "Done: ${count} files processed"
+
+# BAD -- double quotes on strings with no variable expansion (unnecessary)
+local sep="------"
+grep -q "pattern"   # fine if no special chars, but prefer single quotes
+```
+
+Exception: prefer **double quotes** over single quotes when the static string
+contains single quotes that would otherwise require `$'...\n...'` escaping or
+concatenation. Double quotes allow literal single quotes inside and support
+literal newlines, making multiline strings significantly more readable:
+
+```zsh
+# BAD -- $'...' with escaped single quotes is hard to read
+user_action $'Restart \'Terminal\' and \'iTerm\':\n  \'ProtonVPN\' - may drop VPN.'
+
+# Good -- double quotes; single quotes are literal, newline is literal
+user_action "Restart 'Terminal' and 'iTerm':
+  'ProtonVPN' - may drop VPN."
+```
+
+## Exit Points -- `return` vs `exit` in `main()`
+
+Always use `return` (never `exit`) inside `main()`. `exit` terminates the entire
+shell process -- if the script is ever sourced, it kills the calling shell. `return`
+exits only the function; the script process then exits with that return code because
+`main "$@"` is the last line.
+
+```zsh
+# BAD -- exit inside main() terminates the calling shell if the script is sourced
+main() {
+  if is_zero_string "${folder}"; then
+    warn 'Missing required argument'
+    usage
+    exit 1   # BAD
+  fi
+  ensure_keybase_logged_in || exit 1   # BAD
+}
+
+# Good -- return propagates the exit code via 'main "$@"' at the bottom
+main() {
+  if is_zero_string "${folder}"; then
+    warn 'Missing required argument'
+    usage
+    return 1
+  fi
+  ensure_keybase_logged_in || return 1
+}
+
+main "$@"
+```
+
+`exit` IS correct in:
+- Trap handler functions (`_cleanup_and_exit`, ERR/EXIT traps) -- these run outside
+  the normal call stack and must terminate the process.
+- Git `!` alias bodies -- git runs them in a subprocess shell; `exit` propagates
+  the code back to git.
+
+**Scan rule:** when editing any script, flag every `exit` inside `main()` and
+replace with `return`. Leave `exit` in trap handlers and git alias bodies.
+
+## Internal Helpers -- `_` Prefix Convention
+
+Internal helpers not called by external scripts must be prefixed with `_`:
+
+```zsh
+_internal_helper() { ... }   # private
+public_function() { ... }    # public (no prefix)
+```
+
+## Unified Color Standard (Shell + Ruby)
+
+**See [`logging-conventions.md`](./logging-conventions.md) for the complete unified color standard.**
+
+That file documents:
+- Color classification rules (paths, commands, components, booleans, counts, etc.)
+- Application guidelines
+- Language-specific syntax (shell vs Ruby)
+- Deferred error/warning collection
+- Script depth tracking
+- Message prefixes
+
+The rules apply equally to shell and Ruby scripts for consistency across the codebase.
+
+## Comment Philosophy
+
+See [`comment-philosophy.md`](./comment-philosophy.md) for complete rules,
+rationale, and examples, including comment format conventions.
+
+## Character Encoding and Punctuation
+
+See [`character-encoding.md`](./character-encoding.md) for complete rules on ASCII-only requirements, Unicode restrictions, and allowed exceptions.
+
+## Formatting After Every Edit
+
+After every edit to a shell script, follow the complete workflow in [`edit-checklist.md`](./edit-checklist.md).
+
+Quick summary for shell scripts:
+1. Verify decision-making philosophy
+2. Scan for unsafe `&&` patterns (see [§ `&&` as Conditional](#-as-conditional----safety-under-set--e--err-trap))
+3. Syntax check: `zsh -n <file>`
+4. Format: `shfmt -w <file>` (check `.shfmtignore` first)
+5. Verify whitespace rules (see [`whitespace-rules.md`](./whitespace-rules.md))
+6. Ensure executable permission: `chmod +x <file>`
+
 ## Shell Functions as First-Class Entry Points
 
 When a shell function (not a script file) acts as a command-line entry point
@@ -206,35 +521,6 @@ Valid reasons to omit:
 - Scripts that call `find` / `rm` where "no matches" is expected and non-fatal
 - Cron scripts where `set -e` would abort on the first update tool failure,
   preventing all subsequent update steps from running (use an `ERR` trap instead)
-
-## Option Parsing: `getopts` vs Long Flags
-
-Use `getopts` for all short-option (`-f`, `-h`) parsing. `getopts` cannot
-handle long flags (`--flag`). When long options are needed, use manual
-`while/case` with `shift`:
-
-```zsh
-while [[ $# -gt 0 ]]; do
-  case "${1}" in
-    --port)
-      port="${2:?--port requires an argument}"
-      shift 2
-      ;;
-    -h | --help)
-      usage
-      return 0
-      ;;
-    *)
-      error "Unknown option: ${1}"
-      usage
-      return 1
-      ;;
-  esac
-done
-```
-
-The `${2:?message}` expansion aborts with the message if `$2` is unset or
-empty -- use it for required flag arguments.
 
 ## `local` and `unset` -- Correct Usage
 
@@ -331,108 +617,6 @@ local name="${CALLER_SCRIPT:-${0:t}}"  # Good -- same reason
 
 Never collapse a two-step `local` + assignment back into a single line when
 `$(...)` is involved, even though it may look redundant. The split is intentional.
-
-## Quoting and Variable References
-
-### Always Quote Variables
-
-Always quote variables to prevent word-splitting and glob expansion when the
-value is used in a context where it could contain spaces:
-
-```zsh
-# Good -- quoted, safe if value contains spaces
-cp "${src_file}" "${dest_dir}/"
-is_file "${config_path}"
-info "Processing ${filename}"
-
-# BAD -- unquoted, breaks if value contains spaces
-cp $src_file $dest_dir/
-is_file $config_path
-info "Processing $filename"
-```
-
-### Single Quotes vs Double Quotes
-
-Prefer **single quotes** for static strings that contain no variable references
-or command substitutions. Use **double quotes** when the string contains a
-variable reference or needs escape interpretation:
-
-```zsh
-# Good -- single quotes for static strings
-local sep='------'
-grep -q 'pattern'
-error 'File not found'
-
-# Good -- double quotes when expanding variables
-local msg="Processing ${repo_name}"
-source "${HOME}/.shellrc"
-info "Done: ${count} files processed"
-
-# BAD -- double quotes on strings with no variable expansion (unnecessary)
-local sep="------"
-grep -q "pattern"   # fine if no special chars, but prefer single quotes
-```
-
-Exception: prefer **double quotes** over single quotes when the static string
-contains single quotes that would otherwise require `$'...\n...'` escaping or
-concatenation. Double quotes allow literal single quotes inside and support
-literal newlines, making multiline strings significantly more readable:
-
-```zsh
-# BAD -- $'...' with escaped single quotes is hard to read
-user_action $'Restart \'Terminal\' and \'iTerm\':\n  \'ProtonVPN\' - may drop VPN.'
-
-# Good -- double quotes; single quotes are literal, newline is literal
-user_action "Restart 'Terminal' and 'iTerm':
-  'ProtonVPN' - may drop VPN."
-```
-
-### No Hardcoded User-Specific Paths
-
-Never hardcode user-specific or machine-specific paths. Always use the exported
-env vars defined in `.shellrc` instead. This applies to every file in the
-repository -- scripts, config files, and Brewfile Ruby expressions alike.
-
-| Instead of | Use |
-|---|---|
-| `"${HOME}/dev"` literal repeated inline | `"${PROJECTS_BASE_DIR}"` |
-| `"${HOME}/personal/dev/bin"` | `"${PERSONAL_BIN_DIR}"` |
-| `"${HOME}/personal/dev/configs"` | `"${PERSONAL_CONFIGS_DIR}"` |
-| `"${HOME}/.config/dotfiles"` | `"${DOTFILES_DIR}"` |
-| `"${HOME}/.config"` | `"${XDG_CONFIG_HOME}"` |
-| `"${HOME}/.cache"` | `"${XDG_CACHE_HOME}"` |
-| `"${HOME}/.local/bin"` | `"${XDG_BIN_HOME}"` |
-| `"${HOME}/.local/share"` | `"${XDG_DATA_HOME}"` |
-| `"${HOME}/.local/state"` | `"${XDG_STATE_HOME}"` |
-| `/opt/homebrew` or `/usr/local` | `"${HOMEBREW_PREFIX}"` |
-
-`${HOME}` itself is always acceptable -- it is a standard shell variable, not a
-hardcoded path. The rule targets its *derived* paths that already have a named
-env var.
-
-Scan rule: when editing any script or config file, flag every occurrence of a
-literal expanded path that matches one of the right-hand-side values above, and
-replace it with the corresponding env var.
-
-### `${var}` Brace Notation
-
-Always use `${var}` brace notation (not bare `$var`) to unambiguously delimit
-the variable name. This prevents accidental concatenation bugs and makes the
-boundary of the variable name visually clear:
-
-```zsh
-# Good
-echo "${HOME}/.config"
-local path="${DOTFILES_DIR}/scripts"
-info "Repo: ${repo_name}_backup"   # without braces, _backup would be part of name
-
-# BAD
-echo "$HOME/.config"
-local path="$DOTFILES_DIR/scripts"
-```
-
-Exception: `$?`, `$#`, `$@`, `$*`, `$$`, `$!`, `$-` -- the single-character
-special parameters do not need braces.
 
 ## Positional Parameters
 
@@ -532,12 +716,70 @@ is_non_empty_array failed_repos && exit 1
 # BAD -- is_non_zero_string returns 1 for empty string (e.g. a clean cron run)
 is_non_zero_string "${outdated_flat}" && _msg+=". Needs manual update: ${outdated_flat}"
 
+# BAD -- early return guard where condition returning false is normal
+_should_suppress_log && return 0
+is_empty_array arr && return
+
+# BAD -- conditional operation where false is normal
+[[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
+
 # Good -- explicit if; predicate exit code never reaches the enclosing scope
 if is_file "${optional_config}"; then cp "${optional_config}" "${dest}"; fi
 if is_zero_string "${app_pref}"; then continue; fi
 if is_non_empty_array failed_repos; then exit 1; fi
 if is_non_zero_string "${outdated_flat}"; then _msg+=". Needs manual update: ${outdated_flat}"; fi
+if _should_suppress_log; then return 0; fi
+if is_empty_array arr; then return; fi
+if [[ -n "${DEBUG:-}" ]]; then echo "loading ${0}"; fi
 ```
+
+**Common patterns that need conversion:**
+
+1. **Early return guards** -- functions that return early based on a condition:
+   ```zsh
+   # BAD
+   _should_suppress_log && return 0
+
+   # Good
+   if _should_suppress_log; then return 0; fi
+   ```
+
+2. **Re-source guards** -- checking if a file has already been sourced:
+   ```zsh
+   # BAD
+   [[ -n "${ZSH_VERSION-}" ]] && (($+functions[is_shellrc_sourced])) && return
+
+   # Good
+   if [[ -n "${ZSH_VERSION-}" ]] && (($+functions[is_shellrc_sourced])); then
+     return
+   fi
+   ```
+
+3. **Conditional DEBUG output** -- debug statements that only print when DEBUG is set:
+   ```zsh
+   # BAD
+   [[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
+
+   # Good
+   if [[ -n "${DEBUG:-}" ]]; then echo "loading ${0}"; fi
+   ```
+
+4. **Validation function chains** -- functions whose return value is a validation result:
+   ```zsh
+   # BAD -- both is_file and && [[ -s ]] can return false normally
+   is_non_empty_file() {
+     is_file "${1:-}" && [[ -s "${1:-}" ]]
+   }
+
+   # Good -- explicit if/return with clear success/failure branches
+   is_non_empty_file() {
+     if is_file "${1:-}" && [[ -s "${1:-}" ]]; then
+       return 0
+     else
+       return 1
+     fi
+   }
+   ```
 
 **Safe exception -- `A && B || C` dispatch:**
 
@@ -549,6 +791,13 @@ never fires. This pattern is correct for intentional success/failure branching:
 # Good -- C (_record_error / _record_warning) always returns 0; ERR trap never fires
 update_all_repos && success 'Updated repos' || _record_error 'Failed to update repos'
 git pull -r && success "Updated: ${folder}" || _record_warning "Failed: ${folder}"
+
+# Can also be written as explicit if/else for clarity
+if update_all_repos; then
+  success 'Updated repos'
+else
+  _record_error 'Failed to update repos'
+fi
 ```
 
 **Scan rule:** when editing any script that uses `set -e` or an ERR trap, scan
@@ -578,57 +827,7 @@ returns `1`, then evaluates to `0` on the next call). Use `(( var -= 1 )) || tru
 that uses `set -e`, replace bare `(( var++ ))` / `(( var-- ))` with
 `(( var += 1 )) || true` / `(( var -= 1 )) || true`.
 
-
-## `return` vs `exit` Inside `main()`
-
-Always use `return` (never `exit`) inside `main()`. `exit` terminates the entire
-shell process -- if the script is ever sourced, it kills the calling shell. `return`
-exits only the function; the script process then exits with that return code because
-`main "$@"` is the last line.
-
-```zsh
-# BAD -- exit inside main() terminates the calling shell if the script is sourced
-main() {
-  if is_zero_string "${folder}"; then
-    warn 'Missing required argument'
-    usage
-    exit 1   # BAD
-  fi
-  ensure_keybase_logged_in || exit 1   # BAD
-}
-
-# Good -- return propagates the exit code via 'main "$@"' at the bottom
-main() {
-  if is_zero_string "${folder}"; then
-    warn 'Missing required argument'
-    usage
-    return 1
-  fi
-  ensure_keybase_logged_in || return 1
-}
-
-main "$@"
-```
-
-`exit` IS correct in:
-- Trap handler functions (`_cleanup_and_exit`, ERR/EXIT traps) -- these run outside
-  the normal call stack and must terminate the process.
-- Git `!` alias bodies -- git runs them in a subprocess shell; `exit` propagates
-  the code back to git.
-
-**Scan rule:** when editing any script, flag every `exit` inside `main()` and
-replace with `return`. Leave `exit` in trap handlers and git alias bodies.
-
-Internal helpers not called by external scripts must be prefixed with `_`:
-
-```zsh
-_internal_helper() { ... }   # private
-public_function() { ... }    # public (no prefix)
-```
-
 ## `source` vs `load_file_if_exists`
-
-`load_file_if_exists` is defined in `.shellrc` and is only available **after**
 `.shellrc` has been downloaded and sourced. The rule is:
 
 - **Before `.shellrc` is sourced** (e.g., early boot of `fresh-install` on a
@@ -636,6 +835,7 @@ public_function() { ... }    # public (no prefix)
   that the file must be present.
 - **After `.shellrc` is sourced**: always prefer `load_file_if_exists` over
   `source` for any file that may not exist on all machines or in all scenarios.
+
 ```zsh
 # Early boot -- .shellrc not yet available, use source with guard
 [[ -f "${HOME}/.shellrc" ]] && source "${HOME}/.shellrc"
@@ -643,6 +843,11 @@ public_function() { ... }    # public (no prefix)
 # After .shellrc is sourced -- use load_file_if_exists
 load_file_if_exists "${ZDOTDIR}/.some-optional-file"
 ```
+
+**Note:** `load_file_if_exists` includes `|| warn` on the source command to catch
+failures from external files (e.g., Homebrew completion scripts) without triggering
+ERR traps. This is safe because external files may contain `&&` chains or other
+constructs that return non-zero in normal operation.
 
 ## Array Operations
 
@@ -683,6 +888,8 @@ load_file_if_exists "${cache}"
 **Definition** (from `.shellrc`):
 ```zsh
 # Returns true if target file ($1) is missing or older than source file ($2).
+# Resolves symlinks before comparison to ensure edits/upgrades to symlink targets
+# are detected (e.g., Homebrew binaries, dotfiles symlinked from the repo).
 # Uses the shell's built-in -nt (newer-than) test which compares modification times.
 # Common pattern: if is_file_older_than "$cache" "$source"; then regenerate_cache; fi
 #
@@ -694,7 +901,11 @@ load_file_if_exists "${cache}"
 #   0 (true) if target is missing or source is newer (regeneration needed)
 #   1 (false) if target exists and is newer than or same age as source (cache valid)
 is_file_older_than() {
-  [[ ! -f "${1}" || "${2}" -nt "${1}" ]]
+  # Return true (needs regeneration) if either argument is missing/empty
+  [[ -z "${1:-}" || -z "${2:-}" ]] && return 0
+  local target="${1:A}"
+  local source="${2:A}"
+  [[ ! -f "${target}" || "${source}" -nt "${target}" ]]
 }
 ```
 
@@ -702,6 +913,8 @@ is_file_older_than() {
 - First argument: the cache file (what you're checking)
 - Second argument: the source file (what it depends on)
 - Returns true when cache needs regeneration
+- Automatically resolves symlinks so Homebrew binary upgrades are detected
+- Safe with empty/unset parameters (returns true = regenerate)
 
 **Common use cases**:
 ```zsh
@@ -726,13 +939,14 @@ fi
 **Why use the helper**:
 1. **Semantic clarity**: Name describes intent ("is cache stale?")
 2. **DRY principle**: Single implementation of the staleness check
-3. **Maintainability**: Changes to cache logic apply everywhere
-4. **Readability**: `is_file_older_than` reads like English
+3. **Symlink safety**: Resolves symlinks automatically (Homebrew binaries are symlinks)
+4. **Defensive**: Handles empty/unset parameters gracefully (safe default: regenerate)
+5. **Maintainability**: Changes to cache logic apply everywhere
+6. **Readability**: `is_file_older_than` reads like English
 
 **When NOT to use**:
 - One-off comparisons that don't follow the cache pattern
 - When you need custom staleness logic (e.g., multiple source files)
-- When the target is not a file (use raw `[[ ... ]]` for directories)
 
 ## Glob Patterns -- NULL_GLOB
 
@@ -795,37 +1009,6 @@ _remove_loose_files() {
 _remove_loose_files
 ```
 
-## Do not mandate named helpers everywhere
-
-`()` anonymous functions are idiomatic and correct in pure zsh files. Named
-functions defined inside another function in zsh persist in the global function
-table after the outer function returns -- they are **not** scoped. The `()` form
-is truly scoped and disappears on return. Using named helpers everywhere would
-introduce namespace pollution in files where `()` is perfectly safe.
-
-Use named helpers **only** where bash parseability requires it (`.shellrc`,
-`.aliases`, `.envrc`). The deciding question: can bash ever `source` this file?
-
-When a named helper is required (bash-parseable file), always `unfunction` it
-immediately after use to prevent global namespace pollution. This matters in
-non-subshell call sites -- direct interactive invocations and calls from other
-functions running in the same process. `run-all.rb` sandboxes each repo call in
-a `()` subshell so the leak is contained there, but the `unfunction` is still
-required for correctness at other call sites:
-
-```zsh
-# Named helper required in .shellrc -- bash cannot parse '() { ... }'
-_do_the_thing() {
-  setopt localoptions NULL_GLOB
-  rm -f "${dir}"/*.tmp
-}
-_do_the_thing
-# Unfunction immediately: named functions inside functions persist in the global
-# table after the outer function returns, polluting the namespace at non-subshell
-# call sites (direct interactive calls, calls from other functions in the same process).
-unfunction _do_the_thing
-```
-
 ## `is_zsh` guards are for parse-time zsh-only syntax only
 
 Do not wrap a function definition in `if is_zsh; then` unless its body contains
@@ -880,161 +1063,6 @@ trap 'notify "Error in ${BASH_SOURCE[0]##*/} (line ${LINENO})" "❌ direnv error
 is intentionally not used: it does not survive direnv's `strict_env` mode. `warn` and
 `error` always print. This means `.envrc` files need no extra log suppression
 logic -- just use the standard logging functions as normal.
-
-## Logging -- Level Usage
-
-Use the logging functions from `.shellrc` (`debug`, `info`, `success`, `warn`,
-`error`, `user_action`). Never use bare `echo` except for `usage()` output and
-code that runs before `.shellrc` is sourced.
-
-| Level | Function | When to use |
-|---|---|---|
-| `debug` | `debug` | Expected-absent tools or optional steps that are silently skipped (e.g. "mise not in PATH -- skipping"). Hidden by default; visible with `DEBUG=true`. |
-| `info` | `info` | Normal progress messages and idempotency guards ("already installed -- skipping"). Suppressed in direnv subshells. |
-| `success` | `success` | An operation completed successfully (e.g. "Successfully sourced ~/.shellrc"). Suppressed in direnv subshells. |
-| `warn` | `warn` | Argument-parsing failures (`?`/`:` getopts cases) followed by `usage; return 1`; non-fatal operation failures the script recovers from. |
-| `error` | `error` | Unexpected mid-script operation failures that need attention and warrant a macOS notification. **Calls `_dotfiles_notify` -- do NOT use for arg-parse failures in interactive scripts** (notification on every typo is bad UX). |
-| `user_action` | `user_action` | Manual steps the user must perform after the script exits (restart an app, run a command, open a URL). Distinct from `warn` (unexpected problem) and `info` (purely informational). |
-
-### Argument-parse failures -- use `warn`, not `error`
-
-```zsh
-while getopts ":fh" opt; do
-  case "${opt}" in
-    f) flag=true ;;
-    h) usage; return 0 ;;
-    :) warn "Option -${OPTARG} requires an argument."; usage; return 1 ;;
-    ?) warn "Unknown option: -${OPTARG}"; usage; return 1 ;;
-  esac
-done
-```
-
-`error` is intentionally avoided here: it calls `_dotfiles_notify` which fires a
-macOS notification pop-up. Triggering a notification because the user typed a
-bad flag is poor UX for any interactive script.
-
-### Idempotency guard messages -- use `info`, not `warn`
-
-```zsh
-if is_executable "brew"; then
-  info "Homebrew already installed -- skipping."
-else
-  # install ...
-fi
-```
-
-These are expected, non-problematic states. `warn` implies something is wrong;
-`info` correctly signals "nothing to do here".
-
-### Expected-absent tools -- use `debug`, not `warn`
-
-```zsh
-if ! command_exists mise; then
-  debug "mise not in PATH -- skipping mise config loading."
-  return 0
-fi
-```
-
-If a tool is known to be optionally present, its absence is not a warning.
-
-### Action items for the user -- use `user_action`, not `warn`
-
-```zsh
-user_action "Restart iTerm2 to apply the new font settings."
-user_action "Run 'bupc' to update Homebrew packages."
-```
-
-These are follow-up instructions, not warnings about something that went wrong.
-
-### Deferred warning collection -- immediate vs summary-only
-
-`_record_warning` both stores the warning AND prints it immediately. Use it for
-warnings where immediate feedback is valuable (e.g., per-item failures in a loop).
-
-For **aggregated summary messages** computed after processing multiple items
-(e.g., "Failed to process N files" with a list), append directly to
-`_step_warnings` to avoid duplicate output (immediate print + summary):
-
-```zsh
-# Immediate warning -- print now AND in summary (typical case)
-for item in "${items[@]}"; do
-  if ! process_item "${item}"; then
-    _record_warning "Failed to process ${item}"
-  fi
-done
-
-# Summary-only warning -- only in final summary (aggregated message)
-if is_non_empty_array failed_files; then
-  local msg="Failed to process ${#failed_files[@]} file(s):"
-  msg+=$'\n'"$(join_array failed_files)"
-  _step_warnings+=("[${_SCRIPT_NAME}][${_current_section}] ${msg}")
-fi
-```
-
-The direct append pattern is the exception, not the rule. Use it only when:
-- The message is computed/aggregated after processing multiple items
-- Showing it immediately would be confusing or redundant
-- The message is only meaningful in the context of the final summary
-
-The pattern mirrors Ruby's `record_warning` (immediate) vs direct append to
-`@step_warnings` (summary-only).
-
-## Unified Color Standard (Shell + Ruby)
-
-All logging messages across shell scripts and Ruby scripts follow this unified
-color classification for consistency.
-
-### Color Classification Rules
-
-1. **Paths/Files/Folders**: `.cyan` + single quotes (shell: `$(cyan "${path}")`)
-   - File paths, directory paths, full app paths like `/Applications/App.app`
-   - Example: `info "Processing '$(cyan "${folder}")'"`
-
-2. **Action verbs** (in headers/labels): `.yellow` (shell: `$(yellow 'verb')`)
-   - "Installing", "Updating", "Finding", "Processing"
-   - Section header action verbs
-   - Example: `section_header "$(yellow 'Installing') dotfiles"`
-
-3. **Labels/Keys in key-value pairs**: `.yellow` + colon
-   - "Branch:", "Folder:", "Dry run:", env var names as subjects
-   - Example: `info "$(yellow 'Branch:') '$(cyan "${branch}")'"`
-
-4. **Component/tool/app names** (non-paths): `.yellow`
-   - "homebrew", "antidote plugins", "KeyClu" (app name without path)
-   - Example: `section_header "$(yellow 'Updating') $(yellow 'homebrew')"`
-
-5. **Commands/executable strings**: `.cyan` + single quotes
-   - Actual command strings like `'git status'`
-   - Example: `info "Running '$(cyan "git status")'"`
-
-6. **Domain/preference identifiers**: `.light_cyan` (shell: `$(light_cyan "${domain}")`)
-   - `com.apple.Finder`, `com.google.Chrome`
-   - Example: `debug "Processing domain: $(light_cyan "${app_pref}")"`
-
-7. **Numeric values**:
-   - Success counts (in summaries): `.green` (shell: `$(green "${count}")`)
-   - Error counts (in summaries): `.red` (shell: `$(red "${count}")`)
-   - Neutral/informational counts: `.purple` (shell: `$(purple "${count}")`)
-   - Example: `success "Created $(green "${created}") files"`
-   - Example: `info "Processed $(purple "${total}") items"`
-   - Example: `error "Failed $(red "${errors}") operations"`
-
-8. **Boolean values**: `.orange` (shell: `$(orange "${flag}")`)
-   - Example: `info "$(yellow 'Dry run:') $(orange "${dry_run}")"`
-
-9. **Error messages/failed items**: `.red`
-   - Entire error messages can be red
-   - Failed items in lists: `  - '$(red "item")'`
-   - Example: `_record_error "$(red "Failed to process '$(cyan "${file}")'")"` 
-
-### Application Guidelines
-
-- **Regular text**: No color decoration (white/default terminal color)
-- **Consistency across languages**: Apply same rules in Shell and Ruby scripts
-- **Single quotes for paths/commands**: Always single-quote paths and commands when coloring
-- **No mixing**: Don't apply multiple colors to the same text element
-- **Context matters**: Neutral counts get purple; success/error counts get green/red
-- **Yellow-context rule**: When the main message text is already yellow (labels, action verbs), use purple for quoted special content (env vars, component names, script names) to create visual distinction
 
 ## Cron Scripts
 
@@ -1106,6 +1134,20 @@ _cleanup_and_exit() {
 This rule applies whether `set -E` is active or not. With `set -E`, the trap
 fires in the scope of the failing helper function -- `$LINENO` in the string
 trap correctly reports that helper's line.
+
+**Debugging misleading line numbers:** ERR trap line numbers can be misleading when:
+1. **Subprocess failures**: A Ruby/Python script called from shell exits non-zero, triggering
+   the trap at the script invocation line, not the actual failure inside the subprocess
+2. **Function call failures**: A function deep in the call stack fails, but `$LINENO` reports
+   the line where the outermost function was called
+3. **At-exit hook failures**: Ruby `at_exit` hooks that raise or call `exit(1)` cause the
+   parent shell to receive non-zero exit code after the script body completes successfully
+
+**Diagnostic techniques:**
+- Add `info "Reached checkpoint X"` messages before suspected failure points
+- Check if success messages after the reported line never appear in output
+- Look for subprocess output (warnings, errors) that indicates where the real failure occurred
+- Remember: reported line may be where the *trap was set*, not where it *fired*
 
 ### `sudo` in Cron -- Always Guard with `has_sudo_credentials`
 
@@ -1388,319 +1430,6 @@ script:
 ```zsh
 # Re-source guard is inside .aliases itself -- safe to call unconditionally.
 load_file_if_exists "${HOME}/.aliases"
-require_env_var PERSONAL_BIN_DIR
-load_file_if_exists "${PERSONAL_BIN_DIR}/upreb-homebrew-common.sh"
-```
-
-## Comment Format
-
-```zsh
-################################################################################
-# file-header.sh
-# Purpose: ...
-################################################################################
-
-# ---------------------------------------------------------------------------
-# Section Name
-
-# Individual function comments use plain #
-function_name() {
-  # Implementation detail comment
-}
-```
-
-## Character Encoding and Punctuation
-
-All shell scripts and comments must use **ASCII-only characters**. Never use
-Unicode punctuation characters such as em dashes, en dashes, curly quotes, or
-other typographic symbols.
-
-### Rule: Use ASCII dashes only
-
-```zsh
-# Good -- ASCII double dash for parenthetical comments
-# This function caches the result -- no subprocess fork needed.
-
-# Good -- ASCII single dash for hyphenated terms
-# The cache-invalidation pattern uses mtime comparison.
-
-# BAD -- em dash (Unicode U+2014) breaks some syntax highlighters
-# This function caches the result — no subprocess fork needed.
-
-# BAD -- en dash (Unicode U+2013)
-# The cache–invalidation pattern uses mtime comparison.
-```
-
-### Rule: Use ASCII quotes only
-
-```zsh
-# Good -- ASCII straight quotes
-echo "Processing 'file.txt'"
-
-# BAD -- curly quotes (Unicode)
-echo "Processing 'file.txt'"
-```
-
-### Why ASCII-only?
-
-1. **Syntax highlighters**: Many editors and syntax highlighters break or
-   display incorrectly when encountering Unicode punctuation in code/comments
-2. **Terminal compatibility**: Not all terminals render Unicode punctuation
-   correctly, especially in SSH sessions or minimal environments
-3. **Copy-paste safety**: Unicode characters can be accidentally converted or
-   corrupted when copying code between systems
-4. **Searchability**: ASCII dashes can be searched with simple regex patterns;
-   Unicode variants require special handling
-5. **Git diffs**: Unicode characters can display as escape sequences in some
-   git diff viewers, making code review harder
-
-### Allowed Unicode
-
-The only Unicode allowed in shell scripts:
-- **Color codes** in string extensions (e.g., `\e[31m` ANSI sequences)
-- **User-facing output** from logging functions where typographic quality matters
-  (e.g., `info "Processing — 50% complete"` is acceptable in logged output,
-  but not in comments or code)
-
-When in doubt, use ASCII.
-
-## `_DOTFILES_SCRIPT_DEPTH` -- Increment and Decrement
-
-Every `main()` that uses the deferred-collection pattern (`_record_warning` /
-`_record_error` / `print_script_summary`) **must** both increment the counter
-on entry and decrement it on exit:
-
-```zsh
-main() {
-  local _current_section='(init)'
-  local -a _step_warnings=()
-  local -a _step_errors=()
-  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
-  trap '_decrement_script_depth' EXIT   # chain into any existing EXIT trap
-  ...
-}
-```
-
-`_decrement_script_depth` is defined in `.shellrc`. When a script already sets
-its own EXIT trap later in `main()`, chain the decrement into that trap rather
-than setting a separate one -- a later `trap ... EXIT` replaces any earlier one:
-
-```zsh
-# Scripts with an existing EXIT trap -- chain _decrement_script_depth at the end
-trap 'restart_login_item_apps; resume_softwareupdate_schedule; _decrement_script_depth' EXIT
-
-# Scripts whose EXIT trap calls a function -- add _decrement_script_depth inside
-# that function rather than duplicating the trap string
-_cleanup_recreate() {
-  resume_cron
-  _decrement_script_depth
-}
-trap _cleanup_recreate EXIT
-```
-
-`is_outermost_script` (`[[ ${_DOTFILES_SCRIPT_DEPTH:-0} -le 1 ]]`) is used by
-`print_script_start` and `print_script_summary` to suppress output from nested
-subprocess scripts. The decrement ensures the counter returns to its pre-script
-value on exit, which is correct for sourced scripts (subprocess scripts discard
-their env on exit regardless). See `TechnicalDeepDive.md` § 6 for the full
-rationale on why the decrement is applied even for subprocess-only scripts.
-
-### Dual Purpose: Nesting Suppression AND Auto-Indentation
-
-`_DOTFILES_SCRIPT_DEPTH` serves two purposes:
-
-1. **Suppression**: Only outermost scripts (depth ≤ 1) print start/summary banners
-2. **Auto-indentation**: ALL logging functions automatically indent based on depth
-
-All logging functions (`info`, `warn`, `success`, `error`, `debug`, `user_action`)
-and section headers call `$(_log_indent)` internally, which returns `2 * depth`
-spaces. This creates visual hierarchy that matches the call stack:
-
-```zsh
-# Standalone script (depth 0 → 1)
-main() {
-  export _DOTFILES_SCRIPT_DEPTH=1
-  info "Processing items..."  # 2-space indent (depth 1)
-}
-
-# Nested subprocess (depth 1 → 2)
-info "Parent message"         # 2-space indent
-system('child-script.sh')     # Child logs at 4-space indent (depth 2)
-info "Back to parent"         # 2-space indent
-```
-
-**NEVER manually prepend spaces to log messages.** The depth counter handles all
-indentation automatically:
-
-```zsh
-# BAD -- manual indent (old pattern, removed during refactoring)
-info "  -> Processed ${count} items"
-
-# Good -- auto-indent (current pattern)
-info "-> Processed ${count} items"
-```
-
-The `$(_log_indent)` helper is defined in `.shellrc` and should not be called
-directly from scripts -- it is an internal utility for logging functions.
-
-### Bulleted Lists: Current Depth + 1
-
-`join_array` automatically indents list items one level deeper than the current
-depth, creating subordinate structure:
-
-```zsh
-# At depth 1 (2 spaces)
-info "Failed items:"
-join_array failed_items  # Items at depth 2 (4 spaces)
-```
-
-### External Tool Output -- Intentionally Unindented
-
-External tools (`git`, `mise`, `sqlite3`) invoked via `system()` print at column 0.
-This is intentional -- wrapping their output would add complexity for minimal UX
-benefit. Tool output remains visually distinct from our structured logging.
-
-
-## Edit Checklist -- Run After Every Change
-
-After every edit to a shell script, follow these steps **in order**:
-
-### Step 1 -- Verify Decision-Making Philosophy
-
-Verify every new or changed line upholds the four priorities defined in
-`copilot-instructions.md` § **Decision-Making Philosophy** (startup speed →
-maintainability → POSIX compatibility → zsh built-ins). A higher priority
-always wins; document the tradeoff in a comment when they conflict. If it
-is unclear which priority applies, ask the user before proceeding.
-
-Only continue once every changed line satisfies the highest applicable priority.
-
-### Step 2 -- Scan for unsafe `&&` patterns
-
-Scan every standalone `A && B` line in the edited file. If the script uses
-`set -e` or an ERR trap, verify that A returning false is an *error*, not a
-normal/expected outcome. Fix any unsafe patterns before proceeding
-(see **`&&` as Conditional -- Safety Under `set -e` / ERR Trap** above).
-
-Only continue to formatting once all unsafe patterns are resolved.
-
-### Step 3 -- Reformat with `shfmt`
-
-**Check `.shfmtignore` first.** If the file is listed there, do NOT run `shfmt`
-on it -- skip formatting entirely for that file. Running `shfmt` on an excluded
-file will corrupt intentional one-liners (see below).
-
-Run `shfmt`:
-
-```zsh
-shfmt -w <file>
-```
-
-**shfmt has no inline per-line or per-block ignore directive.** Whole files can
-be excluded via `.shfmtignore`, but only for two valid reasons:
-
-1. The file contains zsh-only syntax that shfmt cannot parse (e.g. `${^array}`,
-   `for key value in "${(@kv)assoc}"`).
-2. The file hits a shfmt bug where one-liners inside loop or compound bodies are
-   forcibly expanded into an unreadable (and often misaligned) multi-line form
-   with no way to suppress it. Example -- shfmt transforms this intentional
-   one-liner:
-   ```zsh
-   while true; do has_sudo_credentials; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
-   ```
-   into this broken padded expansion:
-   ```zsh
-   while true; do
-                  sudo -n true
-                                sleep 60
-                                          kill -0 "$$" || exit
-   done                                                          2>/dev/null &
-   ```
-   The one-liner form is correct and must be preserved. Adding the file to
-   `.shfmtignore` is the only reliable fix.
-
-Do not add files to `.shfmtignore` for any other reason.
-
-### Step 4 -- Verify All Whitespace Rules
-
-After formatting, the file **MUST pass all three whitespace checks**. This applies
-to all text files **except Markdown files** (`.md`), which are exempt from Check 2
-only (trailing blank lines).
-
-#### Check 1: File Ends with Newline
-```zsh
-# Verify file ends with exactly one newline
-tail -c 1 <file> | od -An -tx1 | grep -q '0a' || echo "FAIL: Missing final newline"
-```
-
-#### Check 2: No Trailing Blank Lines
-```zsh
-# Verify no blank lines at end of file
-tail -n 1 <file> | grep -q '^$' && echo "FAIL: Has trailing blank lines"
-```
-
-**Fix:**
-```zsh
-# Remove trailing blank lines while preserving final newline
-sed -i '' -e :a -e '/^\s*$/d;N;ba' <file>
-```
-
-#### Check 3: No Trailing Whitespace on Any Line
-```zsh
-# Verify no lines end with spaces or tabs
-grep -n '[[:space:]]$' <file> && echo "FAIL: Lines above have trailing whitespace"
-```
-
-**Fix:**
-```zsh
-# Remove trailing whitespace from all lines
-sed -i '' 's/[[:space:]]*$//' <file>
-```
-
-#### All-in-One Verification
-```zsh
-if tail -c 1 <file> | od -An -tx1 | grep -q '0a' && \
-   ! tail -n 1 <file> | grep -q '^$' && \
-   ! grep -q '[[:space:]]$' <file>; then
-  echo "✅ All whitespace checks pass"
-else
-  echo "❌ Whitespace violations found"
-fi
-```
-
-**When using the Edit tool:**
-- Ensure `newString` ends with exactly one newline
-- No blank lines after the last content line
-- No trailing spaces/tabs on any line
-
-**Why this matters:**
-- Consistent file endings across the repository
-- Cleaner diffs (no spurious blank line changes)
-- Matches the output of `shfmt`, `rufo`, and linters
-- Reduces visual noise in version control
-- POSIX compliance
-
-**Exceptions:**
-- **Markdown files (`.md`)** are exempt from Check 2 only (trailing blank lines may be intentional for formatting). Checks 1 and 3 still apply.
-- **Cryptographic files (`.key`, `.pem`)** must not be modified -- they are generated by external tooling and any modification breaks their integrity.
-
-### Step 5 -- Ensure Executable Permission
-
-After editing shell scripts, ensure they have executable permission. This is especially important if your editing method rewrites the file (which can lose the executable bit).
-
-**Check if executable:**
-```zsh
-[[ -x path/to/script.sh ]] && echo "✅ Executable" || echo "❌ Not executable"
-```
-
-**Restore executable permission:**
-```zsh
-chmod +x path/to/script.sh
-```
-
-**Applies to:**
-- All scripts in `$DOTFILES_DIR/scripts/` (`.sh`, `.zsh`)
-- All scripts in `$PERSONAL_BIN_DIR/` (`.sh`, `.zsh`, `.bash`)
-- Autoload functions in `$XDG_CONFIG_HOME/zsh/` (`.zsh` files)
-
-**Why:** Scripts must be executable to run. Without this permission, they fail with "Permission denied" errors.
+  require_env_var PERSONAL_BIN_DIR
+  load_file_if_exists "${PERSONAL_BIN_DIR}/upreb-homebrew-common.sh"
+  ```

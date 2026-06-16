@@ -63,7 +63,8 @@ module Logging
     # Use error for messages that must always be visible regardless of context.
     return if EnvVars.suppress_log?
     indent = log_indent
-    message.to_s.each_line { |line| puts "#{indent}✅ #{'**SUCCESS**'.green} #{line.chomp}" }
+    msg = message.to_s.replace_home_path_with_tilde
+    msg.each_line { |line| puts "#{indent}✅ #{'**SUCCESS**'.green} #{line.chomp}" }
   end
 
   def info(message)
@@ -71,7 +72,8 @@ module Logging
     # Use error for messages that must always be visible regardless of context.
     return if EnvVars.suppress_log?
     indent = log_indent
-    message.to_s.each_line { |line| puts "#{indent}ℹ️  #{'**INFO**'.cyan} #{line.chomp}" }
+    msg = message.to_s.replace_home_path_with_tilde
+    msg.each_line { |line| puts "#{indent}ℹ️  #{'**INFO**'.cyan} #{line.chomp}" }
   end
 
   def warn(message)
@@ -79,7 +81,8 @@ module Logging
     # Use error for messages that must always be visible regardless of context.
     return if EnvVars.suppress_log?
     indent = log_indent
-    message.to_s.each_line { |line| puts "#{indent}⚠️  #{'**WARN**'.light_red} #{line.chomp}" }
+    msg = message.to_s.replace_home_path_with_tilde
+    msg.each_line { |line| puts "#{indent}⚠️  #{'**WARN**'.light_red} #{line.chomp}" }
   end
 
   def debug(message)
@@ -89,7 +92,8 @@ module Logging
     return unless EnvVars.debug?
     return if EnvVars.suppress_log?
     indent = log_indent
-    message.to_s.each_line { |line| puts "#{indent}⚙️  #{'**DEBUG**'.light_purple} #{line.chomp}" }
+    msg = message.to_s.replace_home_path_with_tilde
+    msg.each_line { |line| puts "#{indent}⚙️  #{'**DEBUG**'.light_purple} #{line.chomp}" }
   end
 
   # Prints a message prompting the user to perform a manual step (e.g. restart
@@ -99,7 +103,8 @@ module Logging
   def user_action(message)
     return if EnvVars.suppress_log?
     indent = log_indent
-    message.to_s.each_line { |line| puts "#{indent}➡️  #{'**ACTION**'.yellow} #{line.chomp}" }
+    msg = message.to_s.replace_home_path_with_tilde
+    msg.each_line { |line| puts "#{indent}➡️  #{'**ACTION**'.yellow} #{line.chomp}" }
   end
 
   # Prints the error message and raises a +RuntimeError+ with that message,

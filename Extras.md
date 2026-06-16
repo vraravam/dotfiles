@@ -20,6 +20,8 @@ Three data files govern which domains are processed and how:
 - **[`scripts/data/capture-prefs-denied-list.txt`](scripts/data/capture-prefs-denied-list.txt)** — domains that must never be exported or imported (machine-specific identifiers, account credentials, ephemeral sync state). Each entry has an inline comment explaining why.
 - **[`scripts/data/capture-prefs-excluded-keys.txt`](scripts/data/capture-prefs-excluded-keys.txt)** — individual keys within allowed domains that are stripped before export or import (display geometry, device UUIDs embedded in per-domain keys).
 
+**Backup staleness check:** On import (`-i`), the script validates that the backup preferences are not older than the last change to `osx-defaults.sh`. This prevents importing incomplete settings after `osx-defaults.sh` has been updated. On `FIRST_INSTALL`, this check is skipped because `fresh-install-of-osx.sh` runs `osx-defaults.sh -s` first to baseline current prefs, so the import is an incremental overlay — any backup is better than none.
+
 See [Technical Deep Dive § 11](TechnicalDeepDive.md#11-capture-prefssh-architecture) for how key stripping, XML plist conversion, and cron-safe export work internally.
 
 ## cleanup-browser-profiles.rb
@@ -36,14 +38,23 @@ This is the main setup script for a fresh macOS installation. It is idempotent (
 * Installs Homebrew, antidote (zsh plugin manager), and Starship prompt
 * Sets up the dotfiles repo and symlinks all config files
 * Installs essential CLI tools and GUI applications via the Brewfile
-* Configures macOS system defaults
+* Configures macOS system defaults (phase 1: baseline seed via `osx-defaults.sh -s`)
+* Restores application preferences from backups (phase 2: UI-configured overrides via `capture-prefs.rb -i`)
 * Sets up SSH keys and permissions
-* Resurrects tracked git repositories *(skipped by default — `resurrect_tracked_repos` is commented out; must be run manually)*
-* Installs programming language versions via mise
-* Restores application preferences from backups
-* Configures cron jobs for ongoing maintenance
+* Configures cron jobs using fallback logic (existing → tracked → user action)
+* Resurrects tracked git repositories
+* Sets up development environment (mise versions, direnv configs)
+* Sets default shell to Homebrew zsh (prompts for password at the very end)
 
 The script has two modes, distinguished by the `FIRST_INSTALL` environment variable (checked via `is_first_install`): a minimal bootstrap for a vanilla OS — with extended curl timeouts and relaxed Homebrew error handling because the network may be unreliable and not all tools exist yet — and a full idempotent run for an already-configured machine.
+
+**Key ordering decisions:**
+- `chsh` moved to end to avoid blocking automation with password prompts
+- Home repo automatically pulled on pre-configured machines before preferences restore
+- Preferences automatically exported, committed (`git sci`), then imported on pre-configured machines (ensures backup timestamp is current)
+- `git sci` amends existing commit if ahead of remote (no commit spam on repeated fresh-install runs)
+- Preferences restoration accepts stale backups on `FIRST_INSTALL` (baseline already applied)
+- All automated tasks complete before any user interaction required
 
 See the [GettingStarted](GettingStarted.md) guide for the recommended invocation. See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-two-phase-preference-architecture) for the ordering rationale.
 
@@ -172,11 +183,26 @@ Some apps must be registered as macOS login items programmatically after install
 ## software-updates-cron.rb
 
 There are so many tools installed, and some of them require their local caches/dbs/configs/etc to be updated from time to time. Rather than remembering each tool and its invocation (for updates), this script is a single place where any new tooling is added so that I don't need to remember the incantation for each separately.
-Run the following command to generate and update your crontab:
+
+To set up or update your crontab, run:
 
   ```zsh
   recron
   ```
+
+**Crontab fallback logic:** `recron` preserves existing cron jobs and uses a fallback strategy:
+1. Captures existing system crontab to temp file
+2. If empty → uses tracked `${PERSONAL_CONFIGS_DIR}/crontab.txt` from home repo
+3. If both empty → prints user action to create `crontab.txt` manually
+4. If non-empty schedule found → loads it into system crontab
+
+This ensures existing schedules are preserved while supporting vanilla OS installs via the tracked file.
+
+**Manual template generation:** If you need a starting template:
+  ```zsh
+  create_crontab ~/personal/dev/configs/crontab.txt
+  ```
+This creates the default schedule (software-updates-cron hourly). Edit as needed, commit to home repo, and run `recron` to install.
 
 The script uses `chronic` (from `moreutils`) to suppress output on successful runs and only produce output when there are errors or warnings. Two files track execution state:
 

@@ -1,5 +1,5 @@
-# Copilot Instructions – Deprecated
+# GitHub Copilot Instructions
 
-The detailed, model‑agnostic rules are defined in [`model-instructions.md`](./model-instructions.md). This file is kept for backward compatibility with tools that still reference it. Please refer to `model-instructions.md` for the up‑to‑date, shared guidelines.
+**All instructions are in the [`.ai/`](../.ai/) folder.**
 
-For any changes, edit `model-instructions.md` instead; updates will automatically apply to Copilot via the reference above.
+Read [`.ai/README.md`](../.ai/README.md) for the complete file structure, rules, and context.

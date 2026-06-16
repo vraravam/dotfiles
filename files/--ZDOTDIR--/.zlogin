@@ -14,32 +14,14 @@
 ################################################################################
 
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
-[[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
+if [[ -n "${DEBUG:-}" ]]; then echo "loading ${0}"; fi
 
 # Re-source guard is inside .shellrc itself -- safe to call unconditionally.
 source "${HOME}/.shellrc"
 
-recompile_zsh_scripts() {
-  # Resolve symlinks for the mtime check: zsh's -nt operator compares symlink mtime
-  # (not target mtime), so edits to the dotfiles target never trigger recompilation
-  # without resolving to the real path first.
-  # The .zwc file lives next to the symlink (${1}.zwc), not next to the real file.
-  local real="${1:A}"
-  if is_non_empty_file "${real}" && is_file_older_than "${1}.zwc" "${real}"; then
-    # Bare echo -- not routed through a color function, so tilde sub must be explicit.
-    # Inline ${1//${HOME}/~} rather than replace_home_with_tilde: .shellrc is already
-    # sourced above (line 20), so replace_home_with_tilde is available here. The inline
-    # form is kept as a belt-and-suspenders measure against any future reordering.
-    [[ -n "${DEBUG:-}" ]] && echo "recompiling '${1//${HOME}/~}'"
-    # Remove any stale .zwc.old left by a previously failed zrecompile run before
-    # attempting recompilation. zrecompile writes .zwc files read-only; if zcompile
-    # fails mid-write the .zwc.old backup is left behind -- clean it up unconditionally.
-    rm -f "${1}.zwc.old" || true
-    zrecompile -pq "${1}" &>/dev/null || true
-    # Remove .zwc.old again in case this run moved the old file there before failing.
-    rm -f "${1}.zwc.old" || true
-  fi
-}
+# recompile_zsh_script is defined in .shellrc and used by both .zshrc (for cache
+# file compilation) and .zlogin (for bulk script recompilation). See .shellrc for
+# implementation details (symlink resolution, .zwc.old cleanup, mtime checking).
 
 recompile_zsh_autoload_dir() {
   # Compile extensionless zsh autoload function files (files with no suffix).
@@ -49,7 +31,7 @@ recompile_zsh_autoload_dir() {
   # NOTE: Do NOT replace this call with find_in_folder_and_recompile -- that function
   # matches only '*.sh' and '*.zsh' patterns, so it would silently skip every
   # extensionless autoload file (cc, count, pull, push, st, etc.) in this directory.
-  local dir_to_scan="${1}"
+  local dir_to_scan="${1:-}"
 
   if ! is_directory "${dir_to_scan}"; then
     warn "Directory '$(yellow "${dir_to_scan}")' not found for zsh autoload recompilation." >&2
@@ -65,14 +47,14 @@ recompile_zsh_autoload_dir() {
     for f in "${dir_to_scan}"/*; do
       # Skip files that already have an extension -- those are handled elsewhere.
       if is_file "${f}" && [[ "${f:e}" == "" ]]; then
-        recompile_zsh_scripts "${f}"
+        recompile_zsh_script "${f}"
       fi
     done
   }
 }
 
 find_in_folder_and_recompile() {
-  local dir_to_scan="${1}"
+  local dir_to_scan="${1:-}"
   local f # Loop variable
 
   if ! is_directory "${dir_to_scan}"; then
@@ -87,7 +69,7 @@ find_in_folder_and_recompile() {
   local sentinel="${XDG_CACHE_HOME}/zwc-sentinel-${dir_to_scan//\//-}"
   if ! is_file_older_than "${sentinel}" "${dir_to_scan}"; then
     # Bare echo -- same reasoning as above: inline to avoid .shellrc load-order dependency.
-    [[ -n "${DEBUG:-}" ]] && echo "skipping recompile scan (unchanged): '${dir_to_scan//${HOME}/~}'"
+    if [[ -n "${DEBUG:-}" ]]; then echo "skipping recompile scan (unchanged): '${dir_to_scan//${HOME}/~}'"; fi
     return
   fi
 
@@ -95,35 +77,38 @@ find_in_folder_and_recompile() {
     \( \( -name 'node_modules' -o -name '.pnpm' \) -type d -prune \) -o \
     \( \( -name '*.sh' -o -name '*.zsh' \) -type f -print0 \) |
     while IFS= read -r -d $'\0' f; do
-      recompile_zsh_scripts "${f}"
+      recompile_zsh_script "${f}"
     done
 
+  # Ensure XDG_CACHE_HOME exists before touching the sentinel file.
+  # On vanilla OS during fresh-install, the directory may not exist yet when
+  # load_zsh_configs is first called (before _ensure_directories_exist runs).
+  ensure_dir_exists "${XDG_CACHE_HOME}"
   touch "${sentinel}"
 }
 
-# <https://github.com/zimfw/zimfw/blob/master/login_init.zsh>
-autoload -Uz zrecompile
+# zrecompile is already autoloaded in .zshrc (which runs before .zlogin).
 
 # zsh config files can be compiled to improve performance
 # Based from: https://github.com/romkatv/zsh-bench/blob/master/configs/ohmyzsh%2B/setup
 # Core startup files -- grouped together regardless of whether they live in
 # ZDOTDIR or HOME; all are sourced on every shell start and benefit equally
 # from bytecode compilation.
-recompile_zsh_scripts "${ZDOTDIR}/.zshenv"
-recompile_zsh_scripts "${ZDOTDIR}/.zshrc"
-recompile_zsh_scripts "${ZDOTDIR}/.zlogin"
-recompile_zsh_scripts "${HOME}/.shellrc"
-recompile_zsh_scripts "${HOME}/.aliases"
+recompile_zsh_script "${ZDOTDIR}/.zshenv"
+recompile_zsh_script "${ZDOTDIR}/.zshrc"
+recompile_zsh_script "${ZDOTDIR}/.zlogin"
+recompile_zsh_script "${HOME}/.shellrc"
+recompile_zsh_script "${HOME}/.aliases"
 
 # zcompdump has no extension so find_in_folder_and_recompile's *.sh/*.zsh glob
 # misses it. Compile it explicitly so compinit loads bytecode on subsequent
 # startups instead of parsing from source (~2-4ms savings per shell start).
-recompile_zsh_scripts "${XDG_CACHE_HOME}/zcompdump"
+recompile_zsh_script "${XDG_CACHE_HOME}/zcompdump"
 
 # The antidote static bundle lives in ZDOTDIR (not ANTIDOTE_HOME or XDG_CACHE_HOME),
 # so it is not picked up by any of the find_in_folder_and_recompile scans below.
 # Compile it explicitly so every shell startup sources bytecode, not raw zsh text.
-recompile_zsh_scripts "${ANTIDOTE_PLUGIN_ZSH}"
+recompile_zsh_script "${ANTIDOTE_PLUGIN_ZSH}"
 
 # antidote.zsh is intentionally NOT compiled to .zwc.
 # antidote 2.1.0 detects whether it is being sourced (vs run as a CLI) by checking
@@ -140,7 +125,7 @@ find_in_folder_and_recompile "${ANTIDOTE_HOME}"
 # These live outside DOTFILES_DIR / XDG_CACHE_HOME / ANTIDOTE_HOME, so they are
 # not covered by the find_in_folder_and_recompile calls below. Add any new
 # third-party sourced completions here rather than extending those scans.
-recompile_zsh_scripts "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
+recompile_zsh_script "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
 
 # Compile extensionless autoload function files under XDG_CONFIG_HOME/zsh/.
 # These are not *.sh / *.zsh so find_in_folder_and_recompile misses them.
@@ -152,9 +137,9 @@ recompile_zsh_autoload_dir "${XDG_CONFIG_HOME}/zsh"
 # picked up automatically without needing to update this file.
 #
 # Note: XDG_CACHE_HOME is NOT guarded by the mtime sentinel in practice -- .zshrc
-# always writes (or touches) cache files before .zlogin runs, so the sentinel
-# ('-nt' check) never passes and 'find' always executes. Running this in the
-# background avoids blocking the first prompt on login shells.
+# always writes (or touches) cache files before .zlogin runs, so the sentinel check
+# never passes and 'find' always executes. Running this in the background avoids
+# blocking the first prompt on login shells.
 {
   find_in_folder_and_recompile "${DOTFILES_DIR}"
   find_in_folder_and_recompile "${PERSONAL_BIN_DIR}"

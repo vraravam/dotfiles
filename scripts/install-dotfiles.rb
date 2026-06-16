@@ -14,20 +14,15 @@
 # It assumes the following:
 #   1. Ruby language is present in the system prior to this script being run.
 
-# Ensure utilities/ is on the load path so 'require' works regardless of whether
-# RUBYLIB is set. This is necessary during FIRST_INSTALL (fresh-install-of-osx.sh)
-# where the dotfiles repo is cloned after .shellrc is first sourced, so RUBYLIB does
-# not yet include this directory when install-dotfiles.rb is first invoked.
-$LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
-
-require 'cli_parser'
-require 'env_vars'
 require 'fileutils'
 require 'find'
-require 'logging'
-require 'path_utils'
 require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
-require 'string'
+
+require_relative 'utilities/cli_parser'
+require_relative 'utilities/env_vars'
+require_relative 'utilities/logging'
+require_relative 'utilities/path_utils'
+require_relative 'utilities/string'
 
 include Logging
 
@@ -118,6 +113,14 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
       info("  Forcefully overwriting existing file '#{target_path}'") if verbose
       target_pn.rmtree unless dry_run
     elsif is_custom_git && !EnvVars.first_install?
+      # For custom.git files, check if they're already identical (content + timestamp)
+      # before doing any mtime comparison or file operations
+      if FileUtils.identical?(source_pn, target_pn) && target_pn.mtime == source_pn.mtime
+        debug("  Target '#{target_path}' is identical to source (content + timestamp); skipping") if verbose
+        STATS.skipped += 1
+        return
+      end
+
       # mtime-based resolution: whichever file was modified more recently is authoritative.
       # On a tie, source wins (repo is authoritative on re-runs).
       target_mtime = target_pn.mtime
@@ -144,7 +147,7 @@ def _process_dotfile(source_pn, target_pn, dry_run: false, verbose: false, force
   # Create symlink or copy file for files matching 'custom.git'
   if is_custom_git # Special handling for git files: copy instead of symlink
     info("  Copying '#{source_path}' to '#{target_path}'")
-    FileUtils.cp(source_pn, target_pn) unless dry_run
+    FileUtils.cp(source_pn, target_pn, preserve: true) unless dry_run
   else
     info("  Creating symlink from '#{source_path}' to '#{target_path}'")
     FileUtils.ln_sf(source_pn, target_pn) unless dry_run

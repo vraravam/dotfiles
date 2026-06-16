@@ -11,19 +11,18 @@
 #   capture-prefs.rb -e  # Export current prefs to git repo
 #   capture-prefs.rb -i  # Import prefs from git repo to current system
 
-$LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
-
-require 'cli_parser'
-require 'env_vars'
 require 'fileutils'
-require 'git_processor'
-require 'logging'
-require 'macos'
 require 'pathname'
 require 'rexml/document'
 require 'set'
-require 'string'
 require 'tempfile'
+
+require_relative 'utilities/cli_parser'
+require_relative 'utilities/env_vars'
+require_relative 'utilities/git_processor'
+require_relative 'utilities/logging'
+require_relative 'utilities/macos'
+require_relative 'utilities/string'
 
 include Logging
 
@@ -263,7 +262,10 @@ else
     osx_defaults_ts = dotfiles_git.log_timestamp('scripts/osx-defaults.sh')
     backup_ts = home_git.log_timestamp(target_dir.to_s)
 
-    if osx_defaults_ts && backup_ts && backup_ts < osx_defaults_ts
+    # On FIRST_INSTALL, accept any backup even if outdated -- fresh-install already
+    # ran osx-defaults.sh -s to baseline current prefs, so the backup import is an
+    # incremental overlay. A stale backup is better than no backup on vanilla OS.
+    if osx_defaults_ts && backup_ts && backup_ts < osx_defaults_ts && !EnvVars.first_install?
       _abort_with_error(
         "Backup predates the last change to '#{'osx-defaults.sh'.cyan}' -- some settings added since may not be present. Run '#{'osx-defaults.sh -s'.cyan}' followed by '#{'capture-prefs.rb -e'.cyan}' on the source machine to refresh the backup first.",
         start_time

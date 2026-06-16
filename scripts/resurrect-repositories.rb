@@ -7,20 +7,17 @@
 # It assumes the following:
 #   1. Ruby language is present in the system prior to this script being run.
 
-# Ensure utilities/ is on the load path so 'require' works regardless of whether
-# RUBYLIB is set (e.g. during FIRST_INSTALL before .shellrc has been sourced).
-$LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
-
-require 'cli_parser'
-require 'collection_processor'
-require 'env_vars'
-require 'git_processor'
-require 'logging'
 require 'open3'
 require 'pathname'
 require 'set'
 require 'shellwords'
 require 'yaml'
+
+require_relative 'utilities/cli_parser'
+require_relative 'utilities/collection_processor'
+require_relative 'utilities/env_vars'
+require_relative 'utilities/git_processor'
+require_relative 'utilities/logging'
 
 include Logging
 

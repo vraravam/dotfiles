@@ -21,3 +21,12 @@ export OLLAMA_MAX_LOADED_MODELS=1
 
 # [Security] Only allow from localhost
 export OLLAMA_HOST=0.0.0.0:11434
+
+# Enable mlx on apple silicon
+OLLAMA_MLX=1
+
+
+# reference: https://youtu.be/BaAy1DodIcQ?t=368
+export ANTHROPIC_AUTH_TOKEN=ollama
+export ANTHROPIC_API_KEY=""
+export ANTHROPIC_BASE_URL=http//localhost:11434

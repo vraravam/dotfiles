@@ -19,15 +19,13 @@
 #   FILTER=oss run-all.rb find . -name "*.rb"
 #   FOLDER=/Users/me MAXDEPTH=5 run-all.rb git pull-safe
 
-$LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
-
 require 'open3'
 
-require 'cli_parser'
-require 'collection_processor'
-require 'env_vars'
-require 'git_workspace'
-require 'logging'
+require_relative 'utilities/cli_parser'
+require_relative 'utilities/collection_processor'
+require_relative 'utilities/env_vars'
+require_relative 'utilities/git_workspace'
+require_relative 'utilities/logging'
 
 include Logging
 

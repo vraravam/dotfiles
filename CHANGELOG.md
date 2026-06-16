@@ -3,6 +3,67 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 For those who follow this repo, here's the changelog for ease of adoption:
 
 
+### 3.1.26
+
+#### Tool-agnostic AI instruction system
+
+* *[.ai/]* (NEW) Centralized AI assistant instructions replacing tool-specific configs. Structure: `instructions.md` (main entry point with general rules, whitespace requirements, git state management), `context.md` (historical optimizations, performance patterns, debugging guidance), `domains/` (13 domain-specific rule files with YAML `applyTo` frontmatter). Total: 4,000+ lines of consolidated guidance.
+
+* *[.ai/domains/]* Domain files cover: `character-encoding.md` (ASCII-only requirements), `comment-philosophy.md` (cross-language comment guidelines), `edit-checklist.md` (complete edit workflow), `fresh-install.md` (bootstrap/setup rules), `git-config.md` (git aliases/config patterns), `logging-conventions.md` (unified color standard for shell+Ruby), `path-constants.md` (env var/path construction rules), `ruby-scripting.md` (Ruby script template, memoization, private methods), `script-depth-tracking.md` (nesting suppression + auto-indentation), `shell-scripting.md` (shell script template, option parsing, conditionals), `whitespace-rules.md` (formatting requirements), `zsh-startup.md` (startup performance optimization).
+
+* *[.cursorrules, .windsurfrules]* (NEW) Minimal redirects pointing to `.ai/instructions.md`. Replaced tool-specific duplication with single source of truth.
+
+* *[.github/copilot-instructions.md]* Reduced from 3,800+ lines to 6-line redirect to `.ai/instructions.md`. All rules migrated to domain files.
+
+* *[.opencode/opencode.json, .opencode/skills/dotfiles-domain/SKILL.md]* Updated to reference new `.ai/` structure. Skill now loads domain context instead of duplicating rules.
+
+#### Script improvements following new conventions
+
+* *[files/--ZDOTDIR--/.zshrc, .zshenv, .zlogin]* Applied whitespace rules (no trailing blank lines, no trailing whitespace, single final newline). Formatted with `shfmt`.
+
+* *[all ruby scripts]* Enforced private method discipline (`_` prefix + `private` declaration). Centralized `ENV.fetch` calls into `EnvVars` module. Applied Pathname optimization (defer `.to_s` until last moment). Fixed whitespace violations.
+
+* *[files/--HOME--/Brewfile]* Added `ollama` package.
+
+* *[files/--HOME--/.ollama/env]* (NEW) Ollama environment configuration with model storage path.
+
+* *[GettingStarted.md]* Updated documentation to reference new `.ai/` instruction structure.
+
+#### Fixed `set -E` ERR trap firing on normal `&&` conditionals during fresh-install
+
+* *[.shellrc]* Converted standalone `&&` chains and bare arithmetic/test expressions to explicit `if/return` blocks in all guard/early-return patterns to prevent ERR trap from firing when the conditional returns false in normal operation. Affected: logging functions (`success`, `info`, `warn`, `user_action`, `debug`), validation helpers (`_has_step_errors`, `_has_step_warnings`, `is_zero_string`, `is_non_zero_string`, `is_running_in_tty`, `is_zsh`, `is_arm`, `is_executable`, `is_symbolic_link`, `is_file`, `is_directory`, `is_empty_array`, `is_non_empty_array`, `is_file_older_than`, `is_macos`, `is_linux`, `is_first_install`, `is_windows`, `is_outermost_script`, `has_sudo_credentials`, `command_exists`, `join_array`, `is_non_empty_file`, `is_directory_empty`), file operations (`load_file_if_exists` now uses `|| warn` on source failures, `ensure_dir_exists` converted `||` mkdir pattern to explicit `if` block), git operations (`clone_repo_into`, `set_ssh_folder_permissions`), and re-source guards.
+
+* *[.aliases]* Converted re-source guard, DEBUG echo, and conditional alias assignments (`command_exists tool && alias`, `is_directory dir && alias`) to explicit `if` blocks. Fixed `is_first_install` flag assignments and `check_cask` brew command chains.
+
+* *[.zshenv, .zshrc, .zlogin]* Converted DEBUG echo `&&` chains to explicit `if` blocks. Fixed `find_in_folder_and_recompile` to ensure `XDG_CACHE_HOME` exists before touching sentinel file (prevents failure when directory doesn't exist on vanilla OS during first `load_zsh_configs` call).
+
+* *[fresh-install-of-osx.sh]* Converted biometric sensor flag assignments to explicit `if` blocks. Fixed `chsh` command to handle authentication failures gracefully with `_record_warning` instead of triggering ERR trap. Declared `_script_start_times` and `_step_start_times` arrays before using `+=` operator (prevents `set -u` violations). Moved Sol.app launch check to nested `if` blocks to avoid standalone `&&` chain abort. Modified `_clone_home_repo` to pull latest home repo changes on pre-configured machines before preferences restore. Added automatic preferences export and commit on pre-configured machines: runs `capture-prefs.rb -e` to refresh backup, then `git sci` to commit (amends existing commit if ahead of remote, creates new if not) - updates git commit timestamp so import validation passes.
+
+* *[osx-defaults.sh]* Converted spotlight indexing `mdutil` command chain to explicit `if` block.
+
+* *[files/--PERSONAL_PROFILES_DIR--/.envrc]* Converted symlink creation and folder move operations from chained `&&` to explicit `if` blocks.
+
+* *[scripts/utilities/cron.rb]* Changed `restore_cron` from raising exceptions to logging errors via `Logging.record_error` and returning boolean success/failure. Updated callers (`resume_cron`, `recron`) to check return value before printing success message. Prevents crontab installation failures from aborting fresh-install via ERR trap - errors are recorded in summary but execution continues.
+
+* *[capture-prefs.rb]* Added `FIRST_INSTALL` exception to timestamp validation check - skips staleness validation when `ENV['FIRST_INSTALL']` is set. On vanilla OS, fresh-install runs `osx-defaults.sh -s` first to baseline current system prefs, so import is an incremental overlay where any backup is better than none. On pre-configured machines, check remains active to prevent importing incomplete settings after `osx-defaults.sh` updates.
+
+**Root cause:** Under `set -E`, ERR traps inherit to all functions. Standalone `A && B` expressions where A returns false propagate exit code 1 to the enclosing scope, triggering the trap even though the false result is expected (e.g., guard conditions, optional file checks). Explicit `if A; then B; fi` never propagates the predicate's exit code, so the trap never fires. Ruby exceptions (`raise`) also propagate to shell as non-zero exit codes, triggering ERR traps when called via `ruby -e` from shell functions.
+
+**Impact:** Fresh-install now completes successfully on both vanilla OS and pre-configured machines without false-positive "Installation failed at line X" errors during `.zshrc` sourcing, when external completion files are loaded, when crontab installation fails, or when backup preferences predate `osx-defaults.sh` changes. On pre-configured machines, preferences backup is automatically refreshed and committed before import, ensuring timestamp validation passes.
+
+
+#### Adopting these changes
+
+* Review the new `.ai/` structure for comprehensive coding guidelines.
+* Rebase from upstream, resolve conflicts.
+* Run the following commands in each terminal tab/window/panel (or) Quit & Restart the Terminal application:
+
+  ```zsh
+  unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
+  unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
+  ```
+
+
 ### 3.1.25
 
 #### Converted `capture-prefs` to Ruby

@@ -15,11 +15,11 @@
 # https://blog.mattclemente.com/2020/06/26/oh-my-zsh-slow-to-load/
 
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
-[[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
+if [[ -n "${DEBUG:-}" ]]; then echo "loading ${0}"; fi
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
 # execute 'ZSH_PROFILE=true zsh -i -c exit' and run 'zprof' to get the details
-[[ -n "${ZSH_PROFILE:-}" ]] && zmodload zsh/zprof
+if [[ -n "${ZSH_PROFILE:-}" ]]; then zmodload zsh/zprof; fi
 
 # Re-source guard is inside .shellrc itself -- safe to call unconditionally.
 source "${HOME}/.shellrc"
@@ -85,10 +85,15 @@ zstyle ':omz:plugins:iterm2' shell-integration yes
 # correction: activated by lib/correction.zsh when ENABLE_CORRECTION is set
 export ENABLE_CORRECTION='true'
 
-# Ensure XDG_CACHE_HOME exists before any cache writes below.  When delete_caches removes ~/.cache,
+# Ensure XDG_CACHE_HOME exists before any cache writes below. When delete_caches removes ~/.cache,
 # the subsequent cache-write redirections (>|) silently fail and leave caches empty -- breaking fpath
 # updates and other lazy-loaded config that only runs through the cache file.
 ensure_dir_exists "${XDG_CACHE_HOME}"
+
+# Load zrecompile for cache bytecode compilation (used after each cache regeneration below).
+# Same tool as .zlogin uses for consistency.
+# <https://github.com/zimfw/zimfw/blob/master/login_init.zsh>
+autoload -Uz zrecompile
 
 # Cache brew shellenv to avoid running the brew binary on every shell startup (it's slow due to Ruby startup).
 # The cache is invalidated when the brew binary itself changes (i.e. after brew upgrades).
@@ -98,13 +103,10 @@ ensure_dir_exists "${XDG_CACHE_HOME}"
 () {
   local brew_bin="${HOMEBREW_PREFIX}/bin/brew"
   local brew_shellenv_cache="${XDG_CACHE_HOME}/brew-shellenv-cache.zsh"
-  # Use the brew binary's modification time as cache key (no need to run brew at all for the check)
-  if is_file_older_than "${brew_shellenv_cache}" "${brew_bin}"; then
-    # Skip cache generation if brew is not yet installed (e.g. vanilla OS first-install)
-    if ! is_executable "${brew_bin}"; then
-      load_file_if_exists "${brew_shellenv_cache}"
-      return
-    fi
+  # Regenerate cache only if brew is installed AND cache is stale/missing.
+  # Check brew executable first (faster) before the mtime comparison.
+  # Use the brew binary's modification time as cache key (no need to run brew at all for the check).
+  if is_executable "${brew_bin}" && is_file_older_than "${brew_shellenv_cache}" "${brew_bin}"; then
     # Run brew shellenv in a subshell to get brew vars + path_helper result without polluting current PATH
     local brew_cellar brew_repo brew_infopath brew_manpath brew_prefix
     eval "$("${brew_bin}" shellenv 2>/dev/null)"
@@ -125,6 +127,7 @@ ensure_dir_exists "${XDG_CACHE_HOME}"
       # typeset +x at the bottom of this file strips the export flag after all sources.
       echo "fpath=('${brew_prefix}/share/zsh/site-functions' \"\${fpath[@]}\");"
     } >|"${brew_shellenv_cache}" 2>/dev/null
+    recompile_zsh_script "${brew_shellenv_cache}"
   fi
   load_file_if_exists "${brew_shellenv_cache}"
 }
@@ -148,7 +151,7 @@ typeset -ga _compdef_queue=()
 compdef() { _compdef_queue+=("$*"); }
 
 # Pre-set git_version to skip the `git version` subprocess fork inside the OMZ git plugin.
-# git.plugin.zsh line 3 runs: git_version="${${(As: :)$(git version 2>/dev/null)}[3]}"
+# The git plugin parses git_version="${${(As: :)$(git version 2>/dev/null)}[3]}" at initialization
 # and uses it for 4 conditional alias decisions (thresholds 2.8, 2.13, 2.30).
 # Since git is always well above those thresholds on this machine, we cache the version
 # string keyed on the git binary mtime -- the same mtime-invalidation pattern used for
@@ -163,17 +166,29 @@ if (($+commands[git])); then
     if is_file_older_than "${git_version_cache}" "${git_bin}"; then
       local ver="${${(As: :)$(git version 2>/dev/null)}[3]}"
       echo "git_version=\"${ver}\"" >|"${git_version_cache}" 2>/dev/null
+      recompile_zsh_script "${git_version_cache}"
     fi
     load_file_if_exists "${git_version_cache}"
   }
 fi
 
-# Warn if plugins.txt is newer than the generated bundle -- a reminder to run
-# update_antidote_and_regenerate_plugin_bundle. Uses zsh's -nt (newer-than)
-# file test: pure built-in, no subprocess fork. Only fires when the user has
-# edited plugins.txt and not yet regenerated; silent on every normal startup.
-is_file_older_than "${ANTIDOTE_PLUGIN_ZSH}" "${ANTIDOTE_PLUGIN_TXT}" &&
-  warn "antidote: '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is newer than the bundle -- run '$(cyan 'update_antidote_and_regenerate_plugin_bundle')' manually to regenerate it."
+# Regenerate antidote bundle if plugins.txt is newer than the generated bundle.
+# Source .aliases to make the regeneration function available, then call it automatically.
+# The re-source guard in .aliases makes this safe even if .aliases loads again later via zsh-defer.
+if is_file "${ANTIDOTE_PLUGIN_ZSH}" && is_file "${ANTIDOTE_PLUGIN_TXT}"; then
+  if is_file_older_than "${ANTIDOTE_PLUGIN_ZSH}" "${ANTIDOTE_PLUGIN_TXT}"; then
+    load_file_if_exists "${HOME}/.aliases"
+    if (($+functions[update_antidote_and_regenerate_plugin_bundle])); then
+      info "antidote: '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is newer than the bundle -- regenerating automatically."
+      update_antidote_and_regenerate_plugin_bundle
+    elif is_file "${ANTIDOTE_PLUGIN_TXT}"; then
+      # Only warn if plugins.txt actually exists (not vanilla OS where both files are missing)
+      warn "antidote: '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is newer than the bundle -- run '$(cyan 'update_antidote_and_regenerate_plugin_bundle')' manually to regenerate it."
+    fi
+  fi
+else
+  warn "antidote: either '$(yellow "${ANTIDOTE_PLUGIN_ZSH}")' or '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' are not present - skipping regeneration"
+fi
 
 # Source the pre-generated antidote static bundle.
 # On a vanilla OS (before brew installs antidote) this file is present because
@@ -187,9 +202,11 @@ is_file_older_than "${ANTIDOTE_PLUGIN_ZSH}" "${ANTIDOTE_PLUGIN_TXT}" &&
 # Anonymous function scopes the LOCAL_OPTIONS change; this is a pure zsh file
 # (never bash-sourced), so () syntax is idiomatic and correct here.
 () {
-  setopt LOCAL_OPTIONS
-  unsetopt NOUNSET
-  load_file_if_exists "${ANTIDOTE_PLUGIN_ZSH}"
+  if is_file "${ANTIDOTE_PLUGIN_ZSH}"; then
+    setopt LOCAL_OPTIONS
+    unsetopt NOUNSET
+    load_file_if_exists "${ANTIDOTE_PLUGIN_ZSH}"
+  fi
 }
 
 # Activate mise -- the OMZ mise plugin referenced $ZSH_CACHE_DIR (undefined without OMZ)
@@ -217,6 +234,7 @@ if (($+commands[mise])); then
         mise activate zsh 2>/dev/null | /usr/bin/grep -v '^_mise_hook$'
         printf '%s\n' 'if (( $+functions[zsh-defer] )); then zsh-defer _mise_hook; else _mise_hook; fi'
       } >|"${mise_activate_cache}"
+      recompile_zsh_script "${mise_activate_cache}"
     fi
     load_file_if_exists "${mise_activate_cache}"
   }
@@ -238,7 +256,7 @@ fi
 if (($+commands[starship])); then
   # Anonymous function scopes starship cache locals; pure zsh file, () is idiomatic here.
   () {
-    # $commands[] is an O(1) zsh hash lookup - no subprocess fork needed.
+    # '$commands[]' is an O(1) zsh hash lookup - no subprocess fork needed.
     local starship_bin="${commands[starship]}"
     local starship_init_cache="${XDG_CACHE_HOME}/starship-init-cache.zsh"
     # Regenerate the cache only when the starship binary is newer than the cache file.
@@ -250,6 +268,7 @@ if (($+commands[starship])); then
       # outlier. The single-quoted form uses the same pattern as PROMPT/RPROMPT.
       starship init zsh 2>/dev/null | /usr/bin/grep -v '^PROMPT2=' >|"${starship_init_cache}"
       printf "PROMPT2='\$(%s prompt --continuation)'\n" "${starship_bin}" >>"${starship_init_cache}"
+      recompile_zsh_script "${starship_init_cache}"
     fi
     # Source directly at the top level (not deferred) so that 'setopt promptsubst'
     # emitted by the cache takes effect globally and is not scoped to a function.
@@ -257,50 +276,10 @@ if (($+commands[starship])); then
   }
 fi
 
-# User configuration
-# export MANPATH="/usr/local/man${MANPATH+:$MANPATH}"
-
-# You may need to manually set your language environment
-# export LANG=en_US.UTF-8
-
-unset GIT_EDITOR
-# SSH sessions fall back to vi; local sessions prefer GUI editors.
-# EDITOR always delegates to wait-editor, which re-execs $GIT_EDITOR via POSIX
-# word-splitting -- so '--wait' flags are passed correctly to GUI editors, and
-# vi (which blocks naturally) works without any special casing.
-if is_non_zero_string "${SSH_CONNECTION:-}"; then
-  preferred_editors=('vi')
-else
-  preferred_editors=('zed --wait' 'code --wait' 'vi')
-fi
-for editor in "${preferred_editors[@]}"; do
-  # ${editor%% *} strips everything after the first space -- pure zsh, no fork.
-  # (($+commands[...])) is a single O(1) hash probe; command_exists does 4.
-  # Safe here: .zshrc is zsh-only; all three candidates (zed, code, vi) are
-  # external binaries -- $+commands is the right table to probe.
-  if (($+commands[${editor%% *}])); then
-    export GIT_EDITOR="${editor}"
-    break
-  fi
-done
-unset preferred_editors editor
-# Safety net: if no editor was found in PATH (e.g. a stripped environment
-# where even vi is absent), fall back to vi unconditionally so GIT_EDITOR is
-# never left unset. wait-editor will fail clearly if vi is truly missing.
-if is_zero_string "${GIT_EDITOR:-}"; then
-  export GIT_EDITOR='vi'
-fi
-# EDITOR is always the wait-editor wrapper regardless of which editor was
-# selected -- set once here rather than repeating it in every branch above.
-export EDITOR='wait-editor'
-
-# For a full list of active aliases, run `alias`.
-
 # setup paths in the beginning so that all other conditions work correctly
 append_to_path_if_dir_exists "${PERSONAL_BIN_DIR}"
 append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
-# Note: Not sure if its a bug, but the first iterm tab alone has all the paths, but these are missing in subsequent tabs and new windows
-append_to_path_if_dir_exists '/usr/local/bin'
+# append_to_path_if_dir_exists '/usr/local/bin'
 append_to_path_if_dir_exists "${HOME}/.rd/bin"
 append_to_path_if_dir_exists "${HOME}/.cargo/bin"
 
@@ -329,21 +308,17 @@ _deferred_compinit() {
   # Remove stub; compinit will define the real compdef.
   unfunction compdef 2>/dev/null
   autoload -Uz compinit
-  local stale=0 dir
+  # Staleness check: dump missing OR any fpath dir newer than dump.
+  local dir
   if ! is_file "${ZSH_COMPDUMP}"; then
-    stale=1
-  else
-    # fpath now includes bundle entries -- staleness check is accurate.
-    for dir in "${fpath[@]}"; do
-      if [[ -d "${dir}" && "${dir}" -nt "${ZSH_COMPDUMP}" ]]; then
-        stale=1
-        break
-      fi
-    done
-  fi
-  if ((stale)); then
     compinit -d "${ZSH_COMPDUMP}"
   else
+    for dir in "${fpath[@]}"; do
+      if is_file_older_than "${ZSH_COMPDUMP}" "${dir}"; then
+        compinit -d "${ZSH_COMPDUMP}"
+        return
+      fi
+    done
     compinit -C -d "${ZSH_COMPDUMP}"
   fi
   # Replay compdef calls captured by the stub (e.g. from the deferred git plugin).
@@ -496,142 +471,6 @@ bindkey '\033[1;9C' forward-word
 # bindkey '^Xp' predict-on
 # bindkey '^X^P' predict-off
 
-if (($+commands[brew])); then
-  # Cache Homebrew bin/sbin and keg-only PATH/LDFLAGS/CPPFLAGS/PKG_CONFIG_PATH/MANPATH
-  # to avoid ~42 stat syscalls per interactive startup. Keyed on the mtime of
-  # ${HOMEBREW_PREFIX}/opt/ -- which changes on every brew install/remove -- so new
-  # keg-only installs are automatically reflected on the next shell start.
-  #
-  # All entries are built directly from the filesystem -- never derived from the current
-  # environment. This makes regeneration idempotent: running inside a shell that already
-  # has keg-only vars set (e.g. OpenCode inheriting the user's PATH) produces the same
-  # cache as running in a clean shell. The snapshot-and-delta approach this replaced was
-  # broken: a pre-populated PATH caused an empty delta (keg-only bins missing from cache)
-  # and inherited LDFLAGS caused doubled flags.
-  #
-  # Safe in all contexts: (($+commands[brew])) is zsh-only, but .zshrc is never
-  # sourced by bash. On vanilla OS, this runs during fresh-install after brew is
-  # installed -- the guard passes and keg-only paths are cached normally.
-  # Anonymous function scopes keg-only path computation locals; pure zsh file, () is idiomatic here.
-  () {
-    local keg_cache="${XDG_CACHE_HOME}/keg-only-paths-cache.zsh"
-    local opt_dir="${HOMEBREW_PREFIX}/opt"
-
-    # Cache hit: source pre-computed static exports -- zero stat calls.
-    # Inverted logic: is_file_older_than returns true when regeneration needed, so negate it.
-    if ! is_file_older_than "${keg_cache}" "${opt_dir}"; then
-      load_file_if_exists "${keg_cache}"
-      return
-    fi
-
-    # Cache absent or stale: enumerate each keg-only package's directories directly.
-    # keg_paths/keg_manpath are built with prepend semantics so the last-processed
-    # package's entries appear first (highest PATH priority). Within each package,
-    # gnubin is prepended last so it wins over libexec/bin which wins over bin.
-    # ldflags_new/cppflags_new/pkgconfig_new accumulate only keg-only contributions
-    # (not inherited environment values) -- the keg-only block is their sole setter
-    # during startup, so these can be safely overwritten in the cache.
-    local -a keg_paths=()
-    local -a keg_manpath=()
-    local ldflags_new=''
-    local cppflags_new=''
-    local pkgconfig_new=''
-
-    # Named function required -- anonymous () cannot be called repeatedly in a loop.
-    # Unfunctioned immediately after use to prevent global namespace pollution
-    # (named functions defined inside () persist in the global table after return).
-    _keg_collect() {
-      local d="${HOMEBREW_PREFIX}/opt/${1}"
-      if ! is_directory "${d}"; then return 0; fi
-      if is_directory "${d}/bin"; then keg_paths=("${d}/bin" "${keg_paths[@]}"); fi
-      if is_directory "${d}/libexec/bin"; then keg_paths=("${d}/libexec/bin" "${keg_paths[@]}"); fi
-      if is_directory "${d}/libexec/gnubin"; then keg_paths=("${d}/libexec/gnubin" "${keg_paths[@]}"); fi
-      if is_directory "${d}/libexec/gnuman"; then keg_manpath=("${d}/libexec/gnuman" "${keg_manpath[@]}"); fi
-      if is_directory "${d}/lib"; then ldflags_new="-L${d}/lib${ldflags_new:+ ${ldflags_new}}"; fi
-      if is_directory "${d}/include"; then cppflags_new="-I${d}/include${cppflags_new:+ ${cppflags_new}}"; fi
-      if is_directory "${d}/lib/pkgconfig"; then pkgconfig_new="${d}/lib/pkgconfig${pkgconfig_new:+:${pkgconfig_new}}"; fi
-    }
-    local pkg
-    for pkg in 'curl' 'gnu-tar' 'grep' 'sqlite' 'zlib'; do
-      _keg_collect "${pkg}"
-    done
-    if is_directory "${HOMEBREW_PREFIX}/opt/openssl@3"; then
-      _keg_collect 'openssl@3'
-      export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${HOMEBREW_PREFIX}/opt/openssl@3"
-    fi
-    unfunction _keg_collect
-
-    # Homebrew base bin/sbin appended after keg-only entries so keg-only tools take
-    # priority. sbin is placed before bin to match the original prepend sequence
-    # (bin prepended first, sbin prepended second → sbin ends up in front of bin).
-    # /etc/paths.d/homebrew pre-populates /opt/homebrew/bin at a low priority position;
-    # it is re-added here at the front. typeset -gU path at the bottom removes the dup.
-    # Desired order: mise (_mise_hook via zsh-defer) > keg-only > homebrew base > system.
-    local -a hb_base=()
-    if is_directory "${HOMEBREW_PREFIX}/bin"; then hb_base+=("${HOMEBREW_PREFIX}/bin"); fi
-    if is_directory "${HOMEBREW_PREFIX}/sbin"; then hb_base=("${HOMEBREW_PREFIX}/sbin" "${hb_base[@]}"); fi
-
-    # homebrew share/man after keg-only gnuman entries.
-    if is_directory "${HOMEBREW_PREFIX}/share/man"; then keg_manpath+=("${HOMEBREW_PREFIX}/share/man"); fi
-
-    local -a all_path_entries=("${keg_paths[@]}" "${hb_base[@]}")
-
-    # Apply to the current session.
-    if is_non_empty_array all_path_entries; then path=("${all_path_entries[@]}" "${path[@]}"); fi
-    if is_non_empty_array keg_manpath; then manpath=("${keg_manpath[@]}" "${manpath[@]}"); fi
-    if is_non_zero_string "${ldflags_new}"; then export LDFLAGS="${ldflags_new}"; fi
-    if is_non_zero_string "${cppflags_new}"; then export CPPFLAGS="${cppflags_new}"; fi
-    if is_non_zero_string "${pkgconfig_new}"; then export PKG_CONFIG_PATH="${pkgconfig_new}"; fi
-
-    # Write static cache. Path/manpath entries are quoted for safe embedding.
-    # LDFLAGS/CPPFLAGS/PKG_CONFIG_PATH are written as plain overwrites (no
-    # ${LDFLAGS} expansion) -- they contain only keg-only contributions and are
-    # safe to overwrite because nothing else in the startup sequence sets them.
-    {
-      local -a qpaths=() qmanpath=()
-      local entry
-      for entry in "${all_path_entries[@]}"; do qpaths+=("${(q)entry}"); done
-      for entry in "${keg_manpath[@]}"; do qmanpath+=("${(q)entry}"); done
-      if is_non_empty_array qpaths; then
-        printf 'path=(%s "${path[@]}")\n' "${qpaths[*]}"
-      fi
-      if is_non_empty_array qmanpath; then
-        printf 'manpath=(%s "${manpath[@]}")\n' "${qmanpath[*]}"
-      fi
-      if is_non_zero_string "${ldflags_new}"; then
-        printf 'export LDFLAGS=%s\n' "${(q)ldflags_new}"
-      fi
-      if is_non_zero_string "${cppflags_new}"; then
-        printf 'export CPPFLAGS=%s\n' "${(q)cppflags_new}"
-      fi
-      if is_non_zero_string "${pkgconfig_new}"; then
-        printf 'export PKG_CONFIG_PATH=%s\n' "${(q)pkgconfig_new}"
-      fi
-      if is_non_zero_string "${RUBY_CONFIGURE_OPTS:-}"; then
-        printf 'export RUBY_CONFIGURE_OPTS=%s\n' "${(q)RUBY_CONFIGURE_OPTS}"
-      fi
-    } >|"${keg_cache}" 2>/dev/null
-  }
-fi
-
-# Make VSCodium use the VS Code marketplace
-if (($+commands[codium])); then
-  export VSCODE_GALLERY_SERVICE_URL='https://marketplace.visualstudio.com/_apis/public/gallery'
-  export VSCODE_GALLERY_CACHE_URL='https://vscode.blob.core.windows.net/gallery/index'
-  export VSCODE_GALLERY_ITEM_URL='https://marketplace.visualstudio.com/items'
-  export VSCODE_GALLERY_CONTROL_URL=''
-  export VSCODE_GALLERY_RECOMMENDATIONS_URL=''
-fi
-
-# Use bat to colorize man pages
-if (($+commands[bat])); then
-  export MANPAGER="sh -c 'col -bx | bat -l man -p'"
-fi
-
-# defines word-boundaries: ensures that deleting word on /path/to/file deletes only 'file' and not the directory, this removes the '/' from $WORDCHARS
-export WORDCHARS="${WORDCHARS:s#/#}"
-export WORDCHARS="${WORDCHARS:s#.#}"
-
 # Enable LSP Tools (used for clause-code)
 # export ENABLE_LSP_TOOLS=1
 
@@ -661,7 +500,7 @@ if is_directory "${XDG_CONFIG_HOME}/zsh"; then
     setopt localoptions NULL_GLOB
     local func_file
     for func_file in "${XDG_CONFIG_HOME}"/zsh/*; do
-      if [[ "${func_file:e}" == "" ]]; then
+      if is_zero_string "${func_file:e}"; then
         autoload -Uz "${func_file:t}"
       fi
     done
@@ -692,7 +531,7 @@ typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPAT
 # environment, where they are inherited by every new shell before any rc file runs.
 # All other *path vars in the typeset -gU line above (PATH, MANPATH, INFOPATH, CPPFLAGS,
 # LDFLAGS, PKG_CONFIG_PATH) are intentionally exported -- child processes need them.
-typeset +x FPATH fpath cdpath CDPATH
+typeset +x FPATH fpath CDPATH cdpath
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
 # execute 'ZSH_PROFILE=true zsh' and run 'zprof' to get the details

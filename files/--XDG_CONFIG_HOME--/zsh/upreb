@@ -40,7 +40,6 @@ _upreb() {
         git -C "${dir}" rebase @{u} || true
       fi
       git -C "${dir}" push || true
-      echo "$(red "$(print_chars_for_length '-' $COLUMNS)")"
     done
   fi
 }

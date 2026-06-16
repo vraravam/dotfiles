@@ -38,7 +38,7 @@ auto='N'
 ask() {
   local prompt default yn=''
   while true; do
-    case "${2}" in
+    case "${2:-}" in
       'Y')
         prompt="$(green 'Y')/n"
         default='Y'
@@ -53,7 +53,7 @@ ask() {
         ;;
     esac
 
-    printf "%s" "${1} [${prompt}] "
+    printf "%s" "${1:-} [${prompt}] "
 
     if [[ "${auto}" == 'Y' ]]; then
       echo
@@ -2193,7 +2193,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   done
 
   # Turn off spotlight indexing for all volumes (to pre-empt any issues with the system settings pane)
-  sudo mdutil -Eda &>/dev/null && sudo mdutil -ai off &>/dev/null
+  if sudo mdutil -Eda &>/dev/null; then
+    sudo mdutil -ai off &>/dev/null || true
+  fi
 
   user_action "Grant Full Disk Access to 'Terminal' and 'iTerm': System Settings → Privacy & Security → Full Disk Access → add 'Terminal.app' and 'iTerm.app' (cannot be automated -- TCC is SIP-protected)."
   user_action "Manually adjust the Finder sidebar content (which folders appear in Favorites): stored in LSSharedFileList binary files -- not scriptable via defaults."

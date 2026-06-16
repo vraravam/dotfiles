@@ -9,11 +9,9 @@
 #
 # Usage: add-upstream-git-config.rb -d <dir> -u <upstream-owner>
 
-$LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
-
-require 'cli_parser'
-require 'git_processor'
-require 'logging'
+require_relative 'utilities/cli_parser'
+require_relative 'utilities/git_processor'
+require_relative 'utilities/logging'
 
 include Logging
 

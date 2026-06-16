@@ -1,10 +1,32 @@
-# Dotfiles Repository — Unified Model Instructions
+# Dotfiles Repository — Tool-Agnostic AI Instructions
 
-This file contains the same rules and guidance as the original
-[`copilot-instructions.md`](./copilot-instructions.md) but adjusted to the
-semantic names and tool availability used by the GPT model.  The core logic
-remains unchanged – only the tool names that appear in the instructions are
-updated where necessary.
+## Quick Reference to Detailed Rules
+
+All domain-specific rules are in [`domains/`](./domains/):
+
+| Domain | File | Coverage |
+|--------|------|----------|
+| Character encoding | [`character-encoding.md`](./domains/character-encoding.md) | All cross-language scripts and configuration files (ASCII-only requirements) |
+| Edit checklist | [`edit-checklist.md`](./domains/edit-checklist.md) | All cross-language scripts and configuration files (edit workflow) |
+| Fresh install | [`fresh-install.md`](./domains/fresh-install.md) | `fresh-install-of-osx.sh`, `install-dotfiles.rb`, `post-brew-install.rb`, `osx-defaults.sh`, `setup-login-item.sh`, `capture-prefs.rb`, `resurrect-repositories.rb` |
+| Git config | [`git-config.md`](./domains/git-config.md) | `.gitconfig`, git aliases, `.gitattributes` |
+| Logging conventions | [`logging-conventions.md`](./domains/logging-conventions.md) | All cross-language scripts (logging/color rules) |
+| Path constants | [`path-constants.md`](./domains/path-constants.md) | All cross-language scripts (path/env var rules) |
+| Ruby scripting | [`ruby-scripting.md`](./domains/ruby-scripting.md) | All `.rb` files |
+| Script depth tracking | [`script-depth-tracking.md`](./domains/script-depth-tracking.md) | All cross-language scripts using deferred error collection |
+| Shell scripting | [`shell-scripting.md`](./domains/shell-scripting.md) | All `.sh`, `.zsh`, `.bash`, `.shellrc`, `.aliases`, `.envrc`, zsh autoload functions |
+| Zsh startup | [`zsh-startup.md`](./domains/zsh-startup.md) | `.zshenv`, `.zshrc`, `.zprofile`, `.zlogin`, zsh config directory |
+
+**Tool-agnostic design**: These files use standard markdown with YAML frontmatter (`applyTo` patterns).
+Any AI assistant can parse them. See [`README.md`](./README.md) for details on the `.ai/` folder convention.
+
+---
+
+## About This File
+
+This is the main entry point for all AI coding assistants working on this repository.
+Tool-specific configs (`.github/copilot-instructions.md`, `.cursorrules`, `.windsurfrules`, etc.)
+are minimal redirects that point here.
 
 ---
 

@@ -16,11 +16,16 @@
 ################################################################################
 
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
-[[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
+if [[ -n "${DEBUG:-}" ]]; then echo "loading ${0}"; fi
 
 # Load the .shellrc here - just to define some env vars that we need before zsh lifecycle kicks in.
 # Re-source guard is inside .shellrc itself -- safe to call unconditionally.
 source "${HOME}/.shellrc"
+
+# zsh/datetime provides $EPOCHSECONDS and strftime -- used by current_timestamp,
+# current_date, current_timestamp_for_filename, format_duration, step_start/end,
+# and print_script_start/duration defined in .shellrc.
+zmodload zsh/datetime
 
 skip_global_compinit=1
 

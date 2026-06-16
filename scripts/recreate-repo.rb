@@ -10,15 +10,13 @@
 #
 # Usage: recreate-repo.rb [-f] -d <repo-dir>
 
-$LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
-
-require 'cli_parser'
-require 'cron'
-require 'env_vars'
-require 'git_processor'
-require 'keybase'
-require 'logging'
-require 'macos'
+require_relative 'utilities/cli_parser'
+require_relative 'utilities/cron'
+require_relative 'utilities/env_vars'
+require_relative 'utilities/git_processor'
+require_relative 'utilities/keybase'
+require_relative 'utilities/logging'
+require_relative 'utilities/macos'
 
 include Logging
 

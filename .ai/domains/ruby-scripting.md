@@ -1,0 +1,1560 @@
+---
+applyTo: "**/*.rb"
+---
+
+# Ruby Script Instructions
+
+> Part of the [tool-agnostic instruction set](../instructions.md) for this repository.
+
+Apply these rules when writing or editing any Ruby script in this repository.
+
+## Script Template
+
+**`$PERSONAL_BIN_DIR` scripts** -- use `require_relative` (idiomatic Ruby):
+
+```ruby
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'pathname'                                     # stdlib
+require_relative '../../../.config/dotfiles/scripts/utilities/logging'
+require_relative '../../../.config/dotfiles/scripts/utilities/cli_parser'
+
+include Logging
+
+# ---------------------------------------------------------------------------
+# Constants
+
+# ---------------------------------------------------------------------------
+# Main
+
+options = {}
+parser = CliParser.parse('<folder>') do |opts|
+  opts.separator 'One-line description of what this script does.'
+  opts.separator ''
+  opts.separator 'Arguments:'.purple
+  opts.separator "  #{'<folder>'.yellow}  Target folder"
+  opts.separator ''
+  opts.separator 'Options:'.purple
+  opts.on('-f', '--flag', 'Enable flag') { options[:flag] = true }
+  opts.separator ''
+  opts.separator "  eg: #{File.basename(__FILE__).cyan} /path/to/folder"
+end
+
+folder = ARGV.first
+if nil_or_empty?(folder)
+  parser.abort_with_usage('Missing required argument: <folder>')
+end
+
+Logging.section_header('Script Name')
+# increment_script_depth increments _DOTFILES_SCRIPT_DEPTH and registers an
+# at_exit hook to decrement it on exit (clean or error). Mirrors the shell
+# export + trap pattern. Must be called before print_script_start.
+Logging.increment_script_depth
+# print_script_start returns the Unix epoch of the logged timestamp so both the
+# displayed time and the in-memory start time are identical -- no two-call pattern.
+# This deviates from the shell version, which cannot return a value.
+script_start_time = Logging.print_script_start
+
+# ... main logic ...
+
+# Passing start_time to print_script_summary causes it to call print_script_duration
+# internally -- no separate call needed. This deviates from the shell version where
+# print_script_summary cannot access the start time (shell functions cannot return
+# values to be threaded through). Omit the argument only on early-exit paths inside
+# methods that cannot access the top-level start-time local.
+Logging.print_script_summary(script_start_time)
+```
+
+**`$DOTFILES_DIR/scripts/` scripts** -- use `require_relative` (idiomatic Ruby):
+
+```ruby
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'pathname'                           # stdlib
+require_relative 'utilities/logging'         # internal
+require_relative 'utilities/cli_parser'      # internal
+
+include Logging
+
+# ... rest follows the same structure as above ...
+```
+
+## Logging
+
+```ruby
+Logging.info    "message"    # informational
+Logging.success "message"    # success
+Logging.warn    "message"    # warning
+Logging.error   "message"    # prints error and raises RuntimeError -- callers must rescue if execution should continue
+Logging.debug   "message"    # debug
+Logging.user_action "message"  # manual step the user must perform after the script exits
+
+# NEVER use Ruby stdlib warn
+warn "message"               # BAD -- use Logging.warn instead
+```
+
+The log levels mirror the shell functions in `.shellrc`. Use the same
+classification rules across both shell and Ruby.
+
+See [`logging-conventions.md`](./logging-conventions.md) for complete rules on:
+- Message prefixes (`[script][section]`) for RCA
+- Deferred error/warning collection
+- Color standards
+
+| Level | When to use |
+|---|---|
+| `debug` | Expected-absent tools or optional steps silently skipped (e.g. "binary not found -- skipping"). Hidden by default. |
+| `info` | Normal progress and idempotency guards ("already configured -- skipping"). |
+| `success` | An operation completed successfully. |
+| `warn` | Argument-parsing failures followed by `abort`; non-fatal operation failures where execution continues (e.g. rescue blocks that log and move on). |
+| `error` | Unexpected operation failures. Raises `RuntimeError` -- callers must `rescue` if processing should continue for remaining items. |
+| `user_action` | Manual steps the user must perform after the script (restart an app, run a command, open a URL). |
+
+### Deferred Error/Warning Collection
+
+`record_warning` and `record_error` mirror `_record_warning` / `_record_error`
+from `.shellrc`. Each entry is prefixed with `[script_name][current_section]`
+for traceability. Pass `start_time` to `print_script_summary` at the end of the
+script -- it prints collected issues and calls `print_script_duration` internally.
+Set `Logging.current_section = 'name'` to track which logical step is executing
+-- mirrors `_current_section` in shell scripts.
+
+Call `Logging.increment_script_depth` once before `print_script_start`. It
+increments `ENV['_DOTFILES_SCRIPT_DEPTH']` and registers an `at_exit` hook that
+decrements it on both clean and error exits -- the exact mirror of the shell
+increment + EXIT trap pair. `print_script_start` and `print_script_summary` gate
+their output on `outermost_script?` (`depth <= 1`), so nested subprocess scripts
+stay silent and only the outermost script prints its banners and summary.
+
+```ruby
+Logging.increment_script_depth
+script_start_time = Logging.print_script_start
+
+Logging.current_section = 'Checking dependencies'
+Logging.record_warning "optional tool missing -- some features disabled"
+Logging.record_error   "required env var FOO is not set"
+
+# At end of script -- duration is printed internally; no separate call needed:
+Logging.print_script_summary(script_start_time)
+```
+
+No macOS notification is sent from Ruby -- `osascript` is not appropriate for
+library code. Scripts that need a notification must handle it themselves.
+
+## Script Depth Tracking
+
+See [`script-depth-tracking.md`](./script-depth-tracking.md) for complete details on `_DOTFILES_SCRIPT_DEPTH`.
+
+**Quick summary for Ruby**:
+- Increment: `Logging.increment_script_depth` (registers `at_exit` hook automatically)
+- Dual purpose: nesting suppression (outermost only prints banners) + auto-indentation (2 spaces per depth)
+- Never manually indent log messages
+- External tool output intentionally unindented
+
+### Argument-parse failures -- use `warn`, not `error`
+
+```ruby
+if nil_or_empty?(options[:required])
+  parser.abort_with_usage('Missing required argument.')
+end
+```
+
+`error` raises `RuntimeError`. For arg-parse failures, prefer
+`parser.abort_with_usage` (which calls `abort`) -- it prints usage and exits
+cleanly without raising. Reserve `error` for unexpected failures mid-execution.
+
+### Idempotency guard messages -- use `info`, not `warn`
+
+```ruby
+if File.exist?(target)
+  Logging.info "#{target} already exists -- skipping."
+else
+  # create ...
+end
+```
+
+### Action items for the user -- use `user_action`, not `warn`
+
+```ruby
+Logging.user_action "Restart the app to apply changes."
+Logging.user_action "Run 'bupc' to update Homebrew packages."
+```
+
+## Path Constants
+
+See [`path-constants.md`](./path-constants.md) for complete rules on environment variables, path construction, and avoiding hardcoded paths.
+
+**Quick summary for Ruby**:
+- Use `EnvVars::CONSTANT` (returns Pathname objects)
+- Use `Pathname#join()` to build paths
+- **Defer `.to_s` until the last possible moment** (system calls, string manipulation, color methods)
+- Keep Pathname throughout: function params, return values, local variables
+- String interpolation auto-converts: `"#{EnvVars::HOME}"` works
+- Never hardcode derived paths: use `EnvVars::XDG_CONFIG_HOME` not `HOME.join('.config')`
+- Use `PathUtils::ROOT` for filesystem root
+
+## Option Parsing -- Use `CliParser`
+
+Always use `CliParser.parse` (from `utilities/cli_parser.rb`) for all CLI
+option parsing -- never raw `OptionParser` or manual `ARGV` shifting.
+`CliParser.parse` is the Ruby equivalent of `getopts` in shell scripts.
+
+`CliParser.parse` automatically:
+- Formats the usage banner as `Usage: <script>.cyan <banner>.yellow`
+- Adds `-h`/`--help` (prints usage and exits)
+- Rescues `InvalidOption` / `MissingArgument` and calls `abort_with_usage`
+
+```ruby
+require 'cli_parser'
+
+options = {}
+parser = CliParser.parse('<folder> [options]') do |opts|
+  opts.separator 'Arguments:'.purple
+  opts.separator "  #{'<folder>'.yellow}  Target folder to process"
+  opts.separator ''
+  opts.separator 'Options:'.purple
+  opts.on('-f', '--flag', 'Enable flag behaviour') { options[:flag] = true }
+  opts.on('-v', '--value VALUE', 'Required value')  { |v| options[:value] = v }
+end
+
+# Guard required positional args (not caught by OptionParser automatically)
+if nil_or_empty?(ARGV.first)
+  parser.abort_with_usage('Missing required argument: <folder>')
+end
+```
+
+Rules:
+- Pass a **positional arg summary** as the banner string (e.g. `'<folder>'`,
+  `'<old> <new> [options]'`). This appears after the script name in the usage
+  line.
+- Use `opts.separator 'Label:'.purple` for section headings inside the help
+  block.
+- Use `'<placeholder>'.yellow` for argument names in separator lines.
+- Use `parser.abort_with_usage('message')` for post-parse validation failures
+  (missing required positional args, conflicting flags, etc.). This prints the
+  message via `Logging.warn` followed by the full usage, then exits 1.
+- Do NOT add `-h`/`--help` manually -- `CliParser.parse` adds it automatically.
+
+### Usage block structure
+
+The body of `CliParser.parse` follows a fixed layout:
+
+```ruby
+parser = CliParser.parse('<old> <new> [options]') do |opts|
+  # 1. One-line description of what the script does (no label)
+  opts.separator 'Renames all files ending with <old> suffix to <new>.'
+  opts.separator ''
+
+  # 2. Arguments section -- positional args only
+  opts.separator 'Arguments:'.purple
+  opts.separator "  #{'<old>'.yellow}  Original suffix to remove"
+  opts.separator "  #{'<new>'.yellow}  Replacement suffix to add"
+  opts.separator ''
+
+  # 3. Options section -- flags/switches only (omit if no flags)
+  opts.separator 'Options:'.purple
+  opts.on('-r', '--recursive', 'Recurse into subdirectories') { options[:recursive] = true }
+  opts.separator ''
+
+  # 4. Example line -- always last, uses File.basename(__FILE__).cyan
+  opts.separator "  eg: #{File.basename(__FILE__).cyan} -compressed ''"
+end
+```
+
+Rules for the usage block:
+- **Description first** -- a plain `opts.separator` sentence before any labelled
+  section. Omit if `CliParser.parse`'s banner string is already self-explanatory.
+- **`Arguments:`.purple** -- list every positional arg with `'<name>'.yellow` and
+  a short description. Omit section entirely if the script takes no positional args.
+- **`Options:`.purple** -- list every flag with `opts.on`. Omit section entirely if
+  there are no flags (do not emit an empty `'Options:'.purple` heading).
+- **`eg:` line last** -- always use `File.basename(__FILE__).cyan` for the script
+  name so the example stays correct if the file is renamed.
+
+## Quoting
+
+Prefer **single quotes** for static strings with no interpolation. Use **double
+quotes** only when the string contains `#{}` interpolation or escape sequences
+(`\n`, `\t`, etc.):
+
+```ruby
+# Good -- single quotes for static strings
+sep = '------'
+raise 'File not found'
+Logging.info 'Already installed -- skipping.'
+
+# Good -- double quotes when interpolating
+Logging.info "Processing #{repo_name}"
+msg = "Done: #{count} files"
+
+# BAD -- double quotes on strings with no interpolation (unnecessary)
+sep = "------"
+raise "File not found"
+```
+
+## Exit Points -- Single Exit at End of Script
+
+**All Ruby scripts must have a single exit point at the end of the script.**
+
+This rule applies primarily to scripts that **process multiple items** (repos, files, etc.). Never call `exit()` in the middle of a processing loop. Instead:
+1. Use flags or variables to track failure state
+2. Let the script run to completion
+3. Call `exit(code)` once at the very end based on accumulated state
+
+```ruby
+# BAD -- exits in middle of processing loop
+process_items.each do |item|
+  if item.invalid?
+    warn "Invalid: #{item}"
+    exit(1)  # BAD -- prevents processing remaining items
+  end
+end
+
+# Good -- single exit at end, all items processed
+@has_failures = false
+
+process_items.each do |item|
+  if item.invalid?
+    warn "Invalid: #{item}"
+    @has_failures = true
+  end
+end
+
+# Single exit point at end of script
+exit(1) if @has_failures
+```
+
+**Why this matters:**
+- **Nested script safety**: When called from another script (e.g., in a loop), premature `exit()` terminates the entire subprocess, making exit code checking work correctly
+- **Process all items**: Users expect all items to be processed, not just up to the first failure
+- **Complete summaries**: Allows printing a full summary of all successes and failures at the end
+- **Predictable cleanup**: `at_exit` hooks and ensure blocks run reliably
+- **Better debugging**: Single exit point makes control flow explicit
+
+**Exceptions:**
+
+1. **Help/usage output**: Scripts that print help and exit (e.g., `ARGV.first == '-h'` or `ARGV.empty?`) may call `exit(0)` directly -- these are not processing failures, just usage information requests:
+
+```ruby
+# Allowed -- help flag exits immediately
+if ARGV.empty? || ARGV.first == '-h' || ARGV.first == '--help'
+  puts "Usage: #{File.basename(__FILE__)} <command...>"
+  exit 0  # OK -- just printing usage
+end
+```
+
+2. **Precondition validation**: `error()` (which raises) or `parser.abort_with_usage` are allowed for argument validation and precondition checks at the top of the script -- these are immediate user errors that should abort before any work begins:
+
+```ruby
+# Allowed -- precondition checks before processing
+unless GitProcessor.repo?(folder)
+  error "'#{folder}' is not a git repo. Aborting."
+end
+
+folder = ARGV.first
+if nil_or_empty?(folder)
+  parser.abort_with_usage('Missing required argument: <folder>')
+end
+
+# ... rest of script processes normally ...
+# Single exit at end
+exit(1) if @has_failures
+```
+
+2. **Fatal mid-operation errors**: Single-item scripts (not processing loops) may use `error()` for truly unrecoverable failures where continuing would cause data corruption. But prefer tracking state and exiting cleanly when possible.
+
+**Summary:** The rule targets scripts that process multiple items. For those, never exit in the middle of the loop. For help/usage, validation, and single-item operations, early exit is acceptable.
+
+## Internal Helpers -- Private Methods
+
+All top-level helper methods in scripts that are not part of the main execution
+flow must be marked `private` and prefixed with `_`:
+
+```ruby
+# BAD -- helper not marked private, no _ prefix
+def read_pattern_file(file)
+  # ...
+end
+
+def process_item(item)
+  # ...
+end
+
+# main execution
+items.each { |item| process_item(item) }
+
+# Good -- helpers marked private with _ prefix
+def _read_pattern_file(file)
+  # ...
+end
+
+def _process_item(item)
+  # ...
+end
+
+private :_read_pattern_file, :_process_item
+
+# main execution
+items.each { |item| _process_item(item) }
+```
+
+Rules:
+- **All** helper methods that are not the main entry point must be prefixed with `_`
+- **All** methods prefixed with `_` must be explicitly marked `private`
+- Place the `private` declaration immediately after the last helper method definition
+- List all private methods on one or more lines (comma-separated)
+- Main execution code (option parsing, main logic) comes after the `private` declaration
+
+Exception: Very short scripts (< 50 lines) with a single helper may omit the
+`private` declaration if the `_` prefix makes the intent clear, but prefer
+being explicit.
+
+### Scan Rule: Check for Missing Private Declarations
+
+When editing any Ruby script, scan for helper methods that should be private:
+
+1. **Find all method definitions**: `grep -n "^def " <script.rb>`
+2. **Identify helpers**: Methods called from main execution but not the entry point
+3. **Check each helper**:
+   - Does it have `_` prefix? If not, rename it
+   - Is it listed in a `private` declaration? If not, add it
+4. **Update all call sites** to use the `_` prefixed name
+5. **Add/update `private` declaration** immediately after the last helper definition
+
+Common patterns requiring private helpers:
+- Methods called from option parsing or main execution block
+- Methods called in loops (`each`, `map`, etc.) over collections
+- Memoized query methods (`_exporting?`, `_importing?`, `_run_all_available?`)
+- File loaders, validators, formatters called by main logic
+
+Example scan:
+```bash
+# Find public helpers (methods without _ prefix)
+grep "^def [^_]" scripts/my-script.rb
+# → Should only show the script's entry point (if any)
+# → Everything else needs _ prefix + private declaration
+```
+
+When you find a helper without `_` prefix or `private` declaration, fix it
+immediately before proceeding with other changes.
+
+## Unified Color Standard (Ruby + Shell)
+
+**See [`logging-conventions.md`](./logging-conventions.md) for the complete unified color standard.**
+
+That file documents:
+- Color classification rules (paths, commands, components, booleans, counts, etc.)
+- Application guidelines
+- Language-specific syntax (Ruby vs shell)
+- Deferred error/warning collection
+- Script depth tracking
+- Message prefixes
+
+The rules apply equally to Ruby and shell scripts for consistency across the codebase.
+
+## Comment Philosophy
+
+See [`comment-philosophy.md`](./comment-philosophy.md) for complete rules,
+rationale, and examples, including comment format conventions.
+
+## Character Encoding and Punctuation
+
+See [`character-encoding.md`](./character-encoding.md) for complete rules on ASCII-only requirements, Unicode restrictions, and allowed exceptions.
+
+## Formatting After Every Edit
+
+After every edit to a Ruby script, follow the complete workflow in [`edit-checklist.md`](./edit-checklist.md).
+
+Quick summary for Ruby scripts:
+1. Verify decision-making philosophy
+2. Verify Ruby 2.6 compatibility (no endless range, pattern matching, etc.)
+3. Syntax check: `/usr/bin/ruby -c <file>`
+4. Format: `cd "${HOME}" && rufo <file>` (must run from `$HOME`, not `$DOTFILES_DIR`)
+5. Verify whitespace rules (see [`whitespace-rules.md`](./whitespace-rules.md))
+6. Ensure executable permission if in bin directory: `chmod +x <file>`
+
+## Version Compatibility
+
+All Ruby scripts in `$DOTFILES_DIR/scripts/` (including `utilities/`) must be
+compatible with **Ruby 2.6** (the system Ruby available on a vanilla macOS).
+Scripts in `$PERSONAL_BIN_DIR` may target newer versions but prefer 2.6 compat.
+
+Do NOT use:
+- Endless range `(1..)` -- use `(1..Float::INFINITY)` or avoid
+- Pattern matching (`case x in`) -- Ruby 3.0+
+- Numbered block parameters (`_1`, `_2`) -- Ruby 2.7+
+- Rightward assignment (`=> variable`) -- Ruby 3.0+
+- Hash shorthand syntax (`{x:, y:}`) -- Ruby 3.1+
+
+### Verification
+
+After editing any Ruby file, verify it parses with Ruby 2.6:
+
+```bash
+/usr/bin/ruby -c path/to/script.rb
+```
+
+This command must succeed with no syntax errors. Run it before formatting.
+
+## Requires
+
+Only `require` what you directly use. Do not transitively pre-load:
+
+```ruby
+# BAD in logging.rb -- hash_ext is not used here, push to caller
+require 'hash_ext'
+
+# Good -- only require what this file uses
+require 'logging'
+```
+
+### Remove Unused Requires
+
+After refactoring, always remove `require` and `require_relative` statements
+that are no longer used. A require is unused when:
+- The module/class is never referenced in the file
+- Methods from the module are no longer called
+- Constants from the module are not accessed
+
+Scan for unused requires when:
+- Replacing method calls with constants from a different module
+- Extracting functionality to a new module
+- Removing code that was the only user of a require
+
+```ruby
+# BAD -- path_utils no longer used after switching to EnvVars constants
+require 'path_utils'
+require 'env_vars'
+
+home = EnvVars::HOME_DIR  # path_utils not needed
+
+# Good -- only require what is actually used
+require 'env_vars'
+
+home = EnvVars::HOME_DIR
+
+# BAD -- inside utilities/, logging no longer used after removing all log calls
+require_relative 'logging'
+require_relative 'env_vars'
+
+EnvVars::HOME_DIR  # logging not needed
+
+# Good -- only require_relative what is actually used
+require_relative 'env_vars'
+
+EnvVars::HOME_DIR
+```
+
+This rule applies equally to both `require` and `require_relative` statements.
+
+Exception: `require 'pathname'` must remain even when not directly referenced
+in the file body if the file defines Pathname constants at module level -- the
+require makes Pathname available to the constant initializers.
+
+### `require` vs `require_relative`
+
+**Ruby community best practice**: Use `require_relative` for all internal files, `require` only for external dependencies (gems, stdlib).
+
+**Benefits of `require_relative`**:
+- **Faster**: O(1) direct path resolution vs O(N) `$LOAD_PATH` search
+- **Clearer**: Explicitly shows file is part of your project
+- **More reliable**: Works regardless of `$LOAD_PATH` or working directory
+- **Idiomatic**: Standard Ruby convention endorsed by style guides and RuboCop
+
+#### Current Dotfiles Convention
+
+**Scripts in `$DOTFILES_DIR/scripts/`** (non-utilities):
+
+Use `require_relative` for utilities and other internal files:
+
+```ruby
+# At the top of scripts in $DOTFILES_DIR/scripts/:
+require 'fileutils'                        # stdlib - plain require
+require 'pathname'                         # stdlib - plain require
+require_relative 'utilities/logging'       # internal file - require_relative
+require_relative 'utilities/cli_parser'    # internal file - require_relative
+require_relative 'utilities/env_vars'      # internal file - require_relative
+
+include Logging
+```
+
+This is **idiomatic Ruby** and works because the path from script to utilities is fixed and relative.
+
+**Scripts in `$DOTFILES_DIR/scripts/utilities/`**:
+
+Use `require_relative` for sibling files, `require` for stdlib/gems:
+
+```ruby
+# Inside utilities/cli_parser.rb
+require 'optparse'                    # stdlib - plain require
+require_relative 'logging'            # sibling - require_relative
+```
+
+**Scripts in `$PERSONAL_BIN_DIR`**:
+
+These can use either pattern:
+
+**Option 1** (idiomatic Ruby - recommended):
+```ruby
+require 'pathname'
+require_relative '../../../.config/dotfiles/scripts/utilities/logging'
+```
+
+**Option 2** (pragmatic - works via `RUBYLIB`):
+```ruby
+# RUBYLIB is always set in interactive shells (via .shellrc)
+require 'pathname'
+require 'logging'  # works because RUBYLIB includes utilities/
+```
+
+Choose based on preference. Option 1 is more idiomatic Ruby, Option 2 is more concise.
+
+### Shell integration with `ruby -e`
+
+Shell functions can invoke Ruby utilities via `ruby -e` without any `$LOAD_PATH` manipulation because `.shellrc` sets `RUBYLIB` (line 1023):
+
+```zsh
+# Shell function in .shellrc or .aliases
+my_function() {
+  # Works because RUBYLIB includes ${DOTFILES_DIR}/scripts/utilities
+  ruby -e "require 'logging'; Logging.info('message')"
+  ruby -e "require 'git_processor'; GitProcessor.some_method(arg: 'value')"
+}
+```
+
+**Do NOT use** `$LOAD_PATH.unshift` in `ruby -e` calls:
+```zsh
+# BAD -- unnecessary, RUBYLIB already set
+ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'logging'; ..."
+
+# Good -- rely on RUBYLIB
+ruby -e "require 'logging'; ..."
+```
+
+This works in all contexts (vanilla OS and configured OS) because `.shellrc` is always sourced before any shell functions are called.
+
+### Sorting and grouping `require` statements
+
+Sort `require` statements alphabetically within each group. Keep two groups in
+order: stdlib/gem `require` first, then `require_relative` -- each group sorted
+independently. A blank line separates the two groups when both are present.
+
+A blank line must also separate the last `require`/`require_relative` line from
+the first `include` line:
+
+```ruby
+# BAD -- unsorted requires; no blank line before include
+require 'logging'
+require 'cli_parser'
+require 'fileutils'
+include Logging
+
+# Good -- sorted within group; blank line before include
+require 'cli_parser'
+require 'fileutils'
+require 'logging'
+
+include Logging
+
+# Good -- stdlib group then require_relative group, each sorted; blank line before include
+require 'fileutils'
+require 'open3'
+
+require_relative 'logging'
+require_relative 'string'
+
+include Logging
+```
+
+## Environment Variables
+
+Always use `ENV.fetch` instead of `ENV['...']` for environment variable access:
+
+```ruby
+# BAD -- ENV['VAR'] returns nil if VAR is unset; easy to miss in code
+value = ENV['FORCE_COLOR']
+if !value.to_s.strip.empty?
+  # ...
+end
+
+# Good -- ENV.fetch with default value
+value = ENV.fetch('FORCE_COLOR', '')
+if !value.strip.empty?
+  # ...
+end
+
+# Good -- ENV.fetch with nil default when you want to check presence
+value = ENV.fetch('OPTIONAL_VAR', nil)
+if value
+  # ...
+end
+
+# Good -- ENV.fetch without default raises KeyError if missing (use for required vars)
+api_key = ENV.fetch('API_KEY')  # Raises if API_KEY not set
+```
+
+**Why `ENV.fetch` is better:**
+- **Explicit defaults**: `ENV.fetch('VAR', '')` makes it clear the default is empty string
+- **Intentional failure**: `ENV.fetch('VAR')` without default raises KeyError for required vars
+- **No `.to_s` needed**: When using a default, you get the type you specify
+- **Catches typos**: `ENV['VARNAME']` silently returns nil for typos; `ENV.fetch('VARNAME')` raises
+
+**When to use each form:**
+```ruby
+# Optional var with default value
+color = ENV.fetch('FORCE_COLOR', '')
+
+# Optional var where nil vs empty matters
+value = ENV.fetch('OPTIONAL', nil)
+
+# Required var (should crash if missing)
+token = ENV.fetch('GITHUB_TOKEN')
+
+# Setting env vars (ENV['VAR'] = value is fine for writes)
+ENV['MY_VAR'] = 'value'  # OK -- this is a write, not a read
+```
+
+### Move String Literal ENV.fetch Calls to EnvVars Module
+
+All `ENV.fetch('STRING_LITERAL', ...)` calls must be moved to the `EnvVars` module
+(`scripts/utilities/env_vars.rb`). Only dynamic variable names (where the env var
+name is itself a variable) should remain as inline `ENV.fetch` calls.
+
+```ruby
+# BAD -- string literal ENV.fetch scattered in codebase
+def running_in_tty?
+  $stdout.tty? || !ENV.fetch('FORCE_COLOR', '').strip.empty?
+end
+
+def script_depth
+  ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+end
+
+# Good -- centralized in EnvVars module
+module EnvVars
+  # Returns true if FORCE_COLOR is set (used by color output methods).
+  def self.force_color?
+    !ENV.fetch('FORCE_COLOR', '').strip.empty?
+  end
+
+  # Current script depth (incremented by increment_script_depth).
+  def self.script_depth
+    ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+  end
+end
+
+# Usage in other files
+def running_in_tty?
+  $stdout.tty? || EnvVars.force_color?
+end
+
+def script_depth
+  EnvVars.script_depth
+end
+```
+
+**EnvVars Structure -- Constants vs Methods:**
+
+- **Pathname env vars → Constants**: Path variables that never change at runtime are
+  Pathname constants (e.g., `HOME`, `DOTFILES_DIR`, `XDG_CACHE_HOME`) because Pathname
+  objects are immutable and the path resolution is expensive -- freeze once at load time.
+
+- **Non-Pathname env vars → Methods**: All non-Pathname env vars must be methods
+  (e.g., `force_color?`, `script_depth`, `debug?`) so they are re-evaluated on
+  each access. This allows them to reflect runtime changes (e.g., script depth
+  increments, debug flag toggled mid-execution).
+
+- **Methods can return Pathname**: Methods that compute paths dynamically (e.g.,
+  `cron_backup_file`) should return Pathname objects directly so callers don't need
+  to wrap the result. This keeps Pathname usage consistent throughout the codebase.
+
+```ruby
+# Good -- Pathname constants (expensive to construct, immutable, never change)
+HOME = Pathname.new(ENV.fetch('HOME', '~')).expand_path.freeze
+DOTFILES_DIR = Pathname.new(ENV.fetch('DOTFILES_DIR', HOME.join('.config', 'dotfiles'))).expand_path.freeze
+
+# Good -- Non-Pathname methods (evaluated on each call)
+def self.force_color?
+  !ENV.fetch('FORCE_COLOR', '').strip.empty?
+end
+
+def self.script_depth
+  ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+end
+
+# Good -- Methods can return Pathname when appropriate
+def self.cron_backup_file
+  Pathname.new(
+    ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do
+      File.join(ENV.fetch('TMPDIR', '/tmp'), 'crontab_backup')
+    end
+  )
+end
+
+# BAD -- non-Pathname as constant (won't reflect runtime changes)
+SCRIPT_DEPTH = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i  # frozen at load time
+```
+
+**Exceptions** -- inline `ENV.fetch` IS correct when:
+- The env var name is dynamic (variable, not literal): `ENV.fetch(var_name, '')`
+- Setting env vars: `ENV['VAR'] = value`
+- Inside `env_vars.rb` itself (the centralization target)
+
+**Why centralize:**
+- **Single source of truth**: All env var defaults and access patterns in one place
+- **DRY**: Repeated `ENV.fetch('SAME_VAR', 'same_default')` across files is duplication
+- **Discoverability**: New developers see all env vars used by the system in one file
+- **Type safety**: EnvVars can provide typed accessors (`.to_i`, `Pathname.new()`, etc.)
+- **Documentation**: Comments in EnvVars document what each var is for
+
+**Scan rule**: When adding/editing code, search for `ENV.fetch('` with a string
+literal. If it's not in `env_vars.rb`, move it there. Use methods for non-Pathname
+values, constants only for Pathname objects.
+
+## Conditionals -- Trailing Style for Single Statements
+
+Use trailing `if`/`unless` style when the conditional body is a single statement.
+Use block style (`if...end`) when the body has multiple statements or when the
+condition is complex.
+
+```ruby
+# Good -- single statement, use trailing style
+return if nil_or_empty?(value)
+exit 1 unless success
+info "Skipping '#{path}'" if File.exist?(path)
+system('git', '-C', folder, 'config', 'user.name', user_name) unless nil_or_empty?(user_name)
+
+# BAD -- single statement in block form (verbose)
+if nil_or_empty?(value)
+  return
+end
+unless success
+  exit 1
+end
+
+# Good -- multiple statements or complex logic, use block style
+if condition
+  statement1
+  statement2
+end
+
+unless File.exist?(path) && valid_path?(path)
+  error "Invalid path"
+  return 1
+end
+
+# Good -- if/else always uses block style (can't be trailing)
+if dry_run
+  info 'Would run command'
+else
+  system('command')
+end
+```
+
+**Exception:** Do NOT use trailing style when it makes the line too long (>120
+characters) or when it reduces readability. Readability always takes precedence.
+
+**Performance consideration:** Trailing style evaluates the entire statement
+(including the operation itself and all its arguments) **before** checking the
+condition. For expensive operations, use block style to avoid unnecessary work:
+
+```ruby
+# BAD -- expensive operation runs before condition is checked
+compute_checksum(large_file) if needs_validation
+
+# Good -- condition checked first, operation only runs if true
+if needs_validation
+  compute_checksum(large_file)
+end
+
+# BAD -- string interpolation happens even when status.success? is true
+_report_git_failure("Failed in '#{folder.cyan}': #{compute_details}", status, stderr) unless status.success?
+
+# Good -- string only built when needed
+unless status.success?
+  _report_git_failure("Failed in '#{folder.cyan}': #{compute_details}", status, stderr)
+end
+
+# Trailing style is fine for cheap operations and simple arguments
+return unless items.any?
+exit 1 unless success
+File.delete(path) if obsolete
+```
+
+## Idiomatic Patterns
+
+```ruby
+# Collections
+items.map { |x| ... }       # not .collect
+items.select { |x| ... }    # not .filter
+items.any? { |x| ... }
+items.all? { |x| ... }
+items.reduce({}) { |acc, x| ... }  # not .inject
+
+# Nil safety for arrays
+Array(value).each { ... }   # guards against nil
+
+# Custom nil guard -- NEVER replace with .empty?
+return if nil_or_empty?(value)
+
+# Cross-platform path separator
+File::SEPARATOR             # not hardcoded "/"
+
+# Hash class extensions (from hash_ext.rb)
+hash.deep_sort              # recursive sort by keys
+
+# String color extensions -- see ## String Colors for the full convention table
+'text'.blue
+'path/to/file'.cyan         # HOME->tilde substitution happens inside color methods
+```
+
+## Shell Command Execution -- `system()` and Escaping
+
+Ruby's `system()` and `Open3.capture3()` have two execution modes:
+
+### 1. Direct execution (safe, no escaping needed)
+
+Pass command and arguments as separate parameters. Ruby executes the command
+directly without invoking a shell. NO shell interpretation happens, so NO
+escaping is needed:
+
+```ruby
+# Good -- safe, no shell, no escaping needed
+system('git', '-C', folder, 'status')
+system({ 'VAR' => 'value' }, 'git', '-C', folder, 'command')
+Open3.capture3('git', '-C', folder, 'log', '--oneline')
+```
+
+Even if `folder` contains spaces or special characters, they are passed as-is
+to the command -- no shell interprets them.
+
+### 2. Shell execution (requires escaping)
+
+Pass a single string. Ruby invokes `/bin/sh -c "string"`, which means the shell
+interprets the string. Variable interpolation MUST use `shellescape`:
+
+```ruby
+# BAD -- unsafe if folder contains spaces or shell metacharacters
+system("git -C #{folder} status")
+
+# Good -- shellescape protects against shell interpretation
+require 'shellwords'
+system("git -C #{folder.shellescape} status")
+
+# Good -- explicit shell invocation (needed for shell functions, pipes, etc.)
+Open3.capture3('/bin/zsh', '-lc', "clone_repo_into #{url.shellescape} #{folder.shellescape}")
+```
+
+### When to use each form
+
+| Use Case | Form |
+|----------|------|
+| Simple command with arguments | Direct execution (separate args) |
+| Command with env vars | Direct execution with env hash |
+| Shell function (e.g., from `.shellrc`) | Shell execution with `shellescape` |
+| Pipeline or redirection | Shell execution with `shellescape` |
+| User-authored command string from config | Shell execution (no escaping -- user controls the command) |
+
+### Exception: User-controlled command strings
+
+When executing commands from user-authored config files (YAML `post_clone`
+commands, etc.), pass the string as-is WITHOUT escaping. The user intends for
+their command to be executed exactly as written, including any shell syntax:
+
+```ruby
+# User-authored command from YAML config -- execute as-is
+command_str = repo['post_clone']  # e.g., "npm install && npm run build"
+Open3.capture3(command_str)       # Shell interprets the string as the user intended
+```
+
+### Invoking Ruby Scripts from Ruby
+
+**When to use subprocess vs direct module call:**
+
+| Scenario | Approach | Reason |
+|----------|----------|--------|
+| Utility module (utilities/*.rb) | Direct call: `GitWorkspace.update_all_repos` | Module is designed to be called directly; no subprocess overhead |
+| CLI script with own lifecycle | Subprocess: `system(RbConfig.ruby, script_path, '-e')` | Script manages traps, logging init, depth tracking - let it run independently |
+| Simple function extraction | Direct call after refactoring into module | Prefer extracting to module over subprocess |
+
+**When calling via subprocess**, use `RbConfig.ruby` instead of hardcoded `'ruby'`:
+
+```ruby
+# BAD -- hardcoded 'ruby' may invoke a different Ruby than the parent
+system('ruby', script_path, '-e')
+
+# Good -- RbConfig.ruby uses the same interpreter as the parent process
+require 'rbconfig'
+system(RbConfig.ruby, script_path, '-e')
+```
+
+**Why subprocess is appropriate for CLI scripts:**
+- Script has its own `at_exit` hooks and EXIT traps
+- Script calls `increment_script_depth` / `print_script_start` / `print_script_summary`
+- Script has option parsing with CliParser
+- Script manages its own error collection (`@step_warnings`, `@step_errors`)
+
+**Example of appropriate subprocess use:**
+```ruby
+# software-updates-cron.rb calling capture-prefs.rb
+# capture-prefs.rb is a complete CLI script with its own lifecycle
+capture_prefs_script = Pathname.new(__dir__).join('capture-prefs.rb')
+system(RbConfig.ruby, capture_prefs_script.to_s, '-e')
+```
+
+**Why `RbConfig.ruby` matters:**
+- `/usr/bin/ruby` is system Ruby 2.6 (macOS default)
+- Homebrew Ruby (if installed) may be in `$PATH` and used by shebangs
+- `RbConfig.ruby` returns the path to the **currently running** interpreter
+- Child script uses same version/environment as parent (consistent behavior)
+
+## GitProcessor Usage Patterns
+
+`GitProcessor` (in `utilities/git_processor.rb`) provides a consistent API for
+all git operations. It handles dry-run mode, error reporting, and directory
+context automatically.
+
+### Block Form vs Instance Form
+
+**Use block form when:**
+- Performing multiple consecutive git operations in the same scope
+- Operations are localized side effects (add, commit, tag, etc.)
+- Don't need return values outside the block
+
+```ruby
+# Good -- multiple operations, block form
+GitProcessor.new(dir: repo_dir) do |git|
+  git.add('.')
+  timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+  git.commit("Update: #{timestamp}")
+  git.push(branch: 'main')
+end
+
+# Good -- localized side effect, block form
+GitProcessor.new(dir: EnvVars::PERSONAL_PROFILES_DIR) do |git|
+  old_backups.each { |f| git.rm_cached(f, quiet: true) }
+end
+
+# Good -- multiple operations including relative_path (rescue outside block)
+GitProcessor.new(dir: repo_dir) do |git|
+  rel_path = relative_path ? git.relative_path(relative_path) : '.'
+  git.add(rel_path)
+  timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+  git.run_alias('sci', "Incremental commit: #{timestamp}")
+end
+rescue RuntimeError => e
+  Logging.warn "Skipping update -- #{e.message}"
+  false
+```
+
+**Use instance form when:**
+- Only calling a single method (chain directly instead of block overhead)
+- Operations spread across conditionals/branches
+- Need return values outside the block's scope
+
+```ruby
+# Good -- single method call, chain directly
+status = GitProcessor.new(dir: repo_dir).status(*switches)
+
+# Good -- return value needed outside block
+git = GitProcessor.new(dir: folder_pn)
+_out, _err, status = git.pull(rebase: true)
+if status.success?
+  success "Updated successfully"
+else
+  record_warning "Failed to update"
+end
+
+# Good -- operations across branches
+git = GitProcessor.new(dir: repo_dir)
+if needs_fetch?
+  git.fetch
+end
+if needs_rebase?
+  git.rebase
+end
+```
+
+**Exception for single calls in blocks:**
+When there's only one git operation inside another block (like an `each` loop),
+prefer chaining over nested blocks for readability:
+
+```ruby
+# Good -- single operation, chain directly (avoids nested block)
+chrome_folders.each do |folder_pn|
+  status = GitProcessor.new(dir: folder_pn).pull(rebase: true)
+  log_result(status)
+end
+
+# BAD -- unnecessary nested block for single operation
+chrome_folders.each do |folder_pn|
+  GitProcessor.new(dir: folder_pn) do |git|
+    status = git.pull(rebase: true)
+    log_result(status)
+  end
+end
+```
+
+### Exception Handling
+
+Some GitProcessor methods can raise exceptions:
+- `relative_path(path)` raises `RuntimeError` if path is invalid or outside repo
+
+When using these methods, wrap the block (or call) in a `rescue` clause:
+
+```ruby
+# Good -- rescue outside block when relative_path may raise
+GitProcessor.new(dir: repo_dir) do |git|
+  rel_path = git.relative_path(some_path)
+  git.add(rel_path)
+end
+rescue RuntimeError => e
+  Logging.warn "Skipping operation -- #{e.message}"
+  return false
+```
+
+### Scan Rule
+
+When adding/editing git operations:
+1. Check if there are 2+ consecutive git calls → use block form
+2. Check if only 1 git call → use instance form with chaining
+3. Check if return value needed in outer scope → use instance form
+4. Check if inside another block (each, if/else) with single git call → use chaining
+5. Check if using `relative_path` → add `rescue RuntimeError` clause
+
+## String Colors
+
+Color methods are defined on `String` in `utilities/string.rb`. They:
+- Wrap the string in ANSI escape codes (no-op when stdout is not a TTY)
+- Automatically substitute `$HOME` with `~` in any path passed to them
+
+**Never** call `replace_home_path_with_tilde` before passing a path to a color
+method -- the substitution happens inside. Only call it explicitly for bare
+`puts`/`print` call sites that display paths without any color method.
+
+**IMPORTANT**: Color methods are defined on `String`, not `Pathname`. Always
+call `.to_s` on Pathname objects before applying color methods:
+
+```ruby
+# BAD -- color methods don't exist on Pathname
+profile_folder = EnvVars::HOME.join('.config')
+info "Processing '#{profile_folder.cyan}'"  # NoMethodError: undefined method `cyan' for #<Pathname>
+
+# Good -- convert to String first
+info "Processing '#{profile_folder.to_s.cyan}'"
+
+# Also good -- assign to a variable after converting
+folder_path = profile_folder.to_s.cyan
+info "Processing '#{folder_path}'"
+```
+
+### Available methods
+
+| Method | ANSI | Typical use |
+|---|---|---|
+| `.red` | normal red | `'Usage'` label (auto via `CliParser`); error messages; failure counts |
+| `.light_red` | bright red | `'**WARN**'` label (auto via `Logging.warn`) |
+| `.green` | normal green | `'**SUCCESS**'` label (auto); success/positive counts; yes-option in prompts |
+| `.light_green` | bright green | -- (available; no fixed convention) |
+| `.orange` | normal orange | Boolean values (`true`/`false`) |
+| `.yellow` | bright yellow | Argument placeholders in usage (`'<folder>'.yellow`); key names in key-value output; summary sub-headers |
+| `.blue` | normal blue | Verbose/debug-only supplementary output |
+| `.light_blue` | bright blue | Timestamps and durations (used internally by `Logging`) |
+| `.purple` | normal purple | `opts.separator` section headings in usage blocks (`'Options:'.purple`); neutral/informational counts |
+| `.light_purple` | bright purple | `'**DEBUG**'` label (auto via `Logging.debug`) |
+| `.cyan` | normal cyan | File/folder paths; script name in banner (auto via `CliParser`) |
+| `.light_cyan` | bright cyan | Domain/preference identifiers (`com.apple.Finder`) |
+| `.dark_gray` | dark gray | -- (available; no fixed convention) |
+| `.light_gray` | light gray | -- (available; no fixed convention) |
+| `.white` | bright white | -- (available; no fixed convention) |
+| `.black` | black | -- (available; no fixed convention) |
+
+### Conventions
+
+```ruby
+# Usage block -- section labels purple, placeholders yellow, script example cyan
+opts.separator 'Arguments:'.purple
+opts.separator "  #{'<folder>'.yellow}  Target folder to process"
+opts.separator "  eg: #{File.basename(__FILE__).cyan} /path/to/folder"
+
+# Paths in log messages -- color method handles tilde substitution
+Logging.info "Processing '#{folder.cyan}'"
+Logging.warn "Skipping '#{path.cyan}': already exists"
+
+# Counts in summary output -- green for good, red for bad
+puts "  Processed: #{count.to_s.green}"
+puts "  Errors:    #{errors.positive? ? errors.to_s.red : errors}"
+
+# Sub-headers inside a summary
+Logging.info 'Summary'.yellow
+```
+
+## Module / Class Structure
+
+```ruby
+module MyModule
+  # Public API -- no prefix, no private declaration needed for simple modules
+  def self.public_method(arg)
+    _private_helper(arg)
+  end
+
+  # Private helpers -- prefix with _ AND use private_class_method
+  def self._private_helper(arg)
+    # ...
+  end
+  private_class_method :_private_helper
+end
+```
+
+For classes, use `private` keyword:
+
+```ruby
+class MyClass
+  def public_method; end
+
+  private
+
+  def _internal_helper; end
+end
+```
+
+## Utility Modules -- Logging Pattern
+
+**CRITICAL RULE**: All utility modules in `scripts/utilities/` use `extend self`
+to make all methods available as module methods (e.g., `Cron.suspend_cron`,
+`Logging.debug`, `Logging.info`, etc.). This allows them to be called from both
+Ruby scripts and shell wrappers.
+
+Do NOT use `include Logging` in utility modules. The combination `extend self` +
+`include Logging` does NOT make Logging's methods available as module methods.
+Always use fully-qualified method calls instead (e.g., `Logging.debug`,
+`Logging.info`).
+
+```ruby
+# BAD -- Logging methods won't be available
+module Cron
+  extend self
+  include Logging  # This doesn't work!
+
+  def suspend_cron
+    debug 'Suspending...'  # ERROR: undefined method 'debug'
+  end
+end
+
+# Good -- Qualify all Logging calls
+module Cron
+  extend self
+
+  # Note: Logging methods must be qualified (Logging.debug, Logging.info, etc.)
+  # because 'include Logging' + 'extend self' doesn't make included methods
+  # available as module methods.
+
+  def suspend_cron
+    Logging.debug 'Suspending...'  # Works correctly
+  end
+end
+```
+
+**Why this matters:**
+- Shell functions delegate to Ruby utilities via `ruby -e` (e.g., `suspend_cron` → `Cron.suspend_cron`)
+- Ruby scripts call utility modules directly (e.g., `Cron.with_cron_suspended { }`)
+- Both contexts need the same behavior
+- Qualified calls work everywhere: module methods, class methods, instance methods
+
+**This rule applies to ALL files in `scripts/utilities/`** including:
+- Modules with `extend self` (cron.rb, keybase.rb, antidote.rb, collection_processor.rb, etc.)
+- Classes (cli_parser.rb's Parser class, etc.)
+- Any other code structures
+
+**Exception:** Top-level scripts in `scripts/` (not `scripts/utilities/`) can use
+`include Logging` because they execute in the main context where `include` works
+as expected.
+
+## Script Output Format
+
+Each Ruby script must print:
+1. A `section_header` with the script name.
+2. Start time (`info "Starting..."`)
+3. Main logic with appropriate `info`/`success`/`warn` per operation.
+4. A summary before exit (counts of success/failure/skipped).
+5. End time and duration.
+
+## `nil_or_empty?` Helper
+
+Always use `nil_or_empty?` to check for nil-or-empty conditions. It is defined
+in `logging.rb` (or injected globally). Never call `.empty?` directly on a
+value that might be `nil`.
+
+```ruby
+nil_or_empty?(value)          # Good
+value.nil? || value.empty?    # Acceptable but verbose
+value.empty?                  # BAD if value could be nil
+```
+
+## Memoization
+
+Use memoization (`||=`) to cache expensive or repeated operations. Common candidates:
+- Methods called multiple times with the same result per script execution
+- Shell command existence checks (`command_exists?`)
+- Boolean flag queries that compare strings (`operation == 'export'`)
+- Expensive computations that don't change during script lifetime
+
+### Memoized Helper Pattern
+
+For repeated checks across multiple helper methods, extract a memoized helper:
+
+```ruby
+# BAD -- repeated expensive check (4 calls = 4 shell invocations)
+def update_home_repos
+  return unless PathUtils.command_exists?('run-all.rb')
+  # ...
+end
+
+def upreb_oss_repos
+  return unless PathUtils.command_exists?('run-all.rb')
+  # ...
+end
+
+def restore_mtime
+  return unless PathUtils.command_exists?('run-all.rb')
+  # ...
+end
+
+# main
+if PathUtils.command_exists?('run-all.rb')
+  update_home_repos
+end
+
+# Good -- single memoized check (4 calls = 1 shell invocation)
+def _run_all_available?
+  @_run_all_available ||= PathUtils.command_exists?('run-all.rb')
+end
+
+def _update_home_repos
+  return unless _run_all_available?
+  # ...
+end
+
+def _upreb_oss_repos
+  return unless _run_all_available?
+  # ...
+end
+
+def _restore_mtime
+  return unless _run_all_available?
+  # ...
+end
+
+private :_run_all_available?, :_update_home_repos, :_upreb_oss_repos, :_restore_mtime
+
+# main
+if _run_all_available?
+  _update_home_repos
+end
+```
+
+### Memoized Boolean Query Pattern
+
+For repeated string comparisons that determine script mode/behavior:
+
+```ruby
+# BAD -- repeated string comparison (7 occurrences in one script)
+if operation == 'export'
+  export_logic
+end
+
+if operation == 'import'
+  import_logic
+end
+
+if operation == 'export'
+  more_export_logic
+end
+
+# Good -- memoized query (comparison happens once, cached forever)
+def _exporting?
+  @_exporting ||= @operation == 'export'
+end
+
+def _importing?
+  @_importing ||= @operation == 'import'
+end
+
+private :_exporting?, :_importing?
+
+if _exporting?
+  export_logic
+end
+
+if _importing?
+  import_logic
+end
+
+if _exporting?
+  more_export_logic
+end
+```
+
+### When NOT to Memoize
+
+Do NOT memoize when:
+- The method is only called once per script execution
+- The value can change during script execution (ENV vars that might be modified, file system state)
+- The operation is already cheap (simple arithmetic, string concatenation, hash lookup)
+- The method has side effects (logging, file I/O, system calls that must run every time)
+
+```ruby
+# BAD -- memoizing dynamic state
+def _files_exist?
+  @_files_exist ||= Dir.glob('*.txt').any?  # file system can change between calls
+end
+
+# BAD -- memoizing single-use check
+def _valid_argument?
+  @_valid_argument ||= ARGV.first && ARGV.first.start_with?('--')  # only checked once
+end
+
+# Good -- don't memoize dynamic state
+def files_exist?
+  Dir.glob('*.txt').any?  # check fresh each time
+end
+
+# Good -- don't memoize single-use check (no benefit)
+if ARGV.first && ARGV.first.start_with?('--')
+  # ...
+end
+```
+
+### Scan Rule: Identify Memoization Opportunities
+
+When editing a Ruby script, look for:
+
+1. **Repeated method calls in guards**: Same `command_exists?`, `File.exist?`, or boolean check at top of 3+ methods
+2. **Repeated string comparisons**: `@var == 'value'` appearing 3+ times across the script
+3. **Command existence checks**: `PathUtils.command_exists?('tool')` called multiple times
+4. **Operation mode checks**: Comparing an operation/mode variable repeatedly
+
+Example scan:
+```bash
+# Find repeated method calls
+rg "command_exists?\|File\.exist?\|\.any?\|\.empty?" script.rb | sort | uniq -c | sort -rn
+
+# Find repeated string comparisons
+rg "@\w+ == ['\"]" script.rb | sort | uniq -c | sort -rn
+```
+
+When you find a pattern repeated 3+ times:
+1. Extract a memoized helper with `_` prefix
+2. Add to `private` declaration
+3. Replace all occurrences with the helper call
+4. Verify the value doesn't change during script execution
+
+### Instance Variables for Memoization
+
+Memoization in top-level scripts uses instance variables (`@var`). This works because:
+- Top-level script code runs in the context of `main` (an Object instance)
+- Instance variables persist for the script's lifetime
+- Each script execution gets a fresh `main` object (clean slate)
+
+```ruby
+# Top-level script (not a class/module)
+def _run_all_available?
+  @_run_all_available ||= PathUtils.command_exists?('run-all.rb')
+end
+
+# Instance variable @_run_all_available persists in main's context
+# First call: checks command, caches result
+# Subsequent calls: returns cached result immediately
+```
+
+In utility modules using `extend self`, memoization uses `@` instance variables on the module singleton:
+
+```ruby
+module MyUtility
+  extend self
+
+  def expensive_check
+    @_expensive_check ||= some_expensive_operation
+  end
+end
+
+# @_expensive_check lives on MyUtility's singleton, persists across calls
+```
+
+## Variable Scoping
+
+Always declare variables in the innermost scope where they are used. This improves
+garbage collection, clarifies intent, and prevents accidental reuse.
+
+### Move variables inside blocks when they're only used there
+
+```ruby
+# BAD -- variable declared outside block but only used inside
+timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+GitProcessor.new(dir: repo_dir) do |git|
+  git.add(path)
+  git.run_alias('sci', "Commit: #{timestamp}")
+end
+
+# Good -- variable scoped to block
+GitProcessor.new(dir: repo_dir) do |git|
+  timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+  git.add(path)
+  git.run_alias('sci', "Commit: #{timestamp}")
+end
+```
+
+### Declare variables in the branch where they're used
+
+```ruby
+# BAD -- variable declared before if/else but only used in one branch
+target_file = target_dir.join("#{name}.plist")
+if operation == 'export'
+  export_file(target_file)
+else
+  # Import branch doesn't use target_file initially
+  unless target_file.file?
+    next
+  end
+  import_file(target_file)
+end
+
+# Good -- declare in each branch where needed
+if operation == 'export'
+  target_file = target_dir.join("#{name}.plist")
+  export_file(target_file)
+else
+  target_file = target_dir.join("#{name}.plist")
+  unless target_file.file?
+    next
+  end
+  import_file(target_file)
+end
+```
+
+### Combine intermediate variables when they're only used once
+
+```ruby
+# BAD -- unnecessary intermediate variable
+bat_config_dir, = Open3.capture3('bat', '--config-dir')
+bat_config_dir_pn = Pathname.new(bat_config_dir.strip)
+bat_syntax_dir_pn = bat_config_dir_pn.join('syntaxes')
+
+# Good -- combine when intermediate is only used once
+bat_config_dir, = Open3.capture3('bat', '--config-dir')
+bat_syntax_dir_pn = Pathname.new(bat_config_dir.strip).join('syntaxes')
+```
+
+### Check scoping when refactoring
+
+When refactoring code:
+1. Look for variables declared at function/class scope
+2. Check if they're only used within a single block (if/else, loop, GitProcessor block)
+3. Move them to the innermost scope where they're used
+4. Eliminate intermediate variables that are only used once
+
+**Scan rule:** After editing any Ruby file, search for variables declared before
+blocks (`do |var|`, `if/else`, `each`) and verify they're used outside the block.
+If not, move them inside.

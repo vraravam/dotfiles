@@ -27,8 +27,8 @@ _SCRIPT_NAME="${0:t}"
 # NOTE: This function duplicates logic from .shellrc (print_script_summary, error,
 # resume_cron) because it must handle failures that occur BEFORE .shellrc can be
 # downloaded on a vanilla OS (e.g., network failures, DNS issues, curl timeouts).
-# The fallback implementations (lines 36-49, 60, 68-74) ensure the script can still
-# display collected warnings/errors and restore cron even when .shellrc is unavailable.
+# The fallback implementations ensure the script can still display collected
+# warnings/errors and restore cron even when .shellrc is unavailable.
 # This is intentional defensive programming for bootstrap edge cases, not accidental
 # duplication.
 _cleanup_and_exit() {
@@ -57,9 +57,9 @@ _cleanup_and_exit() {
     fi
   fi
 
-  local message='Installation failed. Check for error messages above.'
+  local message="[fresh-install-of-osx.sh] Installation failed. Check for error messages above."
   if [[ -n "${failed_line}" ]]; then
-    message="Installation failed at line ${failed_line}. Check for error messages above."
+    message="[fresh-install-of-osx.sh] Installation failed at line ${failed_line}. Check for error messages above."
   fi
   # (( $+functions[...] )) is a no-subshell zsh builtin check, faster than 'type ... &>/dev/null'
   if (($+functions[error])); then
@@ -105,18 +105,20 @@ _download_and_source_shellrc() {
   # is not yet defined. All post-source occurrences use is_first_install instead.
   if [[ -n "${FIRST_INSTALL:-}" ]]; then
     # Vanilla OS: always force a fresh download and re-source.
-    # Unfunction the guard so .shellrc's own re-source check is bypassed.
-    # This also handles retries on a vanilla OS where the script is re-run after an error.
-    # if/fi avoids the && pattern where (($+functions[...])) returning false
-    # (guard not yet defined, the common case on first install) propagates a
-    # non-zero exit under the ERR trap that is active by this point.
-    if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
-    curl "${_curl_opts[@]}" -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/files/--HOME--/.shellrc" -o "${HOME}/.shellrc"
+    # Cache-busting: append timestamp to URL and add no-cache headers to ensure we bypass
+    # GitHub's CDN cache and intermediate proxies to get the latest version.
+    curl "${_cache_bust_headers[@]}" "${_curl_retry_opts[@]}" -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/files/--HOME--/.shellrc?$(/bin/date +%s)" -o "${HOME}/.shellrc"
     echo "==> Successfully downloaded '${HOME}/.shellrc'"
   else
     # Pre-configured OS: skip downloading; the built-in guard makes the source below a no-op if already loaded.
     info "Skipping downloading '$(yellow "${HOME}/.shellrc")' since this is not a first install"
   fi
+  # Unfunction the guard so .shellrc's own re-source check is bypassed.
+  # This handles both first install and retries on a vanilla OS where the script is re-run after an error.
+  # if/fi avoids the && pattern where (($+functions[...])) returning false
+  # (guard not yet defined, the common case on first install) propagates a
+  # non-zero exit under the ERR trap that is active by this point.
+  if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
   DEBUG=true source "${HOME}/.shellrc"
   success "Successfully sourced '$(cyan "${HOME}/.shellrc")'"
 }
@@ -131,8 +133,11 @@ _approve_fingerprint_sudo() {
   # first match, ioreg gets SIGPIPE exit 141, pipefail surfaces that instead of grep's 0).
   # Command substitution buffers all ioreg output first, avoiding the SIGPIPE entirely.
   local has_biometric_sensor=0 has_biometric_services=0
-  [[ -n "$(/usr/sbin/ioreg -c AppleBiometricSensor  2>/dev/null | /usr/bin/grep AppleBiometricSensor)"  ]] && has_biometric_sensor=1  || true
-  [[ -n "$(/usr/sbin/ioreg -c AppleBiometricServices 2>/dev/null | /usr/bin/grep AppleBiometricServices)" ]] && has_biometric_services=1 || true
+  local biometric_sensor_output biometric_services_output
+  biometric_sensor_output="$(/usr/sbin/ioreg -c AppleBiometricSensor 2>/dev/null | /usr/bin/grep AppleBiometricSensor)" || true
+  biometric_services_output="$(/usr/sbin/ioreg -c AppleBiometricServices 2>/dev/null | /usr/bin/grep AppleBiometricServices)" || true
+  if is_non_zero_string "${biometric_sensor_output}"; then has_biometric_sensor=1; fi
+  if is_non_zero_string "${biometric_services_output}"; then has_biometric_services=1; fi
   if [[ "${has_biometric_sensor}" == 0 && "${has_biometric_services}" == 0 ]]; then
     info 'Touch ID hardware is not detected -- skipping configuration.'
     step_end
@@ -251,7 +256,8 @@ _install_homebrew() {
 
     local install_script_file
     install_script_file="$(mktemp)"
-    if curl "${_curl_opts[@]}" -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh -o "${install_script_file}"; then
+    # Cache-busting: add no-cache headers and timestamp to ensure we get the latest Homebrew installer
+    if curl "${_cache_bust_headers[@]}" "${_curl_retry_opts[@]}" -fsSL "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh?$(/bin/date +%s)" -o "${install_script_file}"; then
       NONINTERACTIVE=1 bash "${install_script_file}" || {
         rm -f "${install_script_file}"
         error 'Homebrew installation failed'
@@ -286,11 +292,6 @@ _install_homebrew() {
     fi
   fi
 
-  # Note: Temporarily disable the ERR trap since brew commands may fail on a vanilla OS (e.g. rate limits, missing deps).
-  if is_first_install; then
-    trap - ERR
-  fi
-
   # Taps are no longer used in the FIRST_INSTALL base Brewfile section.
   # The tap commands below are kept for reference in case a tap is needed again.
   # /usr/bin/grep -E "^tap " "${HOMEBREW_BUNDLE_FILE}" | awk '{print $2}' | tr -d "'\"" | while read -r tap_name; do
@@ -319,19 +320,20 @@ _install_homebrew() {
   fi
 
   if is_first_install; then
-    # Note: run this just in case the postinstall didn't work
-    update_antidote_and_regenerate_plugin_bundle
-
     # The base section is done; fork the full Brewfile install in the background so
     # optional/heavy packages install without blocking the rest of this run.
     # FIRST_INSTALL is unset in the subshell so brew bundle runs the complete Brewfile.
     local _full_bundle_log="${HOME}/brew-bundle-full-install.log"
+    # Temporarily disable ERR trap: background job failures should not abort the main script.
+    # The background job logs to _full_bundle_log; users can check that file for issues.
+    trap - ERR
     FIRST_INSTALL= brew bundle >>"${_full_bundle_log}"  2>&1 &|
+    trap '_cleanup_and_exit "${LINENO}"' ERR
     info "Full Brewfile install running in background (log: '$(cyan "${_full_bundle_log}")')"
   fi
 
   # Note: load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)
-  load_zsh_configs
+  DEBUG=true load_zsh_configs
 
   if is_first_install; then
     trap '_cleanup_and_exit "${LINENO}"' ERR
@@ -368,11 +370,20 @@ _set_default_shell() {
     info "'$(yellow "${_brew_zsh}")' already in /etc/shells -- skipping."
   fi
 
-  if [[ "${SHELL}" == "${_brew_zsh}" ]]; then
-    info "Default shell is already '$(yellow "${_brew_zsh}")' -- skipping."
+  # Check which zsh would be invoked by PATH, not just what SHELL is set to.
+  # On FIRST_INSTALL, SHELL is still /bin/zsh but Homebrew's bin directory is now
+  # in PATH, so 'which zsh' returns the Homebrew version. Skip chsh if the correct
+  # zsh is already active in the current session.
+  local active_zsh
+  active_zsh="$(which zsh)"
+  if [[ "${active_zsh}" == "${_brew_zsh}" ]]; then
+    info "Active zsh in PATH is already '$(yellow "${_brew_zsh}")' -- skipping chsh."
   else
-    chsh -s "${_brew_zsh}"
-    success "Default shell changed to '$(cyan "${_brew_zsh}")'."
+    if chsh -s "${_brew_zsh}"; then
+      success "Default shell changed to '$(cyan "${_brew_zsh}")'."
+    else
+      _record_warning "Failed to change default shell to '$(cyan "${_brew_zsh}")'. You may need to run 'chsh -s ${_brew_zsh}' manually after the installation completes."
+    fi
   fi
 
   step_end
@@ -381,18 +392,23 @@ _set_default_shell() {
 # Ensures keybase is installed and the current user is logged in.
 # Thin wrapper that delegates to Ruby Keybase.ensure_logged_in.
 # Returns non-zero on failure so callers can check the exit code.
+#
+# IMPORTANT: This is called after load_zsh_configs, which re-sources .shellrc
+# after unfunctioning the guard. By that point, DOTFILES_DIR exists (cloned by
+# _clone_dot_files_repo), so .shellrc sets RUBYLIB correctly, making 'require'
+# work without $LOAD_PATH.unshift.
 _ensure_keybase_logged_in() {
   if ! command_exists keybase; then
     error "'keybase' command not found in the PATH. Aborting!!!"
     return 1
   fi
-  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
+  ruby -e "require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
 }
 
 # Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
 # Usage: _build_keybase_repo_url <repo-name>
 _build_keybase_repo_url() {
-  echo "keybase://private/${KEYBASE_USERNAME:-}/${1}"
+  echo "keybase://private/${KEYBASE_USERNAME:-}/${1:-}"
 }
 
 # Clone the Keybase home repo (private configs)
@@ -401,7 +417,16 @@ _clone_home_repo() {
   step_start
   section_header2 "$(yellow 'Cloning') '$(cyan "${KEYBASE_HOME_REPO_NAME:-}")' repo"
   if is_non_zero_string "${KEYBASE_HOME_REPO_NAME:-}"; then
-    if clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME:-}")" "${HOME}"; then
+    if is_git_repo "${HOME}"; then
+      # Pre-configured machine: pull latest changes to get fresh backup files
+      info "Home repo already exists -- pulling latest changes"
+      if git -C "${HOME}" pull --rebase; then
+        success "Successfully updated home repo"
+      else
+        _record_warning "Failed to pull home repo -- continuing with existing backup files"
+      fi
+    elif clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME:-}")" "${HOME}"; then
+      # Vanilla OS: clone succeeded
       # Reset ssh keys' permissions so that git doesn't complain when using them
       set_ssh_folder_permissions
 
@@ -451,8 +476,8 @@ main() {
   # On a first install ~/.gitconfig is not yet in place (install-dotfiles.rb runs later),
   # so core.sshCommand is absent. Export GIT_SSH_COMMAND for the entire run to ensure the
   # connect timeout is honoured uniformly for all git operations.
-  # Raw form: this line runs in main() before _download_and_source_shellrc (line 418)
-  # has sourced .shellrc, so is_first_install is not yet defined.
+  # Raw form: this runs in main() before _download_and_source_shellrc has sourced .shellrc,
+  # so is_first_install is not yet defined.
   # if/fi avoids the && pattern where [[ -n ... ]] returning false (not a first install,
   # the common case on a pre-configured machine) propagates a non-zero exit under the ERR trap.
   if [[ -n "${FIRST_INSTALL:-}" ]]; then export GIT_SSH_COMMAND="ssh -o ConnectTimeout=20"; fi
@@ -461,13 +486,21 @@ main() {
   # absent. Define resilient curl flags explicitly for all bootstrap curl calls in this
   # script. Once ~/.curlrc is in place these flags are redundant but harmless.
   # Note: defined as an array so it expands correctly without word-splitting issues.
-  # Note: local -a initialises to an empty array (not unset), so "${_curl_opts[@]}"
-  #       expands to nothing safely under set -u when ~/.curlrc is already present.
+  # Curl retry/timeout flags for bootstrap downloads before ~/.curlrc is symlinked.
+  # Uses CURL_RETRY_OPTS env var as a flag - if set (to any value), enables retry options.
+  # Otherwise only sets defaults when ~/.curlrc is not present.
   # Note: --retry-all-errors is intentionally omitted -- it causes the terminal app to close.
-  # Raw -f used here -- .shellrc has not been sourced yet when _curl_opts is initialized, so is_file is unavailable.
-  local -a _curl_opts
-  if [[ ! -f "${HOME}/.curlrc" ]]; then
-    _curl_opts=(--retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused)
+  # Raw -f used here -- .shellrc has not been sourced yet, so is_file is unavailable.
+  local -a _curl_retry_opts
+  if [[ -n "${CURL_RETRY_OPTS:-}" || ! -f "${HOME}/.curlrc" ]]; then
+    _curl_retry_opts=(--retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused)
+  fi
+
+  # Cache-busting headers for curl downloads from GitHub raw.githubusercontent.com.
+  # Uses CACHE_BUST_HEADERS env var as a flag - if set (to any value), enables cache busting.
+  local -a _cache_bust_headers
+  if [[ -n "${CACHE_BUST_HEADERS:-}" ]]; then
+    _cache_bust_headers=(-H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0")
   fi
 
   # Two separate accumulator arrays for non-fatal step issues:
@@ -478,6 +511,8 @@ main() {
   local _current_section='(init)'
   local -a _step_warnings=()
   local -a _step_errors=()
+  local -a _script_start_times=()
+  local -a _step_start_times=()
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
   # Note: Cannot load from shellrc since that file won't be present in a new machine (vanilla OS)
   # $EPOCHSECONDS is provided by the zsh/datetime built-in module -- always available, no fork.
@@ -487,15 +522,18 @@ main() {
   # compute the "total elapsed" column independently of the local variable.
   # Both are required; see the design note above step_timing_init in .shellrc.
   local script_start_time
-  # zmodload called directly -- .shellrc has not been sourced yet when this runs, so the load is not delegated.
-  # A subsequent zmodload in .shellrc is a no-op in zsh.
+  # zmodload called directly -- .zshenv has not been sourced yet when this runs, so the load is not delegated.
+  # Subsequent zmodload calls are no-op in zsh.
   zmodload zsh/datetime
   script_start_time="${EPOCHSECONDS}"
   _script_start_times+=("${script_start_time}")
   # current_timestamp is not yet available (shellrc not yet sourced); use strftime directly.
   local script_start_time_human
   strftime -s script_start_time_human '%Y-%m-%d %H:%M:%S' "${EPOCHSECONDS}"
-  # Replicate print_script_start format: script_name (cyan) ==> (purple) 'Script started at:' (yellow) timestamp (light_blue)
+  # Replicate print_script_start format using raw ANSI codes: script_name (cyan) ==> (purple)
+  # 'Script started at:' (yellow) timestamp (light_blue). Cannot use color functions here --
+  # this runs before _download_and_source_shellrc, so .shellrc is not yet loaded on a vanilla
+  # OS, making cyan/purple/yellow/light_blue unavailable.
   printf "\033[36m%s\033[0m \033[35m==>\033[0m \033[33mScript started at:\033[0m \033[94m%s\033[0m\n" "${_SCRIPT_NAME}" "${script_start_time_human}"
 
   # Do not allow rootless login.
@@ -511,45 +549,66 @@ main() {
   # sudo spectl --master-disable
 
   _setup_jio_dns
-
   _download_and_source_shellrc
-
   keep_sudo_alive
-
   _approve_fingerprint_sudo
-
   _ensure_filevault_is_on
-
   _install_xcode_command_line_tools
-
   set_ssh_folder_permissions
-
   _ensure_directories_exist
-
   _clone_dot_files_repo
+
+  # On FIRST_INSTALL: validate that the curl-downloaded ~/.shellrc matches the repo version
+  # BEFORE install-dotfiles.rb runs (which would move the curl-downloaded version into the
+  # repo, making them identical). If they differ, the GitHub-cached version is stale and
+  # will cause failures when .zshrc sources it (e.g., missing parameter guards).
+  # Abort early and instruct the user to wait for GitHub's cache to refresh.
+  # Note: This only runs on vanilla OS (FIRST_INSTALL set). On pre-configured machines,
+  # ~/.shellrc is already a symlink to the repo version, so this check is not needed.
+  # Note: Use raw zsh tests here -- utility functions may be from the stale curl-downloaded
+  # .shellrc, so we avoid depending on them for the validation logic itself.
+  if [[ -n "${FIRST_INSTALL:-}" && -n "${DOTFILES_DIR:-}" && -d "${DOTFILES_DIR}" ]]; then
+    if ! /usr/bin/diff -q "${HOME}/.shellrc" "${DOTFILES_DIR}/files/--HOME--/.shellrc" >/dev/null 2>&1; then
+      echo "ERROR: [FIRST_INSTALL] The curl-downloaded ~/.shellrc differs from the repo version." >&2
+      echo "This indicates GitHub's raw.githubusercontent.com cache is stale." >&2
+      echo "" >&2
+      echo "Diff output:" >&2
+      /usr/bin/diff -u "${HOME}/.shellrc" "${DOTFILES_DIR}/files/--HOME--/.shellrc" | head -50 >&2
+      echo "" >&2
+      echo "Wait 5-10 minutes for the cache to refresh, then re-run this script." >&2
+      echo "Alternatively, manually copy the repo version:" >&2
+      echo "  cp '${DOTFILES_DIR}/files/--HOME--/.shellrc' '${HOME}/.shellrc'" >&2
+      echo "  source '${HOME}/.shellrc'" >&2
+      echo "  ${0} \$@" >&2
+      exit 1
+    fi
+  fi
 
   # run this outside of the clone function, since it needs to be run irrespective of whether the dotfiles repo was pre-existing or not
   append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
   install-dotfiles.rb
 
-  # ~/.gitconfig is now symlinked by install-dotfiles.rb -- core.sshCommand is in effect.
-  # Unset GIT_SSH_COMMAND immediately so it no longer overrides core.sshCommand.
-  # Must happen before any subsequent git operations (e.g. the diff/checkout below).
-  unset GIT_SSH_COMMAND
-
-  # On a vanilla OS, .shellrc was curl-downloaded before the dotfiles repo was
-  # cloned. install-dotfiles.rb (with FIRST_INSTALL set) adopts any pre-existing
-  # ~/.shellrc into the repo, which can overwrite the committed version with the
-  # stale GitHub-cached curl content. Restore the committed version if it differs,
-  # so that load_zsh_configs below sources the correct up-to-date .shellrc.
-  if ! git -C "${DOTFILES_DIR}" diff --quiet -- 'files/--HOME--/.shellrc'; then
-    git -C "${DOTFILES_DIR}" checkout -- 'files/--HOME--/.shellrc'
+  # On FIRST_INSTALL: install-dotfiles.rb moves the curl-downloaded ~/.shellrc into the repo,
+  # overwriting the committed version. Even though we validated they matched before install-dotfiles.rb,
+  # we need to restore the committed version so the symlink points to the correct content.
+  # Then force re-source so the functions in the current process are from the restored version.
+  if is_first_install; then
+    if ! git -C "${DOTFILES_DIR}" diff --quiet -- 'files/--HOME--/.shellrc'; then
+      git -C "${DOTFILES_DIR}" checkout -- 'files/--HOME--/.shellrc'
+      # Force re-source the restored version by unfunctioning the guard immediately before sourcing
+      if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
+      DEBUG=true source "${HOME}/.shellrc"
+    fi
   fi
 
+  # ~/.gitconfig is now symlinked by install-dotfiles.rb -- core.sshCommand is in effect.
+  # Unset GIT_SSH_COMMAND immediately so it no longer overrides core.sshCommand.
+  # Must happen before any subsequent git operations.
+  unset GIT_SSH_COMMAND
+
    # Load all zsh config files for PATH and other env vars to take effect
-   # if/fi avoids the && pattern where (($+functions[...])) returning false
-   # (guard not yet defined on some paths) propagates a non-zero exit under the ERR trap.
-   if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
+   # load_zsh_configs internally calls unfunction for both is_shellrc_sourced and
+   # is_aliases_sourced, so no need to do it here.
    DEBUG=true load_zsh_configs
    # ~/.zsh_plugins.zsh (the antidote bundle) is checked into the home git repo and was
    # symlinked by install-dotfiles.rb above, so it is present on both vanilla OS and
@@ -562,8 +621,6 @@ main() {
    load_file_if_exists "${HOME}/.aliases"
 
    _install_homebrew
-
-  _set_default_shell
 
   # Migrate repos cloned before Homebrew's git (2.45+) was on PATH. The system
   # git on a vanilla macOS ignores -c init.defaultRefFormat=reftable and does not
@@ -603,18 +660,47 @@ main() {
   fi
 
   if command_exists 'capture-prefs.rb'; then
+    # On pre-configured machines, refresh backup before import if stale
+    if ! is_first_install; then
+      info "Pre-configured machine detected -- refreshing preferences backup first"
+      if capture-prefs.rb -e; then
+        success 'Successfully refreshed preferences backup'
+        # Commit using git sci (amends if ahead of remote, creates new if not)
+        # capture-prefs.rb -e already staged the files, so just commit
+        # This updates the backup's git timestamp so import validation passes
+        if is_git_repo "${HOME}"; then
+          # sci aborts with message if nothing staged (returns 0 but doesn't commit)
+          if git -C "${HOME}" sci "Preferences backup: $(date '+%Y-%m-%d %H:%M:%S')"; then
+            success "Committed preferences backup"
+          else
+            _record_warning "Failed to commit backup -- timestamp check may fail"
+          fi
+        else
+          _record_warning "HOME is not a git repo -- skipping commit, timestamp check may fail"
+        fi
+      else
+        _record_warning 'Failed to refresh backup -- will attempt import with existing backup'
+      fi
+    fi
+
     capture-prefs.rb -i
     success 'Successfully restored preferences from backup'
   else
     _record_error "Skipping importing of preferences since '$(purple 'capture-prefs.rb')' couldn't be found in the PATH; Please set it up manually"
   fi
 
-  if is_directory '/Applications/Sol.app' && ! pgrep -x 'Sol' &>/dev/null; then
-    open /Applications/Sol.app
+  # Launch Sol.app if installed and not already running
+  if is_directory '/Applications/Sol.app'; then
+    if ! pgrep -x 'Sol' &>/dev/null; then
+      open /Applications/Sol.app
+    fi
   fi
+  info "About to call step_end after preferences restoration..."
   step_end
+  info "step_end completed successfully"
 
   # Recreate the zsh completions.
+  info "Starting zsh completions section..."
   step_start
   section_header "$(yellow 'Recreate zsh completions')"
   rm -rf "${XDG_CACHE_HOME}/zcompdump"* &>/dev/null  || true
@@ -637,10 +723,11 @@ main() {
 
   # Resurrect tracked repos. With shallow cloning (FIRST_INSTALL), large repos
   # download much faster, making this call non-blocking enough to run in-line.
-  # resurrect_tracked_repos calls setup_dev_environment
-  # internally, so no separate calls needed (removing previous duplicate "first pass" pattern).
+  # resurrect_tracked_repos calls setup_dev_environment internally.
   _current_section='Resurrect tracked repos'
+  info "Checking if resurrect_tracked_repos function is available..."
   if command_exists resurrect_tracked_repos; then
+    info "resurrect_tracked_repos found -- calling it now"
     resurrect_tracked_repos
   else
     _record_error "Skipping resurrecting tracked repos since '$(purple 'resurrect_tracked_repos')' couldn't be found in the PATH; Please run it manually"
@@ -658,6 +745,11 @@ main() {
   # Default tooling for dotnet projects
   # dotnet tool install -g dotnet-sonarscanner
   # dotnet tool install -g dotnet-format
+
+  # Set default shell to Homebrew zsh - done at the end to avoid blocking the
+  # automated flow with password prompts. On vanilla OS without cached sudo
+  # credentials, chsh requires password entry.
+  _set_default_shell
 
   # Print grouped summary of all collected warnings and errors, print duration,
   # then send exactly one notification. Exit code is unchanged (0) -- the summary

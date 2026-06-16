@@ -1,14 +1,16 @@
 ---
-applyTo: "**/files/--ZDOTDIR--/**,**/files/--XDG_CONFIG_HOME--/zsh/**"
+applyTo: "**/files/--ZDOTDIR--/**,**/files/--XDG_CONFIG_HOME--/zsh/**,.zprofile"
 ---
 
 # Zsh Startup Performance Instructions
 
-Apply these rules when editing `.zshenv`, `.zshrc`, `.zlogin`, or any file
+> Part of the [tool-agnostic instruction set](../instructions.md) for this repository.
+
+Apply these rules when editing `.zshenv`, `.zshrc`, `.zprofile`, `.zlogin`, or any file
 sourced during zsh startup.
 
 Syntax choices follow the decision-making priority defined in
-`copilot-instructions.md` (startup speed + maintainability first; POSIX and
+[`instructions.md`](../instructions.md) (startup speed + maintainability first; POSIX and
 zsh built-ins where they do not conflict with those). When a startup-path
 optimisation uses zsh-specific syntax, add a comment explaining why.
 
@@ -30,9 +32,12 @@ Avoid them in the hot path:
 # BAD -- forks a subshell
 ARCH=$(uname -m)
 
-# Good -- zsh built-in parameter expansion
-ARCH="${MACHTYPE%%-*}"   # Note: returns 'arm' not 'arm64' on Apple Silicon
-# TODO: verify MACHTYPE gives correct arch string on all targets
+# Good -- use cached value from .shellrc
+# .shellrc caches ARCH to avoid fork on every source (see architecture cache section)
+# Direct MACHTYPE usage is unsafe: reports 'x86_64' on Apple Silicon vanilla macOS (zsh bug)
+if is_arm; then
+  # arm-specific logic
+fi
 
 # BAD
 CURRENT_USER=$(whoami)

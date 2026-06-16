@@ -101,11 +101,11 @@ cask 'zen@twilight'
 cask 'zoom'
 
 # local AI coding tools
-tap 'jundot/omlx', 'git@github.com/jundot/omlx'
-# Note: Switched to using omlx instead of ollama on Apple M* laptop
+# tap 'jundot/omlx', 'git@github.com/jundot/omlx'
 # reference: https://www.agileguy.ca/opencode-fully-local/
-# brew 'ollama', link: true, restart_service: :changed
-brew 'omlx', restart_service: :changed if is_arm
+# to start ollama: ollama launch opencode --model gpt-oss-20b-MXFP4-Q8 -- $DOTFILES_DIR
+brew 'ollama', link: true, restart_service: :changed
+# brew 'omlx', restart_service: :changed if is_arm
 brew 'opencode'
 
 # brew 'mas'

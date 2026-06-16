@@ -4,12 +4,22 @@ applyTo: "**/.gitconfig,**/custom.gitattributes,**/add-upstream-git-config.rb"
 
 # Git Configuration Instructions
 
+> Part of the [tool-agnostic instruction set](../instructions.md) for this repository.
+
 ## Shell Scripting Rules Inside Aliases
 
-These rules mirror the shell scripting rules in `shell-scripting.instructions.md`
-and apply to every `!sh -c` or `!f()` alias body.
+**All generic shell scripting rules from [`shell-scripting.md`](./shell-scripting.md) apply to git alias bodies.**
 
-## Working Directory Argument Convention
+This includes:
+- Variable quoting (always use `"${var}"`)
+- Brace notation (always use `${var}`, never `$var`)
+- Guarding positional parameters (use `${1:-}` or `${1:-.}`)
+- Quote styles (single vs double quotes)
+- All other shell conventions
+
+**This file only documents git-specific patterns and exceptions.**
+
+## Git-Specific: Working Directory Argument Convention
 
 Every `!` alias that operates on a repository **must** accept an optional `<dir>`
 as its first argument, defaulting to `'.'` if omitted. Use `git -C "${1:-.}"` for
@@ -65,61 +75,6 @@ cc = "!f() { case \"${1:-}\" in -*|'') dir='.' ;; *) dir=\"${1}\"; shift ;; esac
 
 This preserves the existing `git cc --expire=now` calling convention while also
 allowing `git cc /path/to/repo --expire=now`.
-
-### Always Quote Variables
-
-Always quote variable expansions to prevent word-splitting on values that could
-contain spaces:
-
-```ini
-# BAD -- unquoted, breaks on paths with spaces
-my-alias = !sh -c 'git -C $1 command' -
-
-# Good -- quoted
-my-alias = !sh -c 'git -C "${1:-.}" command' -
-```
-
-### Brace Notation
-
-Always use `${var}` brace notation -- never bare `$var` (except single-character
-special params `$?`, `$#`, `$@`, `$$`, etc.):
-
-```ini
-# BAD
-my-alias = "!f() { echo $branch; }; f"
-
-# Good
-my-alias = "!f() { echo \"${branch}\"; }; f"
-```
-
-### Guard Positional Parameters with Defaults
-
-Under `set -u` (or any strict mode), bare `$1` fails when no argument is given.
-Always provide a default with `${1:-}` (empty default) or a meaningful fallback:
-
-```ini
-# BAD -- fails if no argument supplied
-my-alias = !sh -c 'git checkout $1' -
-
-# Good -- empty default, safe when no arg
-my-alias = !sh -c 'git checkout "${1:-}"' -
-
-# Good -- meaningful fallback (current dir)
-my-alias = !sh -c 'git -C "${1:-.}" status' -
-```
-
-### Single vs Double Quotes
-
-Use single quotes for static strings with no variable expansion inside the alias
-value. Use double quotes only when the string contains variable references:
-
-```ini
-# Good -- static string, single quotes
-my-alias = !sh -c 'printf "no args\n"' -
-
-# Good -- variable expansion, double quotes required
-my-alias = "!f() { printf '%s\n' \"${1:-}\"; }; f"
-```
 
 ---
 

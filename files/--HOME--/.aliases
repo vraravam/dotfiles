@@ -13,7 +13,9 @@
 # without needing their own check. This return is a no-op cost (single builtin).
 # ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
 # evaluated by non-zsh runtimes (e.g. direnv's sandbox).
-[[ -n "${ZSH_VERSION-}" ]] && (($+functions[is_aliases_sourced]))   && return
+if [[ -n "${ZSH_VERSION-}" ]] && (($+functions[is_aliases_sourced])); then
+  return
+fi
 
 # Dummy function to check if .aliases is sourced (mirrors is_shellrc_sourced in .shellrc)
 is_aliases_sourced() {
@@ -21,10 +23,206 @@ is_aliases_sourced() {
 }
 
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
-[[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
+if [[ -n "${DEBUG:-}" ]]; then echo "loading ${0}"; fi
 
 # Re-source guard is inside .shellrc itself -- safe to call unconditionally.
 source "${HOME}/.shellrc"
+
+# ---------------------------------------------------------------------------
+# Homebrew keg-only paths
+# ---------------------------------------------------------------------------
+
+# Cache Homebrew bin/sbin and keg-only PATH/LDFLAGS/CPPFLAGS/PKG_CONFIG_PATH/MANPATH
+# to avoid ~42 stat syscalls per interactive startup. Keyed on the mtime of
+# ${HOMEBREW_PREFIX}/opt/ -- which changes on every brew install/remove -- so new
+# keg-only installs are automatically reflected on the next shell start.
+#
+# All entries are built directly from the filesystem -- never derived from the current
+# environment. This makes regeneration idempotent: running inside a shell that already
+# has keg-only vars set (e.g. OpenCode inheriting the user's PATH) produces the same
+# cache as running in a clean shell. The snapshot-and-delta approach this replaced was
+# broken: a pre-populated PATH caused an empty delta (keg-only bins missing from cache)
+# and inherited LDFLAGS caused doubled flags.
+#
+# Moved from .zshrc to .aliases so it benefits from the re-source guard (runs once per
+# shell session instead of on every .zshrc source). Only matters after brew is installed.
+if (($+commands[brew])); then
+  # Anonymous function scopes keg-only path computation locals; .aliases is zsh-only.
+  () {
+    local keg_cache="${XDG_CACHE_HOME}/keg-only-paths-cache.zsh"
+    local opt_dir="${HOMEBREW_PREFIX}/opt"
+
+    # Cache hit: source pre-computed static exports -- zero stat calls.
+    # Inverted logic: is_file_older_than returns true when regeneration needed, so negate it.
+    if ! is_file_older_than "${keg_cache}" "${opt_dir}"; then
+      load_file_if_exists "${keg_cache}"
+      return
+    fi
+
+    # Cache absent or stale: enumerate each keg-only package's directories directly.
+    # keg_paths/keg_manpath are built with prepend semantics so the last-processed
+    # package's entries appear first (highest PATH priority). Within each package,
+    # gnubin is prepended last so it wins over libexec/bin which wins over bin.
+    # ldflags_new/cppflags_new/pkgconfig_new accumulate only keg-only contributions
+    # (not inherited environment values) -- the keg-only block is their sole setter
+    # during startup, so these can be safely overwritten in the cache.
+    local -a keg_paths=()
+    local -a keg_manpath=()
+    local ldflags_new=''
+    local cppflags_new=''
+    local pkgconfig_new=''
+
+    # Named function required -- anonymous () cannot be called repeatedly in a loop.
+    # Unfunctioned immediately after use to prevent global namespace pollution
+    # (named functions defined inside () persist in the global table after return).
+    _keg_collect() {
+      local d="${HOMEBREW_PREFIX}/opt/${1:-}"
+      if ! is_directory "${d}"; then return 0; fi
+      if is_directory "${d}/bin"; then keg_paths=("${d}/bin" "${keg_paths[@]}"); fi
+      if is_directory "${d}/libexec/bin"; then keg_paths=("${d}/libexec/bin" "${keg_paths[@]}"); fi
+      if is_directory "${d}/libexec/gnubin"; then keg_paths=("${d}/libexec/gnubin" "${keg_paths[@]}"); fi
+      if is_directory "${d}/libexec/gnuman"; then keg_manpath=("${d}/libexec/gnuman" "${keg_manpath[@]}"); fi
+      if is_directory "${d}/lib"; then ldflags_new="-L${d}/lib${ldflags_new:+ ${ldflags_new}}"; fi
+      if is_directory "${d}/include"; then cppflags_new="-I${d}/include${cppflags_new:+ ${cppflags_new}}"; fi
+      if is_directory "${d}/lib/pkgconfig"; then pkgconfig_new="${d}/lib/pkgconfig${pkgconfig_new:+:${pkgconfig_new}}"; fi
+    }
+    local pkg
+    for pkg in 'curl' 'gnu-tar' 'grep' 'sqlite' 'zlib'; do
+      _keg_collect "${pkg}"
+    done
+    if is_directory "${HOMEBREW_PREFIX}/opt/openssl@3"; then
+      _keg_collect 'openssl@3'
+      export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${HOMEBREW_PREFIX}/opt/openssl@3"
+    fi
+    unfunction _keg_collect
+
+    # Homebrew base bin/sbin appended after keg-only entries so keg-only tools take
+    # priority. sbin is placed before bin to match the original prepend sequence
+    # (bin prepended first, sbin prepended second → sbin ends up in front of bin).
+    # /etc/paths.d/homebrew pre-populates /opt/homebrew/bin at a low priority position;
+    # it is re-added here at the front. typeset -gU path at the bottom removes the dup.
+    # Desired order: mise (_mise_hook via zsh-defer) > keg-only > homebrew base > system.
+    local -a hb_base=()
+    if is_directory "${HOMEBREW_PREFIX}/bin"; then hb_base+=("${HOMEBREW_PREFIX}/bin"); fi
+    if is_directory "${HOMEBREW_PREFIX}/sbin"; then hb_base=("${HOMEBREW_PREFIX}/sbin" "${hb_base[@]}"); fi
+
+    # homebrew share/man after keg-only gnuman entries.
+    if is_directory "${HOMEBREW_PREFIX}/share/man"; then keg_manpath+=("${HOMEBREW_PREFIX}/share/man"); fi
+
+    local -a all_path_entries=("${keg_paths[@]}" "${hb_base[@]}")
+
+    # Apply to the current session.
+    if is_non_empty_array all_path_entries; then path=("${all_path_entries[@]}" "${path[@]}"); fi
+    if is_non_empty_array keg_manpath; then manpath=("${keg_manpath[@]}" "${manpath[@]}"); fi
+    if is_non_zero_string "${ldflags_new}"; then export LDFLAGS="${ldflags_new}"; fi
+    if is_non_zero_string "${cppflags_new}"; then export CPPFLAGS="${cppflags_new}"; fi
+    if is_non_zero_string "${pkgconfig_new}"; then export PKG_CONFIG_PATH="${pkgconfig_new}"; fi
+
+    # Write static cache. Path/manpath entries are quoted for safe embedding.
+    # LDFLAGS/CPPFLAGS/PKG_CONFIG_PATH are written as plain overwrites (no
+    # ${LDFLAGS} expansion) -- they contain only keg-only contributions and are
+    # safe to overwrite because nothing else in the startup sequence sets them.
+    {
+      local -a qpaths=() qmanpath=()
+      local entry
+      for entry in "${all_path_entries[@]}"; do qpaths+=("${(q)entry}"); done
+      for entry in "${keg_manpath[@]}"; do qmanpath+=("${(q)entry}"); done
+      if is_non_empty_array qpaths; then
+        printf 'path=(%s "${path[@]}")\n' "${qpaths[*]}"
+      fi
+      if is_non_empty_array qmanpath; then
+        printf 'manpath=(%s "${manpath[@]}")\n' "${qmanpath[*]}"
+      fi
+      if is_non_zero_string "${ldflags_new}"; then
+        printf 'export LDFLAGS=%s\n' "${(q)ldflags_new}"
+      fi
+      if is_non_zero_string "${cppflags_new}"; then
+        printf 'export CPPFLAGS=%s\n' "${(q)cppflags_new}"
+      fi
+      if is_non_zero_string "${pkgconfig_new}"; then
+        printf 'export PKG_CONFIG_PATH=%s\n' "${(q)pkgconfig_new}"
+      fi
+      if is_non_zero_string "${RUBY_CONFIGURE_OPTS:-}"; then
+        printf 'export RUBY_CONFIGURE_OPTS=%s\n' "${(q)RUBY_CONFIGURE_OPTS}"
+      fi
+    } >|"${keg_cache}" 2>/dev/null
+  }
+fi
+
+# --------------------------------------------------------------------------
+# Editor configuration
+# --------------------------------------------------------------------------
+
+unset GIT_EDITOR
+# SSH sessions fall back to vi; local sessions prefer GUI editors.
+# EDITOR always delegates to wait-editor, which re-execs $GIT_EDITOR via POSIX
+# word-splitting -- so '--wait' flags are passed correctly to GUI editors, and
+# vi (which blocks naturally) works without any special casing.
+if is_non_zero_string "${SSH_CONNECTION:-}"; then
+  preferred_editors=('vi')
+else
+  preferred_editors=('zed --wait' 'code --wait' 'vi')
+fi
+for editor in "${preferred_editors[@]}"; do
+  # ${editor%% *} strips everything after the first space -- pure zsh, no fork.
+  # (($+commands[...])) is a single O(1) hash probe; command_exists does 4.
+  # .aliases is zsh-only; all three candidates (zed, code, vi) are external
+  # binaries -- $+commands is the right table to probe.
+  if (($+commands[${editor%% *}])); then
+    export GIT_EDITOR="${editor}"
+    break
+  fi
+done
+unset preferred_editors editor
+# Safety net: if no editor was found in PATH (e.g. a stripped environment
+# where even vi is absent), fall back to vi unconditionally so GIT_EDITOR is
+# never left unset. wait-editor will fail clearly if vi is truly missing.
+if is_zero_string "${GIT_EDITOR:-}"; then
+  export GIT_EDITOR='vi'
+fi
+# EDITOR is always the wait-editor wrapper regardless of which editor was
+# selected -- set once here rather than repeating it in every branch above.
+export EDITOR='wait-editor'
+
+# Editor aliases
+# EDITOR='wait-editor' -- a wrapper script that re-execs $GIT_EDITOR with word-splitting
+# so --wait is passed correctly to tools that exec() EDITOR directly (crontab, visudo, etc.).
+# GIT_EDITOR carries the full invocation with flags (e.g. 'zed --wait').
+if command_exists "${EDITOR:-}"; then
+  if is_zsh; then
+    # associate file extensions with applications for the 'open' command
+    alias -s txt="${EDITOR}"
+    alias -s log="${EDITOR}"
+  fi
+
+  # add a generic alias for editing files and folders -- non-blocking (bare binary,
+  # no --wait) so the shell prompt returns immediately after launching the editor.
+  # Non-blocking: strip flags (e.g. 'zed --wait' → 'zed') via nested expansion.
+  # Falls back to $EDITOR if GIT_EDITOR is unset (e.g. non-interactive shells).
+  alias edit="${${GIT_EDITOR:-${EDITOR}}%% *}"
+
+  # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
+  alias edit-gist='edit "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${HOME}/.ssh" "${HOME}/.mise.toml" "${PERSONAL_PROFILES_DIR}/.gitignore"'
+fi
+
+# Make VSCodium use the VS Code marketplace
+if (($+commands[codium])); then
+  export VSCODE_GALLERY_SERVICE_URL='https://marketplace.visualstudio.com/_apis/public/gallery'
+  export VSCODE_GALLERY_CACHE_URL='https://vscode.blob.core.windows.net/gallery/index'
+  export VSCODE_GALLERY_ITEM_URL='https://marketplace.visualstudio.com/items'
+  export VSCODE_GALLERY_CONTROL_URL=''
+  export VSCODE_GALLERY_RECOMMENDATIONS_URL=''
+fi
+
+# Use bat to colorize man pages
+if (($+commands[bat])); then
+  export MANPAGER="sh -c 'col -bx | bat -l man -p'"
+fi
+
+# Defines word-boundaries for editing: ensures that deleting word on /path/to/file
+# deletes only 'file' and not the directory. This removes '/' and '.' from $WORDCHARS.
+export WORDCHARS="${WORDCHARS:s#/#}"
+export WORDCHARS="${WORDCHARS:s#.#}"
 
 # --------------------------------------------------------------------------
 # String utilities (zsh-only; not needed in direnv/bash so lives here not .shellrc)
@@ -92,8 +290,8 @@ parse_folder_and_switches() {
 # Example (in the 'push' autoload):
 #   push() { dispatch_or_fallback push _push "$@"; }
 dispatch_or_fallback() {
-  local cmd="${1}"
-  local fallback_fn="${2}"
+  local cmd="${1:-}"
+  local fallback_fn="${2:-}"
   shift 2
   local override="${PERSONAL_BIN_DIR}/${cmd}-${PWD##*/}.sh"
   if is_executable "${override}"; then
@@ -174,13 +372,13 @@ alias egrep="${aliases[egrep]:-egrep} -Hn --color=auto --exclude-dir={.zsh_sessi
 # 3b. Tool replacements -- enhanced CLI tools
 # --------------------------------------------------------------------------
 # eza already defines 'll' - so skip if that's present
-! command_exists eza && alias ll='ls -la'
-command_exists tree && alias tree="${aliases[tree]:-tree} -Ch"
-command_exists vim && alias vi='vim'
-command_exists prettyping && alias ping='prettyping --nolegend'
-command_exists bat && alias cat='bat'
-command_exists btop && alias top='btop'
-command_exists ncdu && alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'
+if ! command_exists eza; then alias ll='ls -la'; fi
+if command_exists tree; then alias tree="${aliases[tree]:-tree} -Ch"; fi
+if command_exists vim; then alias vi='vim'; fi
+if command_exists prettyping; then alias ping='prettyping --nolegend'; fi
+if command_exists bat; then alias cat='bat'; fi
+if command_exists btop; then alias top='btop'; fi
+if command_exists ncdu; then alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'; fi
 
 # --------------------------------------------------------------------------
 # Helper functions for delegating to Ruby utilities
@@ -214,7 +412,7 @@ _call_ruby_git_workspace() {
     kwargs_str="${kwargs_parts[*]}"
   fi
 
-  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'git_workspace'; GitWorkspace.${method}(${kwargs_str})"
+  ruby -e "require 'git_workspace'; GitWorkspace.${method}(${kwargs_str})"
 }
 
 # --------------------------------------------------------------------------
@@ -226,7 +424,9 @@ if command_exists 'run-all.rb'; then
   alias all="FOLDER='${HOME}' MAXDEPTH=7 rug"
   alias all-cache="FILTER='[cC]ache' all"
   alias home="FOLDER='${HOME}' FILTER='.bin|.dotfiles|zsh|mise' MAXDEPTH=5 rug"
-  is_directory "${PERSONAL_PROFILES_DIR}" && alias profiles="FOLDER='${PERSONAL_PROFILES_DIR}' MAXDEPTH=5 rug"
+  if is_directory "${PERSONAL_PROFILES_DIR}"; then
+    alias profiles="FOLDER='${PERSONAL_PROFILES_DIR}' MAXDEPTH=5 rug"
+  fi
 
   # Regenerates the repo alias cache and re-sources it in the current shell.
   # Without -f: silent; only rebuilds if the cache is missing or stale.
@@ -235,7 +435,7 @@ if command_exists 'run-all.rb'; then
     is_directory "${PROJECTS_BASE_DIR}" || return 0
 
     local force_flag="false"
-    [[ "${1-}" == "-f" ]] && force_flag="true"
+    if [[ "${1-}" == "-f" ]]; then force_flag="true"; fi
 
     # Delegate to Ruby implementation in utilities/git_workspace.rb
     _call_ruby_git_workspace regenerate_repo_aliases "force=${force_flag}"
@@ -279,7 +479,14 @@ delete_caches() {
   # bytecode companions. They are all regenerated automatically on the next shell
   # start or login shell.  .zshrc recreates XDG_CACHE_HOME with mkdir -p before
   # any cache write, so the missing directory is safe.
-  if is_directory "${XDG_CACHE_HOME}"; then rm -rfv "${XDG_CACHE_HOME}"; fi
+  if is_directory "${XDG_CACHE_HOME}"; then
+    rm -rfv "${XDG_CACHE_HOME}"
+
+    # Ensure XDG_CACHE_HOME exists before any cache writes below. When ${XDG_CACHE_HOME} is removed above,
+    # the subsequent cache-write redirections (>|) silently fail and leave caches empty -- breaking fpath
+    # updates and other lazy-loaded config that only runs through the cache file.
+    ensure_dir_exists "${XDG_CACHE_HOME}"
+  fi
 
   # Re-source .zlogin immediately to rebuild all .zwc caches in the current shell.
   # Without this, the first new terminal after delete_caches opens with no .zwc files;
@@ -309,8 +516,8 @@ delete_caches() {
 # maintenance register/start, setup_dev_environment).
 resurrect_tracked_repos() {
   # Deferred-collection locals. _SCRIPT_NAME is read by logging functions via
-  # dynamic scoping (no argument passing needed). _current_section is currently
-  # unused but declared for consistency with scripts using deferred collection.
+  # dynamic scoping (no argument passing needed). _current_section is declared
+  # for consistency with scripts using deferred collection but not used here.
   # _step_warnings and _step_errors accumulate issues for the final summary.
   local _SCRIPT_NAME='resurrect_tracked_repos'
   local _current_section='(init)'
@@ -400,7 +607,7 @@ install_mise_versions() {
     return 0
   fi
   local first_install_flag="false"
-  is_first_install && first_install_flag="true"
+  if is_first_install; then first_install_flag="true"; fi
   _call_ruby_git_workspace install_mise_versions "first_install=${first_install_flag}"
 }
 
@@ -414,7 +621,7 @@ allow_all_direnv_configs() {
     return 0
   fi
   local first_install_flag="false"
-  is_first_install && first_install_flag="true"
+  if is_first_install; then first_install_flag="true"; fi
   _call_ruby_git_workspace allow_all_direnv_configs "first_install=${first_install_flag}"
 }
 
@@ -424,7 +631,7 @@ allow_all_direnv_configs() {
 # Thin wrapper that delegates to Ruby GitWorkspace.setup_dev_environment.
 setup_dev_environment() {
   local first_install_flag="false"
-  is_first_install && first_install_flag="true"
+  if is_first_install; then first_install_flag="true"; fi
   _call_ruby_git_workspace setup_dev_environment "first_install=${first_install_flag}"
 }
 
@@ -437,7 +644,7 @@ setup_dev_environment() {
 # Prints the old and new MAC address for confirmation.
 # Usage: _free_wifi <interface>  (called via the free_wifi alias, e.g. free_wifi en0)
 _free_wifi() {
-  local interface="${1}"
+  local interface="${1:-}"
   (ifconfig "${interface}" | /usr/bin/grep ether) &&
     (openssl rand -hex 6 | sed 's/\(..\)/\1:/g; s/.$//' | xargs sudo ifconfig "${interface}" ether) &&
     (ifconfig "${interface}" | /usr/bin/grep ether)
@@ -473,7 +680,7 @@ if is_macos; then
   find_and_append_prefs() {
     local allowed_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-allowed-list.txt"
     local denied_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-denied-list.txt"
-    defaults find "${1}" | /usr/bin/grep 'keys in domain' | while IFS="'" read -r _ field _; do
+    defaults find "${1:-}" | /usr/bin/grep 'keys in domain' | while IFS="'" read -r _ field _; do
       # Check whether this domain is on the denied list before appending.
       # grep -Fxq: fixed-string, whole-line, quiet -- no subprocess output.
       if grep -Fxq "${field}" "${denied_list_file}" 2>/dev/null; then
@@ -531,7 +738,7 @@ if is_macos && command_exists brew; then
   # Called by the antidote formula's postinstall hook in Brewfile (whenever
   # antidote is installed/upgraded) and by software-updates-cron.sh (periodic updates).
   update_antidote_and_regenerate_plugin_bundle() {
-    ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'antidote'; Antidote.update_and_regenerate_bundle"
+    ruby -e "require 'antidote'; Antidote.update_and_regenerate_bundle"
   }
 
   # Audits and auto-styles a Homebrew cask formula for contribution readiness.
@@ -539,17 +746,19 @@ if is_macos && command_exists brew; then
   check_cask() {
     # shasum -a 256 <fileName>
     # cd $(brew --repository homebrew/cask-versions) &&
-    brew audit --online --cask "${1}" && brew style --fix --cask "${1}"
+    if brew audit --online --cask "${1:-}"; then
+      brew style --fix --cask "${1:-}"
+    fi
     # cd -
-    # brew fetch --cask "${1}"
+    # brew fetch --cask "${1:-}"
   }
 
   # Builds a Homebrew formula from source, tests it, and audits it for contribution readiness.
   # Usage: check_formula <formula-name>
   check_formula() {
-    brew install --build-from-source "${1}"
-    brew test "${1}"
-    brew audit --strict "${1}"
+    brew install --build-from-source "${1:-}"
+    brew test "${1:-}"
+    brew audit --strict "${1:-}"
   }
 fi
 
@@ -613,7 +822,7 @@ pdf_to_png() {
     return 0 # Success, nothing to do
   fi
 
-  local pdf="${1}"
+  local pdf="${1:-}"
   local png="${pdf%.*}.png"
 
   magick -density 800 "${pdf}" -quality 100 "${png}"
@@ -641,33 +850,12 @@ fi
 unset remove_trailing_find_cmd
 
 # npm
-command_exists npm && alias npm_cleanup='npm cache clear --force'
+if command_exists npm; then alias npm_cleanup='npm cache clear --force'; fi
 
 # tmux
 if command_exists tmux; then
   alias tmuxn='tmux new-session -A -s'  # start a new tmux session and name it
   alias tmuxa='tmux attach -t'          # attach to a named tmux session
-fi
-
-# Editor aliases
-# EDITOR='wait-editor' -- a wrapper script that re-execs $GIT_EDITOR with word-splitting
-# so --wait is passed correctly to tools that exec() EDITOR directly (crontab, visudo, etc.).
-# GIT_EDITOR carries the full invocation with flags (e.g. 'zed --wait').
-if command_exists "${EDITOR:-}"; then
-  if is_zsh; then
-    # associate file extensions with applications for the 'open' command
-    alias -s txt="${EDITOR}"
-    alias -s log="${EDITOR}"
-  fi
-
-  # add a generic alias for editing files and folders -- non-blocking (bare binary,
-  # no --wait) so the shell prompt returns immediately after launching the editor.
-  # Non-blocking: strip flags (e.g. 'zed --wait' → 'zed') via nested expansion.
-  # Falls back to $EDITOR then 'vi' if GIT_EDITOR is unset (e.g. non-interactive shells).
-  alias edit="${${GIT_EDITOR:-${EDITOR:-vi}}%% *}"
-
-  # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
-  alias edit-gist='edit "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${HOME}/.ssh" "${HOME}/.mise.toml" "${PERSONAL_PROFILES_DIR}/.gitignore"'
 fi
 
 # --------------------------------------------------------------------------
@@ -717,7 +905,7 @@ recron() {
 #
 # Example: with_cron_suspended _push "$@"
 with_cron_suspended() {
-  local fn="${1}"
+  local fn="${1:-}"
   shift
   trap 'resume_cron' EXIT
   suspend_cron
@@ -740,7 +928,7 @@ if command_exists keybase; then
       error "$(red 'Usage:') ${0} $(yellow '<repo name>')\n For eg: '\$KEYBASE_HOME_REPO_NAME' or '\$KEYBASE_PROFILES_REPO_NAME'"
       return
     fi
-    keybase git gc --force "${1}"
+    keybase git gc --force "${1:-}"
   }
 fi
 
@@ -839,7 +1027,7 @@ _MACOS_LOGIN_ITEM_APPS=(
 #   $1 - method name to call on MacOS module
 _call_ruby_macos() {
   local method="${1:?_call_ruby_macos: method name required}"
-  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'macos'; MacOS.${method}"
+  ruby -e "require 'macos'; MacOS.${method}"
 }
 
 # Delegates to MacOS.kill_login_item_apps (scripts/utilities/macos.rb).

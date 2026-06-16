@@ -32,14 +32,19 @@ module Cron
   # Loads +cron_file+ into the system crontab via `crontab <file>`.
   # Warns and returns early if the file does not exist.
   # Mirrors restore_cron in .shellrc.
+  # Returns true on success, false on failure (logs error but does not raise).
   def restore_cron(cron_file)
     cron_file = Pathname.new(cron_file) unless cron_file.is_a?(Pathname)
     unless cron_file.file?
       Logging.warn "No '#{cron_file.to_s.cyan}' found; returning without any processing"
-      return
+      return false
     end
     cron_file.dirname.mkpath
-    raise "Failed to restore crontab from '#{cron_file.to_s.cyan}'" unless system('crontab', cron_file.to_s)
+    unless system('crontab', cron_file.to_s)
+      Logging.record_error "Failed to restore crontab from '#{cron_file.to_s.cyan}'"
+      return false
+    end
+    true
   end
 
   # Backs up the current crontab to the path in ENV['_DOTFILES_CRON_BACKUP_FILE']
@@ -76,8 +81,10 @@ module Cron
     Logging.debug 'Resuming cron jobs...'
     backup_file = EnvVars.cron_backup_file
     if backup_file.file? && !backup_file.empty?
-      restore_cron(backup_file)
-      Logging.success 'Cron jobs resumed from backup'
+      if restore_cron(backup_file)
+        Logging.success 'Cron jobs resumed from backup'
+      end
+      # Error already logged by restore_cron if it failed
     else
       Logging.info 'No cron backup to restore; skipping'
     end
@@ -89,8 +96,11 @@ module Cron
   # ---------------------------------------------------------------------------
 
   # Seeds +file+ with the standard crontab header and the software-updates-cron
-  # schedule. Called by recron only when crontab.txt does not already exist
-  # (bootstrap / first-install path). Mirrors create_crontab in .aliases.
+  # schedule. Can be called manually via the shell wrapper to generate a template.
+  # No longer called by recron (which now preserves existing crontabs and falls back
+  # to tracked crontab.txt). Users who need a template can run:
+  #   create_crontab ~/personal/dev/configs/crontab.txt
+  # Mirrors create_crontab in .aliases.
   def create_crontab(file)
     shell = EnvVars::SHELL
     username = EnvVars::USER
@@ -135,10 +145,17 @@ module Cron
     end
   end
 
-  # Loads the system crontab from ${PERSONAL_CONFIGS_DIR}/crontab.txt.
-  # If crontab.txt does not exist yet (bootstrap / first-install), seeds it
-  # first via create_crontab so there is always a known-good file on disk.
-  # Edit crontab.txt directly to change the schedule; recron will pick it up.
+  # Restores crontab schedule using fallback logic:
+  # 1. Capture existing system crontab to temp file (crontab -l)
+  # 2. If empty → fallback to ${PERSONAL_CONFIGS_DIR}/crontab.txt (tracked in repo)
+  # 3. If both empty → user_action to create schedule, don't modify system crontab
+  # 4. If non-empty schedule found → load it into system crontab
+  #
+  # This ensures:
+  # - Existing cron jobs are preserved (don't overwrite user's custom schedules)
+  # - Tracked crontab.txt is used as fallback on vanilla OS
+  # - No default schedule imposed if user has neither
+  #
   # Mirrors recron in .aliases.
   def recron
     # Only set script name and increment depth if we're at depth 0 (not yet
@@ -153,12 +170,39 @@ module Cron
     end
 
     Logging.debug 'Setting up crontab'
-    unless CRONTAB_FILE.file?
-      Logging.debug "'#{CRONTAB_FILE.to_s.cyan}' not found -- seeding from template"
-      create_crontab(CRONTAB_FILE)
+
+    # Step 1: Capture existing system crontab to temp file
+    require 'tempfile'
+    temp_crontab = Tempfile.new(['crontab', '.txt'])
+    begin
+      # crontab -l exits 1 if no crontab exists; redirect stderr to suppress "no crontab" message
+      system('crontab', '-l', out: temp_crontab.path, err: File::NULL)
+      temp_crontab.close
+
+      # Step 2: Check if temp file has content (existing crontab)
+      schedule_source = nil
+      if temp_crontab.size.positive?
+        Logging.debug "Found existing crontab with #{temp_crontab.size} bytes"
+        schedule_source = Pathname.new(temp_crontab.path)
+      elsif CRONTAB_FILE.file? && !CRONTAB_FILE.empty?
+        # Step 2b: Fallback to tracked crontab.txt if it exists and is non-empty
+        Logging.debug "No existing crontab; falling back to '#{CRONTAB_FILE.to_s.cyan}'"
+        schedule_source = CRONTAB_FILE
+      else
+        # Step 3: Both empty - user action needed
+        Logging.user_action "No crontab found and '#{CRONTAB_FILE.to_s.cyan}' does not exist. Create '#{CRONTAB_FILE.to_s.cyan}' with your desired schedule and run '#{'recron'.yellow}' to install it. Track the file in your home repo for backup."
+      end
+
+      # Step 4: Load non-empty schedule into system crontab
+      if schedule_source
+        if restore_cron(schedule_source)
+          Logging.success 'Crontab set up successfully'
+        end
+        # Error already logged by restore_cron if it failed
+      end
+    ensure
+      temp_crontab.unlink
     end
-    restore_cron(CRONTAB_FILE)
-    Logging.success 'Crontab set up successfully'
 
     Logging.print_script_summary(script_start_time) if current_depth.zero?
   end

@@ -9,13 +9,12 @@
 #
 # Usage: cleanup-browser-profiles.rb [-n]
 
-$LOAD_PATH.unshift(File.join(__dir__, 'utilities'))
-
-require 'cli_parser'
-require 'env_vars'
-require 'logging'
 require 'open3'
-require 'path_utils'
+
+require_relative 'utilities/cli_parser'
+require_relative 'utilities/env_vars'
+require_relative 'utilities/logging'
+require_relative 'utilities/path_utils'
 
 include Logging
 

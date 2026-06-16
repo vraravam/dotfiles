@@ -16,8 +16,10 @@
 # Guard against re-sourcing -- all call sites can unconditionally 'source ~/.shellrc'
 # without needing their own check. This return is a no-op cost (single builtin).
 # ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
-# evaluated by non-zsh runtimes (e.g. direnv's sandbox).
-[[ -n "${ZSH_VERSION-}" ]] && (($+functions[is_shellrc_sourced])) && return
+# evaluated by non-zsh runtimes (e.g. direnv's bash sandbox).
+if [[ -n "${ZSH_VERSION-}" ]] && (($+functions[is_shellrc_sourced])); then
+  return
+fi
 
 # Dummy function to check if shellrc is sourced (mirrors is_aliases_sourced in .aliases)
 # Defined immediately after the guard so that any subsequent 'source ~/.shellrc' in zsh
@@ -27,7 +29,7 @@ is_shellrc_sourced() {
 }
 
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
-[[ -n "${DEBUG:-}" ]] && echo "loading ${0}"
+if [[ -n "${DEBUG:-}" ]]; then echo "loading ${0}"; fi
 
 # BASH_VERSION is set by bash but unset in zsh. Any third-party script sourced
 # from here (e.g. antidote.zsh) that checks $BASH_VERSION bare will crash under
@@ -42,13 +44,7 @@ export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-"${HOME}/.config"}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-"${HOME}/.local/share"}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-"${HOME}/.local/state"}"
 
-# zsh/datetime provides $EPOCHSECONDS and strftime -- used by current_timestamp,
-# current_date, current_timestamp_for_filename, format_duration, step_start/end,
-# and print_script_start/duration defined later in this file.
-# Loaded here (once) so all downstream callers don't need their own zmodload.
-# zmodload is idempotent: re-loading an already-loaded module is a no-op.
-# Guard with ZSH_VERSION: direnv evaluates .shellrc in bash, which has no zmodload.
-[[ -n "${ZSH_VERSION-}" ]] && zmodload zsh/datetime
+# zsh/datetime loaded in .zshenv to avoid repeated loading in interactive shells.
 
 # Memoization cache for _log_indent: associative array depth → indent string.
 # Avoids repeated printf calls for the same depth. Zsh associative arrays are
@@ -111,8 +107,8 @@ export LESSCHARSET='utf-8'
 # Apple support forums. uname -m is the only reliable source on all machines.
 # Cache architecture detection to avoid uname -m fork on every .shellrc source.
 # Cached in XDG_CACHE_HOME, invalidated by delete_caches (e.g. after macOS upgrades).
-# This runs before HOMEBREW_PREFIX setup (line 118+) which depends on ARCH.
-# Note: XDG_CACHE_HOME is defined earlier (line 40), but the directory may not exist
+# This runs before HOMEBREW_PREFIX setup, which depends on ARCH.
+# Note: XDG_CACHE_HOME is defined earlier in this file, but the directory may not exist
 # yet during .zshenv (first source on vanilla OS). Cache write is guarded; cache read
 # works regardless. Saves ~2-3ms per shell startup.
 if [[ -z "${ARCH:-}" ]]; then
@@ -185,28 +181,48 @@ export ANTIDOTE_PLUGIN_TXT="${ZDOTDIR}/.zsh_plugins.txt"
 
 # Returns true if $1 is empty or unset.
 is_zero_string() {
-  [[ -z "${1}" ]]
+  if [[ -z "${1:-}" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if $1 is non-empty.
 is_non_zero_string() {
-  [[ -n "${1}" ]]
+  if [[ -n "${1:-}" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if the array named $1 has no elements.
 is_empty_array() {
-  ((${#${(P)1}[@]} == 0))
+  if ((${#${(P)1}[@]} == 0)); then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if the array named $1 has at least one element.
 is_non_empty_array() {
-  ((${#${(P)1}[@]} > 0))
+  if ((${#${(P)1}[@]} > 0)); then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if stdin is a TTY, or if FORCE_COLOR is set (used to enable color
 # output in non-TTY subshells such as direnv or CI pipelines).
 is_running_in_tty() {
-  [[ -t 0 ]] || is_non_zero_string "${FORCE_COLOR:-}"
+  if [[ -t 0 ]] || is_non_zero_string "${FORCE_COLOR:-}"; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Joins array elements into a bulleted list string, each on a new line with
@@ -220,7 +236,7 @@ is_running_in_tty() {
 # how deeply nested the parent message is.
 join_array() {
   local -a arr=("${(@P)${1:?join_array: array name required}}")
-  is_empty_array arr && return
+  if is_empty_array arr; then return; fi
   # Fixed 2-space indent for list items
   local base_indent='  '
   # Build formatted array with indent prefix, then join with newlines
@@ -238,7 +254,11 @@ join_array() {
 # is true only when ZSH_VERSION is set AND non-empty -- which is always the case
 # when running inside zsh, since zsh unconditionally sets it to a version string.
 is_zsh() {
-  [[ -n "${ZSH_VERSION-}" ]]
+  if [[ -n "${ZSH_VERSION-}" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Replaces the value of HOME with '~' to shorten displayed paths.
@@ -254,18 +274,18 @@ is_zsh() {
 # it centralises the inline expansion ${2//${HOME}/~} (see comment there for why
 # it is inlined rather than calling this function).
 replace_home_with_tilde() {
-  echo "${1//${HOME}/~}"
+  echo "${1:-//${HOME}/~}"
 }
 
 # Remove trailing slash if present. Pure parameter expansion -- no subprocess.
 strip_trailing_slash() {
-  echo "${1%\/}"
+  echo "${1:-%%\/}"
 }
 
 # Returns the portion of $1 before the first occurrence of $2 (default: space).
 # Usage: extract_first_word <string> [delimiter]
 extract_first_word() {
-  local input="${1}"
+  local input="${1:-}"
   local delimiter="${2:- }"
   local first_part="${input%%${delimiter}*}"
   echo "${first_part}"
@@ -317,33 +337,32 @@ else
 fi
 
 # Single implementation point for all color functions -- mirrors the private
-# colorize() method in string.rb. Applies tilde substitution AND wraps in ANSI
+# colorize() method in string.rb. Wraps in ANSI
 # codes; public color functions below are one-line delegators.
 # $1 = ANSI color variable (e.g. ${YELLOW}), $2 = string to colorize.
 # Usage: _colorize <color_var> <string>
 #
-# Why inline ${2//${HOME}/~} rather than calling replace_home_with_tilde "${2}":
-# replace_home_with_tilde prints via 'echo', so capturing it requires a $()
-# subshell fork on every call. The inline expansion is a no-fork zsh built-in.
-_colorize() { printf "${1}${2//${HOME}/~}${NC}"; }
+# Tilde substitution is performed by top-level logging functions to avoid
+# redundant substitutions across multiple colored segments in a single message.
+_colorize() { printf "${1:-}${2:-}${NC}"; }
 
 # Color functions -- ordered by ANSI SGR code (matches variable declarations above).
-black()        { _colorize "${BLACK}"        "${1}"; }
-dark_gray()    { _colorize "${DARK_GRAY}"    "${1}"; }
-red()          { _colorize "${RED}"          "${1}"; }
-light_red()    { _colorize "${LIGHT_RED}"    "${1}"; }
-green()        { _colorize "${GREEN}"        "${1}"; }
-light_green()  { _colorize "${LIGHT_GREEN}"  "${1}"; }
-orange()       { _colorize "${ORANGE}"       "${1}"; }
-yellow()       { _colorize "${YELLOW}"       "${1}"; }
-blue()         { _colorize "${BLUE}"         "${1}"; }
-light_blue()   { _colorize "${LIGHT_BLUE}"   "${1}"; }
-purple()       { _colorize "${PURPLE}"       "${1}"; }
-light_purple() { _colorize "${LIGHT_PURPLE}" "${1}"; }
-cyan()         { _colorize "${CYAN}"         "${1}"; }
-light_cyan()   { _colorize "${LIGHT_CYAN}"   "${1}"; }
-light_gray()   { _colorize "${LIGHT_GRAY}"   "${1}"; }
-white()        { _colorize "${WHITE}"        "${1}"; }
+black()        { _colorize "${BLACK}"        "${1:-}"; }
+dark_gray()    { _colorize "${DARK_GRAY}"    "${1:-}"; }
+red()          { _colorize "${RED}"          "${1:-}"; }
+light_red()    { _colorize "${LIGHT_RED}"    "${1:-}"; }
+green()        { _colorize "${GREEN}"        "${1:-}"; }
+light_green()  { _colorize "${LIGHT_GREEN}"  "${1:-}"; }
+orange()       { _colorize "${ORANGE}"       "${1:-}"; }
+yellow()       { _colorize "${YELLOW}"       "${1:-}"; }
+blue()         { _colorize "${BLUE}"         "${1:-}"; }
+light_blue()   { _colorize "${LIGHT_BLUE}"   "${1:-}"; }
+purple()       { _colorize "${PURPLE}"       "${1:-}"; }
+light_purple() { _colorize "${LIGHT_PURPLE}" "${1:-}"; }
+cyan()         { _colorize "${CYAN}"         "${1:-}"; }
+light_cyan()   { _colorize "${LIGHT_CYAN}"   "${1:-}"; }
+light_gray()   { _colorize "${LIGHT_GRAY}"   "${1:-}"; }
+white()        { _colorize "${WHITE}"        "${1:-}"; }
 
 # Logging functions are pure formatters: prefix + message. They do NOT apply
 # tilde substitution. Any path in the message must be passed through a color
@@ -359,7 +378,7 @@ white()        { _colorize "${WHITE}"        "${1}"; }
 # and trigger the ERR trap in cron scripts.
 # Usage: _dotfiles_notify <message> [title]
 _dotfiles_notify() {
-  local _msg="${1}"
+  local _msg="${1:-}"
   local _title="${2:-Dotfiles}"
   # Use is_executable rather than command_exists -- osascript is a fixed macOS
   # system binary at a known path, and is_executable checks the file directly
@@ -402,22 +421,25 @@ _log_indent() {
 success() {
   # Suppressed when running inside a direnv subshell (see _should_suppress_log).
   # Use error for messages that must always be visible regardless of context.
-  _should_suppress_log && return 0
-  echo "$(_log_indent)✅ $(green '**SUCCESS**') ${1}"
+  if _should_suppress_log; then return 0; fi
+  local msg="${1//${HOME}/~}"
+  echo "$(_log_indent)✅ $(green '**SUCCESS**') ${msg}"
 }
 
 info() {
   # Suppressed when running inside a direnv subshell (see _should_suppress_log).
   # Use error for messages that must always be visible regardless of context.
-  _should_suppress_log && return 0
-  echo "$(_log_indent)ℹ️ $(cyan '**INFO**') ${1}"
+  if _should_suppress_log; then return 0; fi
+  local msg="${1//${HOME}/~}"
+  echo "$(_log_indent)ℹ️ $(cyan '**INFO**') ${msg}"
 }
 
 warn() {
   # Suppressed when running inside a direnv subshell (see _should_suppress_log).
   # Use error for messages that must always be visible regardless of context.
-  _should_suppress_log && return 0
-  echo "$(_log_indent)⚠️ $(light_red '**WARN**') ${1}"
+  if _should_suppress_log; then return 0; fi
+  local msg="${1//${HOME}/~}"
+  echo "$(_log_indent)⚠️ $(light_red '**WARN**') ${msg}"
 }
 
 user_action() {
@@ -425,17 +447,19 @@ user_action() {
   # an app, run a command, open a URL). Distinct from warn (which signals an
   # unexpected problem) and info (which is purely informational). Suppressed
   # in direnv subshells -- direnv runs headlessly and cannot act on prompts.
-  _should_suppress_log && return 0
-  echo "$(_log_indent)➡️ $(yellow '**ACTION**') ${1}"
+  if _should_suppress_log; then return 0; fi
+  local msg="${1//${HOME}/~}"
+  echo "$(_log_indent)➡️ $(yellow '**ACTION**') ${msg}"
 }
 
 debug() {
   # Hidden by default; only visible when DEBUG=true is set in the environment.
   # Also suppressed when running inside a direnv subshell (see _should_suppress_log).
   # Use error for messages that must always be visible regardless of context.
-  [[ -z "${DEBUG:-}" ]] && return 0
-  _should_suppress_log && return 0
-  echo "$(_log_indent)⚙️ $(light_purple '**DEBUG**') ${1}"
+  if [[ -z "${DEBUG:-}" ]]; then return 0; fi
+  if _should_suppress_log; then return 0; fi
+  local msg="${1//${HOME}/~}"
+  echo "$(_log_indent)⚙️ $(light_purple '**DEBUG**') ${msg}"
 }
 
 error() {
@@ -485,10 +509,10 @@ _section_header_impl() {
   # Inline substitution rather than a color function: the header is output as
   # plain text between the two colored padding segments -- it has no color wrapper,
   # so color functions cannot apply tilde sub on its behalf.
-  local header="${1//${HOME}/~}"
-  local char="${2}"
-  local glyph="${3}"
-  local color_fn="${4}"
+  local header="${1:-//${HOME}/~}"
+  local char="${2:-}"
+  local glyph="${3:-}"
+  local color_fn="${4:-}"
   # Auto-indent based on script depth
   local indent
   indent="$(_log_indent)"
@@ -507,14 +531,14 @@ _section_header_impl() {
 }
 
 section_header() {
-  _section_header_impl "${1}" '=' '⏳' 'light_blue'
+  _section_header_impl "${1:-}" '=' '⏳' 'light_blue'
 }
 
 # Sub-level section header: used for steps nested inside a top-level section_header.
 # Uses '-' padding, a '🔷' glyph, and cyan colour to visually subordinate it.
 # Indentation is automatic via _log_indent in _section_header_impl.
 section_header2() {
-  _section_header_impl "${1}" '-' '🔷' 'cyan'
+  _section_header_impl "${1:-}" '-' '🔷' 'cyan'
 }
 
 # Formats a duration given in seconds into a human-readable string "HH:MM:SS".
@@ -522,7 +546,7 @@ section_header2() {
 # Usage: format_duration <seconds> <varname>
 # Example: format_duration 3725 my_var  →  my_var="01h:02m:05s"
 format_duration() {
-  local _fd_seconds="${1}" _fd_varname="${2}"
+  local _fd_seconds="${1:-}" _fd_varname="${2:-}"
   printf -v "${_fd_varname}" '%02dh:%02dm:%02ds' \
     $((_fd_seconds / 3600)) \
     $(((_fd_seconds % 3600) / 60)) \
@@ -532,21 +556,21 @@ format_duration() {
 # Writes the current datetime as "YYYY-MM-DD HH:MM:SS" into the caller-supplied variable.
 # Usage: current_timestamp <varname>
 current_timestamp() {
-  strftime -s "${1}" '%Y-%m-%d %H:%M:%S' "${EPOCHSECONDS}"
+  strftime -s "${1:-}" '%Y-%m-%d %H:%M:%S' "${EPOCHSECONDS}"
 }
 
 # Writes the current date as "YYYY-MM-DD" into the caller-supplied variable.
 # Suitable for lexicographic date comparisons.
 # Usage: current_date <varname>
 current_date() {
-  strftime -s "${1}" '%Y-%m-%d' "${EPOCHSECONDS}"
+  strftime -s "${1:-}" '%Y-%m-%d' "${EPOCHSECONDS}"
 }
 
 # Writes the current datetime as "YYYY-MM-DD-HH-MM" into the caller-supplied variable.
 # Suitable for use in filenames and hostnames (no colons or spaces).
 # Usage: current_timestamp_for_filename <varname>
 current_timestamp_for_filename() {
-  strftime -s "${1}" '%Y-%m-%d-%H-%M' "${EPOCHSECONDS}"
+  strftime -s "${1:-}" '%Y-%m-%d-%H-%M' "${EPOCHSECONDS}"
 }
 
 # Prints a timestamped "Script started at" banner. Call at the top of main() and
@@ -789,7 +813,11 @@ _record_error() {
 #     echo "Found ${#_step_errors[@]} error(s)"
 #   fi
 _has_step_errors() {
-  is_zsh && ((${+_step_errors}))   && is_non_empty_array _step_errors
+  if is_zsh && ((${+_step_errors})); then
+    is_non_empty_array _step_errors
+  else
+    return 1
+  fi
 }
 
 # Returns true if _step_warnings array exists and is non-empty.
@@ -801,7 +829,11 @@ _has_step_errors() {
 #     echo "Found ${#_step_warnings[@]} warning(s)"
 #   fi
 _has_step_warnings() {
-  is_zsh && ((${+_step_warnings}))   && is_non_empty_array _step_warnings
+  if is_zsh && ((${+_step_warnings})); then
+    is_non_empty_array _step_warnings
+  else
+    return 1
+  fi
 }
 
 # Build formatted notification parts from _step_errors and _step_warnings arrays.
@@ -938,25 +970,43 @@ print_script_summary() {
 # Returns true if the current machine is ARM (Apple Silicon or other arm64 CPU).
 is_arm() {
   # == glob is faster than =~ (no regex engine); valid in both bash [[ ]] and zsh.
-  [[ "${ARCH}" == *arm* ]]
+  if [[ "${ARCH}" == *arm* ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if $1 is a non-empty path pointing to an executable file or command.
 is_executable() {
-  is_non_zero_string "${1}" && [[ -x "${1}" ]]
+  if is_non_zero_string "${1:-}" && [[ -x "${1:-}" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if $1 is a non-empty path that is a symbolic link.
 is_symbolic_link() {
-  is_non_zero_string "${1}" && [[ -L "${1}" ]]
+  if is_non_zero_string "${1:-}" && [[ -L "${1:-}" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if $1 is a non-empty path pointing to a regular file.
 is_file() {
-  is_non_zero_string "${1}" && [[ -f "${1}" ]]
+  if is_non_zero_string "${1:-}" && [[ -f "${1:-}" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if target file ($1) is missing or older than source file ($2).
+# Resolves symlinks before comparison to ensure edits/upgrades to symlink targets
+# are detected (e.g., Homebrew binaries, dotfiles symlinked from the repo).
 # Uses the shell's built-in -nt (newer-than) test which compares modification times.
 # Common pattern: if is_file_older_than "$cache" "$source"; then regenerate_cache; fi
 #
@@ -972,17 +1022,33 @@ is_file() {
 #   if is_file_older_than "$cache" "$binary"; then "$binary" --generate-cache; fi
 #   if is_file_older_than "${git_version_cache}" "${git_bin}"; then cache_git_version; fi
 is_file_older_than() {
-  [[ ! -f "${1}" || "${2}" -nt "${1}" ]]
+  # Return true (needs regeneration) if either argument is missing/empty
+  if [[ -z "${1:-}" || -z "${2:-}" ]]; then return 0; fi
+  local target="${1:A}"
+  local source="${2:A}"
+  if [[ ! -f "${target}" || "${source}" -nt "${target}" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if $1 is a non-empty path pointing to a directory.
 is_directory() {
-  is_non_zero_string "${1}" && [[ -d "${1}" ]]
+  if is_non_zero_string "${1:-}" && [[ -d "${1:-}" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if $1 is a regular file with non-zero size.
 is_non_empty_file() {
-  is_file "${1}" && [[ -s "${1}" ]]
+  if is_file "${1:-}" && [[ -s "${1:-}" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 is_directory_empty() {
@@ -991,7 +1057,11 @@ is_directory_empty() {
   # zsh glob qualifiers.  A ZSH_VERSION branch was considered but rejected: the
   # function is only called a handful of times (e.g. set_ssh_folder_permissions),
   # never on the startup hot path, so the ls fork cost is negligible.
-  is_directory "${1}" && [[ -z "$(ls -A "${1}")" ]]
+  if is_directory "${1:-}" && [[ -z "$(ls -A "${1:-}")" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Creates $1 (and any intermediate directories) if it does not already exist.
@@ -999,22 +1069,38 @@ is_directory_empty() {
 # Guards with is_directory to avoid forking mkdir when the directory already
 # exists -- the common case on every shell startup (e.g. XDG_CACHE_HOME).
 ensure_dir_exists() {
-  if is_non_zero_string "${1}"; then
-    is_directory "${1}" || mkdir -pv "${1}"
+  if is_non_zero_string "${1:-}"; then
+    if ! is_directory "${1:-}"; then
+      mkdir -pv "${1:-}"
+    fi
   else
-    warn "Skipping creation of the directory since '$(purple "${1}")' is not defined"
+    warn "Skipping creation of the directory since '$(purple "${1:-}")' is not defined"
   fi
 }
 
 # Ruby load path for shared utilities -- add both dotfiles and personal bin to RUBYLIB
-# so Ruby scripts can use 'require' instead of 'require_relative' for shared utilities.
+# so 'ruby -e' one-liners in shell functions (like resume_cron, with_cron_suspended, etc.)
+# can use 'require' to load utility modules. Ruby scripts that run as standalone programs
+# (like install-dotfiles.rb) use 'require_relative' and do not need RUBYLIB.
+#
+# IMPORTANT: Must stay in .shellrc (not moved to .aliases) for the fresh-install error
+# handling window. During fresh-install, .shellrc is sourced twice: first before dotfiles
+# are cloned (RUBYLIB empty but resume_cron defined), then re-sourced after the clone
+# (RUBYLIB now set). Between the re-source and when .aliases is loaded, errors can occur
+# and resume_cron must work. Moving to .aliases would break error handling during this
+# critical window between when .shellrc is re-sourced and when .aliases is finally loaded.
+#
 # Only add directories that exist.
 # Guarded by is_zsh: the array join syntax '${(j.:.)array}' is zsh-only and when direnv
 # sources this file in bash, this block must be skipped.
 if is_zsh; then
   RUBYLIB_PATHS=()
-  is_directory "${DOTFILES_DIR}/scripts/utilities" && RUBYLIB_PATHS+=("${DOTFILES_DIR}/scripts/utilities")
-  is_directory "${PERSONAL_BIN_DIR}" && RUBYLIB_PATHS+=("${PERSONAL_BIN_DIR}")
+  if is_directory "${DOTFILES_DIR}/scripts/utilities"; then
+    RUBYLIB_PATHS+=("${DOTFILES_DIR}/scripts/utilities")
+  fi
+  if is_directory "${PERSONAL_BIN_DIR}"; then
+    RUBYLIB_PATHS+=("${PERSONAL_BIN_DIR}")
+  fi
   if is_non_empty_array RUBYLIB_PATHS; then
     export RUBYLIB="${(j.:.)RUBYLIB_PATHS}${RUBYLIB:+:${RUBYLIB}}"
   fi
@@ -1023,47 +1109,61 @@ fi
 
 # Returns true if $1 is a non-empty path whose direct child .git directory exists.
 # Checks the repo root explicitly -- does not work from nested sub-directories by design.
+# Alternative that works from any nested sub-directory:
+#   git -C "${1:-}" rev-parse --is-inside-work-tree &>/dev/null
 is_git_repo() {
-  is_non_zero_string "${1}" && is_directory "${1}/.git"
-  # git -C "${1}" rev-parse --is-inside-work-tree &>/dev/null  # alternative that works from any nested sub-directory
+  if is_non_zero_string "${1:-}" && is_directory "${1:-}/.git"; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns the git config value for <key> in [folder] (defaults to $PWD).
 # Returns an empty string silently if the key is not set -- callers decide whether that is an error.
 # Usage: get_git_config_value <key> [folder]
 get_git_config_value() {
-  local key="${1}" folder="${2:-${PWD}}"
+  local key="${1:-}" folder="${2:-${PWD}}"
   git -C "${folder}" config --get "${key}" 2>/dev/null || true
 }
 
 # Sources $1 if it is a non-empty path pointing to a regular file; warns otherwise.
 load_file_if_exists() {
-  if is_file "${1}"; then
-    source "${1}"
-  else
-    warn "Couldn't load file: '$(cyan "${1}")'"
+  if is_file "${1:-}"; then
+    # || true catches source failures from external files that may contain
+    # standalone && chains or other constructs that return non-zero in normal
+    # operation (e.g., completion scripts). Logs a warning but continues.
+    source "${1:-}" || warn "Failed to source file: '$(cyan "${1:-}")' - continuing anyway"
   fi
 }
 
-# delete_directory_if_exists() {
-#   is_directory "${1}" && echo "$(red 'Deleting') '$(green "${1}")'" && sudo rm -rf "${1}"
-# }
-
 # Returns true if $1 names a known command, function, alias, or shell builtin.
 command_exists() {
-  (($+commands[${1}] || $+functions[${1}] || $+aliases[${1}] || $+builtins[${1}]))
+  if (($+commands[${1:-}] || $+functions[${1:-}] || $+aliases[${1:-}] || $+builtins[${1:-}])); then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if the current OS is macOS.
 is_macos() {
   # == glob is faster than =~ (no regex engine); valid in both bash [[ ]] and zsh.
-  [[ "${OSTYPE}" == *darwin* ]]
+  if [[ "${OSTYPE}" == *darwin* ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if the current OS is Linux.
 is_linux() {
   # == glob is faster than =~ (no regex engine); valid in both bash [[ ]] and zsh.
-  [[ "${OSTYPE}" == *Linux* ]]
+  if [[ "${OSTYPE}" == *Linux* ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if FIRST_INSTALL is set to a non-empty value.
@@ -1075,13 +1175,21 @@ is_linux() {
 # Note: two occurrences in fresh-install-of-osx.sh use the raw form because
 # they run before _download_and_source_shellrc has sourced .shellrc.
 is_first_install() {
-  [[ -n "${FIRST_INSTALL:-}" ]]
+  if [[ -n "${FIRST_INSTALL:-}" ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if the current OS is Windows (MSYS/MinGW environment).
 is_windows() {
   # == glob is faster than =~ (no regex engine); consistent with is_macos/is_linux.
-  [[ "${OSTYPE}" == *MINGW* ]]
+  if [[ "${OSTYPE}" == *MINGW* ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Returns true if this is the outermost script in a nested call chain.
@@ -1091,7 +1199,11 @@ is_windows() {
 # standalone scripts (which never set the counter) are treated as outermost --
 # consistent with the ':-0' used in the increment expression in each main().
 is_outermost_script() {
-  [[ ${_DOTFILES_SCRIPT_DEPTH:-0} -le 1 ]]
+  if [[ ${_DOTFILES_SCRIPT_DEPTH:-0} -le 1 ]]; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # Increments _DOTFILES_SCRIPT_DEPTH by 1. Does not guard against overflow since
@@ -1115,7 +1227,11 @@ _decrement_script_depth() {
 # sudo and may be invoked from cron or other non-interactive contexts where a
 # prompt would hang indefinitely.
 has_sudo_credentials() {
-  sudo -n true 2>/dev/null
+  if sudo -n true 2>/dev/null; then
+    return 0
+  else
+    return 1
+  fi
 }
 
 # --------------------------------------------------------------------------
@@ -1126,11 +1242,15 @@ has_sudo_credentials() {
 # existing directory. No-op if the directory does not exist. Safe to call
 # multiple times -- the underlying path arrays deduplicate in zsh.
 append_to_path_if_dir_exists() {
-  is_directory "${1}" && path+="${1}"
+  if is_non_zero_string "${1:-}" && is_directory "${1:-}"; then
+    path+="${1:-}"
+  fi
 }
 
 append_to_fpath_if_dir_exists() {
-  is_directory "${1}" && fpath+="${1}"
+  if is_non_zero_string "${1:-}" && is_directory "${1:-}"; then
+    fpath+="${1:-}"
+  fi
 }
 
 # --------------------------------------------------------------------------
@@ -1150,11 +1270,7 @@ keep_sudo_alive() {
   step_start
   section_header2 "$(yellow 'Keeping sudo alive till this script has finished')"
   sudo -v
-  while true; do
-                 has_sudo_credentials
-                                       sleep 60
-                                                 kill -0 "$$" || exit
-  done                                                                      2>/dev/null &
+  while true; do has_sudo_credentials; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
   export KEEP_SUDO_ALIVE_PID=$!
   step_end
 }
@@ -1183,7 +1299,7 @@ migrate_git_repo_to_reftable() {
 # Usage: clone_repo_into <repo-url> <target-folder> [branch]
 clone_repo_into() {
   local start_time=${EPOCHSECONDS}  # $EPOCHSECONDS from zsh/datetime -- no $(date +%s) fork
-  local target_folder="${2}"
+  local target_folder="${2:-}"
   ensure_dir_exists "${target_folder}"
   if ! is_git_repo "${target_folder}"; then
     # Since git does not allow cloning into a non-empty folder (like the home folder), clone into a temp folder, then copy the .git folder into the real target location, and do a checkout
@@ -1204,9 +1320,9 @@ clone_repo_into() {
       fi
       debug "Using shallow clone (${clone_args[*]}) for FIRST_INSTALL mode"
     fi
-    GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1}" .
+    GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" .
     if [[ $? -ne 0 ]]; then
-      warn "Failed to clone '$(cyan "${1}")' into '$(cyan "${target_folder}")'"
+      warn "Failed to clone '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
       return 1
     fi
 
@@ -1218,7 +1334,9 @@ clone_repo_into() {
     # the move bypasses git's normal post-clone finalisation; shell prompts read .git/HEAD directly)
     local real_ref
     real_ref="$(git -C "${target_folder}" symbolic-ref HEAD 2>/dev/null)"
-    is_non_zero_string "${real_ref}" && echo "ref: ${real_ref}" >"${target_folder}/.git/HEAD"
+    if is_non_zero_string "${real_ref}"; then
+      echo "ref: ${real_ref}" >"${target_folder}/.git/HEAD"
+    fi
 
     # Migrate to reftable if the clone used the legacy files format. On a vanilla
     # macOS the system git (< 2.45) ignores -c init.defaultRefFormat=reftable and
@@ -1227,7 +1345,7 @@ clone_repo_into() {
     # that were cloned with system git.
     migrate_git_repo_to_reftable "${target_folder}"
 
-    success "Successfully cloned '$(cyan "${1}")' into '$(cyan "${target_folder}")'"
+    success "Successfully cloned '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
 
     if is_non_zero_string "${target_branch}"; then
       local current_branch
@@ -1242,7 +1360,7 @@ clone_repo_into() {
     # so this else is exhaustive and the condition check is redundant.
     debug "Fetching '$(yellow "${target_folder}")' since it's already a git repo"
     git -C "${target_folder}" fetch-unshallow
-    success "Successfully fetched '$(cyan "${1}")' into '$(cyan "${target_folder}")'"
+    success "Successfully fetched '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
     # Only warn if FETCH_HEAD has commits not yet in HEAD -- fetch-unshallow always
     # runs but may bring in nothing new (repo already up to date).
     local incoming_count
@@ -1276,9 +1394,17 @@ set_ssh_folder_permissions() {
   fi
 
   if ! is_directory_empty "${HOME}/.ssh"; then
-    find "${HOME}/.ssh" -type f -exec chmod 600 {} \; && success "Ensured correct permissions for '$(cyan "${HOME}/.ssh")' and files within it." || warn "Failed to set file permissions in '$(cyan "${HOME}/.ssh")'"
+    if find "${HOME}/.ssh" -type f -exec chmod 600 {} \;; then
+      success "Ensured correct permissions for '$(cyan "${HOME}/.ssh")' and files within it."
+    else
+      warn "Failed to set file permissions in '$(cyan "${HOME}/.ssh")'"
+    fi
 
-    find "${HOME}/.ssh" -maxdepth 1 -name "id_*" ! -name '*.*' -type f -exec ssh-add -q "{}" \; && success "Added ssh identity files from '$(cyan "${HOME}/.ssh")'." || warn "Failed to add ssh identity files from '$(cyan "${HOME}/.ssh")'"
+    if find "${HOME}/.ssh" -maxdepth 1 -name "id_*" ! -name '*.*' -type f -exec ssh-add -q "{}" \;; then
+      success "Added ssh identity files from '$(cyan "${HOME}/.ssh")'."
+    else
+      warn "Failed to add ssh identity files from '$(cyan "${HOME}/.ssh")'"
+    fi
   else
     warn "'$(cyan "${HOME}/.ssh")' exists but is empty. No file permissions to set."
   fi
@@ -1338,11 +1464,11 @@ _call_ruby_cron() {
     args_str="${args_parts[*]}"
   fi
 
-  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'cron'; Cron.${method}(${args_str})"
+  ruby -e "require 'cron'; Cron.${method}(${args_str})"
 }
 
 # Internal helper: calls a Ruby GitProcessor class method with keyword arguments.
-# Eliminates duplication of $LOAD_PATH setup across git wrapper functions.
+# Eliminates duplication across git wrapper functions.
 # Usage: _call_ruby_git_processor <method_name> <key1>=<value1> [<key2>=<value2> ...]
 # Example: _call_ruby_git_processor migrate_to_reftable folder="${PWD}"
 _call_ruby_git_processor() {
@@ -1367,7 +1493,7 @@ _call_ruby_git_processor() {
     kwargs_str="${kwargs_parts[*]}"
   fi
 
-  ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'git_processor'; GitProcessor.${method}(${kwargs_str})"
+  ruby -e "require 'git_processor'; GitProcessor.${method}(${kwargs_str})"
 }
 
 # Loads a cron file into the system crontab. Shared by suspend_cron/resume_cron
@@ -1399,6 +1525,8 @@ resume_cron() {
 # can cause infinite loops. Use only for manual post-change reloads or targeted
 # bootstrap scenarios (e.g. fresh-install applying new config mid-run).
 load_zsh_configs() {
+  if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
+  if (($+functions[is_aliases_sourced])); then unfunction is_aliases_sourced; fi
   # _SCRIPT_NAME is set as a script-scoped global in each script; unset in
   # interactive shells. The fallback makes the caller visible in both contexts.
   debug "load_zsh_configs called from '$(yellow "${_SCRIPT_NAME:-<interactive>}")'"
@@ -1415,6 +1543,33 @@ load_zsh_configs() {
   done
 }
 
+# Recompiles a zsh script file to bytecode (.zwc) if the source is newer than the compiled form.
+# Used by .zlogin for bulk recompilation and by .zshrc when regenerating cache files.
+# Resolves symlinks explicitly so the .zwc is written next to the symlink, not the target.
+# Handles cleanup of stale .zwc.old files left by failed zrecompile runs.
+# Usage: recompile_zsh_script <file-path>
+recompile_zsh_script() {
+  local file="${1:-}"
+  # Return early if no file path provided (defensive under set -u)
+  if is_zero_string "${file}"; then
+    return 0
+  fi
+  # Resolve symlinks explicitly: is_file_older_than handles this internally, but we need
+  # the real path here for the is_non_empty_file check and because the .zwc file lives
+  # next to the symlink (${file}.zwc), not next to the target file.
+  local real="${file:A}"
+  if is_non_empty_file "${real}" && is_file_older_than "${file}.zwc" "${real}"; then
+    debug "recompiling '${file}'"
+    # Remove any stale .zwc.old left by a previously failed zrecompile run before
+    # attempting recompilation. zrecompile writes .zwc files read-only; if zcompile
+    # fails mid-write the .zwc.old backup is left behind -- clean it up unconditionally.
+    rm -f "${file}.zwc.old" || true
+    zrecompile -pq "${file}" &>/dev/null || true
+    # Remove .zwc.old again in case this run moved the old file there before failing.
+    rm -f "${file}.zwc.old" || true
+  fi
+}
+
 # Prints a standardized usage message and exits.
 # Used by scripts in $DOTFILES_DIR/scripts/ that may be invoked during fresh-install
 # before install-dotfiles.rb has run (e.g. add-upstream-git-config.rb).
@@ -1425,11 +1580,11 @@ load_zsh_configs() {
 #     "-a <app-name>  --> (mandatory) The application name" \
 #     "-v             --> (optional) Verbose output"
 print_usage() {
-  local script_name="${1}"
+  local script_name="${1:-}"
   shift
   echo "$(red 'Usage'): $(cyan "${script_name}") $(yellow "${1:+"[options]"}")"
   while [[ $# -gt 0 ]]; do
-    echo "  ${1}"
+    echo "  ${1:-}"
     shift
   done
   exit 1

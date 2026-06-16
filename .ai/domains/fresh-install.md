@@ -1,10 +1,13 @@
 ---
-applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install.rb"
+applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install.rb,**/osx-defaults.sh,**/setup-login-item.sh,**/capture-prefs.rb,**/resurrect-repositories.rb"
 ---
 
 # Fresh Install Instructions
 
-These rules apply specifically to the bootstrap and installation scripts.
+> Part of the [tool-agnostic instruction set](../instructions.md) for this repository.
+
+These rules apply specifically to the bootstrap and installation scripts, as well as
+scripts invoked during initial setup or backup/restore operations.
 
 ## `fresh-install-of-osx.sh` -- Idempotency Contract
 
@@ -181,6 +184,35 @@ the dotfiles repo is cloned.
 
 The error trap must call `resume_cron` if `_DOTFILES_CRON_BACKUP_FILE` exists.
 
+### `recron` Fallback Logic
+
+`recron` (called during fresh-install to set up cron jobs) uses a fallback strategy
+to preserve existing schedules while supporting vanilla OS installs:
+
+1. **Capture existing crontab**: Run `crontab -l` to a temp file
+2. **Fallback to tracked file**: If no existing crontab, use `${PERSONAL_CONFIGS_DIR}/crontab.txt`
+3. **User action if both empty**: Print user_action instructing user to create `crontab.txt`
+4. **Load non-empty schedule**: Install whichever source (existing or tracked) is non-empty
+
+**Rationale:**
+- Preserves user's custom cron jobs (don't overwrite with defaults)
+- Supports vanilla OS via tracked `crontab.txt` in home repo
+- Doesn't impose default schedule if user has neither
+
+**Error handling:** `restore_cron` (called by `recron`) logs errors via `Logging.record_error`
+and returns false instead of raising. This prevents crontab installation failures from
+aborting the entire fresh-install process. The error is recorded in the summary but
+execution continues.
+
+**Manual template generation:**
+If you need a starting template, run:
+```zsh
+create_crontab ~/personal/dev/configs/crontab.txt
+```
+
+This creates the default schedule (software-updates-cron hourly). Edit as needed,
+commit to home repo, and run `recron` to install.
+
 ## Keybase Functions
 
 See `copilot-instructions.md` -- Keybase / SSH section. Summary: both functions
@@ -212,3 +244,44 @@ brewfile_content="${brewfile_content%$'\n'*FIRST_INSTALL*}"  # strip the guard l
 On a pre-configured machine (no `FIRST_INSTALL`), the full Brewfile is used.
 Do not remove or rename the `FIRST_INSTALL` guard line in the Brewfile -- it is
 load-bearing for the vanilla OS install path.
+
+## `capture-prefs.rb` Timestamp Check
+
+`capture-prefs.rb` validates that the backup preferences are not stale relative to
+`osx-defaults.sh` changes. The check compares git commit timestamps:
+- Last commit touching `scripts/osx-defaults.sh` in dotfiles repo
+- Last commit touching the preferences backup directory in home repo
+
+If the backup predates `osx-defaults.sh` changes, the script would normally abort with
+a fatal error to prevent importing incomplete settings.
+
+**Exception for `FIRST_INSTALL`:** On vanilla OS, fresh-install runs `osx-defaults.sh -s`
+to baseline current system prefs BEFORE calling `capture-prefs.rb -i`. The backup import
+is an incremental overlay on top of this baseline. Therefore, an outdated backup is
+acceptable (and better than no backup) on `FIRST_INSTALL`.
+
+The timestamp check is skipped when `ENV['FIRST_INSTALL']` is set:
+
+```ruby
+if osx_defaults_ts && backup_ts && backup_ts < osx_defaults_ts && !EnvVars.first_install?
+  _abort_with_error("Backup predates the last change to 'osx-defaults.sh' -- ...")
+end
+```
+
+**On pre-configured machines** (no `FIRST_INSTALL`), the check remains active -- importing
+stale prefs without the baseline step would overwrite newer settings with older ones.
+`fresh-install-of-osx.sh` automatically refreshes the backup on pre-configured machines:
+
+1. Runs `capture-prefs.rb -e` to export current preferences (stages files in git)
+2. Commits using `git sci "Preferences backup: <timestamp>"` (amends if ahead of remote, creates new if not)
+3. This updates the backup's git commit timestamp to current time
+4. Import then succeeds because backup timestamp is now newer than `osx-defaults.sh`
+
+The use of `git sci` ensures repeated fresh-install runs amend the same commit rather than
+creating a pile of preference backup commits.
+
+**Debugging note:** When `capture-prefs.rb` aborts via `_abort_with_error`, it calls
+`exit(1)`. This triggers the parent shell's ERR trap, but the reported line number may
+be misleading (trap captures the line where the trap string was defined, not where the
+failure occurred). Look for the warning message in the output to identify the actual
+failure point.
