@@ -2,6 +2,33 @@ As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scr
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
+---
+
+### 3.1.27
+
+#### Extract plist functionality, port setup-login-item to Ruby, centralize system command paths
+
+* *[scripts/utilities/plist.rb]* (NEW) Extracted plist operations from `capture-prefs.rb` into reusable module. Provides: `export_domain(domain, file)` - exports defaults to XML plist; `import_domain(domain, file)` - imports plist to defaults; `strip_excluded_keys(domain, file, patterns)` - removes non-portable keys using REXML; `has_keys?(file)` - checks if plist has any keys after stripping; `load_excluded_keys(filepath)`, `load_denied_list(filepath)`, `load_domains_list(filepath, denied)` - data file loaders for pattern/domain lists. All plist manipulation now uses REXML (system Ruby, always available) with `defaults`/`plutil` wrappers. Benefits: modularity (reusable by other scripts), single source of truth for plist operations, 76-line reduction in `capture-prefs.rb`.
+
+* *[scripts/capture-prefs.rb]* Refactored to use `Plist` module. Removed inline REXML manipulation (now `Plist.strip_excluded_keys`), removed `rexml/document` and `set` requires (now in `plist.rb`), simplified helper methods to thin wrappers around `Plist` module methods. Export/import logic now uses `Plist.export_domain`, `Plist.import_domain`, `Plist.has_keys?`. Reduced from 366 to 290 lines.
+
+* *[scripts/setup-login-item.rb]* (NEW) Ruby port of `setup-login-item.sh`. Registers apps as macOS login items via SMAppService (macOS 14–25) or legacy System Events AppleScript (macOS 13, 26+). Functionality preserved: `-a <app-name>` and `-b` (background) flags, all logging via `Logging` module, script depth tracking, warning collection. Benefits: no `.aliases` dependency (self-contained with `require_relative`), cleaner subprocess handling with `Open3.capture3`, explicit return values, easier to test. Shell version retained temporarily for rollback safety.
+
+* *[files/--HOME--/Brewfile]* Updated `setup_login_items_script` variable to reference `setup-login-item.rb` instead of `setup-login-item.sh`. Keybase and other login-item postinstall hooks now invoke Ruby version.
+
+* *[scripts/utilities/macos.rb]* Added `ROOT` constant (filesystem root as Pathname) and all macOS system command path constants: `DEFAULTS_CMD`, `DU_CMD`, `OSASCRIPT_CMD`, `PLUTIL_CMD`, `ZSH_CMD`. Centralized from scattered definitions across multiple files. All use `ROOT.join('usr', 'bin', 'command').to_s.freeze` pattern for consistency.
+
+* *[scripts/utilities/path_utils.rb]* Removed `ROOT` and `DU_CMD` constants (moved to `MacOS` module). Updated `dir_size_kb` and `dir_size_human` to use `MacOS::DU_CMD`. Added `require_relative 'macos'`. Updated module doc comment to clarify it contains generic (cross-platform) utilities only, with pointer to `MacOS` module for system command paths. Retained: `command_exists?`, `extract_path_segment_at`, `glob_pathnames` (all generic/cross-platform).
+
+* *[scripts/utilities/plist.rb, scripts/setup-login-item.rb, scripts/resurrect-repositories.rb]* Updated all system command references to use `MacOS::` constants (`MacOS::DEFAULTS_CMD`, `MacOS::PLUTIL_CMD`, `MacOS::OSASCRIPT_CMD`, `MacOS::ZSH_CMD`, `MacOS::ROOT`). Changed requires from `path_utils` to `macos` where appropriate. Benefits: clear separation of concerns (macOS-specific paths in `MacOS` module, generic utilities in `PathUtils`), single source of truth for all system command paths, consistent `MacOS::*_CMD` naming pattern.
+
+* *[.ai/domains/fresh-install.md, .ai/instructions.md]* Updated `applyTo` patterns and file lists to reference `setup-login-item.rb` instead of `setup-login-item.sh`.
+
+* *[scripts/setup-login-item.sh]* Deleted after successful production validation of Ruby version. Shell version is no longer needed.
+
+* *[Extras.md]* Updated documentation to reference `setup-login-item.rb` instead of `setup-login-item.sh`. Added notes about SMAppService (macOS 14–25) vs legacy System Events path (macOS 13, 26+).
+
+---
 
 ### 3.1.26
 
@@ -63,6 +90,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
   unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
   ```
 
+---
 
 ### 3.1.25
 
@@ -115,6 +143,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
       unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
   ```
 
+---
 
 ### 3.1.24
 
@@ -143,6 +172,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 * Monitor next 1-2 cron cycles for correct operation (check `~/software-updates-cron.log`).
 
+---
 
 ### 3.1.23
 
@@ -180,6 +210,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 * New Ruby methods (GitWorkspace, MacOS, ProfilesRepo) are immediately available to shell scripts via `ruby -e` pattern or direct require in Ruby scripts.
 * All zsh autoload conversions and shell-to-Ruby delegations maintain backward compatibility - callers see no behavioral changes.
 
+---
 
 ### 3.1.22
 
@@ -202,6 +233,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 * Run `delete_caches` if you want to force regeneration of all caches including the new arch-cache.zsh.
 * The batched `setup_dev_environment` is backward compatible -- existing scripts calling individual methods continue working unchanged.
 
+---
 
 ### 3.1.21
 
@@ -221,6 +253,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 * *[scripts/utilities/collection_processor.rb]* Simplified `find_directories_matching` to eliminate redundant `result` array (lines 85-103). Now uses single Set with `seen.to_a.sort` at return. Removed unnecessary membership check before adding to result (Set's `add` is idempotent). Maintains sorted output for deterministic results.
 
+---
 
 ### 3.1.20
 
@@ -265,6 +298,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 * Rebase from upstream, resolve conflicts.
 * Quit & Restart the Terminal application.
 
+---
 
 ### 3.1.19 - Tested on vanilla macos Tahoe 26.6
 
@@ -280,6 +314,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 * Rebase from upstream, resolve conflicts.
 * Quit & Restart the Terminal application.
 
+---
 
 ### 3.1.18
 
@@ -358,6 +393,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Quit & Restart the Terminal application or run `unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
 ; unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases` in each open terminal window/tab.
 
+---
 
 ### 3.1.17
 
@@ -384,6 +420,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * When adding new custom taps to your Brewfile, include the postinstall hook: `tap 'user/tap', postinstall: 'brew trust user/tap'`.
 * Quit & Restart the Terminal application.
 
+---
 
 ### 3.1.16
 
@@ -401,6 +438,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * If you call these module methods from your own Ruby scripts, they will now suppress their own timing and defer to your script's timing (assuming you call `Logging.increment_script_depth` at your script's entry point).
 * Quit & Restart the Terminal application or run `unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases` to reload in each open terminal window/tab.
 
+---
 
 ### 3.1.15
 
@@ -436,6 +474,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * **Test git-over-SSH**: `git ls-remote git@github.com:vraravam/dotfiles.git` (should connect without errors).
 * No shell restart required -- SSH config is read on every ssh invocation.
 
+---
 
 ### 3.1.14
 
@@ -463,6 +502,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[scripts/run-all.rb]* Verified existing `Dir.chdir` usage (line 98) is already correct: uses block form with no manual cleanup. No changes needed.
 * **Rationale**: The manual `ensure` was a misunderstanding of Ruby semantics. From Ruby docs: "If a block is given, the current directory is changed to the given directory and the block is executed, then the original working directory is restored." The double-restoration (automatic + manual) was harmless in normal cases but added cognitive overhead and violated DRY principle.
 
+---
 
 ### 3.1.13
 
@@ -480,6 +520,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * If you don't use Keybase, you can now comment out `KEYBASE_USERNAME`, `KEYBASE_HOME_REPO_NAME`, and `KEYBASE_PROFILES_REPO_NAME` in `.shellrc` -- all scripts will skip Keybase operations gracefully.
 * Restart the Terminal application.
 
+---
 
 ### 3.1.12
 
@@ -525,6 +566,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Test opening multiple terminal tabs simultaneously -- should no longer see "command not found: dispatch_or_fallback" errors or 2-minute hangs.
 * Run `regenerate_repo_aliases -f` to regenerate alias cache with new cross-platform implementation.
 
+---
 
 ### 3.1.11
 
@@ -582,6 +624,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   for rb in *.rb utilities/*.rb; do /usr/bin/ruby -c "${rb}" || echo "FAILED: ${rb}"; done
   ```
 
+---
 
 ### 3.1.10
 
@@ -614,6 +657,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   recron
   ```
 
+---
 
 ### 3.1.9
 
@@ -637,6 +681,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * *[scripts/utilities/logging.rb]* Removed unused `command_exists?` method and entire step timing subsystem (`step_timing_init`, `step_start`, `step_end`, `step_start_times` accessor). Total reduction: 39 lines. All internal methods used by public logging methods (section_header, print_script_summary, record_warning, etc.) are retained.
 
+---
 
 ### 3.1.8
 
@@ -699,6 +744,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Quit and restart the Terminal application.
 * Review and edit the `~/.ssh/config` file to remove any duplicate `Include` lines. The best way to determine which format to use is to remove all those, and just run `install-dotfiles.rb` which will put the correct expected format in it
 
+---
 
 ### 3.1.7
 
@@ -740,6 +786,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
 
 ### 3.1.6
 
@@ -765,6 +812,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * **Terminal.app** requires no manual change — it always opens a login shell using `$SHELL`, so it picks up the new default automatically once `chsh` is done.
 
 * **iTerm2** — open **Preferences → Profiles → General → Command** and set it to **Login shell** (not "Custom Shell"). This is also applied automatically by `osx-defaults.sh -s`, but pre-configured machines that skip that step must set it manually.
+
+---
 
 ### 3.1.5
 
@@ -813,6 +862,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
 
 ### 3.1.4
 
@@ -832,6 +882,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
 
 ### 3.1.3
 
@@ -882,6 +933,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
 
 ### 3.1.2
 
@@ -1000,6 +1052,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Quit and restart the Terminal application (to guarantee that the latest versions of the zsh autoload scripts are loaded).
 * On macOS 26: if any app is missing from Login Items, re-run `setup-login-item.sh -a '<AppName>'` for each, or re-run `brew bundle install` to trigger the `postinstall` hooks.
 
+---
 
 ### 3.1.1
 
@@ -1094,6 +1147,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   ```
 
 * Quit and restart the Terminal application (to guarantee that the latest versions of the zsh autoload scripts are loaded).
+
+---
 
 ### 3.0-19
 
@@ -1202,6 +1257,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Run `delete_caches` to clear any stale `.zwc` bytecode and cached shell environment files.
 * Quit and restart the Terminal application.
 
+---
+
 ### 3.0-18
 
 * *[.zshrc]* Replaced **Oh My Zsh** with **antidote** as the plugin manager. A pre-generated static bundle (`${ZDOTDIR}/.zsh_plugins.zsh`) is checked into the home repo and sourced directly — antidote itself does not need to be installed for the shell to start. The antidote formula (installed via `brew`) and sourced at shell startup is only required for `antidote update` / `antidote bundle` to refresh plugin sources.
@@ -1238,6 +1295,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application (a full restart is required — sourcing in-place leaves old OMZ functions in memory).
 
+---
+
 ### 3.0-17
 
 * *[files/--HOME--/.p10k.zsh (deleted), files/--XDG_CONFIG_HOME--/starship.toml (new), files/--HOME--/Brewfile, files/--ZDOTDIR--/.zshrc]* Replaced **powerlevel10k** with **Starship** as the prompt engine. Deleted `.p10k.zsh` and the OMZ p10k instant-prompt setup from `.zshrc`; added `starship.toml`; replaced `tap 'romkatv/powerlevel10k'` and `brew 'powerlevel10k'` with `brew 'starship'` in the Brewfile.
@@ -1255,6 +1314,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   ```
 
 * Quit and restart the Terminal application.
+
+---
 
 ### 3.0.16
 
@@ -1297,6 +1358,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
+
 ### 3.0.15
 
 * *[scripts]* AI-based refactoring of shell scripts and ruby scripts to remove redundant scripting issues like unnecessary `local`/`unset` declarations.
@@ -1317,9 +1380,13 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
+
 ### 3.0.14
 
 * *[Brewfile]* Replaced `Ice` with `Thaw`.
+
+---
 
 ### 3.0.13
 
@@ -1338,9 +1405,13 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
+
 ### 3.0.12
 
 * *[.aliases]* New alias for `mkdir` that will create the directory and its parent directories if they don't exist.
+
+---
 
 ### 3.0.11
 
@@ -1364,10 +1435,14 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
+
 ### 3.0.10
 
 * *[install-dotfiles.rb]* Now handles the case where there's no env var substitution needed in the file's relative path, in which case, the file is treated as needing to be processed from the machine's root directory.
 * Use `git restore` instead of `git checkout` to restore files.
+
+---
 
 ### 3.0.9
 
@@ -1384,6 +1459,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   ```
 * Quit and restart the Terminal application.
 
+---
+
 ### 3.0.8
 
 * *[Brewfile]* Added opencode for terminal-based free/OSS AI assistant.
@@ -1391,11 +1468,15 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[Brewfile]* Removed Brave browser since I will use Chrome if needed.
 * *[install-dotfiles.rb]* Use `SSH_CONFIGS_DIR` environment variable for ssh config directory.
 
+---
+
 ### 3.0.7
 
 * Moved `files/--HOME--/.ssh/global_config` file to `files/--SSH_CONFIGS_DIR--/` to make use of the correct ssh folder location if it was customized.
 * mise will default to using pre-compiled ruby binaries if available.
 * *[Brewfile]* Install `keyclu` and `drawio` apps and captured their preferences for backup.
+
+---
 
 ### 3.0.6
 
@@ -1403,10 +1484,14 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Remove redundant lines in multiple shell scripts.
 * *[Brewfile]* Remove `unquarantine` flag in Brewfile since its no longer supported.
 
+---
+
 ### 3.0.5
 
 * *[install-dotfiles.rb]* and *[run-all.sh]* Added support for running in 'dry-run' mode and printing the summary.
 * *[software-updates-cron.sh]* Removed pruning of mise-installed software since that doesn't work with the latest version of mise.
+
+---
 
 ### 3.0.4
 
@@ -1414,9 +1499,13 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[Brewfile]* Added 'Shortcat' (https://github.com/shortcatapp/shortcat) for faster and more efficient keyboard shortcuts.
 * *[resurrect-repositories.rb]* Support for ruby 2.6 (default ruby in macos 26 Tahoe): added 'pathname' to require list.
 
+---
+
 ### 3.0.3
 
 * Revamped the documentations to improve clarity, readability and adoptability.
+
+---
 
 ### 3.0.2
 
@@ -1435,10 +1524,14 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   ```
 * Quit and restart the Terminal application.
 
+---
+
 ### 3.0.1
 
 * *[install-dotfiles.rb]* Optimized the installation script for performance.
 * Introduced `qwen-code` and `claude-code`. (settled on qwen-code)
+
+---
 
 ### 3.0.0
 
@@ -1463,6 +1556,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
+
 ### 2.0.47
 
 * *[.aliases] Extract `restore_cron` function to remove some duplication.
@@ -1474,10 +1569,14 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Rebase from upstream, resolve conflicts.
 * *Quit and restart your Terminal application* for these changes to take effect.
 
+---
+
 ### 2.0.46
 
 * Moved processing of the natsumi browser extension into the `.envrc` file so that `direnv` will take care of it automatically. This also handles cases where a new browser is installed after the first time setup.
 * Moved resurrecting of tracked repos to the end after the import of preferences and setting up the cron job since it takes a long time and should not block the import process.
+
+---
 
 ### 2.0.45
 
@@ -1488,9 +1587,13 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.aliases]* Added a new alias `resurrect_tracked_repos` to resurrect all tracked repositories.
 * Renamed `FIRST_INSTALL` to `DEBUG` to better reflect the functionality.
 
+---
+
 ### 2.0.44
 
 * Updated documentation to include the setup of the cronjobs.
+
+---
 
 ### 2.0.43
 
@@ -1498,11 +1601,15 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Changed all shell scripts to use single quotes where possible to ensure that we don't accidentally expand variables or execute commands.
 * *[osx-defaults.sh]* Converted to a zsh script.
 
+---
+
 ### 2.0.42
 
 * Changed all shell scripts to use switches instead of positional arguments for more intuitive usage.
 * Removed the use of colors if there's no terminal (for eg for cron jobs).
 * Removed `boring-notch` cask since it was causing issues when installing on a fresh vanilla os.
+
+---
 
 ### 2.0.41
 
@@ -1523,18 +1630,26 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * *Quit and restart your Terminal application* for these changes to take effect.
 
+---
+
 ### 2.0.40
 
 * *[resurrect-repositories.rb]* Fixed an issue while cloning git repos where the script was silently proceeding further.
+
+---
 
 ### 2.0.39
 
 * *[Brewfile]* Added common & essential OSS packages that are typically behind in macos (typically due to license issues).
 * *[.zshrc]* Fixed issue with `RUBY_CONFIGURE_OPTS` not being set correctly when `openssl` is installed.
 
+---
+
 ### 2.0.38
 
 * *[resurrect-repositories.rb]* Changed the repo-resurrection generation logic to reduce manual edits to the generated yaml structure. This now handles generating the yaml with references to the `PROJECTS_BASE_DIR` and `HOME` env variables to make it generic and not hardcode the user's login name/home folder.
+
+---
 
 ### 2.0.37
 
@@ -1549,6 +1664,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Manually edit `${HOME}/.ssh/config` to replace the reference to `~/.ssh/global_config` towards the last line with `./global_config`. If this results in a duplicate line, remove the duplicate line.
 * Verify the above changes in the `${HOME}/.ssh/config` file by running `git pull` in one of the cloned repos on your local machine.
 
+---
+
 ### 2.0.36
 
 * All `git push` invocations now have the explicit `--progress` flag.
@@ -1560,6 +1677,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Rebase from upstream, resolve conflicts.
 * Quit and restart your Terminal application for these changes to take effect.
 
+---
+
 ### 2.0.35
 
 * Make handling of stdout and stderr consistent across all usages.
@@ -1569,6 +1688,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 #### Adopting these changes
 
 * Quit and restart your Terminal application for these changes to take effect.
+
+---
 
 ### 2.0.34
 
@@ -1587,13 +1708,19 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart your Terminal application for these changes to take effect.
 
+---
+
 ### 2.0.33
 
 * Show the git repo size in the p10k prompt.
 
+---
+
 ### 2.0.32
 
 * Minor fixes for using `ZSH` env variable instead of hardcoding `$HOME/.oh-my-zsh` in multiple places.
+
+---
 
 ### 2.0.31
 
@@ -1609,20 +1736,28 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   install-dotfiles.rb
   ```
 
+---
+
 ### 2.0.30
 
 * Updated documentation to clearly call out where references to my username (`vraravam`) should NOT be changed when forking for your usage.
 * *[.aliases]* Renamed `delete_zsh_compilations` to `delete_caches`.
+
+---
 
 ### 2.0.29
 
 * Added Tor Browser.
 * Updated instructions for exporting/importing Raycast configurations.
 
+---
+
 ### 2.0.28
 
 * Fixed issue with `upreb` and `cc` scripts since they were not evaluating the current working directory at the time of invocation. Instead, they were evaluating at the time of shell startup.
 * *[Brewfile]* Added `dua-cli` for disk usage measurement from the cli.
+
+---
 
 ### 2.0.27
 
@@ -1642,13 +1777,19 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart your Terminal application for these changes to take effect.
 
+---
+
 ### 2.0.26
 
 * Fixed an issue where running `fresh-install-of-osx.sh` caused the whole terminal app to quit at the end.
 
+---
+
 ### 2.0.25
 
 * *[Brewfile]* Removed `ghostty` since there are some features that make iTerm better suited for my usecase.
+
+---
 
 ### 2.0.24
 
@@ -1663,22 +1804,32 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   install-dotfiles.rb
   ```
 
+---
+
 ### 2.0.23
 
 * De-duplicate `upreb` script to handle all locally checked out branches in a generic manner using a universal script rather than duplicating for each folder.
 * *[.shellrc]* Updated the `section_header` function to be smart about viewport column width and center the text as optimally as possible.
 
+---
+
 ### 2.0.22
 
 * Introduce configuration in `git` to use `pandoc` for diffing word documents.
+
+---
 
 ### 2.0.21
 
 * Commented out the update to FF & Zen browser's user.js scripts since I have started using RapidFox settings.
 
+---
+
 ### 2.0.20
 
 * Trying to grayjay for youtube replacement.
+
+---
 
 ### 2.0.19
 
@@ -1686,10 +1837,14 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Turn on compression for ssh connections.
 * Use `repack.MIDXMustContainCruft` in git config to optimize repo size.
 
+---
+
 ### 2.0.18
 
 * *[Brewfile]* Replace deprecated `tldr` with `tlrc`.
 * Run the `ssh-add` command via direnv for the `HOME` folder. (It's idempotent, and so safe to be re-run for each new terminal window startup.)
+
+---
 
 ### 2.0.17
 
@@ -1706,33 +1861,47 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   install-dotfiles.rb
   ```
 
+---
+
 ### 2.0.16
 
 * *[.gitconfig]* Enable `clone.rejectShallow`.
 * *[Brewfile]* Try out BoringNotch.
+
+---
 
 ### 2.0.15
 
 * *[.gitconfig]* Fixed issues with incorrect sorting configurations.
 * *[Brewfile]* Replaced 'floorp' with 'google chrome beta' since floorp doesn't expose custom key-bindings for switching workspaces. Moved to ice beta to support macos 26 Tahoe beta.
 
+---
+
 ### 2.0.14
 
 * Removed `ZenProfile` from being processed to inject Natsumi for user chrome.
 * Updated documentation for catching up with multiple commits from upstream.
 
+---
+
 ### 2.0.13
 
 * Fixed an issue where the homebrew's libraries were not picked up first in the PATH.
+
+---
 
 ### 2.0.12
 
 * *[post-brew-install.sh]* Fixed issue with app name for Visual Studio Code while crearing cmd-line executable.
 * *[Brewfile]* Removed Picocrypt and Unarchiver due to non-usage.
 
+---
+
 ### 2.0.11
 
 * *[software-updates-cron.sh]* Runs the `bcg` alias as the last command and if there are any oudated softwares, it will error out. This serves as a simple mechanism to prompt the user that some softwares need manual updating.
+
+---
 
 ### 2.0.10
 
@@ -1740,17 +1909,25 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.gitconfig]* Added some more configurations.
 * *[Brewfile]* Use new name for ollama cask.
 
+---
+
 ### 2.0.9
 
 * *[fresh-install-of-osx.sh]* `approve-fingerprint-sudo.sh` has now been converted from a standalone script into a function.
+
+---
 
 ### 2.0.8
 
 * *[fresh-install-of-osx.sh]* Moved each logical block into a function so its easier to understand and maintain.
 
+---
+
 ### 2.0.7
 
 * *[Brewfile]* Onyx is now only processed if the current OS is non-beta.
+
+---
 
 ### 2.0.6
 
@@ -1758,44 +1935,64 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[capture-raycast-configs.sh]* and *[capture-prefs.sh]* now handle switches vs arguments/parameters consistently.
 * *[software-updates-cron.sh]* Now also pulls `ollama` models: `codellama` and `deepseek-r1`.
 
+---
+
 ### 2.0.5
 
 * Updated `README.md` to make adoption steps clearer to follow.
 * Formatting of markdown files.
 
+---
+
 ### 2.0.4
 
 * *[.aliases]* Introduced a new function `find_and_append_prefs` that finds and appends the preferences associated with the partial string passed in as an argument. Also, sorts (and removes duplicates) from the config file used to capture preferences.
 
+---
+
 ### 2.0.3
 
 * Trying to fix issue with osx-defaults somehow corrupting the `System Settings` app.
+
+---
 
 ### 2.0.2
 
 * *[.shellrc]* Exposed a new function `is_arm` to denote whether the current machine architecture is ARM.
 * *[post-brew-install.sh]* Will cleanup the `keybase` executables from the `/usr/local/bin` folder if they are present.
 
+---
+
 ### 2.0.1
 
 * *[Brewfile]* Added Picocrypt.
+
+---
 
 ### 2.0.0
 
 * Squashed all commits into a single commit.
 * Tested on a fresh vanilla macos (15.5) machine.
 
+---
+
 ### 1.1-23
 
 * *[Brewfile]* Removed unused apps, moved commented out lines towards the bottom of the file.
+
+---
 
 ### 1.1-22
 
 * *[Brewfile]* Fix issue with vscode not being in PATH when running `bupc` command.
 
+---
+
 ### 1.1-21
 
 * *[Brewfile]* Replace AppCleaner with PearCleaner, and KeepingYouAwake with an extension to Raycast (Coffee).
+
+---
 
 ### 1.1-20
 
@@ -1815,6 +2012,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
+
 ### 1.1-19
 
 * Moved a lot of the shell functions from `.aliases` into individual files in `${XDG_CONFIG_HOME}/zsh/` so that they can be autoloaded/lazy-loaded on-demand. (Theoretically, this should improve shell startup time)
@@ -1830,6 +2029,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
+
 ### 1.1-18
 
 * *[Brewfile]* Ice is not installed on MacOS < 14, added KnockKnock.
@@ -1838,6 +2039,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Major refactoring for ruby scripts to optimize for time and use of ruby idioms.
 * *[.zlogin]* Optimize recompiling of zsh shell scripts.
 
+---
+
 ### 1.1-17
 
 * *[software-updates-cron.sh]* Removed parallelism (something that was introduced in the previous version when optimzing using gemini) - since this was causing lots of confusion when looking through the logs.
@@ -1845,6 +2048,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[Brewfile]* Removed unused tools / added new tools.
 * *[capture-prefs-domains.txt]* Added entries to capture PdfGear, TinkerTool, UTM.
 * Removed partial line comments from the other config data files since they are inconsistent/might cause issues when parsing / applying them during the cleanup steps.
+
+---
 
 ### 1.1-16
 
@@ -1856,18 +2061,26 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 *Note*: This version has been successfully tested on a Macbook M1 on 2 May, 2025.
 
+---
+
 ### 1.1-15
 
 * Added config settings file for `mise` to handle `idiomatic_version_file_enable_tools`
+
+---
 
 ### 1.1-14
 
 * *[shellrc]* Introduced new `is_zsh` function for defensively loading `~/.aliases` when running `brew` install/update commands (which runs `bash` shell)
 
+---
+
 ### 1.1-13
 
 * *[Brewfile]* Removed deprecated vscode plugins.
 * *[software-updates-cron.sh]* Fix issue with BetterFox user.js not being put in correct Firefox profile; Added BetterZen's user.js into Zen profile.
+
+---
 
 ### 1.1-12
 
@@ -1875,41 +2088,59 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[Brewfile]* Cleaned up some softwares that I rarely use.
 * *[.tcshrc]* Removed empty file
 
+---
+
 ### 1.1-11
 
 * *[.gitconfig]* Minor changes to decorate git log.
 * *[.aliases]* Added `upreb_me` shell script that will intelligently run a shell script (if present) for the current folder or fall back to the global `git upreb` alias
 * *[.npmrc]* Set some npm configurations to hide progress bar and save the exact version into the BOM file.
 
+---
+
 ### 1.1-10
 
 * *[.shellrc]* Removed 'depth' option while cloning repos since that causes rebases from the upstream repo to get corrupted.
 * *[.gitconfig]* Added some [options recommended from the core git maintainers](https://blog.gitbutler.com/how-git-core-devs-configure-git/).
 
+---
+
 ### 1.1-9
 
 * Moved setting up of login items into the `Brewfile` so that can be managed along with the cask block itself.
+
+---
 
 ### 1.1-8
 
 * Minor cleanup (removed leftover references to Arc).
 
+---
+
 ### 1.1-7
 
 * *[software-updates-cron.sh]* Added more steps/commands to be run via a cron job.
 
+---
+
 ### 1.1-6
 
 * Minor refactoring to reuse utilize utility methods defined in `.shellrc`.
+
+---
 
 ### 1.1-5
 
 * *[.cshrc]* Removed empty file
 * *[.shellrc]* Re-aligned colors for the success, warn, debug and error functions
 
+---
+
 ### 1.1-4
 
 * Simplify color output for scripts (avoid nesting) within the same line.
+
+---
 
 ### 1.1-3
 
@@ -1918,14 +2149,20 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[fresh-install-of-osx.sh]* Moved some post-install steps into a new script which is invoked from the Brewfile's `at_exit` block.
 * *[software-updates-cron.sh]* Corrected defensive checking of installed software before running some update commands.
 
+---
+
 ### 1.1-2
 
 * Moved `setup_login_item` function into the `Brewfile` since its used after app-installations.
+
+---
 
 ### 1.1-1
 
 * *[Brewfile]* Replaced `libreoffice` with `onlyoffice`.
 * *[.aliases]* Fixed issue with `start_docker` and `stop_docker`.
+
+---
 
 ### 1.0-53
 
@@ -1945,6 +2182,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Quit and restart the Terminal application.
 
+---
+
 ### 1.0-52
 
 * Removed auto-configuration from rancher desktop to not manage/change the `PATH` env var since that's already done in [this line](./files/--ZDOTDIR--/.zshrc#L155) of the .zshrc file.
@@ -1954,10 +2193,14 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Start rancher desktop, go into its preferences, and change the setting to not automatically set the `PATH`.
 * Restart Terminal app and verify that `docker` is in your `PATH`.
 
+---
+
 ### 1.0-51
 
 * *[.aliases]* Uncommented `start_docker` and `stop_docker` and made them defensive.
 * Removed 'ccleaner' preferences since I am no longer using it.
+
+---
 
 ### 1.0-50
 
@@ -1969,9 +2212,13 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * After rebasing, just quit and restart the terminal emulator so that the `.envrc` is processed. (Hint: Use `allow_all_direnv_configs` to accept and process all `.envrc` files in your system.)
 
+---
+
 ### 1.0-49
 
 * *[capture-raycast-configs.sh]* Automated initial password setup for Raycast export.
+
+---
 
 ### 1.0-48
 
@@ -1982,10 +2229,14 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * After rebasing, just quit and restart the terminal emulator so that the `.shellrc` is loaded into memory.
 
+---
+
 ### 1.0-47
 
 * *[capture-defaults.sh]* Added more macos preferences to be exported/imported for backup.
 * Removed `Itsycal` since raycast and/or a desktop widget can be used instead of a dedicated application.
+
+---
 
 ### 1.0-46
 
@@ -1996,10 +2247,14 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * After rebasing, just quit and restart the terminal emulator so that the `.shellrc` is loaded into memory.
 
+---
+
 ### 1.0-45
 
 * *[capture-raycast-configs.sh]* Added script to export/import raycast configs. More details can be found [here](Extras.md#capture-raycast-configssh). Code contributed by/adapted from @arunvelsriram's gist.
 * Reuse utility functions defined in `.shellrc`
+
+---
 
 ### 1.0-44
 
@@ -2013,6 +2268,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   ```zsh
   cp "${DOTFILES_DIR}/files/--PERSONAL_PROFILES_DIR--/custom.gitignore" "${PERSONAL_PROFILES_DIR}/.gitignore"
   ```
+
+---
 
 ### 1.0-43
 
@@ -2030,27 +2287,39 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * Edit the `profiles.ini` and `installs.ini` files at the root of the FF profile folder, and add `/DefaultProfile` to the lines referring to the profile folder (usually it'll be a relative path).
 * Restart your FF-based browser to verify that all functionality continues to work.
 
+---
+
 ### 1.0-42
 
 * Added dev dependencies for zen-browser.
 * Unignore some files from the `personal` folder that were somehow ignored globally.
 
+---
+
 ### 1.0-41
 
 * Added new script `scripts/add-upstream-git-config.sh`.
 
+---
+
 ### 1.0-40
 
 * Fixed documentation and reduced hardcoding of upstream repo-owner's name.
+
+---
 
 ### 1.0-39
 
 * Introduced [a new script](scripts/cleanup-browser-profiles.sh) to cleanup browser profiles folders.
 * *[fresh-install-of-osx.sh]* Minor refactoring to enhance `clone_repo_into` to handle an optional target git branch which is also validated.
 
+---
+
 ### 1.0-38
 
 * *[.aliases]* Added extra checks for the `status_all_repos` and `count_all_repos` utility functions.
+
+---
 
 ### 1.0-37
 
@@ -2078,14 +2347,20 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * Once Raycast is restarted *AND if it shows an error about the database being corrupt*, then choose the `Reset` option, and use the `Import Settings & Data` option to import your previously exported settings back in.
 * Once the above steps are done, if you rerun the `install-dotfiles.rb` script, it should not show any dirty files (especially the 2 `custom.gitignore` files) - and if this is the case, your setup is now back to normal working state.
 
+---
+
 ### 1.0-36
 
 * Use `is_git_repo` instead of `is_directory` if the next command(s) expects it to be a git repo.
 * Remove Arc from `Brewfile` (since I moved to [Zen](https://zen-browser.app/)).
 
+---
+
 ### 1.0-35
 
 * Use `git-restore-mtime` from `git-tools` (as opposed to `git-utimes` from `git-extras`) since its > 1x faster performance.
+
+---
 
 ### 1.0-34
 
@@ -2093,35 +2368,51 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * Introduce PDFGear and KeyClu.
 * Fixed some old documentation.
 
+---
+
 ### 1.0-33
 
 * Reuse utility functions defined in `.shellrc`.
+
+---
 
 ### 1.0-32
 
 * *[fresh-install-of-osx.sh]* Added date calculation in `fresh-install-of-osx.sh` to track total execution time.
 
+---
+
 ### 1.0-31
 
 * *[approve-fingerprint-sudo.sh]* Handled case to execute `approve-fingerprint-sudo.sh` based on touchId hardware.
+
+---
 
 ### 1.0-30
 
 * *[resurrect-repositories.rb]* Handled the case where git wouldn't allow cloning a repo into a pre-existing, non-empty folder.
 * *[.zshrc]* Handled case where docker-related aliases were not setup since it was not in the `PATH` when `files/--HOME--/.aliases` was evaluated.
 
+---
+
 ### 1.0-29
 
 * *[capture-defaults.sh]* Removed some applications that I no longer use.
 * *[fresh-install-of-osx.sh]* Replaced `TODO` with explanation for future reference as to why we can't use `homebrew` to install omz custom plugins.
 
+---
+
 ### 1.0-28
 
 * *[Brewfile]* Stop processing the `Brewfile` such that the minimal installation can happen in a shorter duration of time. This is controlled by the env var `HOMEBREW_BASE_INSTALL` which is set in the `fresh-install-of-osx.sh` script when installing from scratch.
 
+---
+
 ### 1.0-27
 
 * *[.aliases]* Added 2 new utility functions: `count` and `count_all_repos`
+
+---
 
 ### 1.0-26
 
@@ -2155,12 +2446,16 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 
 *Note*: This version has been successfully tested on a Macbook M1 on 22 Dec, 2024.
 
+---
+
 ### 1.0-25
 
 * *[capture-defaults.sh]* Capture defaults script now aborts when the `PERSONAL_CONFIGS_DIR` env var is not defined.
 * *[.shellrc]* Extracted common utility function to remove duplication and invoke them in the setup scripts.
 * *[fresh-install-of-osx-advanced.sh]* Fixed potential issue with the `PATH` not being updated if the fresh-install-advanced script was run without starting a new terminal session.
 * *[.aliases]* Added a new `profiles` alias to handle git repos checked out into the `PERSONAL_PROFILES_DIR`.
+
+---
 
 ### 1.0-24
 
@@ -2171,15 +2466,21 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * Open Terminal and run the `install-dotfiles.rb` script.
 * Change the current directory in terminal to the profiles repo (`direnv` will take care of the rest)
 
+---
+
 ### 1.0-23
 
 * Incorporate the [natsumi-browser](https://github.com/greeeen-dev/natsumi-browser) into the Zen browser profile.
+
+---
 
 ### 1.0-22
 
 * *[.shellrc]* Moved functions that are only needed in the basic fresh-install script into that so as to reduce shell startup time.
 
 *Note*: This version has been successfully tested on a Macbook M1 on 19 Dec, 2024.
+
+---
 
 ### 1.0-21
 
@@ -2189,6 +2490,8 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 #### Adopting these changes
 
 * Manually edit your `${HOME}/.ssh/config` file, and change all occurrences of `~` to `${HOME}`
+
+---
 
 ### 1.0-20
 
@@ -2203,10 +2506,14 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 
 * Run `git delete-tag success-tested-on-m1; git push origin :success-tested-on-m1` to cleanup the defunct tag.
 
+---
+
 ### 1.0-19
 
 * *[Brewfile]* Added `keycastr` to help with pairing and presentations of screen-grabs.
 * Added some more logging while running the fresh-install scripts.
+
+---
 
 ### 1.0-18
 
@@ -2216,9 +2523,13 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 
 * The reason for this restructuring is explained up above. Since most of the adoptees have customized this file, it will probably result in conflicts. Please be diligent in resolving the conflicts.
 
+---
+
 ### 1.0-17
 
 * All GH urls now also take into account the branch that's being tested for the setup scripts. Read the [new section](./README.md#how-to-test-changes-in-your-fork-before-raising-a-pull-request) in the README if you are making changes that you want to test against a PR branch before the PR is merged.
+
+---
 
 ### 1.0-16
 
@@ -2230,10 +2541,14 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * After rebasing, you will end up with conflicts. The env vars that were previously defined in `files/--ZDOTDIR--/.zprofile` have been moved into `files/--HOME--/.shellrc`. You might have to manually fix them. You can go ahead and delete the `${HOME}/.zprofile` since that is no longer needed.
 * Run `install-dotfiles.rb` so that the symlinked zsh config files in `${HOME}` point to the correct locations (`files/--ZDOTDIR--/` instead of `files/--HOME--/`)
 
+---
+
 ### 1.0-15
 
 * *[README.md]* Fixed some grammatical errors in README.
 * *[.gitconfig]* Added new git alias for logs.
+
+---
 
 ### 1.0-14
 
@@ -2244,17 +2559,25 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * Run `fresh-install-of-osx.sh` so that the `zsh-defer` plugin is cloned to the correct directory.
 * Restart terminal for the deferred-loading to take effect. (No harm in keeping the old session).
 
+---
+
 ### 1.0-13
 
 * *[.shellrc]* Introduced new utility functions `section_header` and `debug` and standardized on usages.
+
+---
 
 ### 1.0-12
 
 * Reverted changes from v1.0.9 related to 'bupc' since the 1st cleanup might be skipped due to the '||' condition status
 
+---
+
 ### 1.0-11
 
 * Converted from 'iBar' menubar app to 'Ice' since its open source and seems to have better features. This also removes the need to login into the App Store!
+
+---
 
 ### 1.0-10
 
@@ -2262,6 +2585,8 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * *[.zprofile]* Ensure that directories are created for env vars defined in `.zprofile`
 * `setopt` paramters are case-insensitive and can handle underscore and so changed them for readability
 * *[.shellrc]* Introduced new utility function `ensure_dir_exists_if_var_defined` to help in cases where `code-gist` used to create unsaved files instead of directories for undefined env vars
+
+---
 
 ### 1.0-9
 
@@ -2272,13 +2597,19 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 
 * Restart terminal for the revised alias function to get loaded. (No harm in keeping the old session; just that it will perform an extra step unnecessarily on `bupc` alias)
 
+---
+
 ### 1.0-7
 
 * *[fresh-install-of-osx.sh]* Fix issue when running in a fresh/vanilla machine since 'ZDOTDIR' was undefined.
 
+---
+
 ### 1.0-6
 
 * *[install-dotfiles.rb]* Fix issue when creating the include line for `~/.ssh/config` if it was not present.
+
+---
 
 ### 1.0-5
 
@@ -2288,17 +2619,25 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 
 * Run `approve-fingerprint-sudo.sh`
 
+---
+
 ### 1.0-4
 
 * *[install-dotfiles.rb]* Refactored environment variable resolution logic to use `gsub!` for improved performance.
+
+---
 
 ### 1.0-3
 
 * Moved all files & nested folders inside the `files` directory into `files/--HOME--` to make that location explicit (earlier it was implied)
 
+---
+
 ### 1.0-2
 
 * *[install-dotfiles.rb]* Refactored the logic to handle ssh global configuration file for ease of readability and maintainability.
+
+---
 
 ### 1.0-1
 
@@ -2306,6 +2645,8 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * *[CHANGELOG.md]* Added changelog which will be maintained going forward for each commit.
 * *[README.md]* Added a [new section](README.md#how-to-upgrade--catch-up-to-new-changes) detailing steps to adopt updates/catchups for new changes on an ongoing basis.
 * Changed all colored messages to be uniform and added a `success` function to print in green. These are optimized for a dark theme in your terminal emulator.
+
+---
 
 ### 1.0
 
@@ -2315,3 +2656,5 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 
 * Since I recreated the `1.0` tag as part of this push, you might need to delete the tag in both your local and your remote and then do `git upreb`.
 * Run the `install-dotfiles.rb` script which will automatically remove the older (broken) symlink and recreate the new one in the correct location.
+
+---

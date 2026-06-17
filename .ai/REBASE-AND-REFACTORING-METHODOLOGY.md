@@ -14,6 +14,8 @@
 4. [Duplication Removal](#duplication-removal)
 5. [Lessons Learned](#lessons-learned)
 
+**See also:** [FEATURE-PARITY-CHECKLIST.md](FEATURE-PARITY-CHECKLIST.md) - Comprehensive post-rebase verification checklist
+
 ---
 
 ## Rebase Workflow
@@ -750,6 +752,7 @@ Created comprehensive comparison documents:
 
 ## Related Documentation
 
+- **Feature Parity Checklist**: `.ai/FEATURE-PARITY-CHECKLIST.md` - Post-rebase verification checklist (use after every rebase)
 - **Ruby Migration Complete**: `.ai/RUBY-MIGRATION-COMPLETE.md` - Full Ruby migration case study
 - **Nix Migration Review**: `.ai/NIX-MIGRATION-REBASE-REVIEW.md` - Analysis of three-way conflict scenario
 - **Context**: `.ai/context.md` - Historical insights and patterns

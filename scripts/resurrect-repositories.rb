@@ -18,6 +18,7 @@ require_relative 'utilities/collection_processor'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
 require_relative 'utilities/logging'
+require_relative 'utilities/macos'
 
 include Logging
 
@@ -222,11 +223,11 @@ def _resurrect_each(repo, idx, total)
   # automatically via .zshenv on every zsh invocation -- so a login shell (`-l`) is
   # sufficient; no explicit `source .shellrc` is needed.
   # The remote URL and folder come from a trusted YAML config authored by the user,
-  # but we still use `/bin/zsh -lc` explicitly (rather than a bare string passed to
+  # but we still use MacOS::ZSH_CMD explicitly (rather than a bare string passed to
   # capture3) to make the shell invocation unambiguous and to avoid surprises from $SHELL.
   # clone_repo_into automatically uses --depth=1 (shallow clone) when FIRST_INSTALL is set.
   clone_command = "clone_repo_into #{repo[REMOTE_KEY_NAME].shellescape} #{dir.shellescape}"
-  stdout_str, stderr_str, status = Open3.capture3({ 'FORCE_COLOR' => '1' }, '/bin/zsh', '-lc', clone_command)
+  stdout_str, stderr_str, status = Open3.capture3({ 'FORCE_COLOR' => '1' }, MacOS::ZSH_CMD, '-lc', clone_command)
   print stdout_str
   unless status.success?
     # Clone failure is fatal for this repo -- cannot proceed without a cloned repository

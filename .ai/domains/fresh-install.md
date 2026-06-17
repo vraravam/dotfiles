@@ -1,5 +1,5 @@
 ---
-applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install.rb,**/osx-defaults.sh,**/setup-login-item.sh,**/capture-prefs.rb,**/resurrect-repositories.rb"
+applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install.rb,**/osx-defaults.sh,**/setup-login-item.rb,**/capture-prefs.rb,**/resurrect-repositories.rb"
 ---
 
 # Fresh Install Instructions

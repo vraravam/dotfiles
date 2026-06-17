@@ -172,13 +172,15 @@ You can control the search scope and filtering using environment variables:
 
 **Note**: Any shell command can be run — not just git commands. Each command executes in the context of the git repository root, giving you access to the repo's files and structure.
 
-## setup-login-item.sh
+## setup-login-item.rb
 
 Some apps must be registered as macOS login items programmatically after installation — the System Settings UI is not scriptable in a repeatable way. This script handles that registration so `fresh-install-of-osx.sh` can set up login items unattended. It is also safe to run manually at any time.
 
   ```zsh
-  setup-login-item.sh -a <app-name>
+  setup-login-item.rb -a <app-name>
   ```
+
+On macOS 14–25, uses SMAppService for proper login item registration. On macOS 13 and 26+, falls back to the legacy System Events AppleScript. Add `-b` flag for background/hidden mode (macOS 13 legacy only).
 
 ## software-updates-cron.rb
 

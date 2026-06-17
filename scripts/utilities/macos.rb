@@ -18,6 +18,20 @@ module MacOS
   # because 'include Logging' + 'extend self' doesn't make included methods
   # available as module methods.
 
+  # Filesystem root as a Pathname object. Use for joining system paths that should
+  # be resolved from the filesystem root.
+  #
+  # @example
+  #   MacOS::ROOT.join('usr', 'bin', 'defaults')  # => Pathname('/usr/bin/defaults')
+  ROOT = Pathname.new(File::SEPARATOR).freeze
+
+  # macOS system command paths (absolute paths for reliability in cron/non-interactive contexts)
+  DEFAULTS_CMD = ROOT.join('usr', 'bin', 'defaults').to_s.freeze
+  DU_CMD = ROOT.join('usr', 'bin', 'du').to_s.freeze
+  OSASCRIPT_CMD = ROOT.join('usr', 'bin', 'osascript').to_s.freeze
+  PLUTIL_CMD = ROOT.join('usr', 'bin', 'plutil').to_s.freeze
+  ZSH_CMD = ROOT.join('bin', 'zsh').to_s.freeze
+
   # Login-item apps that are killed before defaults writes and restarted after.
   # Keep in sync with Brewfile setup_login_items_script entries and
   # defaults-write login-key sections in osx-defaults.sh.

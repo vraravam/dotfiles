@@ -4,23 +4,20 @@
 require 'open3'
 require 'pathname'
 
+require_relative 'macos'
+
 # Command and path manipulation utilities for Ruby scripts.
 #
 # For environment variable paths (HOME, DOTFILES_DIR, etc.), use EnvVars instead.
+# For macOS system command paths (DEFAULTS_CMD, OSASCRIPT_CMD, etc.), use MacOS instead.
 #
 # Usage:
 #   require 'path_utils'
 
-# Module for command existence checks, path segment extraction, and path constants.
+# Module for command existence checks and path manipulation utilities.
+# Generic (cross-platform) utilities only -- macOS-specific paths are in MacOS module.
 module PathUtils
   extend self
-
-  # Filesystem root as a Pathname object. Use for joining relative paths that should
-  # be resolved from the filesystem root rather than the current working directory.
-  #
-  # @example
-  #   PathUtils::ROOT.join('.config', 'file.txt')  # => Pathname('/config/file.txt')
-  ROOT = Pathname.new(File::SEPARATOR).freeze
 
   # Checks if a command exists in the system PATH.
   # Mirrors command_exists() from .shellrc.
@@ -36,7 +33,7 @@ module PathUtils
   end
 
   # Returns the size of a directory in kilobytes using du.
-  # Uses /usr/bin/du for reliability in cron/system contexts.
+  # Uses MacOS::DU_CMD for reliability in cron/system contexts.
   #
   # @param dir [Pathname, String] Directory path to measure
   # @return [Integer] Size in kilobytes
@@ -44,12 +41,12 @@ module PathUtils
   # @example
   #   PathUtils.dir_size_kb(Pathname.new('/path/to/dir'))  # => 1024
   def dir_size_kb(dir)
-    du_out, = Open3.capture3('/usr/bin/du', '-sk', dir.to_s)
+    du_out, = Open3.capture3(MacOS::DU_CMD, '-sk', dir.to_s)
     du_out.split("\t").first.to_i
   end
 
   # Returns the size of a directory in human-readable format using du.
-  # Uses /usr/bin/du for reliability in cron/system contexts.
+  # Uses MacOS::DU_CMD for reliability in cron/system contexts.
   #
   # @param dir [Pathname, String] Directory path to measure
   # @return [String] Human-readable size (e.g., "1.5G", "234M", "4.2K")
@@ -57,7 +54,7 @@ module PathUtils
   # @example
   #   PathUtils.dir_size_human(Pathname.new('/path/to/dir'))  # => "1.5G"
   def dir_size_human(dir)
-    size_out, = Open3.capture3('/usr/bin/du', '-sh', dir.to_s)
+    size_out, = Open3.capture3(MacOS::DU_CMD, '-sh', dir.to_s)
     size_out.split("\t").first
   end
 

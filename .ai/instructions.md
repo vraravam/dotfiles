@@ -8,7 +8,7 @@ All domain-specific rules are in [`domains/`](./domains/):
 |--------|------|----------|
 | Character encoding | [`character-encoding.md`](./domains/character-encoding.md) | All cross-language scripts and configuration files (ASCII-only requirements) |
 | Edit checklist | [`edit-checklist.md`](./domains/edit-checklist.md) | All cross-language scripts and configuration files (edit workflow) |
-| Fresh install | [`fresh-install.md`](./domains/fresh-install.md) | `fresh-install-of-osx.sh`, `install-dotfiles.rb`, `post-brew-install.rb`, `osx-defaults.sh`, `setup-login-item.sh`, `capture-prefs.rb`, `resurrect-repositories.rb` |
+| Fresh install | [`fresh-install.md`](./domains/fresh-install.md) | `fresh-install-of-osx.sh`, `install-dotfiles.rb`, `post-brew-install.rb`, `osx-defaults.sh`, `setup-login-item.rb`, `capture-prefs.rb`, `resurrect-repositories.rb` |
 | Git config | [`git-config.md`](./domains/git-config.md) | `.gitconfig`, git aliases, `.gitattributes` |
 | Logging conventions | [`logging-conventions.md`](./domains/logging-conventions.md) | All cross-language scripts (logging/color rules) |
 | Path constants | [`path-constants.md`](./domains/path-constants.md) | All cross-language scripts (path/env var rules) |
@@ -213,6 +213,38 @@ When reviewing changes:
 
 **Exception:** When the user explicitly says "commit with message X", "create a commit", or similar clear intent, then `git commit` is permitted.
 
+#### Rebase Rules
+
+**When rebasing branches, ensure code quality is maintained or improved.**
+
+After completing any rebase (whether manual conflict resolution or automated):
+
+1. **No functional loss**: All functionality from both branches must be preserved
+2. **No duplication**: Avoid duplicate implementations of the same logic
+3. **No loss in modularity**: Keep extracted modules separate; don't inline them back
+4. **No degradation in maintainability**: Code should be clearer after rebase, not harder to understand
+5. **Documentation must be updated**: All references to renamed/moved files must be updated in docs, configs, and scripts
+
+**Conflict resolution guidelines:**
+- When both branches add the same file with different implementations:
+  - Choose the more modular/maintainable version
+  - If both have unique improvements, merge the best of both
+- When both branches modify the same file:
+  - Preserve all new functionality from both sides
+  - Remove any duplicated code introduced by the merge
+  - Ensure naming and structure remain consistent
+- When file references change (e.g., `.sh` → `.rb`):
+  - Update all references to use the newest file name
+  - Verify documentation, configs, and scripts are all updated
+
+**Verification after rebase:**
+- Check for duplicate functions/methods (same logic in multiple places)
+- Verify all file references point to correct files
+- Ensure no functionality was lost in conflict resolution
+- Run syntax checks on all modified files
+
+**See also:** [FEATURE-PARITY-CHECKLIST.md](.ai/FEATURE-PARITY-CHECKLIST.md) for comprehensive post-rebase verification workflow.
+
 ## SSH Config Rules — Variable Expansion Limitations
 
 **SSH config files (`~/.ssh/config`, `templates/ssh-config.template`) have strict limitations on variable expansion.**
@@ -315,7 +347,15 @@ When creating or editing CHANGELOG.md sections, follow these rules:
    - Version number header (e.g., `### 3.1.23`)
    - Descriptive subheading summarizing the theme (e.g., `#### Backport utility enhancements and convert zsh autoload functions to Ruby`)
    - Bullet points with specific changes (technical details with line numbers)
-   - `#### Adopting these changes` section with user action items
+   - `#### Adopting these changes` section with user action items (optional - omit if no user actions required)
+
+5. **Version section spacing and visual separation**:
+   - Each version section (starting with `### X.Y.Z`) must be separated by **exactly one blank line, followed by a horizontal rule (`---`), followed by one blank line**
+   - Pattern: `[end of previous section]\n\n---\n\n### X.Y.Z`
+   - The horizontal rule provides clear visual separation between sections when rendered in markdown viewers
+   - The horizontal rule is a *separator* between version sections, not a header decoration
+   - **Horizontal rule before the first version section** (one blank line after introductory text, then `---`, then one blank line before `### 3.1.27`)
+   - **Horizontal rule after the last version section** (one blank line after last content, then `---` as the final line of the file)
 
 **Example of good structure:**
 ```markdown
