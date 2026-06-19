@@ -1,3 +1,4 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require 'pathname'
@@ -183,7 +184,7 @@ module Plist
     return unless filepath.file?
     filepath.each_line do |line|
       stripped = line.chomp
-      next if stripped.strip.empty?
+      next if nil_or_empty?(stripped.strip)
       next if stripped =~ /\A\s*#/
       yield stripped
     end

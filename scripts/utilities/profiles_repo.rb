@@ -1,6 +1,8 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require 'time'
+require_relative 'core'
 
 require_relative 'env_vars'
 require_relative 'git_processor'
@@ -12,6 +14,8 @@ require_relative 'path_utils'
 # structure and are extracted from software-updates-cron.rb.
 module ProfilesRepo
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Note: Logging methods must be qualified (Logging.debug, Logging.success, etc.)
   # because 'include Logging' + 'extend self' doesn't make included methods
@@ -44,7 +48,7 @@ module ProfilesRepo
         date_part < cutoff
       end
 
-      if old_backups.empty?
+      if nil_or_empty?(old_backups)
         Logging.debug 'No old session backups to prune'
         return
       end
@@ -99,7 +103,7 @@ module ProfilesRepo
     end
 
     chrome_folders = find_chrome_folders
-    return if chrome_folders.empty?
+    return if nil_or_empty?(chrome_folders)
 
     chrome_folders.each do |folder_pn|
       unless GitProcessor.repo?(folder_pn)
@@ -107,12 +111,13 @@ module ProfilesRepo
         next
       end
 
-      Logging.section_header2 "#{'Updating chrome folder:'.yellow} '#{folder_pn.to_s.cyan}'"
-      _out, _err, status = GitProcessor.new(dir: folder_pn).pull(rebase: true)
-      if status.success?
-        Logging.success "Successfully updated: '#{folder_pn.to_s.cyan}'"
-      else
-        Logging.record_warning("Failed to update chrome folder: '#{folder_pn}'")
+      Logging.with_step("update chrome #{folder_pn.basename}", "#{'Updating chrome folder:'.yellow} '#{folder_pn.to_s.cyan}'") do
+        _out, _err, status = GitProcessor.new(dir: folder_pn).pull(rebase: true)
+        if status.success?
+          Logging.success "Successfully updated: '#{folder_pn.to_s.cyan}'"
+        else
+          Logging.record_warning("Failed to update chrome folder: '#{folder_pn}'")
+        end
       end
     end
 

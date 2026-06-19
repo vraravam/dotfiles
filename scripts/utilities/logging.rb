@@ -1,5 +1,7 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require_relative 'core'
 require_relative 'env_vars'
 require_relative 'string'
 
@@ -19,19 +21,8 @@ require_relative 'string'
 module Logging
   # Make the module usable both as `include Logging` and as `Logging.info(…)`.
   extend self
-
-  # ---------------------------------------------------------------------------
-  # General-purpose utility helpers
-  # ---------------------------------------------------------------------------
-
-  # Checks if a value is nil or empty.
-  #
-  # @param val [nil, #empty?] The value to check. Non-nil values must respond to +#empty?+.
-  # @return [true, false]
-  # @raise [NoMethodError] if +val+ is not nil and does not respond to +#empty?+.
-  def nil_or_empty?(val)
-    val.nil? || val.empty?
-  end
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # ---------------------------------------------------------------------------
   # Semantic log-level helpers
@@ -48,15 +39,6 @@ module Logging
   # The shell's `error` calls `osascript` for a macOS notification; that
   # behaviour is omitted here since it is inappropriate for library code.
   # ---------------------------------------------------------------------------
-
-  # Returns the depth-based indent string (2 spaces per depth level).
-  # Used by all logging functions to auto-indent output based on script nesting.
-  # Memoized to avoid repeated string multiplication for the same depth.
-  def log_indent
-    @indent_cache ||= {}
-    depth = EnvVars.script_depth
-    @indent_cache[depth] ||= '  ' * depth
-  end
 
   def success(message)
     # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
@@ -143,16 +125,6 @@ module Logging
   # from .shellrc.
   # ---------------------------------------------------------------------------
 
-  # Prints +char+ repeated +length+ times.
-  # Defaults to '=' and terminal-width/4 columns when +length+ is not given.
-  #
-  # @param char [String] The character to repeat (default: '=').
-  # @param length [Integer, nil] Number of repetitions; defaults to +terminal_width / 4+ when nil.
-  # @return [String] The repeated character string.
-  def print_chars_for_length(char: '=', length: nil)
-    char * (length || terminal_width / 4)
-  end
-
   # Prints a centred section header flanked by '=' padding, matching:
   #   echo "$(light_blue $(print_chars_for_length '=' …)) ⏳ ${header} $(light_blue …)"
   # Also sets current_section to +header+ so that subsequent record_warning /
@@ -183,6 +155,7 @@ module Logging
   # @return [Integer] Unix epoch of the logged start time.
   def print_script_start
     now = Time.now
+    @script_start_time = now.to_i
     if outermost_script?
       puts "#{script_name.cyan} #{'==>'.purple} #{'Script started at:'.yellow} #{now.strftime('%Y-%m-%d %H:%M:%S').light_blue}"
     end
@@ -213,6 +186,28 @@ module Logging
   # record_error entries. Mirrors the _current_section local in shell scripts.
   def current_section=(name)
     @current_section = name
+  end
+
+  # Wraps a block of code with step lifecycle management (current_section, step_start, step_end).
+  # Ensures step_end is called even if the block raises an exception.
+  #
+  # @param section_name [String] Name for current_section tracking
+  # @param header [String, nil] Optional section header to print (uses section_header if provided)
+  # @yield Block of code to execute within the step lifecycle
+  # @return [void]
+  #
+  # @example
+  #   Logging.with_step('Install Homebrew', "Installing Homebrew into '#{path}'") do
+  #     # ... install logic ...
+  #   end
+  def with_step(section_name, header = nil)
+    self.current_section = section_name
+    step_start
+    section_header(header) if header
+
+    yield
+  ensure
+    step_end
   end
 
   # Appends a non-critical issue to the warnings collection and emits an inline
@@ -251,7 +246,7 @@ module Logging
       nil_or_empty?(line) || all_patterns.any? { |pattern| line.include?(pattern) }
     end
 
-    record_warning("#{context}:\n#{meaningful_errors.join("\n")}") if meaningful_errors.any?
+    record_warning("#{context}:\n#{meaningful_errors.join("\n")}") unless nil_or_empty?(meaningful_errors)
   end
 
   # Prints a grouped summary of all collected warnings and errors, prefixing
@@ -308,6 +303,28 @@ module Logging
     @step_errors ||= []
   end
 
+  # Returns true if any warnings have been recorded during script execution.
+  # Prefer this over directly checking step_warnings.any? for cleaner code.
+  #
+  # @return [Boolean] true if warnings exist, false otherwise
+  #
+  # @example
+  #   @has_failures = true if Logging.has_warnings?
+  def has_warnings?
+    step_warnings.any?
+  end
+
+  # Returns true if any errors have been recorded during script execution.
+  # Prefer this over directly checking step_errors.any? for cleaner code.
+  #
+  # @return [Boolean] true if errors exist, false otherwise
+  #
+  # @example
+  #   exit(1) if Logging.has_errors?
+  def has_errors?
+    step_errors.any?
+  end
+
   # Formats +seconds+ as "Hh:MMm:SSs". Public so callers that build their own
   # notification or summary strings can format a duration without reaching into
   # private state via send().
@@ -315,72 +332,70 @@ module Logging
     format('%02dh:%02dm:%02ds', seconds / 3600, (seconds % 3600) / 60, seconds % 60)
   end
 
+  # Wraps the standard script lifecycle: increment depth, print start banner,
+  # execute block, print summary. Use this instead of manually calling
+  # increment_script_depth + print_script_start + print_script_summary.
+  #
+  # Ensures print_script_summary is always called (even on error) via ensure block.
+  # The at_exit hook registered by increment_script_depth ensures depth is
+  # decremented on both clean and error exits.
+  #
+  # The outermost check is handled internally by print_script_start and
+  # print_script_summary, so this method works correctly for both CLI entry
+  # points and utility module methods that can be called nested.
+  #
+  # @param script_name [String, nil] Name to use for Logging.script_name (required for utility methods, optional for CLI scripts)
+  # @param message [String, nil] Optional message to print before summary
+  # @yield Block containing the script's main logic
+  # @return [void]
+  #
+  # @example CLI entry point script (script_name inferred from $PROGRAM_NAME)
+  #   if __FILE__ == $PROGRAM_NAME
+  #     include Logging
+  #     # ... option parsing ...
+  #     Logging.run_script do
+  #       success = MyModule.run(param: value)
+  #       exit(success ? 0 : 1)
+  #     end
+  #   end
+  #
+  # @example Utility module method (script_name explicit)
+  #   def install_mise_versions(shared_dirs: nil, first_install: false)
+  #     Logging.run_script('install_mise_versions') do
+  #       # ... implementation ...
+  #     end
+  #   end
+  #
+  # @example With custom summary message
+  #   Logging.run_script('cleanup_profiles', 'Finished cleaning up browser profiles') do
+  #     # ... main logic ...
+  #   end
+  def run_script(script_name = nil, message = nil)
+    self.script_name = script_name if script_name
+    increment_script_depth
+    start_time = print_script_start
+
+    yield start_time
+  ensure
+    print_script_summary(start_time, message)
+  end
+
   # ---------------------------------------------------------------------------
-  # Script depth tracking -- public API called by each script's main()
+  # Script depth tracking -- public query method
   # ---------------------------------------------------------------------------
 
   # Returns true when this is the outermost script in a nested call chain.
   # Mirrors is_outermost_script in .shellrc. _DOTFILES_SCRIPT_DEPTH is exported
-  # and incremented by each script's main(); subprocess increments do not
-  # propagate back to the parent. Defaults to 0 when unset so standalone scripts
-  # (which never set the counter) are treated as outermost -- consistent with the
-  # ':-0' used in the increment expression in each main().
+  # and incremented by each script's main() via run_script; subprocess increments
+  # do not propagate back to the parent. Defaults to 0 when unset so standalone
+  # scripts (which never set the counter) are treated as outermost -- consistent
+  # with the ':-0' used in the increment expression in each main().
   def outermost_script?
     EnvVars.script_depth <= 1
   end
 
-  # Increments _DOTFILES_SCRIPT_DEPTH and registers an at_exit hook to
-  # decrement it on exit (clean or error). Call once at script start, before
-  # any logging calls. Mirrors the export + trap pattern in shell scripts.
-  def increment_script_depth
-    ENV['_DOTFILES_SCRIPT_DEPTH'] = (EnvVars.script_depth + 1).to_s
-    at_exit { decrement_script_depth }
-  end
-
-  # Decrements _DOTFILES_SCRIPT_DEPTH, guarding against underflow. Called
-  # automatically by the at_exit hook registered in increment_script_depth.
-  # Mirrors _decrement_script_depth in .shellrc.
-  def decrement_script_depth
-    depth = EnvVars.script_depth
-    ENV['_DOTFILES_SCRIPT_DEPTH'] = (depth - 1).to_s if depth > 0
-  end
-
-  # Prints a summary table showing total/successful/failed counts and lists failed items.
-  # Used by scripts that process multiple items (repos, files, etc.).
-  #
-  # @param total [Integer] Total number of items processed
-  # @param successful [Array<String>] List of successful items (paths, names, etc.)
-  # @param failed [Array<String>] List of failed items
-  # @param item_label [String] What to call each item (default: 'repositories')
-  #
-  # @example
-  #   print_operation_summary(10, successful_repos, failed_repos)
-  #   print_operation_summary(5, successful_files, failed_files, item_label: 'files')
-  def print_operation_summary(total, successful, failed, item_label: 'repositories')
-    # Only print when this is the outermost script -- suppresses nested summaries
-    # when called from a wrapper script/function that prints its own final summary.
-    return unless outermost_script?
-
-    puts ''
-    info 'Summary'.yellow
-    puts "  Total #{item_label}: #{total}"
-    puts "  Successful:         #{successful.length.to_s.green}"
-    return unless failed.any?
-
-    singular = item_label.sub(/ies$/, 'y').sub(/s$/, '')
-    plural = item_label
-    count_label = failed.length == 1 ? singular : plural
-
-    puts "  Failed:             #{failed.length.to_s.red}"
-    puts "  Failed #{count_label}:".red
-    failed.each { |item| puts "    - '#{item.red}'" }
-  end
-
   # Prints a summary of processing results from a hash returned by
   # CollectionProcessor.process_items or similar iteration helpers.
-  #
-  # This is a convenience wrapper around print_operation_summary that unpacks
-  # the results hash and adds skipped-count display.
   #
   # @param results [Hash] Results hash with keys:
   #   - :total [Integer] Total items processed (excludes skipped)
@@ -394,12 +409,28 @@ module Logging
   #   print_results_summary(results)
   #   print_results_summary(results, item_label: 'files')
   def print_results_summary(results, item_label: 'repositories')
-    print_operation_summary(
-      results[:total],
-      results[:successful],
-      results[:failed],
-      item_label: item_label
-    )
+    # Only print when this is the outermost script -- suppresses nested summaries
+    # when called from a wrapper script/function that prints its own final summary.
+    return unless outermost_script?
+
+    total = results[:total]
+    successful = results[:successful]
+    failed = results[:failed]
+
+    puts ''
+    info 'Summary'.yellow
+    puts "  Total #{item_label}: #{total}"
+    puts "  Successful:         #{successful.length.to_s.green}"
+
+    unless nil_or_empty?(failed)
+      singular = item_label.sub(/ies$/, 'y').sub(/s$/, '')
+      plural = item_label
+      count_label = failed.length == 1 ? singular : plural
+
+      puts "  Failed:             #{failed.length.to_s.red}"
+      puts "  Failed #{count_label}:".red
+      failed.each { |item| puts "    - '#{item.red}'" }
+    end
 
     info "Skipped: #{results[:skipped].to_s.purple}" if results[:skipped]&.positive?
   end
@@ -425,6 +456,25 @@ module Logging
     @script_name || File.basename($PROGRAM_NAME)
   end
 
+  # Returns the depth-based indent string (2 spaces per depth level).
+  # Used by all logging functions to auto-indent output based on script nesting.
+  # Memoized to avoid repeated string multiplication for the same depth.
+  def log_indent
+    @indent_cache ||= {}
+    depth = EnvVars.script_depth
+    @indent_cache[depth] ||= '  ' * depth
+  end
+
+  # Prints +char+ repeated +length+ times.
+  # Defaults to '=' and terminal-width/4 columns when +length+ is not given.
+  #
+  # @param char [String] The character to repeat (default: '=').
+  # @param length [Integer, nil] Number of repetitions; defaults to +terminal_width / 4+ when nil.
+  # @return [String] The repeated character string.
+  def print_chars_for_length(char: '=', length: nil)
+    char * (length || terminal_width / 4)
+  end
+
   # Shared implementation for section_header and section_header2. Mirrors
   # _section_header_impl in .shellrc: centres the header between repeated-char
   # padding, coloured by +color+, prefixed with +glyph+, and optionally indented.
@@ -440,6 +490,52 @@ module Logging
     padding_length = [((terminal_width - header_str.length - depth_indent.length) / 2) - 10, 1].max
     pad = print_chars_for_length(char: char, length: padding_length).send(color)
     puts "#{depth_indent}#{pad} #{glyph} #{header_str} #{pad}"
+  end
+
+  # Pushes the current epoch seconds onto the step timing stack. Called by
+  # with_step at the start of a step. Mirrors step_start in .shellrc.
+  def step_start
+    @step_start_times ||= []
+    @step_start_times.push(Time.now.to_i)
+  end
+
+  # Pops the most recent step start time from the stack, computes elapsed time,
+  # and logs it. Called by with_step's ensure block. Mirrors step_end in .shellrc.
+  def step_end
+    @step_start_times ||= []
+    now = Time.now.to_i
+
+    # Pop the step start time; fall back to script start time if stack is empty
+    if nil_or_empty?(@step_start_times)
+      # No step timing available - skip timing output
+      return
+    end
+
+    step_start_time = @step_start_times.pop
+    delta_step = now - step_start_time
+
+    # Compute total elapsed from script start if available
+    script_start_time = @script_start_time || now
+    delta_total = now - script_start_time
+
+    # Format: "  (Step: XXs  Total: YYs)"
+    puts "  (#{'Step:'.yellow} #{delta_step.to_s.light_blue}s  #{'Total:'.yellow} #{delta_total.to_s.light_blue}s)"
+  end
+
+  # Increments _DOTFILES_SCRIPT_DEPTH and registers an at_exit hook to
+  # decrement it on exit (clean or error). Called internally by run_script.
+  # Mirrors the export + trap pattern in shell scripts.
+  def increment_script_depth
+    ENV['_DOTFILES_SCRIPT_DEPTH'] = (EnvVars.script_depth + 1).to_s
+    at_exit { decrement_script_depth }
+  end
+
+  # Decrements _DOTFILES_SCRIPT_DEPTH, guarding against underflow. Called
+  # automatically by the at_exit hook registered in increment_script_depth.
+  # Mirrors _decrement_script_depth in .shellrc.
+  def decrement_script_depth
+    depth = EnvVars.script_depth
+    ENV['_DOTFILES_SCRIPT_DEPTH'] = (depth - 1).to_s if depth.positive?
   end
 
   # Per-includer stacks stored as instance variables so that each object (or

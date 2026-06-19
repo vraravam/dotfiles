@@ -1,3 +1,4 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require 'open3'
@@ -16,6 +17,13 @@ module Keybase
   # because 'include Logging' + 'extend self' doesn't make included methods
   # available as module methods.
 
+  # Returns the configured Keybase username from ENV.
+  #
+  # @return [String, nil] KEYBASE_USERNAME or nil if not set
+  def username
+    EnvVars::KEYBASE_USERNAME
+  end
+
   # Ensures keybase is installed and the current user is logged in.
   # Returns false on failure so callers can decide whether to abort or continue.
   # Called by fresh-install-of-osx.sh (_ensure_keybase_logged_in) and recreate-repo.rb.
@@ -24,7 +32,7 @@ module Keybase
   # @return [Boolean] true if logged in (or would log in), false otherwise.
   def ensure_logged_in(dry_run: false)
     unless PathUtils.command_exists?('keybase')
-      Logging.error "'keybase' command not found in PATH. Aborting."
+      Logging.record_error "'keybase' command not found in PATH -- install via Homebrew first"
       return false
     end
 
@@ -44,7 +52,7 @@ module Keybase
     end
 
     unless system('keybase', 'login')
-      Logging.error 'Could not log into keybase. Retry after logging in manually.'
+      Logging.record_error 'Could not log into keybase -- retry after logging in manually'
       return false
     end
 
@@ -81,16 +89,22 @@ module Keybase
     end
   end
 
-  # Creates a new private Keybase repo. Raises an error if creation fails.
+  # Creates a new private Keybase repo. Returns false if creation fails.
   #
   # @param repo_name [String]
   # @param dry_run [Boolean] When true, logs the operation instead of executing.
-  # @return [void]
+  # @return [Boolean] true on success or dry_run, false on failure
   def create_repo(repo_name, dry_run: false)
     if dry_run
       Logging.info "Would create keybase repo: #{repo_name.yellow}"
+      return true
+    end
+
+    if system('keybase', 'git', 'create', repo_name)
+      true
     else
-      Logging.error "Failed to create keybase repo #{repo_name.yellow}" unless system('keybase', 'git', 'create', repo_name)
+      Logging.record_error "Failed to create keybase repo #{repo_name.yellow}"
+      false
     end
   end
 end

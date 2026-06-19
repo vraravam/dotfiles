@@ -8,7 +8,298 @@ applyTo: "**/*.rb"
 
 Apply these rules when writing or editing any Ruby script in this repository.
 
-## Script Template
+## Dual-Mode Ruby Scripts (Module + Standalone) -- MANDATORY
+
+**ALL standalone Ruby scripts MUST follow this pattern** to enable both CLI usage and direct module calls from other Ruby scripts.
+
+**CRITICAL RULE: When one Ruby script calls another Ruby script, use the module directly instead of forking a subprocess.**
+
+```ruby
+# BAD -- subprocess overhead, complex error handling, no shared context
+system(RbConfig.ruby, 'scripts/install-dotfiles.rb')
+
+# Good -- direct module call, returns boolean, shared logging context
+require_relative 'install-dotfiles'
+InstallDotfiles.run
+```
+
+This rule applies to ALL Ruby-to-Ruby calls unless the callee has conflicting `at_exit` hooks (see "When NOT to Use This Pattern" below).
+
+### Why This Pattern is Required
+
+**Problem with traditional scripts:**
+- Call `exit()` for control flow → kills parent process if called directly
+- Requires subprocess invocation (`system(RUBY_BIN, script, args...)`) → slow, complex error handling
+- Can't share script depth tracking or logging context
+- Harder to test and debug
+
+**Benefits of dual-mode:**
+- **Performance**: No fork/exec overhead when calling from Ruby
+- **Error handling**: Returns bool, exceptions propagate naturally
+- **Log indentation**: Shared script depth tracking works correctly
+- **Debugging**: Single stack trace across all code
+- **Reusability**: Same code works as CLI tool and library
+
+### Template
+
+```ruby
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# file location: $DOTFILES_DIR/scripts/my-script.rb
+#
+# One-line description of what this script does.
+#
+# Usage:
+#   Standalone: my-script.rb [options]
+#   Module:     MyScript.run(param: value)
+
+require_relative 'utilities/logging'
+require_relative 'utilities/env_vars'
+
+# Module contains the business logic.
+# Returns true/false instead of calling exit().
+module MyScript
+  extend self
+
+  # Public API method.
+  #
+  # @param param [String] Description of parameter
+  # @return [Boolean] true on success, false on error
+  def run(param:)
+    Logging.info "Processing '#{param.cyan}'"
+    
+    unless valid_input?(param)
+      Logging.record_error "Invalid parameter: #{param}"
+      return false
+    end
+    
+    # ... main logic ...
+    
+    Logging.success "Completed successfully"
+    true
+  end
+
+  # Private helper methods.
+  def _helper_method(arg)
+    # ...
+  end
+  private_class_method :_helper_method
+end
+
+# ---------------------------------------------------------------------------
+# Standalone CLI mode
+# ---------------------------------------------------------------------------
+
+if __FILE__ == $PROGRAM_NAME
+  require_relative 'utilities/cli_parser'
+  
+  include Logging
+
+  options = {}
+  parser = CliParser.parse('<options>') do |opts|
+    opts.separator 'Description of what this script does.'
+    opts.separator ''
+    opts.separator 'Options:'.purple
+    opts.on('-p', '--param VALUE', 'Parameter description') { |v| options[:param] = v }
+    opts.separator ''
+    opts.separator "  eg: #{File.basename(__FILE__).cyan} --param value"
+  end
+
+  parser.abort_with_usage('Missing required option: --param') if nil_or_empty?(options[:param])
+
+  increment_script_depth
+  start_time = print_script_start
+
+  success = MyScript.run(param: options[:param])
+
+  print_script_summary(start_time)
+  exit(success ? 0 : 1)
+end
+```
+
+### Key Rules
+
+1. **Module contains all business logic**
+   - Use `extend self` to make methods callable as module methods
+   - Return `true`/`false`, **never call `exit()` or `abort()`**
+   - Use `Logging.method_name` (qualified calls, not `include Logging`)
+   - Extract helpers as private class methods
+
+2. **Standalone block is CLI wrapper only**
+   - Wrapped in `if __FILE__ == $PROGRAM_NAME`
+   - Handles argument parsing with `CliParser`
+   - Calls `increment_script_depth` / `print_script_start` / `print_script_summary`
+   - Converts module's boolean return to exit code: `exit(success ? 0 : 1)`
+   - Only place `include Logging` is used (for CLI convenience)
+
+3. **Calling from other Ruby scripts**
+   - Add `require_relative 'script-name'`
+   - Call directly: `success = MyScript.run(param: value)`
+   - Handle boolean return value
+   - No subprocess needed
+
+4. **Error handling**
+   - Use `Logging.record_error` for non-fatal errors (return false, keep processing)
+   - Use `Logging.error` (raises RuntimeError) only for fatal errors that should abort
+   - Caller can `rescue` if needed
+
+### Examples
+
+#### Simple Script (add-upstream-git-config.rb)
+
+```ruby
+module AddUpstreamGitConfig
+  extend self
+
+  def run(dir:, upstream_owner:)
+    target_dir = dir.to_s
+    
+    unless GitProcessor.repo?(target_dir)
+      Logging.info "'#{target_dir.cyan}' is not a git repo -- skipping."
+      return true  # Not an error, just nothing to do
+    end
+    
+    # ... main logic ...
+    
+    unless status.success?
+      Logging.record_error("Failed to add upstream remote")
+      return false
+    end
+    
+    Logging.success "Successfully added upstream remote"
+    true
+  end
+end
+
+if __FILE__ == $PROGRAM_NAME
+  # ... CLI wrapper ...
+  success = AddUpstreamGitConfig.run(dir: options[:dir], upstream_owner: options[:upstream_owner])
+  exit(success ? 0 : 1)
+end
+```
+
+#### Script with Statistics (install-dotfiles.rb)
+
+```ruby
+module InstallDotfiles
+  extend self
+  
+  Stats = Struct.new(:processed, :created, :updated, :skipped, :errors, keyword_init: true)
+
+  def run(dry_run: false, verbose: false, force: false)
+    stats = Stats.new(processed: 0, created: 0, updated: 0, skipped: 0, errors: 0)
+    
+    # ... process files, update stats ...
+    
+    # Print summary
+    puts ''
+    Logging.success('Summary:')
+    puts "  Processed: #{stats.processed.to_s.purple}"
+    puts "  Errors:    #{stats.errors.positive? ? stats.errors.to_s.red : stats.errors}"
+    
+    stats.errors.zero?  # Return true if no errors
+  end
+end
+
+if __FILE__ == $PROGRAM_NAME
+  # ... CLI wrapper ...
+  success = InstallDotfiles.run(**options)
+  exit(success ? 0 : 1)
+end
+```
+
+### Calling Patterns
+
+#### From fresh-install-of-osx.sh (parent script)
+
+```ruby
+# Top of file
+require_relative 'add-upstream-git-config'
+require_relative 'install-dotfiles'
+
+# Inside main()
+unless AddUpstreamGitConfig.run(dir: EnvVars::DOTFILES_DIR, upstream_owner: EnvVars::UPSTREAM_GH_USERNAME)
+  record_warning 'Failed to add upstream git config'
+end
+
+unless InstallDotfiles.run
+  record_error 'install-dotfiles encountered errors'
+end
+```
+
+#### From shell (still works)
+
+```zsh
+# Call as standalone CLI tool
+ruby scripts/add-upstream-git-config.rb -d ~/repo -u upstream-owner
+ruby scripts/install-dotfiles.rb --dry-run
+```
+
+### When NOT to Use This Pattern
+
+**Keep as subprocess** when:
+- **Script must run in isolation** (incompatible lifecycle)
+- **Shell script** (`.sh`) that cannot be ported to Ruby
+- **Script uses `at_exit` hooks that conflict with parent's lifecycle**
+
+**Examples:**
+
+**osx-defaults.sh** - Shell script, cannot be ported:
+- Complex shell script with macOS `defaults` commands
+- Must remain as subprocess
+- Cannot be ported to Ruby module
+
+**capture-prefs.rb** - Lifecycle conflicts with parent:
+- Has `at_exit` hooks that suspend/resume softwareupdate
+- Has `at_exit` hooks that kill/restart login-item apps (on import)
+- Multiple invocations (export, then import) need independent cleanup
+- If called as module, hooks would register in parent and fire at wrong time
+- Subprocess isolation ensures each operation has independent lifecycle
+
+**Key insight**: If a script's `at_exit` hooks need to fire **after each operation** (not at parent script end), keep it as subprocess.
+
+### Refactoring Checklist
+
+When converting an existing script to dual-mode:
+
+1. **Extract module**
+   - [ ] Wrap main logic in `module ScriptName; extend self; end`
+   - [ ] Rename main logic to `run()` method with named parameters
+   - [ ] Change all `exit()` calls to `return true/false`
+   - [ ] Change `abort()` calls to `Logging.record_error + return false`
+   - [ ] Qualify all Logging calls: `info` → `Logging.info`
+   - [ ] Move helpers to private class methods
+
+2. **Create standalone block**
+   - [ ] Wrap old main code in `if __FILE__ == $PROGRAM_NAME`
+   - [ ] Keep `include Logging` inside this block
+   - [ ] Keep `CliParser` require inside this block
+   - [ ] Call module's `run()` method
+   - [ ] Convert return value to exit code
+
+3. **Update callers**
+   - [ ] Add `require_relative` to parent script
+   - [ ] Replace `system(RUBY_BIN, script, args...)` with `Module.run(params)`
+   - [ ] Handle boolean return value
+
+4. **Test both modes**
+   - [ ] Standalone: `ruby script.rb --help`
+   - [ ] Standalone: `ruby script.rb [normal args]`
+   - [ ] Module: Call from parent script
+
+### Scan Rule
+
+When editing any Ruby script, check:
+1. Does it call `exit()` or `abort()` in main logic? → Must be refactored to dual-mode
+2. Is it called via `system(RUBY_BIN, ...)` from another Ruby script? → Should be refactored
+3. Does it have complex `at_exit` hooks? → May need special handling
+
+**Exception**: Scripts that only ever run standalone (cron scripts, one-off utilities) MAY skip dual-mode, but prefer consistency.
+
+## Script Template (Legacy Single-Mode)
+
+**Note**: The dual-mode pattern above is now MANDATORY for all scripts. This legacy template is kept for reference only.
 
 **`$PERSONAL_BIN_DIR` scripts** -- use `require_relative` (idiomatic Ruby):
 
@@ -1192,6 +1483,91 @@ Logging.info 'Summary'.yellow
 ```
 
 ## Module / Class Structure
+
+### Core Module Usage Pattern
+
+**All utility modules must properly include/extend Core for unqualified `nil_or_empty?` calls:**
+
+```ruby
+# Modules with extend self - need BOTH include and extend
+module MyModule
+  extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
+end
+
+# Modules with only module methods - extend only
+module MyModule
+  extend Core  # Makes Core methods available as module methods
+end
+
+# Classes - need BOTH include and extend
+class MyClass
+  include Core  # For instance methods
+  extend Core   # For class methods (if class methods need Core)
+end
+
+# Core module itself - extend self only (can't extend itself)
+module Core
+  extend self
+end
+```
+
+**Why both `include` and `extend` for modules with `extend self`?**
+
+- `include Core` alone does NOT make Core methods available as module methods
+- `extend Core` makes them available as module methods
+- Having both ensures Core methods work everywhere: direct calls, blocks, instance context
+
+**Examples:**
+
+```ruby
+# ✅ CORRECT: Module with extend self
+module Antidote
+  extend self
+  include Core  # For use in blocks/instance context
+  extend Core   # For module method calls
+  
+  def update_plugins
+    return if nil_or_empty?(path)  # Works!
+  end
+end
+
+# ✅ CORRECT: Module with only module methods
+module EnvVars
+  extend Core  # Only need extend, no extend self
+  
+  def self.script_depth
+    ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+  end
+end
+
+# ✅ CORRECT: Class with both instance and class methods
+class GitProcessor
+  include Core  # For instance methods
+  extend Core   # For class methods
+  
+  def remote_url
+    return nil if nil_or_empty?(url)  # Instance method - works via include
+  end
+  
+  def self.repo?(path)
+    return false if nil_or_empty?(path)  # Class method - works via extend
+  end
+end
+
+# ❌ WRONG: Module with extend self but only include Core
+module MyModule
+  extend self
+  include Core  # NOT ENOUGH!
+  
+  def my_method
+    nil_or_empty?(val)  # ERROR: undefined method
+  end
+end
+```
+
+### Private Helpers
 
 ```ruby
 module MyModule

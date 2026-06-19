@@ -277,20 +277,6 @@ replace_home_with_tilde() {
   echo "${1:-//${HOME}/~}"
 }
 
-# Remove trailing slash if present. Pure parameter expansion -- no subprocess.
-strip_trailing_slash() {
-  echo "${1:-%%\/}"
-}
-
-# Returns the portion of $1 before the first occurrence of $2 (default: space).
-# Usage: extract_first_word <string> [delimiter]
-extract_first_word() {
-  local input="${1:-}"
-  local delimiter="${2:- }"
-  local first_part="${input%%${delimiter}*}"
-  echo "${first_part}"
-}
-
 # --------------------------------------------------------------------------
 # 1b. Terminal colors
 # --------------------------------------------------------------------------
@@ -557,13 +543,6 @@ format_duration() {
 # Usage: current_timestamp <varname>
 current_timestamp() {
   strftime -s "${1:-}" '%Y-%m-%d %H:%M:%S' "${EPOCHSECONDS}"
-}
-
-# Writes the current date as "YYYY-MM-DD" into the caller-supplied variable.
-# Suitable for lexicographic date comparisons.
-# Usage: current_date <varname>
-current_date() {
-  strftime -s "${1:-}" '%Y-%m-%d' "${EPOCHSECONDS}"
 }
 
 # Writes the current datetime as "YYYY-MM-DD-HH-MM" into the caller-supplied variable.
@@ -967,28 +946,9 @@ print_script_summary() {
 # 1e. Filesystem & OS predicates
 # --------------------------------------------------------------------------
 
-# Returns true if the current machine is ARM (Apple Silicon or other arm64 CPU).
-is_arm() {
-  # == glob is faster than =~ (no regex engine); valid in both bash [[ ]] and zsh.
-  if [[ "${ARCH}" == *arm* ]]; then
-    return 0
-  else
-    return 1
-  fi
-}
-
 # Returns true if $1 is a non-empty path pointing to an executable file or command.
 is_executable() {
   if is_non_zero_string "${1:-}" && [[ -x "${1:-}" ]]; then
-    return 0
-  else
-    return 1
-  fi
-}
-
-# Returns true if $1 is a non-empty path that is a symbolic link.
-is_symbolic_link() {
-  if is_non_zero_string "${1:-}" && [[ -L "${1:-}" ]]; then
     return 0
   else
     return 1
@@ -1091,21 +1051,33 @@ ensure_dir_exists() {
 # critical window between when .shellrc is re-sourced and when .aliases is finally loaded.
 #
 # Only add directories that exist.
-# Guarded by is_zsh: the array join syntax '${(j.:.)array}' is zsh-only and when direnv
-# sources this file in bash, this block must be skipped.
+# Guarded by is_zsh: the array operations are zsh-only and when direnv sources this
+# file in bash, this block must be skipped.
+
+# Create RUBYLIB<->rubylib tie at top level so it's available before any function calls.
+# Safe to call multiple times (idempotent). Silently skips in bash (is_zsh guard below).
 if is_zsh; then
-  RUBYLIB_PATHS=()
-  if is_directory "${DOTFILES_DIR}/scripts/utilities"; then
-    RUBYLIB_PATHS+=("${DOTFILES_DIR}/scripts/utilities")
-  fi
-  if is_directory "${PERSONAL_BIN_DIR}"; then
-    RUBYLIB_PATHS+=("${PERSONAL_BIN_DIR}")
-  fi
-  if is_non_empty_array RUBYLIB_PATHS; then
-    export RUBYLIB="${(j.:.)RUBYLIB_PATHS}${RUBYLIB:+:${RUBYLIB}}"
-  fi
-  unset RUBYLIB_PATHS
+  typeset -gT RUBYLIB rubylib ':' 2>/dev/null || true
 fi
+
+setup_rubylib() {
+  if is_zsh; then
+    # Work directly with the rubylib array (tied to RUBYLIB scalar above).
+    # Add paths only if they exist.
+    if is_directory "${DOTFILES_DIR}/scripts/utilities"; then
+      rubylib+=("${DOTFILES_DIR}/scripts/utilities")
+    fi
+    if is_directory "${PERSONAL_BIN_DIR}"; then
+      rubylib+=("${PERSONAL_BIN_DIR}")
+    fi
+    # Deduplicate after appending.
+    # typeset -gU is idempotent -- safe to call multiple times (e.g., on re-source).
+    typeset -gU rubylib 2>/dev/null || true
+
+    # Export RUBYLIB so Ruby can see it. typeset -gT does not export automatically.
+    export RUBYLIB
+  fi
+}
 
 # Returns true if $1 is a non-empty path whose direct child .git directory exists.
 # Checks the repo root explicitly -- does not work from nested sub-directories by design.
@@ -1117,14 +1089,6 @@ is_git_repo() {
   else
     return 1
   fi
-}
-
-# Returns the git config value for <key> in [folder] (defaults to $PWD).
-# Returns an empty string silently if the key is not set -- callers decide whether that is an error.
-# Usage: get_git_config_value <key> [folder]
-get_git_config_value() {
-  local key="${1:-}" folder="${2:-${PWD}}"
-  git -C "${folder}" config --get "${key}" 2>/dev/null || true
 }
 
 # Sources $1 if it is a non-empty path pointing to a regular file; warns otherwise.
@@ -1275,21 +1239,6 @@ keep_sudo_alive() {
   step_end
 }
 
-# Migrates a git repo from the legacy loose/packed-refs format to reftable.
-# Requires git 2.45+; silently skips on older git (e.g. the system git on a
-# vanilla macOS, which does not support 'git refs migrate'). After migration
-# it removes stale loose-ref files that 'git refs migrate' may leave behind in
-# .git/refs/heads/, .git/refs/tags/, and .git/refs/remotes/ -- those stale
-# files confuse some git operations even though the canonical refs now live in
-# the reftable directory.
-# Usage: migrate_git_repo_to_reftable [repo-dir]
-#   repo-dir defaults to $PWD when omitted -- use this to migrate the repo in
-#   the current directory without having to specify the path explicitly.
-# Thin wrapper: delegates to GitProcessor.migrate_to_reftable (Ruby implementation).
-migrate_git_repo_to_reftable() {
-  _call_ruby_git_processor migrate_to_reftable folder="${1:-${PWD}}"
-}
-
 # Clones a git repo into a temp folder, moves the .git dir into the real target
 # location, and does an initial checkout there. Works around git's refusal to
 # clone into a non-empty directory (e.g. HOME). If the target is already a git
@@ -1305,6 +1254,10 @@ clone_repo_into() {
     # Since git does not allow cloning into a non-empty folder (like the home folder), clone into a temp folder, then copy the .git folder into the real target location, and do a checkout
     local tmp_folder
     tmp_folder="$(mktemp -d)"
+
+    # Set trap to clean up temp folder on exit (normal or error)
+    trap "rm -rf '${tmp_folder}'" EXIT INT TERM
+
     # Use shallow clone during FIRST_INSTALL to save time and bandwidth on large repos.
     # Repos can be unshallowed later via git fetch-unshallow / git pull-unshallow.
     # On pre-configured machines, clone full history (supports upstream rebase workflows).
@@ -1320,14 +1273,34 @@ clone_repo_into() {
       fi
       debug "Using shallow clone (${clone_args[*]}) for FIRST_INSTALL mode"
     fi
-    GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" .
-    if [[ $? -ne 0 ]]; then
-      warn "Failed to clone '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
+
+    # Capture stderr to display on failure
+    local stderr_file
+    stderr_file="$(mktemp)"
+    trap "rm -rf '${tmp_folder}' '${stderr_file}'" EXIT INT TERM
+
+    GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" . 2>"${stderr_file}"
+    local clone_status=$?
+
+    if [[ ${clone_status} -ne 0 ]]; then
+      local error_msg="Failed to clone '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
+      local stderr_content
+      stderr_content="$(cat "${stderr_file}" 2>/dev/null)"
+      if is_non_zero_string "${stderr_content}"; then
+        error_msg="${error_msg}"$'\n'"Clone command STDERR:"$'\n'"${stderr_content}"
+      fi
+      warn "${error_msg}"
       return 1
     fi
 
+    # Remove existing .git directory if present (safety - prevents corrupt state)
+    if is_directory "${target_folder}/.git"; then
+      rm -rf "${target_folder}/.git"
+    fi
+
     mv "${tmp_folder}/.git" "${target_folder}"
-    rm -rf "${tmp_folder}"
+    rm -rf "${tmp_folder}" "${stderr_file}"
+    trap - EXIT INT TERM  # Clear trap after successful move
     git -C "${target_folder}" restore .
 
     # Correct HEAD file after reftable clone-via-mv (.git/HEAD retains a '.invalid' placeholder since
@@ -1338,12 +1311,15 @@ clone_repo_into() {
       echo "ref: ${real_ref}" >"${target_folder}/.git/HEAD"
     fi
 
+    # setup RUBYLIB so that the ruby calls don't error out
+    setup_rubylib
+
     # Migrate to reftable if the clone used the legacy files format. On a vanilla
     # macOS the system git (< 2.45) ignores -c init.defaultRefFormat=reftable and
     # 'git refs migrate' is unavailable, so this is a no-op until Homebrew's git
     # is on PATH. fresh-install-of-osx.sh calls this again post-Homebrew for repos
     # that were cloned with system git.
-    migrate_git_repo_to_reftable "${target_folder}"
+    ruby -e "require 'git_processor'; GitProcessor.migrate_to_reftable(folder: '${target_folder}')"
 
     success "Successfully cloned '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
 
@@ -1464,36 +1440,8 @@ _call_ruby_cron() {
     args_str="${args_parts[*]}"
   fi
 
+  setup_rubylib
   ruby -e "require 'cron'; Cron.${method}(${args_str})"
-}
-
-# Internal helper: calls a Ruby GitProcessor class method with keyword arguments.
-# Eliminates duplication across git wrapper functions.
-# Usage: _call_ruby_git_processor <method_name> <key1>=<value1> [<key2>=<value2> ...]
-# Example: _call_ruby_git_processor migrate_to_reftable folder="${PWD}"
-_call_ruby_git_processor() {
-  local method="${1:-}"
-  if is_zero_string "${method}"; then
-    error '_call_ruby_git_processor: method name required'
-    return 1
-  fi
-  shift
-
-  local kwargs_str=""
-  if [[ $# -gt 0 ]]; then
-    # Build comma-separated list of keyword arguments (key: 'value').
-    local -a kwargs_parts=()
-    for kwarg in "$@"; do
-      local key="${kwarg%%=*}"
-      local value="${kwarg#*=}"
-      kwargs_parts+=("${key}: '${value}'")
-    done
-    # Join with ', '
-    local IFS=', '
-    kwargs_str="${kwargs_parts[*]}"
-  fi
-
-  ruby -e "require 'git_processor'; GitProcessor.${method}(${kwargs_str})"
 }
 
 # Loads a cron file into the system crontab. Shared by suspend_cron/resume_cron

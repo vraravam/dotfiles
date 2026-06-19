@@ -3,3 +3,6 @@
 *.zwc*
 .*.zwc*
 /.ruby-lsp/*
+
+# Session-specific work products (transactional, no long-term value)
+/.ai/session-state/

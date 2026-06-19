@@ -1,10 +1,15 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require 'open3'
 require 'ostruct'
 require 'pathname'
+require 'shellwords'
 
+require_relative 'core'
+require_relative 'env_vars'
 require_relative 'logging'
+require_relative 'path_utils'
 
 # Instance-based git operations for a specific repository directory.
 # Eliminates repetitive dir: parameters when performing multiple operations
@@ -30,6 +35,9 @@ require_relative 'logging'
 #     git.commit('Initial commit')
 #   end
 class GitProcessor
+  include Core  # For instance methods
+  extend Core   # For class methods
+
   attr_reader :dir
 
   # @param dir [String, Pathname] Repository directory
@@ -48,7 +56,7 @@ class GitProcessor
   def config_value(key)
     out, = _execute('config', '--get', key)
     out = out.strip
-    out.empty? ? nil : out
+    nil_or_empty?(out) ? nil : out
   end
 
   # Sets a git config value.
@@ -85,7 +93,7 @@ class GitProcessor
   # @return [String, nil] Repository name, or nil if remote doesn't exist.
   def remote_repo_name(name: 'origin')
     url = remote_url(name: name)
-    return nil if Logging.nil_or_empty?(url)
+    return nil if nil_or_empty?(url)
     url.sub(/\/\z/, '').split('/').last
   end
 
@@ -95,7 +103,7 @@ class GitProcessor
   def current_branch
     out, = _execute('branch', '--show-current')
     out = out.strip
-    out.empty? ? nil : out
+    nil_or_empty?(out) ? nil : out
   end
 
   # Enumerates all remotes, yielding each remote name and URL.
@@ -112,7 +120,7 @@ class GitProcessor
     return unless status.success?
 
     stdout.each_line do |line|
-      next if line.strip.empty?
+      next if nil_or_empty?(line.strip)
       key, url = line.strip.split(' ', 2) # key is like 'remote.origin.url'
       remote_name = key.split('.')[1]
       yield remote_name, url
@@ -180,7 +188,7 @@ class GitProcessor
     out, _err, status = _execute('log', '--format=%ct', '-n1', '--', path.to_s)
     return nil unless status.success?
     out = out.strip
-    out.empty? ? nil : out.to_i
+    nil_or_empty?(out) ? nil : out.to_i
   end
 
   # Returns true if a tag exists in the repository.
@@ -225,6 +233,15 @@ class GitProcessor
     _execute(*args)
   end
 
+  # Restores working tree files.
+  # Equivalent to `git restore <pathspec>`.
+  #
+  # @param pathspec [String] Path or pathspec to restore (e.g., '.' for all files).
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def restore(pathspec)
+    _execute('restore', pathspec)
+  end
+
   # Reports the working tree status.
   # Equivalent to `git status <switches>`.
   #
@@ -242,7 +259,7 @@ class GitProcessor
   # @return [Array<String>] Array of tracked file paths (relative to repo root).
   def ls_files(*patterns)
     args = ['ls-files']
-    args += ['--'] + patterns unless patterns.empty?
+    args += ['--'] + patterns unless nil_or_empty?(patterns)
     stdout, = _execute(*args)
     stdout.split("\n")
   end
@@ -264,7 +281,7 @@ class GitProcessor
 
     unless status.success?
       error_msg = stderr.strip
-      error_msg = 'Failed to compute relative path' if error_msg.empty?
+      error_msg = 'Failed to compute relative path' if nil_or_empty?(error_msg)
       raise error_msg
     end
 
@@ -281,6 +298,17 @@ class GitProcessor
     args << '-q' if quiet
     args << '-m' << message
     _execute(*args)
+  end
+
+  # Smart commit: amends if ahead of remote and not diverged, otherwise creates new commit.
+  # Equivalent to `git sci "<message>"` alias.
+  # Aborts if nothing is staged.
+  #
+  # @param message [String] The commit message.
+  # @return [Boolean] true if commit succeeded, false if nothing staged or commit failed.
+  def smart_commit(message)
+    _out, _err, status = run_alias('sci', message)
+    status.success?
   end
 
   # Pushes to a remote.
@@ -349,28 +377,66 @@ class GitProcessor
   # @param path [String, Pathname] Path to check.
   # @return [Boolean]
   def self.repo?(path)
-    return false if Logging.nil_or_empty?(path)
+    return false if nil_or_empty?(path)
     # .git can be a directory (normal clone) or a file (worktree / submodule).
     path = Pathname.new(path) unless path.is_a?(Pathname)
     path.join('.git').exist?
   end
 
-  # Migrates a git repository to reftable format if not already using it.
-  # Requires git 2.45+ for 'git refs migrate' command. On older git versions
-  # (e.g. vanilla macOS system git), the migration is skipped silently.
-  # Mirrors migrate_git_repo_to_reftable in .shellrc.
+  # Clones a git repo into a target directory, handling the non-empty target case.
+  # On FIRST_INSTALL (vanilla OS), uses --depth=1 for a shallow clone to save time
+  # and bandwidth; repos can be unshallowed later via fetch-unshallow/pull-unshallow.
   #
-  # @param folder [String, Pathname] Repository directory (defaults to current dir).
-  # @return [void]
-  def self.migrate_to_reftable(folder: Dir.pwd)
+  # **DELEGATES TO SHELL VERSION**: This Ruby method is a thin wrapper around the
+  # shell function clone_repo_into() in .shellrc. The shell version is required
+  # for bootstrap (runs before dotfiles repo is cloned), so it cannot be removed.
+  # This delegation eliminates duplicate implementations and ensures both paths
+  # use identical logic.
+  #
+  # **FUTURE PORT NOTE**: When porting fresh-install to Ruby in the future, this
+  # method should be reimplemented fresh in Ruby (not copied from this stale branch).
+  # The current dual implementation exists only because fresh-install.sh still needs
+  # the shell version for bootstrap. A future pure-Ruby fresh-install can implement
+  # this natively without the shell dependency.
+  #
+  # @param url [String] Git repository URL to clone.
+  # @param dest [String, Pathname] Target directory for the clone.
+  # @param branch [String, nil] Optional branch to clone (defaults to remote's HEAD).
+  # @return [Boolean] true on success, false on failure.
+  def self.clone_repo_into(url, dest, branch: nil)
+    dest = Pathname.new(dest) unless dest.is_a?(Pathname)
+
+    # Build the shell command
+    # clone_repo_into accepts: url (arg 1), dest (arg 2), branch (optional arg 3)
+    cmd = "source #{EnvVars::HOME.join('.shellrc').to_s} && clone_repo_into"
+    cmd += " #{Shellwords.escape(url)}"
+    cmd += " #{Shellwords.escape(dest.to_s)}"
+    cmd += " #{Shellwords.escape(branch)}" if branch && !nil_or_empty?(branch)
+
+    # Execute via zsh with shell function
+    # The shell function handles all the logic: temp folders, traps, error handling,
+    # HEAD fix, reftable migration, submodule updates, etc.
+    system('zsh', '-c', cmd)
+  end
+
+  # Migrates the repository to reftable format if it's still using the legacy
+  # files format. Requires git 2.45+ (git refs migrate command).
+  # On older git (system git on vanilla macOS), silently skips migration.
+  #
+  # @param folder [String, Pathname, nil] Repository directory (required)
+  # @return [Boolean] false if folder is nil or empty, true/void otherwise
+  def self.migrate_to_reftable(folder: nil)
+    return false if nil_or_empty?(folder)
+
     folder = Pathname.new(folder) unless folder.is_a?(Pathname)
+
     return unless repo?(folder)
 
     # git rev-parse --show-ref-format was added in git 2.45; fall back to 'files'
     # on older git so the guard below correctly detects a non-reftable repo.
     ref_format, = Open3.capture3('git', '-C', folder.to_s, 'rev-parse', '--show-ref-format', err: File::NULL)
     ref_format = ref_format.strip
-    ref_format = 'files' if ref_format.empty?
+    ref_format = 'files' if nil_or_empty?(ref_format)
     return if ref_format == 'reftable'
 
     # 'git refs migrate' requires git 2.45+. On older git (vanilla macOS system
@@ -406,7 +472,41 @@ class GitProcessor
     Logging.success "Migrated '#{folder.to_s.cyan}' to reftable format"
   end
 
+  # Corrects the HEAD file after a reftable clone-via-mv operation.
+  # When cloning via temp folder + .git move, the HEAD file retains a '.invalid'
+  # placeholder since the move bypasses git's normal post-clone finalization.
+  # Shell prompts read .git/HEAD directly, so this fixes it by writing the real ref.
+  #
+  # @return [void]
+  def fix_head_file
+    real_ref = symbolic_ref
+    return unless real_ref
+    @dir.join('.git', 'HEAD').write("ref: #{real_ref}\n")
+  end
+
+  # Returns the count of commits in the given revision range.
+  # Equivalent to `git rev-list <range> --count`.
+  #
+  # @param range [String] The revision range (e.g., 'HEAD..FETCH_HEAD').
+  # @return [Integer] The commit count, or 0 on failure.
+  def rev_list_count(range)
+    out, _err, status = _execute('rev-list', range, '--count', err: File::NULL)
+    status.success? ? out.strip.to_i : 0
+  end
+
   private
+
+  # Returns the symbolic reference for the given ref name.
+  # Equivalent to `git symbolic-ref <name>`.
+  # Used by fix_head_file to resolve HEAD reference.
+  #
+  # @param name [String] The symbolic ref to resolve (default: 'HEAD').
+  # @return [String, nil] The resolved ref name, or nil if not a symbolic ref.
+  def symbolic_ref(name = 'HEAD')
+    out, _err, status = _execute('symbolic-ref', name, err: File::NULL)
+    return nil unless status.success?
+    out.strip
+  end
 
   # Builds the base git command array with the -C flag (memoized).
   #

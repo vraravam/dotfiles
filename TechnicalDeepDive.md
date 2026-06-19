@@ -347,6 +347,40 @@ Antidote replaces oh-my-zsh as the plugin manager. Key properties:
 
 `compinit` (the completion system initialiser) runs a filesystem security scan (`compaudit`) that can add ~50 ms. On subsequent starts, `compinit -C` is passed to skip the scan — the dump file at `$XDG_CACHE_HOME/zcompdump` serves as evidence that the scan already ran.
 
+### Startup profiling results
+
+Running `ZSH_PROFILE=true zsh -i -c exit` reveals where time is actually spent during startup. The output is captured via `zprof` which instruments all function calls.
+
+**Current measured breakdown (total ~50ms)**:
+
+| Component | Time | % | Notes |
+|---|---|---|
+| Antidote plugin bundle | 42.2ms | 84% | Largest single cost; sources 6 plugins synchronously |
+| `_zsh_highlight_bind_widgets` | 2.6ms | 5% | fast-syntax-highlighting widget setup |
+| `antidote-setup` | 2.0ms | 4% | antidote initialization (not plugin loading) |
+| Everything else | 3.2ms | 7% | Path setup, cache checks, utility functions |
+
+**Key insights from profiling**:
+
+1. **Plugin loading dominates**: The antidote bundle (line 204-210 in `.zshrc`) accounts for 84% of startup time. This is the cost of sourcing:
+   - OMZ lib files: `functions.zsh` (284 lines), `completion.zsh` (78 lines), `key-bindings.zsh` (145 lines)
+   - Synchronous plugins: `direnv`, `fast-syntax-highlighting` (384 lines), `zsh-autosuggestions`
+   - Total: ~1000 lines of shell code parsed and executed before the first prompt
+
+2. **Deferred plugins don't appear in profile**: The git plugin (431 lines), eza, iterm2, sudo, zbell, and history-substring-search are all loaded via `zsh-defer` — they fire after the first ZLE idle event, so they never block the prompt and don't appear in the `zprof` output at all.
+
+3. **`.aliases` deferred successfully**: Also loaded via `zsh-defer` (963 lines), so it contributes zero time to the measured startup sequence.
+
+4. **All cache strategies working correctly**:
+   - `brew shellenv`: cached, only 0.62ms to source (anonymous function at line 103)
+   - `git version`: cached, only 0.26ms to source (anonymous function at line 163)
+   - `mise activate`: cached, only 1.54ms to source (anonymous function at line 221)
+   - `starship init`: cached, only 1.50ms to source (anonymous function at line 258)
+
+5. **No optimization opportunities remain**: The only significant cost is the plugin bundle, and that cost is unavoidable — those plugins must be loaded synchronously because they provide core shell functionality (completion, correction, key bindings, syntax highlighting, autosuggestions). The heavy plugins (git, eza, etc.) are already deferred.
+
+**Conclusion**: Startup time of ~50ms is excellent for a fully-featured interactive shell with syntax highlighting, autosuggestions, comprehensive completions, and 15+ plugins. Further optimization would require removing functionality, which is not desirable.
+
 ---
 
 ## 8. Cron Safety Mechanisms
@@ -520,6 +554,56 @@ Reversing the order causes `osx-defaults.sh` to overwrite the user's restored pr
 | Ephemeral state the app manages itself | `capture-prefs-excluded-keys.txt` or `-denied-list.txt` — nowhere else |
 
 See [Extras.md — osx-defaults.sh](Extras.md#osx-defaultssh) for the adopter-facing summary.
+
+---
+
+## 13. Why `fresh-install-of-osx.sh` and `osx-defaults.sh` Remain Shell Scripts
+
+While much of this codebase has migrated from shell to Ruby for maintainability and testability, two core scripts **will never be converted**: `fresh-install-of-osx.sh` and `osx-defaults.sh`. This is an intentional architectural decision based on practical constraints.
+
+### `fresh-install-of-osx.sh` — Bootstrap Complexity
+
+Converting `fresh-install-of-osx.sh` to Ruby would introduce unacceptable complexity in the bootstrap path:
+
+1. **Vanilla OS constraint**: On a fresh macOS, only `/usr/bin/ruby` (system Ruby 2.6) is available. No gems, no `require_relative`, no `Pathname`. The bootstrap must work with *only* what the OS provides out of the box.
+
+2. **Variable duplication**: Bootstrap variables (`DOTFILES_DIR`, `FIRST_INSTALL`, etc.) must exist in **two places**:
+   - In shell form in `.shellrc` (sourced immediately after `curl` download on vanilla OS)
+   - In Ruby form in `utilities/env_vars.rb` (loaded by Ruby scripts after dotfiles repo is cloned)
+   
+   This duplication is unavoidable because the bootstrap window runs before Ruby utilities exist. A Ruby-based fresh-install would have to *create* `env_vars.rb` during bootstrap, hardcoding paths into generated Ruby code — far more fragile than the current approach where shell variables are the source of truth and Ruby reads them via `ENV`.
+
+3. **Xcode Command Line Tools dependency**: Git is not available on vanilla macOS — `/usr/bin/git` is just a stub that prompts for Xcode CLT installation. The current bootstrap uses `curl` to download a tarball (no git needed), then converts it to a proper git repo after Xcode CLT is installed. A Ruby bootstrap would have to replicate this entire dance, or force the user to install Xcode CLT manually before running anything.
+
+4. **Shell integration**: The script sources `.shellrc` mid-execution to load utilities incrementally as they become available. Ruby scripts use `require_relative` which fails if the file doesn't exist yet — there's no equivalent to "source this if it exists, skip if not."
+
+5. **Complexity explosion**: The current shell script is ~550 lines and handles all edge cases cleanly. A Ruby port would need:
+   - Pre-flight checks for Ruby version (vanilla OS has 2.6, Homebrew installs 3.3+)
+   - Fallback paths for every system command (some exist in `/usr/bin`, others only after Homebrew)
+   - Manual `ENV` manipulation to replicate shell's automatic environment inheritance
+   - Explicit process management for background jobs (brew bundle full install)
+   
+   The result would be longer, harder to debug, and more fragile than the shell version.
+
+**Decision**: `fresh-install-of-osx.sh` stays as shell. The bootstrap path is inherently shell-native, and fighting that reality creates more problems than it solves.
+
+### `osx-defaults.sh` — Copy-Paste Ergonomics
+
+Converting `osx-defaults.sh` to Ruby would eliminate a key usability feature:
+
+1. **Direct `defaults write` commands**: The current script is ~200 lines of bare `defaults write` commands with inline comments explaining what each one does. Users can copy-paste any line directly into their terminal to test it, tweak values, or apply a single setting without re-running the entire script.
+
+2. **No abstraction layer**: Ruby would naturally introduce helper methods (`write_default(domain, key, value, type)`) for DRY. While cleaner, this makes individual commands non-portable — you can't copy a Ruby method call into a shell and have it work. The user would have to manually reconstruct the `defaults write` invocation from the method call.
+
+3. **Transparency over elegance**: macOS `defaults` commands have complex syntax (`-dict`, `-dict-add`, `-array-add`, nested keys, type flags). The current script shows exactly what gets written, making it obvious what each line does. A Ruby abstraction would hide that detail behind method parameters, making it harder to understand what's actually being applied.
+
+4. **Reference value**: The script doubles as a reference catalog of useful `defaults` commands. Users frequently grep it for "Dock" or "Finder" to find examples they can adapt. A Ruby implementation would obscure the actual commands behind abstractions.
+
+**Decision**: `osx-defaults.sh` stays as shell. The ability to copy-paste individual commands is more valuable than the marginal maintainability gain from porting to Ruby.
+
+### Implication for the Codebase
+
+These two scripts anchor the shell ecosystem: `.shellrc` must remain because `fresh-install-of-osx.sh` sources it during bootstrap. Other scripts (`software-updates-cron.sh` evolved to Ruby, `setup-login-item.sh` evolved to Ruby) were converted because they don't have the same constraints. The decision to keep these two as shell is about respecting the constraints of the problem domain, not lack of effort or willingness to modernize.
 
 ---
 

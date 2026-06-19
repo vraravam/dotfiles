@@ -1,3 +1,4 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require 'pathname'
@@ -88,45 +89,33 @@ module GitWorkspace
   #   the same script). Pass nil to trigger collection internally.
   # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
   def install_mise_versions(shared_dirs: nil, first_install: false)
-    # Only set script name and increment depth if we're at depth 0 (not yet
-    # incremented by a caller). Shell wrappers don't increment, so standalone
-    # calls start at 0. Nested Ruby calls will be at depth >= 1, so they skip
-    # script name override and timing infrastructure entirely.
-    current_depth = EnvVars.script_depth
-    if current_depth.zero?
-      Logging.script_name = 'install_mise_versions'
-      Logging.increment_script_depth
-      script_start_time = Logging.print_script_start
+    Logging.run_script('install_mise_versions', 'Installing mise in all git repos and ancestors') do
+      unless PathUtils.command_exists?('mise')
+        Logging.debug "Couldn't find 'mise' in PATH -- skipping mise config loading"
+        return
+      end
+
+      all_dirs = shared_dirs || collect_ancestor_dirs(first_install: first_install)
+
+      # Filter to dirs that actually have a mise config, then sort by depth so
+      # parents come before children (shallower paths have fewer separators).
+      dirs_with_config = all_dirs.select do |dir|
+        dir_pn = Pathname.new(dir)
+        MISE_CONFIG_FILES.any? { |cfg| dir_pn.join(cfg).file? }
+      end
+      sorted = dirs_with_config.sort_by { |d| d.count(File::SEPARATOR) }
+
+      # Use CollectionProcessor for unified progress logging and error tracking
+      results = CollectionProcessor.process_items(
+        sorted,
+        operation_desc: 'Installing mise tools'
+      ) do |dir, _idx, _total|
+        system('mise', '-C', dir, 'trust', '-y', '-a')
+        system('mise', '-C', dir, 'install')
+      end
+
+      Logging.print_results_summary(results)
     end
-
-    Logging.section_header2 'Installing mise in all git repos and ancestors'
-
-    unless PathUtils.command_exists?('mise')
-      Logging.debug "Couldn't find 'mise' in PATH -- skipping mise config loading"
-      return
-    end
-
-    all_dirs = shared_dirs || collect_ancestor_dirs(first_install: first_install)
-
-    # Filter to dirs that actually have a mise config, then sort by depth so
-    # parents come before children (shallower paths have fewer separators).
-    dirs_with_config = all_dirs.select do |dir|
-      dir_pn = Pathname.new(dir)
-      MISE_CONFIG_FILES.any? { |cfg| dir_pn.join(cfg).file? }
-    end
-    sorted = dirs_with_config.sort_by { |d| d.count(File::SEPARATOR) }
-
-    # Use CollectionProcessor for unified progress logging and error tracking
-    results = CollectionProcessor.process_items(
-      sorted,
-      operation_desc: 'Installing mise tools'
-    ) do |dir, _idx, _total|
-      system('mise', '-C', dir, 'trust', '-y', '-a')
-      system('mise', '-C', dir, 'install')
-    end
-
-    Logging.print_results_summary(results)
-    Logging.print_script_summary(script_start_time) if current_depth.zero?
   end
 
   # ---------------------------------------------------------------------------
@@ -140,41 +129,29 @@ module GitWorkspace
   # @param shared_dirs [Array<String>, nil] See install_mise_versions.
   # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
   def allow_all_direnv_configs(shared_dirs: nil, first_install: false)
-    # Only set script name and increment depth if we're at depth 0 (not yet
-    # incremented by a caller). Shell wrappers don't increment, so standalone
-    # calls start at 0. Nested Ruby calls will be at depth >= 1, so they skip
-    # script name override and timing infrastructure entirely.
-    current_depth = EnvVars.script_depth
-    if current_depth.zero?
-      Logging.script_name = 'allow_all_direnv_configs'
-      Logging.increment_script_depth
-      script_start_time = Logging.print_script_start
+    Logging.run_script('allow_all_direnv_configs', 'Allowing direnv configs in all git repos and ancestors') do
+      unless PathUtils.command_exists?('direnv')
+        Logging.debug "Couldn't find 'direnv' in PATH -- skipping direnv config loading"
+        return
+      end
+
+      all_dirs = shared_dirs || collect_ancestor_dirs(first_install: first_install)
+
+      # Filter to dirs with .envrc, sort parents before children.
+      dirs_with_envrc = all_dirs
+        .select { |dir| Pathname.new(dir).join('.envrc').file? }
+        .sort_by { |d| d.count(File::SEPARATOR) }
+
+      # Use CollectionProcessor for unified progress logging and error tracking
+      results = CollectionProcessor.process_items(
+        dirs_with_envrc,
+        operation_desc: 'Allowing direnv in'
+      ) do |dir, _idx, _total|
+        system('direnv', 'allow', dir)
+      end
+
+      Logging.print_results_summary(results)
     end
-
-    Logging.section_header2 'Allowing direnv configs in all git repos and ancestors'
-
-    unless PathUtils.command_exists?('direnv')
-      Logging.debug "Couldn't find 'direnv' in PATH -- skipping direnv config loading"
-      return
-    end
-
-    all_dirs = shared_dirs || collect_ancestor_dirs(first_install: first_install)
-
-    # Filter to dirs with .envrc, sort parents before children.
-    dirs_with_envrc = all_dirs
-      .select { |dir| Pathname.new(dir).join('.envrc').file? }
-      .sort_by { |d| d.count(File::SEPARATOR) }
-
-    # Use CollectionProcessor for unified progress logging and error tracking
-    results = CollectionProcessor.process_items(
-      dirs_with_envrc,
-      operation_desc: 'Allowing direnv in'
-    ) do |dir, _idx, _total|
-      system('direnv', 'allow', dir)
-    end
-
-    Logging.print_results_summary(results)
-    Logging.print_script_summary(script_start_time) if current_depth.zero?
   end
 
   # ---------------------------------------------------------------------------
@@ -192,21 +169,14 @@ module GitWorkspace
   #
   # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
   def setup_dev_environment(first_install: false)
-    current_depth = EnvVars.script_depth
-    if current_depth.zero?
-      Logging.script_name = 'setup_dev_environment'
-      Logging.increment_script_depth
-      script_start_time = Logging.print_script_start
+    Logging.run_script('setup_dev_environment') do
+      # Collect ancestor dirs once, reuse for both operations
+      shared_dirs = collect_ancestor_dirs(first_install: first_install)
+
+      # Both methods receive shared_dirs and skip their own collection
+      allow_all_direnv_configs(shared_dirs: shared_dirs, first_install: first_install)
+      install_mise_versions(shared_dirs: shared_dirs, first_install: first_install)
     end
-
-    # Collect ancestor dirs once, reuse for both operations
-    shared_dirs = collect_ancestor_dirs(first_install: first_install)
-
-    # Both methods receive shared_dirs and skip their own collection
-    allow_all_direnv_configs(shared_dirs: shared_dirs, first_install: first_install)
-    install_mise_versions(shared_dirs: shared_dirs, first_install: first_install)
-
-    Logging.print_script_summary(script_start_time) if current_depth.zero?
   end
 
   # ---------------------------------------------------------------------------
@@ -231,9 +201,7 @@ module GitWorkspace
     cache_stale = !cache_file.file? ||
                   projects_base.mtime > cache_file.mtime
 
-    unless force || cache_stale
-      return
-    end
+    return unless force || cache_stale
 
     if force
       Logging.info 'Regenerating repo aliases cache...'
@@ -295,21 +263,23 @@ module GitWorkspace
       return false
     end
 
-    Logging.section_header2 "#{'Updating'.yellow} '#{repo_dir.to_s.cyan}'"
+    Logging.with_step("update #{repo_dir}", "#{'Updating'.yellow} '#{repo_dir.to_s.cyan}'") do
+      # Clean up lock files and hooks
+      index_lock = repo_dir.join('.git', 'index.lock')
+      hooks_dir = repo_dir.join('.git', 'hooks')
+      index_lock.delete if index_lock.file?
+      hooks_dir.rmtree if hooks_dir.directory?
 
-    # Clean up lock files and hooks
-    index_lock = repo_dir.join('.git', 'index.lock')
-    hooks_dir = repo_dir.join('.git', 'hooks')
-    index_lock.delete if index_lock.file?
-    hooks_dir.rmtree if hooks_dir.directory?
-
-    # Stage and commit with timestamp (use block form for multiple operations)
-    GitProcessor.new(dir: repo_dir) do |git|
-      # Normalize relative path (may raise if path is invalid/outside repo)
-      rel_path = relative_path ? git.relative_path(relative_path) : '.'
-      git.add(rel_path)
-      timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
-      git.run_alias('sci', "Incremental commit: #{timestamp}")
+      # Stage and commit with timestamp (use block form for multiple operations)
+      success = false
+      GitProcessor.new(dir: repo_dir) do |git|
+        # Normalize relative path (may raise if path is invalid/outside repo)
+        rel_path = relative_path ? git.relative_path(relative_path) : '.'
+        git.add(rel_path)
+        timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+        success = git.smart_commit("Incremental commit: #{timestamp}")
+      end
+      success
     end
   rescue RuntimeError => e
     # relative_path raises RuntimeError if path is invalid or outside repo
@@ -343,15 +313,15 @@ module GitWorkspace
   def status_repo(repo_dir, switches: [])
     repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
 
-    Logging.section_header2 "#{'Status'.yellow} '#{repo_dir.to_s.cyan}'"
-
     unless GitProcessor.repo?(repo_dir)
       Logging.warn "Skipping status -- '#{repo_dir.to_s.cyan}' is not a git repo"
       return false
     end
 
-    _out, _err, status = GitProcessor.new(dir: repo_dir).status(*switches)
-    status.success?
+    Logging.with_step("status #{repo_dir}", "#{'Status'.yellow} '#{repo_dir.to_s.cyan}'") do
+      _out, _err, status = GitProcessor.new(dir: repo_dir).status(*switches)
+      status.success?
+    end
   end
 
   # Reports git status for HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, and all
@@ -395,7 +365,7 @@ module GitWorkspace
       dir = Pathname.new(repo_root)
       dir = dir.dirname unless include_repo_root
 
-      while dir != PathUtils::ROOT
+      while dir != Core::ROOT
         # Stop before reaching stop_at (unless include_stop_boundary is true)
         if dir == stop_at
           seen.add(dir) if include_stop_boundary

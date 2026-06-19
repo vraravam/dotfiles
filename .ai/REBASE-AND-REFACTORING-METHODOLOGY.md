@@ -753,8 +753,6 @@ Created comprehensive comparison documents:
 ## Related Documentation
 
 - **Feature Parity Checklist**: `.ai/FEATURE-PARITY-CHECKLIST.md` - Post-rebase verification checklist (use after every rebase)
-- **Ruby Migration Complete**: `.ai/RUBY-MIGRATION-COMPLETE.md` - Full Ruby migration case study
-- **Nix Migration Review**: `.ai/NIX-MIGRATION-REBASE-REVIEW.md` - Analysis of three-way conflict scenario
 - **Context**: `.ai/context.md` - Historical insights and patterns
 
 ---

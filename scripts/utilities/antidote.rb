@@ -1,7 +1,9 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require 'open3'
 
+require_relative 'core'
 require_relative 'env_vars'
 require_relative 'git_processor'
 require_relative 'logging'
@@ -21,6 +23,8 @@ require_relative 'path_utils'
 # is the narrowest correct fix.
 module Antidote
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Note: Logging methods must be qualified (Logging.debug, Logging.info, etc.)
   # because 'include Logging' + 'extend self' doesn't make included methods
@@ -38,13 +42,13 @@ module Antidote
     plugin_zsh = EnvVars::ANTIDOTE_PLUGIN_ZSH
     antidote_home = EnvVars::ANTIDOTE_HOME
 
-    unless antidote_zsh.file? && !antidote_zsh.empty? && plugin_txt.file? && !plugin_txt.empty?
+    unless antidote_zsh.file? && !nil_or_empty?(antidote_zsh) && plugin_txt.file? && !nil_or_empty?(plugin_txt)
       Logging.debug "Skipping antidote bundle regeneration: antidote not found at '#{antidote_zsh.to_s.cyan}' " \
                     "or plugin list '#{plugin_txt.to_s.cyan}' is missing"
       return
     end
 
-    if antidote_home.directory? && !antidote_home.empty?
+    if antidote_home.directory? && !nil_or_empty?(antidote_home)
       system('zsh', '-f', '-c', 'source "$1"; antidote update', '--', antidote_zsh.to_s)
       PathUtils.glob_pathnames(antidote_home.join('github.com', '*', '*')) do |bundle_dir|
         next unless bundle_dir.directory?

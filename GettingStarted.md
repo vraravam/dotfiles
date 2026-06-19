@@ -1,5 +1,7 @@
 **Before starting to run this script** (for the first time on a new machine), these steps are *recommended* so that the process doesn't error out midway.
 
+> **Important:** Before running the bootstrap command, you MUST customize environment variables in your fork. See [ENV_VARS.md](ENV_VARS.md) for details, especially the "Required Customization" section.
+
 > Curious how the script works internally? See the [Technical Deep Dive](TechnicalDeepDive.md).
 
 On your local machine:

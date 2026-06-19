@@ -370,14 +370,13 @@ _set_default_shell() {
     info "'$(yellow "${_brew_zsh}")' already in /etc/shells -- skipping."
   fi
 
-  # Check which zsh would be invoked by PATH, not just what SHELL is set to.
-  # On FIRST_INSTALL, SHELL is still /bin/zsh but Homebrew's bin directory is now
-  # in PATH, so 'which zsh' returns the Homebrew version. Skip chsh if the correct
-  # zsh is already active in the current session.
-  local active_zsh
-  active_zsh="$(which zsh)"
-  if [[ "${active_zsh}" == "${_brew_zsh}" ]]; then
-    info "Active zsh in PATH is already '$(yellow "${_brew_zsh}")' -- skipping chsh."
+  # Check the user's configured default shell (not the current $SHELL env var).
+  # $SHELL reflects the current terminal session; dscl shows what chsh configured.
+  # This ensures we only run chsh if the login shell for future sessions needs updating.
+  local configured_shell
+  configured_shell="$(dscl . -read ~ UserShell | awk '{print $NF}')"
+  if [[ "${configured_shell}" == "${_brew_zsh}" ]]; then
+    info "Default shell is already configured as '$(cyan "${_brew_zsh}")' -- skipping."
   else
     if chsh -s "${_brew_zsh}"; then
       success "Default shell changed to '$(cyan "${_brew_zsh}")'."
@@ -402,6 +401,7 @@ _ensure_keybase_logged_in() {
     error "'keybase' command not found in the PATH. Aborting!!!"
     return 1
   fi
+  setup_rubylib
   ruby -e "require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
 }
 

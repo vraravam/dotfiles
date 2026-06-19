@@ -1,11 +1,14 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require 'fileutils'
 require 'open3'
 require 'pathname'
 
+require_relative 'core'
 require_relative 'env_vars'
 require_relative 'logging'
+require_relative 'path_utils'
 
 # Cron management helpers that replicate the shell functions split across
 # .shellrc (suspend_cron, resume_cron, restore_cron) and .aliases
@@ -16,6 +19,8 @@ require_relative 'logging'
 # have that constraint -- the full interface lives here.
 module Cron
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Note: Logging methods must be qualified (Logging.debug, Logging.info, etc.)
   # because 'include Logging' + 'extend self' doesn't make included methods
@@ -39,7 +44,7 @@ module Cron
       Logging.warn "No '#{cron_file.to_s.cyan}' found; returning without any processing"
       return false
     end
-    cron_file.dirname.mkpath
+    PathUtils.ensure_directories_exist(cron_file.dirname)
     unless system('crontab', cron_file.to_s)
       Logging.record_error "Failed to restore crontab from '#{cron_file.to_s.cyan}'"
       return false
@@ -58,7 +63,7 @@ module Cron
 
     # Attempt to capture the active crontab into the backup file.
     crontab_output, _err, cron_status = Open3.capture3('crontab', '-l')
-    if cron_status.success? && !crontab_output.empty?
+    if cron_status.success? && !nil_or_empty?(crontab_output)
       backup_file.write(crontab_output)
       Logging.debug "Backed up existing crontab to '#{backup_file.to_s.cyan}'"
     elsif src_file.file?
@@ -80,10 +85,8 @@ module Cron
   def resume_cron
     Logging.debug 'Resuming cron jobs...'
     backup_file = EnvVars.cron_backup_file
-    if backup_file.file? && !backup_file.empty?
-      if restore_cron(backup_file)
-        Logging.success 'Cron jobs resumed from backup'
-      end
+    if backup_file.file? && !nil_or_empty?(backup_file)
+      Logging.success 'Cron jobs resumed from backup' if restore_cron(backup_file)
       # Error already logged by restore_cron if it failed
     else
       Logging.info 'No cron backup to restore; skipping'
@@ -158,53 +161,40 @@ module Cron
   #
   # Mirrors recron in .aliases.
   def recron
-    # Only set script name and increment depth if we're at depth 0 (not yet
-    # incremented by a caller). Shell wrappers don't increment, so standalone
-    # calls start at 0. Nested Ruby calls will be at depth >= 1, so they skip
-    # script name override and timing infrastructure entirely.
-    current_depth = EnvVars.script_depth
-    if current_depth.zero?
-      Logging.script_name = 'recron'
-      Logging.increment_script_depth
-      script_start_time = Logging.print_script_start
-    end
+    Logging.run_script('recron') do
+      Logging.debug 'Setting up crontab'
 
-    Logging.debug 'Setting up crontab'
+      # Step 1: Capture existing system crontab to temp file
+      require 'tempfile'
+      temp_crontab = Tempfile.new(['crontab', '.txt'])
+      begin
+        # crontab -l exits 1 if no crontab exists; redirect stderr to suppress "no crontab" message
+        system('crontab', '-l', out: temp_crontab.path, err: File::NULL)
+        temp_crontab.close
 
-    # Step 1: Capture existing system crontab to temp file
-    require 'tempfile'
-    temp_crontab = Tempfile.new(['crontab', '.txt'])
-    begin
-      # crontab -l exits 1 if no crontab exists; redirect stderr to suppress "no crontab" message
-      system('crontab', '-l', out: temp_crontab.path, err: File::NULL)
-      temp_crontab.close
-
-      # Step 2: Check if temp file has content (existing crontab)
-      schedule_source = nil
-      if temp_crontab.size.positive?
-        Logging.debug "Found existing crontab with #{temp_crontab.size} bytes"
-        schedule_source = Pathname.new(temp_crontab.path)
-      elsif CRONTAB_FILE.file? && !CRONTAB_FILE.empty?
-        # Step 2b: Fallback to tracked crontab.txt if it exists and is non-empty
-        Logging.debug "No existing crontab; falling back to '#{CRONTAB_FILE.to_s.cyan}'"
-        schedule_source = CRONTAB_FILE
-      else
-        # Step 3: Both empty - user action needed
-        Logging.user_action "No crontab found and '#{CRONTAB_FILE.to_s.cyan}' does not exist. Create '#{CRONTAB_FILE.to_s.cyan}' with your desired schedule and run '#{'recron'.yellow}' to install it. Track the file in your home repo for backup."
-      end
-
-      # Step 4: Load non-empty schedule into system crontab
-      if schedule_source
-        if restore_cron(schedule_source)
-          Logging.success 'Crontab set up successfully'
+        # Step 2: Check if temp file has content (existing crontab)
+        schedule_source = nil
+        if temp_crontab.size.positive?
+          Logging.debug "Found existing crontab with #{temp_crontab.size} bytes"
+          schedule_source = Pathname.new(temp_crontab.path)
+        elsif !nil_or_empty?(CRONTAB_FILE) && CRONTAB_FILE.file?
+          # Step 2b: Fallback to tracked crontab.txt if it exists and is non-empty
+          Logging.debug "No existing crontab; falling back to '#{CRONTAB_FILE.to_s.cyan}'"
+          schedule_source = CRONTAB_FILE
+        else
+          # Step 3: Both empty - user action needed
+          Logging.user_action "No crontab found and '#{CRONTAB_FILE.to_s.cyan}' does not exist. Create '#{CRONTAB_FILE.to_s.cyan}' with your desired schedule and run '#{'recron'.yellow}' to install it. Track the file in your home repo for backup."
         end
-        # Error already logged by restore_cron if it failed
-      end
-    ensure
-      temp_crontab.unlink
-    end
 
-    Logging.print_script_summary(script_start_time) if current_depth.zero?
+        # Step 4: Load non-empty schedule into system crontab
+        if schedule_source
+          Logging.success 'Crontab set up successfully' if restore_cron(schedule_source)
+          # Error already logged by restore_cron if it failed
+        end
+      ensure
+        temp_crontab.unlink
+      end
+    end
   end
 
   # Wraps a block in the cron bracket: suspend cron, yield, call recron to

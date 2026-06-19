@@ -1,6 +1,8 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require 'set'
+require_relative 'core'
 
 require_relative 'logging'
 
@@ -17,6 +19,8 @@ require_relative 'logging'
 # provides the iteration infrastructure.
 module CollectionProcessor
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Note: Logging methods must be qualified (Logging.debug, Logging.info, etc.)
   # because 'include Logging' + 'extend self' doesn't make included methods
@@ -66,11 +70,11 @@ module CollectionProcessor
   #   )
   def find_directories_matching(dirs:, name_pattern:, mindepth: 1, maxdepth: 6, filter: nil, prune_dirs: [], skip_symlinks: true, transform_result: nil)
     # Convert Pathname objects to strings, rejecting nil and empty strings
-    dirs = Array(dirs).compact.map(&:to_s).reject { |f| f.empty? }
+    dirs = Array(dirs).compact.map(&:to_s).reject { |f| nil_or_empty?(f) }
     prune = Array(prune_dirs)
 
     # Build prune expression: ( -name dir1 -o -name dir2 ... ) -prune -o
-    prune_expr = prune.empty? ? [] : ['('] + prune.flat_map { |d| ['-o', '-name', d] }.drop(1) + [')', '-prune', '-o']
+    prune_expr = nil_or_empty?(prune) ? [] : ['('] + prune.flat_map { |d| ['-o', '-name', d] }.drop(1) + [')', '-prune', '-o']
 
     find_cmd = [
       'find', *dirs,

@@ -1,8 +1,12 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require_relative 'core'
 require_relative 'env_vars'
 
 class String
+  include Core
+
   # Wraps the string in the ANSI escape sequence for +code+, after replacing
   # the HOME path with '~' so any path argument is display-ready automatically.
   # Returns the string unchanged (no ANSI, no substitution) when stdout is not
@@ -103,6 +107,6 @@ class String
   # @return [true, false]
   def comment_or_empty?
     stripped = strip
-    stripped.empty? || stripped.start_with?('#')
+    nil_or_empty?(stripped) || stripped.start_with?('#')
   end
 end

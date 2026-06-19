@@ -45,13 +45,37 @@ _Note:_
 
 In your forked repo, make the following changes, commit and push _via the Github web-UI itself_ (for the first time before running the script). Once the above steps are done, and committed into your fork, then everytime you need to run the setup, you can run the `curl` commands that point to _your_ fork:
 
-1. **_Only in this file (`README.md`), `GettingStarted.md` and `files/--HOME--/.shellrc` files (and nowhere else; only these 3 files in total):_** Find and replace the strings that reference my usernames to your equivalent ones (for eg, you can search for `vraravam` (referred to as the `GH_USERNAME` env var) and `avijayr` (referred to as the `KEYBASE_USERNAME` env var) and replace them with your values). If you are not going to use keybase (or are going to defer setting that up), please comment out the lines for the environment variables that start with `KEYBASE_` in the `files/--HOME--/.shellrc`. Additionally, review and update the following path-related env vars in `files/--HOME--/.shellrc` to match your preferred folder layout:
+1. **Before running the bootstrap command in [GettingStarted.md](GettingStarted.md)**, you MUST customize the following environment variables in the curl command to match your setup:
+   - `GH_USERNAME='vraravam'` — **REQUIRED**: Change to your GitHub username (this determines where the script clones the dotfiles repo from)
+   - `DOTFILES_BRANCH='master'` — **OPTIONAL**: Change to a different branch name if you want to test changes before merging to master (see [How to test changes in your fork](#how-to-test-changes-in-your-fork-before-raising-a-pull-request))
+   - `FIRST_INSTALL='true'` — **DO NOT CHANGE**: Required for vanilla OS setup
+   - `CACHE_BUST_HEADERS='true'` — **DO NOT CHANGE**: Ensures latest version is fetched
+   - `CURL_RETRY_OPTS='true'` — **DO NOT CHANGE**: Enables retry logic for network issues
+
+2. **In `files/--HOME--/.shellrc`**: Update the hardcoded username defaults to match your setup:
+   - `export GH_USERNAME='vraravam'` — Change to your GitHub username (must match the value used in the curl command above)
+   - `export KEYBASE_USERNAME='avijayr'` — Change to your Keybase username, or comment out if not using Keybase
+   - `export DOTFILES_BRANCH='master'` — Typically leave as 'master' unless testing a specific branch
+
+3. **In `scripts/utilities/env_vars.rb`**: Update the fallback defaults to match your usernames:
+   - `GH_USERNAME = ENV.fetch('GH_USERNAME', 'vraravam').freeze` — Change the fallback `'vraravam'` to your GitHub username
+   - `KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', 'avijayr'))` — Change the fallback `'avijayr'` to your Keybase username, or leave as-is if not using Keybase
+
+4. **In this file (`README.md`) and `GettingStarted.md`**: Find and replace any remaining references to `vraravam` and `avijayr` with your usernames for consistency in documentation.
+
+5. **Review and update path-related env vars in `files/--HOME--/.shellrc`** to match your preferred folder layout:
    - `PROJECTS_BASE_DIR` (default: `${HOME}/dev`) — root folder where all your git repos will be cloned
    - `PERSONAL_BIN_DIR` (default: `${HOME}/personal/dev/bin`) — folder for personal scripts and executables
    - `PERSONAL_CONFIGS_DIR` (default: `${HOME}/personal/dev/configs`) — folder for private config files and repo catalogs
    - `PERSONAL_PROFILES_DIR` (default: `${HOME}/personal/${USER}/browser-profiles`) — folder for browser profile backups
-2. Review all entries in the `files/--HOME--/Brewfile`, and ensure that there are no unwanted libraries/applications. If you have any doubts (if comparing with my [Brewfile](files/--HOME--/Brewfile)), you will need to search the internet for the uses of those libraries/applications and decide whether to retain each one or not.
-3. If you changed `PROJECTS_BASE_DIR` from its default (`~/dev`), update the corresponding entries in `files/--HOME--/custom.gitignore` — specifically the `/dev/` entry in the "HOME DIRECTORY TOP-LEVEL FOLDERS" section and all `/dev/**/` entries in the "DEV WORKSPACE" section. Prefer editing the repo source file directly, then run `install-dotfiles.rb` to propagate. See [Technical Deep Dive § 9](TechnicalDeepDive.md#9-install-dotfilesrb-mechanics) for details on how `install-dotfiles.rb` resolves conflicts between the repo copy and an existing file on disk.
+
+6. **If you are not using Keybase** (or want to defer setting it up):
+   - In `files/--HOME--/.shellrc`: Comment out all lines starting with `KEYBASE_`
+   - In `scripts/utilities/env_vars.rb`: Change the fallback values to empty strings for `KEYBASE_USERNAME`, `KEYBASE_HOME_REPO_NAME`, and `KEYBASE_PROFILES_REPO_NAME` (e.g., change `'avijayr'` to `''`, `'home'` to `''`, `'profiles'` to `''`). You cannot comment out the entire lines as they are constants that Ruby scripts depend on.
+   - The script will skip Keybase-dependent steps silently when these variables are empty or not set.
+
+7. Review all entries in the `files/--HOME--/Brewfile`, and ensure that there are no unwanted libraries/applications. If you have any doubts (if comparing with my [Brewfile](files/--HOME--/Brewfile)), you will need to search the internet for the uses of those libraries/applications and decide whether to retain each one or not.
+8. If you changed `PROJECTS_BASE_DIR` from its default (`~/dev`), update the corresponding entries in `files/--HOME--/custom.gitignore` — specifically the `/dev/` entry in the "HOME DIRECTORY TOP-LEVEL FOLDERS" section and all `/dev/**/` entries in the "DEV WORKSPACE" section. Prefer editing the repo source file directly, then run `install-dotfiles.rb` to propagate. See [Technical Deep Dive § 9](TechnicalDeepDive.md#9-install-dotfilesrb-mechanics) for details on how `install-dotfiles.rb` resolves conflicts between the repo copy and an existing file on disk.
 
 ## How to upgrade / catch-up to new changes
 
@@ -108,10 +132,12 @@ As a summary, these files will typically have changes between your setup and min
 
 - `GettingStarted.md` (references to your usernames instead of mine, and typically any other changes that you introduce in the `files/--HOME--/.shellrc` - look below)
 - `files/--HOME--/.gitconfig` (the `IncludeIf` line to match your global/base configuration filename)
-- `files/--HOME--/.shellrc` (`GH_USERNAME`, `KEYBASE_USERNAME`, path env vars such as `PROJECTS_BASE_DIR` / `PERSONAL_CONFIGS_DIR` / `PERSONAL_BIN_DIR` / `PERSONAL_PROFILES_DIR`, and other changeable env vars to control which steps to perform vs which to bypass)
+- `files/--HOME--/.shellrc` (`GH_USERNAME`, `KEYBASE_USERNAME`, path env vars such as `PROJECTS_BASE_DIR` / `PERSONAL_CONFIGS_DIR` / `PERSONAL_BIN_DIR` / `PERSONAL_PROFILES_DIR`, and other changeable env vars to control which steps to perform vs which to bypass). See [ENV_VARS.md](ENV_VARS.md) for a complete reference of all environment variables.
 - `files/--HOME--/Brewfile` (the list of applications and command-line utilities that you choose to install in your local machine)
 - `scripts/data/capture-prefs-allowed-list.txt` (the preference domains you choose to back up — add or remove entries to match your installed apps)
 - `scripts/data/capture-prefs-denied-list.txt` (domains that must never be exported or imported — edit only to add newly discovered unsafe domains; do not remove existing entries)
+
+For a complete reference of all environment variables (where they're defined, how to access them in shell and Ruby, which ones require customization), see **[ENV_VARS.md](ENV_VARS.md)**.
 
 For a deeper understanding of how the scripts work internally — the logging system, startup optimisation, `.shellrc` vs `.aliases` architecture, cron safety, and more — see the [Technical Deep Dive](TechnicalDeepDive.md).
 

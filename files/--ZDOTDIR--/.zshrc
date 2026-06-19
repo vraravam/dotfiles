@@ -522,6 +522,10 @@ typeset -gT INFOPATH infopath ':'
 infopath=("${infopath[@]:#}")
 manpath=("${manpath[@]:#}")
 
+# Set up RUBYLIB paths (from .shellrc). Creates RUBYLIB<->rubylib tie if needed,
+# deduplicates, and exports. Safe to call multiple times (idempotent).
+setup_rubylib
+
 # remove duplicates from some env vars
 typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPATH manpath PATH path PKG_CONFIG_PATH
 
@@ -529,8 +533,9 @@ typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPAT
 # (autoload search path and cd search path respectively). Exporting them causes their
 # contents to leak into child processes and persist in the macOS launchd user-session
 # environment, where they are inherited by every new shell before any rc file runs.
-# All other *path vars in the typeset -gU line above (PATH, MANPATH, INFOPATH, CPPFLAGS,
-# LDFLAGS, PKG_CONFIG_PATH) are intentionally exported -- child processes need them.
+# All other *path vars (PATH, MANPATH, INFOPATH, CPPFLAGS, LDFLAGS, PKG_CONFIG_PATH)
+# are intentionally exported -- child processes need them. RUBYLIB is also exported
+# but deduplicated separately by setup_rubylib above.
 typeset +x FPATH fpath CDPATH cdpath
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109

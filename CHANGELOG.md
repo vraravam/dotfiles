@@ -4,6 +4,27 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.1.28
+
+#### Core utility module and ENV access centralization
+
+* *[scripts/utilities/core.rb]* (NEW, 80 lines) Zero-dependency foundational module providing helpers used by all other utilities. Prevents circular dependencies and avoids duplication. Provides `nil_or_empty?(val)` with type-aware checking (strips strings, handles arrays, converts others to string), `execute_with_streaming(cmd, stdin_data: nil)` for real-time command output (brew bundle, git operations). Other utility modules include Core for unqualified access. Refactored all other scripts to use this as an included module.
+
+* *[all ruby scripts]* Changed the internal structure of the ruby classes to use a module which could be invoked directly from another ruby script if needed. Provides a cleaner architecture for separating out the CLI usage (as a standalone ruby script) vs the direct-module usage.
+
+#### Documentation updates
+
+* *[.gitignore]* Added `/.ai/session-state/` pattern (holds transactional work products: task lists, session analyses, completed project retrospectives). Removed from tracking (moved to gitignored `session-state/` folder).
+
+* *[.ai/REBASE-AND-REFACTORING-METHODOLOGY.md]* Removed broken references to moved case study files (lines 753-758).
+
+#### Adopting these changes
+
+* Restart terminal to reload environment (EnvVars changes)
+* No user action required for Core module (transparent dependency)
+
+---
+
 ### 3.1.27
 
 #### Extract plist functionality, port setup-login-item to Ruby, centralize system command paths

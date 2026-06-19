@@ -235,25 +235,6 @@ extract_last_segment() {
   echo "${"${1%/}"##*/}"
 }
 
-# Returns 0 (true) when $1 is blank or a comment line (optional leading
-# whitespace followed by '#'). Use this to skip non-data lines when reading
-# config or data files with while+read loops.
-#
-# =~ (regex) is used rather than == (glob) because the comment-start pattern
-# '^[[:space:]]*#' requires an anchor -- zsh extended globs cannot anchor at the
-# start of a string with [[:space:]]* in the same expression without extendedglob
-# side-effects. .aliases is never sourced by bash so zsh regex is safe here.
-#
-# Usage:
-#   while IFS= read -r line; do
-#     if is_blank_or_comment_line "${line}"; then continue; fi
-#     # process "${line}" ...
-#   done < "${file}"
-is_blank_or_comment_line() {
-  local _line="${1:-}"
-  [[ "${_line}" =~ '^[[:space:]]*#' || -z "${_line//[[:space:]]/}" ]]
-}
-
 # --------------------------------------------------------------------------
 # Script utilities (zsh-only; not needed before dotfiles repo is cloned)
 # --------------------------------------------------------------------------
@@ -412,6 +393,7 @@ _call_ruby_git_workspace() {
     kwargs_str="${kwargs_parts[*]}"
   fi
 
+  setup_rubylib
   ruby -e "require 'git_workspace'; GitWorkspace.${method}(${kwargs_str})"
 }
 
@@ -738,6 +720,7 @@ if is_macos && command_exists brew; then
   # Called by the antidote formula's postinstall hook in Brewfile (whenever
   # antidote is installed/upgraded) and by software-updates-cron.sh (periodic updates).
   update_antidote_and_regenerate_plugin_bundle() {
+    setup_rubylib
     ruby -e "require 'antidote'; Antidote.update_and_regenerate_bundle"
   }
 
@@ -945,14 +928,9 @@ implode() {
     "${ANTIDOTE_PLUGIN_ZSH}"
     "${DOTFILES_DIR}"
     "${HOMEBREW_BUNDLE_FILE}"
-    "${HOMEBREW_PREFIX}"
+    "${HOME}/*.log"
     "${HOME}/personal"
     "${PROJECTS_BASE_DIR}"
-    "${XDG_BIN_HOME}"
-    "${XDG_CACHE_HOME}"
-    "${XDG_CONFIG_HOME}"
-    "${XDG_DATA_HOME}"
-    "${XDG_STATE_HOME}"
   )
   for f in "${folders[@]}"; do
     sudo rm -rfv "${f}"*
@@ -1027,6 +1005,7 @@ _MACOS_LOGIN_ITEM_APPS=(
 #   $1 - method name to call on MacOS module
 _call_ruby_macos() {
   local method="${1:?_call_ruby_macos: method name required}"
+  setup_rubylib
   ruby -e "require 'macos'; MacOS.${method}"
 }
 

@@ -4,12 +4,14 @@
 require 'open3'
 require 'pathname'
 
+require_relative 'core'
 require_relative 'macos'
 
 # Command and path manipulation utilities for Ruby scripts.
 #
 # For environment variable paths (HOME, DOTFILES_DIR, etc.), use EnvVars instead.
 # For macOS system command paths (DEFAULTS_CMD, OSASCRIPT_CMD, etc.), use MacOS instead.
+# For filesystem root (/), use Core::ROOT instead.
 #
 # Usage:
 #   require 'path_utils'
@@ -18,6 +20,8 @@ require_relative 'macos'
 # Generic (cross-platform) utilities only -- macOS-specific paths are in MacOS module.
 module PathUtils
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Checks if a command exists in the system PATH.
   # Mirrors command_exists() from .shellrc.
@@ -89,6 +93,28 @@ module PathUtils
 
     Dir.glob(pattern, flags).each do |path_str|
       yield Pathname.new(path_str)
+    end
+  end
+
+  # Ensures the specified directories exist, creating them if necessary.
+  # Accepts a single path or an array of paths. Skips any empty paths.
+  #
+  # @param dirs [Pathname, String, Array<Pathname, String>] Single directory path or array of paths
+  # @return [void]
+  #
+  # @example Single path
+  #   PathUtils.ensure_directories_exist(EnvVars::XDG_CONFIG_HOME)
+  #   PathUtils.ensure_directories_exist('/tmp/my-dir')
+  #
+  # @example Array of paths
+  #   PathUtils.ensure_directories_exist([EnvVars::XDG_CONFIG_HOME, EnvVars::XDG_CACHE_HOME])
+  def ensure_directories_exist(dirs)
+    # Normalize to array (handles single path or array)
+    Array(dirs).each do |dir|
+      next if nil_or_empty?(dir.to_s)
+
+      (dir.is_a?(Pathname) ? dir : Pathname.new(dir)).mkpath
+      Logging.debug "Ensured directory exists: '#{dir.to_s.cyan}'"
     end
   end
 end

@@ -106,6 +106,35 @@ Higher priority always wins. Document tradeoffs in comments when they conflict.
 
 **Key insight**: Ruby scripts called from shell (via `ruby -e` or subprocess) must return non-zero exit codes only for fatal errors. Recoverable failures should log warnings/errors and return false/success code, not raise exceptions.
 
+#### clone_repo_into Delegation Pattern (June 2026)
+**Problem**: Duplicate implementations - 79 lines in .shellrc, 98 lines in git_processor.rb.
+
+**Solution**: Ruby delegates to shell version via `system('zsh', '-c', 'source ~/.shellrc && clone_repo_into ...')`.
+
+**Why delegation, not consolidation**:
+- **Bootstrap constraint**: fresh-install-of-osx.sh clones dotfiles repo BEFORE Ruby utilities exist
+- **Vanilla OS**: Only /bin/zsh and curl available initially
+- **Timing**: Function must be in .shellrc for curl-download during bootstrap
+- **Single source of truth**: Shell version is canonical, Ruby is thin wrapper
+
+**Shell enhancements applied** (lines 1252-1354 in .shellrc):
+1. **Progressive trap cleanup**: `trap "rm -rf '${tmp_folder}' '${stderr_file}'" EXIT INT TERM`
+   - Updates trap as resources are allocated
+   - Clears trap after successful completion
+   - Shell equivalent of Ruby's `ensure` block
+2. **STDERR capture**: `git clone ... 2>"${stderr_file}"` then display on failure
+   - Better debugging experience for network/auth failures
+   - Only shows stderr when clone fails
+3. **Existing .git removal**: `rm -rf "${target_folder}/.git"` before move
+   - Prevents corrupt state from interrupted clones
+   - Safety feature from Ruby version
+4. **Duration tracking**: Uses `${EPOCHSECONDS}` (no subprocess fork)
+   - Debug-only output, no overhead in normal operation
+
+**Future port guidance**: When fresh-install is ported to Ruby, reimplement clone_repo_into fresh (don't copy stale Ruby implementation from git_processor.rb). Use current .shellrc version as reference.
+
+**Pattern applies to**: Any function needed during bootstrap before dotfiles repo exists must stay in .shellrc, Ruby should delegate not duplicate.
+
 ### Recent Optimizations (June 2026)
 Performance improvements in `.zshrc`:
 - **Problem**: 28ms spent in helper functions during startup
@@ -294,6 +323,20 @@ For complete edit workflows (syntax checks, formatting, whitespace verification,
 8. **ERR trap LINENO capture**
    - `trap handler ERR` → `$LINENO` is handler's line
    - **Fix**: `trap 'handler "${LINENO}"' ERR` (string form)
+
+9. **Progressive trap cleanup**
+   - Set trap early, update as resources allocated, clear on success
+   - **Pattern**: `trap "rm -rf '${tmp_folder}'" EXIT INT TERM`
+   - Update: `trap "rm -rf '${tmp_folder}' '${stderr_file}'" EXIT INT TERM`
+   - Clear: `trap - EXIT INT TERM` (after success, before function returns)
+   - Handles normal exit, errors, and interrupts (Ctrl+C)
+   - Shell equivalent of Ruby's `ensure` block
+
+10. **STDERR capture for better debugging**
+    - Pattern: `stderr_file="$(mktemp)"; cmd 2>"${stderr_file}"; status=$?`
+    - Display stderr only on failure: `if [[ $status -ne 0 ]]; then cat "${stderr_file}"; fi`
+    - Always use `2>/dev/null` when reading stderr file (in case it disappeared)
+    - Add trap to clean up stderr file: `trap "rm -rf '${tmp}' '${stderr}'" EXIT`
 
 ### Ruby Scripting Patterns
 

@@ -1,10 +1,12 @@
+#!/usr/bin/env ruby
 # frozen_string_literal: true
 
 require 'open3'
 require 'pathname'
 
+require_relative 'core'
+require_relative 'env_vars'
 require_relative 'logging'
-require_relative 'path_utils'
 require_relative 'string'
 
 # macOS-specific system operations: login-item app management, softwareupdate
@@ -13,24 +15,19 @@ require_relative 'string'
 # These are macOS-only -- callers should not require this module on Linux or Windows.
 module MacOS
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Note: Logging methods must be qualified (Logging.debug, Logging.warn, etc.)
   # because 'include Logging' + 'extend self' doesn't make included methods
   # available as module methods.
 
-  # Filesystem root as a Pathname object. Use for joining system paths that should
-  # be resolved from the filesystem root.
-  #
-  # @example
-  #   MacOS::ROOT.join('usr', 'bin', 'defaults')  # => Pathname('/usr/bin/defaults')
-  ROOT = Pathname.new(File::SEPARATOR).freeze
-
   # macOS system command paths (absolute paths for reliability in cron/non-interactive contexts)
-  DEFAULTS_CMD = ROOT.join('usr', 'bin', 'defaults').to_s.freeze
-  DU_CMD = ROOT.join('usr', 'bin', 'du').to_s.freeze
-  OSASCRIPT_CMD = ROOT.join('usr', 'bin', 'osascript').to_s.freeze
-  PLUTIL_CMD = ROOT.join('usr', 'bin', 'plutil').to_s.freeze
-  ZSH_CMD = ROOT.join('bin', 'zsh').to_s.freeze
+  DEFAULTS_CMD = Core::ROOT.join('usr', 'bin', 'defaults').to_s.freeze
+  DU_CMD = Core::ROOT.join('usr', 'bin', 'du').to_s.freeze
+  OSASCRIPT_CMD = Core::ROOT.join('usr', 'bin', 'osascript').to_s.freeze
+  PLUTIL_CMD = Core::ROOT.join('usr', 'bin', 'plutil').to_s.freeze
+  ZSH_CMD = Core::ROOT.join('bin', 'zsh').to_s.freeze
 
   # Login-item apps that are killed before defaults writes and restarted after.
   # Keep in sync with Brewfile setup_login_items_script entries and
@@ -153,10 +150,10 @@ module MacOS
 
     outdated_raw, = Open3.capture3('brew', 'outdated', '--greedy')
     outdated = outdated_raw.lines
-                           .reject { |l| l.strip.empty? || l.match?(/homebrew|Downloading/i) }
+                           .reject { |l| nil_or_empty?(l.strip) || l.match?(/homebrew|Downloading/i) }
                            .map(&:strip)
 
-    return '' if outdated.empty?
+    return '' if nil_or_empty?(outdated)
 
     Logging.warn "Found outdated software needing manual update: #{outdated.join(', ').yellow}"
     outdated.join(', ')
