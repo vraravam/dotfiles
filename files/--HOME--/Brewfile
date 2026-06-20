@@ -60,6 +60,7 @@ cask 'iterm2'
 
 # FIRST_INSTALL: While re-imaging the OS or setting up for the first time, install only the bare minimum apps/utilities above this line so that the rest of the backup restoration can proceed faster.
 
+tap 'vorssaint/tap'
 tap 'xykong/tap'
 
 # formulae pulled in for advanced configs (these are optional, but still recommended)
@@ -79,12 +80,10 @@ brew 'tlrc'
 
 cask 'clocker', postinstall: "\"#{setup_login_items_script}\" -a 'Clocker'"
 cask 'dbeaver-community'
-cask 'dockdoor', postinstall: "\"#{setup_login_items_script}\" -a 'Dockdoor'"
 cask 'drawio'
 cask 'firefox@nightly' #, greedy: true
 cask 'flux-markdown', postinstall: 'qlmanage -r'
 cask 'google-chrome@beta'
-cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'" if ::OS::Mac::version >= 14 && ::OS::Mac::version < 27
 cask 'keepassxc@beta'
 cask 'keycastr', postinstall: "\"#{setup_login_items_script}\" -a 'Keycastr'"
 cask 'keyclu', postinstall: "\"#{setup_login_items_script}\" -a 'KeyClu'" if is_arm
@@ -94,7 +93,8 @@ cask 'protonvpn' # , postinstall: "\"#{setup_login_items_script}\" -a 'ProtonVPN
 cask 'rancher' # if ::OS::Mac::version < 26
 cask 'sol', postinstall: "\"#{setup_login_items_script}\" -a 'Sol'"
 cask 'shortcat', postinstall: "\"#{setup_login_items_script}\" -a 'Shortcat'"
-cask 'stats', postinstall: "\"#{setup_login_items_script}\" -a 'Stats'"
+cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'" if ::OS::Mac::version >= 14 && ::OS::Mac::version < 27
+cask 'vorssaint', postinstall: "\"#{setup_login_items_script}\" -a 'Vorssaint'"
 cask 'zed@preview',
   postinstall: "ln -sf '/Applications/Zed Preview.app/Contents/MacOS/cli' \"${HOMEBREW_PREFIX}/bin/zed\""
 cask 'zen@twilight'
@@ -107,6 +107,10 @@ cask 'zoom'
 brew 'ollama', link: true, restart_service: :changed
 # brew 'omlx', restart_service: :changed if is_arm
 brew 'opencode'
+
+# These have been replaced with Vorssaint. Once I am fully satisfied, I will remove these references
+# cask 'dockdoor', postinstall: "\"#{setup_login_items_script}\" -a 'Dockdoor'"
+# cask 'stats', postinstall: "\"#{setup_login_items_script}\" -a 'Stats'"
 
 # brew 'mas'
 # mas 'PDFgear', id: 6469021132

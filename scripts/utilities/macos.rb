@@ -32,18 +32,20 @@ module MacOS
   # Login-item apps that are killed before defaults writes and restarted after.
   # Keep in sync with Brewfile setup_login_items_script entries and
   # defaults-write login-key sections in osx-defaults.sh.
+  # TODO: Duplicated in .aliases and macos.rb - need to find a way to have only 1 copy
   LOGIN_ITEM_APPS = [
     'Clocker',   # startAtLogin = true (com.abhishek.Clocker)
-    'DockDoor',  # login item via Brewfile setup_login_items_script (SMAppService)
+    # 'DockDoor',  # login item via Brewfile setup_login_items_script (SMAppService)
     'KeyCastr',  # login item via Brewfile setup_login_items_script (SMAppService)
     'KeyClu',    # launchAtLogin = true (com.0804Team.KeyClu)
     'Keybase',   # login item via Brewfile setup_login_items_script (SMAppService)
-    'Maccy',     # login item via Brewfile setup_login_items_script (SMAppService)
-    'Moom',      # Start Moom at login = true (com.manytricks.Moom)
+    'Mechvibes',  # login item via Brewfile setup_login_items_script (SMAppService)
     'ProtonVPN', # login item via Brewfile setup_login_items_script (SMAppService)
+    'Shortcat',   # login item via Brewfile setup_login_items_script (SMAppService)
     'Sol',       # login item via Brewfile setup_login_items_script (SMAppService)
-    'Stats',     # LaunchAtLoginNext = true (eu.exelban.Stats)
-    'Thaw'       # login item via Brewfile setup_login_items_script (SMAppService)
+    # 'Stats',     # LaunchAtLoginNext = true (eu.exelban.Stats)
+    'Thaw',      # login item via Brewfile setup_login_items_script (SMAppService)
+    'Vorssaint', # login item via Brewfile setup_login_items_script (SMAppService)
   ].freeze
 
   # Returns the current wall-clock time formatted as 'YYYY-MM-DD HH:MM:SS',

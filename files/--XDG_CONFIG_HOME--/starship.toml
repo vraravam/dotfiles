@@ -197,7 +197,7 @@ vimcmd_symbol = "[❮](bold green)"
 # Dirty state: shown when `git status --porcelain` produces any output
 [custom.git_dirty_sep]
 command = "true"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
 format = "[\uE0B0]($style)"
 style = "fg:blue bg:yellow"
 ignore_timeout = true
@@ -208,10 +208,10 @@ branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 branch=$(printf '%.32s' "$branch")
 [ ${#branch} -eq 32 ] && branch="${branch}…"
 porcelain=$(git --no-optional-locks status --porcelain 2>/dev/null)
-staged=$(printf '%s\n' "$porcelain" | grep -c "^[MADRC]" || true)
-modified=$(printf '%s\n' "$porcelain" | grep -c "^.M\\| M" || true)
-untracked=$(printf '%s\n' "$porcelain" | grep -c "^??" || true)
-stashed=$(git stash list 2>/dev/null | grep -c . || true)
+staged=$(printf '%s\n' "$porcelain" | /usr/bin/grep -c "^[MADRC]" || true)
+modified=$(printf '%s\n' "$porcelain" | /usr/bin/grep -c "^.M\\| M" || true)
+untracked=$(printf '%s\n' "$porcelain" | /usr/bin/grep -c "^??" || true)
+stashed=$(git stash list 2>/dev/null | /usr/bin/grep -c . || true)
 ahead=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo 0)
 behind=$(git rev-list --count HEAD..@{u} 2>/dev/null || echo 0)
 status_str=""
@@ -224,7 +224,7 @@ status_str=""
 [ "$behind" -gt 0 ] && [ "$ahead" -eq 0 ] && status_str="${status_str}⇣${behind}"
 [ -n "$status_str" ] && printf ' \uf126 %s %s \n' "$branch" "$status_str" || printf ' \uf126 %s \n' "$branch"
 """
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
 format = "[$output]($style)"
 style = "bg:yellow fg:black"
 ignore_timeout = true
@@ -232,7 +232,7 @@ ignore_timeout = true
 # Clean state: shown when inside a git repo but working tree is clean
 [custom.git_clean_sep]
 command = "true"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
 format = "[\uE0B0]($style)"
 style = "fg:blue bg:green"
 ignore_timeout = true
@@ -250,7 +250,7 @@ status_str=""
 [ "$behind" -gt 0 ] && [ "$ahead" -eq 0 ] && status_str=" ⇣${behind}"
 printf ' \uf126 %s%s \n' "$branch" "$status_str"
 """
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
 format = "[$output]($style)"
 style = "bg:green fg:black"
 ignore_timeout = true
@@ -260,14 +260,14 @@ ignore_timeout = true
 # Two variants to match the dirty (yellow) or clean (green) git segment background.
 [custom.git_size]
 command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} /usr/bin/du -sh {}/.git 2>/dev/null | cut -f1"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
 format = "[ $output]($style)"
 style = "bg:green fg:black"
 ignore_timeout = true
 
 [custom.git_size_dirty]
 command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} /usr/bin/du -sh {}/.git 2>/dev/null | cut -f1"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
 format = "[ $output]($style)"
 style = "bg:yellow fg:black"
 ignore_timeout = true
@@ -275,14 +275,14 @@ ignore_timeout = true
 # Trailing powerline separators (color→terminal default)
 [custom.git_clean_end]
 command = "true"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
 format = "[\uE0B0]($style)"
 style = "fg:green"
 ignore_timeout = true
 
 [custom.git_dirty_end]
 command = "true"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | grep -q ."
+when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
 format = "[\uE0B0]($style)"
 style = "fg:yellow"
 ignore_timeout = true

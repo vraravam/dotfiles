@@ -239,7 +239,7 @@
   # Pulls all remotes; if the repo is shallow, unshallows it first. Accepts extra git-pull flags.
   # Usage: git pull-unshallow [<extra-flags>]
   # Example: git pull-unshallow --rebase
-  pull-unshallow = "!sh -c 'git rev-parse --is-shallow-repository | grep -q true && git pull --all --unshallow \"$@\" || git pull --all \"$@\"' --"
+  pull-unshallow = "!sh -c 'git rev-parse --is-shallow-repository | /usr/bin/grep -q true && git pull --all --unshallow \"$@\" || git pull --all \"$@\"' --"
 
   # Fetches all remotes, then rebases onto @{u} only if the working tree is clean
   # (no uncommitted or staged changes). If the tree is dirty, skips the rebase,
@@ -252,7 +252,7 @@
   # Fetches all remotes; if the repo is shallow, unshallows it first. Accepts extra git-fetch flags.
   # Usage: git fetch-unshallow [<extra-flags>]
   # Example: git fetch-unshallow --tags
-  fetch-unshallow = "!sh -c 'git rev-parse --is-shallow-repository | grep -q true && git fetch --all --unshallow \"$@\" || git fetch --all \"$@\"' --"
+  fetch-unshallow = "!sh -c 'git rev-parse --is-shallow-repository | /usr/bin/grep -q true && git fetch --all --unshallow \"$@\" || git fetch --all \"$@\"' --"
 
   # Prints the name of the current remote repo (assumes remote named 'origin').
   # Usage: git repo [<dir>]
@@ -269,7 +269,7 @@
   # If no upstream remote exists, rebases from origin instead (gracefully falls back for non-fork repos).
   # Callers (e.g. run-all.rb in cron) receive a non-zero exit and surface a warning on dirty tree.
   # Usage: git upreb [<dir>]
-  upreb = "!f() { git -C \"${1:-.}\" fetch --all; if git -C \"${1:-.}\" diff --quiet && git -C \"${1:-.}\" diff --cached --quiet; then git -C \"${1:-.}\" branch -u \"origin/$(git -C \"${1:-.}\" br)\"; if git -C \"${1:-.}\" remote | grep -x upstream &>/dev/null; then git -C \"${1:-.}\" rebase \"upstream/$(git -C \"${1:-.}\" br)\" --no-verify && git -C \"${1:-.}\" fetch upstream --tags; else git -C \"${1:-.}\" rebase \"origin/$(git -C \"${1:-.}\" br)\" --no-verify; fi && git -C \"${1:-.}\" push --progress --no-verify && git -C \"${1:-.}\" push --progress --tags --no-verify && git -C \"${1:-.}\" siu && git -C \"${1:-.}\" dlb; else printf 'Skipping rebase/push in %s: working tree has uncommitted changes. Run manually.\n' \"${1:-.}\" >&2; exit 1; fi; }; f"
+  upreb = "!f() { git -C \"${1:-.}\" fetch --all; if git -C \"${1:-.}\" diff --quiet && git -C \"${1:-.}\" diff --cached --quiet; then git -C \"${1:-.}\" branch -u \"origin/$(git -C \"${1:-.}\" br)\"; if git -C \"${1:-.}\" remote | /usr/bin/grep -x upstream &>/dev/null; then git -C \"${1:-.}\" rebase \"upstream/$(git -C \"${1:-.}\" br)\" --no-verify && git -C \"${1:-.}\" fetch upstream --tags; else git -C \"${1:-.}\" rebase \"origin/$(git -C \"${1:-.}\" br)\" --no-verify; fi && git -C \"${1:-.}\" push --progress --no-verify && git -C \"${1:-.}\" push --progress --tags --no-verify && git -C \"${1:-.}\" siu && git -C \"${1:-.}\" dlb; else printf 'Skipping rebase/push in %s: working tree has uncommitted changes. Run manually.\n' \"${1:-.}\" >&2; exit 1; fi; }; f"
 
   # Prunes the local copy of remote-tracking branches deleted on origin.
   # Note: fetch.prune=true makes this a no-op after any fetch — useful as an explicit
@@ -334,11 +334,11 @@
 
   # Lists the 100 biggest objects ever stored in the repo (including deleted files).
   # Usage: git big
-  big = "!sh -c 'git rev-list --objects --all | grep \"$(git verify-pack -v \"$(git rev-parse --show-toplevel)/.git/objects/pack/*.idx\" | sort -k 3 -n | tail -100 | awk \"{print \\$1}\")\"'"
+  big = "!sh -c 'git rev-list --objects --all | /usr/bin/grep \"$(git verify-pack -v \"$(git rev-parse --show-toplevel)/.git/objects/pack/*.idx\" | sort -k 3 -n | tail -100 | awk \"{print \\$1}\")\"'"
 
   # Deletes all local branches whose remote-tracking counterpart has been deleted (gone).
   # Usage: git dlb [<dir>]
-  dlb = "!f() { git -C \"${1:-.}\" branch -vv | grep ': gone]' | awk '{print $1}' | xargs -r git -C \"${1:-.}\" branch -D; }; f"
+  dlb = "!f() { git -C \"${1:-.}\" branch -vv | /usr/bin/grep ': gone]' | awk '{print $1}' | xargs -r git -C \"${1:-.}\" branch -D; }; f"
 
   # Reports whether the specified remote branch has had any commits in the past 10 days.
   # Prints a warning if the branch appears stale (no recent commits).
@@ -366,7 +366,7 @@
 
   # [WIP/DUPLICATE] Like 'lc' but uses 'git log' so a --since date filter can be applied.
   # Usage: git lc2
-  lc2 = "!git branch -r --sort=-committerdate | grep -Ev 'HEAD|master|main' | while IFS= read -r b; do git log --since 4.days --color --format=\"%ci _%C(magenta)%cr %C(bold cyan)${b}%Creset %s %C(bold blue)<%an>%Creset\" \"${b}\" | head -n 1; done | sort -r | cut -d_ -f2-"
+  lc2 = "!git branch -r --sort=-committerdate | /usr/bin/grep -Ev 'HEAD|master|main' | while IFS= read -r b; do git log --since 4.days --color --format=\"%ci _%C(magenta)%cr %C(bold cyan)${b}%Creset %s %C(bold blue)<%an>%Creset\" \"${b}\" | head -n 1; done | sort -r | cut -d_ -f2-"
 
   # Shows a compact colorful graph log including trailer refs (e.g. Jira ticket refs).
   # Usage: git lt

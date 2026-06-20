@@ -143,6 +143,7 @@ com.apple.MCX
 com.apple.mediaaccessibility
 com.apple.mediaanalysisd
 com.apple.MediaPlayer.RemotePlayerService
+com.apple.MenuBarAgent
 com.apple.menuextra.battery
 com.apple.menuextra.clock
 com.apple.Messages
@@ -341,6 +342,7 @@ com.titanium.OnyX.update
 com.usebruno.app
 com.utmapp.UTM
 com.visualstudio.code.oss
+com.vorssaint.utils
 com.vscodium.VSCodiumInsiders
 com.xykong.Markdown.QuickLook
 dev.zed.Zed

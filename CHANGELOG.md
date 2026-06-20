@@ -4,6 +4,18 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.1.30
+
+* *[files/--HOME--/.aliases]* Extracted `trust_brewfile_items` utility method that can be used to trust formulae/casks which are not yet trusted. Removed deprecated `--cleanup` option from `brew bundle install`.
+
+* *[files/--HOME--/Brewfile]* Replaced `Stats` and `DockDoor` with `Vorssaint`.
+
+#### Adopting these changes
+
+* Restart terminal after successful conflict resolution.
+
+---
+
 ### 3.1.29
 
 #### Fix 26 critical/high-priority issues: Core modules, ERR traps, PlistBuddy atomicity

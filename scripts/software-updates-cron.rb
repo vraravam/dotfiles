@@ -154,7 +154,7 @@ module SoftwareUpdatesCron
       system('brew', 'update') || true
       # 'brew bundle check' exits 0 when everything is installed -- skip the full
       # bundle install in that case to avoid re-checking every formula every hour.
-      system('brew', 'bundle', 'check') || system('brew', 'bundle')
+      system('brew', 'bundle', 'check', '-v') || system('brew', 'bundle', 'install', '-q')
     end
     _perform_update('mise plugins', 'mise') do
       # mise binary is upgraded using homebrew

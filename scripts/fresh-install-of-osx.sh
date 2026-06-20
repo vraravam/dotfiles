@@ -111,7 +111,7 @@ _download_and_source_shellrc() {
 
     # Validate download: check that file is non-empty and contains the re-source guard
     # function (basic smoke test for successful download vs truncated/corrupted response).
-    if [[ ! -s "${HOME}/.shellrc" ]] || ! grep -q 'is_shellrc_sourced' "${HOME}/.shellrc"; then
+    if [[ ! -s "${HOME}/.shellrc" ]] || ! /usr/bin/grep -q 'is_shellrc_sourced' "${HOME}/.shellrc"; then
       echo "ERROR: Downloaded .shellrc appears corrupted or empty" >&2
       exit 1
     fi
@@ -286,20 +286,8 @@ _install_homebrew() {
   # Ensure homebrew's environment variables are set correctly for this session.
   eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
 
-  # Trust all custom taps defined in the Brewfile before running brew bundle.
-  # This ensures taps are trusted before any formulae/casks from those taps are
-  # installed, which is required if HOMEBREW_REQUIRE_TAP_TRUST is enforced.
-  # Use 'brew bundle list --taps' to extract tap names from Brewfile, skip homebrew/* taps.
-  if command_exists brew; then
-    local -a custom_taps
-    # Read tap names into array, excluding homebrew/* taps (core/cask don't need trusting)
-    custom_taps=($(brew bundle list --taps --file="${HOMEBREW_BUNDLE_FILE}" | /usr/bin/grep -v "^homebrew/"))
-
-    if is_non_empty_array custom_taps; then
-      info "Trusting custom taps: '$(yellow "${custom_taps[*]}")'"
-      brew trust --tap -q "${custom_taps[@]}" || true  # Don't fail if trust fails
-    fi
-  fi
+  # Trust any already-untrusted items from already-installed taps
+  trust_brewfile_items
 
   # Taps are no longer used in the FIRST_INSTALL base Brewfile section.
   # The tap commands below are kept for reference in case a tap is needed again.
@@ -317,9 +305,21 @@ _install_homebrew() {
     local brewfile_content
     brewfile_content="$(sed "/^[^#].*FIRST_INSTALL/q" "${HOMEBREW_BUNDLE_FILE}")"
     brewfile_content="${brewfile_content%$'\n'*FIRST_INSTALL*}"  # strip the FIRST_INSTALL guard line itself
-    brew bundle check || brew bundle --file=- <<<"${brewfile_content}" || _brew_bundle_exit=$?
+    # First pass: install taps and already-trusted formulae/casks
+    # Suppress stderr since untrusted-tap errors are expected and fixed by second pass
+    brew bundle check -v 2>/dev/null || brew bundle install -q --file=- <<<"${brewfile_content}" 2>/dev/null || _brew_bundle_exit=$?
+    # Trust any newly-untrusted items from newly-tapped taps
+    trust_brewfile_items
+    # Second pass: install newly-trusted formulae/casks (idempotent if nothing new to trust)
+    brew bundle check -v || brew bundle install -q --file=- <<<"${brewfile_content}" || _brew_bundle_exit=$?
   else
-    brew bundle check || brew bundle || _brew_bundle_exit=$?
+    # First pass: install taps and already-trusted formulae/casks
+    # Suppress stderr since untrusted-tap errors are expected and fixed by second pass
+    brew bundle check -v 2>/dev/null || brew bundle install -q 2>/dev/null || _brew_bundle_exit=$?
+    # Trust any newly-untrusted items from newly-tapped taps
+    trust_brewfile_items
+    # Second pass: install newly-trusted formulae/casks (idempotent if nothing new to trust)
+    brew bundle check -v || brew bundle install -q || _brew_bundle_exit=$?
   fi
 
   if [[ "${_brew_bundle_exit}" -eq 0 ]]; then
