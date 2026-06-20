@@ -3,6 +3,7 @@
 
 require 'open3'
 
+require_relative 'core'
 require_relative 'env_vars'
 require_relative 'logging'
 require_relative 'path_utils'
@@ -12,6 +13,8 @@ require_relative 'path_utils'
 # and by fresh-install-of-osx.sh (_ensure_keybase_logged_in delegates to ensure_logged_in).
 module Keybase
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Note: Logging methods must be qualified (Logging.debug, Logging.error, etc.)
   # because 'include Logging' + 'extend self' doesn't make included methods

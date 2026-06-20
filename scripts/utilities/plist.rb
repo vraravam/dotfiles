@@ -5,6 +5,7 @@ require 'pathname'
 require 'rexml/document'
 require 'set'
 
+require_relative 'core'
 require_relative 'macos'
 
 # Plist read/write helpers for macOS preference management.
@@ -18,6 +19,8 @@ require_relative 'macos'
 # <date> types).
 module Plist
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # ---------------------------------------------------------------------------
   # Defaults export / import
@@ -30,6 +33,7 @@ module Plist
   # @param file [String, Pathname] Destination file path.
   # @return [Boolean]
   def export_domain(domain, file)
+    return false if nil_or_empty?(domain)
     file_str = file.is_a?(Pathname) ? file.to_s : file
     return false unless system(MacOS::DEFAULTS_CMD, 'export', domain, file_str, out: File::NULL, err: File::NULL)
     # Convert binary plist to XML for human-readable git diffs.
@@ -44,6 +48,7 @@ module Plist
   # @param file [String, Pathname] Source XML plist file path.
   # @return [Boolean]
   def import_domain(domain, file)
+    return false if nil_or_empty?(domain)
     file_str = file.is_a?(Pathname) ? file.to_s : file
     system(MacOS::DEFAULTS_CMD, 'import', domain, file_str, out: File::NULL, err: File::NULL)
   end

@@ -5,6 +5,7 @@ require 'open3'
 require 'pathname'
 
 require_relative 'core'
+require_relative 'logging'
 require_relative 'macos'
 
 # Command and path manipulation utilities for Ruby scripts.

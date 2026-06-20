@@ -26,6 +26,12 @@
 _SCRIPT_NAME="${0:t}"
 source "${HOME}/.aliases"
 
+# ERR trap for catastrophic failures (missing binaries, corrupted plists, etc.).
+# Individual `defaults write` / `killall` failures are expected (OS version
+# incompatibility) and handled via `|| true`, but this trap catches unexpected
+# failures that should not be silently ignored.
+trap '_record_error "Unexpected failure in osx-defaults.sh at line ${LINENO}"' ERR
+
 usage() {
   print_usage "${_SCRIPT_NAME}" \
     "$(yellow '[-s]') --> $(purple '-s') (optional) Run in silent/auto mode without interactive prompts"
@@ -89,6 +95,32 @@ _set_trackpad_gesture() {
   defaults write com.apple.AppleMultitouchTrackpad "${key}" "${type}" "${value}"
 }
 
+# Atomically sets a PlistBuddy key value using Set-or-Add pattern.
+# Tries Set first (updates existing key), falls back to Add (creates new key).
+# This avoids Delete+Add which leaves incomplete state if interrupted between operations.
+#
+# Arguments:
+#   $1 - plist file path
+#   $2 - key path (e.g., ":'Window Settings':'Clear Dark':rowCount")
+#   $3 - value to set
+#   $4 - type for Add command (e.g., "integer", "bool", "string") - optional for Set
+_plist_set_or_add() {
+  local plist="${1:?_plist_set_or_add: plist path required}"
+  local key="${2:?_plist_set_or_add: key path required}"
+  local value="${3:?_plist_set_or_add: value required}"
+  local type="${4:-}"  # Only needed for Add, not Set
+
+  if /usr/libexec/PlistBuddy -c "Set ${key} ${value}" "${plist}" 2>/dev/null; then
+    return 0
+  else
+    if is_zero_string "${type}"; then
+      error "_plist_set_or_add: type required for Add when Set fails (key: ${key})"
+      return 1
+    fi
+    /usr/libexec/PlistBuddy -c "Add ${key} ${type} ${value}" "${plist}"
+  fi
+}
+
 main() {
   auto='N'
   local _current_section='(init)'
@@ -137,6 +169,7 @@ main() {
   # be safely force-quit (Terminal, iTerm, Zoom, ProtonVPN) are left to the
   # user_action prompts at the end.
   # The canonical app list lives in _MACOS_LOGIN_ITEM_APPS (.aliases § 3n).
+  info "Temporarily stopping login-item apps (will auto-restart on script exit) to prevent them from overwriting settings"
   kill_login_item_apps
   trap 'restart_login_item_apps; resume_softwareupdate_schedule; _decrement_script_depth' EXIT
 
@@ -1135,11 +1168,9 @@ main() {
     local profile
     for profile in "${profile_array[@]}"; do
       # Profile names may contain spaces; quote them in PlistBuddy paths using single quotes.
-      # Delete before Add is idempotent: suppress errors when the entry doesn't exist yet.
-      /usr/libexec/PlistBuddy -c "Delete :'Window Settings':'${profile}':rowCount" "${HOME}/Library/Preferences/com.apple.Terminal.plist" 2>/dev/null || true
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':rowCount integer 30" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
-      /usr/libexec/PlistBuddy -c "Delete :'Window Settings':'${profile}':columnCount" "${HOME}/Library/Preferences/com.apple.Terminal.plist" 2>/dev/null || true
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':columnCount integer 120" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
+      local plist="${HOME}/Library/Preferences/com.apple.Terminal.plist"
+      _plist_set_or_add "${plist}" ":'Window Settings':'${profile}':rowCount" "30" "integer"
+      _plist_set_or_add "${plist}" ":'Window Settings':'${profile}':columnCount" "120" "integer"
       # Profiles > Text > Font. Terminal stores Font as NSArchiver binary data, so osascript is used
       # instead of PlistBuddy -- it sets font name/size as first-class properties on the settings set.
       # PostScript name: MesloLGSNF-Italic (from MesloLGS Nerd Font Italic).
@@ -1147,19 +1178,19 @@ main() {
       osascript -e "tell application \"Terminal\" to set font size of settings set \"${profile}\" to 13"
       # Profiles > Keyboard > "Use Option as Meta key": makes Option+B/F send \033b/\033f for readline
       # word navigation. Option+arrow keys still send \033[1;9D/C -- those need bindkey in .zshrc.
-      /usr/libexec/PlistBuddy -c "Delete :'Window Settings':'${profile}':useOptionAsMetaKey" "${HOME}/Library/Preferences/com.apple.Terminal.plist" 2>/dev/null || true
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':useOptionAsMetaKey bool true" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
+      _plist_set_or_add "${plist}" ":'Window Settings':'${profile}':useOptionAsMetaKey" "true" "bool"
       # Profiles > Shell > "When the shell exits": 0=don't close, 1=close if exited cleanly, 2=always close.
-      /usr/libexec/PlistBuddy -c "Delete :'Window Settings':'${profile}':shellExitAction" "${HOME}/Library/Preferences/com.apple.Terminal.plist" 2>/dev/null || true
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':shellExitAction integer 1" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
-      /usr/libexec/PlistBuddy -c "Delete :'Window Settings':'${profile}':noWarnProcesses" "${HOME}/Library/Preferences/com.apple.Terminal.plist" 2>/dev/null || true
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses array" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:0:ProcessName string screen" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:1:ProcessName string tmux" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:2:ProcessName string rlogin" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:3:ProcessName string ssh" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:4:ProcessName string slogin" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:5:ProcessName string telnet" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
+      _plist_set_or_add "${plist}" ":'Window Settings':'${profile}':shellExitAction" "1" "integer"
+      # Special handling for noWarnProcesses array: must delete and recreate because Set doesn't work on arrays.
+      # This is inherently non-atomic but unavoidable -- PlistBuddy cannot atomically update array contents.
+      /usr/libexec/PlistBuddy -c "Delete :'Window Settings':'${profile}':noWarnProcesses" "${plist}" 2>/dev/null || true
+      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses array" "${plist}"
+      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:0:ProcessName string screen" "${plist}"
+      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:1:ProcessName string tmux" "${plist}"
+      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:2:ProcessName string rlogin" "${plist}"
+      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:3:ProcessName string ssh" "${plist}"
+      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:4:ProcessName string slogin" "${plist}"
+      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:5:ProcessName string telnet" "${plist}"
     done
   fi
 
@@ -1339,35 +1370,23 @@ main() {
     # /usr/libexec/PlistBuddy -c "Print :'New Bookmarks':0:'Jobs to Ignore'" "${_iterm_plist}"
     # Ensure the array exists; suppress error if it already does (idempotent).
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks' array" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:Rows" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:Rows integer 48" "${_iterm_plist}"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:Columns" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:Columns integer 160" "${_iterm_plist}"
-
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Silence Bell'" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Silence Bell' bool false" "${_iterm_plist}"
-
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Unlimited Scrollback'" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Unlimited Scrollback' bool true" "${_iterm_plist}"
+    # Atomic Set-or-Add pattern via helper function (see _plist_set_or_add definition above).
+    # Arrays must still use Delete+Add since PlistBuddy cannot atomically set array contents.
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:Rows" "48" "integer"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:Columns" "160" "integer"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Silence Bell'" "false" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Unlimited Scrollback'" "true" "bool"
 
     # Profiles > General > Initial directory: 'Recycle' = reuse previous session's directory.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Custom Directory'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Custom Directory' string 'Recycle'" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Custom Directory'" "Recycle" "string"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Enable Progress Bars'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Show Status Bar'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Use Cursor Guide'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Visual Bell'" "true" "bool"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Enable Progress Bars'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Enable Progress Bars' bool true" "${_iterm_plist}"
-
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Show Status Bar'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Show Status Bar' bool true" "${_iterm_plist}"
-
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Cursor Guide'" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Cursor Guide' bool true" "${_iterm_plist}"
-
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Visual Bell'" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Visual Bell' bool true" "${_iterm_plist}"
-
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Jobs to Ignore'" "${_iterm_plist}"
+    # Jobs to Ignore array: must use Delete+Add since PlistBuddy cannot atomically update array contents.
+    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Jobs to Ignore'" "${_iterm_plist}" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore' array" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':0 string screen" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':1 string tmux" "${_iterm_plist}"
@@ -1375,129 +1394,80 @@ main() {
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':3 string ssh" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':4 string slogin" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':5 string telnet" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':5 string zsh" "${_iterm_plist}"
+    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Jobs to Ignore':6 string zsh" "${_iterm_plist}"
 
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Minimum Contrast'" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Minimum Contrast' integer 0" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Minimum Contrast'" "0" "integer"
 
     # Profiles > Text
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'ASCII Anti Aliased'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'ASCII Anti Aliased' bool true" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Allow Title Setting'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Allow Title Setting' bool true" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Ambiguous Double Width'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Ambiguous Double Width' bool false" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Background Image Location'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Background Image Location' string ''" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Blinking Cursor'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Blinking Cursor' bool false" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Blur'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Blur' bool false" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Draw Powerline Glyphs'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Draw Powerline Glyphs' bool true" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'ASCII Anti Aliased'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Allow Title Setting'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Ambiguous Double Width'" "false" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Background Image Location'" "''" "string"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Blinking Cursor'" "false" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Blur'" "false" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Draw Powerline Glyphs'" "true" "bool"
     # Horizontal and Vertical Spacing: multipliers relative to font's natural spacing (1.0 = default).
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Horizontal Spacing'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Horizontal Spacing' real 1" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Non Ascii Font'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Non Ascii Font' string 'Monaco 12'" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Non-ASCII Anti Aliased'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Non-ASCII Anti Aliased' bool true" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Horizontal Spacing'" "1" "real"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Non Ascii Font'" "'Monaco 12'" "string"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Non-ASCII Anti Aliased'" "true" "bool"
     # Keeps background color opaque when transparency > 0; only cursor/text area is affected.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Only The Default BG Color Uses Transparency'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Only The Default BG Color Uses Transparency' bool true" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Transparency'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Transparency' real 0" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Bold Font'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Bold Font' bool true" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Bright Bold'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Bright Bold' bool true" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Italic Font'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Italic Font' bool true" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Non-ASCII Font'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Non-ASCII Font' bool false" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Vertical Spacing'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Vertical Spacing' real 1" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Only The Default BG Color Uses Transparency'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Transparency'" "0" "real"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Use Bold Font'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Use Bright Bold'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Use Italic Font'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Use Non-ASCII Font'" "false" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Vertical Spacing'" "1" "real"
 
     # Profiles > Terminal
     # 4 = UTF-8 encoding.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Character Encoding'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Character Encoding' integer 4" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Custom Locale'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Custom Locale' string 'en_US.UTF-8'" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Disable Printing'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Disable Printing' bool true" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Idle Code'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Idle Code' integer 0" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Load Shell Integration Automatically'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Load Shell Integration Automatically' bool true" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Mouse Reporting'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Mouse Reporting' bool true" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Character Encoding'" "4" "integer"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Custom Locale'" "'en_US.UTF-8'" "string"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Disable Printing'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Idle Code'" "0" "integer"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Load Shell Integration Automatically'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Mouse Reporting'" "true" "bool"
     # 0 scrollback lines with Unlimited Scrollback = true means no hard cap.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Scrollback Lines'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Scrollback Lines' integer 0" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Send Code When Idle'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Send Code When Idle' bool false" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Scrollback Lines'" "0" "integer"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Send Code When Idle'" "false" "bool"
     # 2 = set locale environment variables automatically.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Set Local Environment Vars'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Set Local Environment Vars' integer 2" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Terminal Type'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Terminal Type' string 'xterm-256color'" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Set Local Environment Vars'" "2" "integer"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Terminal Type'" "'xterm-256color'" "string"
 
     # Profiles > Window
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Disable Window Resizing'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Disable Window Resizing' bool true" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Disable Window Resizing'" "true" "bool"
     # 1 = use profile name as window/tab icon label.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Icon'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Icon' integer 1" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Icon'" "1" "integer"
     # -1 = open new sessions on the screen the window is currently on.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Screen'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Screen' integer -1" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Sync Title'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Sync Title' bool false" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Screen'" "-1" "integer"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Sync Title'" "false" "bool"
     # 1 = show profile name as the title component.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Title Components'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Title Components' integer 1" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Title Components'" "1" "integer"
     # 0 = normal (non-fullscreen, non-maximized) window type.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Window Type'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Window Type' integer 0" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Window Type'" "0" "integer"
 
     # Profiles > General / Session
     # BM Growl: post a notification-center alert when bell fires in a background tab.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'BM Growl'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'BM Growl' bool true" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Close Sessions On End'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Close Sessions On End' bool true" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Command'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Command' string ''" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Custom Tab Title'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Custom Tab Title' string ''" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Default Bookmark'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Default Bookmark' string 'No'" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Description'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Description' string 'Default'" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'BM Growl'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Close Sessions On End'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Command'" "''" "string"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Custom Tab Title'" "''" "string"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Default Bookmark'" "'No'" "string"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Description'" "'Default'" "string"
     # Flashing Bell: flash the screen on bell (distinct from Visual Bell which uses a badge).
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Flashing Bell'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Flashing Bell' bool true" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Name'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Name' string 'Default'" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Open Toolbelt'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Open Toolbelt' bool false" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Flashing Bell'" "true" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Name'" "'Default'" "string"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Open Toolbelt'" "false" "bool"
     # 2 = always prompt before closing if a job other than those in 'Jobs to Ignore' is running.
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Prompt Before Closing 2'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Prompt Before Closing 2' integer 2" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Shortcut'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Shortcut' string ''" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Use Custom Tab Title'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Use Custom Tab Title' bool false" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Working Directory'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Working Directory' string '${HOME}'" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Prompt Before Closing 2'" "2" "integer"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Shortcut'" "''" "string"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Use Custom Tab Title'" "false" "bool"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Working Directory'" "'${HOME}'" "string"
 
     # Profiles > Keys -- modifier key behavior for Option keys
     # 0 = normal (do not send escape sequences for Option key combos; rely on Keyboard Map).
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Option Key Sends'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Option Key Sends' integer 0" "${_iterm_plist}"
-    /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Right Option Key Sends'" "${_iterm_plist}" 2>/dev/null || true
-    /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Right Option Key Sends' integer 0" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Option Key Sends'" "0" "integer"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Right Option Key Sends'" "0" "integer"
   fi
 
   # ---------------------------------------------------------------------------

@@ -108,6 +108,14 @@ _download_and_source_shellrc() {
     # Cache-busting: append timestamp to URL and add no-cache headers to ensure we bypass
     # GitHub's CDN cache and intermediate proxies to get the latest version.
     curl "${_cache_bust_headers[@]}" "${_curl_retry_opts[@]}" -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/files/--HOME--/.shellrc?$(/bin/date +%s)" -o "${HOME}/.shellrc"
+
+    # Validate download: check that file is non-empty and contains the re-source guard
+    # function (basic smoke test for successful download vs truncated/corrupted response).
+    if [[ ! -s "${HOME}/.shellrc" ]] || ! grep -q 'is_shellrc_sourced' "${HOME}/.shellrc"; then
+      echo "ERROR: Downloaded .shellrc appears corrupted or empty" >&2
+      exit 1
+    fi
+
     echo "==> Successfully downloaded '${HOME}/.shellrc'"
   else
     # Pre-configured OS: skip downloading; the built-in guard makes the source below a no-op if already loaded.
@@ -169,6 +177,7 @@ _ensure_filevault_is_on() {
   step_start
   section_header "$(yellow 'Verifying FileVault status')"
   if [[ "$(fdesetup isactive)" != 'true' ]]; then
+    user_action "Enable FileVault: System Settings → Privacy & Security → FileVault → Turn On FileVault"
     error 'FileVault is not turned on. Please encrypt your hard disk!'
     exit 1
   fi
@@ -712,10 +721,13 @@ main() {
   step_start
   section_header "$(yellow 'Setup cron jobs')"
   if command_exists recron; then
-    # Remove the backup before calling recron so that if any subsequent step fails the EXIT trap
-    # finds nothing to restore, preventing a stale backup file from persisting across runs.
-    rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
-    recron
+    # Call recron first; only delete backup after successful execution.
+    # This ensures the EXIT trap can still restore the original schedule if recron fails.
+    if recron; then
+      rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
+    else
+      _record_error "recron failed -- original cron schedule preserved in backup"
+    fi
   else
     _record_error "Skipping setting up of cron jobs since '$(purple 'recron')' couldn't be found; Please set it up manually"
   fi
@@ -755,6 +767,10 @@ main() {
   # then send exactly one notification. Exit code is unchanged (0) -- the summary
   # is informational only.
   print_script_summary "${script_start_time}" '** Finished auto installation process **'
+
+  # Remind user of manual steps that cannot be automated
+  user_action "Review System Settings manually: some settings (FileVault, accessibility permissions, notification preferences) require GUI interaction and cannot be automated due to TCC restrictions."
+
   # On FIRST_INSTALL, remind user to unshallow repos to get full history.
   if is_non_zero_string "${FIRST_INSTALL:-}"; then
     user_action "Repositories were cloned shallow (--depth=1) to save time during the first installation process. Run '$(yellow 'all pull-unshallow')' to pull full history."

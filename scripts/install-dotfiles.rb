@@ -21,6 +21,7 @@ require 'fileutils'
 require 'find'
 require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
 
+require_relative 'utilities/core'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/logging'
 require_relative 'utilities/path_utils'
@@ -30,6 +31,8 @@ require_relative 'utilities/string'
 # Returns true on success (zero errors), false if any errors occurred.
 module InstallDotfiles
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # --- Constants ---
   ENV_VAR_REGEX = /--(.*?)--/.freeze # For interpolating environment variables like --VAR--

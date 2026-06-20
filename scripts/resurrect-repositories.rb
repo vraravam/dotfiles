@@ -19,6 +19,7 @@ require 'shellwords'
 require 'yaml'
 
 require_relative 'utilities/collection_processor'
+require_relative 'utilities/core'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
 require_relative 'utilities/logging'
@@ -29,6 +30,8 @@ require_relative 'utilities/path_utils'
 # Returns true/false instead of calling exit().
 module ResurrectRepositories
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Constants
   ORIGIN_NAME = 'origin' # Standard name for the primary remote

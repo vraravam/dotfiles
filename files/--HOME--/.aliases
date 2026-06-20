@@ -378,6 +378,12 @@ _call_ruby_git_workspace() {
   fi
   shift
 
+  # Guard: Ruby must be available (vanilla OS before Homebrew installs it)
+  if ! command_exists ruby; then
+    debug "Ruby not available -- skipping GitWorkspace.${method}"
+    return 0
+  fi
+
   local kwargs_str=""
   if [[ $# -gt 0 ]]; then
     # Build comma-separated list of keyword arguments: key1: value1, key2: value2
@@ -1005,6 +1011,13 @@ _MACOS_LOGIN_ITEM_APPS=(
 #   $1 - method name to call on MacOS module
 _call_ruby_macos() {
   local method="${1:?_call_ruby_macos: method name required}"
+
+  # Guard: Ruby must be available (vanilla OS before Homebrew installs it)
+  if ! command_exists ruby; then
+    debug "Ruby not available -- skipping MacOS.${method}"
+    return 0
+  fi
+
   setup_rubylib
   ruby -e "require 'macos'; MacOS.${method}"
 }

@@ -1234,7 +1234,9 @@ keep_sudo_alive() {
   step_start
   section_header2 "$(yellow 'Keeping sudo alive till this script has finished')"
   sudo -v
-  while true; do has_sudo_credentials; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+  # || true prevents has_sudo_credentials return code (1 when credentials expire)
+  # from triggering ERR trap in scripts that source .shellrc with set -E.
+  while true; do has_sudo_credentials || true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
   export KEEP_SUDO_ALIVE_PID=$!
   step_end
 }
@@ -1427,6 +1429,12 @@ _call_ruby_cron() {
     return 1
   fi
   shift
+
+  # Guard: Ruby must be available (vanilla OS before Homebrew installs it)
+  if ! command_exists ruby; then
+    debug "Ruby not available -- skipping Cron.${method}"
+    return 0
+  fi
 
   local args_str=""
   if [[ $# -gt 0 ]]; then

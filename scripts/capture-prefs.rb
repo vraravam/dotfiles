@@ -111,7 +111,7 @@ module CapturePrefs
     domains = _load_domains_list(
       EnvVars::DOTFILES_DIR.join('scripts', 'data', 'capture-prefs-allowed-list.txt'),
       denied
-     )
+    )
 
     if nil_or_empty?(domains)
       Logging.info 'No domains found -- nothing to do.'
@@ -165,12 +165,16 @@ module CapturePrefs
 
     # Post-processing
     if _exporting?
-      GitProcessor.new(dir: EnvVars::HOME) do |git|
-        rel_path = git.relative_path(target_dir)
-        _out, _err, status = git.add(rel_path)
-        Logging.record_warning("Failed to git add '#{target_dir.to_s.cyan}'") unless status.success?
+      begin
+        GitProcessor.new(dir: EnvVars::HOME) do |git|
+          rel_path = git.relative_path(target_dir)
+          _out, _err, status = git.add(rel_path)
+          Logging.record_warning("Failed to git add '#{target_dir.to_s.cyan}'") unless status.success?
+        end
+        Logging.success "Export complete. Staged changes in '#{target_dir.to_s.cyan}'."
+      rescue RuntimeError => e
+        Logging.record_warning "Skipping git add -- #{e.message}"
       end
-      Logging.success "Export complete. Staged changes in '#{target_dir.to_s.cyan}'."
     else
       # Reload system services so imported preferences take effect immediately
       MacOS.reload_macos_prefs
@@ -250,7 +254,7 @@ module CapturePrefs
     running = APPS_NEEDING_RESTART.select do |proc_name, display_name|
       # Skip login-item apps (auto-killed and restarted) and apps not currently running
       !MacOS::LOGIN_ITEM_APPS.include?(display_name) &&
-         system('pgrep', '-xq', proc_name, out: File::NULL, err: File::NULL)
+        system('pgrep', '-xq', proc_name, out: File::NULL, err: File::NULL)
     end.values.sort
 
     return if nil_or_empty?(running)

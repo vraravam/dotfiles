@@ -136,8 +136,7 @@ module CleanupBrowserProfiles
       next if db_size <= min_db_size
 
       if dry_run
-        size_mb = _bytes_to_mb(db_size)
-        Logging.info "[DRY-RUN] Would vacuum: '#{db_file.to_s.cyan}' (#{size_mb.to_s.purple}MB)"
+        Logging.info "[DRY-RUN] Would vacuum: '#{db_file.to_s.cyan}' (#{_bytes_to_mb(db_size).to_s.purple}MB)"
       else
         Logging.info "Vacuuming: '#{db_file.to_s.cyan}'"
         if system('sqlite3', db_file.to_s, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;', out: File::NULL, err: File::NULL)
@@ -220,7 +219,6 @@ module CleanupBrowserProfiles
 
     Logging.with_step('vacuum', "#{'Vacuuming'.yellow} '#{browser_name.yellow}' in '#{profile_dir.to_s.cyan}'...") do
       # Measure size before cleanup (only for actual runs)
-      size_before_kb = 0
       unless dry_run
         size_before_kb = PathUtils.dir_size_kb(profile_dir)
         Logging.info "--> Size before: '#{profile_dir.to_s.cyan}' --> #{_format_size(size_before_kb)}"

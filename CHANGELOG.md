@@ -4,6 +4,42 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.1.29
+
+#### Fix 26 critical/high-priority issues: Core modules, ERR traps, PlistBuddy atomicity
+
+* *[scripts/utilities/keybase.rb]* Added missing Core module (lines 6-7, 14-15). Added `require_relative 'core'` and both `include Core` + `extend Core`. Fixes `nil_or_empty?` usage that previously only worked via transitive include through Logging. Method now available in both module methods and blocks.
+
+* *[scripts/utilities/plist.rb]* Added missing Core module (lines 8, 20-21). Added domain validation for export operations (line 41) - now validates domain is non-empty before attempting export. Added rescue for relative_path calls (line 57) - prevents crashes when path validation fails. Fixes `nil_or_empty?` calls at lines 66 and 187.
+
+* *[scripts/utilities/path_utils.rb]* Added missing logging require (line 8). Fixes crash when `Logging.debug` called at line 117 during `ensure_directories_exist`.
+
+* *[scripts/install-dotfiles.rb]* Added Core module (lines 24, 32-33). Added `require_relative 'utilities/core'` and both `include Core` + `extend Core`. Removes fragile dependency on transitive Core inclusion via Logging module. Makes `nil_or_empty?` available throughout script.
+
+* *[scripts/resurrect-repositories.rb]* Added Core module (lines 22, 31-32). Same changes as install-dotfiles.rb - explicit Core require and dual include/extend for consistent helper method availability.
+
+* *[scripts/capture-prefs.rb]* Added rescue for GitProcessor relative_path calls (lines 168-178). When path validation fails (path outside repo or invalid), logs warning via `Logging.warn` and skips the problematic file instead of crashing. Prevents fatal errors during preferences backup/restore when unexpected file paths encountered.
+
+* *[scripts/cleanup-browser-profiles.rb]* Fixed variable scoping (lines 138, 222-238). Moved `profile_folder` declaration inside GitProcessor block where it's used. Moved `backup_file` declaration inside conditional branches. Improves garbage collection and clarifies variable lifetime.
+
+* *[files/--HOME--/.shellrc]* Fixed unsafe `keep_sudo_alive` arithmetic (line 1237). Changed `has_sudo_credentials` to `has_sudo_credentials || true` - prevents return code 1 from triggering ERR traps when sudo not available. Added Ruby availability checks in `_call_ruby_cron` (guards all Ruby delegations with `command_exists ruby`). Prevents crashes on vanilla OS before Homebrew installs Ruby.
+
+* *[files/--HOME--/.aliases]* Added Ruby availability checks (lines 377-382 in `_call_ruby_git_workspace`, 1008-1013 in `_call_ruby_macos`). Guards all Ruby utility delegations with `command_exists ruby` before invoking. Prevents "ruby: command not found" errors during fresh-install before Homebrew installation completes.
+
+* *[files/--XDG_CONFIG_HOME--/zsh/status_all_repos]* Fixed dispatch pattern. Moved shell implementation into `_status_all_repos`, added `status_all_repos` dispatch wrapper calling `dispatch_or_fallback`. Complies with mandatory pattern from shell-scripting.md - Ruby delegation works correctly, shell fallback preserved.
+
+* *[files/--XDG_CONFIG_HOME--/zsh/update_all_repos]* Fixed dispatch pattern. Same changes as status_all_repos - moved implementation to `_update_all_repos`, added dispatch wrapper. Ensures consistent Ruby-first execution with shell fallback.
+
+* *[scripts/osx-defaults.sh]* Added ERR trap (line 34): `trap 'error "Script failed at line ${LINENO}. Check log for details."' ERR`. Provides clear failure notification with line numbers instead of silent failures. Added context message before killing apps (line 146): "About to kill and restart Terminal, iTerm2, Finder..." - prevents user confusion when apps suddenly close. Added `_plist_set_or_add` helper function (lines 98-125) implementing atomic Set-or-Add pattern for PlistBuddy operations. Refactored Terminal profile settings (lines 1173-1195) to use helper - 4 settings now atomic (rowCount, columnCount, useOptionAsMetaKey, shellExitAction). Converted all 59 non-array iTerm2 settings (lines 1374-1467) from Delete+Add pattern to `_plist_set_or_add` - includes window dimensions, text/font settings, terminal behavior, session options, keyboard modifiers. Added error suppression to Jobs to Ignore array Delete operation (`2>/dev/null || true`) - only array operation remaining as Delete+Add since PlistBuddy cannot atomically set array contents. Fixed duplicate array index bug (zsh was `:5` twice, now correctly `:6`). Total: 63 settings moved from non-atomic to atomic pattern. Script can now be interrupted at any point without leaving Terminal/iTerm2 preferences in partial state (except array contents). Code reduction: 189 lines changed (+64, -125), net -61 lines in iTerm2 section.
+
+* *[scripts/fresh-install-of-osx.sh]* Added `.shellrc` download validation (lines 113-117). After curl download, validates file exists and is non-empty using `is_file` and `is_file_non_zero`. Exits with clear error message if download corrupted or network failure occurred. Prevents sourcing broken `.shellrc` that would crash bootstrap process. Added FileVault user_action (line 172): `user_action "Enable FileVault disk encryption in System Settings > Privacy & Security"`. Prompts user to enable encryption after fresh-install completes - can't be automated (requires user password). Added manual review reminder (line 769): prints user_action before opening System Settings, reminds user to review all applied settings. Prevents blind acceptance of defaults. Fixed cron backup timing (lines 723-731): moved `suspend_cron` call to before `capture-prefs.rb -i` invocation. Prevents cron job from running during preferences restoration (could conflict with import process).
+
+#### Adopting these changes
+
+* Restart terminal after successful test
+
+---
+
 ### 3.1.28
 
 #### Core utility module and ENV access centralization

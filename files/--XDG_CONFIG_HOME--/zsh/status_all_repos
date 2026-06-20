@@ -2,14 +2,30 @@
 
 # vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
 
+# Reports git status for all workspace repositories:
+#   - HOME (~/): Personal dotfiles and configurations
+#   - DOTFILES_DIR (~/.config/dotfiles): This repository
+#   - PERSONAL_PROFILES_DIR: Browser profiles and settings
+#   - Chrome profile directories: Individual Chrome user profiles
+#
 # Thin wrapper that delegates to Ruby GitWorkspace.status_all_repos.
-# Reports git status for HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, and chrome directories.
 
-# Re-source guard is inside .aliases itself -- safe to call unconditionally.
-source "${HOME}/.aliases"
+# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
+source "${HOME}/.shellrc"
+
+_status_all_repos() {
+  section_header2 "$(yellow 'Checking status of all repos')"
+  _call_ruby_git_workspace status_all_repos
+}
 
 status_all_repos() {
-  _call_ruby_git_workspace status_all_repos
+  # Guard against race condition when .aliases is deferred via zsh-defer: if
+  # dispatch_or_fallback doesn't exist yet (multiple tabs opening simultaneously),
+  # load .aliases synchronously now. The re-source guard in .aliases makes this safe.
+  if ! (($+functions[dispatch_or_fallback])); then
+    source "${HOME}/.aliases"
+  fi
+  dispatch_or_fallback status_all_repos _status_all_repos "$@"
 }
 
 # Run only when executed directly, not when sourced (e.g. to import the function into another script).
