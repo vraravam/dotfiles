@@ -4,6 +4,13 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.1.31
+
+* *[files/--HOME--/Brewfile]* Simplified trusting of specific formulae/casks with fully-qualified names in the DSL itself.
+
+* *[files/--HOME--/.aliases]* Deleted `trust_brewfile_items` since its no longer required due to above change.
+---
+
 ### 3.1.30
 
 * *[files/--HOME--/.aliases]* Extracted `trust_brewfile_items` utility method that can be used to trust formulae/casks which are not yet trusted. Removed deprecated `--cleanup` option from `brew bundle install`.

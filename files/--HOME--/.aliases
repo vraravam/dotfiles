@@ -687,51 +687,6 @@ fi
 # --------------------------------------------------------------------------
 
 if is_macos && command_exists brew; then
-  trust_brewfile_items() {
-    # Trust specific formulae and casks from custom taps that are referenced in Brewfile.
-    # This ensures only explicitly-used items are trusted (not entire taps), which follows
-    # the principle of least privilege when HOMEBREW_REQUIRE_TAP_TRUST is enforced.
-    # Uses 'brew untrust' CLI to identify untrusted items.
-    if command_exists brew; then
-      local -a untrusted_formulae
-      local -a untrusted_casks
-      local -a brewfile_formulae
-      local -a brewfile_casks
-
-      # Get formulae and casks from Brewfile
-      brewfile_formulae=($(brew bundle list --file="${HOMEBREW_BUNDLE_FILE}" --formula 2>/dev/null))
-      brewfile_casks=($(brew bundle list --file="${HOMEBREW_BUNDLE_FILE}" --casks 2>/dev/null))
-
-      # Parse 'brew untrust' output to get untrusted formulae
-      untrusted_formulae=($(brew untrust 2>&1 | awk '/^Untrusted formulae:/{flag=1;next}/^Untrusted [a-z]+:/{flag=0}flag{print $1}'))
-
-      # Parse 'brew untrust' output to get untrusted casks
-      untrusted_casks=($(brew untrust 2>&1 | awk '/^Untrusted casks:/{flag=1;next}/^Untrusted [a-z]+:/{flag=0}flag{print $1}'))
-
-      # Trust untrusted formulae that are in Brewfile
-      if is_non_empty_array untrusted_formulae && is_non_empty_array brewfile_formulae; then
-        for formula in "${untrusted_formulae[@]}"; do
-          # Brewfile contains short names; extract short name from full tap/formula name for comparison
-          if printf '%s\n' "${brewfile_formulae[@]}" | /usr/bin/grep -Fxq "${formula##*/}"; then
-            info "Trusting formula: '$(yellow "${formula}")'"
-            brew trust --formula "${formula}" || true
-          fi
-        done
-      fi
-
-      # Trust untrusted casks that are in Brewfile
-      if is_non_empty_array untrusted_casks && is_non_empty_array brewfile_casks; then
-        for cask in "${untrusted_casks[@]}"; do
-          # Brewfile contains short names; extract short name from full tap/cask name for comparison
-          if printf '%s\n' "${brewfile_casks[@]}" | /usr/bin/grep -Fxq "${cask##*/}"; then
-            info "Trusting cask: '$(yellow "${cask}")'"
-            brew trust --cask "${cask}" || true
-          fi
-        done
-      fi
-    fi
-  }
-
   # List all casks that are outdated like a "dry-run" (and which have version marked as 'latest')
   alias bcg='brew outdated --greedy'
 
@@ -753,28 +708,13 @@ if is_macos && command_exists brew; then
     local start_time="${EPOCHSECONDS}"
     print_script_start
 
-    # Trust any already-untrusted items from already-installed taps
-    trust_brewfile_items
-
     # First pass: install taps and already-trusted formulae/casks
     # Suppress stderr since untrusted-tap errors are expected and fixed by second pass
-    brew bundle check -v 2>/dev/null || brew bundle install -q 2>/dev/null || true
-
-    # Trust any newly-untrusted items from newly-tapped taps (brew bundle may have installed new taps)
-    # Hopefully this bug (https://github.com/Homebrew/brew/issues/22826) will fix the need to run this 2nd pass
-    trust_brewfile_items
-
-    # Second pass: install newly-trusted formulae/casks (idempotent if nothing new to trust)
     brew bundle check -v || brew bundle install -q || true
-
     brew bundle cleanup -f || true
     brew cleanup --prune=all || true
     brew autoremove || true
     brew upgrade || true
-
-    # Third pass: Trust any newly-untrusted items from newly-tapped taps (brew bundle cleanup may have untrusted the taps)
-    # logged a bug for this issue: https://github.com/Homebrew/brew/issues/22826
-    trust_brewfile_items
 
     print_script_summary "${start_time}"
     # Manual decrement -- EXIT trap does not fire on function return in shell functions.

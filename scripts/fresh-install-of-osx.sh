@@ -286,9 +286,6 @@ _install_homebrew() {
   # Ensure homebrew's environment variables are set correctly for this session.
   eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
 
-  # Trust any already-untrusted items from already-installed taps
-  trust_brewfile_items
-
   # Taps are no longer used in the FIRST_INSTALL base Brewfile section.
   # The tap commands below are kept for reference in case a tap is needed again.
   # /usr/bin/grep -E "^tap " "${HOMEBREW_BUNDLE_FILE}" | awk '{print $2}' | tr -d "'\"" | while read -r tap_name; do
@@ -307,18 +304,10 @@ _install_homebrew() {
     brewfile_content="${brewfile_content%$'\n'*FIRST_INSTALL*}"  # strip the FIRST_INSTALL guard line itself
     # First pass: install taps and already-trusted formulae/casks
     # Suppress stderr since untrusted-tap errors are expected and fixed by second pass
-    brew bundle check -v 2>/dev/null || brew bundle install -q --file=- <<<"${brewfile_content}" 2>/dev/null || _brew_bundle_exit=$?
-    # Trust any newly-untrusted items from newly-tapped taps
-    trust_brewfile_items
-    # Second pass: install newly-trusted formulae/casks (idempotent if nothing new to trust)
     brew bundle check -v || brew bundle install -q --file=- <<<"${brewfile_content}" || _brew_bundle_exit=$?
   else
     # First pass: install taps and already-trusted formulae/casks
     # Suppress stderr since untrusted-tap errors are expected and fixed by second pass
-    brew bundle check -v 2>/dev/null || brew bundle install -q 2>/dev/null || _brew_bundle_exit=$?
-    # Trust any newly-untrusted items from newly-tapped taps
-    trust_brewfile_items
-    # Second pass: install newly-trusted formulae/casks (idempotent if nothing new to trust)
     brew bundle check -v || brew bundle install -q || _brew_bundle_exit=$?
   fi
 
