@@ -4,9 +4,15 @@
 # [Windows users] If you are on windows, please search for the word 'windows' - and fix those lines - they seem to cause some trouble
 # [General] Since I use 'delta' as the diffing/pager tool, it's absence on your system will cause some errors. If you are able to, I would sincerely urge you to install and use it for a much better experience. If not, please replace all such occurrences back to use 'diff'
 
-# Note: Even though this will show up twice in `git config -l` - it will still be overridden based on the order of the includeIf lines below (last matching configuration wins). Utility subcommand to find out which config wins: `git who`
-[includeIf "gitdir/i:~/"]
+# Note: Even though configs from this file will show up twice in `git config -l` - it will still be overridden based on the order of the includeIf lines below (last matching configuration wins). Utility subcommand to find out which config wins: `git who`
+[include]
   path = ~/.gitconfig-oss.inc
+  # Delta-specific configuration
+  # Note: Git's includeIf doesn't support PATH checks. Instead, we use a symlink approach:
+  # The install-dotfiles script creates ~/.gitconfig-delta-enabled.inc as a symlink to
+  # ~/.gitconfig-delta.inc when delta is installed and removes it if not found. This file
+  # is always included, but only exists when delta is present.
+  path = ~/.gitconfig-delta-enabled.inc
 [advice]
   statusHints = true
 [alias]
@@ -19,8 +25,8 @@
   # arg wins and <path1> is ignored. Use one or the other, not both.
   # Exceptions — aliases where the first argument already has a fixed meaning do NOT accept <dir>:
   #   commit message (sci), author (standup), branch/ref (new, old, recent-branch, oldest-branch),
-  #   flags (pull-unshallow, fetch-unshallow), pattern (f, se), or complex own arg convention
-  #   (relative-path). For these, 'git -C <path> <alias>' is the only option.
+  #   flags (pull-unshallow, fetch-unshallow), pattern (f, se). For these, 'git -C <path> <alias>'
+  #   is the only option.
 
   # Finds dangling (unreachable) commits not referenced by any branch or tag.
   # Usage: git dangling [<dir>]
@@ -34,23 +40,6 @@
   # Usage: git f <pattern>
   # Example: git f config
   f = !git ls-files | grep -i
-
-  # Prints the relative path of the given path from the repo root.
-  # If no argument is given, prints the relative path of the current directory (prefixed with './' or '.' for repo root).
-  # If argument is a relative path, it's resolved from the current directory, then normalized (with './' prefix).
-  # If argument is an absolute path, it's normalized (with './' prefix).
-  # Returns error if path is outside the repo or cannot be resolved.
-  # Usage: git relative-path [<path>]
-  # Example: git relative-path /abs/path/to/repo/src/foo.ts     =>  ./src/foo.ts  (absolute path, with ./ prefix)
-  # Example: git relative-path ./src/foo.ts                     =>  ./src/foo.ts  (relative path from repo root, with ./ prefix)
-  # Example: git relative-path src/foo.ts                       =>  ./src/foo.ts  (relative path from repo root, with ./ prefix)
-  # Example: git relative-path utilities/git_processor.rb       =>  ./scripts/utilities/git_processor.rb  (relative from repo/scripts, with ./ prefix)
-  # Example: git relative-path                                  =>  .  (no args at repo root)
-  # Example: git relative-path                                  =>  ./scripts/utilities  (no args at repo/scripts/utilities)
-  # Example: git relative-path /tmp/file.txt                    =>  error: path "/tmp/file.txt" is outside repo
-  # Example: git relative-path /nonexistent.txt                 =>  error: cannot resolve path "/nonexistent.txt"
-  relative-path = "!bash -c 'case \"${0}\" in bash|sh) prefix=\"${GIT_PREFIX%/}\"; if [ -z \"${prefix}\" ]; then echo \".\"; else echo \"./${prefix}\"; fi ;; *) root=$(git rev-parse --show-toplevel); case \"${0}\" in /*) abs=$(realpath \"${0}\" 2>/dev/null) ;; *) abs=$(realpath \"${root}/${GIT_PREFIX}${0}\" 2>/dev/null) ;; esac; if [ -z \"${abs}\" ]; then printf \"error: cannot resolve path \\\"%s\\\"\\\\n\" \"${0}\" >&2; exit 1; fi; rel=${abs#${root}}; if [ \"${rel}\" = \"${abs}\" ] || [ \"${rel}\" = \"${abs}/\" ]; then printf \"error: path \\\"%s\\\" is outside repo\\\\n\" \"${0}\" >&2; exit 1; fi; echo \"./${rel#/}\" ;; esac'"
-  relative-path = "!bash -c 'case \"${0}\" in bash|sh) prefix=\"${GIT_PREFIX%/}\"; if [ -z \"${prefix}\" ]; then echo \".\"; else echo \"./${prefix}\"; fi ;; *) root=$(git rev-parse --show-toplevel); case \"${0}\" in /*) abs=$(realpath \"${0}\" 2>/dev/null) ;; *) abs=$(realpath \"${root}/${GIT_PREFIX}${0}\" 2>/dev/null) ;; esac; if [ -z \"${abs}\" ]; then printf \"error: cannot resolve path \\\"%s\\\"\\n\" \"${0}\" >&2; exit 1; fi; rel=${abs#${root}}; if [ \"${rel}\" = \"${abs}\" ] || [ \"${rel}\" = \"${abs}/\" ]; then printf \"error: path \\\"%s\\\" is outside repo\\n\" \"${0}\" >&2; exit 1; fi; echo \"./${rel#/}\" ;; esac'"
 
   # Prints the next patch version derived from the most recent tag (via 'git describe --tags').
   # Tags with only two segments (e.g. '3.1') are treated as '3.1.0' -> '3.1.1'.
@@ -332,9 +321,10 @@
   # Example: git cc /path/to/repo --expire=now
   cc = "!f() { case \"${1:-}\" in -*|'') dir='.' ;; *) dir=\"${1:-}\"; shift ;; esac; expire=''; rest=(); for a in \"$@\"; do case \"${a}\" in --expire=*) expire=\"${a#--expire=}\" ;; *) rest+=(\"${a}\") ;; esac; done; [ -n \"${expire}\" ] || expire=1.week.ago; refs=$(git -C \"${dir}\" for-each-ref --format='%(refname)' refs/heads refs/remotes); git -C \"${dir}\" size; git -C \"${dir}\" remote prune origin; git -C \"${dir}\" pack-refs --all; git -C \"${dir}\" repack -a -d -F --depth=250 --window=250; [ -n \"${refs}\" ] && git -C \"${dir}\" reflog expire --expire=\"${expire}\" --expire-unreachable=\"${expire}\" --stale-fix \"${rest[@]}\" ${refs}; git -C \"${dir}\" maintenance run --task=gc; git -C \"${dir}\" size; }; f"
 
-  # Lists the 100 biggest objects ever stored in the repo (including deleted files).
-  # Usage: git big
-  big = "!sh -c 'git rev-list --objects --all | /usr/bin/grep \"$(git verify-pack -v \"$(git rev-parse --show-toplevel)/.git/objects/pack/*.idx\" | sort -k 3 -n | tail -100 | awk \"{print \\$1}\")\"'"
+  # Comprehensive repo size analysis including biggest objects, blobs, trees, commits.
+  # Uses git-sizer for detailed breakdown. Shows top 30 lines of output.
+  # Usage: git big [<dir>]
+  big = "!f() { cd \"${1:-.}\" && git-sizer --verbose | head -30; }; f"
 
   # Deletes all local branches whose remote-tracking counterpart has been deleted (gone).
   # Usage: git dlb [<dir>]
@@ -427,7 +417,7 @@
   fsMonitor = true
   logAllRefUpdates = true
   longPaths = true
-  pager = delta
+  # pager setting moved to ~/.gitconfig-delta.inc (conditionally included when delta is installed)
   # repositoryFormatVersion = 1   # Note: This can be uncommented to enable the new repository format for SHA256 support
   sshCommand="ssh -o ConnectTimeout=20"
   symlinks = false
@@ -442,38 +432,7 @@
   submodule = diff
 [diff "pandoc"]
   textconv = pandoc --sandbox --to=markdown
-[delta]
-  # Designed to emulate diff-so-fancy's default look and feel
-  # ==========================================================
-  file-style = "bold yellow"
-  file-decoration-style = "yellow ul ol"
-  file-added-label = "🟢 added:"
-  file-modified-label = "🟠 modified:"
-  file-removed-label = "🔴 deleted:"
-  file-renamed-label = "🔵 renamed:"
-  file-change-type-label-width = 0
-  hunk-header-style = "file line-number syntax bold"
-  hunk-header-decoration-style = "box"
-  line-numbers = false
-  side-by-side = false
-  syntax-theme = "Monokai Extended"
-  # Use "syntax <bg>" so whole removed/added lines keep syntax highlighting
-  # on a coloured background. Plain "red"/"green" only set the foreground
-  # colour, which loses syntax highlighting and looks flat on multi-line diffs.
-  minus-style = "syntax #3D1A1A"
-  # Emph bg must be brighter than the minus-style bg (#3D1A1A) so that
-  # intra-line changed characters remain visually distinct from the base line.
-  minus-emph-style = "bold #FF6B68 #6B2020"
-  plus-style = "syntax #002800"
-  # #006400 is visually distinct from the plus-style bg #002800 — no change needed.
-  plus-emph-style = "bold #98FB98 #006400"
-  # ansi fills the background colour to the full terminal width; "spaces"
-  # (the default) only colours actual characters, leaving short lines unshaded.
-  line-fill-method = ansi
-  whitespace-error-style = "magenta reverse"
-  navigate = true
-  hyperlinks = true
-  hyperlinks-file-link-format = "zed://file/{path}:{line}"
+# Delta configuration moved to ~/.gitconfig-delta.inc (conditionally included when delta is installed)
 [extensions]
   # objectFormat = sha256         # Note: This can be uncommented to enable the new repository format for SHA256 support
   # compatObjectFormat = sha1     # Note: This can be uncommented to enable the new repository format for SHA256 support
@@ -521,8 +480,7 @@
 [init]
   defaultBranch = master
   defaultRefFormat = reftable
-[interactive]
-  diffFilter = delta --color-only
+# [interactive] section moved to ~/.gitconfig-delta.inc (conditionally included when delta is installed)
 [maintenance]
   auto = true
   strategy = incremental

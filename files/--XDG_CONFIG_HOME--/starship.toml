@@ -29,6 +29,11 @@ command_timeout = 5000
 # ── Left prompt ───────────────────────────────────────────────────────────────
 # Segment order: os → directory → git branch+status+size → prompt character
 # Arrow separators transition: white→blue→green(clean)/yellow(dirty)→terminal default
+#
+# Git segments use custom commands instead of built-in modules because:
+# 1. Conditional backgrounds (green when clean, yellow when dirty) require custom logic
+# 2. Single git command for all status info is more efficient than separate module calls
+# 3. Repo size display via 'du' is a unique feature not available in built-in modules
 format = """
 [$os](bg:white fg:black)\
 [\uE0B0](fg:white bg:blue)\
@@ -99,15 +104,16 @@ home_symbol = "~"
 # e.g. "~/dev/oss/dev/oss" instead of "~/dev/oss".
 # The regular format handles all cases correctly without duplication.
 
-# ── Git branch ────────────────────────────────────────────────────────────────
-# Disabled: replaced by custom.git_clean / custom.git_dirty which handle
-# conditional green/yellow background based on repo dirty state.
+# ── Git branch & status ───────────────────────────────────────────────────────
+# Built-in modules: Available but not used. The custom segments below provide:
+# - Conditional green (clean) / yellow (dirty) backgrounds
+# - Single git command for all status info (more efficient than separate modules)
+# - Repo size display (not available in built-in modules)
+# - Matching P10k visual style
+# Logged feature request: https://github.com/starship/starship/issues/7556
 [git_branch]
 disabled = true
 
-# ── Git status ────────────────────────────────────────────────────────────────
-# Disabled: replaced by custom.git_clean / custom.git_dirty which handle
-# conditional green/yellow background based on repo dirty state.
 [git_status]
 disabled = true
 
@@ -258,6 +264,7 @@ ignore_timeout = true
 # ── Custom: git repo size ─────────────────────────────────────────────────────
 # Runs /usr/bin/du -sh on the repo's .git folder (equivalent to the 'git size' alias).
 # Two variants to match the dirty (yellow) or clean (green) git segment background.
+# Logged feature request: https://github.com/starship/starship/issues/7557
 [custom.git_size]
 command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} /usr/bin/du -sh {}/.git 2>/dev/null | cut -f1"
 when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."

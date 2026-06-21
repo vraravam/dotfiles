@@ -90,6 +90,7 @@ module InstallDotfiles
     puts "  Errors:    #{stats.errors.positive? ? stats.errors.to_s.red : stats.errors}"
 
     _ensure_ssh_include_line
+    _ensure_delta_symlink
 
     Logging.warn("Since 'custom.git*' files are COPIED (not symlinked), always edit the repo source first. When re-running without FIRST_INSTALL set, the newer file wins -- so a stale home-dir copy can silently overwrite repo changes if its mtime is newer.")
 
@@ -242,7 +243,47 @@ module InstallDotfiles
     end
   end
 
-  private_class_method :_ensure_ssh_include_line
+  # Ensures ~/.gitconfig-delta-enabled.inc symlink exists if delta is installed,
+  # or removes it if delta is not installed. Git config includes this symlink
+  # (→ ~/.gitconfig-delta.inc) which contains delta-specific settings. The symlink
+  # only exists when delta is available, allowing git to work correctly on systems
+  # without delta.
+  def _ensure_delta_symlink
+    delta_config_target = EnvVars::HOME.join('.gitconfig-delta.inc')
+    delta_config_symlink = EnvVars::HOME.join('.gitconfig-delta-enabled.inc')
+
+    if PathUtils.command_exists?('delta')
+      # Delta is installed -- ensure symlink exists
+
+      # Target must exist (should be symlinked by this script from repo)
+      unless delta_config_target.exist?
+        Logging.warn("Skipping delta config symlink -- target file '#{delta_config_target.to_s.cyan}' does not exist")
+        return
+      end
+
+      # Create symlink if it doesn't exist
+      if delta_config_symlink.exist?
+        Logging.debug("Delta config symlink already exists at '#{delta_config_symlink.to_s.cyan}'")
+      else
+        Logging.info("Creating delta config symlink: '#{delta_config_symlink.to_s.cyan}' → '#{delta_config_target.to_s.cyan}'")
+        FileUtils.ln_sf(delta_config_target.to_s, delta_config_symlink.to_s)
+        Logging.success("Created delta config symlink")
+      end
+    else
+      # Delta is not installed -- remove symlink if it exists
+      if delta_config_symlink.exist?
+        Logging.info("Removing delta config symlink (delta not in PATH): '#{delta_config_symlink.to_s.cyan}'")
+        FileUtils.rm_f(delta_config_symlink.to_s)
+        Logging.success("Removed delta config symlink")
+      else
+        Logging.debug("Delta not in PATH and symlink doesn't exist -- nothing to do")
+      end
+    end
+  rescue StandardError => e
+    Logging.warn("Failed to ensure delta symlink: #{e.message}")
+  end
+
+  private_class_method :_ensure_ssh_include_line, :_ensure_delta_symlink
 end
 
 # ---------------------------------------------------------------------------

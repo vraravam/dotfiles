@@ -252,10 +252,10 @@ module GitWorkspace
   # where the caller does not need to review individual changes before committing.
   #
   # @param repo_dir [Pathname, String] The repository directory
-  # @param relative_path [Pathname, String, nil] Optional relative path within
-  #   the repo to add (defaults to entire repo)
+  # @param path [Pathname, String, nil] Optional path within the repo to stage
+  #   (defaults to entire repo). Can be relative or absolute - git handles both.
   # @return [Boolean] true if successful, false if repo is invalid or git operations fail
-  def update_repo(repo_dir, relative_path: nil)
+  def update_repo(repo_dir, path: nil)
     repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
 
     unless GitProcessor.repo?(repo_dir)
@@ -273,16 +273,15 @@ module GitWorkspace
       # Stage and commit with timestamp (use block form for multiple operations)
       success = false
       GitProcessor.new(dir: repo_dir) do |git|
-        # Normalize relative path (may raise if path is invalid/outside repo)
-        rel_path = relative_path ? git.relative_path(relative_path) : '.'
-        git.add(rel_path)
+        # Git accepts both absolute and relative paths directly
+        git.add(path || '.')
         timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
         success = git.smart_commit("Incremental commit: #{timestamp}")
       end
       success
     end
   rescue RuntimeError => e
-    # relative_path raises RuntimeError if path is invalid or outside repo
+    # Git operations may raise RuntimeError on failures
     Logging.warn "Skipping repo update -- #{e.message}"
     false
   end
@@ -294,12 +293,12 @@ module GitWorkspace
   def update_all_repos
     home_success = update_repo(
       EnvVars::HOME,
-      relative_path: EnvVars::PERSONAL_CONFIGS_DIR.join('defaults')
+      path: EnvVars::PERSONAL_CONFIGS_DIR.join('defaults')
     )
 
     profiles_success = update_repo(
       EnvVars::PERSONAL_PROFILES_DIR,
-      relative_path: nil
+      path: nil
     )
 
     home_success && profiles_success

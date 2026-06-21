@@ -129,6 +129,14 @@ Thumbs.db
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# GENERATED/DERIVED FILES — created by install-dotfiles.rb or other automation
+# ══════════════════════════════════════════════════════════════════════════════
+
+# Delta config symlink — only exists when delta is installed (managed by install-dotfiles.rb)
+/.gitconfig-delta-enabled.inc
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # BUILD TOOLS & PACKAGE MANAGERS — auto-installed, not personal data
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -398,6 +406,7 @@ node_modules/
 /.gemrc
 /.gitattributes
 /.gitconfig
+/.gitconfig-delta.inc
 /.gitignore
 /.gitignore_global
 /.iex.exs

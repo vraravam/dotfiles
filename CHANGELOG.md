@@ -4,6 +4,13 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.1.32
+
+* *[files/--HOME--/.gitconfig-delta.inc]* Moved all delta-related configs to this file. It will get included only if `delta` is installed. Till then, this file will just sit on the HOME folder, but will not affect normal git operations.
+
+* *[files/--HOME--/.gitconfig]* Removed custom aliases that are present via `git-extras`.
+---
+
 ### 3.1.31
 
 * *[files/--HOME--/Brewfile]* Simplified trusting of specific formulae/casks with fully-qualified names in the DSL itself.

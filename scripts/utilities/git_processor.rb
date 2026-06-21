@@ -264,29 +264,6 @@ class GitProcessor
     stdout.split("\n")
   end
 
-  # Normalizes a path to be relative to the repository root.
-  # Uses the 'git relative-path' alias. Raises error if path is outside repo or cannot be resolved.
-  #
-  # @param path [String, Pathname, nil] Path to normalize (defaults to @dir via GIT_PREFIX when nil).
-  # @return [String] Path relative to repository root (with './' prefix for non-root), or '.' for repo root.
-  # @raise [RuntimeError] If path is outside repo or cannot be resolved.
-  def relative_path(path = nil)
-    if path.nil?
-      # No argument: let git alias use GIT_PREFIX to determine current directory relative to repo root
-      stdout, stderr, status = _execute('relative-path')
-    else
-      # Explicit path: pass it to the alias for normalization
-      stdout, stderr, status = _execute('relative-path', path.to_s)
-    end
-
-    unless status.success?
-      error_msg = stderr.strip
-      error_msg = 'Failed to compute relative path' if nil_or_empty?(error_msg)
-      raise error_msg
-    end
-
-    stdout.strip
-  end
 
   # Creates a commit with the given message.
   #
