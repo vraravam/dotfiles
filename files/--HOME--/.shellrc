@@ -1241,6 +1241,29 @@ keep_sudo_alive() {
   step_end
 }
 
+# Migrates a git repository to reftable format if git 2.45+ is available.
+# Thin wrapper that delegates to Ruby GitProcessor.migrate_to_reftable.
+# Usage: migrate_git_repo_to_reftable <repo-directory>
+# Returns: 0 on success or silent skip (older git), 1 on error
+# Note: On vanilla macOS with system git < 2.45, this is a silent no-op.
+# fresh-install-of-osx.sh calls this again after Homebrew's git is on PATH.
+migrate_git_repo_to_reftable() {
+  local folder="${1:-}"
+  if is_zero_string "${folder}"; then
+    debug 'migrate_git_repo_to_reftable: folder argument required'
+    return 1
+  fi
+
+  # Guard: Ruby must be available (vanilla OS before Homebrew installs it)
+  if ! command_exists ruby; then
+    debug "Ruby not available -- skipping reftable migration for '${folder}'"
+    return 0
+  fi
+
+  setup_rubylib
+  ruby -e "require 'git_processor'; GitProcessor.migrate_to_reftable(folder: '${folder}')"
+}
+
 # Clones a git repo into a temp folder, moves the .git dir into the real target
 # location, and does an initial checkout there. Works around git's refusal to
 # clone into a non-empty directory (e.g. HOME). If the target is already a git
@@ -1313,15 +1336,12 @@ clone_repo_into() {
       echo "ref: ${real_ref}" >"${target_folder}/.git/HEAD"
     fi
 
-    # setup RUBYLIB so that the ruby calls don't error out
-    setup_rubylib
-
     # Migrate to reftable if the clone used the legacy files format. On a vanilla
     # macOS the system git (< 2.45) ignores -c init.defaultRefFormat=reftable and
     # 'git refs migrate' is unavailable, so this is a no-op until Homebrew's git
     # is on PATH. fresh-install-of-osx.sh calls this again post-Homebrew for repos
     # that were cloned with system git.
-    ruby -e "require 'git_processor'; GitProcessor.migrate_to_reftable(folder: '${target_folder}')"
+    migrate_git_repo_to_reftable "${target_folder}"
 
     success "Successfully cloned '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
 

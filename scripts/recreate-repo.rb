@@ -81,26 +81,24 @@ module RecreateRepo
       if force
         if dry_run
           Logging.info "Would remove: '#{dir_pn.join('.git').to_s.cyan}'"
+          Logging.info "Would delete: '#{git_url.cyan}'"
         else
           dir_pn.join('.git').rmtree
-        end
-        git.init
-        git.add_remote('origin', git_url)
-        git.config_set('user.name', user_name) unless nil_or_empty?(user_name)
-        git.config_set('user.email', user_email) unless nil_or_empty?(user_email)
-        git.delete_index_lock
-        git.stage_all
-        git.commit("Initial commit: #{MacOS.current_timestamp}", quiet: true)
+          git.init
+          git.add_remote('origin', git_url)
+          git.config_set('user.name', user_name) unless nil_or_empty?(user_name)
+          git.config_set('user.email', user_email) unless nil_or_empty?(user_email)
 
-        # Keybase repo recreation only happens when force-squashing commits, because
-        # that's when we've destroyed local history. Without force, we're just
-        # compressing and pushing existing commits - no remote recreation needed.
-        if Keybase.keybase_url?(git_url)
-          Logging.debug "#{'Recreating'.yellow} '#{git_url.cyan}'"
-          Keybase.delete_repo(git.remote_repo_name, dry_run: dry_run)
-          unless Keybase.create_repo(git.remote_repo_name, dry_run: dry_run)
-            Logging.record_error "Failed to recreate keybase repo -- manual intervention required"
-            return false
+          # Keybase repo recreation only happens when force-squashing commits, because
+          # that's when we've destroyed local history. Without force, we're just
+          # compressing and pushing existing commits - no remote recreation needed.
+          if Keybase.keybase_url?(git_url)
+            Logging.debug "#{'Recreating'.yellow} '#{git_url.cyan}'"
+            Keybase.delete_repo(git.remote_repo_name, dry_run: dry_run)
+            unless Keybase.create_repo(git.remote_repo_name, dry_run: dry_run)
+              Logging.record_error "Failed to recreate keybase repo -- manual intervention required"
+              return false
+            end
           end
         end
       end
@@ -108,9 +106,12 @@ module RecreateRepo
       # Retry the commit in case it failed above, then compress.
       if dry_run
         Logging.info 'Would stage all files and amend commit'
+      end
+      git.delete_index_lock
+      git.stage_all
+      if force
+        git.commit("Initial commit: #{MacOS.current_timestamp}", quiet: true)
       else
-        git.delete_index_lock
-        git.stage_all
         git.run_alias('amq')
       end
 
@@ -122,7 +123,7 @@ module RecreateRepo
         git.run_alias('cc')
       end
 
-      git.push(remote: 'origin', branch: branch, force: true, progress: true)
+      git.push(remote: 'origin', branch: branch, force: force)
     end
 
     if dry_run

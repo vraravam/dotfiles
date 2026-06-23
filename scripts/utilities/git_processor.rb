@@ -294,15 +294,13 @@ class GitProcessor
   # @param branch [String] Branch name to push.
   # @param force [Boolean] Whether to force push (defaults to false).
   # @param force_with_lease [Boolean] Whether to use --force-with-lease (defaults to false).
-  # @param progress [Boolean] Whether to show progress (defaults to false).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def push(remote: 'origin', branch:, force: false, force_with_lease: false, progress: false)
+  def push(remote: 'origin', branch:, force: false, force_with_lease: false)
     unless @dry_run
       url = remote_url(name: remote)
       Logging.debug "#{'Pushing'.yellow} from '#{@dir.to_s.cyan}' to #{url.cyan}"
     end
     args = ['push']
-    args << '--progress' if progress
     if force_with_lease
       args << '--force-with-lease'
     elsif force

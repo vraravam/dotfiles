@@ -23,7 +23,7 @@
 
 # Add a blank line before each prompt
 add_newline = true
-# Raised from default 500ms to allow du (git_size) to complete on large repos
+# Raised from default 500ms to allow du (in 'git size' alias) to complete on large repos
 command_timeout = 5000
 
 # ── Left prompt ───────────────────────────────────────────────────────────────
@@ -33,16 +33,15 @@ command_timeout = 5000
 # Git segments use custom commands instead of built-in modules because:
 # 1. Conditional backgrounds (green when clean, yellow when dirty) require custom logic
 # 2. Single git command for all status info is more efficient than separate module calls
-# 3. Repo size display via 'du' is a unique feature not available in built-in modules
+# 3. Repo size (via 'git size' alias) embedded directly in git_clean/git_dirty commands
 format = """
 [$os](bg:white fg:black)\
 [\uE0B0](fg:white bg:blue)\
 [$directory](bg:blue fg:#e4e4e4)\
 ${custom.git_clean_sep}${custom.git_dirty_sep}\
 ${custom.git_clean}${custom.git_dirty}\
-${custom.git_size}${custom.git_size_dirty}\
 ${custom.git_clean_end}${custom.git_dirty_end}\
-${custom.git_state}\
+$git_state\
 $character"""
 
 # ── Right prompt ──────────────────────────────────────────────────────────────
@@ -194,26 +193,30 @@ vimcmd_symbol = "[❮](bold green)"
 #
 # Each state has three parts:
 #   *_sep  — the blue→color powerline left-arrow separator
-#   *      — branch icon + branch name + status symbols
+#   *      — branch icon + branch name + status symbols + repo size
 #   *_end  — the trailing color→default powerline left-arrow separator
 #
-# git_size / git_size_dirty sit between the branch/status and the trailing separator;
-# each variant uses the matching when condition to pick the correct background color.
+# Repo size is embedded directly in the git_clean/git_dirty commands (via 'git size'
+# alias) to eliminate redundant when conditions and maintain consistent background colors.
 
 # Dirty state: shown when `git status --porcelain` produces any output
 [custom.git_dirty_sep]
 command = "true"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
+require_repo = true
+when = "git is-dirty"
+shell = ["sh", "--noprofile", "--norc"]
 format = "[\uE0B0]($style)"
 style = "fg:blue bg:yellow"
 ignore_timeout = true
 
 [custom.git_dirty]
 command = """
+porcelain=$(git st-nolock)
+# Exit early if clean (hide this dirty-state segment)
+[ -z "$porcelain" ] && exit 1
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 branch=$(printf '%.32s' "$branch")
 [ ${#branch} -eq 32 ] && branch="${branch}…"
-porcelain=$(git --no-optional-locks status --porcelain 2>/dev/null)
 staged=$(printf '%s\n' "$porcelain" | /usr/bin/grep -c "^[MADRC]" || true)
 modified=$(printf '%s\n' "$porcelain" | /usr/bin/grep -c "^.M\\| M" || true)
 untracked=$(printf '%s\n' "$porcelain" | /usr/bin/grep -c "^??" || true)
@@ -228,9 +231,13 @@ status_str=""
 [ "$ahead" -gt 0 ] && [ "$behind" -gt 0 ] && status_str="${status_str}⇣${behind}⇡${ahead}"
 [ "$ahead" -gt 0 ] && [ "$behind" -eq 0 ] && status_str="${status_str}⇡${ahead}"
 [ "$behind" -gt 0 ] && [ "$ahead" -eq 0 ] && status_str="${status_str}⇣${behind}"
-[ -n "$status_str" ] && printf ' \uf126 %s %s \n' "$branch" "$status_str" || printf ' \uf126 %s \n' "$branch"
+# Append repo size (from git size alias)
+size=$(GIT_SIZE_QUIET=1 git size)
+[ -n "$status_str" ] && printf ' \uf126 %s %s %s \n' "$branch" "$status_str" "$size" || printf ' \uf126 %s %s \n' "$branch" "$size"
 """
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
+require_repo = true
+when = "true"
+shell = ["sh", "--noprofile", "--norc"]
 format = "[$output]($style)"
 style = "bg:yellow fg:black"
 ignore_timeout = true
@@ -238,13 +245,18 @@ ignore_timeout = true
 # Clean state: shown when inside a git repo but working tree is clean
 [custom.git_clean_sep]
 command = "true"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
+require_repo = true
+when = "! git is-dirty"
+shell = ["sh", "--noprofile", "--norc"]
 format = "[\uE0B0]($style)"
 style = "fg:blue bg:green"
 ignore_timeout = true
 
 [custom.git_clean]
 command = """
+porcelain=$(git st-nolock)
+# Exit early if dirty (hide this clean-state segment)
+[ -n "$porcelain" ] && exit 1
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 branch=$(printf '%.32s' "$branch")
 [ ${#branch} -eq 32 ] && branch="${branch}…"
@@ -254,81 +266,49 @@ status_str=""
 [ "$ahead" -gt 0 ] && [ "$behind" -gt 0 ] && status_str=" ⇣${behind}⇡${ahead}"
 [ "$ahead" -gt 0 ] && [ "$behind" -eq 0 ] && status_str=" ⇡${ahead}"
 [ "$behind" -gt 0 ] && [ "$ahead" -eq 0 ] && status_str=" ⇣${behind}"
-printf ' \uf126 %s%s \n' "$branch" "$status_str"
+# Append repo size (from git size alias)
+size=$(GIT_SIZE_QUIET=1 git size)
+printf ' \uf126 %s%s %s \n' "$branch" "$status_str" "$size"
 """
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
+require_repo = true
+when = "true"
+shell = ["sh", "--noprofile", "--norc"]
 format = "[$output]($style)"
 style = "bg:green fg:black"
-ignore_timeout = true
-
-# ── Custom: git repo size ─────────────────────────────────────────────────────
-# Runs /usr/bin/du -sh on the repo's .git folder (equivalent to the 'git size' alias).
-# Two variants to match the dirty (yellow) or clean (green) git segment background.
-# Logged feature request: https://github.com/starship/starship/issues/7557
-[custom.git_size]
-command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} /usr/bin/du -sh {}/.git 2>/dev/null | cut -f1"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
-format = "[ $output]($style)"
-style = "bg:green fg:black"
-ignore_timeout = true
-
-[custom.git_size_dirty]
-command = "git rev-parse --show-toplevel 2>/dev/null | xargs -I{} /usr/bin/du -sh {}/.git 2>/dev/null | cut -f1"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
-format = "[ $output]($style)"
-style = "bg:yellow fg:black"
 ignore_timeout = true
 
 # Trailing powerline separators (color→terminal default)
 [custom.git_clean_end]
 command = "true"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && ! git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
+require_repo = true
+when = "! git is-dirty"
+shell = ["sh", "--noprofile", "--norc"]
 format = "[\uE0B0]($style)"
 style = "fg:green"
 ignore_timeout = true
 
 [custom.git_dirty_end]
 command = "true"
-when = "git --no-optional-locks rev-parse --is-inside-work-tree 2>/dev/null | /usr/bin/grep -q true && git --no-optional-locks status --porcelain 2>/dev/null | /usr/bin/grep -q ."
+require_repo = true
+when = "git is-dirty"
+shell = ["sh", "--noprofile", "--norc"]
 format = "[\uE0B0]($style)"
 style = "fg:yellow"
 ignore_timeout = true
 
-# ── Custom: git operation state ──────────────────────────────────────────────
+# ── Git operation state (built-in module) ────────────────────────────────────
 # Shown in bold red when a multi-step git operation is in progress:
 # rebase, merge, cherry-pick, revert, or bisect.
-#
-# All states are detected via 'git rev-parse --verify <REF>' so the check works
-# with both the classic .git/ files backend and the reftable backend (git 2.45+
-# default). The reftable stores pseudorefs in the reftable rather than as plain
-# files in .git/, so file/directory checks silently fail on reftable repos.
-#
-#   REBASE_HEAD      → REBASING        (set during both interactive and
-#                                        non-interactive rebase; introduced git 2.24)
-#   MERGE_HEAD       → MERGING
-#   CHERRY_PICK_HEAD → CHERRY-PICKING
-#   REVERT_HEAD      → REVERTING
-#   BISECT_HEAD      → BISECTING
-[custom.git_state]
-command = """
-if git rev-parse --verify REBASE_HEAD > /dev/null 2>&1; then
-  printf '>> REBASING <<'
-elif git rev-parse --verify MERGE_HEAD > /dev/null 2>&1; then
-  printf '>> MERGING <<'
-elif git rev-parse --verify CHERRY_PICK_HEAD > /dev/null 2>&1; then
-  printf '>> CHERRY-PICKING <<'
-elif git rev-parse --verify REVERT_HEAD > /dev/null 2>&1; then
-  printf '>> REVERTING <<'
-elif git rev-parse --verify BISECT_HEAD > /dev/null 2>&1; then
-  printf '>> BISECTING <<'
-else
-  exit 1
-fi
-"""
-when = "git rev-parse --git-dir 2>/dev/null"
-format = "[$output]($style)"
+# Uses Starship's built-in git_state module (replaced custom segment that manually
+# checked git refs - built-in uses same logic internally but with better caching).
+[git_state]
+format = "[$state( $progress_current/$progress_total)]($style)"
 style = "bold red"
-ignore_timeout = true
+rebase = ">> REBASING <<"
+merge = ">> MERGING <<"
+cherry_pick = ">> CHERRY-PICKING <<"
+revert = ">> REVERTING <<"
+bisect = ">> BISECTING <<"
 
 # ── Disabled modules ─────────────────────────────────────────────────────────
 [aws]

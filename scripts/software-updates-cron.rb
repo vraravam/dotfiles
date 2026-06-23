@@ -151,16 +151,19 @@ module SoftwareUpdatesCron
     # already-installed formulae on every cron run.
     _perform_update('brews', 'brew') do
       # Update brew itself first to get latest formula definitions
-      system('brew', 'update') || true
+      # Redirect stdout to suppress progress output in cron context
+      system('brew', 'update', out: File::NULL) || true
       # 'brew bundle check' exits 0 when everything is installed -- skip the full
       # bundle install in that case to avoid re-checking every formula every hour.
+      # Keep check output visible for debugging missing packages.
       system('brew', 'bundle', 'check', '-v') || system('brew', 'bundle', 'install', '-q')
     end
     _perform_update('mise plugins', 'mise') do
       # mise binary is upgraded using homebrew
-      system('mise', 'plugins', 'update') && system('mise', 'upgrade', '--bump')
+      # Redirect stdout to suppress 'all tools are installed' messages
+      system('mise', 'plugins', 'update', out: File::NULL) && system('mise', 'upgrade', '--bump', out: File::NULL)
     end
-    _perform_update('tldr database', 'tldr') { system('tldr', '--update') }
+    _perform_update('tldr database', 'tldr') { system('tldr', '--update', out: File::NULL) }
     _perform_update('git-ignore database', 'git-ignore-io') { system('git', 'ignore-io', '--update-list') }
     _perform_update('claude-code', 'claude') { system('claude', 'update') }
 
@@ -179,7 +182,8 @@ module SoftwareUpdatesCron
           'https://raw.githubusercontent.com/mattmc3/antidote/main/misc/zsh_plugins.sublime-syntax',
           '-o', bat_syntax_dir_pn.join('zsh_plugins.sublime-syntax').to_s
         )
-        system('bat', 'cache', '--build')
+        # Redirect stdout to suppress 'Writing theme/syntax set' messages
+        system('bat', 'cache', '--build', out: File::NULL)
       end
     end
 
@@ -213,7 +217,8 @@ module SoftwareUpdatesCron
           # 'codestral:22b',     # TODO: Need to research
         ]
         ollama_models.each do |model|
-          if system('ollama', 'pull', model)
+          # Redirect stdout/stderr to suppress progress bars and ANSI escape sequences in cron context
+          if system('ollama', 'pull', model, out: File::NULL, err: File::NULL)
             Logging.success "Pulled model: '#{model}'"
           else
             Logging.record_warning "Failed to pull model: '#{model}'"

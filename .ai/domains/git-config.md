@@ -78,47 +78,118 @@ allowing `git cc /path/to/repo --expire=now`.
 
 ---
 
+## Helper Predicates for DRY Principle
+
+Git aliases can call other git aliases. Extract repeated patterns into helper predicates
+to improve maintainability and reduce duplication.
+
+### Lock-Free Status Helpers
+
+Two helpers provide lock-free status checks safe for prompts and monitoring:
+
+**`git st-nolock [<dir>]`** - Returns porcelain status without locks:
+```ini
+st-nolock = "!f() { git -C \"${1:-.}\" --no-optional-locks status --porcelain 2>/dev/null; }; f"
+```
+
+Used in: starship prompt (4 call sites)
+
+**`git is-dirty [<dir>]`** - Returns 0 if working tree has uncommitted changes, 1 if clean:
+```ini
+is-dirty = "!f() { git -C \"${1:-.}\" st-nolock | /usr/bin/grep -q .; }; f"
+```
+
+Used in: starship prompt (4 `when` conditions)
+
+**Why `--no-optional-locks`:**
+- Prevents creating lock files (`index.lock`) during read-only operations
+- Safe for prompts that run on every shell render
+- Avoids interfering with ongoing git operations
+- Never add to interactive aliases (`st`, `status`) - users benefit from seeing lock contention
+
+**Why separate from `st` alias:**
+- Interactive `git st` should NOT use `--no-optional-locks` (users need normal locking)
+- Starship/monitoring contexts need explicit lock-free behavior
+- Keeps concerns separated
+
+### Other Helper Predicates
+
+**`git is-clean [<dir>]`** - Returns 0 if no unstaged or staged changes:
+```ini
+is-clean = "!f() { git -C \"${1:-.}\" d --quiet && git -C \"${1:-.}\" dc --quiet; }; f"
+```
+
+Used in: `pull-safe`, `upreb`
+
+**`git is-shallow [<dir>]`** - Returns 0 if repo is shallow clone:
+```ini
+is-shallow = "!f() { git -C \"${1:-.}\" rev-parse --is-shallow-repository | /usr/bin/grep -q true; }; f"
+```
+
+Used in: `pull-unshallow`, `fetch-unshallow`
+
+**`git all-refs [<dir>]`** - Lists all branches (local + remote-tracking):
+```ini
+all-refs = "!f() { git -C \"${1:-.}\" for-each-ref --format='%(refname)' refs/heads refs/remotes; }; f"
+```
+
+Used in: `rfc`, `cc`
+
+**`git has-upstream [<dir>]`** - Returns 0 if upstream remote exists:
+```ini
+has-upstream = "!f() { git -C \"${1:-.}\" remote | /usr/bin/grep -x upstream &>/dev/null; }; f"
+```
+
+Used in: `upreb`
+
+---
+
 ## `~/.gitconfig` Aliases
 
-Aliases that use shell commands must use `!sh -c '...' -` to properly handle
-the `-C <dir>` flag:
+### Preferred Pattern: `!f() { ... }; f`
 
-```ini
-# BAD -- does not honour -C
-my-alias = !git some-command
-
-# Good -- honours -C via $1 defaulting to current dir
-my-alias = !sh -c 'git -C "${1:-.}" some-command' -
-```
-
-For aliases that accept additional arguments, pass them through with `"$@"`:
-
-```ini
-pull-unshallow = !sh -c 'cd "${1:-.}" && shift && git fetch --unshallow "$@" && git pull "$@"' -
-```
-
-### `--` Trailer and `$0` vs `$1`
-
-The trailing `-` after the shell string sets `$0` (the script name) to `-`.
-Positional arguments from the git invocation then start at `$1`. This is the
-correct convention for `!sh -c '...' -` aliases:
-
-```ini
-# $1 = first user-supplied arg (or "." if no arg given)
-my-alias = !sh -c 'git -C "${1:-.}" command' -
-```
-
-Do NOT use `$0` for user arguments -- `$0` is always `-` (the script name
-passed as the trailing argument to `sh -c`).
-
-### `!f()` Named Function Pattern
-
-For multi-step logic, use a named function rather than a bare inline
-expression. This improves readability and avoids quoting complexity:
+**All multi-step shell aliases should use the named function pattern:**
 
 ```ini
 my-cmd = "!f() { git -C \"${1:-.}\" command \"$@\"; }; f"
 ```
+
+**Benefits:**
+- Clearer structure (no nested quotes)
+- Easier to read multi-line logic
+- Consistent with rest of codebase (17/22 aliases use this pattern)
+- Simpler argument handling
+
+**Example with multi-step logic:**
+```ini
+pull-unshallow = "!f() { \
+  git rev-parse --is-shallow-repository | /usr/bin/grep -q true && \
+    git pull --unshallow \"$@\" || \
+    git pull \"$@\"; \
+}; f"
+```
+
+### Legacy Pattern: `!sh -c '...' -`
+
+The `!sh -c '...' -` pattern is valid but **deprecated** in favor of `!f()`:
+
+```ini
+# Avoid (legacy style) -- harder to read, extra quoting complexity
+my-alias = !sh -c 'git -C "${1:-.}" some-command' -
+```
+
+**When the legacy pattern was used:**
+- Older Git versions (< 1.7.10) didn't support named functions well
+- Historical convention before the codebase standardized
+
+**Argument handling differences:**
+- `!sh -c '...' -`: Trailing `-` sets `$0` to `-`, user args start at `$1`
+- `!sh -c '...' --`: Trailing `--` sets `$0` to `--`, user args start at `$1`  
+- `!f() { ... }; f`: User args naturally start at `$1`, `$0` is the shell name
+
+Both handle `"$@"` the same way for passing through extra arguments.
+
+### Simple Aliases (No Shell)
 
 Simpler single-command aliases can use `!git` or bare git subcommand directly:
 
@@ -178,7 +249,7 @@ The correct pattern is an **early exit**: check first, do nothing if dirty.
 **`git pull-safe`** -- fetch all remotes, rebase onto `@{u}` only if clean:
 
 ```ini
-pull-safe = "!f() { git -C \"${1:-.}\" fetch --all; if git -C \"${1:-.}\" diff --quiet && git -C \"${1:-.}\" diff --cached --quiet; then git -C \"${1:-.}\" rebase '@{u}'; else printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' \"${1:-.}\" >&2; exit 1; fi; }; f"
+pull-safe = "!f() { git -C \"${1:-.}\" fetch; if git -C \"${1:-.}\" diff --quiet && git -C \"${1:-.}\" dc --quiet; then git -C \"${1:-.}\" rebase '@{u}'; else printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' \"${1:-.}\" >&2; exit 1; fi; }; f"
 ```
 
 **`git upreb`** -- abort before touching anything if dirty (a mid-workflow
