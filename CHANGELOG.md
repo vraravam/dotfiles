@@ -6,6 +6,10 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ### 3.1.34
 
+* Removed `vorssaint` since it was causing zoom to hang when joining meetings. Went back to `stats` (menubar monitors), `sol` (clipboard, windo layout) and `dockdoor` (window previews in dock).
+
+### 3.1.33
+
 #### Starship optimizations: 75-100x faster prompts + embedded git size + cron output fix + DRY helpers
 
 * *[files/--HOME--/.gitconfig]* Added 2 new helper aliases to extract repeated patterns (lines 43, 48): `st-nolock` returns porcelain status without locks (`--no-optional-locks status --porcelain 2>/dev/null`) for safe prompt/monitoring use, `is-dirty` returns 0 if working tree has uncommitted changes by piping st-nolock to grep. Both helpers follow `<dir>` argument convention. Extracted to eliminate 6 occurrences of `git --no-optional-locks status --porcelain 2>/dev/null` in starship.toml (2 as standalone command, 4 in `when` conditions with grep pipe). Keeps `st` alias clean for interactive use (users benefit from normal locking/contention visibility). Converted all 19 single-line named function aliases to multi-line format for readability (helper predicates, inspection/info aliases, viewing changes/history, local changes/staging, remote operations) - improves maintainability and makes control flow immediately visible. Now 721 lines (was 649: +10 for new helper aliases, +62 for multi-line formatting).

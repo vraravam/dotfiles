@@ -78,6 +78,7 @@ brew 'tlrc'
 
 cask 'clocker', postinstall: "\"#{setup_login_items_script}\" -a 'Clocker'"
 cask 'dbeaver-community'
+cask 'dockdoor', postinstall: "\"#{setup_login_items_script}\" -a 'Dockdoor'"
 cask 'drawio'
 cask 'firefox@nightly' #, greedy: true
 cask 'xykong/tap/flux-markdown', trusted: true, postinstall: 'qlmanage -r'
@@ -91,8 +92,8 @@ cask 'protonvpn' # , postinstall: "\"#{setup_login_items_script}\" -a 'ProtonVPN
 cask 'rancher' # if ::OS::Mac::version < 26
 cask 'sol', postinstall: "\"#{setup_login_items_script}\" -a 'Sol'"
 cask 'shortcat', postinstall: "\"#{setup_login_items_script}\" -a 'Shortcat'"
+cask 'stats', postinstall: "\"#{setup_login_items_script}\" -a 'Stats'"
 cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'" if ::OS::Mac::version >= 14 && ::OS::Mac::version < 27
-cask 'vorssaint/tap/vorssaint', trusted: true, postinstall: "\"#{setup_login_items_script}\" -a 'Vorssaint'"
 cask 'zed@preview',
   postinstall: "ln -sf '/Applications/Zed Preview.app/Contents/MacOS/cli' \"${HOMEBREW_PREFIX}/bin/zed\""
 cask 'zen@twilight'
@@ -106,9 +107,8 @@ brew 'ollama', link: true, restart_service: :changed
 # brew 'jundot/omlx/omlx', trusted: true, restart_service: :changed if is_arm
 brew 'opencode'
 
-# These have been replaced with Vorssaint. Once I am fully satisfied, I will remove these references
-# cask 'dockdoor', postinstall: "\"#{setup_login_items_script}\" -a 'Dockdoor'"
-# cask 'stats', postinstall: "\"#{setup_login_items_script}\" -a 'Stats'"
+# Vorssaint is causing zoom to hang while joining meetings
+# cask 'vorssaint/tap/vorssaint', trusted: true, postinstall: "\"#{setup_login_items_script}\" -a 'Vorssaint'"
 
 # brew 'mas'
 # mas 'PDFgear', id: 6469021132

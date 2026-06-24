@@ -342,7 +342,7 @@ com.titanium.OnyX.update
 com.usebruno.app
 com.utmapp.UTM
 com.visualstudio.code.oss
-com.vorssaint.utils
+# com.vorssaint.utils
 com.vscodium.VSCodiumInsiders
 com.xykong.Markdown.QuickLook
 dev.zed.Zed
