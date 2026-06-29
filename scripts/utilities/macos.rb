@@ -31,7 +31,7 @@ module MacOS
 
   # Login-item apps that are killed before defaults writes and restarted after.
   # Keep in sync with Brewfile setup_login_items_script entries and
-  # defaults-write login-key sections in osx-defaults.sh.
+  # defaults-write login-key sections in osx-defaults.rb.
   # TODO: Duplicated in .aliases and macos.rb - need to find a way to have only 1 copy
   LOGIN_ITEM_APPS = [
     'Clocker',   # startAtLogin = true (com.abhishek.Clocker)
@@ -106,7 +106,7 @@ module MacOS
   end
 
   # Turns the macOS automatic software update schedule back on. Called from the
-  # EXIT trap in osx-defaults.sh and capture-prefs.rb so it runs on both normal
+  # EXIT trap in osx-defaults.rb and capture-prefs.rb so it runs on both normal
   # and error exits. Guards with sudo check so it is safe to call from cron --
   # if sudo credentials are not cached (no terminal), warns and skips rather than
   # hanging. keep_sudo_alive's duplicate-loop guard makes it a no-op when the

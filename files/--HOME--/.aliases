@@ -986,12 +986,12 @@ build_me() {
 # 3n. macOS prefs helpers
 # --------------------------------------------------------------------------
 
-# Canonical list of login-item apps managed by osx-defaults.sh and
+# Canonical list of login-item apps managed by osx-defaults.rb and
 # capture-prefs.rb. Both scripts kill these apps before writing defaults so
 # the running instance cannot overwrite writes on quit, and restart them on
 # exit via an EXIT trap.
 # Keep in sync with the Brewfile setup_login_items_script entries and the
-# defaults-write login-key sections in osx-defaults.sh.
+# defaults-write login-key sections in osx-defaults.rb.
 # TODO: Duplicated in .aliases and macos.rb - need to find a way to have only 1 copy
 _MACOS_LOGIN_ITEM_APPS=(
   'Clocker'    # startAtLogin = true (com.abhishek.Clocker)

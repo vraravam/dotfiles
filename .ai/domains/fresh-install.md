@@ -1,5 +1,5 @@
 ---
-applyTo: "**/fresh-install-of-osx.rb,**/install-dotfiles.rb,**/post-brew-install.rb,**/osx-defaults.sh,**/setup-login-item.rb,**/capture-prefs.rb,**/resurrect-repositories.rb"
+applyTo: "**/fresh-install-of-osx.rb,**/install-dotfiles.rb,**/post-brew-install.rb,**/osx-defaults.rb,**/setup-login-item.rb,**/capture-prefs.rb,**/resurrect-repositories.rb"
 ---
 
 # Fresh Install Instructions
@@ -248,14 +248,14 @@ load-bearing for the vanilla OS install path.
 ## `capture-prefs.rb` Timestamp Check
 
 `capture-prefs.rb` validates that the backup preferences are not stale relative to
-`osx-defaults.sh` changes. The check compares git commit timestamps:
-- Last commit touching `scripts/osx-defaults.sh` in dotfiles repo
+`osx-defaults.rb` changes. The check compares git commit timestamps:
+- Last commit touching `scripts/osx-defaults.rb` in dotfiles repo
 - Last commit touching the preferences backup directory in home repo
 
-If the backup predates `osx-defaults.sh` changes, the script would normally abort with
+If the backup predates `osx-defaults.rb` changes, the script would normally abort with
 a fatal error to prevent importing incomplete settings.
 
-**Exception for `FIRST_INSTALL`:** On vanilla OS, fresh-install runs `osx-defaults.sh -s`
+**Exception for `FIRST_INSTALL`:** On vanilla OS, fresh-install runs `osx-defaults.rb -s`
 to baseline current system prefs BEFORE calling `capture-prefs.rb -i`. The backup import
 is an incremental overlay on top of this baseline. Therefore, an outdated backup is
 acceptable (and better than no backup) on `FIRST_INSTALL`.
@@ -264,7 +264,7 @@ The timestamp check is skipped when `ENV['FIRST_INSTALL']` is set:
 
 ```ruby
 if osx_defaults_ts && backup_ts && backup_ts < osx_defaults_ts && !EnvVars.first_install?
-  _abort_with_error("Backup predates the last change to 'osx-defaults.sh' -- ...")
+  _abort_with_error("Backup predates the last change to 'osx-defaults.rb' -- ...")
 end
 ```
 
@@ -275,7 +275,7 @@ stale prefs without the baseline step would overwrite newer settings with older 
 1. Runs `capture-prefs.rb -e` to export current preferences (stages files in git)
 2. Commits using `git sci "Preferences backup: <timestamp>"` (amends if ahead of remote, creates new if not)
 3. This updates the backup's git commit timestamp to current time
-4. Import then succeeds because backup timestamp is now newer than `osx-defaults.sh`
+4. Import then succeeds because backup timestamp is now newer than `osx-defaults.rb`
 
 The use of `git sci` ensures repeated fresh-install runs amend the same commit rather than
 creating a pile of preference backup commits.

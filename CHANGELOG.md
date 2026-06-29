@@ -124,7 +124,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 * *[files/--XDG_CONFIG_HOME--/zsh/update_all_repos]* Fixed dispatch pattern. Same changes as status_all_repos - moved implementation to `_update_all_repos`, added dispatch wrapper. Ensures consistent Ruby-first execution with shell fallback.
 
-* *[scripts/osx-defaults.sh]* Added ERR trap (line 34): `trap 'error "Script failed at line ${LINENO}. Check log for details."' ERR`. Provides clear failure notification with line numbers instead of silent failures. Added context message before killing apps (line 146): "About to kill and restart Terminal, iTerm2, Finder..." - prevents user confusion when apps suddenly close. Added `_plist_set_or_add` helper function (lines 98-125) implementing atomic Set-or-Add pattern for PlistBuddy operations. Refactored Terminal profile settings (lines 1173-1195) to use helper - 4 settings now atomic (rowCount, columnCount, useOptionAsMetaKey, shellExitAction). Converted all 59 non-array iTerm2 settings (lines 1374-1467) from Delete+Add pattern to `_plist_set_or_add` - includes window dimensions, text/font settings, terminal behavior, session options, keyboard modifiers. Added error suppression to Jobs to Ignore array Delete operation (`2>/dev/null || true`) - only array operation remaining as Delete+Add since PlistBuddy cannot atomically set array contents. Fixed duplicate array index bug (zsh was `:5` twice, now correctly `:6`). Total: 63 settings moved from non-atomic to atomic pattern. Script can now be interrupted at any point without leaving Terminal/iTerm2 preferences in partial state (except array contents). Code reduction: 189 lines changed (+64, -125), net -61 lines in iTerm2 section.
+* *[scripts/osx-defaults.rb]* Added ERR trap (line 34): `trap 'error "Script failed at line ${LINENO}. Check log for details."' ERR`. Provides clear failure notification with line numbers instead of silent failures. Added context message before killing apps (line 146): "About to kill and restart Terminal, iTerm2, Finder..." - prevents user confusion when apps suddenly close. Added `_plist_set_or_add` helper function (lines 98-125) implementing atomic Set-or-Add pattern for PlistBuddy operations. Refactored Terminal profile settings (lines 1173-1195) to use helper - 4 settings now atomic (rowCount, columnCount, useOptionAsMetaKey, shellExitAction). Converted all 59 non-array iTerm2 settings (lines 1374-1467) from Delete+Add pattern to `_plist_set_or_add` - includes window dimensions, text/font settings, terminal behavior, session options, keyboard modifiers. Added error suppression to Jobs to Ignore array Delete operation (`2>/dev/null || true`) - only array operation remaining as Delete+Add since PlistBuddy cannot atomically set array contents. Fixed duplicate array index bug (zsh was `:5` twice, now correctly `:6`). Total: 63 settings moved from non-atomic to atomic pattern. Script can now be interrupted at any point without leaving Terminal/iTerm2 preferences in partial state (except array contents). Code reduction: 189 lines changed (+64, -125), net -61 lines in iTerm2 section.
 
 * *[scripts/fresh-install-of-osx.rb]* Added `.shellrc` download validation (lines 113-117). After curl download, validates file exists and is non-empty using `is_file` and `is_file_non_zero`. Exits with clear error message if download corrupted or network failure occurred. Prevents sourcing broken `.shellrc` that would crash bootstrap process. Added FileVault user_action (line 172): `user_action "Enable FileVault disk encryption in System Settings > Privacy & Security"`. Prompts user to enable encryption after fresh-install completes - can't be automated (requires user password). Added manual review reminder (line 769): prints user_action before opening System Settings, reminds user to review all applied settings. Prevents blind acceptance of defaults. Fixed cron backup timing (lines 723-731): moved `suspend_cron` call to before `capture-prefs.rb -i` invocation. Prevents cron job from running during preferences restoration (could conflict with import process).
 
@@ -217,17 +217,17 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 * *[fresh-install-of-osx.rb]* Converted biometric sensor flag assignments to explicit `if` blocks. Fixed `chsh` command to handle authentication failures gracefully with `_record_warning` instead of triggering ERR trap. Declared `_script_start_times` and `_step_start_times` arrays before using `+=` operator (prevents `set -u` violations). Moved Sol.app launch check to nested `if` blocks to avoid standalone `&&` chain abort. Modified `_clone_home_repo` to pull latest home repo changes on pre-configured machines before preferences restore. Added automatic preferences export and commit on pre-configured machines: runs `capture-prefs.rb -e` to refresh backup, then `git sci` to commit (amends existing commit if ahead of remote, creates new if not) - updates git commit timestamp so import validation passes.
 
-* *[osx-defaults.sh]* Converted spotlight indexing `mdutil` command chain to explicit `if` block.
+* *[osx-defaults.rb]* Converted spotlight indexing `mdutil` command chain to explicit `if` block.
 
 * *[files/--PERSONAL_PROFILES_DIR--/.envrc]* Converted symlink creation and folder move operations from chained `&&` to explicit `if` blocks.
 
 * *[scripts/utilities/cron.rb]* Changed `restore_cron` from raising exceptions to logging errors via `Logging.record_error` and returning boolean success/failure. Updated callers (`resume_cron`, `recron`) to check return value before printing success message. Prevents crontab installation failures from aborting fresh-install via ERR trap - errors are recorded in summary but execution continues.
 
-* *[capture-prefs.rb]* Added `FIRST_INSTALL` exception to timestamp validation check - skips staleness validation when `ENV['FIRST_INSTALL']` is set. On vanilla OS, fresh-install runs `osx-defaults.sh -s` first to baseline current system prefs, so import is an incremental overlay where any backup is better than none. On pre-configured machines, check remains active to prevent importing incomplete settings after `osx-defaults.sh` updates.
+* *[capture-prefs.rb]* Added `FIRST_INSTALL` exception to timestamp validation check - skips staleness validation when `ENV['FIRST_INSTALL']` is set. On vanilla OS, fresh-install runs `osx-defaults.rb -s` first to baseline current system prefs, so import is an incremental overlay where any backup is better than none. On pre-configured machines, check remains active to prevent importing incomplete settings after `osx-defaults.rb` updates.
 
 **Root cause:** Under `set -E`, ERR traps inherit to all functions. Standalone `A && B` expressions where A returns false propagate exit code 1 to the enclosing scope, triggering the trap even though the false result is expected (e.g., guard conditions, optional file checks). Explicit `if A; then B; fi` never propagates the predicate's exit code, so the trap never fires. Ruby exceptions (`raise`) also propagate to shell as non-zero exit codes, triggering ERR traps when called via `ruby -e` from shell functions.
 
-**Impact:** Fresh-install now completes successfully on both vanilla OS and pre-configured machines without false-positive "Installation failed at line X" errors during `.zshrc` sourcing, when external completion files are loaded, when crontab installation fails, or when backup preferences predate `osx-defaults.sh` changes. On pre-configured machines, preferences backup is automatically refreshed and committed before import, ensuring timestamp validation passes.
+**Impact:** Fresh-install now completes successfully on both vanilla OS and pre-configured machines without false-positive "Installation failed at line X" errors during `.zshrc` sourcing, when external completion files are loaded, when crontab installation fails, or when backup preferences predate `osx-defaults.rb` changes. On pre-configured machines, preferences backup is automatically refreshed and committed before import, ensuring timestamp validation passes.
 
 
 #### Adopting these changes
@@ -343,7 +343,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 * *[files/--HOME--/.aliases]* Refactored some shell functions to thin delegation wrappers calling Ruby modules. Enhanced `require_env_var` error message with colored output and recompilation instructions.
 
-* *[scripts/osx-defaults.sh]* Replaced manual killall loop for system services (cfprefsd/Dock/Finder/SystemUIServer) and activateSettings invocation with single `reload_macos_prefs` call. Application-specific killall calls (Chrome, Safari, Mail, etc.) remain.
+* *[scripts/osx-defaults.rb]* Replaced manual killall loop for system services (cfprefsd/Dock/Finder/SystemUIServer) and activateSettings invocation with single `reload_macos_prefs` call. Application-specific killall calls (Chrome, Safari, Mail, etc.) remain.
 
 * *[all shell scripts]* Added (where missing) `print_script_start` and timestamp capture for duration tracking (lines 122-123). Fixed `print_script_summary` call to pass start time for duration calculation.
 
@@ -481,7 +481,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 * *[scripts/install-dotfiles.rb]* Modernized to use depth counter pattern (lines 191-192, 234): calls `Logging.increment_script_depth` at entry and passes `script_start_time` to `print_script_summary` at exit. Now 100% adoption across all 11 Ruby scripts in the repository.
 
-* *[scripts/osx-defaults.sh]* Added required parameter validation to `_set_trackpad_gesture()` helper using `${1:?...}` pattern (line 2156). Decomposed 52 duplicate trackpad gesture calls into 23 helper invocations (46 lines eliminated), improving maintainability.
+* *[scripts/osx-defaults.rb]* Added required parameter validation to `_set_trackpad_gesture()` helper using `${1:?...}` pattern (line 2156). Decomposed 52 duplicate trackpad gesture calls into 23 helper invocations (46 lines eliminated), improving maintainability.
 
 * *[scripts/capture-prefs.sh]* Added required parameter validation to `_strip_excluded_keys()` using `${1:?...}` pattern (line 108).
 
@@ -863,7 +863,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Clarified two-phase preference architecture in documentation
 
-* *[copilot-instructions.md]* Backported the [`§ osx-defaults.sh and capture-prefs — Two-Phase Preference Architecture`](.github/copilot-instructions.md#osx-defaultssh-and-capture-prefs--two-phase-preference-architecture) Layer 1/Layer 2 section from `nix-migration`, inserted before Git Configuration Rules; stripped the nix-specific `targets.darwin.defaults` subsection. Gives a concise accessible overview (what the layers are, auto-call behavior, re-run warning, ordering constraint) alongside the existing detailed Phase 1/Phase 2 decision-rules section.
+* *[copilot-instructions.md]* Backported the [`§ osx-defaults.rb and capture-prefs — Two-Phase Preference Architecture`](.github/copilot-instructions.md#osx-defaultssh-and-capture-prefs--two-phase-preference-architecture) Layer 1/Layer 2 section from `nix-migration`, inserted before Git Configuration Rules; stripped the nix-specific `targets.darwin.defaults` subsection. Gives a concise accessible overview (what the layers are, auto-call behavior, re-run warning, ordering constraint) alongside the existing detailed Phase 1/Phase 2 decision-rules section.
 * *[GettingStarted.md]* Added an inline sentence to the bootstrap paragraph noting that the script automatically applies the two-phase preference setup in order.
 
 #### Tightened `_create_crontab` cron header comments
@@ -876,10 +876,10 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[starship.toml]* Replaced `[ -d "$root/rebase-merge" ] || [ -d "$root/rebase-apply" ]` and `[ -f "$root/BISECT_LOG" ]` with `git rev-parse --verify REBASE_HEAD` and `git rev-parse --verify BISECT_HEAD` respectively; removed the now-unused `root=$(git rev-parse --git-dir …)` line. All five operation states now use a single unified detection strategy that works with both the classic `.git/` files backend and the reftable backend (git 2.45+), where pseudorefs are stored in the reftable and plain file/directory checks silently fail.
 * *[copilot-instructions.md]* Updated the [`§ Starship Prompt Rules`](.github/copilot-instructions.md#starship-prompt-rules) bullet to drop the "two strategies" framing and document the unified `git rev-parse --verify` approach for all five states (`REBASE_HEAD`, `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `BISECT_HEAD`).
 
-#### Standardised `osx-defaults.sh` section formatting
+#### Standardised `osx-defaults.rb` section formatting
 
-* *[osx-defaults.sh]* Renamed `# MenuBar` section header to `# Menu Bar` to match macOS terminology.
-* *[osx-defaults.sh]* Added missing blank lines after the closing `# ---` divider in seven sections (Login Window, SSD-specific tweaks, Dock, Safari & WebKit, Mail, Terminal, iTerm2) for consistent section-body separation.
+* *[osx-defaults.rb]* Renamed `# MenuBar` section header to `# Menu Bar` to match macOS terminology.
+* *[osx-defaults.rb]* Added missing blank lines after the closing `# ---` divider in seven sections (Login Window, SSD-specific tweaks, Dock, Safari & WebKit, Mail, Terminal, iTerm2) for consistent section-body separation.
 
 #### Adopting these changes
 
@@ -944,7 +944,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 #### Set Homebrew zsh as the default login shell during fresh-install
 
 * *[fresh-install-of-osx.rb]* Added `_set_default_shell` function that adds `/opt/homebrew/bin/zsh` to `/etc/shells` (required by `chsh`) if absent, then calls `chsh -s` to make it the default shell. Called immediately after `_install_homebrew` so Homebrew's zsh is guaranteed to be on disk. Idempotent — skips each step if already done.
-* *[osx-defaults.sh]* Added `PlistBuddy` call to set `Custom Command = No` (Login shell) in the Default iTerm2 profile. The key defaults to `Custom Shell` on a fresh iTerm2 install, which means `.zlogin` is never triggered for new windows/tabs. Setting it to `No` ensures the full zsh startup sequence (`.zshenv → .zshrc → .zlogin`) runs correctly.
+* *[osx-defaults.rb]* Added `PlistBuddy` call to set `Custom Command = No` (Login shell) in the Default iTerm2 profile. The key defaults to `Custom Shell` on a fresh iTerm2 install, which means `.zlogin` is never triggered for new windows/tabs. Setting it to `No` ensures the full zsh startup sequence (`.zshenv → .zshrc → .zlogin`) runs correctly.
 
 #### Added symmetric-diverge rebase to `upreb` autoload script
 
@@ -962,7 +962,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * **Terminal.app** requires no manual change — it always opens a login shell using `$SHELL`, so it picks up the new default automatically once `chsh` is done.
 
-* **iTerm2** — open **Preferences → Profiles → General → Command** and set it to **Login shell** (not "Custom Shell"). This is also applied automatically by `osx-defaults.sh -s`, but pre-configured machines that skip that step must set it manually.
+* **iTerm2** — open **Preferences → Profiles → General → Command** and set it to **Login shell** (not "Custom Shell"). This is also applied automatically by `osx-defaults.rb -s`, but pre-configured machines that skip that step must set it manually.
 
 ---
 
@@ -1107,7 +1107,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Document two-phase preference architecture and no-hardcoded-paths rule
 
-* *[TechnicalDeepDive.md]* Added § 12 — Two-Phase Preference Architecture: explains why `osx-defaults.sh -s` (baseline seed) must run before `capture-prefs.sh -i` (UI-configured overrides), and the decision rule for where new preference code belongs.
+* *[TechnicalDeepDive.md]* Added § 12 — Two-Phase Preference Architecture: explains why `osx-defaults.rb -s` (baseline seed) must run before `capture-prefs.sh -i` (UI-configured overrides), and the decision rule for where new preference code belongs.
 * *[Extras.md, GettingStarted.md]* Added adopter-facing summaries of the two-phase architecture with links to § 12.
 * *[copilot-instructions.md]* Added Two-Phase Preference Architecture section (decision rule + ordering constraint) and cross-referenced `shell-scripting.instructions.md` § No Hardcoded User-Specific Paths.
 * *[shell-scripting.instructions.md, copilot-instructions.md]* Added `## No Hardcoded User-Specific Paths` rule: substitution table of all derived `${HOME}` paths and their canonical env var equivalents, plus a scan rule for auditing existing files.
@@ -1122,11 +1122,11 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Unify script logging decoration across shell and Ruby (remaining call sites)
 
-* *[capture-prefs.sh, osx-defaults.sh, setup-login-item.sh]* Removed the now-redundant `"${_SCRIPT_NAME}"` argument from remaining `print_script_summary` call sites.
+* *[capture-prefs.sh, osx-defaults.rb, setup-login-item.sh]* Removed the now-redundant `"${_SCRIPT_NAME}"` argument from remaining `print_script_summary` call sites.
 
 #### Gate all script banners on outermost-script depth (remaining scripts)
 
-* *[capture-prefs.sh, osx-defaults.sh, setup-login-item.sh]* Each script now decrements `_DOTFILES_SCRIPT_DEPTH` on exit (clean or error) via `_decrement_script_depth`.
+* *[capture-prefs.sh, osx-defaults.rb, setup-login-item.sh]* Each script now decrements `_DOTFILES_SCRIPT_DEPTH` on exit (clean or error) via `_decrement_script_depth`.
 * *[TechnicalDeepDive.md]* Added section on the nesting depth counter, `is_outermost_script` / `outermost_script?` guard, and why subprocess scripts still decrement even though only the outermost script prints output.
 
 #### Harden shell utility infrastructure (remaining changes)
@@ -1154,13 +1154,13 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * *[.aliases]* Extracted `kill_login_item_apps`, `restart_login_item_apps`, and `reload_macos_prefs` into a new `§ 3n. macOS prefs helpers` section, along with the canonical `_MACOS_LOGIN_ITEM_APPS` array.
 * *[.aliases]* Added `suspend_softwareupdate_schedule` and `resume_softwareupdate_schedule` to `§ 3n`.
-* *[osx-defaults.sh, capture-prefs.sh]* Moved `softwareupdate --schedule` management into the shared helpers; wired `resume_softwareupdate_schedule` into the EXIT trap.
+* *[osx-defaults.rb, capture-prefs.sh]* Moved `softwareupdate --schedule` management into the shared helpers; wired `resume_softwareupdate_schedule` into the EXIT trap.
 
-#### Expand `osx-defaults.sh`
+#### Expand `osx-defaults.rb`
 
-* *[osx-defaults.sh]* Added sections for new apps: Clocker, DBeaver, DockDoor, Drawio, Firefox, Keybase, KeyCastr, KeyClu, OnlyOffice, Rancher Desktop, Shortcat, Stats, Thaw, Zen Browser.
-* *[osx-defaults.sh]* Replaced inline kill/restart arrays with calls to `kill_login_item_apps` and `trap 'restart_login_item_apps' EXIT`.
-* *[osx-defaults.sh]* Removed stale Dock/Dashboard keys no longer present in macOS Catalina+.
+* *[osx-defaults.rb]* Added sections for new apps: Clocker, DBeaver, DockDoor, Drawio, Firefox, Keybase, KeyCastr, KeyClu, OnlyOffice, Rancher Desktop, Shortcat, Stats, Thaw, Zen Browser.
+* *[osx-defaults.rb]* Replaced inline kill/restart arrays with calls to `kill_login_item_apps` and `trap 'restart_login_item_apps' EXIT`.
+* *[osx-defaults.rb]* Removed stale Dock/Dashboard keys no longer present in macOS Catalina+.
 
 #### Add technical deep-dive documentation and restructure adopter docs
 
@@ -1211,7 +1211,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * *[.shellrc]* Added `user_action()` logging function (bold yellow, `➡️` prefix) for manual-step messages — distinct from `warn` (unexpected problem) and `info` (informational). Suppressed in direnv subshells.
 * *[.shellrc]* Extracted `_record_warning`, `_record_error`, and `print_script_summary` as shared helpers using zsh dynamic scoping; `print_script_summary` fires a macOS notification when errors or warnings were collected.
-* *[add-upstream-git-config.sh, capture-prefs.sh, cleanup-browser-profiles.sh, osx-defaults.sh, recreate-repo.sh, run-all.sh, setup-login-item.sh]* Applied the deferred collection pattern — operation failures use `_record_warning`/`_record_error`; `print_script_summary` called at end of `main()`.
+* *[add-upstream-git-config.sh, capture-prefs.sh, cleanup-browser-profiles.sh, osx-defaults.rb, recreate-repo.sh, run-all.sh, setup-login-item.sh]* Applied the deferred collection pattern — operation failures use `_record_warning`/`_record_error`; `print_script_summary` called at end of `main()`.
 * *[fresh-install-of-osx.rb]* Two-level collection: `_step_warnings` for recoverable issues, `_step_errors` for significant failures; `_cleanup_and_exit` calls `print_script_summary` before the fatal crash message.
 * *[software-updates-cron.sh]* Two-level collection for update and infrastructure failures; escalated `_title_icon` to `⚠️` when outdated packages need manual update.
 
@@ -1322,7 +1322,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.gitconfig]* Added `git pull-unshallow` and `git fetch-unshallow` aliases (auto-unshallow shallow repos before pulling/fetching). `git pullsub` now delegates to `pull-unshallow`. Fixed `git upreb` to use `grep -x upstream` (exact match). Simplified `git size` to avoid a nested subshell. Removed redundant `git prune` from `git cc`. Fixed `git mn` to pass `--no-ff` (required when `merge.ff=only` is set globally). Changed `help.autoCorrect` from `10` (100ms delay) to `prompt`.
 * *[zsh git commands: cc, count, pull, push, st]* Replaced inline argument-parsing loop with `parse_folder_and_switches`; replaced inline `dispatch_or_fallback` expansion with the shared helper call.
 * *[scripts/]* Fixed stale source comments across all scripts (`add-upstream-git-config.sh`, `capture-prefs.sh`, `capture-raycast-configs.sh`, `cleanup-browser-profiles.sh`, `post-brew-install.sh`, `recreate-repo.sh`, `run-all.sh`, `setup-login-item.sh`, `software-updates-cron.sh`); added missing function doc comments; added `warn` in place of `echo` where `.shellrc` helpers are available.
-* *[scripts/osx-defaults.sh]* Structural refactor: `ask()` moved from nested (inside `main()`) to top-level; `auto` promoted to a script-level variable; sourcing changed from `.shellrc` to `.aliases`; `usage()` added with `print_usage`; `getopts ':s'` (colon-prefixed for error handling) replaces bare `getopts 's'`.
+* *[scripts/osx-defaults.rb]* Structural refactor: `ask()` moved from nested (inside `main()`) to top-level; `auto` promoted to a script-level variable; sourcing changed from `.shellrc` to `.aliases`; `usage()` added with `print_usage`; `getopts ':s'` (colon-prefixed for error handling) replaces bare `getopts 's'`.
 * *[scripts/run-all.sh]* Refactored: `source "${HOME}/.shellrc"` replaced with `.aliases`; all global `MINDEPTH`/`MAXDEPTH`/`FOLDER`/`FILTER` vars replaced with locals; `find … | grep | sort -u` pipeline replaced with a zsh-native dedup loop using `:h` and an associative array; `$(date +%s)` → `${EPOCHSECONDS}` (no fork); `usage()` rewritten with `print_usage`.
 * *[scripts/resurrect-repositories.rb]* Major refactor: all public functions renamed to private (`_find_git_repos_from_disk`, `_apply_filter`, `_generate_each`, etc.); `CliParser` integrated in place of inline `OptionParser`; `section_header`/`print_script_start`/`print_script_duration` calls added; `_verify_all` gains summary statistics (`discovered_count`/`common_repos`); resurrection loop gains per-repo `begin/rescue` error isolation with `successful_repos`/`failed_repos` tracking — failures are now reported rather than aborting the loop.
 * *[.shellrc]* Fixed `${(j.:.)RUBYLIB_PATHS}` bad substitution error when sourced by non-zsh runtimes (e.g. direnv). Wrapped the `RUBYLIB` block in `is_zsh` guard; updated comment to explain the direnv/bash incompatibility.
@@ -1631,7 +1631,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 ### 3.0.6
 
-* *[osx-defaults.sh]* Fix syntax issue.
+* *[osx-defaults.rb]* Fix syntax issue.
 * Remove redundant lines in multiple shell scripts.
 * *[Brewfile]* Remove `unquarantine` flag in Brewfile since its no longer supported.
 
@@ -1713,7 +1713,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * *[.aliases] Extract `restore_cron` function to remove some duplication.
 * *[fresh-install-of-osx.rb]* Removed resurrecting all tracked repos to save time while re-imaging/setting up the laptop.
-* *[osx-defaults.sh]* Turned off spotlight indexing for all volumes.
+* *[osx-defaults.rb]* Turned off spotlight indexing for all volumes.
 
 #### Adopting these changes
 
@@ -1750,7 +1750,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Added a new function `is_shellrc_sourced` to check if the shellrc file is sourced.
 * Changed all shell scripts to use single quotes where possible to ensure that we don't accidentally expand variables or execute commands.
-* *[osx-defaults.sh]* Converted to a zsh script.
+* *[osx-defaults.rb]* Converted to a zsh script.
 
 ---
 

@@ -8,7 +8,7 @@ All domain-specific rules are in [`domains/`](./domains/):
 |--------|------|----------|
 | Character encoding | [`character-encoding.md`](./domains/character-encoding.md) | All cross-language scripts and configuration files (ASCII-only requirements) |
 | Edit checklist | [`edit-checklist.md`](./domains/edit-checklist.md) | All cross-language scripts and configuration files (edit workflow) |
-| Fresh install | [`fresh-install.md`](./domains/fresh-install.md) | `fresh-install-of-osx.rb`, `install-dotfiles.rb`, `post-brew-install.rb`, `osx-defaults.sh`, `setup-login-item.rb`, `capture-prefs.rb`, `resurrect-repositories.rb` |
+| Fresh install | [`fresh-install.md`](./domains/fresh-install.md) | `fresh-install-of-osx.rb`, `install-dotfiles.rb`, `post-brew-install.rb`, `osx-defaults.rb`, `setup-login-item.rb`, `capture-prefs.rb`, `resurrect-repositories.rb` |
 | Git config | [`git-config.md`](./domains/git-config.md) | `.gitconfig`, git aliases, `.gitattributes` |
 | Logging conventions | [`logging-conventions.md`](./domains/logging-conventions.md) | All cross-language scripts (logging/color rules) |
 | Path constants | [`path-constants.md`](./domains/path-constants.md) | All cross-language scripts (path/env var rules) |

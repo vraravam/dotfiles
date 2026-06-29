@@ -74,16 +74,16 @@ Higher priority always wins. Document tradeoffs in comments when they conflict.
 **Key insight**: `if A; then B; fi` never propagates the predicate's exit code outside the conditional, so the trap never fires. Safe exception: `A && B || C` where C returns 0 (overall expression resolves to 0).
 
 #### capture-prefs.rb Timestamp Check Abort (June 2026)
-**Problem**: Fresh-install aborting silently after `osx-defaults.sh` with misleading "line 204" error. Script never reached "Recreate zsh completions" section or later steps (recron, resurrect_tracked_repos, mise/direnv setup).
+**Problem**: Fresh-install aborting silently after `osx-defaults.rb` with misleading "line 204" error. Script never reached "Recreate zsh completions" section or later steps (recron, resurrect_tracked_repos, mise/direnv setup).
 
-**Root cause**: `capture-prefs.rb -i` checks if backup preferences predate `osx-defaults.sh` changes and aborts with `exit(1)` (treated as fatal error). On `FIRST_INSTALL`, any backup is better than none since fresh-install already ran `osx-defaults.sh -s` to baseline current prefs first.
+**Root cause**: `capture-prefs.rb -i` checks if backup preferences predate `osx-defaults.rb` changes and aborts with `exit(1)` (treated as fatal error). On `FIRST_INSTALL`, any backup is better than none since fresh-install already ran `osx-defaults.rb -s` to baseline current prefs first.
 
 **Debugging challenges**:
 - ERR trap `$LINENO` reported wrong line number (204 = array declaration in `_ensure_directories_exist`, but actual failure was in `capture-prefs.rb` call at line 653)
 - Success message "Successfully restored preferences" never printed (line 654), but warning from capture-prefs DID appear
 - Three "Automatic checking for updates is turned on" messages from multiple `resume_softwareupdate_schedule` calls (osx-defaults EXIT trap, capture-prefs at_exit hook, and a third mysterious call before error)
 
-**Solution**: Skip timestamp check on `FIRST_INSTALL` - added `&& !EnvVars.first_install?` condition to the abort logic in `capture-prefs.rb`. On pre-configured machines, `fresh-install-of-osx.rb` automatically refreshes the backup: runs `capture-prefs.rb -e` to export current preferences (stages files), then commits using `git sci` (amends if ahead of remote, creates new if not) to update the git commit timestamp. Import then succeeds because backup timestamp is now newer than `osx-defaults.sh`.
+**Solution**: Skip timestamp check on `FIRST_INSTALL` - added `&& !EnvVars.first_install?` condition to the abort logic in `capture-prefs.rb`. On pre-configured machines, `fresh-install-of-osx.rb` automatically refreshes the backup: runs `capture-prefs.rb -e` to export current preferences (stages files), then commits using `git sci` (amends if ahead of remote, creates new if not) to update the git commit timestamp. Import then succeeds because backup timestamp is now newer than `osx-defaults.rb`.
 
 **Impact**: Fresh-install now completes preferences restoration on both vanilla OS (stale backups accepted) and pre-configured machines (backup automatically refreshed and committed before import).
 

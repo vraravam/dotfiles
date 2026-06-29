@@ -245,7 +245,7 @@ ruby scripts/install-dotfiles.rb --dry-run
 
 **Examples:**
 
-**osx-defaults.sh** - Shell script, cannot be ported:
+**osx-defaults.rb** - Shell script, cannot be ported:
 - Complex shell script with macOS `defaults` commands
 - Must remain as subprocess
 - Cannot be ported to Ruby module

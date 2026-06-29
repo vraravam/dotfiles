@@ -426,12 +426,12 @@ Cron.with_cron_suspended do
 
   # Restore macOS preferences.
   Logging.with_step('Restore preferences', 'Restore preferences') do
-    osx_defaults = EnvVars::DOTFILES_DIR.join('scripts', 'osx-defaults.sh')
+    osx_defaults = EnvVars::DOTFILES_DIR.join('scripts', 'osx-defaults.rb')
     if osx_defaults.file?
       system(RUBY_BIN, osx_defaults.to_s, '-s')
       success 'Successfully baselined preferences'
     else
-      record_error "osx-defaults.sh not found at '#{osx_defaults}' -- baseline preferences manually"
+      record_error "osx-defaults.rb not found at '#{osx_defaults}' -- baseline preferences manually"
     end
 
     capture_prefs = EnvVars::DOTFILES_DIR.join('scripts', 'capture-prefs.rb')

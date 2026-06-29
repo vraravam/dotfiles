@@ -19,7 +19,7 @@ If you are setting up a new machine for the first time, start with [GettingStart
 9. [`install-dotfiles.rb` Mechanics](#9-install-dotfilesrb-mechanics)
 10. [Per-Project Script Overrides](#10-per-project-script-overrides)
 11. [`capture-prefs.rb` Architecture](#11-capture-prefsrb-architecture)
-12. [`osx-defaults.sh` and `capture-prefs.rb` — Two-Phase Preference Architecture](#12-osx-defaultssh-and-capture-prefsrb--two-phase-preference-architecture)
+12. [`osx-defaults.rb` and `capture-prefs.rb` — Two-Phase Preference Architecture](#12-osx-defaultsrb-and-capture-prefsrb--two-phase-preference-architecture)
 
 ---
 
@@ -58,7 +58,7 @@ files/
 scripts/
   fresh-install-of-osx.rb
   capture-prefs.rb
-  osx-defaults.sh
+  osx-defaults.rb
   utilities/             shared Ruby modules (logging, string, cli_parser, …)
   data/                  plain-text data files read by scripts at runtime
 ```
@@ -516,20 +516,20 @@ Kill/restart is therefore scoped to: always on import; interactive (TTY) export 
 
 ---
 
-## 12. `osx-defaults.sh` and `capture-prefs.rb` — Two-Phase Preference Architecture
+## 12. `osx-defaults.rb` and `capture-prefs.rb` — Two-Phase Preference Architecture
 
 macOS preferences are managed in two distinct, ordered phases. The order is load-bearing: phase 2 always wins over phase 1 by design. Both phases are invoked automatically by `fresh-install-of-osx.rb` in sequence.
 
-### Phase 1 — `osx-defaults.sh -s` (baseline seed)
+### Phase 1 — `osx-defaults.rb -s` (baseline seed)
 
-`osx-defaults.sh` writes a curated, partial baseline of `defaults write` calls. "Partial" is intentional — it only codifies settings where a known-good starting value is worth establishing on a fresh machine. It does not attempt to replicate every preference the user has ever configured.
+`osx-defaults.rb` writes a curated, partial baseline of `defaults write` calls. "Partial" is intentional — it only codifies settings where a known-good starting value is worth establishing on a fresh machine. It does not attempt to replicate every preference the user has ever configured.
 
 The baseline is appropriate for:
 - System settings the user has never changed via the UI (Dock behaviour, Finder display options, keyboard shortcuts).
 - App settings that are purely scriptable and have no meaningful UI-side equivalent (disabling analytics, enabling developer menus).
 
 The baseline is **not** appropriate for:
-- Any setting the user configures through the app's UI over time. Writing those here means `osx-defaults.sh -s` would reset them to stale values on every fresh-install, defeating the purpose of phase 2.
+- Any setting the user configures through the app's UI over time. Writing those here means `osx-defaults.rb -s` would reset them to stale values on every fresh-install, defeating the purpose of phase 2.
 - Ephemeral state (window coordinates, last-opened directory, migration sentinels, A/B experiment assignments). Apps manage these themselves.
 
 ### Phase 2 — `capture-prefs.rb -i` (UI-configured overrides)
@@ -539,27 +539,27 @@ The baseline is **not** appropriate for:
 ### Why the order is load-bearing
 
 ```zsh
-osx-defaults.sh -s    # phase 1 — write baseline
+osx-defaults.rb -s    # phase 1 — write baseline
 capture-prefs.rb -i   # phase 2 — overwrite with UI-configured values
 ```
 
-Reversing the order causes `osx-defaults.sh` to overwrite the user's restored preferences with stale baseline values — exactly the wrong outcome. `fresh-install-of-osx.rb` encodes this order and must not be changed without understanding this constraint.
+Reversing the order causes `osx-defaults.rb` to overwrite the user's restored preferences with stale baseline values — exactly the wrong outcome. `fresh-install-of-osx.rb` encodes this order and must not be changed without understanding this constraint.
 
 ### Decision rule for new preference code
 
 | Preference type | Where it goes |
 |---|---|
-| One-time baseline the user will not change via UI | `osx-defaults.sh` |
-| Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` — not `osx-defaults.sh` |
+| One-time baseline the user will not change via UI | `osx-defaults.rb` |
+| Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` — not `osx-defaults.rb` |
 | Ephemeral state the app manages itself | `capture-prefs-excluded-keys.txt` or `-denied-list.txt` — nowhere else |
 
-See [Extras.md — osx-defaults.sh](Extras.md#osx-defaultssh) for the adopter-facing summary.
+See [Extras.md — osx-defaults.rb](Extras.md#osx-defaultsrb) for the adopter-facing summary.
 
 ---
 
-## 13. Why `fresh-install-of-osx.rb` and `osx-defaults.sh` Remain Shell Scripts
+## 13. Why `fresh-install-of-osx.rb` and `osx-defaults.rb` Remain Shell Scripts
 
-While much of this codebase has migrated from shell to Ruby for maintainability and testability, two core scripts **will never be converted**: `fresh-install-of-osx.rb` and `osx-defaults.sh`. This is an intentional architectural decision based on practical constraints.
+While much of this codebase has migrated from shell to Ruby for maintainability and testability, two core scripts **will never be converted**: `fresh-install-of-osx.rb` and `osx-defaults.rb`. This is an intentional architectural decision based on practical constraints.
 
 ### `fresh-install-of-osx.rb` — Bootstrap Complexity
 
@@ -587,9 +587,9 @@ Converting `fresh-install-of-osx.rb` to Ruby would introduce unacceptable comple
 
 **Decision**: `fresh-install-of-osx.rb` stays as shell. The bootstrap path is inherently shell-native, and fighting that reality creates more problems than it solves.
 
-### `osx-defaults.sh` — Copy-Paste Ergonomics
+### `osx-defaults.rb` — Copy-Paste Ergonomics
 
-Converting `osx-defaults.sh` to Ruby would eliminate a key usability feature:
+Converting `osx-defaults.rb` to Ruby would eliminate a key usability feature:
 
 1. **Direct `defaults write` commands**: The current script is ~200 lines of bare `defaults write` commands with inline comments explaining what each one does. Users can copy-paste any line directly into their terminal to test it, tweak values, or apply a single setting without re-running the entire script.
 
@@ -599,7 +599,7 @@ Converting `osx-defaults.sh` to Ruby would eliminate a key usability feature:
 
 4. **Reference value**: The script doubles as a reference catalog of useful `defaults` commands. Users frequently grep it for "Dock" or "Finder" to find examples they can adapt. A Ruby implementation would obscure the actual commands behind abstractions.
 
-**Decision**: `osx-defaults.sh` stays as shell. The ability to copy-paste individual commands is more valuable than the marginal maintainability gain from porting to Ruby.
+**Decision**: `osx-defaults.rb` stays as shell. The ability to copy-paste individual commands is more valuable than the marginal maintainability gain from porting to Ruby.
 
 ### Implication for the Codebase
 

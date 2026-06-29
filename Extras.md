@@ -20,7 +20,7 @@ Three data files govern which domains are processed and how:
 - **[`scripts/data/capture-prefs-denied-list.txt`](scripts/data/capture-prefs-denied-list.txt)** — domains that must never be exported or imported (machine-specific identifiers, account credentials, ephemeral sync state). Each entry has an inline comment explaining why.
 - **[`scripts/data/capture-prefs-excluded-keys.txt`](scripts/data/capture-prefs-excluded-keys.txt)** — individual keys within allowed domains that are stripped before export or import (display geometry, device UUIDs embedded in per-domain keys).
 
-**Backup staleness check:** On import (`-i`), the script validates that the backup preferences are not older than the last change to `osx-defaults.sh`. This prevents importing incomplete settings after `osx-defaults.sh` has been updated. On `FIRST_INSTALL`, this check is skipped because `fresh-install-of-osx.rb` runs `osx-defaults.sh -s` first to baseline current prefs, so the import is an incremental overlay — any backup is better than none.
+**Backup staleness check:** On import (`-i`), the script validates that the backup preferences are not older than the last change to `osx-defaults.rb`. This prevents importing incomplete settings after `osx-defaults.rb` has been updated. On `FIRST_INSTALL`, this check is skipped because `fresh-install-of-osx.rb` runs `osx-defaults.rb -s` first to baseline current prefs, so the import is an incremental overlay — any backup is better than none.
 
 See [Technical Deep Dive § 11](TechnicalDeepDive.md#11-capture-prefssh-architecture) for how key stripping, XML plist conversion, and cron-safe export work internally.
 
@@ -38,7 +38,7 @@ This is the main setup script for a fresh macOS installation. It is idempotent (
 * Installs Homebrew, antidote (zsh plugin manager), and Starship prompt
 * Sets up the dotfiles repo and symlinks all config files
 * Installs essential CLI tools and GUI applications via the Brewfile
-* Configures macOS system defaults (phase 1: baseline seed via `osx-defaults.sh -s`)
+* Configures macOS system defaults (phase 1: baseline seed via `osx-defaults.rb -s`)
 * Restores application preferences from backups (phase 2: UI-configured overrides via `capture-prefs.rb -i`)
 * Sets up SSH keys and permissions
 * Configures cron jobs using fallback logic (existing → tracked → user action)
@@ -68,7 +68,7 @@ Run `${DOTFILES_DIR}/scripts/install-dotfiles.rb` to symlink all dotfiles from t
 
 See [Technical Deep Dive § 9](TechnicalDeepDive.md#9-install-dotfilesrb-mechanics) for conflict resolution rules, mtime tie-breaking, and `FIRST_INSTALL` behaviour.
 
-## osx-defaults.sh
+## osx-defaults.rb
 
 Codifies a **partial baseline** of macOS system and application preferences as a repeatable script. It kills affected apps upfront (graceful SIGTERM), applies all `defaults write` calls, then restarts them via an EXIT trap — so the settings take effect immediately without a logout.
 
@@ -76,7 +76,7 @@ Codifies a **partial baseline** of macOS system and application preferences as a
 
 Preferences are managed in two ordered phases on every fresh install. The order is load-bearing:
 
-**Phase 1 — `osx-defaults.sh -s` (baseline seed)**
+**Phase 1 — `osx-defaults.rb -s` (baseline seed)**
 
 Seeds known-good starting values for settings the user has not yet configured via the UI on a fresh machine. It is intentionally incomplete — it only codifies defaults where a specific starting value is worth establishing. It does **not** attempt to capture every preference.
 
@@ -87,18 +87,18 @@ Imports the preferences the user previously exported from their old machine via 
 `fresh-install-of-osx.rb` enforces this order:
 
 ```zsh
-osx-defaults.sh -s    # phase 1 — seed baseline
+osx-defaults.rb -s    # phase 1 — seed baseline
 capture-prefs.rb -i   # phase 2 — UI-configured values override on top
 ```
 
-Never reverse the order — running `capture-prefs.rb -i` before `osx-defaults.sh -s` would cause `osx-defaults.sh` to overwrite the user's restored preferences.
+Never reverse the order — running `capture-prefs.rb -i` before `osx-defaults.rb -s` would cause `osx-defaults.rb` to overwrite the user's restored preferences.
 
 ### What belongs where
 
 | Preference type | Where it goes |
 |---|---|
-| One-time baseline the user will never change via UI | `osx-defaults.sh` |
-| Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` (not `osx-defaults.sh`) |
+| One-time baseline the user will never change via UI | `osx-defaults.rb` |
+| Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` (not `osx-defaults.rb`) |
 | Ephemeral state (window positions, sync cursors, UUIDs) | `capture-prefs-excluded-keys.txt` or `-denied-list.txt` — nowhere else |
 
 See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-two-phase-preference-architecture) for the full architectural rationale and ordering constraint.
