@@ -1,5 +1,5 @@
 ---
-applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install.rb,**/osx-defaults.sh,**/setup-login-item.rb,**/capture-prefs.rb,**/resurrect-repositories.rb"
+applyTo: "**/fresh-install-of-osx.rb,**/install-dotfiles.rb,**/post-brew-install.rb,**/osx-defaults.sh,**/setup-login-item.rb,**/capture-prefs.rb,**/resurrect-repositories.rb"
 ---
 
 # Fresh Install Instructions
@@ -9,7 +9,7 @@ applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install
 These rules apply specifically to the bootstrap and installation scripts, as well as
 scripts invoked during initial setup or backup/restore operations.
 
-## `fresh-install-of-osx.sh` -- Idempotency Contract
+## `fresh-install-of-osx.rb` -- Idempotency Contract
 
 This script runs in **two modes**:
 1. **Vanilla OS** (`FIRST_INSTALL=1`): a fresh macOS with nothing installed.
@@ -19,7 +19,7 @@ Every function and code path MUST work correctly in both modes.
 
 ### Section-Level Idempotency and Guards
 
-Every section in `fresh-install-of-osx.sh` must be individually idempotent and
+Every section in `fresh-install-of-osx.rb` must be individually idempotent and
 must have an appropriate guard that **pre-empts the entire section** when its
 work is already done. This serves two purposes:
 
@@ -270,7 +270,7 @@ end
 
 **On pre-configured machines** (no `FIRST_INSTALL`), the check remains active -- importing
 stale prefs without the baseline step would overwrite newer settings with older ones.
-`fresh-install-of-osx.sh` automatically refreshes the backup on pre-configured machines:
+`fresh-install-of-osx.rb` automatically refreshes the backup on pre-configured machines:
 
 1. Runs `capture-prefs.rb -e` to export current preferences (stages files in git)
 2. Commits using `git sci "Preferences backup: <timestamp>"` (amends if ahead of remote, creates new if not)

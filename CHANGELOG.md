@@ -126,7 +126,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 * *[scripts/osx-defaults.sh]* Added ERR trap (line 34): `trap 'error "Script failed at line ${LINENO}. Check log for details."' ERR`. Provides clear failure notification with line numbers instead of silent failures. Added context message before killing apps (line 146): "About to kill and restart Terminal, iTerm2, Finder..." - prevents user confusion when apps suddenly close. Added `_plist_set_or_add` helper function (lines 98-125) implementing atomic Set-or-Add pattern for PlistBuddy operations. Refactored Terminal profile settings (lines 1173-1195) to use helper - 4 settings now atomic (rowCount, columnCount, useOptionAsMetaKey, shellExitAction). Converted all 59 non-array iTerm2 settings (lines 1374-1467) from Delete+Add pattern to `_plist_set_or_add` - includes window dimensions, text/font settings, terminal behavior, session options, keyboard modifiers. Added error suppression to Jobs to Ignore array Delete operation (`2>/dev/null || true`) - only array operation remaining as Delete+Add since PlistBuddy cannot atomically set array contents. Fixed duplicate array index bug (zsh was `:5` twice, now correctly `:6`). Total: 63 settings moved from non-atomic to atomic pattern. Script can now be interrupted at any point without leaving Terminal/iTerm2 preferences in partial state (except array contents). Code reduction: 189 lines changed (+64, -125), net -61 lines in iTerm2 section.
 
-* *[scripts/fresh-install-of-osx.sh]* Added `.shellrc` download validation (lines 113-117). After curl download, validates file exists and is non-empty using `is_file` and `is_file_non_zero`. Exits with clear error message if download corrupted or network failure occurred. Prevents sourcing broken `.shellrc` that would crash bootstrap process. Added FileVault user_action (line 172): `user_action "Enable FileVault disk encryption in System Settings > Privacy & Security"`. Prompts user to enable encryption after fresh-install completes - can't be automated (requires user password). Added manual review reminder (line 769): prints user_action before opening System Settings, reminds user to review all applied settings. Prevents blind acceptance of defaults. Fixed cron backup timing (lines 723-731): moved `suspend_cron` call to before `capture-prefs.rb -i` invocation. Prevents cron job from running during preferences restoration (could conflict with import process).
+* *[scripts/fresh-install-of-osx.rb]* Added `.shellrc` download validation (lines 113-117). After curl download, validates file exists and is non-empty using `is_file` and `is_file_non_zero`. Exits with clear error message if download corrupted or network failure occurred. Prevents sourcing broken `.shellrc` that would crash bootstrap process. Added FileVault user_action (line 172): `user_action "Enable FileVault disk encryption in System Settings > Privacy & Security"`. Prompts user to enable encryption after fresh-install completes - can't be automated (requires user password). Added manual review reminder (line 769): prints user_action before opening System Settings, reminds user to review all applied settings. Prevents blind acceptance of defaults. Fixed cron backup timing (lines 723-731): moved `suspend_cron` call to before `capture-prefs.rb -i` invocation. Prevents cron job from running during preferences restoration (could conflict with import process).
 
 #### Adopting these changes
 
@@ -215,7 +215,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 * *[.zshenv, .zshrc, .zlogin]* Converted DEBUG echo `&&` chains to explicit `if` blocks. Fixed `find_in_folder_and_recompile` to ensure `XDG_CACHE_HOME` exists before touching sentinel file (prevents failure when directory doesn't exist on vanilla OS during first `load_zsh_configs` call).
 
-* *[fresh-install-of-osx.sh]* Converted biometric sensor flag assignments to explicit `if` blocks. Fixed `chsh` command to handle authentication failures gracefully with `_record_warning` instead of triggering ERR trap. Declared `_script_start_times` and `_step_start_times` arrays before using `+=` operator (prevents `set -u` violations). Moved Sol.app launch check to nested `if` blocks to avoid standalone `&&` chain abort. Modified `_clone_home_repo` to pull latest home repo changes on pre-configured machines before preferences restore. Added automatic preferences export and commit on pre-configured machines: runs `capture-prefs.rb -e` to refresh backup, then `git sci` to commit (amends existing commit if ahead of remote, creates new if not) - updates git commit timestamp so import validation passes.
+* *[fresh-install-of-osx.rb]* Converted biometric sensor flag assignments to explicit `if` blocks. Fixed `chsh` command to handle authentication failures gracefully with `_record_warning` instead of triggering ERR trap. Declared `_script_start_times` and `_step_start_times` arrays before using `+=` operator (prevents `set -u` violations). Moved Sol.app launch check to nested `if` blocks to avoid standalone `&&` chain abort. Modified `_clone_home_repo` to pull latest home repo changes on pre-configured machines before preferences restore. Added automatic preferences export and commit on pre-configured machines: runs `capture-prefs.rb -e` to refresh backup, then `git sci` to commit (amends existing commit if ahead of remote, creates new if not) - updates git commit timestamp so import validation passes.
 
 * *[osx-defaults.sh]* Converted spotlight indexing `mdutil` command chain to explicit `if` block.
 
@@ -456,9 +456,9 @@ For those who follow this repo, here's the changelog for ease of adoption:
 #### git clone uses shallow clone if FIRST_INSTALL is set
 
 * *[files/--HOME--/.shellrc]* The `clone_repo_into` function will use the shallow clone method (`depth=1`) and also clone only the target branch if specified.
-* *[scripts/fresh-install-of-osx.sh]* Simplified the `brew trust` logic to trust taps from the `Brewfile`.
-* *[scripts/fresh-install-of-osx.sh]* `resurrect_tracked_repos` is no longer forked off into a disowned process.
-* *[scripts/fresh-install-of-osx.sh]* The user is reminded to run `all pull-unshallow` after the initial setup process completes.
+* *[scripts/fresh-install-of-osx.rb]* Simplified the `brew trust` logic to trust taps from the `Brewfile`.
+* *[scripts/fresh-install-of-osx.rb]* `resurrect_tracked_repos` is no longer forked off into a disowned process.
+* *[scripts/fresh-install-of-osx.rb]* The user is reminded to run `all pull-unshallow` after the initial setup process completes.
 
 #### Adopting these changes
 
@@ -551,7 +551,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 #### Moved all post-install logic to Brewfile postinstall hooks
 
 * *[files/--HOME--/Brewfile]* Added postinstall hooks to formulae and taps that require post-installation actions. `brew 'antidote'` now includes `postinstall: "ruby -e \"\\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'antidote'; Antidote.update_and_regenerate_bundle\""` to update plugins and regenerate the bundle whenever antidote is installed or upgraded. `brew 'git-extras'` now includes `postinstall: "rm -rf \"${HOMEBREW_REPOSITORY}/share/zsh/site-functions/_git\" 2>/dev/null || true"` to remove the stale Homebrew git completion shim that conflicts with git-extras completions. `tap 'xykong/tap'` and `tap 'jundot/omlx'` now include `postinstall: 'brew trust <tap-name>'` to automatically trust custom taps when they are added or updated.
-* *[scripts/fresh-install-of-osx.sh]* Added tap trusting logic before `brew bundle` runs (lines 274-295). Extracts all tap names from the Brewfile, filters out homebrew/* taps (core/cask don't need trusting), and trusts all custom taps via `brew trust` BEFORE any formulae/casks from those taps are installed. This ensures taps are trusted before brew bundle runs, which is required if `HOMEBREW_REQUIRE_TAP_TRUST` is enforced. Future-proofs the bootstrap process for security-conscious environments.
+* *[scripts/fresh-install-of-osx.rb]* Added tap trusting logic before `brew bundle` runs (lines 274-295). Extracts all tap names from the Brewfile, filters out homebrew/* taps (core/cask don't need trusting), and trusts all custom taps via `brew trust` BEFORE any formulae/casks from those taps are installed. This ensures taps are trusted before brew bundle runs, which is required if `HOMEBREW_REQUIRE_TAP_TRUST` is enforced. Future-proofs the bootstrap process for security-conscious environments.
 * *[scripts/post-brew-install.rb]* Deleted entirely. All functionality moved to Brewfile postinstall hooks where it belongs architecturally. Antidote plugin updates handled by antidote formula postinstall. Stale git completion shim removal handled by git-extras postinstall. Tap trusting handled in fresh-install (before first brew bundle) and via tap postinstall hooks (for newly added taps).
 * *[files/--HOME--/.aliases]* Removed `post-brew-install.rb` call from `bupc` function (line 510). Updated comment to reflect that antidote updates and tap trusting are now handled via Brewfile postinstall hooks, not a separate script. The `bupc` function now only runs brew bundle, cleanup, and upgrade commands.
 * *[scripts/utilities/antidote.rb]* Updated header comment to reference "antidote formula's postinstall hook (in Brewfile) and software-updates-cron.sh" instead of "post-brew-install.rb and software-updates-cron.rb". No functional changes.
@@ -599,7 +599,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[files/--HOME--/.shellrc]* Removed `export SSH_CONFIGS_DIR="${HOME}/.ssh"` -- variable is no longer used anywhere. Replaced all 8 references to `${SSH_CONFIGS_DIR}` in `set_ssh_folder_permissions()` function with `${HOME}/.ssh` literal. Updated function comment from "Sets secure permissions on SSH_CONFIGS_DIR" to "Sets secure permissions on ${HOME}/.ssh". Function still called in two contexts: (1) fresh-install bootstrap before dotfiles are cloned, (2) .envrc subshells (bash-parseable, no .aliases).
 * *[files/--HOME--/.aliases]* Replaced 2 references to `${SSH_CONFIGS_DIR}` with `${HOME}/.ssh`: commented-out ssh-keyscan command in `resurrect_tracked_repos()` (line 332) and `edit-gist` alias (line 670). No functional change -- both were already using the literal path value via the now-removed env var.
 * *[files/--ZDOTDIR--/.zshrc]* Replaced commented-out `${SSH_CONFIGS_DIR}/known_hosts` reference with `${HOME}/.ssh/known_hosts` in hosts completion example (line 444). No functional change -- code was already commented out.
-* *[scripts/fresh-install-of-osx.sh]* Replaced `${SSH_CONFIGS_DIR}/known_hosts.old` with `${HOME}/.ssh/known_hosts.old` in cleanup check (line 577). Functional change: now uses literal path instead of env var.
+* *[scripts/fresh-install-of-osx.rb]* Replaced `${SSH_CONFIGS_DIR}/known_hosts.old` with `${HOME}/.ssh/known_hosts.old` in cleanup check (line 577). Functional change: now uses literal path instead of env var.
 * *[scripts/install-dotfiles.rb]* Replaced `ssh_config_dir = ENV.fetch('SSH_CONFIGS_DIR', "#{home}/.ssh")` with `ssh_config_dir = File.join(home, '.ssh')` (lines 330-331). Removed env var lookup -- now always uses `~/.ssh` directly. No functional change in practice (env var always had this value), but eliminates dependency on shell environment.
 * *[scripts/utilities/env_vars.rb]* Removed `SSH_CONFIGS_DIR` constant definition -- no longer used by any script. Constant was `Pathname.new(ENV.fetch('SSH_CONFIGS_DIR', File.join(HOME, '.ssh')))`. All scripts now use `${HOME}/.ssh` or `File.join(home, '.ssh')` directly.
 * *[TechnicalDeepDive.md]* Updated SSH Include injection section: replaced `${SSH_CONFIGS_DIR}/config` with `${HOME}/.ssh/config` in documentation (line 363). Reflects removal of `SSH_CONFIGS_DIR` env var.
@@ -836,17 +836,17 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 ### 3.1.8
 
-#### Fixed `ensure_keybase_logged_in` not found on re-running `fresh-install-of-osx.sh`
+#### Fixed `ensure_keybase_logged_in` not found on re-running `fresh-install-of-osx.rb`
 
-* *[fresh-install-of-osx.sh]* Added `load_file_if_exists "${HOME}/.aliases"` directly after `load_zsh_configs` in `main()`. `~/.zsh_plugins.zsh` (the antidote bundle) is checked into the home git repo and symlinked by `install-dotfiles.rb` before this point, so it is present on both vanilla OS and pre-configured machine runs. `.zshrc` sources the bundle, which defines `zsh-defer`, and then defers `.aliases` to the next ZLE idle event. In a non-interactive script there is no ZLE idle event, so the deferred callback never fires and `.aliases` functions (`ensure_keybase_logged_in`, `build_keybase_repo_url`) are absent. The `is_aliases_sourced` guard inside `.aliases` prevents double-loading.
+* *[fresh-install-of-osx.rb]* Added `load_file_if_exists "${HOME}/.aliases"` directly after `load_zsh_configs` in `main()`. `~/.zsh_plugins.zsh` (the antidote bundle) is checked into the home git repo and symlinked by `install-dotfiles.rb` before this point, so it is present on both vanilla OS and pre-configured machine runs. `.zshrc` sources the bundle, which defines `zsh-defer`, and then defers `.aliases` to the next ZLE idle event. In a non-interactive script there is no ZLE idle event, so the deferred callback never fires and `.aliases` functions (`ensure_keybase_logged_in`, `build_keybase_repo_url`) are absent. The `is_aliases_sourced` guard inside `.aliases` prevents double-loading.
 
 #### Fixed `all` alias not found in `resurrect_tracked_repos`
 
-* *[.aliases]* Replaced `command_exists all` / `all restore-mtime -c` / `all maintenance register` / `all maintenance start` with direct `FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git ...` invocations. The failure was not caused by alias expansion being disabled — zsh's `ALIASES` option is on by default even in non-interactive scripts. The actual cause: `resurrect_tracked_repos` is called as a background `&|` job from `fresh-install-of-osx.sh`, and if `.aliases` is not loaded in that child-process, `all` is simply never defined. Using the underlying command directly removes the dependency on `.aliases` being in scope.
+* *[.aliases]* Replaced `command_exists all` / `all restore-mtime -c` / `all maintenance register` / `all maintenance start` with direct `FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git ...` invocations. The failure was not caused by alias expansion being disabled — zsh's `ALIASES` option is on by default even in non-interactive scripts. The actual cause: `resurrect_tracked_repos` is called as a background `&|` job from `fresh-install-of-osx.rb`, and if `.aliases` is not loaded in that child-process, `all` is simply never defined. Using the underlying command directly removes the dependency on `.aliases` being in scope.
 
 #### Made `allow_all_direnv_configs` and `install_mise_versions` synchronous in fresh-install
 
-* *[fresh-install-of-osx.sh]* Removed `&|` (background + disown) from the `allow_all_direnv_configs` and `install_mise_versions` calls; both now run synchronously. Also removed the HACKTAG comments that described the background rationale.
+* *[fresh-install-of-osx.rb]* Removed `&|` (background + disown) from the `allow_all_direnv_configs` and `install_mise_versions` calls; both now run synchronously. Also removed the HACKTAG comments that described the background rationale.
 
 #### Corrected `No Aliases in Non-Interactive Scripts` rule
 
@@ -889,7 +889,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
   unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
   install-dotfiles.rb
-  fresh-install-of-osx.sh
+  fresh-install-of-osx.rb
   ```
 
 * Quit and restart the Terminal application.
@@ -914,7 +914,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Removed dead `prepend_to_*` functions from `.shellrc`
 
-* *[.shellrc]* Removed five functions superseded by the filesystem-direct keg-only cache approach: `prepend_to_path_if_dir_exists`, `prepend_to_manpath_if_dir_exists`, `prepend_to_ldflags_if_dir_exists`, `prepend_to_cppflags_if_dir_exists`, `prepend_to_pkg_config_path_if_dir_exists`. `append_to_path_if_dir_exists` and `append_to_fpath_if_dir_exists` are retained (both have active call sites in `.zshrc` and `fresh-install-of-osx.sh`).
+* *[.shellrc]* Removed five functions superseded by the filesystem-direct keg-only cache approach: `prepend_to_path_if_dir_exists`, `prepend_to_manpath_if_dir_exists`, `prepend_to_ldflags_if_dir_exists`, `prepend_to_cppflags_if_dir_exists`, `prepend_to_pkg_config_path_if_dir_exists`. `append_to_path_if_dir_exists` and `append_to_fpath_if_dir_exists` are retained (both have active call sites in `.zshrc` and `fresh-install-of-osx.rb`).
 
 #### Disabled `predict-on` and `incremental-complete-word` ZLE features
 
@@ -943,7 +943,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Set Homebrew zsh as the default login shell during fresh-install
 
-* *[fresh-install-of-osx.sh]* Added `_set_default_shell` function that adds `/opt/homebrew/bin/zsh` to `/etc/shells` (required by `chsh`) if absent, then calls `chsh -s` to make it the default shell. Called immediately after `_install_homebrew` so Homebrew's zsh is guaranteed to be on disk. Idempotent — skips each step if already done.
+* *[fresh-install-of-osx.rb]* Added `_set_default_shell` function that adds `/opt/homebrew/bin/zsh` to `/etc/shells` (required by `chsh`) if absent, then calls `chsh -s` to make it the default shell. Called immediately after `_install_homebrew` so Homebrew's zsh is guaranteed to be on disk. Idempotent — skips each step if already done.
 * *[osx-defaults.sh]* Added `PlistBuddy` call to set `Custom Command = No` (Login shell) in the Default iTerm2 profile. The key defaults to `Custom Shell` on a fresh iTerm2 install, which means `.zlogin` is never triggered for new windows/tabs. Setting it to `No` ensures the full zsh startup sequence (`.zshenv → .zshrc → .zlogin`) runs correctly.
 
 #### Added symmetric-diverge rebase to `upreb` autoload script
@@ -956,7 +956,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Adopting these changes
 
-* Since `_set_default_shell` only runs inside `fresh-install-of-osx.sh`, pre-configured machines will not automatically get the default shell changed to Homebrew's zsh. Run `fresh-install-of-osx.sh` to pick up this change — it is fully idempotent and safe to run on an already-configured machine. It will add `/opt/homebrew/bin/zsh` to `/etc/shells` and call `chsh` only if the default shell is not already set correctly.
+* Since `_set_default_shell` only runs inside `fresh-install-of-osx.rb`, pre-configured machines will not automatically get the default shell changed to Homebrew's zsh. Run `fresh-install-of-osx.rb` to pick up this change — it is fully idempotent and safe to run on an already-configured machine. It will add `/opt/homebrew/bin/zsh` to `/etc/shells` and call `chsh` only if the default shell is not already set correctly.
 
 * After `chsh` takes effect (quit and reopen the terminal), verify with `echo $SHELL` — it should print `/opt/homebrew/bin/zsh`.
 
@@ -972,7 +972,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * *[.shellrc]* Added `migrate_git_repo_to_reftable` helper that checks whether a repo uses the legacy loose/packed-refs format and, when `git refs migrate` (git 2.45+) is available, converts it to reftable. After migration it removes stale loose-ref files from `.git/refs/heads/`, `.git/refs/tags/`, and `.git/refs/remotes/` that `git refs migrate` may leave behind and that can confuse ref lookup. Uses a named helper (`_remove_loose_reftable_refs`) instead of an anonymous `()` function so bash can parse `.shellrc` without a syntax error.
 * *[.shellrc]* `clone_repo_into` now calls `migrate_git_repo_to_reftable` after a successful clone. On a vanilla macOS the system git silently ignores this (the function exits early when `git refs migrate` is unavailable), so it is a no-op until Homebrew's modern git is on PATH.
-* *[fresh-install-of-osx.sh]* Added a "Migrate repos to reftable format" step immediately after `_install_homebrew`. At that point Homebrew's git 2.45+ is on PATH, so the dotfiles repo (cloned earlier with system git and therefore still in files format) is migrated correctly.
+* *[fresh-install-of-osx.rb]* Added a "Migrate repos to reftable format" step immediately after `_install_homebrew`. At that point Homebrew's git 2.45+ is on PATH, so the dotfiles repo (cloned earlier with system git and therefore still in files format) is migrated correctly.
 
 #### Remove redundant `is_zsh` guards from `.shellrc`
 
@@ -983,23 +983,23 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[shell-scripting.instructions.md]* Rewrote the [§ Glob Patterns — NULL_GLOB](.github/instructions/shell-scripting.instructions.md#glob-patterns--null_glob) section to explain the `()` vs named helper decision based on whether bash may source the file. Added two new top-level sections: [§ Do not mandate named helpers everywhere](.github/instructions/shell-scripting.instructions.md#do-not-mandate-named-helpers-everywhere) (named functions in zsh are not scoped — `()` avoids namespace pollution in pure zsh files; named helpers require `unfunction` immediately after use) and [§ `is_zsh` guards are for parse-time zsh-only syntax only](.github/instructions/shell-scripting.instructions.md#is_zsh-guards-are-for-parse-time-zsh-only-syntax-only) (`setopt`/`autoload` are runtime-only issues; guards are only needed for syntax bash cannot tokenise).
 * *[copilot-instructions.md]* Added matching summary bullets for the two new rules, referencing the full treatment in `shell-scripting.instructions.md`.
 
-#### Fix ERR trap `$LINENO` in `fresh-install-of-osx.sh`
+#### Fix ERR trap `$LINENO` in `fresh-install-of-osx.rb`
 
-* *[fresh-install-of-osx.sh]* Changed both `trap _cleanup_and_exit ERR` calls to the string form `trap '_cleanup_and_exit "${LINENO}"' ERR`. With the function-name form, `$LINENO` inside the handler reports its own line (wrong); the string form evaluates `$LINENO` in the failing command's scope before calling the function, so the reported line is always accurate — including for failures in helper functions when `set -E` propagates the trap.
-* *[fresh-install-of-osx.sh]* Updated `_cleanup_and_exit` to accept `$1` as the failing line number and include it in the error message when non-empty.
+* *[fresh-install-of-osx.rb]* Changed both `trap _cleanup_and_exit ERR` calls to the string form `trap '_cleanup_and_exit "${LINENO}"' ERR`. With the function-name form, `$LINENO` inside the handler reports its own line (wrong); the string form evaluates `$LINENO` in the failing command's scope before calling the function, so the reported line is always accurate — including for failures in helper functions when `set -E` propagates the trap.
+* *[fresh-install-of-osx.rb]* Updated `_cleanup_and_exit` to accept `$1` as the failing line number and include it in the error message when non-empty.
 * *[shell-scripting.instructions.md]* Added new [§ ERR Trap — `$LINENO` String Form vs Function Form](.github/instructions/shell-scripting.instructions.md#err-trap---lineno-string-form-vs-function-form) section under Cron Scripts with BAD/Good examples and a note that the rule applies with or without `set -E`.
 * *[copilot-instructions.md]* Added a matching summary bullet referencing [§ ERR Trap — `$LINENO` String Form vs Function Form](.github/instructions/shell-scripting.instructions.md#err-trap---lineno-string-form-vs-function-form).
 
 #### Add missing `unfunction` for named inner functions
 
-* *[.shellrc]* Added missing `unfunction _remove_loose_reftable_refs` after calling it inside `migrate_git_repo_to_reftable`. The named function persists in the global table after the outer function returns — `unfunction` is required for non-subshell call sites (direct interactive use, `clone_repo_into` from `fresh-install-of-osx.sh`). `run-all.sh` sandboxes each repo call in a `()` subshell so the leak is contained there, but does not eliminate the need for cleanup at other call sites.
+* *[.shellrc]* Added missing `unfunction _remove_loose_reftable_refs` after calling it inside `migrate_git_repo_to_reftable`. The named function persists in the global table after the outer function returns — `unfunction` is required for non-subshell call sites (direct interactive use, `clone_repo_into` from `fresh-install-of-osx.rb`). `run-all.sh` sandboxes each repo call in a `()` subshell so the leak is contained there, but does not eliminate the need for cleanup at other call sites.
 * *[cleanup-browser-profiles.sh]* Added missing `unfunction _read_pattern_file` after its two call sites inside `vacuum_browser_profile_folder`. Same pattern — named inner function would persist in the global table for the rest of the shell session.
 * *[shell-scripting.instructions.md]* Expanded [§ Do not mandate named helpers everywhere](.github/instructions/shell-scripting.instructions.md#do-not-mandate-named-helpers-everywhere) to include the `unfunction` requirement with a code example noting the `run-all.sh` subshell distinction.
 * *[copilot-instructions.md]* Updated the matching summary bullet to include the `unfunction` requirement and `run-all.sh` subshell nuance.
 
 #### Fix stale GitHub-cached `.shellrc` on vanilla OS install
 
-* *[fresh-install-of-osx.sh]* After `install-dotfiles.rb` runs, check whether the committed `files/--HOME--/.shellrc` differs from what was adopted (the curl-downloaded, potentially GitHub-cached version). If it does, restore the committed version with `git checkout -- files/--HOME--/.shellrc` before `load_zsh_configs` re-sources it. Without this guard, a stale cache could cause the rest of the install to run with an older `.shellrc` that is missing newly added functions.
+* *[fresh-install-of-osx.rb]* After `install-dotfiles.rb` runs, check whether the committed `files/--HOME--/.shellrc` differs from what was adopted (the curl-downloaded, potentially GitHub-cached version). If it does, restore the committed version with `git checkout -- files/--HOME--/.shellrc` before `load_zsh_configs` re-sources it. Without this guard, a stale cache could cause the rest of the install to run with an older `.shellrc` that is missing newly added functions.
 
 #### Adopting these changes
 
@@ -1177,7 +1177,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.zshrc]* Commented out `setopt null_glob` — the option causes commands that receive zero arguments silently rather than producing a clear "no matches found" error; `setopt localoptions NULL_GLOB` inside an anonymous function is the correct scoped alternative.
 * *[.aliases, capture-prefs.sh]* Fixed remaining unsafe `&&`-as-conditional patterns.
 * *[.editorconfig, custom.gitattributes, .shfmtignore]* Removed `*.defaults` binary/charset entries (leftover from the 3.1.1 `.defaults` → `.plist` format migration); added `capture-prefs.sh` to `.shfmtignore` (uses `${~pattern}` zsh glob matching that shfmt cannot parse).
-* *[fresh-install-of-osx.sh]* Removed trailing manual `user_action` prompts from `main()` — the deferred-collection summary (introduced in 3.1.1) already surfaces all follow-up actions.
+* *[fresh-install-of-osx.rb]* Removed trailing manual `user_action` prompts from `main()` — the deferred-collection summary (introduced in 3.1.1) already surfaces all follow-up actions.
 
 #### Update documentation
 
@@ -1212,7 +1212,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.shellrc]* Added `user_action()` logging function (bold yellow, `➡️` prefix) for manual-step messages — distinct from `warn` (unexpected problem) and `info` (informational). Suppressed in direnv subshells.
 * *[.shellrc]* Extracted `_record_warning`, `_record_error`, and `print_script_summary` as shared helpers using zsh dynamic scoping; `print_script_summary` fires a macOS notification when errors or warnings were collected.
 * *[add-upstream-git-config.sh, capture-prefs.sh, cleanup-browser-profiles.sh, osx-defaults.sh, recreate-repo.sh, run-all.sh, setup-login-item.sh]* Applied the deferred collection pattern — operation failures use `_record_warning`/`_record_error`; `print_script_summary` called at end of `main()`.
-* *[fresh-install-of-osx.sh]* Two-level collection: `_step_warnings` for recoverable issues, `_step_errors` for significant failures; `_cleanup_and_exit` calls `print_script_summary` before the fatal crash message.
+* *[fresh-install-of-osx.rb]* Two-level collection: `_step_warnings` for recoverable issues, `_step_errors` for significant failures; `_cleanup_and_exit` calls `print_script_summary` before the fatal crash message.
 * *[software-updates-cron.sh]* Two-level collection for update and infrastructure failures; escalated `_title_icon` to `⚠️` when outdated packages need manual update.
 
 #### Gate all script banners on outermost-script depth
@@ -1220,7 +1220,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.shellrc]* Added `is_outermost_script` (`_DOTFILES_SCRIPT_DEPTH <= 1`) and `_decrement_script_depth`; `print_script_start`, `print_script_duration`, and `print_script_summary` now guard on `is_outermost_script || return 0`.
 * *[logging.rb]* Added `outermost_script?`, `increment_script_depth` (registers `at_exit` decrement), and `decrement_script_depth`; all three print helpers guard on `outermost_script?` — mirrors shell behaviour.
 * *[.shellrc, logging.rb]* `print_script_duration` now prefixes output with the script name, eliminating ambiguity in multi-script cron logs.
-* *[add-upstream-git-config.sh, cleanup-browser-profiles.sh, fresh-install-of-osx.sh, recreate-repo.sh, run-all.sh, software-updates-cron.sh]* Each now decrements `_DOTFILES_SCRIPT_DEPTH` on exit via `_decrement_script_depth`.
+* *[add-upstream-git-config.sh, cleanup-browser-profiles.sh, fresh-install-of-osx.rb, recreate-repo.sh, run-all.sh, software-updates-cron.sh]* Each now decrements `_DOTFILES_SCRIPT_DEPTH` on exit via `_decrement_script_depth`.
 * *[resurrect-repositories.rb]* Calls `Logging.increment_script_depth` before `print_script_start`; `at_exit` hook handles the decrement.
 * *[ruby-scripting.instructions.md]* Documented depth counter, `is_outermost_script` / `outermost_script?` guard, and why subprocess scripts still decrement.
 
@@ -1248,7 +1248,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.shellrc]* Added `debug` logging to `load_zsh_configs`.
 * *[.aliases]* `require_env_var`: replaced raw `-z` test with `is_zero_string` and `warn`.
 * *[.shellrc, .aliases]* Log-level reclassifications: idempotency guards → `info`; expected-absent tools → `debug`; action items → `user_action`; "Successfully sourced ~/.shellrc" → `success`.
-* *[6 scripts]* Fixed unsafe `&&`-as-conditional patterns in `software-updates-cron.sh`, `recreate-repo.sh`, `capture-prefs.sh`, `run-all.sh`, `fresh-install-of-osx.sh` (×2) — converted to explicit `if` blocks.
+* *[6 scripts]* Fixed unsafe `&&`-as-conditional patterns in `software-updates-cron.sh`, `recreate-repo.sh`, `capture-prefs.sh`, `run-all.sh`, `fresh-install-of-osx.rb` (×2) — converted to explicit `if` blocks.
 
 #### Fix cron-safety issues in `.shellrc`
 
@@ -1367,8 +1367,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[files/--XDG_CONFIG_HOME--/zsh/cc]* Updated header documentation to reflect `--expire` flag, default behaviour, `--stale-fix`, and `--dry-run` example.
 * *[.github/instructions/shell-scripting.instructions.md, .github/copilot-instructions.md]* Sharpened `shfmt` formatting rules: added explicit "check `.shfmtignore` first" directive, concrete before/after example of the `while true; do ...; done` one-liner corruption bug, and explanation that running `shfmt` on an excluded file corrupts intentional one-liners with no inline suppression escape.
 * *[.shellrc]* `info` and `success` are now suppressed when `DIRENV_DIR` is set (i.e. running inside a direnv subshell evaluating an `.envrc`). `warn` and `error` always print. Cron jobs, CI, and interactive shells are unaffected. This silences routine `.envrc` log output from direnv without losing actionable messages.
-* *[scripts/fresh-install-of-osx.sh]* Added `set -E` immediately after `set -euo pipefail` so the existing `_cleanup_and_exit` ERR trap is inherited by all helper functions defined in the file — previously a failure inside a helper would not trigger the trap.
-* *[scripts/fresh-install-of-osx.sh]* Fixed dead `$?` check after `brew bundle`. Uncommented `resurrect_tracked_repos` (now runs automatically, synchronously, before `allow_all_direnv_configs` and `install_mise_versions` so repos exist before those sweep). DNS fallback changed from `8.8.8.8` to `1.1.1.1`.
+* *[scripts/fresh-install-of-osx.rb]* Added `set -E` immediately after `set -euo pipefail` so the existing `_cleanup_and_exit` ERR trap is inherited by all helper functions defined in the file — previously a failure inside a helper would not trigger the trap.
+* *[scripts/fresh-install-of-osx.rb]* Fixed dead `$?` check after `brew bundle`. Uncommented `resurrect_tracked_repos` (now runs automatically, synchronously, before `allow_all_direnv_configs` and `install_mise_versions` so repos exist before those sweep). DNS fallback changed from `8.8.8.8` to `1.1.1.1`.
 * *[.github/copilot-instructions.md]* `custom.git*` exception block rewritten with FIRST_INSTALL / mtime resolution rules. `.shellrc` vs `.aliases` decision rule rewritten: clarifies the `install-dotfiles.rb` boundary, bash-compat reason for `.shellrc` retention, and lists zsh-autoload functions as `.aliases` candidates.
 * *[.github/instructions/git-config.instructions.md, Extras.md]* `custom.git*` handling descriptions updated to reflect mtime-based resolution rules.
 * *[files/--ZDOTDIR--/.zsh_plugins.txt, files/--ZDOTDIR--/.zsh_plugins.zsh]* Un-deferred `fast-syntax-highlighting`, `zsh-autosuggestions`, and `zsh-history-substring-search`. `kind:defer` uses `zle -F` but reschedules itself when `PENDING > 0` (bytes already in the TTY buffer) — a fast typist beats the idle window and gets no highlighting, no suggestions, and non-functional Up/Down arrow on their first command. These three plugins directly affect the live typing experience and must be synchronous. Alias-only and cosmetic plugins (`eza`, `git`, `termsupport`, `iterm2`, `sudo`, `zbell`) remain deferred. Updated deferral policy comment to document the `PENDING` race condition and the deliberate tradeoff.
@@ -1425,7 +1425,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.shellrc]* Added `export ANTIDOTE_HOME`, `ANTIDOTE_ZSH`, and `ANTIDOTE_PLUGIN_ZSH` — set early (before `antidote.zsh` is sourced) so they are available in `.zlogin` and other contexts. `ANTIDOTE_HOME` mirrors antidote's own platform defaults: `~/Library/Caches/antidote` on macOS, `${XDG_CACHE_HOME}/antidote` on Linux.
 * *[.zsh_plugins.txt]* **New file** — canonical antidote plugin list, replacing the old `plugins=(...)` array in `.zshrc`. Loads selected OMZ lib files, OMZ plugins and third-party plugins.
 * *[Brewfile]* Added `antidote` to the base-configs section (installed on every machine, including `FIRST_INSTALL`). Replaced `diff-so-fancy` with `delta` as the diff/pager tool. Replaced `jq` with `jaq` (a faster Rust reimplementation). Commented out `codeql` cask.
-* *[scripts/fresh-install-of-osx.sh]* Replaced `install_oh_my_zsh_and_custom_plugins` (curl install + three `git clone` calls for custom plugins) with a call to `update_antidote_and_regenerate_plugin_bundle` placed after `homebrew` is installed.
+* *[scripts/fresh-install-of-osx.rb]* Replaced `install_oh_my_zsh_and_custom_plugins` (curl install + three `git clone` calls for custom plugins) with a call to `update_antidote_and_regenerate_plugin_bundle` placed after `homebrew` is installed.
 * *[scripts/post-brew-install.sh]* Added antidote update and bundle regeneration step by invoking `update_antidote_and_regenerate_plugin_bundle` on every `brew bundle` / `bupc` run, keeping the bundle in sync after antidote itself is installed or upgraded.
 * *[scripts/software-updates-cron.sh]* Replaced `omz update` with the equivalent antidote update function `update_antidote_and_regenerate_plugin_bundle`.
 
@@ -1470,7 +1470,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 ### 3.0.16
 
-* *[fresh-install-of-osx.sh]* Fixed issue where this script was failing silently on the first run on a vanilla OS (root cause: curl timeout within homebrew while downloading installables). Replaced the `HOMEBREW_BASE_INSTALL` variable with `FIRST_INSTALL` and added a guard which disables the ERR trap during brew operations, forces re-download of `.shellrc`, sets a long curl timeout (`--max-time 3600`), splits `brew bundle` into separate tap/formula/cask passes for better isolation and resilience, and restores the trap + unsets the extra curl args afterwards.
+* *[fresh-install-of-osx.rb]* Fixed issue where this script was failing silently on the first run on a vanilla OS (root cause: curl timeout within homebrew while downloading installables). Replaced the `HOMEBREW_BASE_INSTALL` variable with `FIRST_INSTALL` and added a guard which disables the ERR trap during brew operations, forces re-download of `.shellrc`, sets a long curl timeout (`--max-time 3600`), splits `brew bundle` into separate tap/formula/cask passes for better isolation and resilience, and restores the trap + unsets the extra curl args afterwards.
 * *[Brewfile]* Renamed the early-exit guard from `HOMEBREW_BASE_INSTALL` to `FIRST_INSTALL` for consistency.
 * *[software-updates-cron.sh]* Prune Zen session-backup files older than 7 days from the browser-profiles repo (works with both macOS BSD and GNU `date`).
 * *[.shellrc]* Added TODO comments in `clone_repo_into` for future reftable support once p10k resolves the `vcs_info` incompatibility, including a HEAD-fixup snippet for post-move repos.
@@ -1484,7 +1484,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[recreate-repo.sh]* Added TODO comment for future `git init --ref-format=reftable` support.
 * *[software-updates-cron.sh]* Added a new step to prune tracked Zen session backup files older than 7 days from the browser-profiles repo (compatible with both macOS BSD and GNU `date`).
 * *[.shellrc]* Added `step_start`, `step_end`, and `step_timing_init` helper functions for per-step and total elapsed time reporting in scripts.
-* *[fresh-install-of-osx.sh, software-updates-cron.sh]* Instrumented all major steps with `step_start`/`step_end` calls for granular timing output. Also initialise `_SCRIPT_START_TIME` explicitly so timing is accurate before `.shellrc` is sourced.
+* *[fresh-install-of-osx.rb, software-updates-cron.sh]* Instrumented all major steps with `step_start`/`step_end` calls for granular timing output. Also initialise `_SCRIPT_START_TIME` explicitly so timing is accurate before `.shellrc` is sourced.
 * *[Brewfile]* Enabled `cairo`, `gnu-tar`, `mercurial`, and `sccache` (previously commented out) for zen-browser development.
 * *[.zshrc]* Added `gnu-tar` to the list of keg-only Homebrew packages that override macOS defaults. Removed the `git_scripts` path addition.
 * *[.envrc (profiles)]* Temporarily disabled natsumi-browser cloning as a trial. Removed `timeout` wrapper from `add-upstream-git-config.sh` call.
@@ -1712,7 +1712,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 ### 2.0.47
 
 * *[.aliases] Extract `restore_cron` function to remove some duplication.
-* *[fresh-install-of-osx.sh]* Removed resurrecting all tracked repos to save time while re-imaging/setting up the laptop.
+* *[fresh-install-of-osx.rb]* Removed resurrecting all tracked repos to save time while re-imaging/setting up the laptop.
 * *[osx-defaults.sh]* Turned off spotlight indexing for all volumes.
 
 #### Adopting these changes
@@ -1732,7 +1732,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 ### 2.0.45
 
 * Added a new script `run-all.sh` to run any unix command in matched git repos.
-* *[fresh-install-of-osx.sh]* Removed cloning of the `git_scripts` repo since the `run-all.sh` script has now been moved into this repo.
+* *[fresh-install-of-osx.rb]* Removed cloning of the `git_scripts` repo since the `run-all.sh` script has now been moved into this repo.
 * *[.shellrc]* Replaced function `dir_has_children` with `is_dir_empty` which checks if a directory is empty.
 * *[.zlogin]* Recompile scripts in the foreground since running in the background results in silent failures.
 * *[.aliases]* Added a new alias `resurrect_tracked_repos` to resurrect all tracked repositories.
@@ -1844,7 +1844,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 ### 2.0.34
 
-* *[fresh-install-of-osx.sh]* Move the custom handling of the `direnv` for the home and profiles folders into `allow_all_direnv_configs`.
+* *[fresh-install-of-osx.rb]* Move the custom handling of the `direnv` for the home and profiles folders into `allow_all_direnv_configs`.
 * *[cleanup-browser-profiles.sh]* Remove parallelization since the code seems cleaner.
 * General cleanup for maintainability and removing duplicate code.
 
@@ -1932,7 +1932,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 ### 2.0.26
 
-* Fixed an issue where running `fresh-install-of-osx.sh` caused the whole terminal app to quit at the end.
+* Fixed an issue where running `fresh-install-of-osx.rb` caused the whole terminal app to quit at the end.
 
 ---
 
@@ -2056,7 +2056,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 ### 2.0.10
 
-* *[fresh-install-of-osx.sh]* Added command to add the checked-out ssh keys to the ssh-agent.
+* *[fresh-install-of-osx.rb]* Added command to add the checked-out ssh keys to the ssh-agent.
 * *[.gitconfig]* Added some more configurations.
 * *[Brewfile]* Use new name for ollama cask.
 
@@ -2064,13 +2064,13 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 ### 2.0.9
 
-* *[fresh-install-of-osx.sh]* `approve-fingerprint-sudo.sh` has now been converted from a standalone script into a function.
+* *[fresh-install-of-osx.rb]* `approve-fingerprint-sudo.sh` has now been converted from a standalone script into a function.
 
 ---
 
 ### 2.0.8
 
-* *[fresh-install-of-osx.sh]* Moved each logical block into a function so its easier to understand and maintain.
+* *[fresh-install-of-osx.rb]* Moved each logical block into a function so its easier to understand and maintain.
 
 ---
 
@@ -2185,7 +2185,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 ### 1.1-18
 
 * *[Brewfile]* Ice is not installed on MacOS < 14, added KnockKnock.
-* *[fresh-install-of-osx.sh]* Use natsumi-browser in Firefox profile (similar to Zen profile).
+* *[fresh-install-of-osx.rb]* Use natsumi-browser in Firefox profile (similar to Zen profile).
 * *[.gitignore_global]* Regenerate from https://gitignore.io with more options.
 * Major refactoring for ruby scripts to optimize for time and use of ruby idioms.
 * *[.zlogin]* Optimize recompiling of zsh shell scripts.
@@ -2235,7 +2235,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 ### 1.1-12
 
-* *[fresh-install-of-osx.sh]* Set PATH even if dotfiles repo is present - so that future scripts can be invoked without issues.
+* *[fresh-install-of-osx.rb]* Set PATH even if dotfiles repo is present - so that future scripts can be invoked without issues.
 * *[Brewfile]* Cleaned up some softwares that I rarely use.
 * *[.tcshrc]* Removed empty file
 
@@ -2296,8 +2296,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 ### 1.1-3
 
 * *[.aliases]* `install_mise_versions` now handles config files from more language-version-managers.
-* *[fresh-install-of-osx.sh]* Removed duplicate function defn: `build_keybase_repo_url`.
-* *[fresh-install-of-osx.sh]* Moved some post-install steps into a new script which is invoked from the Brewfile's `at_exit` block.
+* *[fresh-install-of-osx.rb]* Removed duplicate function defn: `build_keybase_repo_url`.
+* *[fresh-install-of-osx.rb]* Moved some post-install steps into a new script which is invoked from the Brewfile's `at_exit` block.
 * *[software-updates-cron.sh]* Corrected defensive checking of installed software before running some update commands.
 
 ---
@@ -2462,7 +2462,7 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 ### 1.0-39
 
 * Introduced [a new script](scripts/cleanup-browser-profiles.sh) to cleanup browser profiles folders.
-* *[fresh-install-of-osx.sh]* Minor refactoring to enhance `clone_repo_into` to handle an optional target git branch which is also validated.
+* *[fresh-install-of-osx.rb]* Minor refactoring to enhance `clone_repo_into` to handle an optional target git branch which is also validated.
 
 ---
 
@@ -2529,7 +2529,7 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 
 ### 1.0-32
 
-* *[fresh-install-of-osx.sh]* Added date calculation in `fresh-install-of-osx.sh` to track total execution time.
+* *[fresh-install-of-osx.rb]* Added date calculation in `fresh-install-of-osx.rb` to track total execution time.
 
 ---
 
@@ -2549,13 +2549,13 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 ### 1.0-29
 
 * *[capture-defaults.sh]* Removed some applications that I no longer use.
-* *[fresh-install-of-osx.sh]* Replaced `TODO` with explanation for future reference as to why we can't use `homebrew` to install omz custom plugins.
+* *[fresh-install-of-osx.rb]* Replaced `TODO` with explanation for future reference as to why we can't use `homebrew` to install omz custom plugins.
 
 ---
 
 ### 1.0-28
 
-* *[Brewfile]* Stop processing the `Brewfile` such that the minimal installation can happen in a shorter duration of time. This is controlled by the env var `HOMEBREW_BASE_INSTALL` which is set in the `fresh-install-of-osx.sh` script when installing from scratch.
+* *[Brewfile]* Stop processing the `Brewfile` such that the minimal installation can happen in a shorter duration of time. This is controlled by the env var `HOMEBREW_BASE_INSTALL` which is set in the `fresh-install-of-osx.rb` script when installing from scratch.
 
 ---
 
@@ -2567,13 +2567,13 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 
 ### 1.0-26
 
-* Merged `fresh-install-of-osx-advanced.sh` into `fresh-install-of-osx.sh` to reduce complexity of loading different config files into the shell session.
+* Merged `fresh-install-of-osx-advanced.sh` into `fresh-install-of-osx.rb` to reduce complexity of loading different config files into the shell session.
 * *[.gitconfig]* Remove git sub-command `currentDir` in favor of [root](https://github.com/tj/git-extras/blob/main/Commands.md#git-root).
 * *[Brewfile]* Remove `git-tools` since `git-extras` has an equivalent git sub-command.
 * *[.gitignore_global]* Generate from [gitignore.io](https://gitignore.io) for common languages, OSes and editors.
-* *[fresh-install-of-osx.sh]* Minimize use of `eval` and sub-shells.
-* *[fresh-install-of-osx.sh]* Moved utility scripts (from `files/--HOME--/.aliases`) that are only loaded while running the `fresh-install-of-osx.sh` into that single script to optimize shell startup time.
-* *[fresh-install-of-osx.sh]* Removed cloning of `natsumi-browser` from `.envrc` and moved into fresh-install script. Updating the repo is now handled as part of `scripts/software-updates-cron.sh`.
+* *[fresh-install-of-osx.rb]* Minimize use of `eval` and sub-shells.
+* *[fresh-install-of-osx.rb]* Moved utility scripts (from `files/--HOME--/.aliases`) that are only loaded while running the `fresh-install-of-osx.rb` into that single script to optimize shell startup time.
+* *[fresh-install-of-osx.rb]* Removed cloning of `natsumi-browser` from `.envrc` and moved into fresh-install script. Updating the repo is now handled as part of `scripts/software-updates-cron.sh`.
 * *[.zshrc]* Removed `zsh-defer` since that was introducing more complexity in maintenance.
 * *[.shellrc]* Use `mktemp` to enhance implementation of `clone_repo_into` which reduces need to process the home-repo in a special manner while doing a fresh install.
 * *[.shellrc]* Moved homebrew env vars from `files/--HOME--/.zshenv` into `files/--HOME--/.shellrc`.
@@ -2646,7 +2646,7 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 
 ### 1.0-20
 
-* Removed necessity of quitting and restarting the Terminal application between executing the `fresh-install-of-osx.sh` and `fresh-install-of-osx-advanced.sh`.
+* Removed necessity of quitting and restarting the Terminal application between executing the `fresh-install-of-osx.rb` and `fresh-install-of-osx-advanced.sh`.
 * *[.shellrc]* Extracted some utility functions to remove duplication and invoke them in the setup scripts.
 * *[.shellrc]* Renamed `ensure_dir_exists_if_var_defined` into `ensure_dir_exists` and `clone_if_not_present` into `clone_omz_plugin_if_not_present`.
 * *[Brewfile]* Removed `gs`, `wifi-password` and `virtualbox`.
@@ -2707,7 +2707,7 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 
 #### Adopting these changes
 
-* Run `fresh-install-of-osx.sh` so that the `zsh-defer` plugin is cloned to the correct directory.
+* Run `fresh-install-of-osx.rb` so that the `zsh-defer` plugin is cloned to the correct directory.
 * Restart terminal for the deferred-loading to take effect. (No harm in keeping the old session).
 
 ---
@@ -2752,7 +2752,7 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 
 ### 1.0-7
 
-* *[fresh-install-of-osx.sh]* Fix issue when running in a fresh/vanilla machine since 'ZDOTDIR' was undefined.
+* *[fresh-install-of-osx.rb]* Fix issue when running in a fresh/vanilla machine since 'ZDOTDIR' was undefined.
 
 ---
 

@@ -1297,7 +1297,7 @@ main() {
 Do not call `suspend_cron` / `resume_cron` directly in scripts that have a
 single entry point -- use `with_cron_suspended` instead. Use the low-level
 functions only when the suspend/resume scope spans multiple code paths (e.g.
-`fresh-install-of-osx.sh` where the scope is the entire `main()`).
+`fresh-install-of-osx.rb` where the scope is the entire `main()`).
 
 ## `parse_folder_and_switches` Convention
 

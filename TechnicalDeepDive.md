@@ -41,9 +41,9 @@ Where possible, syntax is kept POSIX-compatible so that scripts remain portable 
 
 ### 1.4 Idempotency
 
-`fresh-install-of-osx.sh` — the main bootstrap — must work correctly both on a **vanilla macOS** and on a **fully configured machine**. Every section has a guard at the very top that short-circuits the entire section when its work is already done. Re-running on a configured machine is therefore fast: only sections with outstanding work execute their logic.
+`fresh-install-of-osx.rb` — the main bootstrap — must work correctly both on a **vanilla macOS** and on a **fully configured machine**. Every section has a guard at the very top that short-circuits the entire section when its work is already done. Re-running on a configured machine is therefore fast: only sections with outstanding work execute their logic.
 
-The `FIRST_INSTALL` environment variable signals a vanilla OS run. Logic that only makes sense on a blank slate (e.g. downloading `.shellrc` via `curl` before the dotfiles repo exists) is guarded with `is_first_install` (a utility function in `.shellrc` that wraps `[[ -n "${FIRST_INSTALL:-}" ]]`). Two occurrences in `fresh-install-of-osx.sh` use the raw form directly because they run before `.shellrc` has been sourced.
+The `FIRST_INSTALL` environment variable signals a vanilla OS run. Logic that only makes sense on a blank slate (e.g. downloading `.shellrc` via `curl` before the dotfiles repo exists) is guarded with `is_first_install` (a utility function in `.shellrc` that wraps `[[ -n "${FIRST_INSTALL:-}" ]]`). Two occurrences in `fresh-install-of-osx.rb` use the raw form directly because they run before `.shellrc` has been sourced.
 
 ---
 
@@ -56,7 +56,7 @@ files/
   --XDG_CONFIG_HOME--/   symlinked into $XDG_CONFIG_HOME
   --PERSONAL_PROFILES_DIR--/  .envrc for direnv
 scripts/
-  fresh-install-of-osx.sh
+  fresh-install-of-osx.rb
   capture-prefs.rb
   osx-defaults.sh
   utilities/             shared Ruby modules (logging, string, cli_parser, …)
@@ -85,7 +85,7 @@ To add a new dotfile, drop it under the appropriate `files/--VAR--/` directory. 
 
 ### Why the split exists
 
-`.shellrc` is downloaded via `curl` early in `fresh-install-of-osx.sh`, **before** the dotfiles repo has been cloned and before `install-dotfiles.rb` has created symlinks. It must therefore stay lean — it holds only the functions that are genuinely needed in that pre-clone window.
+`.shellrc` is downloaded via `curl` early in `fresh-install-of-osx.rb`, **before** the dotfiles repo has been cloned and before `install-dotfiles.rb` has created symlinks. It must therefore stay lean — it holds only the functions that are genuinely needed in that pre-clone window.
 
 `.aliases` is available only after the dotfiles repo is cloned and `install-dotfiles.rb` has run. Everything that does not need to exist before that point lives in `.aliases`.
 
@@ -518,7 +518,7 @@ Kill/restart is therefore scoped to: always on import; interactive (TTY) export 
 
 ## 12. `osx-defaults.sh` and `capture-prefs.rb` — Two-Phase Preference Architecture
 
-macOS preferences are managed in two distinct, ordered phases. The order is load-bearing: phase 2 always wins over phase 1 by design. Both phases are invoked automatically by `fresh-install-of-osx.sh` in sequence.
+macOS preferences are managed in two distinct, ordered phases. The order is load-bearing: phase 2 always wins over phase 1 by design. Both phases are invoked automatically by `fresh-install-of-osx.rb` in sequence.
 
 ### Phase 1 — `osx-defaults.sh -s` (baseline seed)
 
@@ -543,7 +543,7 @@ osx-defaults.sh -s    # phase 1 — write baseline
 capture-prefs.rb -i   # phase 2 — overwrite with UI-configured values
 ```
 
-Reversing the order causes `osx-defaults.sh` to overwrite the user's restored preferences with stale baseline values — exactly the wrong outcome. `fresh-install-of-osx.sh` encodes this order and must not be changed without understanding this constraint.
+Reversing the order causes `osx-defaults.sh` to overwrite the user's restored preferences with stale baseline values — exactly the wrong outcome. `fresh-install-of-osx.rb` encodes this order and must not be changed without understanding this constraint.
 
 ### Decision rule for new preference code
 
@@ -557,13 +557,13 @@ See [Extras.md — osx-defaults.sh](Extras.md#osx-defaultssh) for the adopter-fa
 
 ---
 
-## 13. Why `fresh-install-of-osx.sh` and `osx-defaults.sh` Remain Shell Scripts
+## 13. Why `fresh-install-of-osx.rb` and `osx-defaults.sh` Remain Shell Scripts
 
-While much of this codebase has migrated from shell to Ruby for maintainability and testability, two core scripts **will never be converted**: `fresh-install-of-osx.sh` and `osx-defaults.sh`. This is an intentional architectural decision based on practical constraints.
+While much of this codebase has migrated from shell to Ruby for maintainability and testability, two core scripts **will never be converted**: `fresh-install-of-osx.rb` and `osx-defaults.sh`. This is an intentional architectural decision based on practical constraints.
 
-### `fresh-install-of-osx.sh` — Bootstrap Complexity
+### `fresh-install-of-osx.rb` — Bootstrap Complexity
 
-Converting `fresh-install-of-osx.sh` to Ruby would introduce unacceptable complexity in the bootstrap path:
+Converting `fresh-install-of-osx.rb` to Ruby would introduce unacceptable complexity in the bootstrap path:
 
 1. **Vanilla OS constraint**: On a fresh macOS, only `/usr/bin/ruby` (system Ruby 2.6) is available. No gems, no `require_relative`, no `Pathname`. The bootstrap must work with *only* what the OS provides out of the box.
 
@@ -585,7 +585,7 @@ Converting `fresh-install-of-osx.sh` to Ruby would introduce unacceptable comple
    
    The result would be longer, harder to debug, and more fragile than the shell version.
 
-**Decision**: `fresh-install-of-osx.sh` stays as shell. The bootstrap path is inherently shell-native, and fighting that reality creates more problems than it solves.
+**Decision**: `fresh-install-of-osx.rb` stays as shell. The bootstrap path is inherently shell-native, and fighting that reality creates more problems than it solves.
 
 ### `osx-defaults.sh` — Copy-Paste Ergonomics
 
@@ -603,7 +603,7 @@ Converting `osx-defaults.sh` to Ruby would eliminate a key usability feature:
 
 ### Implication for the Codebase
 
-These two scripts anchor the shell ecosystem: `.shellrc` must remain because `fresh-install-of-osx.sh` sources it during bootstrap. Other scripts (`software-updates-cron.sh` evolved to Ruby, `setup-login-item.sh` evolved to Ruby) were converted because they don't have the same constraints. The decision to keep these two as shell is about respecting the constraints of the problem domain, not lack of effort or willingness to modernize.
+These two scripts anchor the shell ecosystem: `.shellrc` must remain because `fresh-install-of-osx.rb` sources it during bootstrap. Other scripts (`software-updates-cron.sh` evolved to Ruby, `setup-login-item.sh` evolved to Ruby) were converted because they don't have the same constraints. The decision to keep these two as shell is about respecting the constraints of the problem domain, not lack of effort or willingness to modernize.
 
 ---
 

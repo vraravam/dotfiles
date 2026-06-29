@@ -97,6 +97,47 @@ module PathUtils
     end
   end
 
+  # Prepends +dir+ to ENV['PATH'] if it is a directory and not already present.
+  # Mirrors append_to_path_if_dir_exists in .shellrc (prepend is safer for homebrew).
+  #
+  # @param dir [String, Pathname] Directory to prepend to PATH.
+  # @return [void]
+  #
+  # @example
+  #   PathUtils.prepend_to_path('/usr/local/bin')
+  #   PathUtils.prepend_to_path(Pathname.new('/opt/homebrew/bin'))
+  def prepend_to_path(dir)
+    dir_pn = dir.is_a?(Pathname) ? dir : Pathname.new(dir)
+    return unless dir_pn.directory?
+
+    dir_str = dir_pn.to_s
+    return if EnvVars.path.split(':').include?(dir_str)
+
+    ENV['PATH'] = "#{dir_str}:#{EnvVars.path}"
+    Logging.debug "Prepended '#{dir_str}' to PATH"
+  end
+
+  # Sets secure permissions on SSH folder and files (700 on directory, 600 on files).
+  # Adds any bare identity files (id_*) to the ssh-agent keychain.
+  # Mirrors set_ssh_folder_permissions in .shellrc.
+  #
+  # @return [void]
+  #
+  # @example
+  #   PathUtils.set_ssh_folder_permissions
+  def set_ssh_folder_permissions
+    require_relative 'env_vars'
+
+    ssh_configs_dir = EnvVars::HOME.join('.ssh')
+    return unless ssh_configs_dir.directory?
+
+    FileUtils.chmod(0o700, ssh_configs_dir)
+    glob_pathnames(ssh_configs_dir.join('*')) do |f|
+      FileUtils.chmod(0o600, f) if f.file?
+    end
+    Logging.debug "SSH folder permissions set for '#{ssh_configs_dir}'"
+  end
+
   # Ensures the specified directories exist, creating them if necessary.
   # Accepts a single path or an array of paths. Skips any empty paths.
   #

@@ -48,7 +48,7 @@ Higher priority always wins. Document tradeoffs in comments when they conflict.
 │   └── --XDG_CONFIG_HOME--/zsh/  # Autoload functions
 ├── scripts/
 │   ├── utilities/             # Shared Ruby modules
-│   ├── fresh-install-of-osx.sh
+│   ├── fresh-install-of-osx.rb
 │   └── install-dotfiles.rb
 └── .ai/                        # AI assistant instructions
 ```
@@ -83,7 +83,7 @@ Higher priority always wins. Document tradeoffs in comments when they conflict.
 - Success message "Successfully restored preferences" never printed (line 654), but warning from capture-prefs DID appear
 - Three "Automatic checking for updates is turned on" messages from multiple `resume_softwareupdate_schedule` calls (osx-defaults EXIT trap, capture-prefs at_exit hook, and a third mysterious call before error)
 
-**Solution**: Skip timestamp check on `FIRST_INSTALL` - added `&& !EnvVars.first_install?` condition to the abort logic in `capture-prefs.rb`. On pre-configured machines, `fresh-install-of-osx.sh` automatically refreshes the backup: runs `capture-prefs.rb -e` to export current preferences (stages files), then commits using `git sci` (amends if ahead of remote, creates new if not) to update the git commit timestamp. Import then succeeds because backup timestamp is now newer than `osx-defaults.sh`.
+**Solution**: Skip timestamp check on `FIRST_INSTALL` - added `&& !EnvVars.first_install?` condition to the abort logic in `capture-prefs.rb`. On pre-configured machines, `fresh-install-of-osx.rb` automatically refreshes the backup: runs `capture-prefs.rb -e` to export current preferences (stages files), then commits using `git sci` (amends if ahead of remote, creates new if not) to update the git commit timestamp. Import then succeeds because backup timestamp is now newer than `osx-defaults.sh`.
 
 **Impact**: Fresh-install now completes preferences restoration on both vanilla OS (stale backups accepted) and pre-configured machines (backup automatically refreshed and committed before import).
 
@@ -112,7 +112,7 @@ Higher priority always wins. Document tradeoffs in comments when they conflict.
 **Solution**: Ruby delegates to shell version via `system('zsh', '-c', 'source ~/.shellrc && clone_repo_into ...')`.
 
 **Why delegation, not consolidation**:
-- **Bootstrap constraint**: fresh-install-of-osx.sh clones dotfiles repo BEFORE Ruby utilities exist
+- **Bootstrap constraint**: fresh-install-of-osx.rb clones dotfiles repo BEFORE Ruby utilities exist
 - **Vanilla OS**: Only /bin/zsh and curl available initially
 - **Timing**: Function must be in .shellrc for curl-download during bootstrap
 - **Single source of truth**: Shell version is canonical, Ruby is thin wrapper

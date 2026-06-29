@@ -49,7 +49,7 @@ Each domain file uses `applyTo` patterns to specify which files it covers:
 | **character-encoding** | All cross-language scripts and configuration files (ASCII-only requirements) |
 | **comment-philosophy** | All cross-language scripts (comment guidelines) |
 | **edit-checklist** | All cross-language scripts and configuration files (edit workflow) |
-| **fresh-install** | `fresh-install-of-osx.sh`, `install-dotfiles.rb`, setup/backup scripts |
+| **fresh-install** | `fresh-install-of-osx.rb`, `install-dotfiles.rb`, setup/backup scripts |
 | **git-config** | `.gitconfig`, git aliases, `.gitattributes` |
 | **logging-conventions** | All cross-language scripts (logging/color rules) |
 | **path-constants** | All cross-language scripts (path/env var rules) |

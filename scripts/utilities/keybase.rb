@@ -10,7 +10,7 @@ require_relative 'path_utils'
 
 # Keybase helpers for login, repo creation/deletion, and URL validation.
 # These are used by scripts that interact with Keybase git repos (recreate-repo.rb)
-# and by fresh-install-of-osx.sh (_ensure_keybase_logged_in delegates to ensure_logged_in).
+# and by fresh-install-of-osx.rb (_ensure_keybase_logged_in delegates to ensure_logged_in).
 module Keybase
   extend self
   include Core  # For instance methods (in blocks)
@@ -29,7 +29,7 @@ module Keybase
 
   # Ensures keybase is installed and the current user is logged in.
   # Returns false on failure so callers can decide whether to abort or continue.
-  # Called by fresh-install-of-osx.sh (_ensure_keybase_logged_in) and recreate-repo.rb.
+  # Called by fresh-install-of-osx.rb (_ensure_keybase_logged_in) and recreate-repo.rb.
   #
   # @param dry_run [Boolean] When true, logs the operation instead of executing.
   # @return [Boolean] true if logged in (or would log in), false otherwise.

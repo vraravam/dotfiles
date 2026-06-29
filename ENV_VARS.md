@@ -79,7 +79,7 @@ These are managed automatically by the system and should not be set manually:
 
 ## Required Customization (⚠️ MUST SET)
 
-Before running `fresh-install-of-osx.sh`, you **MUST** customize these variables in `.shellrc`:
+Before running `fresh-install-of-osx.rb`, you **MUST** customize these variables in `.shellrc`:
 
 ### 1. GitHub Username (Line 42)
 

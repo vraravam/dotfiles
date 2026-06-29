@@ -161,11 +161,231 @@ module MacOS
     outdated.join(', ')
   end
 
+  # Parses `brew shellenv` output and merges the exported variables into the
+  # current process environment. This is the Ruby equivalent of eval_shellenv
+  # in .shellrc -- it ensures homebrew bins are on PATH for subsequent system()
+  # calls without forking a shell.
+  #
+  # @param brew_bin [Pathname, String] Path to brew binary.
+  # @return [void]
+  #
+  # @example
+  #   MacOS.load_brew_shellenv(Pathname.new('/opt/homebrew/bin/brew'))
+  def load_brew_shellenv(brew_bin)
+    brew_bin = Pathname.new(brew_bin) unless brew_bin.is_a?(Pathname)
+    return unless brew_bin.executable?
+
+    brew_env_out, = Open3.capture3(brew_bin.to_s, 'shellenv')
+    brew_env_out.each_line do |line|
+      # Parse simple export lines: export KEY="value"; (note trailing semicolon)
+      if (m = line.match(/^export (\w+)="([^"]*)"/))
+        ENV[m[1]] = m[2]
+        next
+      end
+
+      # Handle path_helper eval line: eval "$(/usr/bin/env PATH_HELPER_ROOT="..." /usr/libexec/path_helper -s)"
+      next unless (m = line.match(/eval "\$\((.+)\)"/))
+
+      # Execute the command inside $(...) and parse its output
+      cmd = m[1]
+      path_helper_out, = Open3.capture3(cmd)
+      path_helper_out.each_line do |ph_line|
+        # Parse path_helper output: KEY="value"; export KEY;
+        next unless (ph_m = ph_line.match(/^(\w+)="([^"]*)"; export \1;$/))
+
+        ENV[ph_m[1]] = ph_m[2]
+      end
+    end
+    Logging.debug "Loaded brew shellenv from '#{brew_bin}'"
+  end
+
+  # Returns the brewfile content trimmed to the base section for first install.
+  # Strips lines at and after the first non-comment line containing 'EnvVars.first_install?',
+  # matching the shell sed truncation in _install_homebrew.
+  #
+  # @return [String] Brewfile content (full or trimmed based on EnvVars.first_install?)
+  #
+  # @example
+  #   content = MacOS.first_install_brewfile_content
+  def first_install_brewfile_content
+    lines = EnvVars::HOMEBREW_BUNDLE_FILE.readlines
+    cutoff = lines.index { |l| l.include?('FIRST_INSTALL') }
+    base_lines = cutoff ? lines[0...cutoff] : lines
+    base_lines.reject { |l| l.comment_or_empty? }.join
+  end
+
+  # Trusts custom taps and runs brew bundle to install formulae/casks from Brewfile.
+  # On first install, only installs the base section (fast essentials) and forks
+  # a background process for the full Brewfile. On pre-configured machines, runs
+  # the full Brewfile install synchronously.
+  #
+  # @param brew_bin [Pathname, String] Path to brew executable
+  # @return [Boolean] true if brew bundle succeeded, false if it had errors
+  #
+  # @example
+  #   success = MacOS.install_homebrew_bundle(EnvVars::HOMEBREW_PREFIX.join('bin', 'brew'))
+  def install_homebrew_bundle(brew_bin)
+    # Ensure brew_bin is a Pathname for consistent .executable? checks
+    brew_bin = Pathname.new(brew_bin) unless brew_bin.is_a?(Pathname)
+
+    # Trust all custom taps defined in the Brewfile before running brew bundle.
+    # This ensures taps are trusted before any formulae/casks from those taps are
+    # installed, which is required if HOMEBREW_REQUIRE_TAP_TRUST is enforced.
+    if nil_or_empty?(brew_bin.to_s) || !brew_bin.executable?
+      Logging.warn "Brew binary '#{brew_bin}' not executable -- skipping bundle install"
+      return false
+    end
+
+    custom_taps = _custom_taps_from_brewfile(brew_bin)
+    if custom_taps.any?
+      Logging.info "Trusting custom taps: #{custom_taps.join(', ').yellow}"
+      system(brew_bin.to_s, 'trust', '--tap', '-q', *custom_taps) || true  # Don't fail if trust fails
+    end
+
+    # Run brew bundle. On EnvVars.first_install?, only install the base section of the Brewfile
+    # to keep the initial run fast; fork the full install in the background.
+    brew_bundle_exit = 0
+    if EnvVars.first_install?
+      content = first_install_brewfile_content
+      # brew bundle --file=- reads the Brewfile from stdin.
+      check_ok = system(brew_bin.to_s, 'bundle', 'check', out: File::NULL, err: File::NULL)
+      unless check_ok
+        # Use Core.stream_command for real-time output during package installation.
+        brew_bundle_exit = Core.stream_command([brew_bin.to_s, 'bundle', '--file=-'], stdin_data: content)
+      end
+    else
+      check_ok = system(brew_bin.to_s, 'bundle', 'check', out: File::NULL, err: File::NULL)
+      unless check_ok
+        system(brew_bin.to_s, 'bundle') || (brew_bundle_exit = 1)
+      end
+    end
+
+    if brew_bundle_exit.zero?
+      Logging.success 'Successfully installed cmd-line and GUI apps using Homebrew'
+    else
+      Logging.record_warning 'Homebrew bundle install encountered errors; continuing...'
+    end
+
+    if EnvVars.first_install?
+      # Fork the full Brewfile install in the background so optional/heavy packages
+      # install without blocking the rest of this run. FIRST_INSTALL is unset in
+      # the child so brew bundle processes the complete Brewfile.
+      full_bundle_log = EnvVars::HOME.join('brew-bundle-full-install.log')
+      pid = Process.spawn(
+        ENV.to_h.merge('FIRST_INSTALL' => ''),
+        brew_bin.to_s, 'bundle',
+        out: [full_bundle_log.to_s, 'a'], err: [full_bundle_log.to_s, 'a']
+      )
+      Process.detach(pid)
+      Logging.info "Full Brewfile install running in background (log: '#{full_bundle_log.to_s.cyan}')"
+    end
+
+    brew_bundle_exit.zero?
+  end
+
+  # Sets up Touch ID for sudo access in terminal shells by enabling pam_tid.so.
+  # Skips if Touch ID hardware not detected or if already configured.
+  #
+  # @return [void]
+  def approve_fingerprint_sudo
+    Logging.section_header 'Setting up Touch ID for sudo access in terminal shells'
+
+    # AppleBiometricSensor = T1/T2 chip (Intel); AppleBiometricServices = Apple Silicon.
+    sensor_out, = Open3.capture3('ioreg', '-c', 'AppleBiometricSensor')
+    sensor = sensor_out.include?('AppleBiometricSensor')
+    services_out, = Open3.capture3('ioreg', '-c', 'AppleBiometricServices')
+    services = services_out.include?('AppleBiometricServices')
+    unless sensor || services
+      Logging.info 'Touch ID hardware not detected -- skipping configuration.'
+      return
+    end
+
+    template_file_pn = Pathname.new('/etc/pam.d/sudo_local.template')
+    unless template_file_pn.file?
+      Logging.warn "Template file '#{template_file_pn}' not found -- skipping."
+      return
+    end
+
+    target_file_pn = Pathname.new('/etc/pam.d/sudo_local')
+    if target_file_pn.file?
+      Logging.info "'#{target_file_pn.to_s.cyan}' already present -- skipping."
+    else
+      content = template_file_pn.read.gsub(/^#auth/, 'auth')
+      tmp = Tempfile.new('sudo_local')
+      tmp.write(content)
+      tmp.close
+      result = system('sudo', 'cp', tmp.path, target_file_pn.to_s)
+      tmp.unlink
+      if result
+        Logging.success "Created '#{target_file_pn.to_s.cyan}'"
+      else
+        Logging.record_error "Failed to create '#{target_file_pn.to_s.cyan}'"
+      end
+    end
+  end
+
+  # Verifies FileVault disk encryption is active. Raises RuntimeError if not.
+  #
+  # @return [void]
+  # @raise [RuntimeError] if FileVault is not enabled
+  def ensure_filevault_is_on
+    Logging.section_header 'Verifying FileVault status'
+    fv_out, = Open3.capture3('fdesetup', 'isactive')
+    unless fv_out.strip == 'true'
+      Logging.error 'FileVault is not turned on. Please encrypt your hard disk!'
+      # Logging.error raises RuntimeError; at_exit cleanup hooks still run.
+    end
+  end
+
+  # Installs Xcode Command Line Tools via non-interactive softwareupdate.
+  # Skips if already installed. Raises RuntimeError if installation fails.
+  #
+  # @return [void]
+  # @raise [RuntimeError] if installation fails
+  def install_xcode_command_line_tools
+    Logging.section_header 'Installing Xcode command-line tools'
+
+    software_update_marker_file = Pathname.new('/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress')
+    if system('xcode-select', '-p', out: File::NULL, err: File::NULL)
+      Logging.info 'Xcode command-line tools already present -- skipping.'
+      # Idempotency cleanup: remove the in-progress sentinel unconditionally.
+      software_update_marker_file.delete if software_update_marker_file.exist?
+      return
+    end
+
+    software_update_marker_file.write('')
+    unless system('sudo', 'softwareupdate', '-ia', '--agree-to-license', '--force')
+      Logging.record_warning 'softwareupdate encountered errors during Xcode CLT install'
+    end
+    software_update_marker_file.delete if software_update_marker_file.exist?
+
+    unless system('xcode-select', '-p', out: File::NULL, err: File::NULL)
+      Logging.error "Couldn't install Xcode command-line tools; aborting"
+    end
+    Logging.success 'Successfully installed Xcode command-line tools'
+  end
+
   # ---------------------------------------------------------------------------
   # Private helpers
   # ---------------------------------------------------------------------------
 
   private
+
+  # Returns custom tap names from the Brewfile (excluding homebrew/* taps).
+  # Uses 'brew bundle list --taps' to extract tap declarations.
+  #
+  # @param brew_bin [Pathname, String] Path to brew executable
+  # @return [Array<String>] Custom tap names, or empty array if Brewfile doesn't exist or brew_bin not executable
+  def _custom_taps_from_brewfile(brew_bin)
+    # Ensure brew_bin is a Pathname for consistent .executable? checks
+    brew_bin = Pathname.new(brew_bin) unless brew_bin.is_a?(Pathname)
+
+    return [] if nil_or_empty?(brew_bin.to_s) || !brew_bin.executable?
+    return [] unless EnvVars::HOMEBREW_BUNDLE_FILE.file?
+
+    tap_output, = Open3.capture2(brew_bin.to_s, 'bundle', 'list', '--taps', "--file=#{EnvVars::HOMEBREW_BUNDLE_FILE.to_s}")
+    tap_output.lines.map(&:strip).reject { |tap| tap.start_with?('homebrew/') }
+  end
 
   # Sets the macOS automatic software update schedule to ON or OFF.
   # Checks for sudo credentials, starts keep-alive thread, and runs softwareupdate.
@@ -206,4 +426,5 @@ module MacOS
       end
     end
   end
+  private_class_method :_set_softwareupdate_schedule, :_has_sudo_credentials, :_keep_sudo_alive
 end

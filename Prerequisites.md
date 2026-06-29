@@ -1,6 +1,6 @@
 # This section is important if you want to capture the installed softwares, etc from an *existing* machine.
 
-These steps capture the state of your current machine so that `fresh-install-of-osx.sh` can restore it faithfully on the new one. Without them, you would have to reinstall apps, reconfigure preferences, and re-clone repositories manually after re-imaging.
+These steps capture the state of your current machine so that `fresh-install-of-osx.rb` can restore it faithfully on the new one. Without them, you would have to reinstall apps, reconfigure preferences, and re-clone repositories manually after re-imaging.
 
 1. If you are starting this process on a machine where you have already installed some apps using `homebrew`, then use `brew bundle dump --force --file="${HOME}/Brewfile"` to create the `${HOME}/Brewfile` file and avoid starting from scratch. Remember though that this is a **1-time** run of this command. In the future, if you regenerate the Brewfile using this command, any custom comments/formatting that you might have written into that file would be lost.
 2. Use the `scripts/capture-prefs.rb` script with the `-e` (export) option to export your application and system preferences. Please ensure that you edit the whitelist of applications to what you have installed and would like to capture the preferences for.

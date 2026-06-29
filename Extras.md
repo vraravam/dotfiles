@@ -20,7 +20,7 @@ Three data files govern which domains are processed and how:
 - **[`scripts/data/capture-prefs-denied-list.txt`](scripts/data/capture-prefs-denied-list.txt)** — domains that must never be exported or imported (machine-specific identifiers, account credentials, ephemeral sync state). Each entry has an inline comment explaining why.
 - **[`scripts/data/capture-prefs-excluded-keys.txt`](scripts/data/capture-prefs-excluded-keys.txt)** — individual keys within allowed domains that are stripped before export or import (display geometry, device UUIDs embedded in per-domain keys).
 
-**Backup staleness check:** On import (`-i`), the script validates that the backup preferences are not older than the last change to `osx-defaults.sh`. This prevents importing incomplete settings after `osx-defaults.sh` has been updated. On `FIRST_INSTALL`, this check is skipped because `fresh-install-of-osx.sh` runs `osx-defaults.sh -s` first to baseline current prefs, so the import is an incremental overlay — any backup is better than none.
+**Backup staleness check:** On import (`-i`), the script validates that the backup preferences are not older than the last change to `osx-defaults.sh`. This prevents importing incomplete settings after `osx-defaults.sh` has been updated. On `FIRST_INSTALL`, this check is skipped because `fresh-install-of-osx.rb` runs `osx-defaults.sh -s` first to baseline current prefs, so the import is an incremental overlay — any backup is better than none.
 
 See [Technical Deep Dive § 11](TechnicalDeepDive.md#11-capture-prefssh-architecture) for how key stripping, XML plist conversion, and cron-safe export work internally.
 
@@ -30,7 +30,7 @@ Cleans up browser profile folders by vacuuming SQLite databases larger than 10 M
 
 The lists of files and directories to clean are maintained in [`scripts/data/cleanup-browser-files.txt`](scripts/data/cleanup-browser-files.txt) and [`scripts/data/cleanup-browser-dirs.txt`](scripts/data/cleanup-browser-dirs.txt).
 
-## fresh-install-of-osx.sh
+## fresh-install-of-osx.rb
 
 This is the main setup script for a fresh macOS installation. It is idempotent (see [Technical Deep Dive § 1.4](TechnicalDeepDive.md#14-idempotency)) and can be run multiple times safely. The script:
 
@@ -84,7 +84,7 @@ Seeds known-good starting values for settings the user has not yet configured vi
 
 Imports the preferences the user previously exported from their old machine via `capture-prefs.rb -e`. Because this runs *after* phase 1, every UI-configured value overwrites the corresponding baseline. The user's deliberate choices always win.
 
-`fresh-install-of-osx.sh` enforces this order:
+`fresh-install-of-osx.rb` enforces this order:
 
 ```zsh
 osx-defaults.sh -s    # phase 1 — seed baseline
@@ -105,7 +105,7 @@ See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-two-phase-preference-arc
 
 ## post-brew-install.rb
 
-This script runs post-bundle cleanup and plugin setup that cannot live in the Brewfile itself. It removes conflicting zsh completion files, trusts known taps, and updates antidote plugins. It is called automatically by `fresh-install-of-osx.sh` after `brew bundle` completes. It can also be run manually at any time — it is idempotent.
+This script runs post-bundle cleanup and plugin setup that cannot live in the Brewfile itself. It removes conflicting zsh completion files, trusts known taps, and updates antidote plugins. It is called automatically by `fresh-install-of-osx.rb` after `brew bundle` completes. It can also be run manually at any time — it is idempotent.
 
 ## recreate-repo.rb
 
@@ -174,7 +174,7 @@ You can control the search scope and filtering using environment variables:
 
 ## setup-login-item.rb
 
-Some apps must be registered as macOS login items programmatically after installation — the System Settings UI is not scriptable in a repeatable way. This script handles that registration so `fresh-install-of-osx.sh` can set up login items unattended. It is also safe to run manually at any time.
+Some apps must be registered as macOS login items programmatically after installation — the System Settings UI is not scriptable in a repeatable way. This script handles that registration so `fresh-install-of-osx.rb` can set up login items unattended. It is also safe to run manually at any time.
 
   ```zsh
   setup-login-item.rb -a <app-name>

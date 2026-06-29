@@ -358,21 +358,13 @@ class GitProcessor
     path.join('.git').exist?
   end
 
-  # Clones a git repo into a target directory, handling the non-empty target case.
+  # Clones a git repo into a temp folder, moves the .git dir into the target location,
+  # and does an initial checkout there. Works around git's refusal to clone into a
+  # non-empty directory (e.g. HOME). If the target is already a git repo, fetches and
+  # unshallows instead. Always updates submodules afterwards.
   # On FIRST_INSTALL (vanilla OS), uses --depth=1 for a shallow clone to save time
   # and bandwidth; repos can be unshallowed later via fetch-unshallow/pull-unshallow.
-  #
-  # **DELEGATES TO SHELL VERSION**: This Ruby method is a thin wrapper around the
-  # shell function clone_repo_into() in .shellrc. The shell version is required
-  # for bootstrap (runs before dotfiles repo is cloned), so it cannot be removed.
-  # This delegation eliminates duplicate implementations and ensures both paths
-  # use identical logic.
-  #
-  # **FUTURE PORT NOTE**: When porting fresh-install to Ruby in the future, this
-  # method should be reimplemented fresh in Ruby (not copied from this stale branch).
-  # The current dual implementation exists only because fresh-install.sh still needs
-  # the shell version for bootstrap. A future pure-Ruby fresh-install can implement
-  # this natively without the shell dependency.
+  # Mirrors clone_repo_into in .shellrc.
   #
   # @param url [String] Git repository URL to clone.
   # @param dest [String, Pathname] Target directory for the clone.
@@ -380,36 +372,106 @@ class GitProcessor
   # @return [Boolean] true on success, false on failure.
   def self.clone_repo_into(url, dest, branch: nil)
     dest = Pathname.new(dest) unless dest.is_a?(Pathname)
+    PathUtils.ensure_directories_exist(dest)
 
-    # Build the shell command
-    # clone_repo_into accepts: url (arg 1), dest (arg 2), branch (optional arg 3)
-    cmd = "source #{EnvVars::HOME.join('.shellrc').to_s} && clone_repo_into"
-    cmd += " #{Shellwords.escape(url)}"
-    cmd += " #{Shellwords.escape(dest.to_s)}"
-    cmd += " #{Shellwords.escape(branch)}" if branch && !nil_or_empty?(branch)
+    if !repo?(dest)
+      # Repo doesn't exist - clone into temp folder, then move .git to target
+      tmp_folder = Pathname.new(Dir.mktmpdir)
 
-    # Execute via zsh with shell function
-    # The shell function handles all the logic: temp folders, traps, error handling,
-    # HEAD fix, reftable migration, submodule updates, etc.
-    system('zsh', '-c', cmd)
+      begin
+        # Build clone args (shallow on FIRST_INSTALL, full history otherwise)
+        clone_args = %w[git clone -q -c init.defaultRefFormat=reftable]
+        if EnvVars.first_install?
+          clone_args << '--depth=1'
+          # If a target branch is specified, clone that branch directly to avoid the
+          # "branch not found" error when switching after a shallow clone (which only
+          # fetches the default branch). Without --branch, git switch would fail.
+          clone_args += ['--branch', branch] if branch && !nil_or_empty?(branch)
+          Logging.debug 'Using shallow clone (--depth=1) for FIRST_INSTALL mode'
+        end
+        clone_args += [url, '.']
+
+        # Clone into temp folder
+        env = { 'GIT_SSH_COMMAND' => 'ssh -o ConnectTimeout=20' }
+        stdout_str, stderr_str, status = Open3.capture3(env, *clone_args, chdir: tmp_folder.to_s)
+        print stdout_str unless nil_or_empty?(stdout_str)
+        unless status.success?
+          error_msg = "Failed to clone '#{url.cyan}' into '#{dest.to_s.cyan}'"
+          error_msg += "\nClone command STDERR:\n#{stderr_str}" unless nil_or_empty?(stderr_str.strip)
+          Logging.warn error_msg
+          return false
+        end
+
+        # Move .git directory to target location
+        dest.join('.git').rmtree if dest.join('.git').exist?
+        FileUtils.mv(tmp_folder.join('.git').to_s, dest.to_s, force: true)
+
+        # Create GitProcessor instance for the newly cloned repo
+        git = GitProcessor.new(dir: dest)
+
+        # Checkout files in target location
+        git.restore('.')
+
+        # Correct HEAD file after reftable clone-via-mv (.git/HEAD retains a '.invalid'
+        # placeholder since the move bypasses git's normal post-clone finalisation; shell
+        # prompts read .git/HEAD directly)
+        git.fix_head_file
+
+        # Migrate to reftable if the clone used the legacy files format. On a vanilla
+        # macOS the system git (< 2.45) ignores -c init.defaultRefFormat=reftable and
+        # 'git refs migrate' is unavailable, so this is a no-op until Homebrew's git
+        # is on PATH. fresh-install-of-osx.rb calls this again post-Homebrew for repos
+        # that were cloned with system git.
+        git.migrate_to_reftable
+
+        Logging.success "Successfully cloned '#{url.cyan}' into '#{dest.to_s.cyan}'"
+
+        # Validate branch if specified
+        if branch && !nil_or_empty?(branch)
+          current_branch = git.current_branch
+          if current_branch != branch
+            Logging.error "Branch mismatch: expected '#{branch.cyan}' but got '#{current_branch.cyan}' - something is wrong. Please correct before retrying!"
+            return false
+          end
+        end
+      ensure
+        # Clean up temp folder
+        tmp_folder.rmtree if tmp_folder.directory?
+      end
+    else
+      # Repo already exists - fetch and unshallow to match shell version behavior
+      Logging.debug "Fetching '#{dest.to_s.yellow}' since it's already a git repo"
+      git = GitProcessor.new(dir: dest)
+      _out, _err, status = git.run_alias('fetch-unshallow')
+      unless status.success?
+        Logging.warn "Failed to fetch-unshallow '#{dest.to_s.cyan}'"
+        return false
+      end
+      Logging.success "Successfully fetched '#{url.cyan}' into '#{dest.to_s.cyan}'"
+
+      # Only warn if FETCH_HEAD has commits not yet in HEAD
+      incoming_count = git.rev_list_count('HEAD..FETCH_HEAD')
+      if incoming_count.positive?
+        Logging.warn 'Remember to merge the incoming changes into the working tree!'
+      end
+    end
+
+    # Always update submodules after clone or fetch -- new commits may introduce submodule changes.
+    env = { 'GIT_SSH_COMMAND' => 'ssh -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=3' }
+    system(env, 'git', '-C', dest.to_s, 'submodule', 'update', '--init', '--recursive', '--remote', '--rebase', '--force')
+
+    true
   end
 
   # Migrates the repository to reftable format if it's still using the legacy
   # files format. Requires git 2.45+ (git refs migrate command).
   # On older git (system git on vanilla macOS), silently skips migration.
   #
-  # @param folder [String, Pathname, nil] Repository directory (required)
-  # @return [Boolean] false if folder is nil or empty, true/void otherwise
-  def self.migrate_to_reftable(folder: nil)
-    return false if nil_or_empty?(folder)
-
-    folder = Pathname.new(folder) unless folder.is_a?(Pathname)
-
-    return unless repo?(folder)
-
+  # @return [void]
+  def migrate_to_reftable
     # git rev-parse --show-ref-format was added in git 2.45; fall back to 'files'
     # on older git so the guard below correctly detects a non-reftable repo.
-    ref_format, = Open3.capture3('git', '-C', folder.to_s, 'rev-parse', '--show-ref-format', err: File::NULL)
+    ref_format, = Open3.capture3(*_git_command, 'rev-parse', '--show-ref-format', err: File::NULL)
     ref_format = ref_format.strip
     ref_format = 'files' if nil_or_empty?(ref_format)
     return if ref_format == 'reftable'
@@ -417,9 +479,9 @@ class GitProcessor
     # 'git refs migrate' requires git 2.45+. On older git (vanilla macOS system
     # git) this returns non-zero; skip silently -- fresh-install calls this again
     # after Homebrew's modern git is on PATH.
-    _out, _err, status = Open3.capture3('git', '-C', folder.to_s, 'refs', 'migrate', '--ref-format=reftable', err: File::NULL)
+    _out, _err, status = Open3.capture3(*_git_command, 'refs', 'migrate', '--ref-format=reftable', err: File::NULL)
     unless status.success?
-      Logging.debug "git refs migrate unavailable (requires git 2.45+) -- skipping reftable migration for '#{folder.to_s.cyan}'"
+      Logging.debug "git refs migrate unavailable (requires git 2.45+) -- skipping reftable migration for '#{@dir.to_s.cyan}'"
       return
     end
 
@@ -428,7 +490,7 @@ class GitProcessor
     # .git/refs/{heads,tags,remotes}/ trees. Remove them so they cannot shadow
     # the canonical reftable entries. Use Pathname#rmtree to recursively remove
     # directories with nested refs (e.g. refs/heads/feature/mybranch).
-    git_dir = folder.join('.git')
+    git_dir = @dir.join('.git')
     refs_heads = git_dir.join('refs', 'heads')
     refs_tags = git_dir.join('refs', 'tags')
     refs_remotes = git_dir.join('refs', 'remotes')
@@ -444,7 +506,29 @@ class GitProcessor
       end
     end
 
-    Logging.success "Migrated '#{folder.to_s.cyan}' to reftable format"
+    Logging.success "Migrated '#{@dir.to_s.cyan}' to reftable format"
+  end
+
+  # Corrects the HEAD file after a reftable clone-via-mv operation.
+  # When cloning via temp folder + .git move, the HEAD file retains a '.invalid'
+  # placeholder since the move bypasses git's normal post-clone finalization.
+  # Shell prompts read .git/HEAD directly, so this fixes it by writing the real ref.
+  #
+  # @return [void]
+  def fix_head_file
+    real_ref = symbolic_ref
+    return unless real_ref
+    @dir.join('.git', 'HEAD').write("ref: #{real_ref}\n")
+  end
+
+  # Returns the count of commits in the given revision range.
+  # Equivalent to `git rev-list <range> --count`.
+  #
+  # @param range [String] The revision range (e.g., 'HEAD..FETCH_HEAD').
+  # @return [Integer] The commit count, or 0 on failure.
+  def rev_list_count(range)
+    out, _err, status = _execute('rev-list', range, '--count', err: File::NULL)
+    status.success? ? out.strip.to_i : 0
   end
 
   # Corrects the HEAD file after a reftable clone-via-mv operation.

@@ -211,7 +211,7 @@ end
 
 ### Calling Patterns
 
-#### From fresh-install-of-osx.sh (parent script)
+#### From fresh-install-of-osx.rb (parent script)
 
 ```ruby
 # Top of file

@@ -16,8 +16,18 @@ On your local machine:
 The meta script to setup the macos machine from a vanilla OS can be run using the following command:
 
 ```zsh
-export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true'; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/fresh-install-of-osx.log"; unset FIRST_INSTALL
+export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' DOTFILES_DIR="${HOME}/.config/dotfiles" FIRST_INSTALL='true'; \
+mkdir -p "$(dirname "${DOTFILES_DIR}")" && \
+rm -rf "$(dirname "${DOTFILES_DIR}")/dotfiles-${DOTFILES_BRANCH}" && \
+rm -rf "${DOTFILES_DIR}" && \
+curl -fsSL "https://github.com/${GH_USERNAME}/dotfiles/archive/refs/heads/${DOTFILES_BRANCH}.tar.gz" | \
+  tar -xz -C "$(dirname "${DOTFILES_DIR}")" && \
+mv "$(dirname "${DOTFILES_DIR}")/dotfiles-${DOTFILES_BRANCH}" "${DOTFILES_DIR}" && \
+ruby "${DOTFILES_DIR}/scripts/fresh-install-of-osx.rb" 2>&1 | tee "${HOME}/fresh-install-of-osx.log"; \
+unset FIRST_INSTALL
 ```
+
+**Note:** The bootstrap downloads a tarball (not a git clone) because on vanilla macOS, `/usr/bin/git` is just a stub that prompts for Xcode Command Line Tools. After installing Xcode CLT, `fresh-install-of-osx.rb` automatically converts the tarball directory to a proper git repository with full history.
 
 This script can be run in an idempotent manner, and will setup [antidote](https://antidote.sh/), [homebrew](https://brew.sh), the dotfiles (this repo), etc. It automatically applies the two-phase macOS preference setup in order: `osx-defaults.sh -s` (baseline defaults) followed by `capture-prefs.rb -i` (UI-configured overrides from your previous machine). To test changes on a branch before merging, see [How to test changes in your fork](README.md#how-to-test-changes-in-your-fork-before-raising-a-pull-request).
 
@@ -25,7 +35,7 @@ All these scripts are optimized for fast loading of the shell so that the user c
 
 ### Preference restoration: two-phase sequence
 
-The script seeds and restores macOS preferences in two ordered phases automatically as part of `fresh-install-of-osx.sh`:
+The script seeds and restores macOS preferences in two ordered phases automatically as part of `fresh-install-of-osx.rb`:
 
 1. **`osx-defaults.sh -s`** — seeds a partial baseline of known-good starting values.
 2. **`capture-prefs.rb -i`** — imports preferences exported from your previous machine, overriding the baseline where they overlap.

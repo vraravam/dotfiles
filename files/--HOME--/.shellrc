@@ -171,7 +171,7 @@ export ANTIDOTE_PLUGIN_TXT="${ZDOTDIR}/.zsh_plugins.txt"
 # --------------------------------------------------------------------------
 # GROUP 1: Bootstrap Utilities
 # Available immediately after .shellrc is sourced on a vanilla OS.
-# Used by fresh-install-of-osx.sh during first-time installation before the
+# Used by fresh-install-of-osx.rb during first-time installation before the
 # dotfiles repo is cloned and before .aliases is loaded.
 # --------------------------------------------------------------------------
 
@@ -656,7 +656,7 @@ print_script_duration() {
 #
 #   _DOTFILES_CRON_BACKUP_FILE  (exported env var)
 #     Path to the temporary crontab backup file. Written by suspend_cron()
-#     and fresh-install-of-osx.sh before cron is removed. Read by
+#     and fresh-install-of-osx.rb before cron is removed. Read by
 #     resume_cron() and EXIT/ERR traps to restore the crontab on exit or
 #     failure.
 # --------------------------------------------------------------------------
@@ -679,7 +679,7 @@ print_script_duration() {
 #     Needs a "total elapsed since script start" value independently of
 #     whatever argument was passed to print_script_summary.  It reads
 #     _script_start_times[-1] for this.  Scripts that call step_start/step_end
-#     (fresh-install-of-osx.sh, software-updates-cron.sh) MUST push their
+#     (fresh-install-of-osx.rb, software-updates-cron.sh) MUST push their
 #     start epoch onto _script_start_times so step_end's total-elapsed column
 #     is correct.
 #
@@ -697,7 +697,7 @@ export _DOTFILES_CRON_BACKUP_FILE="${TMPDIR:-/tmp}/crontab_backup"
 
 # --------------------------------------------------------------------------
 # 1d. Step timing helpers
-# Used by fresh-install-of-osx.sh and software-updates-cron.sh for per-step
+# Used by fresh-install-of-osx.rb and software-updates-cron.sh for per-step
 # progress reporting. See print_script_start/duration (section 1b) for
 # overall script timing, which is independent of this stack-based mechanism.
 # --------------------------------------------------------------------------
@@ -1136,7 +1136,7 @@ is_linux() {
 # this is true only when FIRST_INSTALL holds a real value -- treating unset and
 # set-but-empty identically. This is intentional: only a deliberate non-empty
 # assignment (e.g. FIRST_INSTALL=true) should activate vanilla-OS behaviour.
-# Note: two occurrences in fresh-install-of-osx.sh use the raw form because
+# Note: two occurrences in fresh-install-of-osx.rb use the raw form because
 # they run before _download_and_source_shellrc has sourced .shellrc.
 is_first_install() {
   if [[ -n "${FIRST_INSTALL:-}" ]]; then
@@ -1219,7 +1219,7 @@ append_to_fpath_if_dir_exists() {
 
 # --------------------------------------------------------------------------
 # 1g. Bootstrap operations
-# Called by fresh-install-of-osx.sh and post-brew-install.sh.
+# Called by fresh-install-of-osx.rb and post-brew-install.sh.
 # set_ssh_folder_permissions is also called from ~/.envrc directly.
 # --------------------------------------------------------------------------
 
@@ -1339,7 +1339,7 @@ clone_repo_into() {
     # Migrate to reftable if the clone used the legacy files format. On a vanilla
     # macOS the system git (< 2.45) ignores -c init.defaultRefFormat=reftable and
     # 'git refs migrate' is unavailable, so this is a no-op until Homebrew's git
-    # is on PATH. fresh-install-of-osx.sh calls this again post-Homebrew for repos
+    # is on PATH. fresh-install-of-osx.rb calls this again post-Homebrew for repos
     # that were cloned with system git.
     migrate_git_repo_to_reftable "${target_folder}"
 
@@ -1374,11 +1374,10 @@ clone_repo_into() {
   local duration=$((end_time - start_time))
   debug "Process took ${duration} seconds"
 }
-
 # Sets secure permissions on ${HOME}/.ssh (700 on the directory, 600 on all
 # files) and adds any bare identity files (id_*) to the ssh-agent keychain.
 # Kept in .shellrc for two independent reasons:
-#   1. Bootstrap: called in fresh-install-of-osx.sh before install-dotfiles.rb
+#   1. Bootstrap: called in fresh-install-of-osx.rb before install-dotfiles.rb
 #      creates the ~/.aliases symlink (vanilla OS pre-symlink window).
 #   2. Bash-compat: called from .envrc files (evaluated by direnv in a bash
 #      subshell); .aliases contains zsh-only syntax and cannot be sourced in bash.
