@@ -23,7 +23,7 @@ export OLLAMA_MAX_LOADED_MODELS=1
 export OLLAMA_HOST=0.0.0.0:11434
 
 # Enable mlx on apple silicon
-OLLAMA_MLX=1
+export OLLAMA_USE_MLX=1
 
 
 # reference: https://youtu.be/BaAy1DodIcQ?t=368

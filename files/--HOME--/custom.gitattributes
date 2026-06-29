@@ -25,6 +25,10 @@
 *.zwc*          binary
 .*.zwc*         binary
 
+# Apple binary property list files captured by capture-prefs.sh — treat as binary so that
+# git does not attempt text diffs, line-ending normalisation, or merge on them.
+*.defaults      binary
+
 .ssh/*.pub      text
 .editorconfig   text
 .gitconfig*     text

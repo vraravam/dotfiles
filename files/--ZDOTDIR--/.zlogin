@@ -16,8 +16,11 @@
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
 if [[ -n "${DEBUG:-}" ]]; then echo "loading ${0}"; fi
 
-# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
-source "${HOME}/.shellrc"
+# .shellrc was already sourced by .zshrc (which runs before .zlogin).
+# The re-source guard makes this a no-op, but checking the guard itself adds
+# overhead. Skip the source call entirely -- .zlogin only uses utilities
+# (is_directory, is_file, ensure_dir_exists, recompile_zsh_script) that are
+# already loaded from .zshrc's earlier source.
 
 # recompile_zsh_script is defined in .shellrc and used by both .zshrc (for cache
 # file compilation) and .zlogin (for bulk script recompilation). See .shellrc for
@@ -140,14 +143,26 @@ recompile_zsh_autoload_dir "${XDG_CONFIG_HOME}/zsh"
 # always writes (or touches) cache files before .zlogin runs, so the sentinel check
 # never passes and 'find' always executes. Running this in the background avoids
 # blocking the first prompt on login shells.
+#
+# Performance optimization: Order these from smallest to largest scope to maximize
+# early completion of fast scans. DOTFILES_DIR and PERSONAL_BIN_DIR are small and
+# finish quickly; XDG_CACHE_HOME is medium; PROJECTS_BASE_DIR and Homebrew paths
+# are largest. The sentinel mechanism in find_in_folder_and_recompile already
+# short-circuits unchanged directories, but ordering still helps when changes exist.
 {
+  find_in_folder_and_recompile "${XDG_CACHE_HOME}"
   find_in_folder_and_recompile "${DOTFILES_DIR}"
   find_in_folder_and_recompile "${PERSONAL_BIN_DIR}"
   find_in_folder_and_recompile "${PROJECTS_BASE_DIR}"
-  find_in_folder_and_recompile "${XDG_CACHE_HOME}"
-  # explicitly use both intel and arm install locations of homebrew
-  find_in_folder_and_recompile /opt/homebrew
-  find_in_folder_and_recompile /usr/local
+  # Only scan the active Homebrew prefix (not both /opt/homebrew and /usr/local).
+  # HOMEBREW_PREFIX is set by the brew shellenv cache in .zshrc and points to
+  # the actual installation (/opt/homebrew on Apple Silicon, /usr/local on Intel).
+  # Scanning the inactive prefix wastes time -- it either doesn't exist or contains
+  # no actively-sourced scripts. find handles nonexistent paths gracefully (warns
+  # but continues), but the wasted fork+stat overhead adds up across login shells.
+  if is_non_zero_string "${HOMEBREW_PREFIX:-}"; then
+    find_in_folder_and_recompile "${HOMEBREW_PREFIX}"
+  fi
 } &|
 
 if [[ -n "${DEBUG:-}" ]]; then echo "Finished recompiling zsh scripts."; fi

@@ -13,7 +13,7 @@ idiomatic_version_file_enable_tools = [
   "python",
   "ruby",
   "rust",
-  "scala"
+  "scala",
 ]
 experimental = true
 fetch_remote_versions_timeout = "30s"

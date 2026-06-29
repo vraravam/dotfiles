@@ -158,13 +158,21 @@ compdef() { _compdef_queue+=("$*"); }
 # brew shellenv, mise activate, and starship init. Saves ~14ms on every shell startup.
 # (($+commands[git])) is a single O(1) hash probe; command_exists does 4.
 # .zshrc is zsh-only so the zsh arithmetic syntax is always safe here.
+#
+# Performance note: This check happens before the deferred .aliases load, so the
+# git_version var is available immediately when the git plugin (loaded via antidote)
+# initializes. If this were deferred, the plugin would fork `git version` before
+# the cache becomes available.
 if (($+commands[git])); then
   # Anonymous function scopes git version cache locals; pure zsh file, () is idiomatic here.
   () {
     local git_bin="${commands[git]}"
     local git_version_cache="${XDG_CACHE_HOME}/git-version-cache.zsh"
     if is_file_older_than "${git_version_cache}" "${git_bin}"; then
-      local ver="${${(As: :)$(git version 2>/dev/null)}[3]}"
+      # Optimization: Use git's --version flag instead of 'git version' subcommand.
+      # Both produce identical output, but --version is a built-in flag handled
+      # directly by the git binary (no subcommand dispatch overhead).
+      local ver="${${(As: :)$(git --version 2>/dev/null)}[3]}"
       echo "git_version=\"${ver}\"" >|"${git_version_cache}" 2>/dev/null
       recompile_zsh_script "${git_version_cache}"
     fi

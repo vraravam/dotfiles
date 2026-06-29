@@ -337,3 +337,24 @@ disabled = true
 disabled = true
 [package]
 disabled = true
+
+# ── Enabled lightweight modules ──────────────────────────────────────────────
+# mise: shown only when a project has an active mise runtime (auto-detected by
+# .mise.toml, .tool-versions, etc.). Quiet by default - only renders when used.
+[mise]
+disabled = false
+format = "[ ⇪ $health ]($style)"
+style = "fg:cyan"
+
+# direnv: shown when an .envrc is loaded for the current directory. Useful as
+# a visual confirmation that direnv has applied its env vars.
+[direnv]
+disabled = false
+format = "[ direnv $loaded$allowed]($style) "
+style = "fg:yellow"
+symbol = "📁 "
+allowed_msg = ""
+not_allowed_msg = "[!]"
+denied_msg = "[✗]"
+loaded_msg = ""
+unloaded_msg = "[?]"

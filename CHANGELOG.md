@@ -4,9 +4,18 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.1.35
+
+* *[.zlogin, .zshrc]* Performance tweaks for zsh startup.
+* *[starship.toml]* Enabled lightweight modules `mise` and `direnv`.
+* *[cron.rb]* Disable all mail generation from cron jobs (rely on macOS notifications instead).
+* Cron jobs do not ues chronic now. They will write to a temp file and delete if the cron was successful, else this file's contents will be appended into the `${HOME}/software-updates-cron.log` file for human review.
+
+---
+
 ### 3.1.34
 
-* Removed `vorssaint` since it was causing zoom to hang when joining meetings. Went back to `stats` (menubar monitors), `sol` (clipboard, windo layout) and `dockdoor` (window previews in dock).
+* Removed `vorssaint` since it was causing zoom to hang when joining meetings. Went back to `stats` (menubar monitors), `sol` (clipboard, window layout) and `dockdoor` (window previews in dock).
 
 ### 3.1.33
 

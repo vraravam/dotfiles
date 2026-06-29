@@ -67,7 +67,6 @@ brew 'git-gui'
 brew 'git-sizer'
 brew 'jaq'
 brew 'mole'
-brew 'moreutils'
 brew 'ncdu'
 brew 'pandoc'
 brew 'prettyping'
@@ -194,7 +193,6 @@ brew 'sccache'
 # brew 'wifi-password'
 
 # ---- casks
-# tap 'TheBoredTeam/boring-notch'
 # cask 'TheBoredTeam/boring-notch/boring-notch', trusted: true, postinstall: "\"#{setup_login_items_script}\" -a 'boringNotch'" if ::OS::Mac::version >= 14
 # cask 'brave-browser'
 # cask 'claude-code'

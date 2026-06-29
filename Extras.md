@@ -206,7 +206,9 @@ This ensures existing schedules are preserved while supporting vanilla OS instal
   ```
 This creates the default schedule (software-updates-cron hourly). Edit as needed, commit to home repo, and run `recron` to install.
 
-The script uses `chronic` (from `moreutils`) to suppress output on successful runs and only produce output when there are errors or warnings. Two files track execution state:
+The generated crontab defines environment variables (`HOME`, `HOMEBREW_PREFIX`, `PERSONAL_BIN_DIR`, `DOTFILES_DIR`) at the top so that the job command can use variable substitution (e.g., `${DOTFILES_DIR}/scripts/...`) instead of hardcoded paths. This makes the crontab portable across different user accounts or system configurations.
+
+The crontab is configured with `MAILTO=""` to disable mail generation (notifications are sent via macOS native alerts instead). The cron job uses a temporary buffer to capture output during execution and only appends it to the log file if the run exits with an error/warning. Two files track execution state:
 
 **Success marker**: `~/.software-updates-last-success`
 - Logs timestamp and duration for each successful run (no errors or warnings)
@@ -214,8 +216,8 @@ The script uses `chronic` (from `moreutils`) to suppress output on successful ru
 - Each successful execution appends one line
 
 **Error log**: `~/software-updates-cron.log`
-- Written only when there are errors or warnings (via `chronic` + `tee`)
-- Contains full output of failed runs for debugging
+- Captures full output only for runs that have errors or warnings (exit code non-zero)
+- Successful runs discard their output (not appended to log)
 - Appends to the log (older entries preserved)
 
 To check when the last successful run completed:

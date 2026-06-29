@@ -11,10 +11,12 @@
 # entire run -- all steps execute regardless of earlier failures, and a single
 # grouped macOS notification is sent at the end.
 #
-# Output behavior (when run via chronic in crontab):
-# - Success: no output to log (chronic suppresses), writes ~/.software-updates-last-success
-# - Failure: full output to log (chronic passes through when exit non-zero)
+# Output behavior (when run from crontab with conditional logging):
+# - All runs: output captured to temp file during execution
+# - Success (exit 0): temp file discarded, writes ~/.software-updates-last-success timestamp
+# - Failure (exit non-zero): temp file appended to ~/software-updates-cron.log
 # - Check last success: cat ~/.software-updates-last-success
+# - Check errors: tail ~/software-updates-cron.log
 #
 # Usage:
 #   Standalone: software-updates-cron.rb
@@ -101,6 +103,7 @@ module SoftwareUpdatesCron
       end
     end
   end
+
   private_class_method :_perform_update
 
   def _update_home_repos
@@ -115,6 +118,7 @@ module SoftwareUpdatesCron
       end
     end
   end
+
   private_class_method :_update_home_repos
 
   def _upreb_oss_repos
@@ -131,6 +135,7 @@ module SoftwareUpdatesCron
       end
     end
   end
+
   private_class_method :_upreb_oss_repos
 
   def _restore_mtime_and_register_maintenance
@@ -144,6 +149,7 @@ module SoftwareUpdatesCron
       RunAll.run(command: ['git', 'maintenance', 'start'], folder: folder, maxdepth: maxdepth)
     end
   end
+
   private_class_method :_restore_mtime_and_register_maintenance
 
   def _run_all_updates
@@ -206,15 +212,16 @@ module SoftwareUpdatesCron
         # reference: https://popularaitools.ai/blog/run-gemma-4-locally-opencode-2026
         # Note: This list is up-to-date as of 2026-06-06
         ollama_models = [
+          'qwen3.6:27b',         # reference: gChat from work (AIFSD chat room): strong coding model
           # 'gemma4:e2b-mlx',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - doesn't edit, only single file for suggestions
-          'qwen2.5-coder:14b',   # Qwen 2.5 Coder 14B: strong coding model
-          # 'rafw007/gemma4-e4b-claude-coder',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - not sure if this runs via opencode, trying now
-          # 'deepseek-coder-v2',
-          # 'gpt-oss:20b',
-          # 'qwen3.5:9b-q8_0',   # Qwen 3.5 9B (Q8): strong reasoning model
-          # 'mdq100/qwen3.5-coder:35b',
-          # 'gemma3:12b'         # Gemma 3 12B: free coding model
-          # 'codestral:22b',     # TODO: Need to research
+          'qwen2.5-coder:14b'   # Qwen 2.5 Coder 14B: strong coding model
+        # 'rafw007/gemma4-e4b-claude-coder',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - not sure if this runs via opencode, trying now
+        # 'deepseek-coder-v2',
+        # 'gpt-oss:20b',
+        # 'qwen3.5:9b-q8_0',   # Qwen 3.5 9B (Q8): strong reasoning model
+        # 'mdq100/qwen3.5-coder:35b',
+        # 'gemma3:12b'         # Gemma 3 12B: free coding model
+        # 'codestral:22b',     # TODO: Need to research
         ]
         ollama_models.each do |model|
           # Redirect stdout/stderr to suppress progress bars and ANSI escape sequences in cron context
@@ -280,6 +287,7 @@ module SoftwareUpdatesCron
       MacOS.check_and_notify_outdated_apps
     end
   end
+
   private_class_method :_run_all_updates
 end
 
@@ -294,9 +302,8 @@ if __FILE__ == $PROGRAM_NAME
     success = SoftwareUpdatesCron.run(start_time: start_time)
 
     # Single exit point: exit non-zero if there were errors or warnings.
-    # Combined with chronic in crontab, this means:
-    # - Success: chronic suppresses all output (empty log), but writes timestamp to marker file
-    # - Failure: chronic outputs everything (populated log)
+    # The exit code doesn't affect mail generation (MAILTO="" disables it),
+    # but it's still useful for scripting contexts that check exit codes.
     exit(success ? 0 : 1)
   end
 end

@@ -107,44 +107,35 @@ module Cron
   def create_crontab(file)
     shell = EnvVars::SHELL
     username = EnvVars::USER
+    home = EnvVars::HOME
+    homebrew_prefix = EnvVars::HOMEBREW_PREFIX
+    personal_bin = EnvVars::PERSONAL_BIN_DIR
+    dotfiles_dir = EnvVars::DOTFILES_DIR
+
     file = Pathname.new(file) unless file.is_a?(Pathname)
-
-    # PATH line must have no inline comment -- crontab treats '#' as part of the
-    # value, corrupting the last directory entry and causing 'command not found'.
-    path = [
-      EnvVars::HOMEBREW_PREFIX.join('bin').to_s,
-      '/usr/local/bin',
-      '/usr/bin',
-      '/bin',
-      '/usr/sbin',
-      '/sbin',
-      EnvVars::PERSONAL_BIN_DIR.to_s,
-      EnvVars::DOTFILES_DIR.join('scripts').to_s
-    ].join(':')
-
-    cron_cmd = EnvVars::DOTFILES_DIR.join('scripts', 'software-updates-cron.rb')
-    log_file = EnvVars::HOME.join('software-updates-cron.log')
 
     file.open(mode: 'w') do |f|
       f.puts '# Reference: https://crontab.guru/'
       f.puts
-      f.puts "# Note: 'chronic' is a utility installed using 'moreutils' from homebrew " \
-             'and is needed so that a successful run of any cron job does not cause a mail ' \
-             'to get generated unless in case of error scenarios'
-      f.puts
       f.puts '# Env'
       f.puts "SHELL=\"#{shell}\""
       f.puts "USERNAME=\"#{username}\""
-      f.puts "HOME=\"#{EnvVars::HOME}\""
+      f.puts "HOME=\"#{home}\""
+      f.puts "HOMEBREW_PREFIX=\"#{homebrew_prefix}\""
+      f.puts "PERSONAL_BIN_DIR=\"#{personal_bin}\""
+      f.puts "DOTFILES_DIR=\"#{dotfiles_dir}\""
+      f.puts '# Disable all mail generation from cron jobs (rely on macOS notifications instead)'
+      f.puts 'MAILTO=""'
       f.puts '# PATH: homebrew + system utils + personal bin + dotfiles scripts ' \
-             '(needed for chronic, run-all.rb, capture-prefs.rb etc.)'
-      f.puts "PATH=#{path}"
+             '(needed for run-all.rb, capture-prefs.rb etc.)'
+      f.puts 'PATH=${HOMEBREW_PREFIX}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PERSONAL_BIN_DIR}:${DOTFILES_DIR}/scripts'
       f.puts
       f.puts "# Note: Need to use the full path to scripts inside the sub-shell since that's not a logged-in shell"
-      f.puts '# chronic suppresses output on success (exit 0), outputs everything on failure (exit non-zero).'
+      f.puts '# MAILTO="" (above) disables all mail generation.'
+      f.puts '# Wrapper script captures output to temp file; only appends to log on error/warning (exit non-zero).'
       f.puts '# Success runs write timestamp to ~/.software-updates-last-success for audit trail.'
       f.puts '# Check: cat ~/.software-updates-last-success to see last successful run.'
-      f.puts "0   *   *   *   *   chronic ruby #{cron_cmd} 2>&1 | tee -a #{log_file}"
+      f.puts '0   *   *   *   *   tmplog=$(mktemp); ruby ${DOTFILES_DIR}/scripts/software-updates-cron.rb 2>&1 | tee "${tmplog}"; exitcode=$?; if [ $exitcode -ne 0 ]; then cat "${tmplog}" >> ${HOME}/software-updates-cron.log; fi; rm -f "${tmplog}"; exit $exitcode'
     end
   end
 

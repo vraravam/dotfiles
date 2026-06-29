@@ -4,15 +4,6 @@
 # [Windows users] If you are on windows, please search for the word 'windows' - and fix those lines - they seem to cause some trouble
 # [General] Since I use 'delta' as the diffing/pager tool, it's absence on your system will cause some errors. If you are able to, I would sincerely urge you to install and use it for a much better experience. If not, please replace all such occurrences back to use 'diff'
 
-# Note: Even though configs from this file will show up twice in `git config -l` - it will still be overridden based on the order of the includeIf lines below (last matching configuration wins). Utility subcommand to find out which config wins: `git who`
-[include]
-  path = ~/.gitconfig-oss.inc
-  # Delta-specific configuration
-  # Note: Git's includeIf doesn't support PATH checks. Instead, we use a symlink approach:
-  # The install-dotfiles script creates ~/.gitconfig-delta-enabled.inc as a symlink to
-  # ~/.gitconfig-delta.inc when delta is installed and removes it if not found. This file
-  # is always included, but only exists when delta is present.
-  path = ~/.gitconfig-delta-enabled.inc
 [advice]
   statusHints = true
 [alias]
@@ -719,3 +710,14 @@
   fsckObjects = true
 [user]
   useConfigOnly = true
+
+# moved BELOW all the above sections so that the per-folder includes can override the global settings
+# Note: Even though configs from this file will show up twice in `git config -l` - it will still be overridden based on the order of the include/includeIf lines below (last matching configuration wins).
+[include]
+  # Delta-specific configuration
+  # Note: Git's includeIf doesn't support PATH checks. Instead, we use a symlink approach:
+  # The install-dotfiles script creates ~/.gitconfig-delta-enabled.inc as a symlink to
+  # ~/.gitconfig-delta.inc when delta is installed and removes it if not found. This file
+  # is always included, but only exists when delta is present.
+  path = ~/.gitconfig-delta-enabled.inc
+  path = ~/.gitconfig-oss.inc
