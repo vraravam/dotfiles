@@ -313,7 +313,7 @@ module GitWorkspace
     repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
 
     unless GitProcessor.repo?(repo_dir)
-      Logging.warn "Skipping status -- '#{repo_dir.to_s.cyan}' is not a git repo"
+      Logging.debug "Skipping status -- '#{repo_dir.to_s.cyan}' is not a git repo"
       return false
     end
 

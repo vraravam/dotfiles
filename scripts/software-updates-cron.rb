@@ -13,9 +13,9 @@
 #
 # Output behavior (when run from crontab with conditional logging):
 # - All runs: output captured to temp file during execution
-# - Success (exit 0): temp file discarded, writes ~/.software-updates-last-success timestamp
+# - Success (exit 0): temp file discarded, writes ~/.software-updates-run-log timestamp
 # - Failure (exit non-zero): temp file appended to ~/software-updates-cron.log
-# - Check last success: cat ~/.software-updates-last-success
+# - Check run history: cat ~/.software-updates-run-log
 # - Check errors: tail ~/software-updates-cron.log
 #
 # Usage:
@@ -76,11 +76,11 @@ module SoftwareUpdatesCron
 
     MacOS.notify("Done at #{now} (took #{duration})#{msg}", "#{title_icon} Software Updates")
 
-    # Write success marker file for audit trail when run completes without errors/warnings
+    # Write end marker for audit trail when run completes without errors/warnings
     if nil_or_empty?(step_errors) && nil_or_empty?(step_warnings)
-      success_marker = EnvVars::HOME.join('.software-updates-last-success')
-      # Append to file (creates if doesn't exist), each run on a new line
-      success_marker.write("#{now} (took #{duration})\n", mode: 'a')
+      run_log = EnvVars::HOME.join('.software-updates-run-log')
+      # Append completion marker (start marker was written before run began)
+      run_log.write("COMPLETED: #{now} (took #{duration})\n", mode: 'a')
     end
 
     # Return false if there were any errors or warnings
@@ -299,7 +299,19 @@ if __FILE__ == $PROGRAM_NAME
   include Logging
 
   Logging.run_script do |start_time|
+    # Write start marker before beginning work (shows cron is running)
+    run_log = EnvVars::HOME.join('.software-updates-run-log')
+    start_timestamp = MacOS.current_timestamp
+    run_log.write("STARTED: #{start_timestamp}\n", mode: 'a')
+
     success = SoftwareUpdatesCron.run(start_time: start_time)
+
+    # Write failure marker if run had errors/warnings
+    unless success
+      end_timestamp = MacOS.current_timestamp
+      duration = Logging.format_duration(Time.now.to_i - start_time)
+      run_log.write("FAILED: #{end_timestamp} (took #{duration})\n", mode: 'a')
+    end
 
     # Single exit point: exit non-zero if there were errors or warnings.
     # The exit code doesn't affect mail generation (MAILTO="" disables it),

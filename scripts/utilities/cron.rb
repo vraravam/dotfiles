@@ -110,7 +110,11 @@ module Cron
     home = EnvVars::HOME
     homebrew_prefix = EnvVars::HOMEBREW_PREFIX
     personal_bin = EnvVars::PERSONAL_BIN_DIR
+    personal_configs = EnvVars::PERSONAL_CONFIGS_DIR
+    personal_profiles = EnvVars::PERSONAL_PROFILES_DIR
     dotfiles_dir = EnvVars::DOTFILES_DIR
+    projects_base = EnvVars::PROJECTS_BASE_DIR
+    homebrew_bundle = EnvVars::HOMEBREW_BUNDLE_FILE
 
     file = Pathname.new(file) unless file.is_a?(Pathname)
 
@@ -119,23 +123,35 @@ module Cron
       f.puts
       f.puts '# Env'
       f.puts "SHELL=\"#{shell}\""
-      f.puts "USERNAME=\"#{username}\""
       f.puts "HOME=\"#{home}\""
+      f.puts "USER=\"#{username}\""
       f.puts "HOMEBREW_PREFIX=\"#{homebrew_prefix}\""
       f.puts "PERSONAL_BIN_DIR=\"#{personal_bin}\""
+      f.puts "PERSONAL_CONFIGS_DIR=\"#{personal_configs}\""
+      f.puts "PERSONAL_PROFILES_DIR=\"#{personal_profiles}\""
       f.puts "DOTFILES_DIR=\"#{dotfiles_dir}\""
+      f.puts "PROJECTS_BASE_DIR=\"#{projects_base}\""
+      f.puts "HOMEBREW_BUNDLE_FILE=\"#{homebrew_bundle}\""
+      f.puts "HOMEBREW_BUNDLE_FILE_GLOBAL=\"#{homebrew_bundle}\""
       f.puts '# Disable all mail generation from cron jobs (rely on macOS notifications instead)'
       f.puts 'MAILTO=""'
       f.puts '# PATH: homebrew + system utils + personal bin + dotfiles scripts ' \
              '(needed for run-all.rb, capture-prefs.rb etc.)'
-      f.puts 'PATH=${HOMEBREW_PREFIX}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:${PERSONAL_BIN_DIR}:${DOTFILES_DIR}/scripts'
+      # Cron does not expand ${VAR} references in environment variables -- use literal expanded paths
+      f.puts "PATH=#{homebrew_prefix}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:#{personal_bin}:#{dotfiles_dir}/scripts"
       f.puts
       f.puts "# Note: Need to use the full path to scripts inside the sub-shell since that's not a logged-in shell"
       f.puts '# MAILTO="" (above) disables all mail generation.'
-      f.puts '# Wrapper script captures output to temp file; only appends to log on error/warning (exit non-zero).'
-      f.puts '# Success runs write timestamp to ~/.software-updates-last-success for audit trail.'
-      f.puts '# Check: cat ~/.software-updates-last-success to see last successful run.'
-      f.puts '0   *   *   *   *   tmplog=$(mktemp); ruby ${DOTFILES_DIR}/scripts/software-updates-cron.rb 2>&1 | tee "${tmplog}"; exitcode=$?; if [ $exitcode -ne 0 ]; then cat "${tmplog}" >> ${HOME}/software-updates-cron.log; fi; rm -f "${tmplog}"; exit $exitcode'
+      f.puts '# Wrapper script captures ALL output to temp file (~/.software-updates-cron-last-run.log).'
+      f.puts '# Main log file only appended if exit code is non-zero (errors/warnings occurred).'
+      f.puts '# Run history (STARTED/COMPLETED/FAILED) written to ~/.software-updates-run-log for audit trail.'
+      f.puts '# Check: cat ~/.software-updates-run-log to see run history (start/completion/failure markers).'
+      f.puts '# Check: cat ~/.software-updates-cron-last-run.log to see all output from last run (debugging).'
+      f.puts '# Check: tail ~/software-updates-cron.log to see error/warning output only.'
+      # Use expanded paths (cron doesn't expand ${VAR} in command lines reliably)
+      # Run every hour at minute 0
+      # Temp log captures ALL output; main log only gets appended on errors/warnings
+      f.puts "0 *   *   *   *   tmplog=#{home}/.software-updates-cron-last-run.log; ruby #{dotfiles_dir}/scripts/software-updates-cron.rb 2>&1 | tee \"${tmplog}\"; exitcode=$?; [ $exitcode -ne 0 ] && cat \"${tmplog}\" >> #{home}/software-updates-cron.log; exit $exitcode"
     end
   end
 

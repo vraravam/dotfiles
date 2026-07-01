@@ -206,27 +206,41 @@ This ensures existing schedules are preserved while supporting vanilla OS instal
   ```
 This creates the default schedule (software-updates-cron hourly). Edit as needed, commit to home repo, and run `recron` to install.
 
-The generated crontab defines environment variables (`HOME`, `HOMEBREW_PREFIX`, `PERSONAL_BIN_DIR`, `DOTFILES_DIR`) at the top so that the job command can use variable substitution (e.g., `${DOTFILES_DIR}/scripts/...`) instead of hardcoded paths. This makes the crontab portable across different user accounts or system configurations.
+The generated crontab defines environment variables (`HOME`, `HOMEBREW_PREFIX`, `PERSONAL_BIN_DIR`, `DOTFILES_DIR`) at the top with expanded literal paths (cron does not expand `${VAR}` references in environment variables). This ensures tools in Homebrew's bin directory are available in PATH when the cron job runs.
 
-The crontab is configured with `MAILTO=""` to disable mail generation (notifications are sent via macOS native alerts instead). The cron job uses a temporary buffer to capture output during execution and only appends it to the log file if the run exits with an error/warning. Two files track execution state:
+The crontab is configured with `MAILTO=""` to disable mail generation (notifications are sent via macOS native alerts instead). The cron job uses a temporary buffer to capture output during execution and only appends it to the main log file if the run exits with an error/warning. Three files track execution state:
 
-**Success marker**: `~/.software-updates-last-success`
-- Logs timestamp and duration for each successful run (no errors or warnings)
-- Provides an audit trail to verify cron is running correctly
-- Each successful execution appends one line
+**Run history log**: `~/.software-updates-run-log`
+- Logs STARTED marker at the beginning of each run
+- Logs COMPLETED marker with timestamp and duration for successful runs (no errors/warnings)
+- Logs FAILED marker with timestamp and duration for runs with errors/warnings
+- Provides audit trail showing when jobs started, whether they completed, and how long they took
+- Useful for detecting if a job is currently running (STARTED without COMPLETED/FAILED) or hung
 
-**Error log**: `~/software-updates-cron.log`
+**Last run output**: `~/.software-updates-cron-last-run.log`
+- Captures ALL output from the most recent run (success or failure)
+- Overwrites on each run (only keeps last execution)
+- Useful for debugging - see complete output even from successful runs
+
+**Error/warning log**: `~/software-updates-cron.log`
 - Captures full output only for runs that have errors or warnings (exit code non-zero)
-- Successful runs discard their output (not appended to log)
-- Appends to the log (older entries preserved)
+- Successful runs do not append to this file (keeps it clean)
+- Appends over time (older error entries preserved)
+- Useful for tracking problems over time
 
-To check when the last successful run completed:
+To check current run status:
 
   ```zsh
-  cat ~/.software-updates-last-success
+  tail -2 ~/.software-updates-run-log
   ```
 
-To check for recent errors:
+To see all output from the last run (debugging):
+
+  ```zsh
+  cat ~/.software-updates-cron-last-run.log
+  ```
+
+To check for errors/warnings over time:
 
   ```zsh
   tail -50 ~/software-updates-cron.log

@@ -117,7 +117,8 @@ Thumbs.db
 /.rustup/update-hashes/
 /.rvm/
 /.sbt/
-/.software-updates-last-success
+/.software-updates-run-log
+/.software-updates-cron-last-run.log
 /.swiftpm/
 /.terminfo/
 /.tldrc/

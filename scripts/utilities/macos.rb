@@ -44,8 +44,8 @@ module MacOS
     'Shortcat',   # login item via Brewfile setup_login_items_script (SMAppService)
     'Sol',       # login item via Brewfile setup_login_items_script (SMAppService)
     'Stats',     # LaunchAtLoginNext = true (eu.exelban.Stats)
-    'Thaw',      # login item via Brewfile setup_login_items_script (SMAppService)
-    # 'Vorssaint', # login item via Brewfile setup_login_items_script (SMAppService)
+    'Thaw'      # login item via Brewfile setup_login_items_script (SMAppService)
+  # 'Vorssaint', # login item via Brewfile setup_login_items_script (SMAppService)
   ].freeze
 
   # Returns the current wall-clock time formatted as 'YYYY-MM-DD HH:MM:SS',
@@ -175,7 +175,7 @@ module MacOS
   # @return [void]
   def _set_softwareupdate_schedule(state, action)
     unless _has_sudo_credentials
-      Logging.warn "#{action}_softwareupdate_schedule: sudo credentials not available -- skipping"
+      Logging.debug "#{action}_softwareupdate_schedule: sudo credentials not available -- skipping"
       return
     end
     _keep_sudo_alive
