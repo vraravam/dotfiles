@@ -4,6 +4,18 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.1.37
+
+#### Skip nested git repos in `run-all.rb`
+
+* *[scripts/utilities/git_workspace.rb]* Added nested repository filtering to `find_git_repos`. Nested repos are now excluded from `run-all.rb`, `oss upreb`, git maintenance registration, and mtime restoration - eliminating spurious dirty-tree warnings when nested repos have uncommitted changes.
+
+#### brew package cleanup improvements
+
+* *[files/--HOME--/.aliases]* Added cleanup operations before first `brew bundle install` in `bupc` function: Run `brew bundle cleanup -f`, `brew cleanup --prune=all`, and `brew autoremove` to remove unused dependencies, orphaned casks, and outdated downloads before installing new packages. Prevents accumulation of stale software and avoids if the old vs new casks were conflicting with each other. Existing cleanup operations after install remain unchanged.
+
+---
+
 ### 3.1.36
 
 #### Cron job improvements: PATH expansion fix, run tracking, and warning reduction

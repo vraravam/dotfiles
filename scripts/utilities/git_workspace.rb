@@ -64,7 +64,7 @@ module GitWorkspace
   def find_git_repos(dirs:, mindepth: 1, maxdepth: 6, filter: nil, additional_prune: [], skip_symlinks: true)
     prune_dirs = DEFAULT_PRUNE_DIRS + Array(additional_prune)
 
-    CollectionProcessor.find_directories_matching(
+    repos = CollectionProcessor.find_directories_matching(
       dirs: dirs,
       name_pattern: '.git',
       mindepth: mindepth,
@@ -74,6 +74,29 @@ module GitWorkspace
       skip_symlinks: skip_symlinks,
       transform_result: ->(git_dir) { File.dirname(git_dir) }
     )
+
+    # Filter out nested repos: remove any repo that sits inside another repo's
+    # working tree. A repo is nested if any of its ancestor directories (between
+    # the repo and the search root) contains a .git directory.
+    # Example: ~/dev/project/.git is found, then ~/dev/project/nested/.git is
+    # rejected because ~/dev/project is between ~/dev/project/nested and ~/dev.
+    repos.reject do |repo|
+      parent = File.dirname(repo)
+      # Walk up until we hit a search root or find a .git directory
+      while parent != Core::ROOT.to_s
+        # Check if we've reached any of the search roots - stop here
+        search_roots = Array(dirs).map { |d| File.expand_path(d.to_s) }
+        break if search_roots.include?(parent)
+
+        # If this ancestor is a git repo, current repo is nested
+        break true if GitProcessor.repo?(parent)
+
+        # Move up one directory
+        new_parent = File.dirname(parent)
+        break if new_parent == parent  # Hit root
+        parent = new_parent
+      end == true  # Result of while loop - true means we found a parent repo
+    end
   end
 
   # ---------------------------------------------------------------------------

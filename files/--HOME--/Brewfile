@@ -97,6 +97,7 @@ cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'" if ::OS::M
 cask 'zed@preview',
   postinstall: "ln -sf '/Applications/Zed Preview.app/Contents/MacOS/cli' \"${HOMEBREW_PREFIX}/bin/zed\""
 cask 'zen@twilight'
+# cask 'zen'
 cask 'zoom'
 
 # local AI coding tools
