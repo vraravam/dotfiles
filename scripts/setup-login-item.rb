@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# file location: $DOTFILES_DIR/scripts/setup-login-item.rb
+# file location: ${DOTFILES_DIR}/scripts/setup-login-item.rb
 #
 # Registers an app as a macOS login item.
 #

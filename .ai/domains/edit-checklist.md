@@ -105,7 +105,7 @@ Do not add files to `.shfmtignore` for any other reason.
 
 #### Ruby Scripts
 
-Run `rufo` from `$HOME` (required for correct path resolution):
+Run `rufo` from `${HOME}` (required for correct path resolution):
 
 ```bash
 cd "${HOME}" && rufo path/to/script.rb
@@ -136,9 +136,9 @@ chmod +x path/to/script.sh
 ```
 
 **Applies to:**
-- All scripts in `$DOTFILES_DIR/scripts/` (`.sh`, `.zsh`)
-- All scripts in `$PERSONAL_BIN_DIR/` (`.sh`, `.zsh`, `.bash`)
-- Autoload functions in `$XDG_CONFIG_HOME/zsh/` (`.zsh` files)
+- All scripts in `${DOTFILES_DIR}/scripts/` (`.sh`, `.zsh`)
+- All scripts in `${PERSONAL_BIN_DIR}/` (`.sh`, `.zsh`, `.bash`)
+- Autoload functions in `${XDG_CONFIG_HOME}/zsh/` (`.zsh` files)
 
 **Why:** Scripts must be executable to run. Without this permission, they fail with "Permission denied" errors.
 

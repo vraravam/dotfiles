@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# file location: $DOTFILES_DIR/scripts/add-upstream-git-config.rb
+# file location: ${DOTFILES_DIR}/scripts/add-upstream-git-config.rb
 #
 # Adds an 'upstream' remote to a forked git repository. For forked repos,
 # constructs the upstream URL by substituting the cloned owner's username

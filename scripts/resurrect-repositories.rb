@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# file location: $DOTFILES_DIR/scripts/resurrect-repositories.rb
+# file location: ${DOTFILES_DIR}/scripts/resurrect-repositories.rb
 #
 # Generates, resurrects, or verifies a set of known git repositories from a YAML config file.
 #

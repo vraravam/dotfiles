@@ -46,7 +46,7 @@ This rule applies to ALL Ruby-to-Ruby calls unless the callee has conflicting `a
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# file location: $DOTFILES_DIR/scripts/my-script.rb
+# file location: ${DOTFILES_DIR}/scripts/my-script.rb
 #
 # One-line description of what this script does.
 #
@@ -301,7 +301,7 @@ When editing any Ruby script, check:
 
 **Note**: The dual-mode pattern above is now MANDATORY for all scripts. This legacy template is kept for reference only.
 
-**`$PERSONAL_BIN_DIR` scripts** -- use `require_relative` (idiomatic Ruby):
+**`${PERSONAL_BIN_DIR}` scripts** -- use `require_relative` (idiomatic Ruby):
 
 ```ruby
 #!/usr/bin/env ruby
@@ -357,7 +357,7 @@ script_start_time = Logging.print_script_start
 Logging.print_script_summary(script_start_time)
 ```
 
-**`$DOTFILES_DIR/scripts/` scripts** -- use `require_relative` (idiomatic Ruby):
+**`${DOTFILES_DIR}/scripts/` scripts** -- use `require_relative` (idiomatic Ruby):
 
 ```ruby
 #!/usr/bin/env ruby
@@ -762,15 +762,15 @@ Quick summary for Ruby scripts:
 1. Verify decision-making philosophy
 2. Verify Ruby 2.6 compatibility (no endless range, pattern matching, etc.)
 3. Syntax check: `/usr/bin/ruby -c <file>`
-4. Format: `cd "${HOME}" && rufo <file>` (must run from `$HOME`, not `$DOTFILES_DIR`)
+4. Format: `cd "${HOME}" && rufo <file>` (must run from `${HOME}`, not `${DOTFILES_DIR}`)
 5. Verify whitespace rules (see [`whitespace-rules.md`](./whitespace-rules.md))
 6. Ensure executable permission if in bin directory: `chmod +x <file>`
 
 ## Version Compatibility
 
-All Ruby scripts in `$DOTFILES_DIR/scripts/` (including `utilities/`) must be
+All Ruby scripts in `${DOTFILES_DIR}/scripts/` (including `utilities/`) must be
 compatible with **Ruby 2.6** (the system Ruby available on a vanilla macOS).
-Scripts in `$PERSONAL_BIN_DIR` may target newer versions but prefer 2.6 compat.
+Scripts in `${PERSONAL_BIN_DIR}` may target newer versions but prefer 2.6 compat.
 
 Do NOT use:
 - Endless range `(1..)` -- use `(1..Float::INFINITY)` or avoid
@@ -856,12 +856,12 @@ require makes Pathname available to the constant initializers.
 
 #### Current Dotfiles Convention
 
-**Scripts in `$DOTFILES_DIR/scripts/`** (non-utilities):
+**Scripts in `${DOTFILES_DIR}/scripts/`** (non-utilities):
 
 Use `require_relative` for utilities and other internal files:
 
 ```ruby
-# At the top of scripts in $DOTFILES_DIR/scripts/:
+# At the top of scripts in ${DOTFILES_DIR}/scripts/:
 require 'fileutils'                        # stdlib - plain require
 require 'pathname'                         # stdlib - plain require
 require_relative 'utilities/logging'       # internal file - require_relative
@@ -873,7 +873,7 @@ include Logging
 
 This is **idiomatic Ruby** and works because the path from script to utilities is fixed and relative.
 
-**Scripts in `$DOTFILES_DIR/scripts/utilities/`**:
+**Scripts in `${DOTFILES_DIR}/scripts/utilities/`**:
 
 Use `require_relative` for sibling files, `require` for stdlib/gems:
 
@@ -883,7 +883,7 @@ require 'optparse'                    # stdlib - plain require
 require_relative 'logging'            # sibling - require_relative
 ```
 
-**Scripts in `$PERSONAL_BIN_DIR`**:
+**Scripts in `${PERSONAL_BIN_DIR}`**:
 
 These can use either pattern:
 
@@ -1419,7 +1419,7 @@ When adding/editing git operations:
 
 Color methods are defined on `String` in `utilities/string.rb`. They:
 - Wrap the string in ANSI escape codes (no-op when stdout is not a TTY)
-- Automatically substitute `$HOME` with `~` in any path passed to them
+- Automatically substitute `${HOME}` with `~` in any path passed to them
 
 **Never** call `replace_home_path_with_tilde` before passing a path to a color
 method -- the substitution happens inside. Only call it explicitly for bare

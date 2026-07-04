@@ -257,8 +257,8 @@ local path="${DOTFILES_DIR}/scripts"
 info "Repo: ${repo_name}_backup"   # without braces, _backup would be part of name
 
 # BAD
-echo "$HOME/.config"
-local path="$DOTFILES_DIR/scripts"
+echo "${HOME}/.config"
+local path="${DOTFILES_DIR}/scripts"
 ```
 
 Exception: `$?`, `$#`, `$@`, `$*`, `$$`, `$!`, `$-` -- the single-character

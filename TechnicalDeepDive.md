@@ -51,9 +51,9 @@ The `FIRST_INSTALL` environment variable signals a vanilla OS run. Logic that on
 
 ```
 files/
-  --HOME--/              symlinked into $HOME
-  --ZDOTDIR--/           symlinked into $ZDOTDIR (defaults to $HOME)
-  --XDG_CONFIG_HOME--/   symlinked into $XDG_CONFIG_HOME
+  --HOME--/              symlinked into ${HOME}
+  --ZDOTDIR--/           symlinked into ${ZDOTDIR} (defaults to ${HOME})
+  --XDG_CONFIG_HOME--/   symlinked into ${XDG_CONFIG_HOME}
   --PERSONAL_PROFILES_DIR--/  .envrc for direnv
 scripts/
   fresh-install-of-osx.sh
@@ -65,7 +65,7 @@ scripts/
 
 ### The `--VAR--` naming convention
 
-Subdirectories under `files/` use the pattern `--ENV_VAR_NAME--`. The `install-dotfiles.rb` script resolves each directory name to the env var it names (`--HOME--` → `$HOME`, `--XDG_CONFIG_HOME--` → `$XDG_CONFIG_HOME`) and symlinks every file inside into the resolved directory.
+Subdirectories under `files/` use the pattern `--ENV_VAR_NAME--`. The `install-dotfiles.rb` script resolves each directory name to the env var it names (`--HOME--` → `${HOME}`, `--XDG_CONFIG_HOME--` → `${XDG_CONFIG_HOME}`) and symlinks every file inside into the resolved directory.
 
 To add a new dotfile, drop it under the appropriate `files/--VAR--/` directory. The script handles nested paths, conflict resolution, and the difference between symlinks and copies (see [§ 9](#9-install-dotfilesrb-mechanics)).
 
@@ -73,11 +73,11 @@ To add a new dotfile, drop it under the appropriate `files/--VAR--/` directory. 
 
 | Variable | Default path | Purpose |
 |---|---|---|
-| `$DOTFILES_DIR` | `~/.config/dotfiles` | This repo |
-| `$PERSONAL_BIN_DIR` | `~/personal/dev/bin` | Private scripts and per-project overrides |
-| `$PERSONAL_CONFIGS_DIR` | `~/personal/dev/configs` | Private config files (repo catalog YAML, exported prefs, etc.) |
+| `${DOTFILES_DIR}` | `~/.config/dotfiles` | This repo |
+| `${PERSONAL_BIN_DIR}` | `~/personal/dev/bin` | Private scripts and per-project overrides |
+| `${PERSONAL_CONFIGS_DIR}` | `~/personal/dev/configs` | Private config files (repo catalog YAML, exported prefs, etc.) |
 
-`$PERSONAL_BIN_DIR` and `$PERSONAL_CONFIGS_DIR` live outside the dotfiles repo. They are never present on a vanilla OS before the dotfiles repo is cloned, so any function that only these scripts need belongs in `.aliases` — not `.shellrc`. They are kept separate intentionally: they hold private data (credentials, personal scripts, site-specific configs) that must never appear in a public repository. The only personal identifiers that belong in this repo are `GH_USERNAME` (a public GitHub username, inherently non-sensitive) and references to Keybase (which handles its own encryption for private data).
+`${PERSONAL_BIN_DIR}` and `${PERSONAL_CONFIGS_DIR}` live outside the dotfiles repo. They are never present on a vanilla OS before the dotfiles repo is cloned, so any function that only these scripts need belongs in `.aliases` — not `.shellrc`. They are kept separate intentionally: they hold private data (credentials, personal scripts, site-specific configs) that must never appear in a public repository. The only personal identifiers that belong in this repo are `GH_USERNAME` (a public GitHub username, inherently non-sensitive) and references to Keybase (which handles its own encryption for private data).
 
 ---
 
@@ -329,7 +329,7 @@ Architecture detection is a known exception: `${MACHTYPE%%-*}` is the ideal no-f
 
 ### Homebrew shellenv caching
 
-`brew shellenv` sets PATH, MANPATH, and a handful of other variables. It is slow (~100 ms). The output is cached to `$XDG_CONFIG_HOME/zsh/homebrew-shellenv-cache.zsh` and sourced from there on subsequent starts. The cache is regenerated only when the brew binary is newer than the cache file.
+`brew shellenv` sets PATH, MANPATH, and a handful of other variables. It is slow (~100 ms). The output is cached to `${XDG_CONFIG_HOME}/zsh/homebrew-shellenv-cache.zsh` and sourced from there on subsequent starts. The cache is regenerated only when the brew binary is newer than the cache file.
 
 ### ZWC compilation
 
@@ -345,7 +345,7 @@ Antidote replaces oh-my-zsh as the plugin manager. Key properties:
 
 ### `compinit` caching
 
-`compinit` (the completion system initialiser) runs a filesystem security scan (`compaudit`) that can add ~50 ms. On subsequent starts, `compinit -C` is passed to skip the scan — the dump file at `$XDG_CACHE_HOME/zcompdump` serves as evidence that the scan already ran.
+`compinit` (the completion system initialiser) runs a filesystem security scan (`compaudit`) that can add ~50 ms. On subsequent starts, `compinit -C` is passed to skip the scan — the dump file at `${XDG_CACHE_HOME}/zcompdump` serves as evidence that the scan already ran.
 
 ### Startup profiling results
 

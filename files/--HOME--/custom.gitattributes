@@ -25,10 +25,6 @@
 *.zwc*          binary
 .*.zwc*         binary
 
-# Apple binary property list files captured by capture-prefs.sh — treat as binary so that
-# git does not attempt text diffs, line-ending normalisation, or merge on them.
-*.defaults      binary
-
 .ssh/*.pub      text
 .editorconfig   text
 .gitconfig*     text
@@ -36,6 +32,10 @@
 *.kdbx          -text
 *.key           -text
 
-# extensions that pandoc can handle
-*.odt           diff=pandoc
+*.defaults      diff=plist
 *.docx          diff=pandoc
+*.odt           diff=pandoc
+*.sqlite*       diff=sqlite3
+
+# .gitattributes file must not be encrypted, so make sure wildcards don't match it accidentally
+.gitattributes  !filter !diff

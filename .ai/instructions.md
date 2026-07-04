@@ -383,9 +383,9 @@ When creating or editing CHANGELOG.md sections, follow these rules:
 **After creating or editing shell scripts (`.sh`, `.zsh`, `.bash`) or Ruby scripts (`.rb`), ensure they have executable permission (`chmod +x`).**
 
 This applies to:
-- All scripts in `$DOTFILES_DIR/scripts/`
-- All scripts in `$PERSONAL_BIN_DIR/`
-- Autoload functions in `$XDG_CONFIG_HOME/zsh/` (`.zsh` files)
+- All scripts in `${DOTFILES_DIR}/scripts/`
+- All scripts in `${PERSONAL_BIN_DIR}/`
+- Autoload functions in `${XDG_CONFIG_HOME}/zsh/` (`.zsh` files)
 - Any standalone scripts intended to be executed directly
 
 **When creating a new script:**
@@ -431,8 +431,8 @@ find <dir> \( -name "*.sh" -o -name "*.rb" \) ! -perm +111 -type f
 ```
 
 **Why this matters:**
-- Scripts in `$PERSONAL_BIN_DIR` are intended to be executed directly from PATH
-- Scripts in `$DOTFILES_DIR/scripts/` are invoked by other scripts and must be executable
+- Scripts in `${PERSONAL_BIN_DIR}` are intended to be executed directly from PATH
+- Scripts in `${DOTFILES_DIR}/scripts/` are invoked by other scripts and must be executable
 - Autoload functions must be executable for zsh to load them
 - Without executable permission, scripts fail with "Permission denied" errors
 

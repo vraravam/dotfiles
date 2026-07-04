@@ -90,7 +90,10 @@ module InstallDotfiles
     puts "  Errors:    #{stats.errors.positive? ? stats.errors.to_s.red : stats.errors}"
 
     _ensure_ssh_include_line
-    _ensure_delta_symlink
+    _ensure_gitconfig_tool_symlink('delta')
+    _ensure_gitconfig_tool_symlink('pandoc')
+    _ensure_gitconfig_tool_symlink('plist', command_name: 'plutil')
+    _ensure_gitconfig_tool_symlink('sqlite3')
 
     Logging.warn("Since 'custom.git*' files are COPIED (not symlinked), always edit the repo source first. When re-running without FIRST_INSTALL set, the newer file wins -- so a stale home-dir copy can silently overwrite repo changes if its mtime is newer.")
 
@@ -243,47 +246,52 @@ module InstallDotfiles
     end
   end
 
-  # Ensures ~/.gitconfig-delta-enabled.inc symlink exists if delta is installed,
-  # or removes it if delta is not installed. Git config includes this symlink
-  # (→ ~/.gitconfig-delta.inc) which contains delta-specific settings. The symlink
-  # only exists when delta is available, allowing git to work correctly on systems
-  # without delta.
-  def _ensure_delta_symlink
-    delta_config_target = EnvVars::HOME.join('.gitconfig-delta.inc')
-    delta_config_symlink = EnvVars::HOME.join('.gitconfig-delta-enabled.inc')
+  # Generic helper to ensure a tool-specific gitconfig symlink exists when the tool
+  # is installed, or removes it when the tool is not available.
+  #
+  # Pattern: ~/.gitconfig-<tool>.inc (source, symlinked from repo)
+  #       → ~/.gitconfig-<tool>-enabled.inc (symlink, only exists when tool installed)
+  #
+  # @param tool_name [String] Name of the tool (e.g., 'delta', 'pandoc')
+  # @param command_name [String] Command to check in PATH (defaults to tool_name)
+  def _ensure_gitconfig_tool_symlink(tool_name, command_name: nil)
+    command_name ||= tool_name
+    config_target = EnvVars::HOME.join(".gitconfig-#{tool_name}.inc")
+    config_symlink = EnvVars::HOME.join(".gitconfig-#{tool_name}-enabled.inc")
+    display_name = tool_name.capitalize
 
-    if PathUtils.command_exists?('delta')
-      # Delta is installed -- ensure symlink exists
+    if PathUtils.command_exists?(command_name)
+      # Tool is installed -- ensure symlink exists
 
       # Target must exist (should be symlinked by this script from repo)
-      unless delta_config_target.exist?
-        Logging.warn("Skipping delta config symlink -- target file '#{delta_config_target.to_s.cyan}' does not exist")
+      unless config_target.exist?
+        Logging.warn("Skipping #{tool_name} config symlink -- target file '#{config_target.to_s.cyan}' does not exist")
         return
       end
 
       # Create symlink if it doesn't exist
-      if delta_config_symlink.exist?
-        Logging.debug("Delta config symlink already exists at '#{delta_config_symlink.to_s.cyan}'")
+      if config_symlink.exist?
+        Logging.debug("#{display_name} config symlink already exists at '#{config_symlink.to_s.cyan}'")
       else
-        Logging.info("Creating delta config symlink: '#{delta_config_symlink.to_s.cyan}' → '#{delta_config_target.to_s.cyan}'")
-        FileUtils.ln_sf(delta_config_target.to_s, delta_config_symlink.to_s)
-        Logging.success("Created delta config symlink")
+        Logging.info("Creating #{tool_name} config symlink: '#{config_symlink.to_s.cyan}' → '#{config_target.to_s.cyan}'")
+        FileUtils.ln_sf(config_target.to_s, config_symlink.to_s)
+        Logging.success("Created #{tool_name} config symlink")
       end
     else
-      # Delta is not installed -- remove symlink if it exists
-      if delta_config_symlink.exist?
-        Logging.info("Removing delta config symlink (delta not in PATH): '#{delta_config_symlink.to_s.cyan}'")
-        FileUtils.rm_f(delta_config_symlink.to_s)
-        Logging.success("Removed delta config symlink")
+      # Tool is not installed -- remove symlink if it exists
+      if config_symlink.exist?
+        Logging.info("Removing #{tool_name} config symlink (#{command_name} not in PATH): '#{config_symlink.to_s.cyan}'")
+        FileUtils.rm_f(config_symlink.to_s)
+        Logging.success("Removed #{tool_name} config symlink")
       else
-        Logging.debug("Delta not in PATH and symlink doesn't exist -- nothing to do")
+        Logging.debug("#{command_name} not in PATH and symlink doesn't exist -- nothing to do")
       end
     end
   rescue StandardError => e
-    Logging.warn("Failed to ensure delta symlink: #{e.message}")
+    Logging.warn("Failed to ensure #{tool_name} symlink: #{e.message}")
   end
 
-  private_class_method :_ensure_ssh_include_line, :_ensure_delta_symlink
+  private_class_method :_ensure_ssh_include_line, :_ensure_gitconfig_tool_symlink
 end
 
 # ---------------------------------------------------------------------------

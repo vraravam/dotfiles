@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# file location: $DOTFILES_DIR/scripts/run-all.rb
+# file location: ${DOTFILES_DIR}/scripts/run-all.rb
 #
 # Finds all git repositories within FOLDER (env var, defaults to current dir)
 # filtered by FILTER (regex, defaults to empty = all) and a depth range

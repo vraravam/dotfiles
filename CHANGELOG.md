@@ -4,6 +4,26 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.1.38
+
+#### Cross-platform tool-specific git diff configuration with conditional includes
+
+* *[files/--HOME--/.gitconfig]* Moved tool-dependent diff configurations (pandoc, plist, sqlite3) to conditional include files for cross-platform compatibility. Removed inline `[diff "plist"]` and `[diff "sqlite3"]` sections. Added `cachetextconv = true` to plist and sqlite3 configs for performance (textconv output is deterministic and safe to cache). Added four conditional includes in `[include]` section: `~/.gitconfig-delta-enabled.inc`, `~/.gitconfig-pandoc-enabled.inc`, `~/.gitconfig-plist-enabled.inc`, `~/.gitconfig-sqlite3-enabled.inc`. These symlinks only exist when the corresponding tool is installed, allowing git config to work on systems without these tools (Linux, Windows, fresh macOS).
+
+* *[files/--HOME--/.gitconfig-{pandoc,plist,sqlite3}.inc]* Created separate config files for tool-specific diff drivers (pandoc for .docx/.odt, plutil for .plist/.defaults, sqlite3 for .db/.sqlite files). Each includes `cachetextconv = true` for performance. Plist config notes that plutil is macOS-only. SQLite3 config includes `binary = true` to prevent git text diff attempts on raw database files. Files are symlinked by `install-dotfiles.rb` and conditionally enabled via `-enabled.inc` symlinks when tools are installed.
+
+* *[scripts/install-dotfiles.rb]* Refactored tool-specific gitconfig symlink management for DRY principle and extensibility. Added `_ensure_gitconfig_tool_symlink(tool_name, command_name: nil)` generic helper method that handles symlink creation/removal for any tool. Replaced four nearly-identical methods with direct calls to the generic helper, reducing ~160 lines of duplicate code to ~44 lines (73% reduction). Adding new tools now requires only a single line call, no new method definitions needed.
+
+* *[files/--HOME--/custom.gitignore]* Added ignore patterns for new gitconfig conditional include files: `/.gitconfig-{pandoc,plist,sqlite3}-enabled.inc` symlinks and `/.gitconfig-{pandoc,plist,sqlite3}.inc` source configs.
+
+#### Adopting these changes
+
+* Run install-dotfiles to create symlinks for available tools: `install-dotfiles.rb`
+* Verify git config includes are working: `git config --list --show-origin | grep diff.pandoc` (should show config loaded from `~/.gitconfig-pandoc-enabled.inc` if pandoc is installed)
+* On systems without pandoc/plutil/sqlite3: The enabled symlinks won't exist, git config will silently skip those includes, and the file types will show as binary diffs (expected behavior)
+
+---
+
 ### 3.1.37
 
 #### Skip nested git repos in `run-all.rb`
@@ -702,7 +722,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Extended EnvVars module with additional constants
 
-* *[scripts/utilities/env_vars.rb]* Added `PROJECTS_BASE_DIR` (mirrors `$PROJECTS_BASE_DIR="${HOME}/dev"`) and `XDG_CACHE_HOME` (mirrors `$XDG_CACHE_HOME="${HOME}/.cache"`) as Pathname constants. All constants now use sensible fallbacks and are frozen. Updated ruby-scripting.instructions.md "Available Constants" section to include both new constants.
+* *[scripts/utilities/env_vars.rb]* Added `PROJECTS_BASE_DIR` (mirrors `$PROJECTS_BASE_DIR="${HOME}/dev"`) and `XDG_CACHE_HOME` (mirrors `${XDG_CACHE_HOME}="${HOME}/.cache"`) as Pathname constants. All constants now use sensible fallbacks and are frozen. Updated ruby-scripting.instructions.md "Available Constants" section to include both new constants.
 * *[scripts/utilities/repos.rb]* Replaced all `ENV.fetch('HOME', '')`, `ENV.fetch('DOTFILES_DIR', ...)`, `ENV.fetch('PROJECTS_BASE_DIR', ...)` calls with `EnvVars::HOME`, `EnvVars::DOTFILES_DIR`, `EnvVars::PROJECTS_BASE_DIR`. Kept `ENV.fetch('DEBUG', nil)` for non-path boolean flag. EnvVars is now single source of truth for all directory paths in repos.rb.
 
 #### Replaced ENV hash access with ENV.fetch
@@ -1208,7 +1228,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   unfunction is_aliases_sourced; source ~/.aliases    # to pick up new functions and bug fixes
   rm -rfv  /opt/homebrew/opt/antidote/share/antidote/antidote.zsh.zwc*
   delete_caches                                       # clear any stale .zwc bytecode and cached shell environment files.
-  _create_crontab "$PERSONAL_CONFIGS_DIR/crontab.txt" # re-generate the cron file with correct settings
+  _create_crontab "${PERSONAL_CONFIGS_DIR}/crontab.txt" # re-generate the cron file with correct settings
   recron                                              # to pick up the simplified crontab entry
   ```
 
@@ -1412,8 +1432,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Rebase from upstream, resolve conflicts, and then run in any open terminal:
 
   ```zsh
-  cp $DOTFILES_DIR/files/--HOME--/custom.gitattributes $HOME/.gitattributes
-  cp $DOTFILES_DIR/files/--HOME--/custom.gitignore $HOME/.gitignore
+  cp ${DOTFILES_DIR}/files/--HOME--/custom.gitattributes ${HOME}/.gitattributes
+  cp ${DOTFILES_DIR}/files/--HOME--/custom.gitignore ${HOME}/.gitignore
   install-dotfiles.rb
   ```
 
@@ -1428,7 +1448,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.zshrc]* Removed all Oh My Zsh bootstrap variables (`ZSH`, `ZSH_CUSTOM`, `ZSH_THEME`, `ZSH_DISABLE_COMPFIX`, `zstyle ':omz:update' ...`, `plugins=(...)`) and the `source "${ZSH}/oh-my-zsh.sh"` call. `compinit -C` is now called explicitly (no longer delegated to OMZ). Stale alias/comment block referencing OMZ examples removed.
 * *[.zshrc]* `mise activate zsh` is now cached — output written to `${XDG_CACHE_HOME}/mise-activate-cache.zsh` keyed on the mise binary mtime, regenerated only when mise itself is updated. The OMZ `mise` plugin was removed because it referenced `${ZSH_CACHE_DIR}` (undefined without OMZ), which caused a "no such file or directory: /completions/_mise" error on every shell start.
 * *[.zshrc]* Added `typeset +x FPATH fpath cdpath CDPATH` after the dedup pass — `FPATH` and `CDPATH` must never be exported. Both are zsh-internal variables (autoload search path and `cd` search path respectively). Exporting them causes their contents to leak into the macOS launchd user-session environment, where they persist across iTerm2 restarts and are inherited by every new shell before any rc file runs. Symptoms: `zsh -f -c 'echo $FPATH'` showed stale `~/.oh-my-zsh/...` paths even after `~/.oh-my-zsh` was deleted. All other `*path` vars on that line (`PATH`, `MANPATH`, `INFOPATH`, `CPPFLAGS`, `LDFLAGS`, `PKG_CONFIG_PATH`) are intentionally exported — child processes need them.
-* *[.zshrc]* `compinit` refactored to use `-C` (skip `compaudit` scan) when the dump file already exists, saving ~11ms per startup. Wrapped in an anonymous function so `autoload -Uz compinit` does not pollute the global function table. `ZSH_COMPDUMP` moved to `${XDG_CACHE_HOME}/zcompdump` to keep `$HOME` clean.
+* *[.zshrc]* `compinit` refactored to use `-C` (skip `compaudit` scan) when the dump file already exists, saving ~11ms per startup. Wrapped in an anonymous function so `autoload -Uz compinit` does not pollute the global function table. `ZSH_COMPDUMP` moved to `${XDG_CACHE_HOME}/zcompdump` to keep `${HOME}` clean.
 * *[.zshrc]* Starship prompt initialisation cached to `${XDG_CACHE_HOME}/starship-init-cache.zsh`, keyed on the starship binary mtime — avoids forking `starship init zsh` on every shell start. `${commands[starship]}` used instead of `$(command -v starship)` (O(1) zsh hash lookup, no fork). Note: sourcing via a `precmd` hook was attempted but causes `setopt promptsubst` (emitted by starship's init) to be scoped to the hook function, leaving `PROMPT` as an unexpanded literal after the first command — the cache is therefore sourced directly at startup.
 * *[.zshrc]* `autoload -Uz colors && colors` removed — none of the active plugins use `$fg`/`$bg`/`$color` from the zsh `colors` function; own color variables are defined as `$'\e[...'` literals in `.shellrc`.
 * *[.zshrc]* `$(extract_first_word "${editor}")` in the preferred-editor detection loop replaced with `${editor%% *}` (inline parameter expansion, no subshell).
@@ -1446,7 +1466,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Rebase from upstream, resolve conflicts, and then proceed with the following steps in any open terminal:
 
    ```zsh
-   cp $DOTFILES_DIR/files/--HOME--/custom.gitignore $HOME/.gitignore
+   cp ${DOTFILES_DIR}/files/--HOME--/custom.gitignore ${HOME}/.gitignore
    rm -rf "${HOME}/.oh-my-zsh"
    install-dotfiles.rb                                                              # Symlink .zsh_plugins.txt and .zsh_plugins.zsh into ${ZDOTDIR}
    brew install antidote                                                            # Install antidote (a zsh script, not a binary)
@@ -1469,7 +1489,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Rebase from upstream, resolve conflicts, and then run in any open terminal:
 
   ```zsh
-  cp $DOTFILES_DIR/files/--HOME--/custom.gitignore $HOME/.gitignore
+  cp ${DOTFILES_DIR}/files/--HOME--/custom.gitignore ${HOME}/.gitignore
   install-dotfiles.rb
   rm -f "${HOME}/.p10k.zsh"      # remove dangling symlink — source deleted from repo
   brew install starship
@@ -1881,13 +1901,13 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 ### 2.0.32
 
-* Minor fixes for using `ZSH` env variable instead of hardcoding `$HOME/.oh-my-zsh` in multiple places.
+* Minor fixes for using `ZSH` env variable instead of hardcoding `${HOME}/.oh-my-zsh` in multiple places.
 
 ---
 
 ### 2.0.31
 
-* Unignore `$HOME/.ssh/known_hosts` so that the repository resurrection process is done without user interaction.
+* Unignore `${HOME}/.ssh/known_hosts` so that the repository resurrection process is done without user interaction.
 * When using the `error` function, a visual notification is also raised in the Notifications area so that the user need not monitor the `mail` command if there are any outdated GUI apps that need upgrading using `bcug`.
 
 #### Adopting these changes

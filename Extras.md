@@ -64,7 +64,7 @@ Run `${DOTFILES_DIR}/scripts/install-dotfiles.rb` to symlink all dotfiles from t
 
 - Existing files at symlink targets are **moved into the repo** (never silently discarded) before the symlink is created. Use `--force` to delete rather than adopt.
 - `custom.git*` files (`.gitignore`, `.gitattributes`) are **copied** rather than symlinked, because git does not handle symlinks reliably for its own core config.
-- The `files/--VAR--/` directory naming convention resolves each `--ENV_VAR--` name to the env var it wraps (`--HOME--` → `$HOME`, etc.) and symlinks files inside into the resolved path.
+- The `files/--VAR--/` directory naming convention resolves each `--ENV_VAR--` name to the env var it wraps (`--HOME--` → `${HOME}`, etc.) and symlinks files inside into the resolved path.
 
 See [Technical Deep Dive § 9](TechnicalDeepDive.md#9-install-dotfilesrb-mechanics) for conflict resolution rules, mtime tie-breaking, and `FIRST_INSTALL` behaviour.
 
@@ -267,12 +267,12 @@ A set of git-workflow functions are available as zsh autoloads (lazily loaded on
 
 ### Per-project overrides
 
-For the six commands marked ✓, if a file named `<cmd>-<current-directory-name>.sh` exists in `$PERSONAL_BIN_DIR` and is executable, it is sourced in the current shell instead of the built-in implementation.
+For the six commands marked ✓, if a file named `<cmd>-<current-directory-name>.sh` exists in `${PERSONAL_BIN_DIR}` and is executable, it is sourced in the current shell instead of the built-in implementation.
 
 **Example**: to customise `push` when inside a directory named `my-project`, create:
 
 ```zsh
-# $PERSONAL_BIN_DIR/push-my-project.sh
+# ${PERSONAL_BIN_DIR}/push-my-project.sh
 
 # All functions and env vars from .shellrc and .aliases are available because
 # this file is sourced (not exec'd) in the current interactive shell.

@@ -40,7 +40,7 @@ config_file="${DOTFILES_DIR}/scripts/data/cleanup.txt"
 nested="${HOME}/.config/zsh/completions"
 
 # BAD -- ambiguous parsing or concatenation issues
-config_file="$DOTFILES_DIR/scripts/data/cleanup.txt"
+config_file="${DOTFILES_DIR}/scripts/data/cleanup.txt"
 ```
 
 **Always quote variable expansions** (prevents word-splitting):
@@ -51,7 +51,7 @@ cd "${DOTFILES_DIR}/scripts" || exit 1
 rm -f "${XDG_CACHE_HOME}/cache.db"
 
 # BAD -- unquoted (breaks if path contains spaces)
-cd $DOTFILES_DIR/scripts || exit 1
+cd ${DOTFILES_DIR}/scripts || exit 1
 ```
 
 **Never hardcode derived paths**:

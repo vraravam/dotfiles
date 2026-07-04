@@ -170,7 +170,7 @@ export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
 
 `compinit` must be called with `-C` (skip `compaudit` security scan) when the
 dump file already exists, and without `-C` on the first run. Store the dump in
-`$XDG_CACHE_HOME` (not `~/.zcompdump`) to keep `$HOME` clean.
+`${XDG_CACHE_HOME}` (not `~/.zcompdump`) to keep `${HOME}` clean.
 Set `skip_global_compinit=1` in `.zshenv` to prevent `/etc/zshrc` from running
 its own `compinit` before ours:
 

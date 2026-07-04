@@ -296,10 +296,12 @@ class GitProcessor
   # @param force_with_lease [Boolean] Whether to use --force-with-lease (defaults to false).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def push(remote: 'origin', branch:, force: false, force_with_lease: false)
+    url = remote_url(name: remote) unless @dry_run
+
     unless @dry_run
-      url = remote_url(name: remote)
       Logging.debug "#{'Pushing'.yellow} from '#{@dir.to_s.cyan}' to #{url.cyan}"
     end
+
     args = ['push']
     if force_with_lease
       args << '--force-with-lease'
@@ -307,10 +309,10 @@ class GitProcessor
       args << '-f'
     end
     args << remote << branch
+
     _execute(*args) do
       # Clean up stale index.lock after push operations (common with force push)
       delete_index_lock unless @dry_run
-      url = remote_url(name: remote) unless url
       Logging.success "Pushed from '#{@dir.to_s.cyan}' to #{url.cyan}"
     end
   end
@@ -494,20 +496,58 @@ class GitProcessor
   # Automatically prepends 'git -C <dir>' to the command.
   # If a block is given, yields after execution and before returning the result.
   #
+  # Decides whether to stream output or capture it based on the command:
+  # - Streams (system): push, pull, fetch (unless -q/--quiet flag present)
+  # - Captures (Open3.capture3): all other commands
+  #
   # @param args [Array<String>] Git subcommand and arguments (e.g., 'status', '--short').
   # @yield Optional block executed after command completes (useful for cleanup/logging).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   #   In dry-run mode, returns empty strings and a mock successful status.
   def _execute(*args)
     cmd = _git_command + args
+
     if @dry_run
       Logging.info "Would run: #{cmd.join(' ').cyan}"
       # Return mock success response compatible with Open3.capture3
       result = ['', '', OpenStruct.new(success?: true, exitstatus: 0)]
-    else
-      result = Open3.capture3(*cmd)
+      yield if block_given?
+      return result
     end
-    yield if block_given?
-    result
+
+    # Determine if we should stream output (for push/pull/fetch without quiet flag)
+    should_stream = _should_stream_output?(args)
+
+    if should_stream
+      # Stream output directly to terminal
+      success = system(*cmd)
+      yield if block_given? && success
+      # Return format compatible with captured output
+      ['', '', OpenStruct.new(success?: success, exitstatus: success ? 0 : 1)]
+    else
+      # Capture output
+      result = Open3.capture3(*cmd)
+      yield if block_given?
+      result
+    end
   end
+
+  # Determines if a git command should stream output or capture it.
+  # Commands like push/pull/fetch benefit from real-time progress output,
+  # but only when quiet mode is not requested.
+  #
+  # @param args [Array<String>] Git subcommand and arguments.
+  # @return [Boolean] true if output should be streamed, false if captured.
+  def _should_stream_output?(args)
+    return false if args.empty?
+
+    # Commands that benefit from streaming
+    streaming_commands = %w[push pull fetch]
+    return false if (args & streaming_commands).empty?
+
+    # Don't stream if quiet flag is present
+    quiet_flags = %w[-q --quiet]
+    (args & quiet_flags).empty?
+  end
+  private :_should_stream_output?
 end

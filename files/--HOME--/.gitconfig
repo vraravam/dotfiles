@@ -594,9 +594,11 @@
   renameLimit = 1000
   renames = true
   submodule = diff
-[diff "pandoc"]
-  textconv = pandoc --sandbox --to=markdown
-# Delta configuration moved to ~/.gitconfig-delta.inc (conditionally included when delta is installed)
+# Tool-specific diff configurations moved to separate conditional include files:
+# - Pandoc: ~/.gitconfig-pandoc.inc (conditionally included when pandoc is installed)
+# - Plist: ~/.gitconfig-plist.inc (conditionally included when plutil is available - macOS only)
+# - SQLite3: ~/.gitconfig-sqlite3.inc (conditionally included when sqlite3 is installed)
+# - Delta: ~/.gitconfig-delta.inc (conditionally included when delta is installed)
 [extensions]
   # objectFormat = sha256         # Note: This can be uncommented to enable the new repository format for SHA256 support
   # compatObjectFormat = sha1     # Note: This can be uncommented to enable the new repository format for SHA256 support
@@ -716,8 +718,11 @@
 [include]
   # Delta-specific configuration
   # Note: Git's includeIf doesn't support PATH checks. Instead, we use a symlink approach:
-  # The install-dotfiles script creates ~/.gitconfig-delta-enabled.inc as a symlink to
-  # ~/.gitconfig-delta.inc when delta is installed and removes it if not found. This file
-  # is always included, but only exists when delta is present.
+  # The install-dotfiles script creates ~/.gitconfig-<tool>-enabled.inc as a symlink to
+  # ~/.gitconfig-<tool>.inc when the tool is installed and removes it if not found.
+  # These files are always included in git config, but only exist when the tool is present.
   path = ~/.gitconfig-delta-enabled.inc
+  path = ~/.gitconfig-pandoc-enabled.inc
+  path = ~/.gitconfig-plist-enabled.inc
+  path = ~/.gitconfig-sqlite3-enabled.inc
   path = ~/.gitconfig-oss.inc

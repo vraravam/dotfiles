@@ -136,6 +136,15 @@ Thumbs.db
 # Delta config symlink — only exists when delta is installed (managed by install-dotfiles.rb)
 /.gitconfig-delta-enabled.inc
 
+# Pandoc config symlink — only exists when pandoc is installed (managed by install-dotfiles.rb)
+/.gitconfig-pandoc-enabled.inc
+
+# Plist config symlink — only exists when plutil is available, macOS only (managed by install-dotfiles.rb)
+/.gitconfig-plist-enabled.inc
+
+# SQLite3 config symlink — only exists when sqlite3 is installed (managed by install-dotfiles.rb)
+/.gitconfig-sqlite3-enabled.inc
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # BUILD TOOLS & PACKAGE MANAGERS — auto-installed, not personal data
@@ -408,6 +417,9 @@ node_modules/
 /.gitattributes
 /.gitconfig
 /.gitconfig-delta.inc
+/.gitconfig-pandoc.inc
+/.gitconfig-plist.inc
+/.gitconfig-sqlite3.inc
 /.gitignore
 /.gitignore_global
 /.iex.exs

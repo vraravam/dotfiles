@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# file location: $DOTFILES_DIR/scripts/recreate-repo.rb
+# file location: ${DOTFILES_DIR}/scripts/recreate-repo.rb
 #
 # Recreates a git repo by optionally squashing all history into a single
 # commit, then deleting and re-creating the remote Keybase repo and force-
@@ -106,13 +106,14 @@ module RecreateRepo
       # Retry the commit in case it failed above, then compress.
       if dry_run
         Logging.info 'Would stage all files and amend commit'
-      end
-      git.delete_index_lock
-      git.stage_all
-      if force
-        git.commit("Initial commit: #{MacOS.current_timestamp}", quiet: true)
       else
-        git.run_alias('amq')
+        git.delete_index_lock
+        git.stage_all
+        if force
+          git.commit("Initial commit: #{MacOS.current_timestamp}", quiet: true)
+        else
+          git.run_alias('amq')
+        end
       end
 
       if dry_run
@@ -123,7 +124,11 @@ module RecreateRepo
         git.run_alias('cc')
       end
 
-      git.push(remote: 'origin', branch: branch, force: force)
+      if dry_run
+        Logging.info 'Would push to remote'
+      else
+        git.push(remote: 'origin', branch: branch, force: force)
+      end
     end
 
     if dry_run

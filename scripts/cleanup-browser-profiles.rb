@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# file location: $DOTFILES_DIR/scripts/cleanup-browser-profiles.rb
+# file location: ${DOTFILES_DIR}/scripts/cleanup-browser-profiles.rb
 #
 # Cleans up browser profile folders by vacuuming SQLite databases larger than
 # 10 MB and deleting known cache/session files. Skips processing if the target

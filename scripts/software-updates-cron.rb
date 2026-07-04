@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# file location: $DOTFILES_DIR/scripts/software-updates-cron.rb
+# file location: ${DOTFILES_DIR}/scripts/software-updates-cron.rb
 #
 # Runs the periodic update steps in sequence. Intended to be invoked from cron
 # every hour.

@@ -146,7 +146,7 @@ module EnvVars
 
   # Antidote plugin manager paths.
   # Mirrors: ANTIDOTE_* exports in .shellrc (platform-specific and brew-dependent)
-  # Note: On macOS ANTIDOTE_HOME defaults to ~/Library/Caches/antidote, on Linux to $XDG_CACHE_HOME/antidote
+  # Note: On macOS ANTIDOTE_HOME defaults to ~/Library/Caches/antidote, on Linux to ${XDG_CACHE_HOME}/antidote
   ANTIDOTE_HOME = Pathname.new(ENV.fetch('ANTIDOTE_HOME', HOME.join('Library', 'Caches', 'antidote'))).expand_path.freeze
   ANTIDOTE_ZSH = Pathname.new(ENV.fetch('ANTIDOTE_ZSH', HOMEBREW_PREFIX.join('opt', 'antidote', 'share', 'antidote', 'antidote.zsh'))).expand_path.freeze
   ANTIDOTE_PLUGIN_ZSH = Pathname.new(ENV.fetch('ANTIDOTE_PLUGIN_ZSH', HOME.join('.zsh_plugins.zsh'))).expand_path.freeze

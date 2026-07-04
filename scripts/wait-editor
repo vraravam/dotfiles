@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# file location: $DOTFILES_DIR/scripts/wait-editor
+# file location: ${DOTFILES_DIR}/scripts/wait-editor
 #
 # Thin wrapper used as $EDITOR for tools (crontab, visudo, fc, etc.) that
 # exec() the editor directly without shell parsing.  Those tools can only pass

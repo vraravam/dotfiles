@@ -1,7 +1,7 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# file location: $DOTFILES_DIR/scripts/capture-prefs.rb
+# file location: ${DOTFILES_DIR}/scripts/capture-prefs.rb
 #
 # Export or import macOS application preferences (plists) to/from the dotfiles repo.
 # Handles stripping of non-portable keys, git staging on export, and system service
