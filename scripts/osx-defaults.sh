@@ -124,6 +124,7 @@ _plist_set_or_add() {
 main() {
   auto='N'
   local _current_section='(init)'
+  local _current_section_manual=0  # 0 = auto-set allowed, 1 = manual override active
   local -a _step_warnings=()
   local -a _step_errors=()
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))

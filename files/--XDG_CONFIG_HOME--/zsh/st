@@ -12,7 +12,7 @@ _st() {
   local folder
   local -a switches
   parse_folder_and_switches "$@"
-  section_header2 "$(yellow 'Status') '$(cyan "${folder}")'"
+  section_header "$(yellow 'Status') '$(cyan "${folder}")'"
   if ! is_git_repo "${folder}"; then
     warn "Skipping status -- '$(cyan "${folder}")' is not a git repo"
   else

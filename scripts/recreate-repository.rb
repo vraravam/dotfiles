@@ -1,16 +1,16 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# file location: ${DOTFILES_DIR}/scripts/recreate-repo.rb
+# file location: ${DOTFILES_DIR}/scripts/recreate-repository.rb
 #
-# Recreates a git repo by optionally squashing all history into a single
-# commit, then deleting and re-creating the remote Keybase repo and force-
+# Recreates a git repository by optionally squashing all history into a single
+# commit, then deleting and re-creating the remote Keybase repository and force-
 # pushing. Useful for removing dangling/orphaned commits so fresh cloning
 # is fast.
 #
 # Usage:
-#   Standalone: recreate-repo.rb [-f] -d <repo-dir>
-#   Module:     RecreateRepo.run(dir: path, force: false, dry_run: false)
+#   Standalone: recreate-repository.rb [-f] -d <repo-dir>
+#   Module:     RecreateRepository.run(dir: path, force: false, dry_run: false)
 
 require_relative 'utilities/cron'
 require_relative 'utilities/env_vars'
@@ -21,7 +21,7 @@ require_relative 'utilities/macos'
 
 # Module contains the business logic.
 # Returns true/false instead of calling exit().
-module RecreateRepo
+module RecreateRepository
   extend self
 
   # Public API method.
@@ -68,74 +68,26 @@ module RecreateRepo
 
     # Before destroying git history, ensure Keybase is reachable so we do not end
     # up with a deleted local .git and no way to push.
-    if Keybase.keybase_url?(git_url) && !Keybase.ensure_logged_in(dry_run: dry_run)
-      return false
-    end
+    return false if Keybase.keybase_url?(git_url) && !Keybase.ensure_logged_in(dry_run: dry_run)
 
     # Wrap the destructive operations in cron suspension so the cron job does not
     # fire mid-operation. recron regenerates the crontab on the success path;
     # resume_cron restores from the backup on any error path.
-    Logging.info 'Would suspend cron jobs' if dry_run
-
-    operation = lambda do
+    Cron.with_cron_suspended(dry_run: dry_run) do
       if force
-        if dry_run
-          Logging.info "Would remove: '#{dir_pn.join('.git').to_s.cyan}'"
-          Logging.info "Would delete: '#{git_url.cyan}'"
-        else
-          dir_pn.join('.git').rmtree
-          git.init
-          git.add_remote('origin', git_url)
-          git.config_set('user.name', user_name) unless nil_or_empty?(user_name)
-          git.config_set('user.email', user_email) unless nil_or_empty?(user_email)
+        git.recreate(remote_url: git_url, user_name: user_name, user_email: user_email)
 
-          # Keybase repo recreation only happens when force-squashing commits, because
-          # that's when we've destroyed local history. Without force, we're just
-          # compressing and pushing existing commits - no remote recreation needed.
-          if Keybase.keybase_url?(git_url)
-            Logging.debug "#{'Recreating'.yellow} '#{git_url.cyan}'"
-            Keybase.delete_repo(git.remote_repo_name, dry_run: dry_run)
-            unless Keybase.create_repo(git.remote_repo_name, dry_run: dry_run)
-              Logging.record_error "Failed to recreate keybase repo -- manual intervention required"
-              return false
-            end
-          end
-        end
+        # Keybase repo recreation only happens when force-squashing commits, because
+        # that's when we've destroyed local history. Without force, we're just
+        # compressing and pushing existing commits - no remote recreation needed.
+        return false unless Keybase.recreate_repo(git.remote_repo_name, dry_run: dry_run) if Keybase.keybase_url?(git_url)
       end
 
-      # Retry the commit in case it failed above, then compress.
-      if dry_run
-        Logging.info 'Would stage all files and amend commit'
-      else
-        git.delete_index_lock
-        git.stage_all
-        if force
-          git.commit("Initial commit: #{MacOS.current_timestamp}", quiet: true)
-        else
-          git.run_alias('amq')
-        end
-      end
+      git.stage_all
+      git.run_alias('sci', "Initial commit: #{MacOS.current_timestamp}")
 
-      if dry_run
-        Logging.info 'Would compress (reflog + gc)'
-      else
-        Logging.debug "#{'Compressing'.yellow} '#{dir.cyan}'"
-        git.run_alias('rfc')
-        git.run_alias('cc')
-      end
-
-      if dry_run
-        Logging.info 'Would push to remote'
-      else
-        git.push(remote: 'origin', branch: branch, force: force)
-      end
-    end
-
-    if dry_run
-      operation.call
-      Logging.info 'Would resume cron jobs'
-    else
-      Cron.with_cron_suspended(&operation)
+      git.compress
+      git.push(remote: 'origin', branch: branch, force: force)
     end
 
     true
@@ -172,7 +124,7 @@ if __FILE__ == $PROGRAM_NAME
   parser.abort_with_usage('Missing required option: -d <dir>') if nil_or_empty?(options[:dir])
 
   Logging.run_script(File.basename(__FILE__, '.rb')) do
-    success = RecreateRepo.run(dir: options[:dir], force: options[:force], dry_run: options[:dry_run])
+    success = RecreateRepository.run(dir: options[:dir], force: options[:force], dry_run: options[:dry_run])
     exit(success ? 0 : 1)
   end
 end

@@ -4,6 +4,22 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.1.39
+
+#### Logging system refactor: centralized error handling and common section header format
+
+* **Logging improvements**: All Ruby and shell scripts now use fixed-width format for section_header, and all human-readable text (not the padding character) start at a fixed position to help ease of reading all section headers in a vertical manner.
+
+* **Vanilla OS compatibility**: Removed timestamp check in `capture-prefs.rb` that was blocking imports when backup predated `osx-defaults.sh` changes. Script now accepts any backup without validation errors.
+
+#### Adopting these changes
+
+* Restart terminal to reload `.shellrc` with fixed `section_header` function
+* Regenerate crontab: `crontab -r; recron; crontab -l`
+* Scripts now provide better error messages with formatted stdout/stderr output
+
+---
+
 ### 3.1.38
 
 #### Cross-platform tool-specific git diff configuration with conditional includes

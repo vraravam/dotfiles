@@ -46,8 +46,8 @@ module PathUtils
   # @example
   #   PathUtils.dir_size_kb(Pathname.new('/path/to/dir'))  # => 1024
   def dir_size_kb(dir)
-    du_out, = Open3.capture3(MacOS::DU_CMD, '-sk', dir.to_s)
-    du_out.split("\t").first.to_i
+    size_out, = Open3.capture3(MacOS::DU_CMD, '-sk', dir.to_s)
+    size_out.split("\t").first.to_i
   end
 
   # Returns the size of a directory in human-readable format using du.

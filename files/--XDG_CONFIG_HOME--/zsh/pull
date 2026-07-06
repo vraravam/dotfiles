@@ -11,7 +11,7 @@ _pull() {
   local folder
   local -a switches
   parse_folder_and_switches "$@"
-  section_header2 "$(yellow 'Pulling') '$(cyan "${folder}")'"
+  section_header "$(yellow 'Pulling') '$(cyan "${folder}")'"
   if ! is_git_repo "${folder}"; then
     warn "Skipping pulling of the repo since '$(cyan "${folder}")' doesn't exist or is not a git repo"
   else

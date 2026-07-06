@@ -164,11 +164,51 @@ class GitProcessor
     _execute('init', "--ref-format=#{ref_format}", '.')
   end
 
+  # Recreates the local git repository by removing .git and reinitializing.
+  # Preserves working tree files, only destroys git history.
+  #
+  # @param ref_format [String] The ref-format to use (defaults to 'reftable').
+  # @param remote_name [String] Remote name to add (defaults to 'origin').
+  # @param remote_url [String, nil] Remote URL to add (optional).
+  # @param user_name [String, nil] Git user.name to set (optional).
+  # @param user_email [String, nil] Git user.email to set (optional).
+  # @return [Boolean] true on success, false on failure.
+  def recreate(ref_format: 'reftable', remote_name: 'origin', remote_url: nil, user_name: nil, user_email: nil)
+    git_path = @dir.join('.git')
+
+    if @dry_run
+      Logging.info "Would remove: '#{git_path.to_s.cyan}'"
+    else
+      return false unless repo?
+      # .git can be a directory (normal clone) or a file (worktree/submodule pointer).
+      # rmtree handles both: removes directory tree or deletes the file.
+      git_path.rmtree
+    end
+
+    _out, _err, status = init(ref_format: ref_format)
+    return false unless status.success?
+
+    # Add remote if URL provided
+    add_remote(remote_name, remote_url) if remote_url
+
+    # Set git config if provided
+    config_set('user.name', user_name) unless nil_or_empty?(user_name)
+    config_set('user.email', user_email) unless nil_or_empty?(user_email)
+
+    true
+  end
+
   # Stages all changes (equivalent to `git add -A .`).
+  # Automatically removes stale index.lock before staging to prevent failures.
   #
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def stage_all
-    _execute('add', '-A', '.')
+    if @dry_run
+      Logging.info 'Would stage all files after removing stale lock file if it exists'
+    else
+      delete_index_lock
+      _execute('add', '-A', '.')
+    end
   end
 
   # Stages a specific file or directory (equivalent to `git add <path>`).
@@ -296,11 +336,13 @@ class GitProcessor
   # @param force_with_lease [Boolean] Whether to use --force-with-lease (defaults to false).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def push(remote: 'origin', branch:, force: false, force_with_lease: false)
-    url = remote_url(name: remote) unless @dry_run
-
-    unless @dry_run
-      Logging.debug "#{'Pushing'.yellow} from '#{@dir.to_s.cyan}' to #{url.cyan}"
+    if @dry_run
+      Logging.info 'Would push to remote'
+      return _mock_status_response(true)
     end
+
+    url = remote_url(name: remote)
+    Logging.debug "#{'Pushing'.yellow} from '#{@dir.to_s.cyan}' to #{url.cyan}"
 
     args = ['push']
     if force_with_lease
@@ -312,9 +354,25 @@ class GitProcessor
 
     _execute(*args) do
       # Clean up stale index.lock after push operations (common with force push)
-      delete_index_lock unless @dry_run
+      delete_index_lock
       Logging.success "Pushed from '#{@dir.to_s.cyan}' to #{url.cyan}"
     end
+  end
+
+  # Compresses the repository by expiring reflog and running gc.
+  # Runs 'git rfc' (reflog expire) and 'git cc' (gc --aggressive) aliases.
+  #
+  # @return [Boolean] true on success, false on failure.
+  def compress
+    if @dry_run
+      Logging.info 'Would compress (reflog + gc)'
+      return true
+    end
+
+    Logging.debug "#{'Compressing'.yellow} '#{@dir.to_s.cyan}'"
+    run_alias('rfc')
+    run_alias('cc')
+    true
   end
 
   # Runs a git alias command (e.g., 'amq', 'rfc', 'cc').
@@ -509,21 +567,18 @@ class GitProcessor
 
     if @dry_run
       Logging.info "Would run: #{cmd.join(' ').cyan}"
-      # Return mock success response compatible with Open3.capture3
-      result = ['', '', OpenStruct.new(success?: true, exitstatus: 0)]
       yield if block_given?
-      return result
+      # Return mock success response compatible with Open3.capture3
+      return _mock_status_response(true)
     end
 
     # Determine if we should stream output (for push/pull/fetch without quiet flag)
-    should_stream = _should_stream_output?(args)
-
-    if should_stream
+    if _should_stream_output?(args)
       # Stream output directly to terminal
       success = system(*cmd)
       yield if block_given? && success
       # Return format compatible with captured output
-      ['', '', OpenStruct.new(success?: success, exitstatus: success ? 0 : 1)]
+      _mock_status_response(success)
     else
       # Capture output
       result = Open3.capture3(*cmd)
@@ -539,15 +594,25 @@ class GitProcessor
   # @param args [Array<String>] Git subcommand and arguments.
   # @return [Boolean] true if output should be streamed, false if captured.
   def _should_stream_output?(args)
-    return false if args.empty?
+    return false if nil_or_empty?(args)
 
     # Commands that benefit from streaming
     streaming_commands = %w[push pull fetch]
-    return false if (args & streaming_commands).empty?
+    return false if nil_or_empty?(args & streaming_commands)
 
     # Don't stream if quiet flag is present
     quiet_flags = %w[-q --quiet]
-    (args & quiet_flags).empty?
+    nil_or_empty?(args & quiet_flags)
   end
-  private :_should_stream_output?
+
+  # Creates a mock status response compatible with Open3.capture3.
+  # Used for dry-run and streaming operations to maintain consistent return format.
+  #
+  # @param success [Boolean] Whether the operation succeeded.
+  # @return [Array<(String, String, OpenStruct)>] Empty stdout/stderr and status object.
+  def _mock_status_response(success)
+    ['', '', OpenStruct.new(success?: success, exitstatus: success ? 0 : 1)]
+  end
+
+  private :_should_stream_output?, :_mock_status_response
 end

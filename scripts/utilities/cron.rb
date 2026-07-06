@@ -135,6 +135,8 @@ module Cron
       f.puts "HOMEBREW_BUNDLE_FILE_GLOBAL=\"#{homebrew_bundle}\""
       f.puts '# Disable all mail generation from cron jobs (rely on macOS notifications instead)'
       f.puts 'MAILTO=""'
+      f.puts '# Terminal width for Ruby logging (cron has no TTY, default 80 cols)'
+      f.puts 'COLUMNS=80'
       f.puts '# PATH: homebrew + system utils + personal bin + dotfiles scripts ' \
              '(needed for run-all.rb, capture-prefs.rb etc.)'
       # Cron does not expand ${VAR} references in environment variables -- use literal expanded paths
@@ -209,9 +211,18 @@ module Cron
   # Mirrors with_cron_suspended in .aliases. Restores cron via an ensure
   # clause so it always runs even if the block raises.
   #
+  # @param dry_run [Boolean] When true, logs what would happen without suspending cron.
   # @example
   #   Cron.with_cron_suspended { run_main_logic }
-  def with_cron_suspended
+  #   Cron.with_cron_suspended(dry_run: true) { run_main_logic }
+  def with_cron_suspended(dry_run: false)
+    if dry_run
+      Logging.info 'Would suspend cron jobs'
+      yield
+      Logging.info 'Would resume cron jobs'
+      return
+    end
+
     suspend_cron
     begin
       yield

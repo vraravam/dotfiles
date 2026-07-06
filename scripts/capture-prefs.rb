@@ -81,24 +81,6 @@ module CapturePrefs
       target_dir.glob('*.plist').each(&:unlink)
       target_dir.glob('.plist').each(&:unlink)
       target_dir.glob('*.defaults').each(&:unlink)
-    else
-      # Import: warn if the backup predates the last change to osx-defaults.sh
-      if GitProcessor.repo?(EnvVars::DOTFILES_DIR) && GitProcessor.repo?(EnvVars::HOME)
-        dotfiles_git = GitProcessor.new(dir: EnvVars::DOTFILES_DIR)
-        home_git = GitProcessor.new(dir: EnvVars::HOME)
-
-        osx_defaults_ts = dotfiles_git.log_timestamp('scripts/osx-defaults.sh')
-        backup_ts = home_git.log_timestamp(target_dir.to_s)
-
-        # On FIRST_INSTALL, accept any backup even if outdated -- fresh-install already
-        # ran osx-defaults.sh -s to baseline current prefs, so the backup import is an
-        # incremental overlay. A stale backup is better than no backup on vanilla OS.
-        if osx_defaults_ts && backup_ts && backup_ts < osx_defaults_ts && !EnvVars.first_install?
-          Logging.error(
-            "Backup predates the last change to '#{'osx-defaults.sh'.cyan}' -- some settings added since may not be present. Run '#{'osx-defaults.sh -s'.cyan}' followed by '#{'capture-prefs.rb -e'.cyan}' on the source machine to refresh the backup first."
-          )
-        end
-      end
     end
 
     # Load data files (each helper validates its own file)

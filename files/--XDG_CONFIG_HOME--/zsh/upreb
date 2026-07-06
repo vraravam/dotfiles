@@ -11,7 +11,7 @@ source "${HOME}/.shellrc"
 # then pushes each branch. Defaults to the current directory if no dir is specified.
 _upreb() {
   local dir="${1:-${PWD}}"
-  section_header2 "$(yellow 'Upreb-ing') $(purple "${dir}")"
+  section_header "$(yellow 'Upreb-ing') $(purple "${dir}")"
 
   local current_branch
   current_branch="$(git -C "${dir}" br)"

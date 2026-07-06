@@ -54,8 +54,8 @@ module InstallDotfiles
   def run(dry_run: false, verbose: false, force: false)
     stats = Stats.new(processed: 0, created: 0, updated: 0, skipped: 0, errors: 0)
 
-    Logging.info('Starting to install dotfiles')
-    Logging.warn('[DRY-RUN MODE]') if dry_run
+    Logging.info 'Starting to install dotfiles'
+    Logging.info 'Running in DRY-RUN mode -- no changes will be made' if dry_run
 
     # NOTE: cannot use Dir.glob since that doesn't handle hidden files
     Find.find(EnvVars::DOTFILES_DIR.join('files')) do |source_path_str|
@@ -83,11 +83,11 @@ module InstallDotfiles
     # Print statistics summary
     puts ''
     Logging.success('Summary:')
-    puts "  Processed: #{stats.processed.to_s.purple}"
-    puts "  Created:   #{stats.created.to_s.green}"
-    puts "  Updated:   #{stats.updated.to_s.green}"
-    puts "  Skipped:   #{stats.skipped.to_s.purple}"
-    puts "  Errors:    #{stats.errors.positive? ? stats.errors.to_s.red : stats.errors}"
+    Logging.emit("Processed: #{stats.processed.to_s.purple}", level: 1)
+    Logging.emit("Created:   #{stats.created.to_s.green}", level: 1)
+    Logging.emit("Updated:   #{stats.updated.to_s.green}", level: 1)
+    Logging.emit("Skipped:   #{stats.skipped.to_s.purple}", level: 1)
+    Logging.emit("Errors:    #{stats.errors.positive? ? stats.errors.to_s.red : stats.errors}", level: 1)
 
     _ensure_ssh_include_line
     _ensure_gitconfig_tool_symlink('delta')

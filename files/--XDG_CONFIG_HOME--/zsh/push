@@ -11,7 +11,7 @@ _push() {
   local folder
   local -a switches
   parse_folder_and_switches "$@"
-  section_header2 "$(yellow 'Pushing') '$(cyan "${folder}")'"
+  section_header "$(yellow 'Pushing') '$(cyan "${folder}")'"
   if ! is_git_repo "${folder}"; then
     warn "Skipping pushing of the repo since '$(cyan "${folder}")' doesn't exist or is not a git repo"
   else

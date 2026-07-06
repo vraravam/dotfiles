@@ -8,6 +8,34 @@ applyTo: "**/*.rb"
 
 Apply these rules when writing or editing any Ruby script in this repository.
 
+## File Naming Convention
+
+**Executable scripts use kebab-case (hyphens), utility modules use snake_case (underscores).**
+
+This follows standard Ruby community conventions:
+
+| Type | Pattern | Examples | Rationale |
+|------|---------|----------|-----------|
+| **Executable scripts** | kebab-case | `install-dotfiles.rb`, `recreate-repo.rb`, `capture-prefs.rb` | Matches Unix CLI tool convention; easier to type on command line |
+| **Utility modules** | snake_case | `git_processor.rb`, `cli_parser.rb`, `env_vars.rb` | Matches Ruby `require_relative` convention (`require 'git_processor'` → `git_processor.rb`) |
+| **Single-word modules** | no separator | `logging.rb`, `cron.rb`, `keybase.rb` | No separator needed for single words |
+
+**Why this convention:**
+- `require_relative 'git_processor'` naturally maps to `git_processor.rb`
+- CLI tools use hyphens (standard across Unix ecosystem: `git-log`, `npm-install`, etc.)
+- Reduces cognitive load - file extension reveals intended usage
+
+**Applies to:**
+- `${DOTFILES_DIR}/scripts/*.rb` - All executable scripts use kebab-case
+- `${DOTFILES_DIR}/scripts/utilities/*.rb` - All modules use snake_case
+- `${PERSONAL_BIN_DIR}/*.rb` - All executable scripts use kebab-case
+- Shell scripts follow same pattern: `fresh-install-of-osx.sh`, `osx-defaults.sh`
+
+**Scan rule:** When creating or renaming Ruby files:
+1. Is it an executable entry point (has `if __FILE__ == $PROGRAM_NAME`)? → Use kebab-case
+2. Is it a utility module (no CLI mode, only `module` definitions)? → Use snake_case
+3. Single word? → No separator needed
+
 ## Dual-Mode Ruby Scripts (Module + Standalone) -- MANDATORY
 
 **ALL standalone Ruby scripts MUST follow this pattern** to enable both CLI usage and direct module calls from other Ruby scripts.
@@ -1161,11 +1189,11 @@ if needs_validation
 end
 
 # BAD -- string interpolation happens even when status.success? is true
-_report_git_failure("Failed in '#{folder.cyan}': #{compute_details}", status, stderr) unless status.success?
+_report_git_failure("Failed in '#{folder.cyan}': #{compute_details}", status, stdout, stderr) unless status.success?
 
 # Good -- string only built when needed
 unless status.success?
-  _report_git_failure("Failed in '#{folder.cyan}': #{compute_details}", status, stderr)
+  _report_git_failure("Failed in '#{folder.cyan}': #{compute_details}", status, stdout, stderr)
 end
 
 # Trailing style is fine for cheap operations and simple arguments

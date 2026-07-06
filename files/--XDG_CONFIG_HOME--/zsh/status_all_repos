@@ -14,7 +14,7 @@
 source "${HOME}/.shellrc"
 
 _status_all_repos() {
-  section_header2 "$(yellow 'Checking status of all repos')"
+  section_header "$(yellow 'Checking status of all repos')"
   _call_ruby_git_workspace status_all_repos
 }
 

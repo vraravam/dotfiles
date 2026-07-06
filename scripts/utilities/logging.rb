@@ -24,6 +24,20 @@ module Logging
   include Core  # For instance methods (in blocks)
   extend Core   # For module methods
 
+  # Section header styles by level. Each level has a distinct visual style
+  # (character, glyph, color) to create a clear visual hierarchy.
+  #
+  # Level 0: Top-level sections (main workflow steps)
+  # Level 1: Sub-sections within a top-level section
+  # Level 2+: Further nesting (extensible)
+  SECTION_STYLES = [
+    { char: '=', glyph: '⏳', color: :light_blue },  # Level 0: Top-level sections (depth 1)
+    { char: '-', glyph: '🔷', color: :cyan },        # Level 1: Sub-sections (depth 2)
+    { char: '·', glyph: '▸', color: :yellow },       # Level 2: Collection items (depth 3)
+    { char: '·', glyph: '▫', color: :purple },       # Level 3: Operations within items (depth 4)
+    { char: '·', glyph: '▪', color: :dark_gray }     # Level 4: Deep nesting (depth 5+)
+  ].freeze
+
   # ---------------------------------------------------------------------------
   # Semantic log-level helpers
   # These mirror success/info/warn/debug/error from .shellrc.
@@ -44,27 +58,24 @@ module Logging
     # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
     # Use error for messages that must always be visible regardless of context.
     return if EnvVars.suppress_log?
-    indent = log_indent
     msg = message.to_s.replace_home_path_with_tilde
-    msg.each_line { |line| puts "#{indent}✅ #{'**SUCCESS**'.green} #{line.chomp}" }
+    msg.each_line { |line| emit("✅ #{'**SUCCESS**'.green} #{line.chomp}", level: 0) }
   end
 
   def info(message)
     # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
     # Use error for messages that must always be visible regardless of context.
     return if EnvVars.suppress_log?
-    indent = log_indent
     msg = message.to_s.replace_home_path_with_tilde
-    msg.each_line { |line| puts "#{indent}ℹ️  #{'**INFO**'.cyan} #{line.chomp}" }
+    msg.each_line { |line| emit("ℹ️ #{'**INFO**'.cyan} #{line.chomp}", level: 0) }
   end
 
   def warn(message)
     # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
     # Use error for messages that must always be visible regardless of context.
     return if EnvVars.suppress_log?
-    indent = log_indent
     msg = message.to_s.replace_home_path_with_tilde
-    msg.each_line { |line| puts "#{indent}⚠️  #{'**WARN**'.light_red} #{line.chomp}" }
+    msg.each_line { |line| emit("⚠️ #{'**WARN**'.light_red} #{line.chomp}", level: 0) }
   end
 
   def debug(message)
@@ -73,9 +84,8 @@ module Logging
     # Use error for messages that must always be visible regardless of context.
     return unless EnvVars.debug?
     return if EnvVars.suppress_log?
-    indent = log_indent
     msg = message.to_s.replace_home_path_with_tilde
-    msg.each_line { |line| puts "#{indent}⚙️  #{'**DEBUG**'.light_purple} #{line.chomp}" }
+    msg.each_line { |line| emit("⚙️ #{'**DEBUG**'.light_purple} #{line.chomp}", level: 0) }
   end
 
   # Prints a message prompting the user to perform a manual step (e.g. restart
@@ -84,9 +94,8 @@ module Logging
   # runs headlessly and cannot act on prompts. Mirrors user_action() in .shellrc.
   def user_action(message)
     return if EnvVars.suppress_log?
-    indent = log_indent
     msg = message.to_s.replace_home_path_with_tilde
-    msg.each_line { |line| puts "#{indent}➡️  #{'**ACTION**'.yellow} #{line.chomp}" }
+    msg.each_line { |line| emit("➡️ #{'**ACTION**'.yellow} #{line.chomp}", level: 0) }
   end
 
   # Prints the error message and raises a +RuntimeError+ with that message,
@@ -94,29 +103,77 @@ module Logging
   # error() always prints regardless of context -- critical failures must be visible.
   # @raise [RuntimeError]
   def error(message)
-    indent = log_indent
     msg = message.to_s.replace_home_path_with_tilde
-    msg.each_line { |line| puts "#{indent}❌ #{'**ERROR**'.red} #{line.chomp} 🤓" }
+    msg.each_line { |line| emit("❌ #{'**ERROR**'.red} #{line.chomp} 🤓", level: 0) }
     raise msg
   end
 
-  # Joins array elements into a bulleted list string, each on a new line with
-  # 2-space indent and '- ' prefix.
+  # Formats an array as a bulleted, indented list with color and quotes applied to each item.
+  # Each item is indented by current depth + N levels, prefixed with '- ', wrapped in
+  # single quotes, and has color applied. Items are joined with newlines.
   #
-  # Usage: join_array(my_array)
-  # Example: join_array(['file1.yml', 'file2.yml'])
+  # The indent is depth-aware (current script depth) + level additional spaces, so list
+  # items can be positioned at any desired nesting level relative to their context.
   #
-  # Output: "  - file1.yml\n  - file2.yml"
-  #
-  # The 2-space indent is fixed, not depth-based, because list items should always
-  # be subordinate to their parent message text by exactly 2 spaces regardless of
-  # how deeply nested the parent message is.
-  #
-  # @param arr [Array] The array to join.
+  # @param arr [Array] The array to format.
+  # @param color [Symbol] Color method to apply (:red, :cyan, :yellow, etc.).
+  # @param level [Integer] Subordinate nesting level (default: 1 for typical label + list pattern).
   # @return [String] The formatted list string, or empty string if array is empty.
-  def join_array(arr)
+  #
+  # Example:
+  #   # At depth 1 (outermost script):
+  #   join_array(['file1.rb', 'file2.rb'], :red)
+  #   # => "  - 'file1.rb'\n  - 'file2.rb'" (2 spaces + bullet, level defaults to 1)
+  #
+  #   join_array(['file1.rb', 'file2.rb'], :red, level: 2)
+  #   # => "    - 'file1.rb'\n    - 'file2.rb'" (4 spaces + bullet)
+  #
+  #   # At depth 2 (nested script):
+  #   join_array(['file1.rb', 'file2.rb'], :red)
+  #   # => "    - 'file1.rb'\n    - 'file2.rb'" (4 spaces + bullet)
+  def join_array(arr, color, level: 1)
     return '' if nil_or_empty?(arr)
-    arr.map { |item| "  - #{item}" }.join("\n")
+    # Compute indentation: base depth + level subordination.
+    # Base depth is captured at construction time, ensuring the list indents
+    # correctly even if parent message is printed at a different depth later
+    # (e.g., deferred warnings). All lines in multi-line messages must have their
+    # own indentation baked in since logging functions only indent the first line.
+    indent = _subordinate_indent(level)
+    arr.map { |item| "#{indent}- '#{item.to_s.send(color)}'" }.join("\n")
+  end
+
+  # Prints a line with depth-aware indentation + N levels of additional nesting.
+  # Each level adds 2 spaces. Use this for content that should be indented relative
+  # to a parent message (stats, timing info, etc.) but not bulleted like join_array items.
+  #
+  # Named 'emit' instead of 'puts' to avoid confusion with standard puts.
+  #
+  # Indentation formula: (depth - 1 + level) * 2 spaces
+  # - Outermost script (depth 1) with level 0 → 0 spaces
+  # - Outermost script (depth 1) with level 1 → 2 spaces
+  # - Nested script (depth 2) with level 0 → 2 spaces
+  # - Nested script (depth 2) with level 1 → 4 spaces
+  #
+  # @param message [String] The message to print
+  # @param level [Integer] Number of subordinate nesting levels (required, no default)
+  # @return [void]
+  #
+  # Example:
+  #   # At depth 1 (outermost):
+  #   Logging.emit("Total: 10", level: 0)
+  #   # => "Total: 10" (0 spaces)
+  #
+  #   Logging.emit("Total: 10", level: 1)
+  #   # => "  Total: 10" (2 spaces)
+  #
+  #   # At depth 2 (nested):
+  #   Logging.emit("Total: 10", level: 0)
+  #   # => "  Total: 10" (2 spaces)
+  #
+  #   Logging.emit("Details:", level: 1)
+  #   # => "    Details:" (4 spaces)
+  def emit(message, level:)
+    puts "#{_subordinate_indent(level)}#{message}"
   end
 
   # ---------------------------------------------------------------------------
@@ -125,23 +182,69 @@ module Logging
   # from .shellrc.
   # ---------------------------------------------------------------------------
 
-  # Prints a centred section header flanked by '=' padding, matching:
-  #   echo "$(light_blue $(print_chars_for_length '=' …)) ⏳ ${header} $(light_blue …)"
-  # Also sets current_section to +header+ so that subsequent record_warning /
-  # record_error entries are automatically attributed to this section.
-  # Automatically indents based on _DOTFILES_SCRIPT_DEPTH.
-  def section_header(header)
-    @current_section = header
-    _section_header_impl(header, char: '=', glyph: '⏳', color: :light_blue)
+  # Strips ANSI escape codes from a string to get visual length.
+  # Used by section_header to calculate padding correctly when header contains colors.
+  #
+  # @param str [String] String potentially containing ANSI escape codes
+  # @return [String] String with all ANSI codes removed
+  def _strip_ansi(str)
+    # ANSI escape sequences match pattern: ESC [ ... m
+    # This regex removes all such sequences to get the visual text
+    str.gsub(/\e\[[0-9;]*m/, '')
   end
 
-  # Sub-level section header for steps nested inside a top-level section_header.
-  # Mirrors section_header2 in .shellrc: '-' padding, '🔷' glyph, cyan colour.
-  # Indentation is automatic via log_indent in _section_header_impl.
-  # Does NOT update current_section -- sub-steps belong to the enclosing
-  # top-level section for record_warning / record_error attribution.
-  def section_header2(header)
-    _section_header_impl(header, char: '-', glyph: '🔷', color: :cyan)
+  private_class_method :_strip_ansi
+
+  # Prints a section header with visual hierarchy based on current script depth.
+  # Level is automatically derived from script depth (depth 1 = level 0, depth 2 = level 1, etc.).
+  # Only level 0 (outermost script) updates @current_section for error attribution.
+  # Output matches the shell version in .shellrc (section_header function).
+  #
+  # Visual styles:
+  # - Level 0 (depth 1): = ⏳ light_blue (top-level sections)
+  # - Level 1 (depth 2): - 🔷 cyan (sub-sections)
+  # - Level 2+ (depth 3+): · ▸ yellow (nested sections)
+  #
+  # @param header [String] The header text
+  def section_header(header)
+    level = [EnvVars.script_depth - 1, 0].max  # depth 1 → level 0, depth 2 → level 1, etc.
+
+    # Auto-set current_section if nil/empty, at initial '(init)' value, OR not manually set.
+    # This provides progressively more specific context as execution descends through nested
+    # operations. Manual assignments (via `current_section=`) set a flag that prevents
+    # auto-updates, allowing concise error attribution while displaying descriptive headers.
+    unless @current_section_manual
+      # Direct assignment (not via setter) to avoid setting the manual flag
+      @current_section = _strip_ansi(header.to_s)
+    end
+
+    # Get style for this level (fallback to highest defined level if out of bounds)
+    style = SECTION_STYLES[level] || SECTION_STYLES.last
+
+    # Extract style components
+    char = style[:char]
+    glyph = style[:glyph]
+    color = style[:color]
+
+    # Section headers use only base depth indentation (no subordinate levels).
+    # The level variable selects the visual style (char/glyph/color), not indentation.
+    header_str = header.replace_home_path_with_tilde
+    indent_length = _log_indent.length
+
+    # Strip ANSI codes to get visual length (header may contain color codes from caller)
+    header_visual = _strip_ansi(header_str)
+    header_length = header_visual.length
+
+    # Left-aligned headers: text starts at fixed position for vertical scanability
+    # Left padding: 5 chars min (prevents touching left edge)
+    # Right padding: fills remaining width minus 10 chars (prevents touching right edge)
+    left_padding_length = [5 - indent_length, 1].max
+    right_padding_length = [terminal_width - indent_length - left_padding_length - 3 - header_length - 10, 1].max
+    left_pad = _repeat_char(char, left_padding_length).send(color)
+    right_pad = _repeat_char(char, right_padding_length).send(color)
+
+    # Emit the formatted header at level 0 (base indent only)
+    emit("#{left_pad} #{glyph} #{header_str} #{right_pad}", level: 0)
   end
 
   # Prints the script start timestamp, prefixed with the script name. Mirrors:
@@ -157,7 +260,7 @@ module Logging
     now = Time.now
     @script_start_time = now.to_i
     if outermost_script?
-      puts "#{script_name.cyan} #{'==>'.purple} #{'Script started at:'.yellow} #{now.strftime('%Y-%m-%d %H:%M:%S').light_blue}"
+      emit("#{script_name.cyan} #{'==>'.purple} #{'Script started at:'.yellow} #{now.strftime('%Y-%m-%d %H:%M:%S').light_blue}", level: 0)
     end
     now.to_i
   end
@@ -170,8 +273,8 @@ module Logging
     return unless outermost_script?
     now = Time.now
     human = format_duration(now.to_i - start_time)
-    puts "#{script_name.cyan} #{'==>'.purple} #{'Script finished at:'.yellow} #{now.strftime('%Y-%m-%d %H:%M:%S').light_blue} " \
-         "(#{'Total duration:'.yellow} #{human.light_blue} #{'seconds'.yellow})."
+    emit("#{script_name.cyan} #{'==>'.purple} #{'Script finished at:'.yellow} #{now.strftime('%Y-%m-%d %H:%M:%S').light_blue} " \
+         "(#{'Total duration:'.yellow} #{human.light_blue} #{'seconds'.yellow}).", level: 0)
   end
 
   # ---------------------------------------------------------------------------
@@ -184,8 +287,10 @@ module Logging
 
   # Sets the current logical section name, used as context in record_warning /
   # record_error entries. Mirrors the _current_section local in shell scripts.
+  # Automatically strips ANSI codes to ensure clean error messages.
   def current_section=(name)
-    @current_section = name
+    @current_section = _strip_ansi(name.to_s)
+    @current_section_manual = true  # Mark as manually set
   end
 
   # Wraps a block of code with step lifecycle management (current_section, step_start, step_end).
@@ -222,31 +327,6 @@ module Logging
   def record_error(message)
     step_errors << "[#{script_name || 'unknown'}][#{@current_section || 'unknown'}] #{message}"
     warn(message)
-  end
-
-  # Filters out common noise from stderr output (permission denied, file not found, etc.)
-  # and records a warning only if meaningful errors remain. Use this when a command is
-  # expected to produce some non-fatal stderr noise that should not clutter the logs.
-  #
-  # @param stderr [String] Raw stderr output from a command.
-  # @param context [String] Context message prefix for the warning (e.g., "Issues during git search").
-  # @param ignore_patterns [Array<String>] Additional patterns to ignore beyond the defaults.
-  # @return [void]
-  #
-  # @example
-  #   stdout, stderr, status = Open3.capture3('find', path, '-name', '.git')
-  #   filter_and_warn_stderr(stderr, context: 'Issues while searching for git repos')
-  def filter_and_warn_stderr(stderr, context:, ignore_patterns: [])
-    return if nil_or_empty?(stderr)
-
-    default_noise = ['Permission denied', 'No such file or directory']
-    all_patterns = default_noise + ignore_patterns
-
-    meaningful_errors = stderr.each_line.map(&:strip).reject do |line|
-      nil_or_empty?(line) || all_patterns.any? { |pattern| line.include?(pattern) }
-    end
-
-    record_warning("#{context}:\n#{meaningful_errors.join("\n")}") unless nil_or_empty?(meaningful_errors)
   end
 
   # Prints a grouped summary of all collected warnings and errors, prefixing
@@ -336,17 +416,17 @@ module Logging
   # execute block, print summary. Use this instead of manually calling
   # increment_script_depth + print_script_start + print_script_summary.
   #
+  # When called from a nested context (script_depth >= 1), skips depth increment
+  # and banner output -- the module runs at the current depth as if called directly.
+  # This allows shell functions to call Ruby scripts without double-nesting.
+  #
   # Ensures print_script_summary is always called (even on error) via ensure block.
   # The at_exit hook registered by increment_script_depth ensures depth is
   # decremented on both clean and error exits.
   #
-  # The outermost check is handled internally by print_script_start and
-  # print_script_summary, so this method works correctly for both CLI entry
-  # points and utility module methods that can be called nested.
-  #
   # @param script_name [String, nil] Name to use for Logging.script_name (required for utility methods, optional for CLI scripts)
   # @param message [String, nil] Optional message to print before summary
-  # @yield Block containing the script's main logic
+  # @yield [start_time] Block containing the script's main logic; receives Unix epoch start time (or nil if nested)
   # @return [void]
   #
   # @example CLI entry point script (script_name inferred from $PROGRAM_NAME)
@@ -372,12 +452,34 @@ module Logging
   #   end
   def run_script(script_name = nil, message = nil)
     self.script_name = script_name if script_name
+    # Initialize current_section to '(init)' for consistency with shell scripts.
+    # Use direct assignment (not setter) to avoid setting the manual flag.
+    @current_section = '(init)'
+    @current_section_manual = false
+
+    # When already nested (called from shell function at depth >= 1), increment
+    # depth for the module execution to ensure outermost_script? returns false,
+    # then return early to skip banners and summary. The increment ensures that
+    # print_results_summary and other checks correctly identify this as nested.
+    if EnvVars.script_depth >= 1
+      increment_script_depth
+      begin
+        yield nil
+      ensure
+        decrement_script_depth
+      end
+      return
+    end
+
+    # Standalone mode (depth 0): increment depth and print banners
     increment_script_depth
     start_time = print_script_start
 
     yield start_time
   ensure
-    print_script_summary(start_time, message)
+    # Only print summary in standalone mode (depth <= 1).
+    # The early return above ensures this only runs for standalone calls.
+    print_script_summary(start_time, message) if start_time
   end
 
   # ---------------------------------------------------------------------------
@@ -387,11 +489,14 @@ module Logging
   # Returns true when this is the outermost script in a nested call chain.
   # Mirrors is_outermost_script in .shellrc. _DOTFILES_SCRIPT_DEPTH is exported
   # and incremented by each script's main() via run_script; subprocess increments
-  # do not propagate back to the parent. Defaults to 0 when unset so standalone
-  # scripts (which never set the counter) are treated as outermost -- consistent
-  # with the ':-0' used in the increment expression in each main().
+  # do not propagate back to the parent. Depth starts at 0 (no script running),
+  # outermost script increments to 1, nested scripts to 2+.
+  #
+  # Used by print_script_start, print_script_summary, and print_results_summary
+  # to suppress output from nested scripts so only the outermost script prints
+  # banners and summaries.
   def outermost_script?
-    EnvVars.script_depth <= 1
+    EnvVars.script_depth == 1
   end
 
   # Prints a summary of processing results from a hash returned by
@@ -418,18 +523,18 @@ module Logging
     failed = results[:failed]
 
     puts ''
-    info 'Summary'.yellow
-    puts "  Total #{item_label}: #{total}"
-    puts "  Successful:         #{successful.length.to_s.green}"
+    info('Summary'.yellow)
+    emit("Total #{item_label}: #{total}", level: 1)
+    emit("Successful:         #{successful.length.to_s.green}", level: 1)
 
     unless nil_or_empty?(failed)
       singular = item_label.sub(/ies$/, 'y').sub(/s$/, '')
       plural = item_label
       count_label = failed.length == 1 ? singular : plural
 
-      puts "  Failed:             #{failed.length.to_s.red}"
-      puts "  Failed #{count_label}:".red
-      failed.each { |item| puts "    - '#{item.red}'" }
+      emit("Failed:             #{failed.length.to_s.red}", level: 1)
+      emit("Failed #{count_label}:".red, level: 0)
+      puts join_array(failed, :red)
     end
 
     info "Skipped: #{results[:skipped].to_s.purple}" if results[:skipped]&.positive?
@@ -441,6 +546,22 @@ module Logging
   # can call it before increment_script_depth.
   def script_name=(name)
     @script_name = name
+  end
+
+  # Increments _DOTFILES_SCRIPT_DEPTH and registers an at_exit hook to
+  # decrement it on exit (clean or error). Called internally by run_script
+  # and CollectionProcessor. Mirrors the export + trap pattern in shell scripts.
+  def increment_script_depth
+    ENV['_DOTFILES_SCRIPT_DEPTH'] = (EnvVars.script_depth + 1).to_s
+    at_exit { decrement_script_depth }
+  end
+
+  # Decrements _DOTFILES_SCRIPT_DEPTH, guarding against underflow. Called
+  # automatically by the at_exit hook registered in increment_script_depth.
+  # Mirrors _decrement_script_depth in .shellrc.
+  def decrement_script_depth
+    depth = EnvVars.script_depth
+    ENV['_DOTFILES_SCRIPT_DEPTH'] = (depth - 1).to_s if depth.positive?
   end
 
   # ---------------------------------------------------------------------------
@@ -459,38 +580,38 @@ module Logging
   # Returns the depth-based indent string (2 spaces per depth level).
   # Used by all logging functions to auto-indent output based on script nesting.
   # Memoized to avoid repeated string multiplication for the same depth.
-  def log_indent
+  def _log_indent
     @indent_cache ||= {}
     depth = EnvVars.script_depth
-    @indent_cache[depth] ||= '  ' * depth
+    # Guard against depth 0 (called before increment_script_depth) - treat as depth 1
+    # to prevent negative multiplication. This can happen when print_script_summary
+    # decrements depth before calling section_header.
+    depth = 1 if depth < 1
+    # Outermost script (depth 1) has 0 indentation, depth 2 has 2 spaces, etc.
+    @indent_cache[depth] ||= '  ' * (depth - 1)
   end
 
-  # Prints +char+ repeated +length+ times.
-  # Defaults to '=' and terminal-width/4 columns when +length+ is not given.
+  # Returns the subordinate indent string (depth-based indent + N levels of nesting).
+  # Each nesting level adds 2 spaces. Used for content that should be indented
+  # relative to parent messages (stats, timing, list items).
   #
-  # @param char [String] The character to repeat (default: '=').
-  # @param length [Integer, nil] Number of repetitions; defaults to +terminal_width / 4+ when nil.
+  # @param level [Integer] Number of subordinate nesting levels (default: 0)
+  # @return [String] The indented string
+  def _subordinate_indent(level = 0)
+    _log_indent + ('  ' * level)
+  end
+
+  # Repeats a character N times for section header padding.
+  #
+  # @param char [String] The character to repeat.
+  # @param length [Integer] Number of repetitions.
   # @return [String] The repeated character string.
-  def print_chars_for_length(char: '=', length: nil)
-    char * (length || terminal_width / 4)
+  def _repeat_char(char, length)
+    char * length
   end
 
-  # Shared implementation for section_header and section_header2. Mirrors
-  # _section_header_impl in .shellrc: centres the header between repeated-char
-  # padding, coloured by +color+, prefixed with +glyph+, and optionally indented.
-  # Automatically indents based on _DOTFILES_SCRIPT_DEPTH.
+  # Prints +char+ repeated +length+ times for section header padding.
   #
-  # @param header [String] The header text to display.
-  # @param char   [String] Padding character ('=' for headers).
-  # @param glyph  [String] Emoji glyph displayed before the header.
-  # @param color  [Symbol] Color method to apply to padding (e.g. :light_blue).
-  def _section_header_impl(header, char:, glyph:, color:)
-    depth_indent = log_indent
-    header_str = header.replace_home_path_with_tilde
-    padding_length = [((terminal_width - header_str.length - depth_indent.length) / 2) - 10, 1].max
-    pad = print_chars_for_length(char: char, length: padding_length).send(color)
-    puts "#{depth_indent}#{pad} #{glyph} #{header_str} #{pad}"
-  end
 
   # Pushes the current epoch seconds onto the step timing stack. Called by
   # with_step at the start of a step. Mirrors step_start in .shellrc.
@@ -518,24 +639,8 @@ module Logging
     script_start_time = @script_start_time || now
     delta_total = now - script_start_time
 
-    # Format: "  (Step: XXs  Total: YYs)"
-    puts "  (#{'Step:'.yellow} #{delta_step.to_s.light_blue}s  #{'Total:'.yellow} #{delta_total.to_s.light_blue}s)"
-  end
-
-  # Increments _DOTFILES_SCRIPT_DEPTH and registers an at_exit hook to
-  # decrement it on exit (clean or error). Called internally by run_script.
-  # Mirrors the export + trap pattern in shell scripts.
-  def increment_script_depth
-    ENV['_DOTFILES_SCRIPT_DEPTH'] = (EnvVars.script_depth + 1).to_s
-    at_exit { decrement_script_depth }
-  end
-
-  # Decrements _DOTFILES_SCRIPT_DEPTH, guarding against underflow. Called
-  # automatically by the at_exit hook registered in increment_script_depth.
-  # Mirrors _decrement_script_depth in .shellrc.
-  def decrement_script_depth
-    depth = EnvVars.script_depth
-    ENV['_DOTFILES_SCRIPT_DEPTH'] = (depth - 1).to_s if depth.positive?
+    # Format: "(Step: XXs  Total: YYs)"
+    emit("(#{'Step:'.yellow} #{delta_step.to_s.light_blue}s  #{'Total:'.yellow} #{delta_total.to_s.light_blue}s)", level: 0)
   end
 
   # Per-includer stacks stored as instance variables so that each object (or
@@ -545,12 +650,16 @@ module Logging
     @script_start_times ||= []
   end
 
-  # Returns the current terminal column width, falling back to 80.
-  # $stdout.winsize[1] reads the terminal dimensions via ioctl -- no `tput cols` subprocess fork.
-  # rescue 0 handles non-tty contexts (e.g. pipes, cron) gracefully.
+  # Returns the current terminal column width, falling back to COLUMNS env var or 80.
+  # Reads from: 1) $stdout.winsize (ioctl), 2) EnvVars.columns (COLUMNS env var), 3) hardcoded 80
+  # Matches shell behavior: ${COLUMNS:-${_FALLBACK_TERMINAL_WIDTH}}
   def terminal_width
     return @terminal_width if @terminal_width
+
+    # Try ioctl first (real terminal attached)
     cols = $stdout.winsize[1] rescue 0
-    @terminal_width = cols.nonzero? || 80
+
+    # Fall back to COLUMNS env var (set by parent shell), then hardcoded 80
+    @terminal_width = cols.nonzero? || EnvVars.columns
   end
 end

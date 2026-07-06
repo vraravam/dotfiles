@@ -9,7 +9,7 @@ require_relative 'logging'
 require_relative 'path_utils'
 
 # Keybase helpers for login, repo creation/deletion, and URL validation.
-# These are used by scripts that interact with Keybase git repos (recreate-repo.rb)
+# These are used by scripts that interact with Keybase git repos (recreate-repository.rb)
 # and by fresh-install-of-osx.sh (_ensure_keybase_logged_in delegates to ensure_logged_in).
 module Keybase
   extend self
@@ -29,7 +29,7 @@ module Keybase
 
   # Ensures keybase is installed and the current user is logged in.
   # Returns false on failure so callers can decide whether to abort or continue.
-  # Called by fresh-install-of-osx.sh (_ensure_keybase_logged_in) and recreate-repo.rb.
+  # Called by fresh-install-of-osx.sh (_ensure_keybase_logged_in) and recreate-repository.rb.
   #
   # @param dry_run [Boolean] When true, logs the operation instead of executing.
   # @return [Boolean] true if logged in (or would log in), false otherwise.
@@ -109,5 +109,26 @@ module Keybase
       Logging.record_error "Failed to create keybase repo #{repo_name.yellow}"
       false
     end
+  end
+
+  # Recreates a Keybase repo by deleting and recreating it.
+  # Used when force-squashing commits destroys local history.
+  #
+  # @param repo_name [String]
+  # @param dry_run [Boolean] When true, logs the operation instead of executing.
+  # @return [Boolean] true on success or dry_run, false on failure
+  def recreate_repo(repo_name, dry_run: false)
+    if dry_run
+      Logging.info "Would recreate keybase repo: #{repo_name.yellow}"
+      return true
+    end
+
+    Logging.debug "#{'Recreating'.yellow} keybase repo '#{repo_name.cyan}'"
+    delete_repo(repo_name, dry_run: dry_run)
+    unless create_repo(repo_name, dry_run: dry_run)
+      Logging.record_error "Failed to recreate keybase repo -- manual intervention required"
+      return false
+    end
+    true
   end
 end

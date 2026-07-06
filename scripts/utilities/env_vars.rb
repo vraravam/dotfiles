@@ -241,6 +241,13 @@ module EnvVars
     ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
   end
 
+  # Terminal column width from COLUMNS env var.
+  # Mirrors: ${COLUMNS} (set by shell, may be 0 in non-TTY contexts)
+  # Returns 80 when unset or 0 (fallback matches _FALLBACK_TERMINAL_WIDTH in .shellrc)
+  def self.columns
+    ENV.fetch('COLUMNS', '80').to_i
+  end
+
   # Cron backup file path (used by suspend_cron/resume_cron).
   # Mirrors: _DOTFILES_CRON_BACKUP_FILE (set by suspend_cron in .shellrc)
   # Falls back to TMPDIR/crontab_backup when not set.

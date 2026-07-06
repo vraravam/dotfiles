@@ -136,7 +136,7 @@ module CleanupBrowserProfiles
       next if db_size <= min_db_size
 
       if dry_run
-        Logging.info "[DRY-RUN] Would vacuum: '#{db_file.to_s.cyan}' (#{_bytes_to_mb(db_size).to_s.purple}MB)"
+        Logging.info "Would vacuum: '#{db_file.to_s.cyan}' (#{_bytes_to_mb(db_size).to_s.purple}MB)"
       else
         Logging.info "Vacuuming: '#{db_file.to_s.cyan}'"
         if system('sqlite3', db_file.to_s, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;', out: File::NULL, err: File::NULL)
@@ -149,9 +149,7 @@ module CleanupBrowserProfiles
 
     Logging.info "-> Processed #{vacuumed.to_s.purple} of #{db_count.to_s.purple} SQLite databases"
     if failed_dbs.any?
-      # Apply red color to each path, then format as bulleted list
-      colored_paths = failed_dbs.map { |f| "'#{f.to_s.red}'" }
-      Logging.record_warning("sqlite3 vacuum failed for #{failed_dbs.size.to_s.red} database(s):\n#{Logging.join_array(colored_paths)}")
+      Logging.record_warning("sqlite3 vacuum failed for #{failed_dbs.size.to_s.red} database(s):\n#{Logging.join_array(failed_dbs, :red)}")
     end
   end
 
@@ -182,8 +180,8 @@ module CleanupBrowserProfiles
     # Delete items (or show what would be deleted in dry-run)
     if dry_run
       max_preview_items = 20
-      Logging.info '[DRY-RUN] Would delete the following files and directories:'
-      items_to_delete.first(max_preview_items).each { |p| puts "  '#{p.cyan}'" }
+      Logging.info 'Would delete the following files and directories:'
+      puts Logging.join_array(items_to_delete.first(max_preview_items), :cyan)
       Logging.info "... and #{(items_to_delete.length - max_preview_items).to_s.purple} more items" if items_to_delete.length > max_preview_items
       return
     end

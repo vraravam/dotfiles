@@ -24,7 +24,7 @@ _cc() {
   local folder
   local -a switches
   parse_folder_and_switches "$@"
-  section_header2 "$(yellow 'Compressing') '$(cyan "${folder}")'"
+  section_header "$(yellow 'Compressing') '$(cyan "${folder}")'"
   if ! is_git_repo "${folder}"; then
     warn "Skipping finding size of the repo since '$(cyan "${folder}")' doesn't exist or is not a git repo"
   else

@@ -186,7 +186,7 @@ _ensure_filevault_is_on() {
 
 # Install Xcode Command Line Tools via non-interactive, non-gui softwareupdate
 _install_xcode_command_line_tools() {
-  _current_section='Install Xcode Command Line Tools'
+  _current_section='Install Xcode Command Line Tools'; _current_section_manual=1
   step_start
   section_header "$(yellow 'Installing xcode command-line tools')"
   if ! xcode-select -p &>/dev/null; then
@@ -221,7 +221,7 @@ _ensure_directories_exist() {
 
 # Clone the dotfiles repo and configure upstream
 _clone_dot_files_repo() {
-  _current_section='Clone dotfiles repo'
+  _current_section='Clone dotfiles repo'; _current_section_manual=1
   step_start
   section_header "$(yellow 'Installing dotfiles') into '$(cyan "${DOTFILES_DIR}")'"
   if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
@@ -236,7 +236,7 @@ _clone_dot_files_repo() {
       fi
       append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
       # Setup the DOTFILES_DIR repo's upstream if it doesn't already point to UPSTREAM_GH_USERNAME's repo
-      add-upstream-git-config.rb -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || _record_warning 'Failed to add upstream git config for dotfiles repo'
+      COLUMNS="${COLUMNS}" add-upstream-git-config.rb -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || _record_warning 'Failed to add upstream git config for dotfiles repo'
     else
       error 'Failed to clone dotfiles repo'
       exit 1
@@ -249,7 +249,7 @@ _clone_dot_files_repo() {
 
 # Install homebrew, tap repos, and run brew bundle
 _install_homebrew() {
-  _current_section='Install Homebrew'
+  _current_section='Install Homebrew'; _current_section_manual=1
   step_start
   section_header "$(yellow 'Installing homebrew') into '$(cyan "${HOMEBREW_PREFIX}")'"
   if is_zero_string "${HOMEBREW_PREFIX}"; then
@@ -348,7 +348,7 @@ _install_homebrew() {
 # Without this, iTerm2's "Login shell" setting uses /bin/zsh (system) even when
 # /opt/homebrew/bin/zsh is on PATH, and $SHELL stays /bin/zsh after a fresh install.
 _set_default_shell() {
-  _current_section='Set default shell'
+  _current_section='Set default shell'; _current_section_manual=1
   step_start
   section_header "$(yellow 'Setting default shell to Homebrew zsh')"
 
@@ -400,7 +400,7 @@ _ensure_keybase_logged_in() {
     return 1
   fi
   setup_rubylib
-  ruby -e "require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
+  COLUMNS="${COLUMNS}" ruby -e "require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
 }
 
 # Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
@@ -411,9 +411,9 @@ _build_keybase_repo_url() {
 
 # Clone the Keybase home repo (private configs)
 _clone_home_repo() {
-  _current_section='Clone home repo'
+  _current_section='Clone home repo'; _current_section_manual=1
   step_start
-  section_header2 "$(yellow 'Cloning') '$(cyan "${KEYBASE_HOME_REPO_NAME:-}")' repo"
+  section_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_HOME_REPO_NAME:-}")' repo"
   if is_non_zero_string "${KEYBASE_HOME_REPO_NAME:-}"; then
     if is_git_repo "${HOME}"; then
       # Pre-configured machine: pull latest changes to get fresh backup files
@@ -441,9 +441,9 @@ _clone_home_repo() {
 
 # Clone the Keybase profiles repo (browser profiles)
 _clone_profiles_repo() {
-  _current_section='Clone profiles repo'
+  _current_section='Clone profiles repo'; _current_section_manual=1
   step_start
-  section_header2 "$(yellow 'Cloning') '$(cyan "${KEYBASE_PROFILES_REPO_NAME:-}")' repo"
+  section_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_PROFILES_REPO_NAME:-}")' repo"
   if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME:-}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
     if ! clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME:-}")" "${PERSONAL_PROFILES_DIR}"; then
       _record_error 'Failed to clone profiles repo'
@@ -507,6 +507,7 @@ main() {
   # _record_warning/_record_error/_cleanup_and_exit/print_script_summary (all from .shellrc) read/write
   # these via zsh dynamic scoping -- locals declared here are visible in all callees.
   local _current_section='(init)'
+  local _current_section_manual=0  # 0 = auto-set allowed, 1 = manual override active
   local -a _step_warnings=()
   local -a _step_errors=()
   local -a _script_start_times=()
@@ -584,7 +585,7 @@ main() {
 
   # run this outside of the clone function, since it needs to be run irrespective of whether the dotfiles repo was pre-existing or not
   append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
-  install-dotfiles.rb
+  COLUMNS="${COLUMNS}" install-dotfiles.rb
 
   # On FIRST_INSTALL: install-dotfiles.rb moves the curl-downloaded ~/.shellrc into the repo,
   # overwriting the committed version. Even though we validated they matched before install-dotfiles.rb,
@@ -624,14 +625,13 @@ main() {
   # git on a vanilla macOS ignores -c init.defaultRefFormat=reftable and does not
   # support 'git refs migrate', so clone_repo_into's migration call was a no-op
   # for those early clones. Now that Homebrew's git is available, migrate them.
-  _current_section='Migrate repos to reftable'
+  _current_section='Migrate repos to reftable'; _current_section_manual=1
   step_start
   section_header "$(yellow 'Migrating repos to reftable format')"
   migrate_git_repo_to_reftable "${DOTFILES_DIR}"
   step_end
 
   if is_non_zero_string "${KEYBASE_USERNAME:-}"; then
-    section_header "$(yellow 'Cloning') '$(cyan 'keybase')' repos"
     # Login into Keybase
     step_start
     _ensure_keybase_logged_in || return 1
@@ -647,7 +647,6 @@ main() {
   if is_file "${HOME}/.ssh/known_hosts.old"; then rm -f "${HOME}/.ssh/known_hosts.old"; fi
 
   # Restore the preferences from the older machine into the new one.
-  _current_section='Restore preferences'
   step_start
   section_header "$(yellow 'Restore preferences')"
   if command_exists 'osx-defaults.sh'; then
@@ -661,7 +660,7 @@ main() {
     # On pre-configured machines, refresh backup before import if stale
     if ! is_first_install; then
       info "Pre-configured machine detected -- refreshing preferences backup first"
-      if capture-prefs.rb -e; then
+      if COLUMNS="${COLUMNS}" capture-prefs.rb -e; then
         success 'Successfully refreshed preferences backup'
         # Commit using git sci (amends if ahead of remote, creates new if not)
         # capture-prefs.rb -e already staged the files, so just commit
@@ -681,7 +680,7 @@ main() {
       fi
     fi
 
-    capture-prefs.rb -i
+    COLUMNS="${COLUMNS}" capture-prefs.rb -i
     success 'Successfully restored preferences from backup'
   else
     _record_error "Skipping importing of preferences since '$(purple 'capture-prefs.rb')' couldn't be found in the PATH; Please set it up manually"
@@ -693,12 +692,9 @@ main() {
       open /Applications/Sol.app
     fi
   fi
-  info "About to call step_end after preferences restoration..."
   step_end
-  info "step_end completed successfully"
 
   # Recreate the zsh completions.
-  info "Starting zsh completions section..."
   step_start
   section_header "$(yellow 'Recreate zsh completions')"
   rm -rf "${XDG_CACHE_HOME}/zcompdump"* &>/dev/null  || true
@@ -706,7 +702,6 @@ main() {
   step_end
 
   # Setup cron jobs.
-  _current_section='Setup cron jobs'
   step_start
   section_header "$(yellow 'Setup cron jobs')"
   if command_exists recron; then
@@ -725,10 +720,8 @@ main() {
   # Resurrect tracked repos. With shallow cloning (FIRST_INSTALL), large repos
   # download much faster, making this call non-blocking enough to run in-line.
   # resurrect_tracked_repos calls setup_dev_environment internally.
-  _current_section='Resurrect tracked repos'
-  info "Checking if resurrect_tracked_repos function is available..."
+  _current_section='Resurrect tracked repos'; _current_section_manual=1
   if command_exists resurrect_tracked_repos; then
-    info "resurrect_tracked_repos found -- calling it now"
     resurrect_tracked_repos
   else
     _record_error "Skipping resurrecting tracked repos since '$(purple 'resurrect_tracked_repos')' couldn't be found in the PATH; Please run it manually"

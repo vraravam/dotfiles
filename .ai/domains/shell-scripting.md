@@ -13,6 +13,60 @@ Syntax choices follow the decision-making priority defined in
 zsh built-ins where they do not conflict with those). Document the tradeoff in
 a comment when they conflict.
 
+## File Naming Convention
+
+**All shell scripts use kebab-case (hyphens), matching Unix CLI tool conventions.**
+
+| Type | Pattern | Examples | Rationale |
+|------|---------|----------|-----------|
+| **Executable scripts** | kebab-case | `fresh-install-of-osx.sh`, `osx-defaults.sh` | Standard Unix convention; easier to type on command line |
+| **Common libraries** | kebab-case | `db-dump-common.sh`, `upreb-homebrew-common.sh` | Consistency with main scripts that source them |
+| **Single-word scripts** | no separator | N/A - most shell scripts are multi-word descriptive names | No separator needed if single word |
+
+**Why kebab-case for shell:**
+- Matches Unix ecosystem conventions (`git-log`, `npm-install`, `docker-compose`)
+- Easier to type on command line (no Shift key for underscores)
+- Consistent with Ruby executable scripts (see ruby-scripting.md § File Naming Convention)
+
+**Applies to:**
+- `${DOTFILES_DIR}/scripts/*.sh` - All shell scripts use kebab-case
+- `${PERSONAL_BIN_DIR}/*.sh` - All shell scripts use kebab-case
+- Autoload functions in `${XDG_CONFIG_HOME}/zsh/` - Single-word names (no separator)
+
+## Function Naming Convention
+
+**All shell functions use snake_case (underscores), following Unix and Ruby conventions.**
+
+```zsh
+# Good -- public functions use snake_case
+current_timestamp() { date '+%Y-%m-%d %H:%M:%S'; }
+clone_repo_into() { ... }
+is_file() { ... }
+
+# Good -- private/internal functions use snake_case with leading underscore
+_log_indent() { ... }
+_section_header_impl() { ... }
+_colorize() { ... }
+
+# BAD -- kebab-case is for file names, not function names
+current-timestamp() { ... }   # Wrong
+clone-repo-into() { ... }     # Wrong
+```
+
+**Why snake_case for functions:**
+- Matches Ruby method naming (consistency across shell/Ruby boundary)
+- Standard Unix shell convention (most bash/zsh codebases use snake_case)
+- Easier to type than kebab-case (no need to type hyphens in function names)
+- Functions often wrap Ruby methods with identical names: `status_all_repos()` → `GitWorkspace.status_all_repos`
+
+**Private function prefix:**
+- Internal helpers must be prefixed with `_` (see § Internal Helpers below)
+- Public functions (called by users or other scripts) have no prefix
+
+**Cross-reference:**
+- File naming: § File Naming Convention (above)
+- Private helpers: § Internal Helpers -- `_` Prefix Convention (below)
+
 ## Script Template
 
 ```zsh
@@ -390,12 +444,69 @@ replace with `return`. Leave `exit` in trap handlers and git alias bodies.
 
 ## Internal Helpers -- `_` Prefix Convention
 
-Internal helpers not called by external scripts must be prefixed with `_`:
+**All internal/private helper functions must be prefixed with `_` to signal they are script-internal and not part of the public API.**
 
 ```zsh
-_internal_helper() { ... }   # private
-public_function() { ... }    # public (no prefix)
+# BAD -- helper not prefixed with underscore
+read_config_file() {
+  # ...
+}
+
+process_item() {
+  # ...
+}
+
+# main execution
+items=(...)
+for item in "${items[@]}"; do
+  process_item "${item}"
+done
+
+# Good -- helpers prefixed with underscore
+_read_config_file() {
+  # ...
+}
+
+_process_item() {
+  # ...
+}
+
+# main execution
+items=(...)
+for item in "${items[@]}"; do
+  _process_item "${item}"
+done
+
+# Public functions exported for use by other scripts
+public_function() { ... }    # no prefix - part of public API
 ```
+
+**Rules:**
+- **All** helper functions that are not the main entry point or intended for external use must be prefixed with `_`
+- Main execution code (option parsing, main logic) comes after helper definitions
+- Functions in `.shellrc` and `.aliases` that are intended to be called by users or other scripts should NOT have underscore prefix
+- Functions in `.shellrc` and `.aliases` that are only called internally (like `_log_indent`, `_section_header_impl`, `_colorize`) MUST have underscore prefix
+
+**Applies to:**
+- Helper functions in standalone scripts (anything in `${DOTFILES_DIR}/scripts/*.sh`)
+- Helper functions in `${PERSONAL_BIN_DIR}/*.sh`
+- Internal implementation functions in `.shellrc` and `.aliases`
+
+**Exception:** Autoload functions in `${XDG_CONFIG_HOME}/zsh/` follow a dual-function pattern where the public wrapper (no underscore) calls a private implementation (with underscore):
+
+```zsh
+# Autoload function pattern
+_status_all_repos() {
+  # Implementation
+  _call_ruby_git_workspace status_all_repos
+}
+
+status_all_repos() {
+  dispatch_or_fallback status_all_repos _status_all_repos "$@"
+}
+```
+
+This pattern allows `dispatch_or_fallback` to choose between Ruby module mode (fast, when available) and shell fallback mode (when Ruby unavailable).
 
 ## Unified Color Standard (Shell + Ruby)
 

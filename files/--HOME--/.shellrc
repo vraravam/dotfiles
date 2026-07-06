@@ -226,24 +226,34 @@ is_running_in_tty() {
 }
 
 # Joins array elements into a bulleted list string, each on a new line with
-# 2-space indent and '- ' prefix.
-# Usage: join_array <array_name>
-# Example: join_array my_arr
+# depth-aware indent + N levels, '- ' prefix, and single quotes around each item.
+# Usage: join_array <array_name> [level]
+# Example: join_array my_arr     # defaults to level 1
+#          join_array my_arr 2   # level 2 (extra indentation)
 #
-# Output: "  - item1\n  - item2"
-# The 2-space indent is fixed, not depth-based, because list items should always
-# be subordinate to their parent message text by exactly 2 spaces regardless of
-# how deeply nested the parent message is.
+# The indent is depth-aware (current script depth) + level subordination, matching
+# Ruby's join_array behavior. Level defaults to 1 for standard label + list pattern.
+#
+# Output at depth 1, level 1: "  - 'item1'\n  - 'item2'"
+# Output at depth 2, level 1: "    - 'item1'\n    - 'item2'"
+# Output at depth 1, level 2: "    - 'item1'\n    - 'item2'"
 join_array() {
   local -a arr=("${(@P)${1:?join_array: array name required}}")
   if is_empty_array arr; then return; fi
-  # Fixed 2-space indent for list items
-  local base_indent='  '
-  # Build formatted array with indent prefix, then join with newlines
+
+  local level="${2:-1}"
+  # Compute indentation: base depth + level subordination.
+  # Base depth is captured at construction time, ensuring the list indents
+  # correctly even if parent message is printed at a different depth later
+  # (e.g., deferred warnings). All lines in multi-line messages must have their
+  # own indentation baked in since logging functions only indent the first line.
+  local base_indent="$(_log_indent)$(printf '%*s' $((level * 2)) '')"
+
+  # Build formatted array with indent prefix, quotes, then join with newlines
   local -a formatted=()
   local item
   for item in "${arr[@]}"; do
-    formatted+=("${base_indent}- ${item}")
+    formatted+=("${base_indent}- '${item}'")
   done
   echo "${(j:\n:)formatted}"
 }
@@ -370,15 +380,8 @@ _dotfiles_notify() {
   # system binary at a known path, and is_executable checks the file directly
   # ([[ -x ]]) rather than searching functions/aliases/builtins/PATH.
   if is_executable '/usr/bin/osascript'; then
-    # Strip ANSI escape sequences inline using zsh parameter expansion -- no subshell fork.
-    # (S) = shortest match; ## = one-or-more (requires extendedglob); replaces all occurrences globally.
-    # Pattern: ESC + '[' + zero-or-more digits/semicolons + final letter (e.g. \e[0;31m).
-    # local_options scopes extendedglob to this function only -- avoids affecting callers.
-    # A sed subshell was avoided here because the ERR trap (set in cron scripts) is inherited
-    # into $(...) subshells, and shell functions are not available inside them.
-    setopt local_options extendedglob
-    local _esc=$'\e'
-    _msg="${(S)_msg//${_esc}\[[0-9;]##[a-zA-Z]/}"
+    # Strip ANSI codes using shared helper (avoids subshell fork that would trigger ERR trap)
+    _msg="$(_strip_ansi "${_msg}")"
     osascript -e "display notification \"${_msg}\" with title \"${_title}\"" 2>/dev/null || true
   fi
 }
@@ -397,9 +400,14 @@ _should_suppress_log() {
 # Used by all logging functions to auto-indent output based on script nesting.
 # Memoized to avoid repeated printf calls for the same depth.
 _log_indent() {
-  local depth="${_DOTFILES_SCRIPT_DEPTH:-0}"
+  local depth="${_DOTFILES_SCRIPT_DEPTH:-1}"
+  # Guard against depth 0 (called before increment_script_depth) - treat as depth 1
+  # to prevent negative multiplication. This can happen when print_script_summary
+  # decrements depth before calling section_header. Default to 1 if unset.
+  [[ ${depth} -lt 1 ]] && depth=1
   if [[ ! -v "_INDENT_CACHE[${depth}]" ]]; then
-    _INDENT_CACHE[${depth}]="$(printf '%*s' $((depth * 2)) '')"
+    # Outermost script (depth 1) has 0 indentation, depth 2 has 2 spaces, etc.
+    _INDENT_CACHE[${depth}]="$(printf '%*s' $(((depth - 1) * 2)) '')"
   fi
   printf '%s' "${_INDENT_CACHE[${depth}]}"
 }
@@ -463,15 +471,21 @@ error() {
 # --------------------------------------------------------------------------
 
 # Terminal width fallback when COLUMNS is unavailable (cron, non-TTY contexts).
-# Terminal width and section header sizing constants.
 # Standard assumption: 80-column terminal is the baseline for readability.
-# Headers use 3/4 of terminal width minus text length for balanced visual weight.
 # Minimum padding of 10 characters prevents headers from touching screen edges.
 # Exported so subprocesses (run-all.rb → git commands → section_header) can access them.
 export _FALLBACK_TERMINAL_WIDTH=80
-export _HEADER_WIDTH_NUMERATOR=3
-export _HEADER_WIDTH_DENOMINATOR=4
 export _HEADER_MIN_PADDING=10
+
+# Section header styles by level. Each level has a distinct visual style
+# (character, glyph, color) to create a clear visual hierarchy.
+# Format: "char|glyph|color_function"
+typeset -A _SECTION_STYLES
+_SECTION_STYLES[0]="=|⏳|light_blue"   # Level 0: Top-level sections (depth 1)
+_SECTION_STYLES[1]="-|🔷|cyan"         # Level 1: Sub-sections (depth 2)
+_SECTION_STYLES[2]="·|▸|yellow"        # Level 2: Collection items (depth 3)
+_SECTION_STYLES[3]="·|▫|purple"        # Level 3: Operations within items (depth 4)
+_SECTION_STYLES[4]="·|▪|dark_gray"     # Level 4: Deep nesting (depth 5+)
 
 # --------------------------------------------------------------------------
 # 1d. Section header helpers
@@ -480,51 +494,108 @@ export _HEADER_MIN_PADDING=10
 # Prints <char> repeated <length> times to stdout. Used by section header
 # helpers to generate padding lines. Defaults to '-' for the char and a
 # quarter of the terminal width for the length.
-# Usage: print_chars_for_length [char] [length]
-print_chars_for_length() {
-  local char="${1:--}"  # default to using '-'
-  # ${COLUMNS} is a zsh special variable updated on SIGWINCH -- no tput fork needed.
-  # Fallback to _FALLBACK_TERMINAL_WIDTH when COLUMNS is 0 (e.g. cron -- no terminal attached).
-  local final_length=${2:=$((${COLUMNS:-${_FALLBACK_TERMINAL_WIDTH}} / _HEADER_WIDTH_DENOMINATOR))}
-  printf "${char}%.0s" {1..${final_length}}
+# Internal helper shared by section_header and print_script_summary.
+# Repeats a character N times using printf.
+# Usage: _repeat_char <char> <length>
+_repeat_char() {
+  local char="${1:-}"
+  local length="${2:-0}"
+  printf "${char}%.0s" {1..${length}}
 }
 
-# Internal helper shared by section_header.
-# Usage: _section_header_impl <header> <char> <glyph> <color_fn>
-_section_header_impl() {
-  # Inline substitution rather than a color function: the header is output as
-  # plain text between the two colored padding segments -- it has no color wrapper,
-  # so color functions cannot apply tilde sub on its behalf.
-  local header="${1:-//${HOME}/~}"
-  local char="${2:-}"
-  local glyph="${3:-}"
-  local color_fn="${4:-}"
-  # Auto-indent based on script depth
-  local indent
-  indent="$(_log_indent)"
+# Strips ANSI escape codes from a string to get visual length.
+# Uses zsh parameter expansion to avoid subshell fork (critical for ERR trap contexts).
+# Returns the stripped string via stdout.
+# Usage: result="$(_strip_ansi "${colored_string}")"
+_strip_ansi() {
+  # Use zsh parameter expansion with extendedglob to strip ANSI codes without forking.
+  # (S) = shortest match; ## = one-or-more (requires extendedglob); replaces all globally.
+  # Pattern: ESC + '[' + zero-or-more digits/semicolons + final letter (e.g. \e[0;31m).
+  # local_options scopes extendedglob to this function only.
+  setopt local_options extendedglob
+  local _esc=$'\e'
+  local _stripped="${1:-}"
+  _stripped="${(S)_stripped//${_esc}\[[0-9;]##[a-zA-Z]/}"
+  echo "${_stripped}"
+}
+
+# Prints a section header with visual hierarchy based on current script depth.
+# Prints a section header with visual hierarchy based on current script depth.
+# Level is automatically derived from script depth (depth 1 = level 0, depth 2 = level 1, etc.).
+#
+# Visual styles:
+# - Level 0 (depth 1): = ⏳ light_blue (top-level sections)
+# - Level 1 (depth 2): - 🔷 cyan (sub-sections)
+# - Level 2+ (depth 3+): · ▸ yellow (nested sections)
+#
+# Usage: section_header "Header Text"
+section_header() {
+  local header="${1:-}"
+
+  # Automatically derive level from script depth: depth 1 → level 0, depth 2 → level 1, etc.
+  local level=$((${_DOTFILES_SCRIPT_DEPTH:-1} - 1))
+  [[ ${level} -lt 0 ]] && level=0
+
+  # Auto-set _current_section unless manually set via direct assignment (which also
+  # sets _current_section_manual=1). This provides progressively more specific context
+  # as execution descends through nested operations. Manual assignments prevent auto-updates,
+  # allowing concise error attribution while displaying descriptive headers.
+  # Uses dynamic scoping: both _current_section and _current_section_manual must be
+  # declared local in the calling script's main().
+  if [[ "${_current_section_manual:-0}" != "1" ]]; then
+    # Strip ANSI codes before setting (header may contain color codes from caller)
+    _current_section="$(_strip_ansi "${header}")"
+  fi
+
+  # Get style for this level (fallback to highest defined level if out of bounds)
+  # Cap level at max defined level to prevent undefined key access under set -u
+  # Use (( ... )) for array length - safer under set -u than ${#...[@]}
+  local max_level=0
+  (( max_level = ${#_SECTION_STYLES[@]} - 1 )) 2>/dev/null || max_level=4
+  [[ ${max_level} -lt 0 ]] && max_level=0  # Safety: ensure non-negative
+  [[ ${level} -gt ${max_level} ]] && level=${max_level}
+
+  # If array key doesn't exist, fall back to simple output without style
+  # Use ${+...} to check if parameter is set (works under set -u)
+  if (( ! ${+_SECTION_STYLES[${level}]} )); then
+    echo "===== ${header} ====="
+    return 0
+  fi
+
+  local style="${_SECTION_STYLES[${level}]}"
+  local char="${style%%|*}"            # Extract char (everything before first |)
+  local rest="${style#*|}"             # Remove char and first |
+  local glyph="${rest%%|*}"            # Extract glyph (everything before next |)
+  local color_fn="${rest#*|}"          # Extract color function (everything after last |)
+
+  # Inline substitution: the header is plain text between colored padding segments
+  header="${header//${HOME}/~}"
+
+  # Section headers use only base depth indentation (no subordinate levels).
+  # The level variable selects the visual style (char/glyph/color), not indentation.
+  local indent="$(_log_indent)"
   local indent_len=${#indent}
+
   # ${COLUMNS} is a zsh special variable -- no tput subprocess fork needed.
   # Fallback to _FALLBACK_TERMINAL_WIDTH when COLUMNS is 0 (e.g. cron -- no terminal attached).
   local viewport_length=${COLUMNS:-${_FALLBACK_TERMINAL_WIDTH}}
-  local header_length=${#header}
-  local final_length=$(((viewport_length * _HEADER_WIDTH_NUMERATOR / _HEADER_WIDTH_DENOMINATOR - header_length - indent_len) / 2 - _HEADER_MIN_PADDING))
 
-  # Pre-compute the padding string once to avoid calling print_chars_for_length
-  # twice via $(...) -- each $(...) call forks a subshell.
-  local padding
-  printf -v padding "${char}%.0s" {1..${final_length}}
-  echo "${indent}$(${color_fn} "${padding}") ${glyph} ${header} $(${color_fn} "${padding}")"
-}
+  # Strip ANSI codes to get visual length (header may contain color codes from caller)
+  local header_visual="$(_strip_ansi "${header}")"
+  local header_length=${#header_visual}
 
-section_header() {
-  _section_header_impl "${1:-}" '=' '⏳' 'light_blue'
-}
+  # Left-aligned headers: text starts at fixed position for vertical scanability
+  # Left padding: 5 chars min (prevents touching left edge)
+  # Right padding: fills remaining width minus 10 chars (prevents touching right edge)
+  local left_padding_len=$((5 - indent_len))
+  [[ ${left_padding_len} -lt 1 ]] && left_padding_len=1
+  local right_padding_len=$((viewport_length - indent_len - left_padding_len - 3 - header_length - _HEADER_MIN_PADDING))
+  [[ ${right_padding_len} -lt 1 ]] && right_padding_len=1
 
-# Sub-level section header: used for steps nested inside a top-level section_header.
-# Uses '-' padding, a '🔷' glyph, and cyan colour to visually subordinate it.
-# Indentation is automatic via _log_indent in _section_header_impl.
-section_header2() {
-  _section_header_impl "${1:-}" '-' '🔷' 'cyan'
+  local left_padding right_padding
+  left_padding="$(_repeat_char "${char}" "${left_padding_len}")"
+  right_padding="$(_repeat_char "${char}" "${right_padding_len}")"
+  echo "${indent}$(${color_fn} "${left_padding}") ${glyph} ${header} $(${color_fn} "${right_padding}")"
 }
 
 # Formats a duration given in seconds into a human-readable string "HH:MM:SS".
@@ -756,7 +827,7 @@ step_end() {
   local total_human
   format_duration "${delta_total}" total_human
 
-  echo "$(purple '    ⏱') $(yellow 'step:') $(light_blue "${step_human}") $(yellow '| elapsed:') $(light_blue "${total_human}")"
+  echo "$(purple "$(_log_indent)⏱") $(yellow 'step:') $(light_blue "${step_human}") $(yellow '| elapsed:') $(light_blue "${total_human}")"
 }
 
 # Append a non-critical issue to _step_warnings (declared local in the calling script's main).
@@ -898,8 +969,13 @@ print_script_summary() {
   local _pss_title="${_SCRIPT_NAME:-}"
 
   local viewport_length=${COLUMNS:-${_FALLBACK_TERMINAL_WIDTH}}
-  local final_length=$(((viewport_length * _HEADER_WIDTH_NUMERATOR / _HEADER_WIDTH_DENOMINATOR)))
-  echo $(dark_gray "$(print_chars_for_length '*' ${final_length})")
+
+  # Use full viewport width for summary separator (no text to account for)
+  local final_length="${viewport_length}"
+  # Print separator line
+  local padding
+  padding="$(_repeat_char '*' "${final_length}")"
+  echo $(dark_gray "${padding}")
 
   if is_non_zero_string "${_pss_msg}"; then
     if _has_step_warnings || _has_step_errors; then
@@ -911,7 +987,7 @@ print_script_summary() {
   if _has_step_warnings; then
     # Temporarily decrement depth so both header and warnings print one level less indented
     _decrement_script_depth
-    _section_header_impl "$(cyan "${_pss_title}") $(yellow "${#_step_warnings[@]} warning(s)")" '-' '⏳' 'orange'
+    section_header "$(cyan "${_pss_title}") $(yellow "${#_step_warnings[@]} warning(s)")"
     local _psw
     for _psw in "${_step_warnings[@]}"; do
       warn "${_psw}"
@@ -921,7 +997,7 @@ print_script_summary() {
   if _has_step_errors; then
     # Temporarily decrement depth so both header and errors print one level less indented
     _decrement_script_depth
-    _section_header_impl "$(cyan "${_pss_title}") $(red "${#_step_errors[@]} error(s) -- manual attention needed")" '-' '⏳' 'light_red'
+    section_header "$(cyan "${_pss_title}") $(red "${#_step_errors[@]} error(s) -- manual attention needed")"
     local _pse
     for _pse in "${_step_errors[@]}"; do
       warn "${_pse}"
@@ -1163,7 +1239,7 @@ is_windows() {
 # standalone scripts (which never set the counter) are treated as outermost --
 # consistent with the ':-0' used in the increment expression in each main().
 is_outermost_script() {
-  if [[ ${_DOTFILES_SCRIPT_DEPTH:-0} -le 1 ]]; then
+  if [[ ${_DOTFILES_SCRIPT_DEPTH:-0} -eq 1 ]]; then
     return 0
   else
     return 1
@@ -1232,7 +1308,7 @@ keep_sudo_alive() {
     return
   fi
   step_start
-  section_header2 "$(yellow 'Keeping sudo alive till this script has finished')"
+  section_header "$(yellow 'Keeping sudo alive till this script has finished')"
   sudo -v
   # || true prevents has_sudo_credentials return code (1 when credentials expire)
   # from triggering ERR trap in scripts that source .shellrc with set -E.
@@ -1261,7 +1337,7 @@ migrate_git_repo_to_reftable() {
   fi
 
   setup_rubylib
-  ruby -e "require 'git_processor'; GitProcessor.migrate_to_reftable(folder: '${folder}')"
+  COLUMNS="${COLUMNS}" ruby -e "require 'git_processor'; GitProcessor.migrate_to_reftable(folder: '${folder}')"
 }
 
 # Clones a git repo into a temp folder, moves the .git dir into the real target
@@ -1469,7 +1545,7 @@ _call_ruby_cron() {
   fi
 
   setup_rubylib
-  ruby -e "require 'cron'; Cron.${method}(${args_str})"
+  COLUMNS="${COLUMNS}" ruby -e "require 'cron'; Cron.${method}(${args_str})"
 }
 
 # Loads a cron file into the system crontab. Shared by suspend_cron/resume_cron

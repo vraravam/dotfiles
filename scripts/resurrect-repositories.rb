@@ -19,6 +19,7 @@ require 'shellwords'
 require 'yaml'
 
 require_relative 'utilities/collection_processor'
+require_relative 'utilities/command_utils'
 require_relative 'utilities/core'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
@@ -79,11 +80,11 @@ module ResurrectRepositories
       generated = repositories.map { |dir| _generate_each(dir) }
       puts generated.to_yaml
 
-      puts('')
+      puts ''
       Logging.info('Summary'.yellow)
-      puts("  Discovered repositories: #{discovered_count.to_s.purple}")
-      puts("  After filter:            #{repositories.length.to_s.purple}") unless nil_or_empty?(filter)
-      puts("  Generated entries:       #{generated.length.to_s.green}")
+      Logging.emit("Discovered repositories: #{discovered_count.to_s.purple}", level: 1)
+      Logging.emit("After filter:            #{repositories.length.to_s.purple}", level: 1) unless nil_or_empty?(filter)
+      Logging.emit("Generated entries:       #{generated.length.to_s.green}", level: 1)
     end
   end
 
@@ -91,11 +92,11 @@ module ResurrectRepositories
 
   # Run resurrect mode: clone/update repos from config file
   def _run_resurrect(config_file, filter)
-    Logging.with_step('resurrect repos', 'Resurrecting repositories') do
-      config_file = Pathname.new(config_file).expand_path.to_s
-      Logging.info("#{'Config file:'.yellow} '#{config_file.cyan}'")
-      Logging.info("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
-      repositories = _read_git_repos_from_file(config_file)
+    config_file = Pathname.new(config_file).expand_path
+
+    Logging.with_step('resurrect repos', "Processing '#{config_file.to_s.cyan}'") do
+      Logging.emit("#{'Using filter:'.yellow} '#{filter.cyan}'", level: 0) unless nil_or_empty?(filter)
+      repositories = _read_git_repos_from_file(config_file.to_s)
       repositories = _apply_filter(repositories, filter)
 
       results = CollectionProcessor.process_items(
@@ -103,7 +104,7 @@ module ResurrectRepositories
         item_name_proc: ->(repo) { repo[FOLDER_KEY_NAME] },
         operation_desc: 'Resurrecting'
       ) do |repo, idx, total|
-        _resurrect_each(repo, idx, total)
+        _resurrect_each(repo)
       end
 
       Logging.print_results_summary(results)
@@ -116,13 +117,13 @@ module ResurrectRepositories
 
   # Run check mode: verify repos on disk match config file
   def _run_check(config_file, filter)
-    Logging.with_step('check repos', 'Verifying repositories') do
-      config_file = Pathname.new(config_file).expand_path.to_s
-      Logging.info("#{'Config file:'.yellow} '#{config_file.cyan}'")
-      Logging.info("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
+    config_file = Pathname.new(config_file).expand_path
+
+    Logging.with_step('check repos', "Verifying '#{config_file.to_s.cyan}'") do
+      Logging.emit("#{'Using filter:'.yellow} '#{filter.cyan}'", level: 0) unless nil_or_empty?(filter)
       reference_dir = EnvVars.ref_folder
       Logging.info("#{'Reference dir:'.yellow} '#{reference_dir.cyan}'") unless nil_or_empty?(reference_dir)
-      repositories = _read_git_repos_from_file(config_file)
+      repositories = _read_git_repos_from_file(config_file.to_s)
       discovered_count = repositories.length
       repositories = _apply_filter(repositories, filter)
       _verify_all(repositories, discovered_count, filter, ref_dir: reference_dir)
@@ -176,21 +177,6 @@ module ResurrectRepositories
 
   private_class_method :_find_and_reverse_replace_env_var
 
-  # Reports a git operation failure by recording a warning with the operation description,
-  # exit status, and optional stderr output.
-  #
-  # @param operation_desc [String] Description of the failed operation (e.g., "Failed to add remote 'upstream'").
-  # @param status [Process::Status] The status object from Open3.capture3.
-  # @param stderr [String] The stderr output from the git command.
-  # @return [void]
-  def _report_git_failure(operation_desc, status, stderr)
-    message = "#{operation_desc} (status: #{status.exitstatus})"
-    message += "\nSTDERR: #{stderr.strip}".red unless nil_or_empty?(stderr.strip)
-    Logging.record_warning(message)
-  end
-
-  private_class_method :_report_git_failure
-
   # Finds all Git repositories on disk starting from a given path.
   # It uses the `find` command to locate .git directories.
   #
@@ -204,14 +190,17 @@ module ResurrectRepositories
     cmd = ['find', path.to_s, '-name', '.git', '-type', 'd', '-not', '-regex', '.*/\\..*/\\.git', '-prune', '-print0']
     stdout_str, stderr_str, status = Open3.capture3(*cmd)
 
-    Logging.filter_and_warn_stderr(stderr_str, context: 'Issues encountered while searching for git repositories')
+    # Log any meaningful stderr (filtering out common filesystem traversal noise)
+    noise_patterns = ['Permission denied', 'No such file or directory']
+    CommandUtils.check_status(stdout_str, stderr_str, status, noise_patterns: noise_patterns) do |st, output_msg|
+      Logging.record_warning("Issues encountered while searching for git repositories (status: #{st.exitstatus})#{output_msg}")
+    end
 
     if status.success? || !nil_or_empty?(stdout_str.strip) # Process output if command was successful or if there's any output despite error
       stdout_str.split("\0").map { |git_path| Pathname.new(git_path).dirname.to_s }.uniq.sort
     else
       # This case means find command failed AND produced no output, a more critical failure.
       Logging.record_error("`find` command failed (status #{status.exitstatus}) and produced no output.")
-      Logging.record_error("STDERR from find: #{stderr_str}") unless nil_or_empty?(stderr_str.strip)
       []
     end
   rescue Errno::ENOENT # Specific rescue for `find` not being found
@@ -307,7 +296,7 @@ module ResurrectRepositories
   #   which abort processing of this repo and mark it as failed. Returns true for success,
   #   or when non-fatal failures (remote configuration, fetch, post-clone commands) are
   #   logged as warnings but allow the repo to complete processing.
-  def _resurrect_each(repo, idx, total)
+  def _resurrect_each(repo)
     dir = repo[FOLDER_KEY_NAME] # Assumed to be an absolute, resolved path
     PathUtils.ensure_directories_exist(dir)
 
@@ -350,16 +339,16 @@ module ResurrectRepositories
             if existing_remotes[name] != remote
               # Remote exists but URL is different
               Logging.info("Updating remote '#{name}' URL from '#{existing_remotes[name]}' to '#{remote}'")
-              _stdout, stderr, status = git.set_remote_url(name, remote)
-              unless status.success?
-                _report_git_failure("Failed to update URL for remote '#{name}' in repo '#{dir.cyan}'", status, stderr)
+              stdout, stderr, status = git.set_remote_url(name, remote)
+              CommandUtils.check_status(stdout, stderr, status) do |st, output_msg|
+                Logging.record_warning("Failed to update URL for remote '#{name}' in repo '#{dir.cyan}' (status: #{st.exitstatus})#{output_msg}")
               end
             end
           else
             Logging.info("Adding remote '#{name}' -> '#{remote}'")
-            _stdout, stderr, status = git.add_remote(name, remote)
-            unless status.success?
-              _report_git_failure("Failed to add remote '#{name}' for repo '#{dir.cyan}'", status, stderr)
+            stdout, stderr, status = git.add_remote(name, remote)
+            CommandUtils.check_status(stdout, stderr, status) do |st, output_msg|
+              Logging.record_warning("Failed to add remote '#{name}' for repo '#{dir.cyan}' (status: #{st.exitstatus})#{output_msg}")
             end
           end
         end
@@ -368,9 +357,9 @@ module ResurrectRepositories
 
     # Fetch failures are non-fatal -- repository exists and is usable, just couldn't pull latest changes
     Logging.with_step('fetching remotes', 'Fetching all remotes and tags...') do
-      _stdout, stderr, status = git.fetch_all
-      unless status.success?
-        _report_git_failure("Failed to fetch all remotes and tags for repo '#{dir.cyan}'", status, stderr)
+      stdout, stderr, status = git.fetch_all
+      CommandUtils.check_status(stdout, stderr, status) do |st, output_msg|
+        Logging.record_warning("Failed to fetch all remotes and tags for repo '#{dir.cyan}' (status: #{st.exitstatus})#{output_msg}")
       end
     end
 
@@ -383,9 +372,8 @@ module ResurrectRepositories
       Dir.chdir(dir) do
         repo[POST_CLONE_KEY_NAME].each do |command_str|
           Logging.debug("Executing: #{command_str.dump}")
-          _stdout, stderr, status = Open3.capture3(command_str)
-          unless status.success?
-            _report_git_failure("Post-clone command #{command_str.dump} failed for repo '#{dir.cyan}'", status, stderr)
+          CommandUtils.capture_output(command_str) do |status, output_msg|
+            Logging.record_warning("Post-clone command #{command_str.dump} failed for repo '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
           end
         end
       end
@@ -429,14 +417,14 @@ module ResurrectRepositories
     diff_repos = (local_set ^ yml_set).to_a.sort # ^ = symmetric difference
     common_repos = (local_set & yml_set).to_a.sort # & = intersection
 
-    puts('')
+    puts ''
     Logging.info('Summary'.yellow)
-    puts("  Discovered repositories: #{discovered_count.to_s.purple}")
-    puts("  After filter:            #{repositories.length.to_s.purple}") unless nil_or_empty?(filter)
-    puts("  Verified entries:        #{common_repos.length.to_s.green}")
-    puts("  Common repositories:\n  #{common_repos.map(&:cyan).join("\n  ")}")
+    Logging.emit("Discovered repositories: #{discovered_count.to_s.purple}", level: 1)
+    Logging.emit("After filter:            #{repositories.length.to_s.purple}", level: 1) unless nil_or_empty?(filter)
+    Logging.emit("Verified entries:        #{common_repos.length.to_s.green}", level: 1)
+    Logging.emit("Common repositories:\n#{Logging.join_array(common_repos, :cyan, level: 2)}", level: 1)
     if diff_repos.any?
-      Logging.record_warning("Please correlate the following #{diff_repos.length.to_s.red} differences in projects manually:\n  #{diff_repos.map(&:cyan).join("\n  ")}")
+      Logging.record_warning("Please correlate the following #{diff_repos.length.to_s.red} differences in projects manually:\n#{Logging.join_array(diff_repos, :cyan)}")
       @has_failures = true
     else
       Logging.success('Everything is kosher!')

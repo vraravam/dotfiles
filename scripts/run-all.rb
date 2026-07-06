@@ -24,6 +24,7 @@
 require 'open3'
 
 require_relative 'utilities/collection_processor'
+require_relative 'utilities/command_utils'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_workspace'
 require_relative 'utilities/logging'
@@ -83,25 +84,20 @@ module RunAll
       shell = EnvVars::SHELL
       cmd_string = command.join(' ')
 
-      # Use Open3.capture3 to capture stderr for better error reporting, matching the
-      # pattern in resurrect-repositories.rb. Dir.chdir with a block automatically
-      # restores the original directory when the block exits, even if an exception is raised.
+      # Use CommandUtils.capture_output to capture output and format errors consistently,
+      # matching the pattern in resurrect-repositories.rb and git_workspace.rb. Dir.chdir
+      # with a block automatically restores the original directory when the block exits,
+      # even if an exception is raised.
       Dir.chdir(dir) do
-        _stdout, stderr, status = Open3.capture3(shell, '-c', cmd_string)
-
-        unless status.success?
-          # Command failures are warnings (non-fatal) -- record the failure with context
-          # but continue processing remaining repos. Mirrors _report_git_failure pattern.
-          message = "Command failed in '#{dir.cyan}' (status: #{status.exitstatus})"
-          message += "\nSTDERR: #{stderr.strip}".red unless nil_or_empty?(stderr.strip)
-          Logging.record_warning(message)
-          has_failures = true
+        success = CommandUtils.capture_output(shell, '-c', cmd_string) do |status, output_msg|
+          Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
         end
+        has_failures = true unless success
       end
 
       # Always return true -- failures are recorded as warnings above, not as failed items.
       # This matches resurrect-repositories.rb pattern where _resurrect_each returns true
-      # and handles its own warning logging via _report_git_failure.
+      # and handles its own warning logging inline.
       true
     end
 

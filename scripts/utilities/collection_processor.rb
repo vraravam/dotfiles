@@ -134,9 +134,11 @@ module CollectionProcessor
   #   count toward successful/failed totals.
   # @param dry_run [Boolean] When true, logs what would be done without calling
   #   the block. Useful for --dry-run modes.
-  # @yield [item, idx, total] Processes a single item. The block receives the
-  #   item, its 1-based index, and the total count. Should return truthy on
-  #   success, falsy on failure. Exceptions are caught and recorded as errors.
+  # @yield [item, idx, total] Processes a single item. The block receives:
+  #   - item: the item to process
+  #   - idx: 1-based index of the item
+  #   - total: total count of items
+  #   Should return truthy on success, falsy on failure. Exceptions are caught and recorded as errors.
   # @return [Hash] Summary hash with keys:
   #   - :total [Integer] Total items processed (excludes skipped)
   #   - :successful [Array<String>] Display names of successful items
@@ -196,18 +198,24 @@ module CollectionProcessor
       # Build progress message with aligned counters
       idx_str = format_counter(one_based_idx, counter_width)
       progress = "[#{idx_str.purple} of #{total_str.purple}]"
-      if operation_desc
-        Logging.info "#{progress} #{operation_desc.yellow}: '#{item_name.cyan}'"
-      else
-        Logging.info "#{progress} '#{item_name.cyan}'"
-      end
+
+      # Increment depth before printing the item header so it's indented one level deeper
+      # than the parent operation.
+      Logging.increment_script_depth
+
+      # Print section header for this item
+      operation_part = operation_desc ? "#{operation_desc.yellow}: " : ''
+      Logging.section_header("#{progress} #{operation_part}'#{item_name.cyan}'")
 
       if dry_run
-        Logging.info "[DRY RUN] Would process '#{item_name.cyan}'"
+        Logging.info "Would process '#{item_name.cyan}'"
+        Logging.decrement_script_depth
         successful << item_name
         next
       end
 
+      # Increment depth again so operations within this item are nested one level deeper
+      Logging.increment_script_depth
       begin
         # Call the user's block with item, idx (1-based), and total
         result = yield(item, one_based_idx, total)
@@ -227,6 +235,10 @@ module CollectionProcessor
         # Exceptions are unexpected script errors (missing method, nil reference, etc.)
         # Record as error with context. Callers should not rescue StandardError.
         Logging.record_error("Exception processing '#{item_name.cyan}': #{e.message}")
+      ensure
+        # Decrement depth twice: once for operations block, once for item header
+        Logging.decrement_script_depth
+        Logging.decrement_script_depth
       end
     end
 

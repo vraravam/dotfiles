@@ -11,7 +11,7 @@ _count() {
   local folder
   local -a switches
   parse_folder_and_switches "$@"
-  section_header2 "$(yellow 'Counting commits') '$(cyan "${folder}")'"
+  section_header "$(yellow 'Counting commits') '$(cyan "${folder}")'"
   if ! is_git_repo "${folder}"; then
     warn "Skipping finding count of the repo since '$(cyan "${folder}")' doesn't exist or is not a git repo"
   else

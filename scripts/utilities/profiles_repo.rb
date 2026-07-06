@@ -65,7 +65,7 @@ module ProfilesRepo
   end
 
   # Checks the size of the profiles repo .git directory and records an error
-  # if it exceeds the specified limit. Suggests running recreate-repo.rb when
+  # if it exceeds the specified limit. Suggests running recreate-repository.rb when
   # the threshold is breached.
   #
   # @param limit_gb [Integer] Size limit in gigabytes (default: 2)
@@ -84,7 +84,7 @@ module ProfilesRepo
       size_human = PathUtils.dir_size_human(git_dir)
       Logging.record_error(
         "Profiles repo .git directory is #{size_human} -- exceeds #{limit_gb}GB threshold. " \
-        "Consider running: recreate-repo.rb -d \"#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}\""
+        "Consider running: recreate-repository.rb -d \"#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}\""
       )
     else
       Logging.debug "Profiles repo .git directory size within #{limit_gb}GB threshold"

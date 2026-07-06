@@ -5,6 +5,8 @@ require 'pathname'
 require 'set'
 
 require_relative 'collection_processor'
+require_relative 'command_utils'
+require_relative 'core'
 require_relative 'env_vars'
 require_relative 'git_processor'
 require_relative 'logging'
@@ -26,6 +28,8 @@ require_relative 'profiles_repo'
 # avoiding repeated find traversals.
 module GitWorkspace
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Directories that are always excluded from repo searches (huge, rarely contain repos)
   DEFAULT_PRUNE_DIRS = %w[node_modules .cache .Trash].freeze
@@ -133,8 +137,20 @@ module GitWorkspace
         sorted,
         operation_desc: 'Installing mise tools'
       ) do |dir, _idx, _total|
-        system('mise', '-C', dir, 'trust', '-y', '-a')
-        system('mise', '-C', dir, 'install')
+        # mise trust can be captured (quick, no progress to show)
+        trust_success = CommandUtils.capture_output('mise', '-C', dir.to_s, 'trust', '-y', '-a') do |status, output_msg|
+          Logging.warn("mise trust failed in '#{dir.to_s.cyan}' (status: #{status.exitstatus})#{output_msg}")
+        end
+
+        # mise install needs streaming output (downloads/builds plugins, slow, users want progress)
+        install_exitstatus = stream_command(['mise', '-C', dir.to_s, 'install'])
+        install_success = install_exitstatus.zero?
+        unless install_success
+          Logging.warn("mise install failed in '#{dir.to_s.cyan}' (exit code: #{install_exitstatus})")
+        end
+
+        # Return boolean: true only if both operations succeeded
+        trust_success && install_success
       end
 
       Logging.print_results_summary(results)

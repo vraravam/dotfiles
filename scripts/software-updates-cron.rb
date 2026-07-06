@@ -254,7 +254,9 @@ module SoftwareUpdatesCron
 
     Logging.with_step('capture preferences', 'Capture app preferences'.yellow) do
       capture_prefs_script = Pathname.new(__dir__).join('capture-prefs.rb')
-      if system(RbConfig.ruby, capture_prefs_script.to_s, '-e')
+      # Set COLUMNS for terminal width detection (cron has no TTY, defaults to 80)
+      env = { 'COLUMNS' => EnvVars.columns.to_s }
+      if system(env, RbConfig.ruby, capture_prefs_script.to_s, '-e')
         Logging.success 'Finished capturing app preferences'
       else
         Logging.record_error('Failed to capture app preferences')

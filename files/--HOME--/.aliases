@@ -400,7 +400,7 @@ _call_ruby_git_workspace() {
   fi
 
   setup_rubylib
-  ruby -e "require 'git_workspace'; GitWorkspace.${method}(${kwargs_str})"
+  COLUMNS="${COLUMNS}" ruby -e "require 'git_workspace'; GitWorkspace.${method}(${kwargs_str})"
 }
 
 # --------------------------------------------------------------------------
@@ -509,6 +509,7 @@ resurrect_tracked_repos() {
   # _step_warnings and _step_errors accumulate issues for the final summary.
   local _SCRIPT_NAME='resurrect_tracked_repos'
   local _current_section='(init)'
+  local _current_section_manual=0  # 0 = auto-set allowed, 1 = manual override active
   local -a _step_warnings=()
   local -a _step_errors=()
 
@@ -525,18 +526,17 @@ resurrect_tracked_repos() {
   local script_start_time="${EPOCHSECONDS}"
   print_script_start
 
+  # resurrect repositories that are in the repo catalogues
+  section_header 'Resurrecting all tracked git repos'
+
   if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
     # TODO: Add the github.com host to the known_hosts file so that the script is not blocked for user input
     # ssh-keyscan -H -t ED25519 github.com >> "${HOME}/.ssh/known_hosts"
-
-    # resurrect repositories that are in the repo catalogues
-    section_header2 "$(yellow 'Resurrecting all tracked git repos')"
-    _current_section='Resurrecting all tracked git repos'
     # Use zsh glob qualifier (N.) for nullglob and regular files
     local file
     local -a failed_files=()
     for file in "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml(N.); do
-      if ! resurrect-repositories.rb -r "${file}"; then
+      if ! COLUMNS="${COLUMNS}" resurrect-repositories.rb -r "${file}"; then
         # Transform and store failed files: replace HOME with ~ and colorize in red
         failed_files+=("$(red "$(replace_home_with_tilde "${file}")")")
       fi
@@ -547,8 +547,13 @@ resurrect_tracked_repos() {
     if is_empty_array failed_files; then
       success 'Successfully resurrected all tracked git repos'
     else
+      # Temporarily decrement depth so join_array bakes in the correct indentation
+      # for when this warning is printed in print_script_summary (which decrements
+      # before printing). This ensures the list is indented 2 more spaces than parent.
+      _decrement_script_depth
       local msg="$(red "Failed to process ${#failed_files[@]} file(s):")"
       msg+=$'\n'"$(join_array failed_files)"
+      _increment_script_depth
       # Append directly to _step_warnings instead of calling _record_warning
       # to avoid duplicate output (don't print immediately, only in final summary)
       _step_warnings+=("[${_SCRIPT_NAME}][${_current_section}] ${msg}")
@@ -558,15 +563,15 @@ resurrect_tracked_repos() {
   fi
 
   # post-clone operations for installing system dependencies
-  section_header2 "$(yellow 'Running post-clone operations')"
+  section_header 'Running post-clone operations'
   # 'all' (alias: FOLDER='${HOME}' MAXDEPTH=7 rug → run-all.rb git) requires .aliases
   # to be loaded so the alias is defined. Use the underlying command directly to avoid
   # that dependency -- this function is called from fresh-install as a background job
   # where the sourcing order may differ.
   if command_exists 'run-all.rb'; then
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb 'git restore-mtime -c'
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb "git maintenance register --config-file '${HOME}/.gitconfig-oss.inc'"
-    FOLDER="${HOME}" MAXDEPTH=7 run-all.rb 'git maintenance start'
+    COLUMNS="${COLUMNS}" FOLDER="${HOME}" MAXDEPTH=7 run-all.rb 'git restore-mtime -c'
+    COLUMNS="${COLUMNS}" FOLDER="${HOME}" MAXDEPTH=7 run-all.rb "git maintenance register --config-file '${HOME}/.gitconfig-oss.inc'"
+    COLUMNS="${COLUMNS}" FOLDER="${HOME}" MAXDEPTH=7 run-all.rb 'git maintenance start'
   fi
 
   setup_dev_environment
@@ -698,6 +703,7 @@ if is_macos && command_exists brew; then
   bupc() {
     local _SCRIPT_NAME='bupc'
     local _current_section='(init)'
+    local _current_section_manual=0  # 0 = auto-set allowed, 1 = manual override active
     local -a _step_warnings=()
     local -a _step_errors=()
     export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
@@ -731,7 +737,7 @@ if is_macos && command_exists brew; then
   # antidote is installed/upgraded) and by software-updates-cron.sh (periodic updates).
   update_antidote_and_regenerate_plugin_bundle() {
     setup_rubylib
-    ruby -e "require 'antidote'; Antidote.update_and_regenerate_bundle"
+    COLUMNS="${COLUMNS}" ruby -e "require 'antidote'; Antidote.update_and_regenerate_bundle"
   }
 
   # Audits and auto-styles a Homebrew cask formula for contribution readiness.
@@ -1025,7 +1031,7 @@ _call_ruby_macos() {
   fi
 
   setup_rubylib
-  ruby -e "require 'macos'; MacOS.${method}"
+  COLUMNS="${COLUMNS}" ruby -e "require 'macos'; MacOS.${method}"
 }
 
 # Delegates to MacOS.kill_login_item_apps (scripts/utilities/macos.rb).

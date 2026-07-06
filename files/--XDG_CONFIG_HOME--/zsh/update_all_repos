@@ -14,7 +14,7 @@
 source "${HOME}/.shellrc"
 
 _update_all_repos() {
-  section_header2 "$(yellow 'Updating all repos')"
+  section_header "$(yellow 'Updating all repos')"
   _call_ruby_git_workspace update_all_repos
 }
 

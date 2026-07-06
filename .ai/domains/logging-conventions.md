@@ -113,13 +113,138 @@ Both shell and Ruby track script nesting depth for:
 
 **Never manually prepend spaces to log messages** -- the depth counter handles indentation automatically.
 
+### Indentation Formula
+
+All logging functions use this formula:
+- **Base indentation**: `(depth - 1) * 2` spaces
+- **Subordinate indentation**: `(depth - 1 + level) * 2` spaces
+
+Where:
+- `depth` = `_DOTFILES_SCRIPT_DEPTH` (minimum 1)
+- `level` = optional parameter to logging functions (default 0)
+
+**Examples:**
+```
+depth=1 (outermost): base = 0 spaces, subordinate (level 1) = 2 spaces
+depth=2 (nested):    base = 2 spaces, subordinate (level 1) = 4 spaces
+depth=3 (deeper):    base = 4 spaces, subordinate (level 1) = 6 spaces
+```
+
+### Section Header Auto-Leveling
+
+`section_header(text)` automatically derives its visual style from current depth:
+- **Level calculation**: `level = max(depth - 1, 0)`
+- **Style selection**: Uses `SECTION_STYLES[level]` (char/glyph/color)
+- **Indentation**: Uses base indentation only (not subordinate)
+
+**Visual hierarchy:**
+```
+Level 0 (depth 1): === ⏳ (light_blue)   # Top-level script sections
+Level 1 (depth 2): --- 🔷 (cyan)         # Sub-operations
+Level 2 (depth 3): ··· ▸ (yellow)        # Individual items
+Level 3 (depth 4): ··· ▫ (purple)        # Operations within items
+Level 4 (depth 5): ··· ▪ (dark_gray)     # Deeper nesting
+```
+
+**Result**: Nested operations have progressively distinct visual styles without caller needing to specify level.
+
+### Section Header Formatting
+
+Section headers use **left-aligned formatting** for better vertical scanability:
+
+**Formula:**
+```
+left_padding = max(5 - indent_length, 1)
+right_padding = max(terminal_width - indent_length - left_padding - 3 - header_visual_length - 10, 1)
+```
+
+**Layout:**
+```
+[indent][left_padding][glyph] [header_text] [right_padding]
+         ^^^^^^^^^^^^^          ^^^^^^^^^^^
+         Fixed 5 chars          Variable (depends on text length)
+         (minus indent)
+```
+
+**Benefits:**
+- Header text starts at consistent horizontal position (easier to scan vertically)
+- Full terminal width is used (no 3/4 multiplier)
+- ANSI color codes stripped before calculating padding (correct alignment)
+
+**Terminal width detection:**
+- **Ruby**: Uses `$stdout.winsize[1]` (real TTY), falls back to `EnvVars.columns` (COLUMNS env var or 80)
+- **Shell**: Uses `${COLUMNS:-80}` (defaults to 80 when not set)
+- **COLUMNS passing**: Pass `COLUMNS="${COLUMNS}"` when calling Ruby scripts (not exported, allows resize detection)
+- **Cron**: Set `COLUMNS=80` in crontab for consistent width in cron jobs
+
+### ANSI Code Stripping
+
+Both Ruby and shell strip ANSI escape codes before:
+1. **Length calculations**: Section header padding, macOS notifications
+2. **Setting current_section**: Ensures error prefixes never contain escape codes
+
+**Implementation:**
+- **Ruby**: Regex `/\e\[[0-9;]*m/` in `_strip_ansi` helper
+- **Shell**: Zsh parameter expansion `${(S)var//${_esc}\[[0-9;]##[a-zA-Z]/}` with `extendedglob`
+
+**Why shell uses parameter expansion** (not sed/grep):
+- No subshell fork (critical for ERR trap contexts where subshells can hide failures)
+- Native zsh syntax, fast and reliable
+- `_dotfiles_notify` reuses `_strip_ansi` to ensure macOS notifications never contain escape codes
+
+**Where applied:**
+- `section_header`: Strips color codes from header text before calculating visual length for padding
+- `current_section=` setter (Ruby): Strips automatically so all error messages are clean
+- `_dotfiles_notify` (shell): Strips before passing to osascript
+
 ## External Tool Output
 
-External tools (`git`, `mise`, `sqlite3`, `keybase`, etc.) invoked via `system()` or `Open3.capture3()` print at column 0 (no indentation). This is intentional -- wrapping their output would add complexity for minimal UX benefit. Tool output remains visually distinct from our structured logging.
+External tools (`git`, `mise`, `sqlite3`, `keybase`, etc.) may print at column 0 (no indentation) depending on how they're invoked.
 
-**Examples of unindented tool output**:
-- Shell: `system('git', '-C', repo, 'status')`
-- Ruby: `system('mise', 'install')`, `Open3.capture3('git', 'log')`
+**Streaming output** (via `system()`):
+- Used for operations that benefit from real-time progress (git push/pull/fetch)
+- Output appears at column 0, intentionally unindented
+- Example: `system('git', '-C', repo, 'push')`
+
+**Captured output** (via `Open3.capture3()` or `CommandUtils`):
+- Used for operations where we want to suppress success output and only log on error
+- Examples: `mise install` (only log if tools missing), `git fetch -q` (suppress unless error)
+- **Prefer `CommandUtils.capture_output`** for direct command execution:
+  ```ruby
+  success = CommandUtils.capture_output('mise', '-C', dir, 'install') do |status, output_msg|
+    Logging.warn("mise install failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
+  end
+  ```
+  - Executes command via `Open3.capture3` internally
+  - Builds formatted output message (stdout/stderr sections with stderr colored red)
+  - Yields `status` and formatted `output_msg` to block on failure only
+  - Returns boolean (true on success, false on failure)
+- **Use `CommandUtils.check_status`** for pre-captured output (e.g., GitProcessor wrappers):
+  ```ruby
+  stdout, stderr, status = git.fetch_all
+  success = CommandUtils.check_status(stdout, stderr, status) do |status, output_msg|
+    Logging.record_warning("Fetch failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
+  end
+  ```
+  - Takes pre-captured `stdout, stderr, status` (e.g., from GitProcessor methods)
+  - Builds same formatted output message as `capture_output`
+  - Optional `noise_patterns: [patterns]` parameter filters stderr noise:
+    ```ruby
+    noise_patterns = ['Permission denied', 'No such file or directory']
+    CommandUtils.check_status(stdout, stderr, status, noise_patterns: noise_patterns) { |st, msg| ... }
+    ```
+    - Removes lines matching any pattern in the array
+    - Useful for commands like `find` that generate expected noise during traversal
+    - Patterns visible at call site (not hidden in method implementation)
+  - Eliminates duplicate error formatting code at call sites
+- **Raw `Open3.capture3` pattern** (only when custom error handling needed):
+  ```ruby
+  stdout, stderr, status = Open3.capture3('command', 'args')
+  # Custom handling - check output even on failure, special stderr filtering, etc.
+  if status.success? || !stdout.strip.empty?
+    process_output(stdout)
+  end
+  ```
 
 ## Message Prefixes -- Script Name and Section for RCA
 
@@ -149,14 +274,72 @@ External tools (`git`, `mise`, `sqlite3`, `keybase`, etc.) invoked via `system()
 ### Implementation
 
 **Shell** (`.shellrc`):
-- `_SCRIPT_NAME` - Set at script/function start
-- `_current_section` - Update before each major section
-- `_record_error`/`_record_warning` - Automatically prefix messages
+- `_SCRIPT_NAME` - Set at script/function start via `_SCRIPT_NAME="${0:t}"`
+- `_current_section` - Initialize to `'(init)'` in main(), auto-set by `section_header`, can be manually overridden
+- `_record_error`/`_record_warning` - Automatically prefix messages, use `${_current_section:-unknown}` as fallback
 
 **Ruby** (`logging.rb`):
-- `_script_name` - Set via `Logging` module
-- `@current_section` - Update before each major section
-- `Logging.record_error`/`record_warning` - Automatically prefix messages
+- `_script_name` - Set via `Logging.run_script`
+- `@current_section` - Initialize to `'(init)'` in `run_script`, auto-set by `section_header`, can be manually overridden
+- `Logging.record_error`/`record_warning` - Automatically prefix messages, use `@current_section || 'unknown'` as fallback
+
+**Three states of `current_section`:**
+1. **Unset/nil** → `'unknown'` fallback (error case: variable never initialized)
+2. **`'(init)'`** → Initial value (script started, before first section_header)
+3. **Actual value** → Set by `section_header` auto-update or manual assignment
+
+The `'unknown'` fallback catches bugs where `record_error`/`record_warning` are called before the variable is initialized. If you see `[script-name][unknown]` in logs, it means the script called error recording before setting up the variable.
+
+### Section Tracking with `section_header`
+
+**Both Ruby and shell `section_header` automatically update `current_section` progressively**, providing more specific context as execution descends through nested operations.
+
+#### Auto-Update Behavior
+
+`section_header(text)` automatically updates `current_section` unless manually overridden:
+- Updates happen at **all nesting levels** (not just top-level)
+- Each call updates to the new header text (progressively more specific)
+- Stops updating once manually set via direct assignment
+- ANSI color codes are automatically stripped before setting
+
+**Progressive specificity example:**
+```
+1. Script starts:  '(init)'
+2. First header:   'Processing repositories.yml'
+3. Item header:    '[2 of 5] Resurrecting: ~/dev/content-studio'
+4. Op header:      '[2 of 5] Resurrecting: ~/dev/content-studio'  (no update, keeps item)
+```
+
+**Result**: Error messages show the most specific context:
+```
+[resurrect-repositories][[2 of 5] Resurrecting: ~/dev/content-studio] Failed to fetch
+```
+
+#### Manual Override
+
+**Manual assignment prevents all future auto-updates:**
+
+**Shell:**
+```zsh
+_current_section='Install Xcode'           # Manual set
+_current_section_manual=1                  # Flag prevents future updates
+section_header "$(yellow 'Installing') Xcode Command Line Tools"
+# Won't update because manual flag is set
+# Errors will show: [fresh-install][Install Xcode] ...
+```
+
+**Ruby:**
+```ruby
+Logging.current_section = 'Clone repos'    # Manual set (flag set automatically)
+Logging.section_header("#{'Cloning'.yellow} tracked repositories")
+# Won't update because manual flag is set
+# Errors will show: [resurrect-repositories][Clone repos] ...
+```
+
+**Implementation details:**
+- **Ruby**: `current_section=` setter automatically sets `@current_section_manual = true`
+- **Shell**: Manual assignments must set `_current_section_manual=1` explicitly
+- `section_header` checks the flag and skips update when `true`/`1`
 
 ### Examples
 
