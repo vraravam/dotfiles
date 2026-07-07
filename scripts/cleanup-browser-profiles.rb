@@ -13,6 +13,7 @@
 
 require 'open3'
 
+require_relative 'utilities/command_utils'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/logging'
 require_relative 'utilities/path_utils'
@@ -95,8 +96,7 @@ module CleanupBrowserProfiles
   # @return [String] Human-readable size (e.g., "1.5G", "234M")
   def _format_size(kb)
     if PathUtils.command_exists?('numfmt')
-      size_human, = Open3.capture3('numfmt', '--to=iec', _kb_to_bytes(kb).to_s)
-      size_human.chomp
+      CommandUtils.query('numfmt', '--to=iec', _kb_to_bytes(kb).to_s)
     else
       "#{kb}K"
     end

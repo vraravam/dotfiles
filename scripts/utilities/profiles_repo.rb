@@ -133,7 +133,7 @@ module ProfilesRepo
     chrome_folders = []
     chrome_pattern = EnvVars::PERSONAL_PROFILES_DIR.join('*Profile', 'Profiles', 'DefaultProfile', 'chrome')
     PathUtils.glob_pathnames(chrome_pattern) do |path_pn|
-      chrome_folders << path_pn if path_pn.directory?
+      chrome_folders << path_pn if path_pn.directory? && GitProcessor.repo?(path_pn)
     end
     chrome_folders
   end

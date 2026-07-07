@@ -53,13 +53,16 @@ In your forked repo, make the following changes, commit and push _via the Github
    - `CURL_RETRY_OPTS='true'` — **DO NOT CHANGE**: Enables retry logic for network issues
 
 2. **In `files/--HOME--/.shellrc`**: Update the hardcoded username defaults to match your setup:
-   - `export GH_USERNAME='vraravam'` — Change to your GitHub username (must match the value used in the curl command above)
-   - `export KEYBASE_USERNAME='avijayr'` — Change to your Keybase username, or comment out if not using Keybase
-   - `export DOTFILES_BRANCH='master'` — Typically leave as 'master' unless testing a specific branch
+   - `export GH_USERNAME='vraravam'` — **REQUIRED**: Change to your GitHub username (must match the value used in the curl command above)
+   - `export DOTFILES_BRANCH='master'` — **OPTIONAL**: Typically leave as 'master' unless testing a specific branch
+   - `export UPSTREAM_GH_USERNAME='vraravam'` — **DO NOT CHANGE**: Must stay as 'vraravam' (parent repo owner)
+   - `export KEYBASE_USERNAME='avijayr'` — **OPTIONAL**: Change to your Keybase username, or comment out if not using Keybase
 
 3. **In `scripts/utilities/env_vars.rb`**: Update the fallback defaults to match your usernames:
-   - `GH_USERNAME = ENV.fetch('GH_USERNAME', 'vraravam').freeze` — Change the fallback `'vraravam'` to your GitHub username
-   - `KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', 'avijayr'))` — Change the fallback `'avijayr'` to your Keybase username, or leave as-is if not using Keybase
+   - `GH_USERNAME = ENV.fetch('GH_USERNAME', 'vraravam').freeze` — **REQUIRED**: Change the fallback `'vraravam'` to your GitHub username
+   - `DOTFILES_BRANCH = ENV.fetch('DOTFILES_BRANCH', 'master').freeze` — **OPTIONAL**: Typically leave as 'master'
+   - `UPSTREAM_GH_USERNAME = ENV.fetch('UPSTREAM_GH_USERNAME', 'vraravam').freeze` — **DO NOT CHANGE**: Must stay as 'vraravam' (parent repo owner)
+   - `KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', 'avijayr'))` — **OPTIONAL**: Change the fallback `'avijayr'` to your Keybase username, or leave as empty string if not using Keybase
 
 4. **In this file (`README.md`) and `GettingStarted.md`**: Find and replace any remaining references to `vraravam` and `avijayr` with your usernames for consistency in documentation.
 

@@ -4,6 +4,27 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.1
+
+#### CommandUtils refactoring: dead code removal and error logging improvements
+
+* *[scripts/utilities/command_utils.rb]* Added `query(*command)` method for simple read-only operations - returns stdout.strip on success, ignores stderr and exit status. Use for version checks and config queries where failure is unexpected. Eliminates boilerplate for trivial commands that previously used full capture3 pattern.
+
+* *[scripts/utilities/git_processor.rb]* Removed 4 unused methods (67 lines total): `log_timestamp`, `fix_head_file`, `rev_list_count`, `symbolic_ref` - none were called by any scripts. Updated internal comments to describe behavior/format rather than implementation details. Result: 9% smaller (736 lines → 683 lines).
+
+* *[13 Ruby scripts and utility modules]* Converted 15 Open3.capture3 call sites to CommandUtils methods: 9 to `query()` (simple stdout reads), 2 to `capture_output()` (new error handling needs), 4 to `check_status()` (pre-captured output from GitProcessor). Fixed 3 error logging sites (antidote.rb, collection_processor.rb, cron.rb) to pass `nil` for stdout parameter when stdout contains sensitive data, large directory lists, or success indicators rather than failure diagnostics - focuses error messages on stderr (what failed) instead of mixed output.
+
+* *[.ai/domains/logging-conventions.md]* Restructured CommandUtils documentation with decision tree for choosing the right pattern: Use `query()` for stdout-only reads, `capture_output()` for commands with error handling, `check_status()` for pre-captured output, raw Open3.capture3 only when both stdout and stderr are needed for processing logic (not just error logging).
+
+* *[README.md]* Enhanced adoption instructions with priority markings for environment variable customization. Added `DOTFILES_BRANCH` and `UPSTREAM_GH_USERNAME` to required changes checklist. Clarified that `UPSTREAM_GH_USERNAME` must NOT be changed (parent repo owner), while `GH_USERNAME` must be changed to adopter's username. Applies to both `.shellrc` and `env_vars.rb` files.
+
+#### Adopting these changes
+
+* No action required - refactoring is internal implementation change with no user-visible behavior changes
+* Net zero line count change (+120/-120 across 13 files), git_processor.rb 9% smaller
+
+---
+
 ### 3.1.39
 
 #### Logging system refactor: centralized error handling and common section header format

@@ -206,45 +206,66 @@ External tools (`git`, `mise`, `sqlite3`, `keybase`, etc.) may print at column 0
 - Output appears at column 0, intentionally unindented
 - Example: `system('git', '-C', repo, 'push')`
 
-**Captured output** (via `Open3.capture3()` or `CommandUtils`):
+**Captured output** (via `CommandUtils` or raw `Open3.capture3`):
 - Used for operations where we want to suppress success output and only log on error
 - Examples: `mise install` (only log if tools missing), `git fetch -q` (suppress unless error)
-- **Prefer `CommandUtils.capture_output`** for direct command execution:
-  ```ruby
-  success = CommandUtils.capture_output('mise', '-C', dir, 'install') do |status, output_msg|
-    Logging.warn("mise install failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
-  end
-  ```
-  - Executes command via `Open3.capture3` internally
-  - Builds formatted output message (stdout/stderr sections with stderr colored red)
-  - Yields `status` and formatted `output_msg` to block on failure only
-  - Returns boolean (true on success, false on failure)
-- **Use `CommandUtils.check_status`** for pre-captured output (e.g., GitProcessor wrappers):
-  ```ruby
-  stdout, stderr, status = git.fetch_all
-  success = CommandUtils.check_status(stdout, stderr, status) do |status, output_msg|
-    Logging.record_warning("Fetch failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
-  end
-  ```
-  - Takes pre-captured `stdout, stderr, status` (e.g., from GitProcessor methods)
-  - Builds same formatted output message as `capture_output`
-  - Optional `noise_patterns: [patterns]` parameter filters stderr noise:
-    ```ruby
-    noise_patterns = ['Permission denied', 'No such file or directory']
-    CommandUtils.check_status(stdout, stderr, status, noise_patterns: noise_patterns) { |st, msg| ... }
-    ```
-    - Removes lines matching any pattern in the array
-    - Useful for commands like `find` that generate expected noise during traversal
-    - Patterns visible at call site (not hidden in method implementation)
-  - Eliminates duplicate error formatting code at call sites
-- **Raw `Open3.capture3` pattern** (only when custom error handling needed):
-  ```ruby
-  stdout, stderr, status = Open3.capture3('command', 'args')
-  # Custom handling - check output even on failure, special stderr filtering, etc.
-  if status.success? || !stdout.strip.empty?
-    process_output(stdout)
-  end
-  ```
+
+**Decision tree for choosing the right pattern**:
+
+1. **Use `CommandUtils.query`** when you only need stdout on success:
+   ```ruby
+   # Returns stdout.strip on success, raises on failure
+   version = CommandUtils.query('git', '--version')
+   ```
+   - Simplest pattern for read-only commands
+   - Raises RuntimeError on failure (no need to check status)
+   - Use when: Getting command output, failure is unexpected
+
+2. **Use `CommandUtils.capture_output`** for direct command execution with error handling:
+   ```ruby
+   success = CommandUtils.capture_output('mise', '-C', dir, 'install') do |status, output_msg|
+     Logging.warn("mise install failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
+   end
+   ```
+   - Executes command via `Open3.capture3` internally
+   - Builds formatted output message (stdout/stderr sections with stderr colored red)
+   - Yields `status` and formatted `output_msg` to block on failure only
+   - Returns boolean (true on success, false on failure)
+   - Use when: Running commands where failure is expected/recoverable
+
+3. **Use `CommandUtils.check_status`** for pre-captured output (e.g., GitProcessor wrappers):
+   ```ruby
+   stdout, stderr, status = git.fetch_all
+   success = CommandUtils.check_status(stdout, stderr, status) do |status, output_msg|
+     Logging.record_warning("Fetch failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
+   end
+   ```
+   - Takes pre-captured `stdout, stderr, status` (e.g., from GitProcessor methods)
+   - Builds same formatted output message as `capture_output`
+   - Optional `noise_patterns: [patterns]` parameter filters stderr noise:
+     ```ruby
+     noise_patterns = ['Permission denied', 'No such file or directory']
+     CommandUtils.check_status(stdout, stderr, status, noise_patterns: noise_patterns) { |st, msg| ... }
+     ```
+     - Removes lines matching any pattern in the array
+     - Useful for commands like `find` that generate expected noise during traversal
+     - Patterns visible at call site (not hidden in method implementation)
+   - Eliminates duplicate error formatting code at call sites
+   - Use when: Already have captured output (GitProcessor, custom capture logic)
+   - **Pass `nil` for stdout parameter when**: stdout contains sensitive data (crontab), is large/verbose (directory lists), or represents success not failure (partial-success scenarios)
+
+4. **Use raw `Open3.capture3`** only when you need BOTH stdout and stderr for processing:
+   ```ruby
+   stdout, stderr, status = Open3.capture3('antidote', 'bundle')
+   # Need to process plugin list (stdout) AND check for errors (stderr)
+   plugins = stdout.split("\n")
+   if !status.success?
+     # Custom error handling using both outputs
+   end
+   ```
+   - Use when: Both outputs are needed for logic (not just error logging)
+   - Examples: antidote bundle (need plugin list + errors), find with noise filtering (need results + filtered errors)
+   - If you only need output for error logging, use `capture_output` or `check_status` instead
 
 ## Message Prefixes -- Script Name and Section for RCA
 

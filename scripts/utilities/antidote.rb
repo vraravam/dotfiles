@@ -3,6 +3,7 @@
 
 require 'open3'
 
+require_relative 'command_utils'
 require_relative 'core'
 require_relative 'env_vars'
 require_relative 'git_processor'
@@ -62,15 +63,18 @@ module Antidote
 
     # antidote bundle reads the plugin list from stdin; pass it via stdin_data
     # so no shell redirect (<) is needed -- array form avoids a shell layer.
-    bundle_content, _err, status = Open3.capture3(
+    bundle_content, stderr_str, status = Open3.capture3(
       'zsh', '-f', '-c', 'source "$1"; antidote bundle', '--', antidote_zsh.to_s,
       stdin_data: plugin_txt.read
     )
-    if status.success?
+
+    success = CommandUtils.check_status(nil, stderr_str, status) do |st, output_msg|
+      Logging.record_warning("Failed to regenerate antidote bundle (status: #{st.exitstatus})#{output_msg}")
+    end
+
+    if success
       plugin_zsh.write(bundle_content)
       Logging.success "antidote bundle regenerated at '#{plugin_zsh.to_s.cyan}'"
-    else
-      Logging.record_warning('Failed to regenerate antidote bundle')
     end
   end
 end

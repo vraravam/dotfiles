@@ -62,8 +62,9 @@ module Cron
     src_file = CRONTAB_FILE
 
     # Attempt to capture the active crontab into the backup file.
-    crontab_output, _err, cron_status = Open3.capture3('crontab', '-l')
-    if cron_status.success? && !nil_or_empty?(crontab_output)
+    crontab_output, stderr_str, status = Open3.capture3('crontab', '-l')
+    success = CommandUtils.check_status(nil, stderr_str, status)
+    if success && !nil_or_empty?(crontab_output)
       backup_file.write(crontab_output)
       Logging.debug "Backed up existing crontab to '#{backup_file.to_s.cyan}'"
     elsif src_file.file?

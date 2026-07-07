@@ -4,6 +4,7 @@
 require 'open3'
 require 'pathname'
 
+require_relative 'command_utils'
 require_relative 'core'
 require_relative 'env_vars'
 require_relative 'logging'
@@ -150,7 +151,7 @@ module MacOS
   def check_and_notify_outdated_apps
     return '' unless PathUtils.command_exists?('brew')
 
-    outdated_raw, = Open3.capture3('brew', 'outdated', '--greedy')
+    outdated_raw = CommandUtils.query('brew', 'outdated', '--greedy')
     outdated = outdated_raw.lines
                            .reject { |l| nil_or_empty?(l.strip) || l.match?(/homebrew|Downloading/i) }
                            .map(&:strip)

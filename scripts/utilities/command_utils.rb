@@ -30,6 +30,21 @@ module CommandUtils
     check_status(stdout, stderr, status) { |st, msg| yield(st, msg) }
   end
 
+  # Executes a command and returns its stdout, stripped of whitespace.
+  # Ignores stderr and exit status - use only for simple query commands where
+  # failure is not expected (version checks, config queries, etc.).
+  #
+  # @param command [Array<String>] Command and arguments to execute
+  # @return [String] Command's stdout with leading/trailing whitespace removed
+  #
+  # @example
+  #   version = CommandUtils.query('sw_vers', '-productVersion')
+  #   config_dir = CommandUtils.query('bat', '--config-dir')
+  def query(*command)
+    stdout, = Open3.capture3(*command)
+    stdout.strip
+  end
+
   # Checks pre-captured command output and yields formatted error details on failure.
   #
   # Use this when you've already captured stdout/stderr/status (e.g., from GitProcessor

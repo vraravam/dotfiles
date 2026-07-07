@@ -4,6 +4,7 @@
 require 'open3'
 require 'pathname'
 
+require_relative 'command_utils'
 require_relative 'core'
 require_relative 'logging'
 require_relative 'macos'
@@ -46,7 +47,7 @@ module PathUtils
   # @example
   #   PathUtils.dir_size_kb(Pathname.new('/path/to/dir'))  # => 1024
   def dir_size_kb(dir)
-    size_out, = Open3.capture3(MacOS::DU_CMD, '-sk', dir.to_s)
+    size_out = CommandUtils.query(MacOS::DU_CMD, '-sk', dir.to_s)
     size_out.split("\t").first.to_i
   end
 
@@ -59,7 +60,7 @@ module PathUtils
   # @example
   #   PathUtils.dir_size_human(Pathname.new('/path/to/dir'))  # => "1.5G"
   def dir_size_human(dir)
-    size_out, = Open3.capture3(MacOS::DU_CMD, '-sh', dir.to_s)
+    size_out = CommandUtils.query(MacOS::DU_CMD, '-sh', dir.to_s)
     size_out.split("\t").first
   end
 

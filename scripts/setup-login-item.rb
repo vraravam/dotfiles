@@ -28,6 +28,7 @@
 
 require 'open3'
 
+require_relative 'utilities/command_utils'
 require_relative 'utilities/logging'
 require_relative 'utilities/macos'
 require_relative 'utilities/path_utils'
@@ -51,8 +52,8 @@ module SetupLoginItem
     end
 
     # Detect macOS major version to choose the registration path.
-    sw_out, = Open3.capture3('sw_vers', '-productVersion')
-    macos_major = sw_out.strip.split('.').first.to_i
+    sw_out = CommandUtils.query('sw_vers', '-productVersion')
+    macos_major = sw_out.split('.').first.to_i
 
     if macos_major >= 14 && macos_major < 26
       # macOS 14–25: SMAppService.loginItem(url:) registers the app as a proper
@@ -131,11 +132,11 @@ module SetupLoginItem
     SWIFT
 
     env = ENV.to_h.merge('APP_PATH' => app_path)
-    out, err, status = Open3.capture3(env, 'swift', '-', stdin_data: swift_src,
-                                                         err: [:child, :out])
-    _ = out
-    _ = err
-    status.success?
+
+    # Log compilation errors if swift fails
+    CommandUtils.capture_output(env, 'swift', '-', stdin_data: swift_src, err: [:child, :out]) do |st, output_msg|
+      Logging.debug("Swift compilation failed (status: #{st.exitstatus})#{output_msg}")
+    end
   end
 
   private_class_method :_register_smappservice
@@ -145,8 +146,8 @@ module SetupLoginItem
   # Skips silently when already registered.
   # Mirrors _register_legacy in the shell version.
   def _register_legacy(app_name, app_path, hidden)
-    items_out, = Open3.capture3(MacOS::OSASCRIPT_CMD, '-e',
-                                'tell application "System Events" to get the name of every login item')
+    items_out = CommandUtils.query(MacOS::OSASCRIPT_CMD, '-e',
+                                   'tell application "System Events" to get the name of every login item')
     already = items_out.split(',').any? { |i| i.strip.downcase.include?(app_name.downcase) }
     return true if already
 

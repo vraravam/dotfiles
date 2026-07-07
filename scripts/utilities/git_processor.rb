@@ -6,6 +6,7 @@ require 'ostruct'
 require 'pathname'
 require 'shellwords'
 
+require_relative 'command_utils'
 require_relative 'core'
 require_relative 'env_vars'
 require_relative 'logging'
@@ -219,18 +220,6 @@ class GitProcessor
     _execute('add', path.to_s)
   end
 
-  # Returns the last commit timestamp for a file or directory.
-  # Returns nil if the file has no commits or doesn't exist in git history.
-  #
-  # @param path [String, Pathname] Path to check (relative to repo root).
-  # @return [Integer, nil] Unix timestamp of last commit, or nil if no commits.
-  def log_timestamp(path)
-    out, _err, status = _execute('log', '--format=%ct', '-n1', '--', path.to_s)
-    return nil unless status.success?
-    out = out.strip
-    nil_or_empty?(out) ? nil : out.to_i
-  end
-
   # Returns true if a tag exists in the repository.
   #
   # @param name [String] Tag name to check.
@@ -303,7 +292,6 @@ class GitProcessor
     stdout, = _execute(*args)
     stdout.split("\n")
   end
-
 
   # Creates a commit with the given message.
   #
@@ -392,7 +380,7 @@ class GitProcessor
   # @return [void]
   def delete_index_lock
     if @dry_run
-      Logging.info "Would delete: '#{@dir.join('.git', 'index.lock').to_s.cyan}' (if exists)"
+      Logging.info "Would delete: '#{@dir.join('.git', 'index.lock').to_s.cyan}' (if it exists)"
     else
       @dir.join('.git', 'index.lock').delete rescue nil
     end
@@ -469,19 +457,18 @@ class GitProcessor
 
     # git rev-parse --show-ref-format was added in git 2.45; fall back to 'files'
     # on older git so the guard below correctly detects a non-reftable repo.
-    ref_format, = Open3.capture3('git', '-C', folder.to_s, 'rev-parse', '--show-ref-format', err: File::NULL)
-    ref_format = ref_format.strip
+    ref_format = CommandUtils.query('git', '-C', folder.to_s, 'rev-parse', '--show-ref-format', err: File::NULL)
     ref_format = 'files' if nil_or_empty?(ref_format)
     return if ref_format == 'reftable'
 
     # 'git refs migrate' requires git 2.45+. On older git (vanilla macOS system
     # git) this returns non-zero; skip silently -- fresh-install calls this again
     # after Homebrew's modern git is on PATH.
-    _out, _err, status = Open3.capture3('git', '-C', folder.to_s, 'refs', 'migrate', '--ref-format=reftable', err: File::NULL)
-    unless status.success?
-      Logging.debug "git refs migrate unavailable (requires git 2.45+) -- skipping reftable migration for '#{folder.to_s.cyan}'"
-      return
+    success = CommandUtils.capture_output('git', '-C', folder.to_s, 'refs', 'migrate', '--ref-format=reftable', err: File::NULL) do |st, output_msg|
+      Logging.debug "git refs migrate unavailable (requires git 2.45+, status: #{st.exitstatus})#{output_msg} -- skipping reftable migration for '#{folder.to_s.cyan}'"
     end
+
+    return unless success
 
     # 'git refs migrate' writes all refs to the reftable directory and should
     # clear loose refs, but may leave behind empty files in the legacy
@@ -507,41 +494,7 @@ class GitProcessor
     Logging.success "Migrated '#{folder.to_s.cyan}' to reftable format"
   end
 
-  # Corrects the HEAD file after a reftable clone-via-mv operation.
-  # When cloning via temp folder + .git move, the HEAD file retains a '.invalid'
-  # placeholder since the move bypasses git's normal post-clone finalization.
-  # Shell prompts read .git/HEAD directly, so this fixes it by writing the real ref.
-  #
-  # @return [void]
-  def fix_head_file
-    real_ref = symbolic_ref
-    return unless real_ref
-    @dir.join('.git', 'HEAD').write("ref: #{real_ref}\n")
-  end
-
-  # Returns the count of commits in the given revision range.
-  # Equivalent to `git rev-list <range> --count`.
-  #
-  # @param range [String] The revision range (e.g., 'HEAD..FETCH_HEAD').
-  # @return [Integer] The commit count, or 0 on failure.
-  def rev_list_count(range)
-    out, _err, status = _execute('rev-list', range, '--count', err: File::NULL)
-    status.success? ? out.strip.to_i : 0
-  end
-
   private
-
-  # Returns the symbolic reference for the given ref name.
-  # Equivalent to `git symbolic-ref <name>`.
-  # Used by fix_head_file to resolve HEAD reference.
-  #
-  # @param name [String] The symbolic ref to resolve (default: 'HEAD').
-  # @return [String, nil] The resolved ref name, or nil if not a symbolic ref.
-  def symbolic_ref(name = 'HEAD')
-    out, _err, status = _execute('symbolic-ref', name, err: File::NULL)
-    return nil unless status.success?
-    out.strip
-  end
 
   # Builds the base git command array with the -C flag (memoized).
   #
@@ -556,7 +509,7 @@ class GitProcessor
   #
   # Decides whether to stream output or capture it based on the command:
   # - Streams (system): push, pull, fetch (unless -q/--quiet flag present)
-  # - Captures (Open3.capture3): all other commands
+  # - Captures: all other commands
   #
   # @param args [Array<String>] Git subcommand and arguments (e.g., 'status', '--short').
   # @yield Optional block executed after command completes (useful for cleanup/logging).
@@ -568,7 +521,7 @@ class GitProcessor
     if @dry_run
       Logging.info "Would run: #{cmd.join(' ').cyan}"
       yield if block_given?
-      # Return mock success response compatible with Open3.capture3
+      # Return mock success response with same format as captured output
       return _mock_status_response(true)
     end
 
@@ -605,7 +558,7 @@ class GitProcessor
     nil_or_empty?(args & quiet_flags)
   end
 
-  # Creates a mock status response compatible with Open3.capture3.
+  # Creates a mock status response with the same format as captured command output.
   # Used for dry-run and streaming operations to maintain consistent return format.
   #
   # @param success [Boolean] Whether the operation succeeded.

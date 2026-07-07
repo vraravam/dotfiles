@@ -1,9 +1,11 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require 'open3'
 require 'set'
-require_relative 'core'
 
+require_relative 'command_utils'
+require_relative 'core'
 require_relative 'logging'
 
 # Generic framework for processing collections of items (paths, hashes, objects)
@@ -40,11 +42,14 @@ module CollectionProcessor
   # @param maxdepth [Integer] Maximum search depth (default: 6)
   # @param filter [String, Regexp, nil] Optional regex to filter results by full path
   # @param prune_dirs [Array<String>] Directories to exclude from search (default: [])
+  # @param exclude_regex [String, nil] Optional regex pattern to pass to find's -not -regex flag
+  #   (e.g., '.*/\\..*/\\.git' to exclude .git dirs inside hidden directories)
   # @param skip_symlinks [Boolean] Skip directories that are symlinks (default: true)
   # @param transform_result [Proc, nil] Optional proc to transform each result path
   #   before adding to results. Receives the matched path, should return the
   #   transformed path. For example, to get parent directories of matched items:
   #   ->(path) { File.dirname(path) }
+  # @param noise_patterns [Array<String>, nil] Patterns to filter from stderr (e.g., ['Permission denied'])
   # @return [Array<String>] Matching directory paths, deduplicated and sorted alphabetically
   #
   # @example Find all .git directories
@@ -68,7 +73,15 @@ module CollectionProcessor
   #     filter: /my-project/,
   #     maxdepth: 4
   #   )
-  def find_directories_matching(dirs:, name_pattern:, mindepth: 1, maxdepth: 6, filter: nil, prune_dirs: [], skip_symlinks: true, transform_result: nil)
+  #
+  # @example Exclude hidden directories
+  #   repos = CollectionProcessor.find_directories_matching(
+  #     dirs: ENV['HOME'],
+  #     name_pattern: '.git',
+  #     exclude_regex: '.*/\\..*/\\.git',
+  #     noise_patterns: ['Permission denied', 'No such file or directory']
+  #   )
+  def find_directories_matching(dirs:, name_pattern:, mindepth: 1, maxdepth: 6, filter: nil, prune_dirs: [], exclude_regex: nil, skip_symlinks: true, transform_result: nil, noise_patterns: nil)
     # Convert Pathname objects to strings, rejecting nil and empty strings
     dirs = Array(dirs).compact.map(&:to_s).reject { |f| nil_or_empty?(f) }
     prune = Array(prune_dirs)
@@ -80,31 +93,54 @@ module CollectionProcessor
       'find', *dirs,
       '-mindepth', mindepth.to_s,
       '-maxdepth', maxdepth.to_s,
-      *prune_expr,
+      *prune_expr
+    ]
+
+    # Add exclude_regex if provided
+    find_cmd += ['-not', '-regex', exclude_regex] if exclude_regex
+
+    find_cmd += [
       '-type', 'd',
       '-name', name_pattern,
-      '-print'
+      '-prune',
+      '-print0'
     ]
+
+    stdout_str, stderr_str, status = Open3.capture3(*find_cmd)
+
+    # Log formatted output on failure (warnings logged but processing continues for partial results).
+    # noise_patterns filters stderr if provided, otherwise shows all stderr.
+    # Stdout is not logged - it contains the list of found directories which are processed and returned.
+    success = CommandUtils.check_status(nil, stderr_str, status, noise_patterns: noise_patterns) do |st, output_msg|
+      Logging.record_warning("Issues while searching directories (status: #{st.exitstatus})#{output_msg}")
+    end
+
+    # Process results if command succeeded OR produced output (partial success case:
+    # find may encounter permission denied but still return results for accessible dirs)
+    return [] unless success || !nil_or_empty?(stdout_str.strip)
 
     # Use Set for O(1) membership checks and deduplication
     seen = Set.new
     filter_re = filter.is_a?(Regexp) ? filter : (filter ? Regexp.new(filter) : nil)
 
-    IO.popen(find_cmd, err: File::NULL) do |io|
-      io.each_line do |line|
-        path = line.chomp
-        next if filter_re && !path.match?(filter_re)
-        next if skip_symlinks && File.symlink?(path)
+    stdout_str.split("\0").each do |path|
+      next if filter_re && !path.match?(filter_re)
+      next if skip_symlinks && File.symlink?(path)
 
-        # Apply transform if provided (e.g., get parent directory)
-        final_path = transform_result ? transform_result.call(path) : path
-        seen.add(final_path)
-      end
+      # Apply transform if provided (e.g., get parent directory)
+      final_path = transform_result ? transform_result.call(path) : path
+      seen.add(final_path)
     end
 
     # Return sorted for deterministic output. Callers may re-sort by different
     # criteria (e.g., depth) for their specific needs.
     seen.to_a.sort
+  rescue Errno::ENOENT
+    Logging.record_error("'find' command not found. Please ensure it is installed and in your PATH.")
+    []
+  rescue StandardError => e
+    Logging.record_error("Error executing 'find' command: #{e.message}")
+    []
   end
 
   # ---------------------------------------------------------------------------

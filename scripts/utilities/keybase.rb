@@ -3,6 +3,7 @@
 
 require 'open3'
 
+require_relative 'command_utils'
 require_relative 'core'
 require_relative 'env_vars'
 require_relative 'logging'
@@ -48,7 +49,7 @@ module Keybase
 
     # Use Open3 to avoid SIGPIPE from grep -q under pipefail.
     # keybase status --json returns a JSON blob; parse for logged_in:true.
-    status_json, = Open3.capture3('keybase', 'status', '--json')
+    status_json = CommandUtils.query('keybase', 'status', '--json')
     if status_json.include?('"logged_in":true')
       Logging.debug "Skipping keybase login -- '#{EnvVars::KEYBASE_USERNAME.purple}' is already logged in"
       return true
@@ -126,7 +127,7 @@ module Keybase
     Logging.debug "#{'Recreating'.yellow} keybase repo '#{repo_name.cyan}'"
     delete_repo(repo_name, dry_run: dry_run)
     unless create_repo(repo_name, dry_run: dry_run)
-      Logging.record_error "Failed to recreate keybase repo -- manual intervention required"
+      Logging.record_error 'Failed to recreate keybase repo -- manual intervention required'
       return false
     end
     true

@@ -178,37 +178,23 @@ module ResurrectRepositories
   private_class_method :_find_and_reverse_replace_env_var
 
   # Finds all Git repositories on disk starting from a given path.
-  # It uses the `find` command to locate .git directories.
+  # Delegates to CollectionProcessor.find_directories_matching with git-specific
+  # configuration (exclude hidden directories, transform to repo roots).
   #
   # @param path [String] The base path to search for Git repositories.
   # @return [Array<String>] A sorted, deduplicated array of absolute paths to the root
   #   directories of discovered Git repositories (i.e. the parent of each +.git+ dir).
   #   Returns an empty array on failure.
   def _find_git_repos_from_disk(path)
-    # Using array form for command execution safety if path contains special characters
-    # Optimization: Use -print0 and handle dirname in Ruby to avoid spawning a process for every match
-    cmd = ['find', path.to_s, '-name', '.git', '-type', 'd', '-not', '-regex', '.*/\\..*/\\.git', '-prune', '-print0']
-    stdout_str, stderr_str, status = Open3.capture3(*cmd)
-
-    # Log any meaningful stderr (filtering out common filesystem traversal noise)
-    noise_patterns = ['Permission denied', 'No such file or directory']
-    CommandUtils.check_status(stdout_str, stderr_str, status, noise_patterns: noise_patterns) do |st, output_msg|
-      Logging.record_warning("Issues encountered while searching for git repositories (status: #{st.exitstatus})#{output_msg}")
-    end
-
-    if status.success? || !nil_or_empty?(stdout_str.strip) # Process output if command was successful or if there's any output despite error
-      stdout_str.split("\0").map { |git_path| Pathname.new(git_path).dirname.to_s }.uniq.sort
-    else
-      # This case means find command failed AND produced no output, a more critical failure.
-      Logging.record_error("`find` command failed (status #{status.exitstatus}) and produced no output.")
-      []
-    end
-  rescue Errno::ENOENT # Specific rescue for `find` not being found
-    Logging.record_error('`find` command not found. Please ensure it is installed and in your PATH.')
-    []
-  rescue StandardError => e # Catch other potential errors during command execution
-    Logging.record_error("Error executing find command: #{e.message}")
-    []
+    CollectionProcessor.find_directories_matching(
+      dirs: [path],
+      name_pattern: '.git',
+      mindepth: 1,
+      maxdepth: 999,
+      exclude_regex: '.*/\\..*/\\.git',
+      transform_result: ->(git_path) { Pathname.new(git_path).dirname.to_s },
+      noise_patterns: ['Permission denied', 'No such file or directory']
+    )
   end
 
   private_class_method :_find_git_repos_from_disk

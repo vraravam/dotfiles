@@ -28,6 +28,7 @@ require 'shellwords'
 
 require_relative 'run-all'
 require_relative 'utilities/antidote'
+require_relative 'utilities/command_utils'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
 require_relative 'utilities/git_workspace'
@@ -179,8 +180,8 @@ module SoftwareUpdatesCron
 
     Logging.with_step('bat cache update', "#{'Updating'.yellow} #{'bat'.purple} cache") do
       if PathUtils.command_exists?('bat')
-        bat_config_dir, = Open3.capture3('bat', '--config-dir')
-        bat_syntax_dir_pn = Pathname.new(bat_config_dir.strip).join('syntaxes')
+        bat_config_dir = CommandUtils.query('bat', '--config-dir')
+        bat_syntax_dir_pn = Pathname.new(bat_config_dir).join('syntaxes')
         PathUtils.ensure_directories_exist(bat_syntax_dir_pn)
 
         system(
