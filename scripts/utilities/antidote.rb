@@ -56,7 +56,8 @@ module Antidote
         next unless GitProcessor.repo?(bundle_dir)
         GitProcessor.new(dir: bundle_dir) do |git|
           git.config_set('fetch.fsckObjects', 'false')
-          git.run_alias('pull-unshallow', '-q')
+          git.run_alias('unshallow')
+          git.pull(quiet: true)
         end
       end
     end

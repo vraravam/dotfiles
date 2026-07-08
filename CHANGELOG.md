@@ -4,6 +4,18 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.3
+
+#### Git Shallow Clone Workflow Simplification
+
+* Replaced `fetch-unshallow` and `pull-unshallow` aliases with new `unshallow` alias. The new alias configures all remotes to fetch all branches and converts shallow clones to full clones. After running `git unshallow`, users must run `git fetch` or `git pull` to retrieve complete history for all branches.
+
+#### Adopting these changes
+
+* Run `all unshallow` followed by `all fetch` or `all pull` on any shallow-cloned repositories to retrieve complete history
+
+---
+
 ### 3.2.2
 
 * Turned off `ollama pull` in the cron job since it was taking more than an hour in some cases.

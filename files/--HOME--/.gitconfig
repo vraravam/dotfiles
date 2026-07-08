@@ -445,13 +445,18 @@
   # REMOTE OPERATIONS (alphabetical)
   # ═══════════════════════════════════════════════════════════════════════════
 
-  # Fetches all remotes; if the repo is shallow, unshallows it first. Accepts extra git-fetch flags.
-  # Usage: git fetch-unshallow [<extra-flags>]
-  # Example: git fetch-unshallow --tags
-  fetch-unshallow = "!f() { \
-    git remote set-branches origin '*' && git fetch --depth=1 \"$@\"; \
-    git is-shallow && git fetch --unshallow \"$@\" || \
-    git fetch \"$@\"; \
+  # Unshallows a shallow repository by configuring it to fetch full history.
+  # Configures all remotes to fetch all branches, then converts shallow clone to full clone.
+  # After running this, use 'git fetch' or 'git pull' to retrieve complete history for all branches.
+  # No-op if repo is already a full clone (not shallow).
+  # Usage: git unshallow [<dir>]
+  # Example workflow: git unshallow && git fetch
+  unshallow = "!f() { \
+    dir=\"${1:-.}\"; \
+    git -C \"${dir}\" remote | while IFS= read -r remote; do \
+      git -C \"${dir}\" remote set-branches \"${remote}\" '*'; \
+    done && \
+    ( git -C \"${dir}\" is-shallow && git -C \"${dir}\" fetch --unshallow || true ); \
   }; f"
 
   # Fetches all remotes and tags, then prunes local branches deleted on remote.
@@ -478,18 +483,9 @@
     fi; \
   }; f"
 
-  # Pulls all remotes; if the repo is shallow, unshallows it first. Accepts extra git-pull flags.
-  # Usage: git pull-unshallow [<extra-flags>]
-  # Example: git pull-unshallow --rebase
-  pull-unshallow = "!f() { \
-    git remote set-branches origin '*' && git fetch --depth=1 \"$@\"; \
-    git is-shallow && git pull --unshallow \"$@\" || \
-    git pull \"$@\"; \
-  }; f"
-
-  # Pulls all submodules (runs pull-unshallow in each submodule).
+  # Pulls all submodules (runs unshallow + pull in each submodule).
   # Usage: git pullsub
-  pullsub = sf "git pull-unshallow"
+  pullsub = sf "git unshallow && git pull"
 
   # Pushes current branch with submodules.
   # Usage: git pushsub

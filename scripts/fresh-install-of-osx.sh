@@ -755,7 +755,7 @@ main() {
 
   # On FIRST_INSTALL, remind user to unshallow repos to get full history.
   if is_non_zero_string "${FIRST_INSTALL:-}"; then
-    user_action "Repositories were cloned shallow (--depth=1) to save time during the first installation process. Run '$(yellow 'all pull-unshallow')' to pull full history."
+    user_action "Repositories were cloned shallow (--depth=1) to save time. Run '$(yellow 'all unshallow')' to convert them to full clones, then run '$(yellow 'all fetch')' or '$(yellow 'all pull')' to retrieve complete history for all branches."
   fi
 
   local -a _notification_parts=()

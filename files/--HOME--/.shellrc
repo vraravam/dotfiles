@@ -1343,9 +1343,10 @@ migrate_git_repo_to_reftable() {
 # Clones a git repo into a temp folder, moves the .git dir into the real target
 # location, and does an initial checkout there. Works around git's refusal to
 # clone into a non-empty directory (e.g. HOME). If the target is already a git
-# repo, runs fetch-unshallow instead. Always updates submodules afterwards.
+# repo, runs unshallow to convert to full clone, then fetches to get complete history.
+# Always updates submodules afterwards.
 # On FIRST_INSTALL (vanilla OS), uses --depth=1 for a shallow clone to save time
-# and bandwidth; repos can be unshallowed later via fetch-unshallow/pull-unshallow.
+# and bandwidth; repos can be converted to full clones later via 'git unshallow && git fetch'.
 # Usage: clone_repo_into <repo-url> <target-folder> [branch]
 clone_repo_into() {
   local start_time=${EPOCHSECONDS}  # $EPOCHSECONDS from zsh/datetime -- no $(date +%s) fork
@@ -1360,7 +1361,7 @@ clone_repo_into() {
     trap "rm -rf '${tmp_folder}'" EXIT INT TERM
 
     # Use shallow clone during FIRST_INSTALL to save time and bandwidth on large repos.
-    # Repos can be unshallowed later via git fetch-unshallow / git pull-unshallow.
+    # Repos can be converted to full clones later via 'git unshallow && git fetch'.
     # On pre-configured machines, clone full history (supports upstream rebase workflows).
     local -a clone_args=()
     local target_branch="${3:-}"
@@ -1433,9 +1434,9 @@ clone_repo_into() {
     # is_git_repo = (is_non_zero_string && is_directory .git) -- logical complement of the if above,
     # so this else is exhaustive and the condition check is redundant.
     debug "Fetching '$(yellow "${target_folder}")' since it's already a git repo"
-    git -C "${target_folder}" fetch-unshallow
+    git -C "${target_folder}" unshallow && git -C "${target_folder}" fetch
     success "Successfully fetched '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
-    # Only warn if FETCH_HEAD has commits not yet in HEAD -- fetch-unshallow always
+    # Only warn if FETCH_HEAD has commits not yet in HEAD -- unshallow + fetch always
     # runs but may bring in nothing new (repo already up to date).
     local incoming_count
     incoming_count="$(git -C "${target_folder}" rev-list HEAD..FETCH_HEAD --count 2>/dev/null || echo 0)"

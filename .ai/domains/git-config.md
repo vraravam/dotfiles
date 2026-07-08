@@ -58,7 +58,6 @@ established meaning:
 | `new` | branch name | `git -C <path> new <branch>` |
 | `old` | remote name | `git -C <path> old <remote> <branch>` |
 | `recent-branch` / `oldest-branch` | reference branch | `git -C <path> recent-branch` |
-| `pull-unshallow` / `fetch-unshallow` | extra flags | `git -C <path> pull-unshallow` |
 | `f` / `se` | search pattern | `git -C <path> f <pattern>` |
 | `relative-path` | path argument | `git -C <path> relative-path` |
 
@@ -126,7 +125,7 @@ Used in: `pull-safe`, `upreb`
 is-shallow = "!f() { git -C \"${1:-.}\" rev-parse --is-shallow-repository | /usr/bin/grep -q true; }; f"
 ```
 
-Used in: `pull-unshallow`, `fetch-unshallow`
+Used in: `unshallow`
 
 **`git all-refs [<dir>]`** - Lists all branches (local + remote-tracking):
 ```ini
@@ -162,10 +161,12 @@ my-cmd = "!f() { git -C \"${1:-.}\" command \"$@\"; }; f"
 
 **Example with multi-step logic:**
 ```ini
-pull-unshallow = "!f() { \
-  git rev-parse --is-shallow-repository | /usr/bin/grep -q true && \
-    git pull --unshallow \"$@\" || \
-    git pull \"$@\"; \
+unshallow = "!f() { \
+  dir=\"${1:-.}\"; \
+  git -C \"${dir}\" remote | while IFS= read -r remote; do \
+    git -C \"${dir}\" remote set-branches \"${remote}\" '*'; \
+  done && \
+  ( git -C \"${dir}\" is-shallow && git -C \"${dir}\" fetch --unshallow || true ); \
 }; f"
 ```
 
@@ -199,12 +200,34 @@ st = status --short --branch
 
 ## Shallow Clone Aliases
 
-- `git fetch-unshallow`: fetch and unshallow if repo is shallow. Guards against
-  `--unshallow` on already-complete repos (which fails).
-- `git pull-unshallow`: pull and unshallow in one step.
+**`git unshallow [<dir>]`** - Converts a shallow repository to a full clone and configures it to fetch all branches:
 
 ```ini
-fetch-unshallow = !sh -c 'git -C "${1:-.}" rev-parse --is-shallow-repository | grep -q true && git -C "${1:-.}" fetch --unshallow || git -C "${1:-.}" fetch' -
+unshallow = "!f() { \
+  dir=\"${1:-.}\"; \
+  git -C \"${dir}\" remote | while IFS= read -r remote; do \
+    git -C \"${dir}\" remote set-branches \"${remote}\" '*'; \
+  done && \
+  ( git -C \"${dir}\" is-shallow && git -C \"${dir}\" fetch --unshallow || true ); \
+}; f"
+```
+
+- Configures all remotes to fetch all branches (`remote set-branches <remote> '*'` for each remote)
+- If shallow, runs `fetch --unshallow` to convert to a full clone
+- **After running this, you must run `git fetch` or `git pull` to retrieve the complete history for all branches**
+- No-op if repo is already a full clone
+- Replaces the previous `fetch-unshallow` and `pull-unshallow` aliases
+
+**Typical workflow:**
+```bash
+# Convert shallow clone to full clone
+git unshallow
+
+# Fetch complete history for all branches
+git fetch
+
+# Or use in one line
+git unshallow && git fetch
 ```
 
 ## `git sci` (Smart Commit -- Non-Interactive)

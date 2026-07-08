@@ -408,7 +408,7 @@ class GitProcessor
 
   # Clones a git repo into a target directory, handling the non-empty target case.
   # On FIRST_INSTALL (vanilla OS), uses --depth=1 for a shallow clone to save time
-  # and bandwidth; repos can be unshallowed later via fetch-unshallow/pull-unshallow.
+  # and bandwidth; repos can be converted to full clones later via 'git unshallow && git fetch'.
   #
   # **DELEGATES TO SHELL VERSION**: This Ruby method is a thin wrapper around the
   # shell function clone_repo_into() in .shellrc. The shell version is required
