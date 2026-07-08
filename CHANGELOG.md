@@ -4,6 +4,13 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.2
+
+* Turned off `ollama pull` in the cron job since it was taking more than an hour in some cases.
+* Fixed issue when unshallowing shallow-cloned git repos.
+
+---
+
 ### 3.2.1
 
 #### CommandUtils refactoring: dead code removal and error logging improvements

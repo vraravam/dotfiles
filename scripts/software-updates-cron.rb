@@ -224,14 +224,15 @@ module SoftwareUpdatesCron
         # 'gemma3:12b'         # Gemma 3 12B: free coding model
         # 'codestral:22b',     # TODO: Need to research
         ]
-        ollama_models.each do |model|
-          # Redirect stdout/stderr to suppress progress bars and ANSI escape sequences in cron context
-          if system('ollama', 'pull', model, out: File::NULL, err: File::NULL)
-            Logging.success "Pulled model: '#{model}'"
-          else
-            Logging.record_warning "Failed to pull model: '#{model}'"
-          end
-        end
+        # TODO: Turned off the call to update / pull ollama models since that was drastically increasing the time to run the cron job if a model indeed needed to be updated
+        # ollama_models.each do |model|
+        #   # Redirect stdout/stderr to suppress progress bars and ANSI escape sequences in cron context
+        #   if system('ollama', 'pull', model, out: File::NULL, err: File::NULL)
+        #     Logging.success "Pulled model: '#{model}'"
+        #   else
+        #     Logging.record_warning "Failed to pull model: '#{model}'"
+        #   end
+        # end
       else
         Logging.debug 'ollama not found -- skipping model pulls'
       end

@@ -449,6 +449,7 @@
   # Usage: git fetch-unshallow [<extra-flags>]
   # Example: git fetch-unshallow --tags
   fetch-unshallow = "!f() { \
+    git remote set-branches origin '*' && git fetch --depth=1 \"$@\"; \
     git is-shallow && git fetch --unshallow \"$@\" || \
     git fetch \"$@\"; \
   }; f"
@@ -481,6 +482,7 @@
   # Usage: git pull-unshallow [<extra-flags>]
   # Example: git pull-unshallow --rebase
   pull-unshallow = "!f() { \
+    git remote set-branches origin '*' && git fetch --depth=1 \"$@\"; \
     git is-shallow && git pull --unshallow \"$@\" || \
     git pull \"$@\"; \
   }; f"
