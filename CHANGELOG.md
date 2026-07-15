@@ -4,6 +4,29 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.4
+
+#### Zsh startup optimization and code quality improvements
+
+* *[files/--ZDOTDIR--/.zshrc]* Minor consistency improvement in git version cache generation: Simplified single-line cache write by removing redundant `{...}` block wrapper around single echo statement. Matches pattern used throughout codebase where single-line writes are inlined and multi-line writes use blocks.
+
+* *[scripts/software-updates-cron.rb]* Replaced hardcoded empty `ollama_models = []` array with dynamic model discovery via `CommandUtils.query('ollama', 'list')`. Script now automatically detects and updates all locally installed Ollama models instead of requiring manual list maintenance. Removed commented-out hardcoded model names. Removed redundant `require 'open3'` since `CommandUtils` already requires it internally. Any model you `ollama pull` manually will now be automatically updated by the cron job.
+
+#### Comprehensive code quality review
+
+* *[files/--HOME--/.aliases]* Fixed `_free_wifi` unsafe `&&` command chains - converted to explicit if statements
+* *[scripts/resurrect-repositories.rb]* Replaced Ruby stdlib `warn()` with `Logging.warn()` for consistency; improved variable scoping in `_resurrect_each` method by moving `existing_remotes` declaration closer to first usage
+* *[scripts/osx-defaults.sh]* Moved `auto` variable from script-level into `main()` as local variable
+
+All other issues already compliant: `.shellrc` logging guards use explicit if statements, arithmetic expressions have proper fallback handling. All 35 files now pass whitespace rules, syntax checks, and have correct executable permissions.
+
+#### Adopting these changes
+
+* Zsh cache change: Restart terminal to reload updated `.zshrc`
+* Ollama updates: No action required - cron job will now automatically update all installed models on next run
+
+---
+
 ### 3.2.3
 
 #### Git Shallow Clone Workflow Simplification

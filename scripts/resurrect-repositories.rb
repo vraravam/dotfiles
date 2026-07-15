@@ -147,7 +147,7 @@ module ResurrectRepositories
     dir.gsub(/\$\{(.*?)\}/) do |match|
       key = Regexp.last_match(1)
       ENV.fetch(key) do
-        warn("Environment variable '#{key}' not set. Keeping placeholder '#{match}'.")
+        Logging.warn("Environment variable '#{key}' not set. Keeping placeholder '#{match}'.")
         match
       end
     end
@@ -286,7 +286,6 @@ module ResurrectRepositories
     dir = repo[FOLDER_KEY_NAME] # Assumed to be an absolute, resolved path
     PathUtils.ensure_directories_exist(dir)
 
-    existing_remotes = {} # Store existing remotes {name => url}
     # Clone or update the repository using GitProcessor module method
     unless GitProcessor.clone_repo_into(repo[REMOTE_KEY_NAME], dir)
       # Clone failure is fatal for this repo -- cannot proceed without a cloned repository
@@ -296,6 +295,7 @@ module ResurrectRepositories
 
     # After cloning, verify the origin URL using GitProcessor
     git = GitProcessor.new(dir: dir)
+    existing_remotes = {} # Store existing remotes {name => url}
     Logging.with_step('clone verification', 'Clone verification') do
       cloned_origin_url = git.remote_url(name: ORIGIN_NAME)
       if cloned_origin_url

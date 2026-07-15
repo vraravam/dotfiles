@@ -22,7 +22,6 @@
 #   Standalone: software-updates-cron.rb
 #   Module:     SoftwareUpdatesCron.run
 
-require 'open3'
 require 'rbconfig'
 require 'shellwords'
 
@@ -212,10 +211,9 @@ module SoftwareUpdatesCron
         # reference: https://insiderllm.com/guides/ollama-mac-setup-optimization/
         # reference: https://popularaitools.ai/blog/run-gemma-4-locally-opencode-2026
         # Note: This list is up-to-date as of 2026-06-06
-        ollama_models = [
-          'qwen3.6:27b',         # reference: gChat from work (AIFSD chat room): strong coding model
-          # 'gemma4:e2b-mlx',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - doesn't edit, only single file for suggestions
-          'qwen2.5-coder:14b'   # Qwen 2.5 Coder 14B: strong coding model
+        # 'qwen3.6:27b',         # reference: gChat from work (AIFSD chat room): strong coding model
+        # 'gemma4:e2b-mlx',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - doesn't edit, only single file for suggestions
+        # 'qwen2.5-coder:14b'   # Qwen 2.5 Coder 14B: strong coding model
         # 'rafw007/gemma4-e4b-claude-coder',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - not sure if this runs via opencode, trying now
         # 'deepseek-coder-v2',
         # 'gpt-oss:20b',
@@ -223,16 +221,29 @@ module SoftwareUpdatesCron
         # 'mdq100/qwen3.5-coder:35b',
         # 'gemma3:12b'         # Gemma 3 12B: free coding model
         # 'codestral:22b',     # TODO: Need to research
-        ]
-        # TODO: Turned off the call to update / pull ollama models since that was drastically increasing the time to run the cron job if a model indeed needed to be updated
-        # ollama_models.each do |model|
-        #   # Redirect stdout/stderr to suppress progress bars and ANSI escape sequences in cron context
-        #   if system('ollama', 'pull', model, out: File::NULL, err: File::NULL)
-        #     Logging.success "Pulled model: '#{model}'"
-        #   else
-        #     Logging.record_warning "Failed to pull model: '#{model}'"
-        #   end
-        # end
+        # Fetch the list of currently downloaded models dynamically via 'ollama list'.
+        # This replaces the hardcoded list to automatically keep all local models up to date.
+        # Output format: "NAME             ID              SIZE      MODIFIED"
+        # We extract the NAME column (first field) and skip the header row.
+        # CommandUtils.query returns stripped stdout; failure is not expected for 'ollama list'
+        # when ollama binary exists (already checked via command_exists?).
+        stdout = CommandUtils.query('ollama', 'list')
+        # Parse model names from output (skip header, extract first column)
+        ollama_models = stdout.lines[1..-1]&.map { |line| line.split.first }&.compact || []
+
+        if ollama_models.empty?
+          Logging.info 'No ollama models found locally -- skipping updates'
+        else
+          Logging.info "Found #{ollama_models.size} ollama model(s) to update: #{ollama_models.join(', ')}"
+          ollama_models.each do |model|
+            # Redirect stdout/stderr to suppress progress bars and ANSI escape sequences in cron context
+            if system('ollama', 'pull', model, out: File::NULL, err: File::NULL)
+              Logging.success "Successfully pulled model: '#{model.cyan}'"
+            else
+              Logging.record_warning "Failed to pull model: '#{model.cyan}'"
+            end
+          end
+        end
       else
         Logging.debug 'ollama not found -- skipping model pulls'
       end

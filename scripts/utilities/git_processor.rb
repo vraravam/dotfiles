@@ -316,7 +316,7 @@ class GitProcessor
     status.success?
   end
 
-  # Pushes to a remote.
+  # Pushes to a remote and sets up upstream tracking.
   #
   # @param remote [String] Remote name (defaults to 'origin').
   # @param branch [String] Branch name to push.
@@ -326,6 +326,7 @@ class GitProcessor
   def push(remote: 'origin', branch:, force: false, force_with_lease: false)
     if @dry_run
       Logging.info 'Would push to remote'
+      Logging.info "Would set upstream tracking: #{remote}/#{branch}"
       return _mock_status_response(true)
     end
 
@@ -343,6 +344,15 @@ class GitProcessor
     _execute(*args) do
       # Clean up stale index.lock after push operations (common with force push)
       delete_index_lock
+
+      # Set upstream tracking after successful push
+      _out, _err, status = _execute('branch', '-u', "#{remote}/#{branch}")
+      if status.success?
+        Logging.debug "Set upstream tracking: #{remote}/#{branch}"
+      else
+        Logging.warn "Failed to set upstream tracking for '#{branch}'"
+      end
+
       Logging.success "Pushed from '#{@dir.to_s.cyan}' to #{url.cyan}"
     end
   end

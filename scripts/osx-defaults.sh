@@ -37,10 +37,8 @@ usage() {
     "$(yellow '[-s]') --> $(purple '-s') (optional) Run in silent/auto mode without interactive prompts"
 }
 
-# Script-level flag for silent mode; set by main() when -s is passed
-auto='N'
-
 # Interactive y/n prompt with silent (auto) mode support.
+# Reads the 'auto' variable from main()'s scope to determine if running in silent mode.
 ask() {
   local prompt default yn=''
   while true; do
@@ -122,7 +120,7 @@ _plist_set_or_add() {
 }
 
 main() {
-  auto='N'
+  local auto='N'
   local _current_section='(init)'
   local _current_section_manual=0  # 0 = auto-set allowed, 1 = manual override active
   local -a _step_warnings=()
