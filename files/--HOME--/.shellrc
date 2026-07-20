@@ -488,6 +488,39 @@ _SECTION_STYLES[3]="·|▫|purple"        # Level 3: Operations within items (de
 _SECTION_STYLES[4]="·|▪|dark_gray"     # Level 4: Deep nesting (depth 5+)
 
 # --------------------------------------------------------------------------
+# 1c-1. iTerm2 shell integration marks
+# --------------------------------------------------------------------------
+
+# Outputs iTerm2 shell integration mark A (prompt start).
+# Called by starship custom.iterm2_mark segment.
+# Returns: escape sequence \033]133;A\007
+iterm2_mark_prompt_start() {
+  printf '\033]133;A\007'
+}
+
+# Outputs iTerm2 shell integration mark B (prompt end).
+# Called by starship custom.iterm2_end segment.
+# Returns: escape sequence \033]133;B\007
+iterm2_mark_prompt_end() {
+  printf '\033]133;B\007'
+}
+
+# Outputs iTerm2 shell integration mark C (command start).
+# Called by preexec hook in .zshrc (before command execution).
+# Returns: escape sequence \033]133;C\007
+iterm2_mark_command_start() {
+  printf '\033]133;C\007'
+}
+
+# Outputs iTerm2 shell integration mark D (command end with exit code).
+# Called by precmd hook in .zshrc (after command execution).
+# Arguments: $1 = exit code of last command
+# Returns: escape sequence \033]133;D;$?\007
+iterm2_mark_command_end() {
+  printf '\033]133;D;%s\007' "${1:-0}"
+}
+
+# --------------------------------------------------------------------------
 # 1d. Section header helpers
 # --------------------------------------------------------------------------
 

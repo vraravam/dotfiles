@@ -570,7 +570,7 @@ Converting `fresh-install-of-osx.sh` to Ruby would introduce unacceptable comple
 2. **Variable duplication**: Bootstrap variables (`DOTFILES_DIR`, `FIRST_INSTALL`, etc.) must exist in **two places**:
    - In shell form in `.shellrc` (sourced immediately after `curl` download on vanilla OS)
    - In Ruby form in `utilities/env_vars.rb` (loaded by Ruby scripts after dotfiles repo is cloned)
-   
+
    This duplication is unavoidable because the bootstrap window runs before Ruby utilities exist. A Ruby-based fresh-install would have to *create* `env_vars.rb` during bootstrap, hardcoding paths into generated Ruby code — far more fragile than the current approach where shell variables are the source of truth and Ruby reads them via `ENV`.
 
 3. **Xcode Command Line Tools dependency**: Git is not available on vanilla macOS — `/usr/bin/git` is just a stub that prompts for Xcode CLT installation. The current bootstrap uses `curl` to download a tarball (no git needed), then converts it to a proper git repo after Xcode CLT is installed. A Ruby bootstrap would have to replicate this entire dance, or force the user to install Xcode CLT manually before running anything.
@@ -582,7 +582,7 @@ Converting `fresh-install-of-osx.sh` to Ruby would introduce unacceptable comple
    - Fallback paths for every system command (some exist in `/usr/bin`, others only after Homebrew)
    - Manual `ENV` manipulation to replicate shell's automatic environment inheritance
    - Explicit process management for background jobs (brew bundle full install)
-   
+
    The result would be longer, harder to debug, and more fragile than the shell version.
 
 **Decision**: `fresh-install-of-osx.sh` stays as shell. The bootstrap path is inherently shell-native, and fighting that reality creates more problems than it solves.

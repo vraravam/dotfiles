@@ -96,14 +96,14 @@ module MyScript
   # @return [Boolean] true on success, false on error
   def run(param:)
     Logging.info "Processing '#{param.cyan}'"
-    
+
     unless valid_input?(param)
       Logging.record_error "Invalid parameter: #{param}"
       return false
     end
-    
+
     # ... main logic ...
-    
+
     Logging.success "Completed successfully"
     true
   end
@@ -121,7 +121,7 @@ end
 
 if __FILE__ == $PROGRAM_NAME
   require_relative 'utilities/cli_parser'
-  
+
   include Logging
 
   options = {}
@@ -182,19 +182,19 @@ module AddUpstreamGitConfig
 
   def run(dir:, upstream_owner:)
     target_dir = dir.to_s
-    
+
     unless GitProcessor.repo?(target_dir)
       Logging.info "'#{target_dir.cyan}' is not a git repo -- skipping."
       return true  # Not an error, just nothing to do
     end
-    
+
     # ... main logic ...
-    
+
     unless status.success?
       Logging.record_error("Failed to add upstream remote")
       return false
     end
-    
+
     Logging.success "Successfully added upstream remote"
     true
   end
@@ -212,20 +212,20 @@ end
 ```ruby
 module InstallDotfiles
   extend self
-  
+
   Stats = Struct.new(:processed, :created, :updated, :skipped, :errors, keyword_init: true)
 
   def run(dry_run: false, verbose: false, force: false)
     stats = Stats.new(processed: 0, created: 0, updated: 0, skipped: 0, errors: 0)
-    
+
     # ... process files, update stats ...
-    
+
     # Print summary
     puts ''
     Logging.success('Summary:')
     puts "  Processed: #{stats.processed.to_s.purple}"
     puts "  Errors:    #{stats.errors.positive? ? stats.errors.to_s.red : stats.errors}"
-    
+
     stats.errors.zero?  # Return true if no errors
   end
 end
@@ -1555,7 +1555,7 @@ module Antidote
   extend self
   include Core  # For use in blocks/instance context
   extend Core   # For module method calls
-  
+
   def update_plugins
     return if nil_or_empty?(path)  # Works!
   end
@@ -1564,7 +1564,7 @@ end
 # ✅ CORRECT: Module with only module methods
 module EnvVars
   extend Core  # Only need extend, no extend self
-  
+
   def self.script_depth
     ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
   end
@@ -1574,11 +1574,11 @@ end
 class GitProcessor
   include Core  # For instance methods
   extend Core   # For class methods
-  
+
   def remote_url
     return nil if nil_or_empty?(url)  # Instance method - works via include
   end
-  
+
   def self.repo?(path)
     return false if nil_or_empty?(path)  # Class method - works via extend
   end
@@ -1588,7 +1588,7 @@ end
 module MyModule
   extend self
   include Core  # NOT ENOUGH!
-  
+
   def my_method
     nil_or_empty?(val)  # ERROR: undefined method
   end

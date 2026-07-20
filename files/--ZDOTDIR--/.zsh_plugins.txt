@@ -60,9 +60,37 @@ ohmyzsh/ohmyzsh path:lib/termsupport.zsh kind:defer
 # Safe to defer; aliases are available before any keypress is processed.
 ohmyzsh/ohmyzsh path:plugins/eza kind:defer
 
-# DEFERRED: the heaviest non-deferred plugin (431 lines of aliases/functions).
-# Purely alias definitions -- no ZLE hooks or setopts. Biggest startup win.
-ohmyzsh/ohmyzsh path:plugins/git kind:defer
+# git plugin removed: provided 431 lines of aliases, but only 'gco' was used.
+# Replaced with 'co = checkout' alias in .gitconfig (see git-config.md).
+# Saves ~2ms deferred load time and eliminates 400+ unused aliases.
+
+# DEFERRED: Colors man pages (red headers, green underlines, yellow highlights).
+# Zero overhead - just sets LESS_TERMCAP_* env vars for the less pager.
+ohmyzsh/ohmyzsh path:plugins/colored-man-pages kind:defer
+
+# DEFERRED: Universal archive extractor with 'x' alias. Handles tar.gz, tar.bz2,
+# zip, rar, 7z, deb, rpm, and 20+ formats with automatic format detection.
+ohmyzsh/ohmyzsh path:plugins/extract kind:defer
+
+# DEFERRED: Copy absolute paths to clipboard. Usage: copypath [file|dir]
+# Copies current directory if no argument provided.
+ohmyzsh/ohmyzsh path:plugins/copypath kind:defer
+
+# DEFERRED: Copy file contents to clipboard. Usage: copyfile <file>
+ohmyzsh/ohmyzsh path:plugins/copyfile kind:defer
+
+# DEFERRED: Ctrl+O keybind to copy current command line to clipboard.
+# Useful for saving long commands before clearing/editing them.
+ohmyzsh/ohmyzsh path:plugins/copybuffer kind:defer
+
+# DEFERRED: JSON utilities (pp_json, is_json, urlencode_json, urldecode_json).
+# Uses node/python3/ruby for formatting/validation (complementary to jq).
+ohmyzsh/ohmyzsh path:plugins/jsontools kind:defer
+
+# DEFERRED: macOS-specific utilities (ofd, tab, showfiles, hidefiles, btrestart).
+# ofd - open current dir in Finder; tab - new terminal tab in current dir;
+# showfiles/hidefiles - toggle hidden files in Finder.
+ohmyzsh/ohmyzsh path:plugins/macos kind:defer
 
 # DEFERRED: sources iterm2_shell_integration.zsh which registers precmd/preexec
 # hooks for prompt-zone marking. Cosmetic for the first prompt only.

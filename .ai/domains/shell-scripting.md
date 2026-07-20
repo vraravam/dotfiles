@@ -1162,7 +1162,9 @@ fi
 
 ```bash
 set -euo pipefail
+
 source "${HOME}/.shellrc"
+
 # set -E ensures the ERR trap is inherited by functions called from this file.
 # notify() (from .shellrc) triggers an osascript notification -- no terminal needed.
 set -E

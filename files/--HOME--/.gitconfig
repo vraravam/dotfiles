@@ -8,6 +8,15 @@
   statusHints = true
 [alias]
   # ═══════════════════════════════════════════════════════════════════════════
+  # BASIC SHORTCUTS
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # Checkout branches or files.
+  # Replaces OMZ git plugin 'gco' alias (removed to eliminate 431-line plugin).
+  # Usage: git co <branch>
+  co = checkout
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # HELPER PREDICATES (alphabetical)
   # ═══════════════════════════════════════════════════════════════════════════
 

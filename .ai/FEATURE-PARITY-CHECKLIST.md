@@ -25,7 +25,7 @@ Before starting the rebase, document:
   ```bash
   # Shell scripts
   find . -name "*.sh" -o -name "*.zsh" | xargs -I {} zsh -n {}
-  
+
   # Ruby scripts
   find . -name "*.rb" | xargs -I {} ruby -c {}
   ```
@@ -93,10 +93,10 @@ When conflicts occurred during rebase:
    ```bash
    # Shell: Check for unquoted variables
    rg '\$[A-Z_]+[^"{]' --type sh
-   
+
    # Ruby: Check for require without relative/gem
    rg '^require [^_]' --type ruby
-   
+
    # Both: Check for hardcoded paths
    rg '/(usr|bin|etc|opt)/' --type sh --type ruby
    ```
@@ -110,7 +110,7 @@ When conflicts occurred during rebase:
    ```bash
    # Files only in master (deleted in branch?)
    git diff --name-only --diff-filter=D master..HEAD
-   
+
    # Files only in branch (added)
    git diff --name-only --diff-filter=A master..HEAD
    ```

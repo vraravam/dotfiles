@@ -4,6 +4,28 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.5
+
+#### Starship prompt optimization and visual refinement
+
+* *[files/--XDG_CONFIG_HOME--/starship.toml]* Replaced custom shell-based git segments with starship's built-in Rust modules (`[git_branch]` and `[git_status]`) - 10-100x faster with automatic caching. Root cause of 2-4s delay to first keystroke: custom segments using `git st-nolock`, `git is-dirty`, `git rev-parse`, and `git size` caused cumulative ~500ms+ delay per prompt render. Built-in modules complete in <100ms. Reduced `command_timeout` from 5000ms to 300ms. Added `[custom.git_size]` (~50ms overhead) showing repo size (du on .git) after branch name on green background, and `[custom.git_clean_arrow]` (~50-180ms overhead, short-circuits if dirty) to show green arrow only when repo has no uncommitted changes AND is not ahead/behind tracking branch. Fixed spacing issues: trailing space in git_size format stays on green background; git_status arrow and status symbols properly contained within yellow background to prevent black rectangles between segments; git_clean_arrow uses git_size's trailing space (no added space). Visual flow: clean repos show `master 1.3M ` (green with trailing space) → green arrow; dirty/ahead/behind repos show `master 1.3M ` (green with trailing space) → green→yellow arrow → `!3?1` or `⇣1⇡1` (yellow) → yellow arrow.
+
+* *[files/--ZDOTDIR--/.zshrc]* Fixed anonymous function scope bugs that destroyed `zsh-defer` function and `setopt promptsubst`: removed wrappers around antidote bundle loading (~line 210-224) and starship init (~line 271-295). Re-enabled `fast-syntax-highlighting` and `zsh-autosuggestions` plugins after confirming they cause tiny acceptable delay (<50ms), not the 2-3s delay (which was caused by custom git segments).
+
+* *[files/--ZDOTDIR--/.zsh_plugins.txt]* Removed OMZ git plugin (431 lines, only 1 alias `gco` was used). Added 7 deferred utility plugins: `colored-man-pages` (syntax-highlighted man pages), `extract` (universal archive extractor with `x` alias supporting 20+ formats), `copypath` (copy absolute paths to clipboard), `copyfile` (copy file contents to clipboard), `copybuffer` (Ctrl+O keybind to copy command line), `jsontools` (JSON formatting/validation utilities), `macos` (macOS-specific utilities including `ofd`, `tab`, `showfiles`, `hidefiles`). All new plugins use `kind:defer` for zero startup impact (~1-2ms deferred load time).
+
+* *[files/--HOME--/.gitconfig]* Added `co = checkout` alias to replace removed OMZ git plugin's `gco` alias. Added new "BASIC SHORTCUTS" section before "HELPER PREDICATES" section to organize simple one-line aliases separately from complex predicates.
+
+#### Adopting these changes
+
+* Quit and restart terminal (not just new tab) to reload starship config, zsh plugins, and git config
+* Prompt should now appear instantly with <100ms render time (down from 500ms+)
+* First keystroke should be instant (down from 2-4s delay)
+* Test new plugins after 1-2 second deferral: `extract`, `copypath`, `copyfile`, `pp_json`, `ofd`, `man ls` (colored output)
+* Use `git co <branch>` instead of `gco <branch>` (or continue using full `git checkout`)
+
+---
+
 ### 3.2.4
 
 #### Zsh startup optimization and code quality improvements

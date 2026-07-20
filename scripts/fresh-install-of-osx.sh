@@ -94,7 +94,7 @@ _setup_jio_dns() {
   _org=$(curl -fsS https://ipinfo.io/org 2>/dev/null)
   if [[ "${_org:l}" == *jio* ]]; then
     echo '==> Setting DNS for WiFi from Jio ISP'
-    networksetup -setdnsservers Wi-Fi 1.1.1.1 || echo 'Warning: Failed to set DNS for Wi-Fi'
+    networksetup -setdnsservers Wi-Fi 1.1.1.2 9.9.9.9 || echo 'Warning: Failed to set DNS for Wi-Fi'
   fi
 }
 

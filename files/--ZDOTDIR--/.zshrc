@@ -80,8 +80,11 @@ export ZSH_AUTOSUGGEST_HISTORY_IGNORE="?(#c100,)"
 export ZSH_AUTOSUGGEST_STRATEGY=(history)
 # eza plugin: enable icons
 zstyle ':omz:plugins:eza' 'icons' yes
-# iterm2 plugin: enable shell integration
-zstyle ':omz:plugins:iterm2' shell-integration yes
+# iterm2 plugin: disable built-in shell integration (we handle marks manually in starship.toml)
+# Setting to 'no' prevents the plugin from loading iterm2_shell_integration.zsh, which would
+# add its own precmd/preexec hooks that conflict with starship's prompt rendering.
+# We still get the utility functions (iterm2_profile, iterm2_tab_color, etc.) from the plugin.
+zstyle ':omz:plugins:iterm2' shell-integration no
 # correction: activated by lib/correction.zsh when ENABLE_CORRECTION is set
 export ENABLE_CORRECTION='true'
 
@@ -207,15 +210,21 @@ fi
 # $3 without a default, which crashes under NOUNSET (set -u). The fresh-install
 # script runs with `set -euo pipefail`, so NOUNSET is active when load_zsh_configs
 # sources this file. Suspend NOUNSET for the duration of the bundle source only.
-# Anonymous function scopes the LOCAL_OPTIONS change; this is a pure zsh file
-# (never bash-sourced), so () syntax is idiomatic and correct here.
-() {
-  if is_file "${ANTIDOTE_PLUGIN_ZSH}"; then
-    setopt LOCAL_OPTIONS
-    unsetopt NOUNSET
-    load_file_if_exists "${ANTIDOTE_PLUGIN_ZSH}"
-  fi
-}
+#
+# CRITICAL: Do NOT wrap this in an anonymous function () { ... } -- functions
+# defined inside the bundle (like zsh-defer) would be scoped to that function
+# and destroyed when it returns. Use setopt/unsetopt directly at file scope.
+#
+# Save the current NOUNSET state, disable it for bundle loading (some plugins
+# reference bare positionals like $3 without defaults), then restore it after.
+if is_file "${ANTIDOTE_PLUGIN_ZSH}"; then
+  local _nounset_was_set=0
+  [[ -o NOUNSET ]] && _nounset_was_set=1
+  unsetopt NOUNSET
+  load_file_if_exists "${ANTIDOTE_PLUGIN_ZSH}"
+  (( _nounset_was_set )) && setopt NOUNSET
+  unset _nounset_was_set
+fi
 
 # Activate mise -- the OMZ mise plugin referenced $ZSH_CACHE_DIR (undefined without OMZ)
 # so it has been removed from $ANTIDOTE_PLUGIN_TXT and replaced with a direct activation here.
@@ -261,27 +270,30 @@ fi
 # both require file-scope application to interact correctly with zsh's startup
 # sequence. The cache is therefore sourced directly at the top level; the ~5ms
 # cost of sourcing the pre-parsed .zwc bytecode is acceptable.
+#
+# CRITICAL: Do NOT wrap this in an anonymous function () { ... } -- the setopt
+# promptsubst emitted by starship's init would be scoped to that function and
+# destroyed when it returns, leaving PROMPT as a literal unexpanded string.
+# Temporary variables are acceptable at file scope here; they will be unset after.
 if (($+commands[starship])); then
-  # Anonymous function scopes starship cache locals; pure zsh file, () is idiomatic here.
-  () {
-    # '$commands[]' is an O(1) zsh hash lookup - no subprocess fork needed.
-    local starship_bin="${commands[starship]}"
-    local starship_init_cache="${XDG_CACHE_HOME}/starship-init-cache.zsh"
-    # Regenerate the cache only when the starship binary is newer than the cache file.
-    if is_file_older_than "${starship_init_cache}" "${starship_bin}"; then
-      # Strip the eager PROMPT2="$(...)" line that starship emits (double-quoted, forks
-      # the binary at source time, ~9-15ms). Replace it with a lazy single-quoted form
-      # so the fork only happens when the continuation prompt is actually displayed.
-      # PROMPT and RPROMPT are already lazy in starship's output; PROMPT2 is the only
-      # outlier. The single-quoted form uses the same pattern as PROMPT/RPROMPT.
-      starship init zsh 2>/dev/null | /usr/bin/grep -v '^PROMPT2=' >|"${starship_init_cache}"
-      printf "PROMPT2='\$(%s prompt --continuation)'\n" "${starship_bin}" >>"${starship_init_cache}"
-      recompile_zsh_script "${starship_init_cache}"
-    fi
-    # Source directly at the top level (not deferred) so that 'setopt promptsubst'
-    # emitted by the cache takes effect globally and is not scoped to a function.
-    load_file_if_exists "${starship_init_cache}"
-  }
+  # '$commands[]' is an O(1) zsh hash lookup - no subprocess fork needed.
+  _starship_bin="${commands[starship]}"
+  _starship_init_cache="${XDG_CACHE_HOME}/starship-init-cache.zsh"
+  # Regenerate the cache only when the starship binary is newer than the cache file.
+  if is_file_older_than "${_starship_init_cache}" "${_starship_bin}"; then
+    # Strip the eager PROMPT2="$(...)" line that starship emits (double-quoted, forks
+    # the binary at source time, ~9-15ms). Replace it with a lazy single-quoted form
+    # so the fork only happens when the continuation prompt is actually displayed.
+    # PROMPT and RPROMPT are already lazy in starship's output; PROMPT2 is the only
+    # outlier. The single-quoted form uses the same pattern as PROMPT/RPROMPT.
+    starship init zsh 2>/dev/null | /usr/bin/grep -v '^PROMPT2=' >|"${_starship_init_cache}"
+    printf "PROMPT2='\$(%s prompt --continuation)'\n" "${_starship_bin}" >>"${_starship_init_cache}"
+    recompile_zsh_script "${_starship_init_cache}"
+  fi
+  # Source directly at the top level (not deferred) so that 'setopt promptsubst'
+  # emitted by the cache takes effect globally and is not scoped to a function.
+  load_file_if_exists "${_starship_init_cache}"
+  unset _starship_bin _starship_init_cache
 fi
 
 # setup paths in the beginning so that all other conditions work correctly
@@ -549,3 +561,65 @@ typeset +x FPATH fpath CDPATH cdpath
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109
 # execute 'ZSH_PROFILE=true zsh' and run 'zprof' to get the details
 if [[ -n "${ZSH_PROFILE:-}" ]]; then zprof; fi
+
+# iTerm2 shell integration: output marks C (command start) and D (command end).
+# These complement marks A (prompt start) and B (prompt end).
+# The complete set of 4 marks enables full iTerm2 features: command cycling, selection, etc.
+# Only register hooks in iTerm2 sessions (check ITERM_SESSION_ID).
+#
+# NOTE: Hook registration stays in .zshrc (not moved to .shellrc) for three reasons:
+#   1. Timing: Must register AFTER starship init (which happens late in .zshrc)
+#   2. Scope: precmd_functions/preexec_functions are zsh-specific (.shellrc is bash-compatible)
+#   3. Ordering: Our hooks must run before/after starship's hooks for correct mark placement
+# The helper functions (iterm2_mark_*) live in .shellrc as reusable utilities.
+#
+# MARK PLACEMENT STRATEGY:
+#   Mark A: output by starship at start of prompt (always fresh, even after ⌘K)
+#   Mark B: output by starship at end of prompt
+#   Newline: output in precmd BEFORE starship renders (for spacing)
+#   Marks C/D: wrap command execution in preexec/precmd
+#
+# KNOWN LIMITATION - Post-⌘K Prompt:
+#   The prompt visible immediately after ⌘K won't have marks until you run a command.
+#   This is because ⌘K repositions the existing prompt (doesn't re-render it), and we
+#   can't inject marks into an already-rendered prompt. Starship only outputs marks
+#   when rendering a NEW prompt (which happens after a command completes).
+#   Workaround: Run a no-op command like ':' or 'true' after ⌘K to get a marked prompt.
+if [[ -n "${ITERM_SESSION_ID:-}" ]]; then
+  # precmd that runs BEFORE starship: outputs just the newline
+  # Mark A is now embedded in starship format (always present, even after ⌘K).
+  # Must be prepended (not appended) to run before prompt_starship_precmd.
+  _iterm2_precmd_before() {
+    printf '\n'
+  }
+
+  # precmd that runs AFTER command completes: outputs mark D
+  _iterm2_precmd_after() {
+    iterm2_mark_command_end "$?"
+  }
+
+  # preexec runs RIGHT BEFORE a command executes (after user presses Enter).
+  # Output mark C to tell iTerm2 "command execution starting now".
+  _iterm2_preexec() {
+    iterm2_mark_command_start
+  }
+
+  # Register hooks: prepend _before to run before starship, append _after to run after
+  precmd_functions=(_iterm2_precmd_before "${precmd_functions[@]}")
+  precmd_functions+=(_iterm2_precmd_after)
+  preexec_functions+=(_iterm2_preexec)
+
+  # Signal that .zshrc has finished loading. This is used by starship custom segment
+  # (custom.iterm2_start and custom.iterm2_end) to prevent marks from appearing during
+  # shell initialization.
+  # Only set in iTerm2 sessions since it's only checked by iTerm2-specific segments.
+  export PROMPT_INITIALIZED=1
+
+  # Output mark A manually for the initial prompt that's already visible.
+  # This ensures the very first prompt (which appeared during .zshrc loading) has marks,
+  # allowing ⌘↑ to wrap around to it. Without this, ⌘↑ stops at the first command.
+  # Note: This doesn't trigger a new prompt render, it just injects mark A into the
+  # current prompt that's already on screen. The next prompt render (after first command)
+  # will have marks via starship segments.
+  iterm2_mark_prompt_start
+fi

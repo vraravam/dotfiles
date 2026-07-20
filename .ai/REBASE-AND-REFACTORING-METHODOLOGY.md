@@ -1,7 +1,7 @@
 # Rebase and Refactoring Methodology
 
-**Purpose:** General-purpose patterns for rebasing feature branches and large refactorings  
-**Scope:** Language-agnostic strategies applicable to any major code reorganization  
+**Purpose:** General-purpose patterns for rebasing feature branches and large refactorings
+**Scope:** Language-agnostic strategies applicable to any major code reorganization
 **Source:** Lessons learned from Ruby migration (June 2026) and Nix migration analysis
 
 ---
@@ -377,7 +377,7 @@ git push origin feature-branch --force-with-lease
 
 ### Why It Matters
 
-**Forward comparison** (what main has): Standard conflict resolution  
+**Forward comparison** (what main has): Standard conflict resolution
 **Reverse comparison** (what branch has): Regression prevention
 
 **Git's rebase resolves conflicts forward** (main → branch). Easy to:
@@ -411,10 +411,10 @@ git push origin feature-branch --force-with-lease
    ```bash
    # Source code
    git diff main..feature-branch -- src/ lib/ scripts/
-   
+
    # Configuration
    git diff main..feature-branch -- config/ .*.yml *.json
-   
+
    # Documentation
    git diff main..feature-branch -- docs/ *.md
    ```
@@ -612,7 +612,7 @@ Maintaining both original (main) and refactored (branch) versions in parallel:
 
 **Caught 100% of potential regressions**
 
-Forward comparison (old → new) checks "does new have what old has?"  
+Forward comparison (old → new) checks "does new have what old has?"
 Reverse comparison (new → old) checks "did we drop anything?"
 
 **Results from Ruby migration:**
@@ -757,6 +757,6 @@ Created comprehensive comparison documents:
 
 ---
 
-**Last Updated:** June 16, 2026  
-**Source:** Lessons learned from Ruby migration project  
+**Last Updated:** June 16, 2026
+**Source:** Lessons learned from Ruby migration project
 **Status:** Living document (update as new patterns emerge)

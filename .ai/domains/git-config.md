@@ -185,7 +185,7 @@ my-alias = !sh -c 'git -C "${1:-.}" some-command' -
 
 **Argument handling differences:**
 - `!sh -c '...' -`: Trailing `-` sets `$0` to `-`, user args start at `$1`
-- `!sh -c '...' --`: Trailing `--` sets `$0` to `--`, user args start at `$1`  
+- `!sh -c '...' --`: Trailing `--` sets `$0` to `--`, user args start at `$1`
 - `!f() { ... }; f`: User args naturally start at `$1`, `$0` is the shell name
 
 Both handle `"$@"` the same way for passing through extra arguments.
