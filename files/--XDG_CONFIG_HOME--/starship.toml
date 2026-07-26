@@ -24,9 +24,9 @@
 # Disable blank line before prompt - iTerm2's auto-detection places mark on blank line instead of prompt
 # Testing: no blank line to see if mark appears on prompt line
 add_newline = false
-# REDUCED from 5000ms to 300ms - git operations should complete in <200ms
-# If they take longer, skip the segment (better than blocking)
-command_timeout = 300
+# Command timeout increased to 1000ms to allow git operations in larger repos
+# Custom git modules (git_size, git_clean_arrow) have ignore_timeout=true
+command_timeout = 1000
 
 # ── Left prompt ───────────────────────────────────────────────────────────────
 # Segment order: iterm2_mark → os → directory → git branch → git size → git status (if dirty/ahead/behind) → clean arrow (if clean) → git state → iterm2_end → character
@@ -176,7 +176,7 @@ require_repo = true
 when = "true"  # Always show in git repos
 shell = ["sh", "--noprofile", "--norc"]
 format = "[ $output ](bg:green fg:black)"
-ignore_timeout = false
+ignore_timeout = true
 
 # ── Custom: Clean repo arrow ──────────────────────────────────────────────────
 # Shows green arrow when repo is completely clean (no git_status output at all)
@@ -200,7 +200,7 @@ when = """! git is-dirty && \
  test "$(git rev-list --left-right --count @{u}...HEAD 2>/dev/null | awk '{print $1+$2}')" = "0")"""
 shell = ["sh", "--noprofile", "--norc"]
 format = "[\uE0B0](fg:green)"
-ignore_timeout = false
+ignore_timeout = true
 
 # ── Custom: iTerm2 shell integration marks A and B ──────────────────────────
 # Mark A (prompt start) and mark B (prompt end) output by starship.

@@ -107,9 +107,12 @@ autoload -Uz zrecompile
   local brew_bin="${HOMEBREW_PREFIX}/bin/brew"
   local brew_shellenv_cache="${XDG_CACHE_HOME}/brew-shellenv-cache.zsh"
   # Regenerate cache only if brew is installed AND cache is stale/missing.
-  # Check brew executable first (faster) before the mtime comparison.
-  # Use the brew binary's modification time as cache key (no need to run brew at all for the check).
+  # is_executable checks the absolute path directly (not PATH lookup).
+  # is_file_older_than returns true when target is missing OR source is newer than target.
+  # This ensures cache is force-created when brew exists but cache is missing.
   if is_executable "${brew_bin}" && is_file_older_than "${brew_shellenv_cache}" "${brew_bin}"; then
+    # Ensure cache directory exists before writing
+    ensure_dir_exists "${XDG_CACHE_HOME}"
     # Run brew shellenv in a subshell to get brew vars + path_helper result without polluting current PATH
     local brew_cellar brew_repo brew_infopath brew_manpath brew_prefix
     eval "$("${brew_bin}" shellenv 2>/dev/null)"
@@ -132,7 +135,21 @@ autoload -Uz zrecompile
     } >|"${brew_shellenv_cache}" 2>/dev/null
     recompile_zsh_script "${brew_shellenv_cache}"
   fi
-  load_file_if_exists "${brew_shellenv_cache}"
+  # Source cache if it exists, otherwise manually add Homebrew to PATH.
+  # The else branch only runs when brew is NOT installed (vanilla OS before fresh-install).
+  # When brew IS installed, the cache is always created above (is_file_older_than returns
+  # true for missing files), so the cache will always exist and this sources it.
+  if is_file "${brew_shellenv_cache}"; then
+    load_file_if_exists "${brew_shellenv_cache}"
+  else
+    # No cache and no brew - manually set up minimal Homebrew environment
+    # This handles the case where .zshrc runs before Homebrew is installed.
+    # Ensures PATH has Homebrew directories even when they don't exist yet on disk.
+    export PATH="${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
+    export MANPATH="${HOMEBREW_PREFIX}/share/man${MANPATH+:$MANPATH}:"
+    export INFOPATH="${HOMEBREW_PREFIX}/share/info:${INFOPATH:-}"
+    fpath=("${HOMEBREW_PREFIX}/share/zsh/site-functions" "${fpath[@]}")
+  fi
 }
 
 load_file_if_exists "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
@@ -605,7 +622,8 @@ if [[ -n "${ITERM_SESSION_ID:-}" ]]; then
   }
 
   # Register hooks: prepend _before to run before starship, append _after to run after
-  precmd_functions=(_iterm2_precmd_before "${precmd_functions[@]}")
+  # Ensure arrays exist before modifying (guards against 'parameter not set' under set -u)
+  precmd_functions=(_iterm2_precmd_before "${precmd_functions[@]:-}")
   precmd_functions+=(_iterm2_precmd_after)
   preexec_functions+=(_iterm2_preexec)
 

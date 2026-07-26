@@ -30,6 +30,25 @@ module CommandUtils
     check_status(stdout, stderr, status) { |st, msg| yield(st, msg) }
   end
 
+  # Executes a command via system(), streaming stdout/stderr to terminal.
+  #
+  # Use this for interactive commands where users expect to see output in real-time
+  # (e.g., git log, ls, etc.). Unlike capture_output, this does not buffer output.
+  #
+  # @param command [Array<String>] Command and arguments to execute
+  # @yield Block receives no arguments; called on failure (can record warning/error)
+  # @return [Boolean] true if command succeeded, false otherwise
+  #
+  # @example
+  #   success = CommandUtils.run_interactive('git', '-C', dir, 'log', '--oneline', '-5') do
+  #     Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{$?.exitstatus})")
+  #   end
+  def run_interactive(*command)
+    success = system(*command)
+    yield unless success if block_given?
+    success
+  end
+
   # Executes a command and returns its stdout, stripped of whitespace.
   # Ignores stderr and exit status - use only for simple query commands where
   # failure is not expected (version checks, config queries, etc.).

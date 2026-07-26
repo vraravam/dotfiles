@@ -84,15 +84,15 @@ module RunAll
       shell = EnvVars::SHELL
       cmd_string = command.join(' ')
 
-      # Use CommandUtils.capture_output to capture output and format errors consistently,
-      # matching the pattern in resurrect-repositories.rb and git_workspace.rb. Dir.chdir
+      # Use CommandUtils.run_interactive to execute the command, allowing stdout/stderr
+      # to flow through to the terminal (so users see git log output, etc.). Dir.chdir
       # with a block automatically restores the original directory when the block exits,
       # even if an exception is raised.
       Dir.chdir(dir) do
-        success = CommandUtils.capture_output(shell, '-c', cmd_string) do |status, output_msg|
-          Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
+        CommandUtils.run_interactive(shell, '-c', cmd_string) do
+          Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{$?.exitstatus})")
+          has_failures = true
         end
-        has_failures = true unless success
       end
 
       # Always return true -- failures are recorded as warnings above, not as failed items.
@@ -112,28 +112,29 @@ end
 # ---------------------------------------------------------------------------
 
 if __FILE__ == $PROGRAM_NAME
-  require_relative 'utilities/cli_parser'
-
   include Logging
 
-  parser = CliParser.parse('<command...>') do |opts|
-    opts.separator 'Finds git repositories and runs the command in each repo directory.'
-    opts.separator 'Commands can be git operations (status, pull) or any shell command (ls, find, etc.).'
-    opts.separator ''
-    opts.separator 'Environment variables (all optional):'.purple
-    opts.separator "  #{'FOLDER'.yellow}    Root directory to search (default: current dir)"
-    opts.separator "  #{'FILTER'.yellow}    Regex to filter repos by path (default: empty = all)"
-    opts.separator "  #{'MINDEPTH'.yellow}  Minimum search depth (default: 1)"
-    opts.separator "  #{'MAXDEPTH'.yellow}  Maximum search depth (default: 4)"
-    opts.separator ''
-    opts.separator 'Examples:'.purple
-    opts.separator "  #{File.basename(__FILE__).cyan} git status"
-    opts.separator "  #{File.basename(__FILE__).cyan} ls -la"
-    opts.separator "  #{'FOLDER=dev MINDEPTH=2'.yellow} #{File.basename(__FILE__).cyan} git status"
-    opts.separator "  #{'FILTER=oss'.yellow} #{File.basename(__FILE__).cyan} git upreb"
+  # Handle --help manually (can't use CliParser because all args are the command)
+  if ARGV.empty? || ARGV.first == '-h' || ARGV.first == '--help'
+    puts "#{'Usage'.red}: #{File.basename(__FILE__).cyan} #{'<command...>'.yellow}"
+    puts ''
+    puts 'Finds git repositories and runs the command in each repo directory.'
+    puts 'Commands can be git operations (status, pull) or any shell command (ls, find, etc.).'
+    puts ''
+    puts 'Environment variables (all optional):'.purple
+    puts "  #{'FOLDER'.yellow}    Root directory to search (default: current dir)"
+    puts "  #{'FILTER'.yellow}    Regex to filter repos by path (default: empty = all)"
+    puts "  #{'MINDEPTH'.yellow}  Minimum search depth (default: 1)"
+    puts "  #{'MAXDEPTH'.yellow}  Maximum search depth (default: 4)"
+    puts ''
+    puts 'Examples:'.purple
+    puts "  #{File.basename(__FILE__).cyan} git status"
+    puts "  #{File.basename(__FILE__).cyan} git log --oneline -5"
+    puts "  #{File.basename(__FILE__).cyan} ls -la"
+    puts "  #{'FOLDER=dev MINDEPTH=2'.yellow} #{File.basename(__FILE__).cyan} git status"
+    puts "  #{'FILTER=oss'.yellow} #{File.basename(__FILE__).cyan} git upreb"
+    exit 0
   end
-
-  parser.abort_with_usage('Missing required argument: <command...>') if nil_or_empty?(ARGV)
 
   Logging.run_script(File.basename(__FILE__, '.rb')) do
     success = RunAll.run(command: ARGV.dup)

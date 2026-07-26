@@ -1,2 +1,7 @@
+# mise configuration for dotfiles repository
+#
+# Ruby must use system Ruby (2.6) to ensure scripts work on vanilla macOS.
+# All Ruby scripts in this repo must be compatible with Ruby 2.6 for fresh-install-of-osx.sh
+# to work on a brand new Mac before mise/Homebrew Ruby is installed.
 [settings]
 disable_tools = ["ruby"]

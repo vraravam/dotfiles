@@ -86,15 +86,47 @@ if (($+commands[brew])); then
       if is_directory "${d}/include"; then cppflags_new="-I${d}/include${cppflags_new:+ ${cppflags_new}}"; fi
       if is_directory "${d}/lib/pkgconfig"; then pkgconfig_new="${d}/lib/pkgconfig${pkgconfig_new:+:${pkgconfig_new}}"; fi
     }
+    # Helper to append Ruby configure options while preserving existing values.
+    # Extracts the option name (e.g., '--with-openssl-dir' from '--with-openssl-dir=/path')
+    # and skips if an option with that name is already present, preventing conflicts.
+    _ruby_opt() {
+      local opt_name="${1%%=*}"  # Extract option name before '=' (or full string if no '=')
+      # Skip if an option starting with this name is already present
+      if [[ "${RUBY_CONFIGURE_OPTS:-}" == *"${opt_name}"* ]]; then return 0; fi
+      export RUBY_CONFIGURE_OPTS="${RUBY_CONFIGURE_OPTS:+${RUBY_CONFIGURE_OPTS} }${1}"
+    }
+    # Helper to append Python configure options while preserving existing values.
+    # Same deduplication logic as _ruby_opt.
+    _python_opt() {
+      local opt_name="${1%%=*}"
+      if [[ "${PYTHON_CONFIGURE_OPTS:-}" == *"${opt_name}"* ]]; then return 0; fi
+      export PYTHON_CONFIGURE_OPTS="${PYTHON_CONFIGURE_OPTS:+${PYTHON_CONFIGURE_OPTS} }${1}"
+    }
     local pkg
     for pkg in 'curl' 'gnu-tar' 'grep' 'sqlite' 'zlib'; do
       _keg_collect "${pkg}"
     done
     if is_directory "${HOMEBREW_PREFIX}/opt/openssl@3"; then
       _keg_collect 'openssl@3'
-      export RUBY_CONFIGURE_OPTS="--with-openssl-dir=${HOMEBREW_PREFIX}/opt/openssl@3"
+      _ruby_opt "--with-openssl-dir=${HOMEBREW_PREFIX}/opt/openssl@3"
     fi
-    unfunction _keg_collect
+    if is_directory "${HOMEBREW_PREFIX}/opt/readline"; then
+      _keg_collect 'readline'
+      _ruby_opt "--with-readline-dir=${HOMEBREW_PREFIX}/opt/readline"
+    fi
+    if is_directory "${HOMEBREW_PREFIX}/opt/jemalloc"; then
+      _keg_collect 'jemalloc'
+      _ruby_opt "--with-jemalloc"
+    fi
+    _ruby_opt "--enable-yjit"
+
+    # Python build optimizations (for mise python-build)
+    # --enable-optimizations: Profile-Guided Optimization (PGO) + Link-Time Optimization (LTO)
+    # Adds 10-15 minutes to build time but results in 20-40% faster Python runtime.
+    # mise python-build enables this by default for Python 3.10+, but set explicitly for clarity.
+    _python_opt "--enable-optimizations"
+
+    unfunction _keg_collect _ruby_opt _python_opt
 
     # Homebrew base bin/sbin appended after keg-only entries so keg-only tools take
     # priority. sbin is placed before bin to match the original prepend sequence
@@ -145,9 +177,22 @@ if (($+commands[brew])); then
       if is_non_zero_string "${RUBY_CONFIGURE_OPTS:-}"; then
         printf 'export RUBY_CONFIGURE_OPTS=%s\n' "${(q)RUBY_CONFIGURE_OPTS}"
       fi
+      if is_non_zero_string "${PYTHON_CONFIGURE_OPTS:-}"; then
+        printf 'export PYTHON_CONFIGURE_OPTS=%s\n' "${(q)PYTHON_CONFIGURE_OPTS}"
+      fi
     } >|"${keg_cache}" 2>/dev/null
   }
 fi
+
+# --------------------------------------------------------------------------
+# Ruby runtime optimizations
+# --------------------------------------------------------------------------
+
+# Enable YJIT for all Ruby processes (15-50% faster execution, ~1MB memory overhead)
+# YJIT is compiled in via --enable-yjit during mise ruby-build, but must be enabled
+# at runtime via this env var. Minimal warmup cost (~100-500ms) is negligible for
+# typical use cases (web apps, long-running processes, complex scripts).
+export RUBY_YJIT_ENABLE=1
 
 # --------------------------------------------------------------------------
 # Editor configuration

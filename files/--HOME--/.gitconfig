@@ -582,6 +582,7 @@
   autocrlf = false
   commentChar = *
   bigFileThreshold = 512m          # skip delta compression for files larger than this (faster pack, smaller packs for binary-heavy repos)
+  commitGraph = true               # use commit graph for traversal (10-50x faster git log/branch operations)
   compression = 9                  # max zlib compression for loose objects (best size reduction)
   excludesFile = ~/.gitignore_global
   fileMode = true
@@ -589,6 +590,7 @@
   logAllRefUpdates = true
   longPaths = true
   # pager setting moved to ~/.gitconfig-delta.inc (conditionally included when delta is installed)
+  preloadIndex = true              # parallel index loading (2-5x faster status/diff/checkout)
   # repositoryFormatVersion = 1   # Note: This can be uncommented to enable the new repository format for SHA256 support
   sshCommand="ssh -o ConnectTimeout=20"
   symlinks = false
@@ -631,6 +633,7 @@
   reflogExpireUnreachable = 2.weeks.ago
   rerereResolved = 1.weeks.ago
   worktreePruneExpire = 1.weeks.ago
+  writeCommitGraph = true          # generate commit graph on GC (enables faster log/branch operations)
 [grep]
   column = true
   extendedRegexp = true

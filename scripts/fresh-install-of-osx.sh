@@ -31,6 +31,11 @@ _SCRIPT_NAME="${0:t}"
 # warnings/errors and restore cron even when .shellrc is unavailable.
 # This is intentional defensive programming for bootstrap edge cases, not accidental
 # duplication.
+# Helper functions for _cleanup_and_exit that work before .shellrc is sourced.
+# These mirror the versions in .shellrc but use simpler checks.
+_has_step_warnings() { (( ${#_step_warnings[@]:-0} > 0 )); }
+_has_step_errors() { (( ${#_step_errors[@]:-0} > 0 )); }
+
 _cleanup_and_exit() {
   local failed_line="${1:-}"
 
@@ -44,14 +49,14 @@ _cleanup_and_exit() {
     if _has_step_warnings; then
       echo '==> Collected warnings:'
       local _cae_w
-      for _cae_w in "${_step_warnings[@]}"; do
+      for _cae_w in "${_step_warnings[@]:-}"; do
         echo "  ⚠️  ${_cae_w}"
       done
     fi
     if _has_step_errors; then
       echo '==> Collected errors:'
       local _cae_e
-      for _cae_e in "${_step_errors[@]}"; do
+      for _cae_e in "${_step_errors[@]:-}"; do
         echo "  ❌  ${_cae_e}"
       done
     fi
@@ -466,9 +471,6 @@ main() {
   crontab -l >"${_DOTFILES_CRON_BACKUP_FILE}"  2>/dev/null || : >"${_DOTFILES_CRON_BACKUP_FILE}"
   crontab -r &>/dev/null || true
 
-  trap '_cleanup_and_exit "${LINENO}"' ERR
-  trap 'rm -f "${_DOTFILES_CRON_BACKUP_FILE}"; _decrement_script_depth' EXIT
-
   export ZDOTDIR="${ZDOTDIR:-"${HOME}"}"
 
   # On a first install ~/.gitconfig is not yet in place (install-dotfiles.rb runs later),
@@ -510,6 +512,12 @@ main() {
   local _current_section_manual=0  # 0 = auto-set allowed, 1 = manual override active
   local -a _step_warnings=()
   local -a _step_errors=()
+
+  # Set ERR trap AFTER initializing arrays to prevent "parameter not set" errors in _cleanup_and_exit
+  # if an error occurs during initialization. The trap accesses these arrays via dynamic scoping.
+  trap '_cleanup_and_exit "${LINENO}"' ERR
+  trap 'rm -f "${_DOTFILES_CRON_BACKUP_FILE}"; _decrement_script_depth' EXIT
+
   local -a _script_start_times=()
   local -a _step_start_times=()
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))

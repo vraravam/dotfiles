@@ -58,7 +58,7 @@ module InstallDotfiles
     Logging.info 'Running in DRY-RUN mode -- no changes will be made' if dry_run
 
     # NOTE: cannot use Dir.glob since that doesn't handle hidden files
-    Find.find(EnvVars::DOTFILES_DIR.join('files')) do |source_path_str|
+    Find.find(EnvVars::DOTFILES_DIR.join('files').to_s) do |source_path_str|
       source_pn = Pathname.new(source_path_str)
 
       # Skip directories and ignored files/patterns
@@ -169,16 +169,23 @@ module InstallDotfiles
         Logging.info("  Forcefully overwriting existing file '#{target_path}'") if verbose
         target_pn.rmtree unless dry_run
       elsif is_custom_git && !EnvVars.first_install?
-        # For custom.git files, check if they're already identical (content + timestamp)
-        # before doing any mtime comparison or file operations
-        if FileUtils.identical?(source_pn, target_pn) && target_pn.mtime == source_pn.mtime
-          Logging.debug("  Target '#{target_path}' is identical to source (content + timestamp); skipping") if verbose
+        # For custom.git files, check if content is identical first.
+        # If content matches, synchronize timestamps (target may be out of sync after git restore-mtime).
+        # Only use mtime comparison when content differs to determine which version is authoritative.
+        if FileUtils.identical?(source_pn, target_pn)
+          # Content is identical - use source (repo) timestamp as authoritative.
+          if target_pn.mtime != source_pn.mtime
+            Logging.debug("  Content identical but timestamps differ; syncing to source timestamp") if verbose
+            _sync_timestamps(source_pn, target_pn) unless dry_run
+          else
+            Logging.debug("  Target '#{target_path}' is identical to source (content + timestamp); skipping") if verbose
+          end
           stats.skipped += 1
           return
         end
 
-        # mtime-based resolution: whichever file was modified more recently is authoritative.
-        # On a tie, source wins (repo is authoritative on re-runs).
+        # Content differs - use mtime to determine which version is authoritative.
+        # Whichever file was modified more recently wins. On a tie, source wins (repo is authoritative).
         target_mtime = target_pn.mtime
         source_mtime = source_pn.mtime
         if target_mtime > source_mtime
@@ -203,7 +210,10 @@ module InstallDotfiles
     # Create symlink or copy file for files matching 'custom.git'
     if is_custom_git # Special handling for git files: copy instead of symlink
       Logging.info("  Copying '#{source_path}' to '#{target_path}'")
-      FileUtils.cp(source_pn, target_pn, preserve: true) unless dry_run
+      unless dry_run
+        FileUtils.cp(source_pn, target_pn, preserve: true)
+        _sync_timestamps(source_pn, target_pn)
+      end
     else
       Logging.info("  Creating symlink from '#{source_path}' to '#{target_path}'")
       FileUtils.ln_sf(source_pn, target_pn) unless dry_run
@@ -215,6 +225,30 @@ module InstallDotfiles
   end
 
   private_class_method :_process_dotfile
+
+  # Synchronizes timestamps from source to target file(s).
+  #
+  # Applies File.utime to all provided files simultaneously to ensure they have
+  # exactly the same timestamp. This is necessary because:
+  # - FileUtils.cp with preserve: true can introduce sub-microsecond drift due to
+  #   filesystem precision differences
+  # - After git restore-mtime, source has commit timestamp but target may differ
+  # - Mtime-based cache invalidation requires exact timestamp matches
+  #
+  # The source file's timestamp is treated as authoritative and applied to all targets.
+  #
+  # @param source_pn [Pathname] The source file (timestamp authority)
+  # @param target_paths [Array<Pathname>, Pathname] One or more target files to sync
+  # @return [void]
+  def _sync_timestamps(source_pn, *target_paths)
+    source_mtime = source_pn.mtime
+    source_atime = source_pn.atime
+    # Apply to all files at once (including source) to ensure exact timestamp match
+    all_paths = [source_pn, *target_paths].map(&:to_s)
+    File.utime(source_atime, source_mtime, *all_paths)
+  end
+
+  private_class_method :_sync_timestamps
 
   # Ensures the SSH global_config Include line is present in the default SSH config.
   # Extracted from top-level code so it is testable and has a clear failure boundary.

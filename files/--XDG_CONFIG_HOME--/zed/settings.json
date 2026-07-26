@@ -64,10 +64,9 @@
     // "single_file_review": false,
     "model_parameters": [],
     "default_model": {
-      "effort": "high",
       "enable_thinking": true,
-      "provider": "copilot_chat",
-      "model": "gpt-5.1-codex-max"
+      "provider": "ollama",
+      "model": "gemma4:latest"
     },
     "default_profile": "write",
     "enabled": true,
@@ -264,7 +263,7 @@
   "tabs": {
     "file_icons": true,
     "git_status": true,
-    "show_diagnostics": "all",
+    "show_diagnostics": "errors",
     // "show_close_button": "always",
   },
   "file_scan_exclusions": [
@@ -314,7 +313,7 @@
     "show_parameter_hints": false,
     "show_other_hints": true,
     "edit_debounce_ms": 700,
-    "scroll_debounce_ms": 50
+    "scroll_debounce_ms": 150
   },
   "indent_guides": {
     "coloring": "fixed",
@@ -324,7 +323,7 @@
     "git_gutter": "tracked_files",
     "inline_blame": {
       "enabled": true,
-      "delay_ms": 600,
+      "delay_ms": 1200,
       "show_commit_summary": true
     },
     "branch_picker": {
@@ -381,7 +380,7 @@
     "git_diff": true,
     "search_results": true,
     "selected_symbol": true,
-    "diagnostics": "all"
+    "diagnostics": "error"
   },
   "prettier": {
     "singleQuote": true,

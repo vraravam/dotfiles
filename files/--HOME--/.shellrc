@@ -1478,6 +1478,13 @@ clone_repo_into() {
     fi
   fi
 
+  # Generate commit graph after clone/fetch for performance (10-50x faster log/branch
+  # operations). Failure is non-fatal -- repo is usable, just slower. Suppress output
+  # unless it fails (avoid noise during bulk cloning).
+  if ! git -C "${target_folder}" commit-graph write --reachable --changed-paths >/dev/null 2>&1; then
+    debug "Failed to generate commit graph for '$(yellow "${target_folder}")' -- repo will work but may be slower"
+  fi
+
   # Always update submodules after clone or pull -- new commits may introduce submodule changes.
   GIT_SSH_COMMAND="ssh -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=3" git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
   local end_time=${EPOCHSECONDS}  # no $(date +%s) fork

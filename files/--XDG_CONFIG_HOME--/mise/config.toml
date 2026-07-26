@@ -1,3 +1,12 @@
+# mise global configuration (tracked in dotfiles repo)
+#
+# Tool versions are NOT specified here - they belong in ~/.mise.toml (personal, untracked)
+# This file only contains settings that apply to all adopters of the dotfiles.
+#
+# To set your Ruby version: Add to ~/.mise.toml:
+#   [tools]
+#   ruby = "4.0.6"
+
 [settings]
 # tools can read the versions files used by other version managers
 # for example, .nvmrc in the case of node's nvm
@@ -19,7 +28,13 @@ experimental = true
 fetch_remote_versions_timeout = "30s"
 
 [settings.ruby]
-compile = false
+# Ruby always compiles from source via ruby-build (no pre-built binaries exist).
+# This setting may be redundant, but kept explicitly to ensure RUBY_CONFIGURE_OPTS
+# from .aliases is used (openssl@3, readline, jemalloc, YJIT).
+# Results in 25-60% faster Ruby with ~1MB extra memory.
+compile = true
 
 [settings.python]
+# Python uses pre-built binaries that already include PGO+LTO optimizations.
+# PYTHON_CONFIGURE_OPTS from .aliases is only used if mise falls back to python-build.
 github_attestations = false

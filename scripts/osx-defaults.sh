@@ -120,11 +120,14 @@ _plist_set_or_add() {
 }
 
 main() {
-  local auto='N'
-  local _current_section='(init)'
-  local _current_section_manual=0  # 0 = auto-set allowed, 1 = manual override active
+  # Initialize error/warning arrays FIRST, before any code that might trigger ERR trap.
+  # _record_error/_record_warning (called by ERR trap at script level) need these arrays.
   local -a _step_warnings=()
   local -a _step_errors=()
+  local _current_section='(init)'
+  local _current_section_manual=0  # 0 = auto-set allowed, 1 = manual override active
+
+  local auto='N'
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
   # Minimal trap ensures depth is restored on early-return paths (arg-parse failure,
   # non-TTY check) before kill_login_item_apps and the full EXIT trap are registered.

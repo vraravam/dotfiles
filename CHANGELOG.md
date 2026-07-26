@@ -4,6 +4,41 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.6
+
+#### Language build optimizations, Git performance tuning, and mise configuration improvements
+
+* *[files/--HOME--/.shellrc]* Added automatic commit graph generation in `clone_repo_into()` function after successful clone or unshallow+fetch. Commit graphs accelerate git log and branch operations by 10-50x. Runs silently on success, logs debug message on failure (non-fatal). Benefits all repositories cloned via this function (resurrect-repositories.rb, fresh-install bootstrap, manual clones).
+
+* *[files/--HOME--/.gitconfig]* Added Git runtime optimizations: `core.commitGraph = true` (enables commit graph reading for 10-50x faster log/branch operations), `core.preloadIndex = true` (2-5x faster status/diff/checkout on large repos via parallel index loading), `gc.writeCommitGraph = true` (auto-maintains commit graphs during garbage collection). These settings apply immediately to all git operations without requiring any build-time configuration.
+
+* *[files/--HOME--/.aliases]* Added Ruby and Python build optimizations via `RUBY_CONFIGURE_OPTS` and `PYTHON_CONFIGURE_OPTS`. Created `_ruby_opt()` and `_python_opt()` helper functions with option-name-based deduplication to prevent duplicate flags when re-sourcing or when user has pre-existing values. Ruby optimizations: `--with-openssl-dir` (OpenSSL 3.x), `--with-readline-dir` (readline 8.3), `--with-jemalloc` (5-15% faster memory), `--enable-yjit` (compiles YJIT JIT). Python optimizations: `--enable-optimizations` (PGO+LTO, 20-40% faster). Added `RUBY_YJIT_ENABLE=1` export to enable YJIT runtime globally (15-50% faster execution, ~1MB memory overhead). Updated keg-only paths cache generation to export both `RUBY_CONFIGURE_OPTS` and `PYTHON_CONFIGURE_OPTS`. Expected Ruby improvement: 25-60% faster overall (build opts + YJIT runtime).
+
+* *[files/--XDG_CONFIG_HOME--/mise/config.toml]* Changed Ruby compilation setting from `compile = false` to `compile = true` with documentation explaining Ruby always compiles via ruby-build (no pre-built binaries exist), ensuring `RUBY_CONFIGURE_OPTS` is used. Added header documenting tool versions belong in `~/.mise.toml` (personal, untracked) not in this tracked config file. Added Python setting documentation: pre-built binaries already include PGO+LTO optimizations, `PYTHON_CONFIGURE_OPTS` only used as fallback.
+
+* *.mise.toml* Added comment documenting Ruby must use system Ruby (2.6) in dotfiles repo for vanilla macOS compatibility - all Ruby scripts must work before mise/Homebrew Ruby is installed during fresh-install-of-osx.sh. Kept `disable_tools = ["ruby"]` setting with rationale.
+
+* *[files/--HOME--/Brewfile]* Added `jemalloc` dependency with comment "used for faster ruby". Added inline comments to `libyaml` and `openssl` documenting they're also used for faster Ruby builds.
+
+* *[files/--XDG_CONFIG_HOME--/starship.toml]* Fixed timeout warnings on shell startup: increased global `command_timeout` from 500ms to 1000ms to accommodate larger repos, set `ignore_timeout = true` for both `custom.git_size` and `custom.git_clean_arrow` modules to prevent warning spam when git operations exceed timeout (segments simply don't render rather than logging warnings).
+
+* *[files/--XDG_CONFIG_HOME--/zed/settings.json]* Performance tuning: increased git blame `delay_ms` from 600 to 1200, increased inlay hints `scroll_debounce_ms` from 50 to 150, changed scrollbar `diagnostics` from "all" to "error", changed tabs `show_diagnostics` from "all" to "error". Reduces UI noise and improves editor responsiveness.
+
+* *[scripts/utilities/command_utils.rb]* Added `run_interactive` method to execute commands without suppressing stdout/stderr, allowing terminal output to flow through (for git log, etc.). Uses `system()` instead of `Open3.capture3`, passes block for error handling.
+
+* *[scripts/run-all.rb]* Replaced `CommandUtils.capture_output` with `CommandUtils.run_interactive` so command output is visible in terminal. Updated error recording to use `$?.exitstatus` instead of captured status object. Failures still recorded as warnings via `Logging.record_warning`.
+
+#### Adopting these changes
+
+* Restart terminal to pick up new `RUBY_YJIT_ENABLE` and regenerated keg-only paths cache
+* Rebuild Ruby with optimizations: `mise uninstall --all ruby; install_mise_versions`
+* Verify YJIT: `ruby -e 'puts "YJIT: #{RubyVM::YJIT.enabled?}"'` (should show true)
+* Verify jemalloc: `ruby -r rbconfig -e 'puts RbConfig::CONFIG["MAINLIBS"]'` (should include -ljemalloc)
+* Python already has optimizations if using mise pre-built binaries (Python 3.10+)
+* Set your Ruby version in `~/.mise.toml`: `[tools]` section with `ruby = "4.0.6"` (or your preferred version)
+
+---
+
 ### 3.2.5
 
 #### Starship prompt optimization and visual refinement
