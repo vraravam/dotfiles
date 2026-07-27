@@ -257,12 +257,11 @@ module Logging
   #
   # @return [Integer] Unix epoch of the logged start time.
   def print_script_start
-    now = Time.now
-    @script_start_time = now.to_i
+    @script_start_time = Time.now.to_i
     if outermost_script?
-      emit("#{script_name.cyan} #{'==>'.purple} #{'Script started at:'.yellow} #{now.strftime('%Y-%m-%d %H:%M:%S').light_blue}", level: 0)
+      emit("#{script_name.cyan} #{'==>'.purple} #{'Script started at:'.yellow} #{Core.current_timestamp.light_blue}", level: 0)
     end
-    now.to_i
+    @script_start_time
   end
 
   # Prints the script finish timestamp and total duration.
@@ -271,9 +270,8 @@ module Logging
   # @return [void]
   def print_script_duration(start_time)
     return unless outermost_script?
-    now = Time.now
-    human = format_duration(now.to_i - start_time)
-    emit("#{script_name.cyan} #{'==>'.purple} #{'Script finished at:'.yellow} #{now.strftime('%Y-%m-%d %H:%M:%S').light_blue} " \
+    human = format_duration(Time.now.to_i - start_time)
+    emit("#{script_name.cyan} #{'==>'.purple} #{'Script finished at:'.yellow} #{Core.current_timestamp.light_blue} " \
          "(#{'Total duration:'.yellow} #{human.light_blue} #{'seconds'.yellow}).", level: 0)
   end
 

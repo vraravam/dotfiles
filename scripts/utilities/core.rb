@@ -5,7 +5,35 @@ require 'pathname'
 
 # Core utility module with minimal dependencies.
 # Provides foundational helpers used by other utility modules.
-# This module must have ZERO requires (except stdlib) to avoid circular dependencies.
+#
+# **CRITICAL: This module must remain dependency-free and OS-agnostic.**
+#
+# Rules for adding methods to this module:
+# 1. **ZERO requires** except Ruby stdlib (pathname, fileutils, etc.)
+#    - Never require other utilities/* modules (creates circular dependencies)
+#    - Never require gems or external dependencies
+#
+# 2. **OS-agnostic only** - methods must work on any platform
+#    - No macOS-specific calls (osascript, defaults, softwareupdate, etc.)
+#    - No Linux-specific calls (systemctl, apt, etc.)
+#    - Only cross-platform Ruby stdlib and standard Unix tools
+#
+# 3. **Check ENV directly** when needed, not via EnvVars module
+#    - EnvVars requires Core, so Core cannot require EnvVars (circular dependency)
+#    - Use ENV.fetch('VAR', 'default') directly in method bodies
+#
+# 4. **Examples of appropriate methods for Core:**
+#    - nil_or_empty? checks (pure Ruby logic)
+#    - Timestamp formatting (Time.now.strftime - pure Ruby)
+#    - TTY detection ($stdout.tty? - Ruby stdlib)
+#    - Stream command execution (IO.popen - Ruby stdlib)
+#    - Path constants (Pathname - Ruby stdlib)
+#
+# 5. **Examples of methods that belong elsewhere:**
+#    - macOS notifications → MacOS module
+#    - Git operations → GitProcessor module
+#    - Homebrew queries → CommandUtils module
+#    - Logging with colors → Logging module
 #
 # Other utility modules can include Core to get unqualified access to helpers.
 module Core
@@ -17,6 +45,33 @@ module Core
   # @example
   #   Core::ROOT.join('usr', 'bin', 'defaults')  # => Pathname('/usr/bin/defaults')
   ROOT = Pathname.new(File::SEPARATOR).freeze
+
+  # Returns the current wall-clock time formatted as 'YYYY-MM-DD HH:MM:SS'.
+  # Used for git commit messages, user-facing timestamps, and logging.
+  # Mirrors current_timestamp function in .shellrc.
+  #
+  # @return [String] Formatted timestamp
+  #
+  # @example
+  #   Core.current_timestamp  # => "2026-07-27 08:45:00"
+  def current_timestamp
+    Time.now.strftime('%Y-%m-%d %H:%M:%S')
+  end
+
+  # Checks if the script is running in a TTY (terminal) context.
+  # Returns true when stdout is a TTY or FORCE_COLOR env var is set.
+  # Used to gate interactive operations (app kill/restart, prompts, etc.)
+  # that should not run in cron or non-interactive contexts.
+  #
+  # @return [Boolean] true if running in TTY context
+  #
+  # @example
+  #   Core.running_in_tty?  # => true (in terminal), false (in cron)
+  def running_in_tty?
+    # Check FORCE_COLOR directly to avoid circular dependency with EnvVars
+    # (EnvVars requires this module via Core)
+    $stdout.tty? || !ENV.fetch('FORCE_COLOR', '').strip.empty?
+  end
 
   # Checks if a value is nil or empty.
   # - String: strips whitespace first, then checks if empty

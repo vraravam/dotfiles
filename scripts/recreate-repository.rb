@@ -91,7 +91,7 @@ module RecreateRepository
 
       # Stage and commit all files in local repo
       git.stage_all
-      git.run_alias('sci', "#{force ? 'Initial' : 'Incremental'} commit: #{MacOS.current_timestamp}")
+      git.smart_commit
 
       git.compress
 

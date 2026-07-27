@@ -324,11 +324,36 @@ class GitProcessor
   # Equivalent to `git sci "<message>"` alias.
   # Aborts if nothing is staged.
   #
-  # @param message [String] The commit message.
+  # When called without a message, auto-generates one based on repository state:
+  # - "Initial commit: <timestamp>" if no commits exist (commit_count == 0)
+  # - "Incremental commit: <timestamp>" otherwise (commit_count > 0)
+  #
+  # @param message [String, nil] Optional commit message. If nil, auto-generates based on repo state.
   # @return [Boolean] true if commit succeeded, false if nothing staged or commit failed.
-  def smart_commit(message)
+  def smart_commit(message = nil)
+    # Auto-generate message if not provided
+    if nil_or_empty?(message)
+      prefix = commit_count.zero? ? 'Initial' : 'Incremental'
+      message = "#{prefix} commit: #{Core.current_timestamp}"
+    end
+
     _out, _err, status = run_alias('sci', message)
     status.success?
+  end
+
+  # Returns the total number of commits in the repository across all branches.
+  # Uses 'git rev-list --all --count' which counts all reachable commits.
+  #
+  # Works correctly for:
+  # - Brand new repos without any commits (returns 0)
+  # - Repos without remotes (counts local commits only)
+  # - Repos after git.recreate() (returns 0 for fresh .git directory)
+  # - Existing repos with commit history (returns total count)
+  #
+  # @return [Integer] Total commit count (0 for brand new repos, >0 for repos with history).
+  def commit_count
+    out, = _execute('rev-list', '--all', '--count')
+    out.strip.to_i
   end
 
   # Pushes to a remote and sets up upstream tracking.

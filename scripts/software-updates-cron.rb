@@ -28,6 +28,7 @@ require 'shellwords'
 require_relative 'run-all'
 require_relative 'utilities/antidote'
 require_relative 'utilities/command_utils'
+require_relative 'utilities/core'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
 require_relative 'utilities/git_workspace'
@@ -47,7 +48,7 @@ module SoftwareUpdatesCron
   # @return [Boolean] true on success (no errors/warnings), false if any errors or warnings occurred
   def run(start_time:)
     outdated_flat = _run_all_updates
-    now = MacOS.current_timestamp
+    now = Core.current_timestamp
     duration = Logging.format_duration(Time.now.to_i - start_time)
 
     Logging.success "Finished software updates at #{now.purple} in #{duration.light_blue}"
@@ -316,14 +317,14 @@ if __FILE__ == $PROGRAM_NAME
   Logging.run_script do |start_time|
     # Write start marker before beginning work (shows cron is running)
     run_log = EnvVars::HOME.join('.software-updates-run-log')
-    start_timestamp = MacOS.current_timestamp
+    start_timestamp = Core.current_timestamp
     run_log.write("STARTED: #{start_timestamp}\n", mode: 'a')
 
     success = SoftwareUpdatesCron.run(start_time: start_time)
 
     # Write failure marker if run had errors/warnings
     unless success
-      end_timestamp = MacOS.current_timestamp
+      end_timestamp = Core.current_timestamp
       duration = Logging.format_duration(Time.now.to_i - start_time)
       run_log.write("FAILED: #{end_timestamp} (took #{duration})\n", mode: 'a')
     end

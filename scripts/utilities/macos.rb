@@ -31,45 +31,32 @@ module MacOS
   ZSH_CMD = Core::ROOT.join('bin', 'zsh').to_s.freeze
 
   # Login-item apps that are killed before defaults writes and restarted after.
+  # This is the single source of truth for the login-item app list.
   # Keep in sync with Brewfile setup_login_items_script entries and
   # defaults-write login-key sections in osx-defaults.sh.
-  # TODO: Duplicated in .aliases and macos.rb - need to find a way to have only 1 copy
   LOGIN_ITEM_APPS = [
-    'Clocker',   # startAtLogin = true (com.abhishek.Clocker)
-    'DockDoor',  # login item via Brewfile setup_login_items_script (SMAppService)
-    'KeyCastr',  # login item via Brewfile setup_login_items_script (SMAppService)
-    'KeyClu',    # launchAtLogin = true (com.0804Team.KeyClu)
-    'Keybase',   # login item via Brewfile setup_login_items_script (SMAppService)
+    'Clocker',    # startAtLogin = true (com.abhishek.Clocker)
+    'DockDoor',   # login item via Brewfile setup_login_items_script (SMAppService)
+    'KeyCastr',   # login item via Brewfile setup_login_items_script (SMAppService)
+    'KeyClu',     # launchAtLogin = true (com.0804Team.KeyClu)
+    'Keybase',    # login item via Brewfile setup_login_items_script (SMAppService)
     'Mechvibes',  # login item via Brewfile setup_login_items_script (SMAppService)
-    'ProtonVPN', # login item via Brewfile setup_login_items_script (SMAppService)
+    'ProtonVPN',  # login item via Brewfile setup_login_items_script (SMAppService)
     'Shortcat',   # login item via Brewfile setup_login_items_script (SMAppService)
-    'Sol',       # login item via Brewfile setup_login_items_script (SMAppService)
-    'Stats',     # LaunchAtLoginNext = true (eu.exelban.Stats)
-    'Thaw'      # login item via Brewfile setup_login_items_script (SMAppService)
-  # 'Vorssaint', # login item via Brewfile setup_login_items_script (SMAppService)
+    'Sol',        # login item via Brewfile setup_login_items_script (SMAppService)
+    'Stats',      # LaunchAtLoginNext = true (eu.exelban.Stats)
+    'Thaw',       # login item via Brewfile setup_login_items_script (SMAppService)
+    'Vorssaint',  # login item via Brewfile setup_login_items_script (SMAppService)
   ].freeze
-
-  # Returns the current wall-clock time formatted as 'YYYY-MM-DD HH:MM:SS',
-  # mirroring current_timestamp in .shellrc.
-  #
-  # @return [String]
-  def current_timestamp
-    Time.now.strftime('%Y-%m-%d %H:%M:%S')
-  end
-
-  # Checks if the script is running in a TTY (terminal) context.
-  # Returns true when stdout is a TTY or FORCE_COLOR env var is set.
-  # Used to gate interactive operations (app kill/restart, prompts, etc.)
-  # that should not run in cron or non-interactive contexts.
-  #
-  # @return [Boolean] true if running in TTY context
-  def running_in_tty?
-    $stdout.tty? || EnvVars.force_color?
-  end
 
   # Sends SIGTERM to every app in LOGIN_ITEM_APPS. Called before writing
   # defaults so in-memory state is flushed to disk first.
   # Failures are silenced -- apps that are not running are not an error.
+  #
+  # Sleeps 1 second after sending signals to ensure apps have fully terminated
+  # before the caller proceeds with defaults writes. This prevents race conditions
+  # where an app's shutdown handler might flush preferences to disk after we've
+  # already started writing new values.
   #
   # @return [void]
   def kill_login_item_apps
@@ -78,6 +65,9 @@ module MacOS
     end
     # Finder is launchd-managed; killall causes immediate relaunch
     system('killall', 'Finder', out: File::NULL, err: File::NULL)
+
+    # Give apps time to fully terminate before defaults writes begin
+    sleep 1
   end
 
   # Re-opens every app in LOGIN_ITEM_APPS. Called from an EXIT trap

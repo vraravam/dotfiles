@@ -170,7 +170,7 @@ main() {
   # Only apps explicitly set as login items are handled here; apps that cannot
   # be safely force-quit (Terminal, iTerm, Zoom, ProtonVPN) are left to the
   # user_action prompts at the end.
-  # The canonical app list lives in _MACOS_LOGIN_ITEM_APPS (.aliases § 3n).
+  # The canonical app list lives in MacOS::LOGIN_ITEM_APPS (scripts/utilities/macos.rb).
   info "Temporarily stopping login-item apps (will auto-restart on script exit) to prevent them from overwriting settings"
   kill_login_item_apps
   trap 'restart_login_item_apps; resume_softwareupdate_schedule; _decrement_script_depth' EXIT

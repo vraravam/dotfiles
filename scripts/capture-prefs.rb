@@ -16,6 +16,7 @@ require 'fileutils'
 require 'pathname'
 require 'tempfile'
 
+require_relative 'utilities/core'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
 require_relative 'utilities/logging'
@@ -70,7 +71,7 @@ module CapturePrefs
     # values when they quit. Cron skips this -- killall would disrupt the user's running
     # session, and 'open -a' would re-launch apps mid-session. On export, macOS cfprefsd
     # has already flushed current prefs to disk; killing apps is unnecessary.
-    if _importing? && MacOS.running_in_tty?
+    if _importing? && Core.running_in_tty?
       MacOS.kill_login_item_apps
       at_exit { MacOS.restart_login_item_apps }
     end

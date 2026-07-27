@@ -416,18 +416,8 @@ if command_exists ncdu; then alias du='ncdu --color dark -r -x --exclude .git --
 # Example: _call_ruby_git_workspace install_mise_versions first_install=true
 #          _call_ruby_git_workspace regenerate_repo_aliases force=false
 _call_ruby_git_workspace() {
-  local method="${1:-}"
-  if is_zero_string "${method}"; then
-    error '_call_ruby_git_workspace: method name required'
-    return 1
-  fi
+  local method="${1:?_call_ruby_git_workspace: method name required}"
   shift
-
-  # Guard: Ruby must be available (vanilla OS before Homebrew installs it)
-  if ! command_exists ruby; then
-    debug "Ruby not available -- skipping GitWorkspace.${method}"
-    return 0
-  fi
 
   local kwargs_str=""
   if [[ $# -gt 0 ]]; then
@@ -444,8 +434,7 @@ _call_ruby_git_workspace() {
     kwargs_str="${kwargs_parts[*]}"
   fi
 
-  setup_rubylib
-  COLUMNS="${COLUMNS}" ruby -e "require 'git_workspace'; GitWorkspace.${method}(${kwargs_str})"
+  call_ruby_utility "require 'git_workspace'; GitWorkspace.${method}(${kwargs_str})"
 }
 
 # --------------------------------------------------------------------------
@@ -782,8 +771,7 @@ if is_macos && command_exists brew; then
   # Called by the antidote formula's postinstall hook in Brewfile (whenever
   # antidote is installed/upgraded) and by software-updates-cron.sh (periodic updates).
   update_antidote_and_regenerate_plugin_bundle() {
-    setup_rubylib
-    COLUMNS="${COLUMNS}" ruby -e "require 'antidote'; Antidote.update_and_regenerate_bundle"
+    call_ruby_utility "require 'antidote'; Antidote.update_and_regenerate_bundle"
   }
 
   # Audits and auto-styles a Homebrew cask formula for contribution readiness.
@@ -926,11 +914,7 @@ fi
 # does not already exist (bootstrap / first-install path).
 # Usage: create_crontab <output-file-path>
 create_crontab() {
-  local file="${1:-}"
-  if is_zero_string "${file}"; then
-    error "create_crontab requires an output file path as its first argument."
-    return 1
-  fi
+  local file="${1:?create_crontab: output file path required}"
   _call_ruby_cron create_crontab "${file}"
 }
 
@@ -1041,27 +1025,6 @@ build_me() {
 # 3n. macOS prefs helpers
 # --------------------------------------------------------------------------
 
-# Canonical list of login-item apps managed by osx-defaults.sh and
-# capture-prefs.rb. Both scripts kill these apps before writing defaults so
-# the running instance cannot overwrite writes on quit, and restart them on
-# exit via an EXIT trap.
-# Keep in sync with the Brewfile setup_login_items_script entries and the
-# defaults-write login-key sections in osx-defaults.sh.
-# TODO: Duplicated in .aliases and macos.rb - need to find a way to have only 1 copy
-_MACOS_LOGIN_ITEM_APPS=(
-  'Clocker'    # startAtLogin = true (com.abhishek.Clocker)
-  'DockDoor'   # login item via Brewfile setup_login_items_script (SMAppService)
-  'KeyCastr'   # login item via Brewfile setup_login_items_script (SMAppService)
-  'KeyClu'     # launchAtLogin = true (com.0804Team.KeyClu)
-  'Keybase'    # login item via Brewfile setup_login_items_script (SMAppService)
-  'Mechvibes'  # login item via Brewfile setup_login_items_script (SMAppService)
-  'Shortcat'   # login item via Brewfile setup_login_items_script (SMAppService)
-  'Sol'        # login item via Brewfile setup_login_items_script (SMAppService)
-  'Stats'      # LaunchAtLoginNext = true (eu.exelban.Stats)
-  'Thaw'       # login item via Brewfile setup_login_items_script (SMAppService)
-  # 'Vorssaint'  # login item via Brewfile setup_login_items_script (SMAppService)
-)
-
 # Invokes a method on the MacOS Ruby module (scripts/utilities/macos.rb).
 # Used by the delegation functions below to eliminate repetitive ruby -e calls.
 #
@@ -1070,14 +1033,7 @@ _MACOS_LOGIN_ITEM_APPS=(
 _call_ruby_macos() {
   local method="${1:?_call_ruby_macos: method name required}"
 
-  # Guard: Ruby must be available (vanilla OS before Homebrew installs it)
-  if ! command_exists ruby; then
-    debug "Ruby not available -- skipping MacOS.${method}"
-    return 0
-  fi
-
-  setup_rubylib
-  COLUMNS="${COLUMNS}" ruby -e "require 'macos'; MacOS.${method}"
+  call_ruby_utility "require 'macos'; MacOS.${method}"
 }
 
 # Delegates to MacOS.kill_login_item_apps (scripts/utilities/macos.rb).

@@ -314,8 +314,7 @@ module GitWorkspace
       GitProcessor.new(dir: repo_dir) do |git|
         # Git accepts both absolute and relative paths directly
         git.add(path || '.')
-        timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
-        success = git.smart_commit("Incremental commit: #{timestamp}")
+        success = git.smart_commit
       end
       success
     end
