@@ -234,13 +234,16 @@ Benefits realized:
 
 Trade-off: Still use shell for startup paths (zsh internals)
 
-#### Antidote .zwc Crash (3.1.19 - Oct 2025)
+#### Antidote .zwc Crash (3.1.19 - Oct 2025) [FIXED in 2.1.1 - July 2026]
 **Problem**: `antidote.zsh.zwc` bytecode broke every shell startup
-**Cause**: antidote uses `[[ ":${ZSH_EVAL_CONTEXT}:" == *:file:* ]]` to detect sourcing
+**Cause**: antidote 2.1.0 used `[[ ":${ZSH_EVAL_CONTEXT}:" == *:file:* ]]` to detect sourcing
   - `.zwc` sets context to `filecode`, not `file`
   - Pattern mismatch → CLI mode → `exit 1` → crash
-**Solution**: Never compile `antidote.zsh` to `.zwc`
-**Prevention**: `delete_caches` now purges any stale `antidote.zsh.zwc`
+**Temporary solution (3.1.19-3.1.26)**: Never compile `antidote.zsh` to `.zwc`
+**Fix (antidote 2.1.1+)**: Pattern changed to `*:file(|code):*` which matches both contexts
+  - Now safe to compile `antidote.zsh` to `.zwc`
+  - `find_in_folder_and_recompile "${ANTIDOTE_HOME}"` handles it automatically
+  - GitHub issue #270: https://github.com/mattmc3/antidote/issues/270
 
 ### Known Issues
 1. Aliases sometimes fail to load after certain `.zshrc` changes

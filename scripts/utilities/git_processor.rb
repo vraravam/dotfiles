@@ -293,6 +293,21 @@ class GitProcessor
     stdout.split("\n")
   end
 
+  # Lists files in a ref (branch/tag/commit/remote ref) using ls-tree.
+  # Works for both local refs (HEAD, master) and remote refs (origin/main).
+  # Does not require fetching - reads from locally cached refs.
+  #
+  # Returns sorted list for consistent comparison operations.
+  # Git naturally outputs in sorted order, but we call .sort explicitly for guaranteed consistency.
+  #
+  # @param ref [String] Any git ref (e.g., 'HEAD', 'master', 'origin/main')
+  # @return [Array<String>] Sorted list of file paths, or empty array on failure
+  def ls_tree(ref)
+    stdout, stderr, status = _execute('ls-tree', '-r', '--name-only', ref)
+    return [] unless status.success?
+    stdout.split("\n").sort
+  end
+
   # Creates a commit with the given message.
   #
   # @param message [String] Commit message.
@@ -371,6 +386,22 @@ class GitProcessor
     run_alias('rfc')
     run_alias('cc')
     true
+  end
+
+  # Builds the commit graph for the repository to optimize git operations.
+  # Commit graphs speed up operations like git log, git merge-base, and git status.
+  # Use --reachable to include all commits reachable from any ref (branches, tags).
+  #
+  # @return [Boolean] true on success, false on failure
+  def build_commit_graph
+    if @dry_run
+      Logging.info 'Would build commit graph'
+      return true
+    end
+
+    Logging.debug "#{'Building commit graph'.yellow} for '#{@dir.to_s.cyan}'"
+    _out, _err, status = _execute('commit-graph', 'write', '--reachable', '--changed-paths')
+    status.success?
   end
 
   # Runs a git alias command (e.g., 'amq', 'rfc', 'cc').

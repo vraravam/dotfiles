@@ -111,8 +111,6 @@ autoload -Uz zrecompile
   # is_file_older_than returns true when target is missing OR source is newer than target.
   # This ensures cache is force-created when brew exists but cache is missing.
   if is_executable "${brew_bin}" && is_file_older_than "${brew_shellenv_cache}" "${brew_bin}"; then
-    # Ensure cache directory exists before writing
-    ensure_dir_exists "${XDG_CACHE_HOME}"
     # Run brew shellenv in a subshell to get brew vars + path_helper result without polluting current PATH
     local brew_cellar brew_repo brew_infopath brew_manpath brew_prefix
     eval "$("${brew_bin}" shellenv 2>/dev/null)"

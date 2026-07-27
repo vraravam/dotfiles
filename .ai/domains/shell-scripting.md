@@ -1461,23 +1461,37 @@ _my_cmd() {
 my_cmd() { dispatch_or_fallback my_cmd _my_cmd "$@"; }
 
 # Run only when executed directly, not when sourced (e.g. to import the function
-# into another script).
-[[ "${zsh_eval_context}" == *file* ]] || my_cmd "$@"
+# into another script). Pattern matches both 'file' (regular sourcing) and
+# 'filecode' (.zwc bytecode).
+[[ ":${ZSH_EVAL_CONTEXT}:" == *:file(|code):* ]] || my_cmd "$@"
 # is_zsh returns false in bash (ZSH_VERSION unset), short-circuiting the zsh-only
 # '(( $+functions[...] ))' syntax so it is never evaluated by non-zsh runtimes.
 is_zsh && (($+functions[compdef])) && compdef my_cmd || true
 ```
 
-### `zsh_eval_context` Self-Invocation Guard
+### `ZSH_EVAL_CONTEXT` Self-Invocation Guard
 
-`[[ "${zsh_eval_context}" == *file* ]] || my_cmd "$@"` prevents the function
-from running when the file is `source`d by another script. When `*file*` is
-present in `zsh_eval_context`, the file is being sourced -- skip execution.
-When absent, the file is being run directly -- execute.
+`[[ ":${ZSH_EVAL_CONTEXT}:" == *:file(|code):* ]] || my_cmd "$@"` prevents the
+function from running when the file is `source`d by another script.
 
-Use `*file*` (not `*:file*`) -- the separator before `file` differs by context:
-- Sourced from a script: `toplevel:shfunc:file` → colon-separated, matches both
-- Sourced in `zsh -c`: `cmdarg file` → space-separated, only `*file*` matches
+**Pattern explanation:**
+- Use **uppercase** `ZSH_EVAL_CONTEXT` (scalar string version), not lowercase `zsh_eval_context` (array version)
+- `:${ZSH_EVAL_CONTEXT}:` wraps the variable in colons to match colon-separated tokens
+- `*:file(|code):*` matches both `:file:` (regular sourcing) and `:filecode:` (.zwc bytecode)
+- The `(|code)` pattern means "optionally followed by 'code'"
+
+**Behavior:**
+- When sourced: context contains `:file:` or `:filecode:` → pattern matches → skip execution
+- When run directly: context is `toplevel` or `cmdarg` → pattern doesn't match → execute
+
+**Why the colon wrappers:**
+- `toplevel:shfunc:file` → `:toplevel:shfunc:file:` ensures `:file:` matches (not partial match of `filecode`)
+- `cmdarg filecode` → `:cmdarg filecode:` would NOT match `:file:` (correct - bytecode loaded differently)
+
+**Why `file(|code)` pattern:**
+- `.zwc` bytecode changes eval context token from `file` to `filecode`
+- Pattern must match both to work correctly with compiled autoload functions
+- Mirrors antidote 2.1.1's fix for the same issue
 
 ### `compdef` Registration Guard
 

@@ -188,6 +188,12 @@ if __FILE__ == $PROGRAM_NAME
 
   parser.abort_with_usage('Missing required option: -a <app-name>') if nil_or_empty?(options[:app_name])
 
+  # Note: This script uses Logging.run_script instead of the manual
+  # increment_script_depth + print_script_start + print_script_summary pattern.
+  # This is a standalone utility (not called from fresh-install or other scripts),
+  # so the simplified run_script wrapper is appropriate. If this script is later
+  # integrated into a larger workflow, run_script automatically suppresses banners
+  # when script_depth >= 1 (see logging.rb lines 464-471).
   Logging.run_script(File.basename(__FILE__, '.rb')) do
     success = SetupLoginItem.run(app_name: options[:app_name], background: options[:background] || false)
     exit(success ? 0 : 1)

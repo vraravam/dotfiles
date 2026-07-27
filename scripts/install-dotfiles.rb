@@ -40,7 +40,7 @@ module InstallDotfiles
   DOT_GIT_REPLACEMENT_TARGET = '.git' # Target string for replacement (e.g., custom.gitignore -> .gitignore)
 
   IGNORED_FILENAMES = ['.DS_Store'].freeze # Filenames to ignore during processing
-  IGNORED_FILE_PATTERNS = [/\.zwc/].freeze # File patterns to ignore (matches anywhere in path)
+  IGNORED_SUFFIXES = ['.zwc'].freeze # File suffixes to ignore (e.g., compiled bytecode)
 
   # Statistics tracking -- use a Struct so the intent (a mutable bag of counters) is explicit
   Stats = Struct.new(:processed, :created, :updated, :skipped, :errors, keyword_init: true)
@@ -61,10 +61,10 @@ module InstallDotfiles
     Find.find(EnvVars::DOTFILES_DIR.join('files').to_s) do |source_path_str|
       source_pn = Pathname.new(source_path_str)
 
-      # Skip directories and ignored files/patterns
+      # Skip directories and ignored files/suffixes
       next if source_pn.directory?
       next if IGNORED_FILENAMES.include?(source_pn.basename.to_s)
-      next if IGNORED_FILE_PATTERNS.any? { |pattern| source_pn.to_s.match?(pattern) }
+      next if IGNORED_SUFFIXES.any? { |suffix| source_pn.to_s.end_with?(suffix) }
 
       # git doesn't handle symlinks well for its core config, handle separately
       relative_path_str = source_pn.relative_path_from(EnvVars::DOTFILES_DIR.join('files')).to_s

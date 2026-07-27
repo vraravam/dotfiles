@@ -107,13 +107,48 @@ See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-two-phase-preference-arc
 
 This script runs post-bundle cleanup and plugin setup that cannot live in the Brewfile itself. It removes conflicting zsh completion files, trusts known taps, and updates antidote plugins. It is called automatically by `fresh-install-of-osx.sh` after `brew bundle` completes. It can also be run manually at any time — it is idempotent.
 
-## recreate-repo.rb
+## recreate-repository.rb
 
-Usually, over time, if a repo has lots of branches that were deleted or became stale, and constant rebases done - it can lead to the repo bloating in size (both on local and remote). This is especially true of the browser-profiles repo in my usage since I have a cron job setup to amend the repo with the new state files. To effectively reduce the size on the remote so that any future clone does not pull down dangling commits and other cruft, the simplest way that I have found is to recreate the remote after running the `git cc` command on the local.
+Reduces repository size by removing dangling commits and orphaned objects that accumulate over time from deleted branches, rebases, and amend operations. This is especially useful for frequently-updated repos (like browser-profiles with cron amendments).
 
-  ```zsh
-  recreate-repo.rb [-f] -d <repo-folder>
-  ```
+The script has two modes:
+
+**Non-force mode** (default): Compresses and pushes existing commits without destroying history.
+
+**Force mode** (`-f`): Squashes all history into a single commit and recreates the remote repository.
+
+### Force mode workflow
+
+When run with `-f`, the script follows this safety-first sequence:
+
+1. **Capture remote state** — Gets file list from `origin/<branch>` before any destructive operations
+2. **Recreate local repo** — Destroys `.git` and creates a fresh repository
+3. **Commit all files** — Stages and commits everything into a single initial commit
+4. **Verify file lists match** — Compares new local vs captured remote file lists
+5. **If match**: Delete remote repo (Keybase only), then push
+6. **If mismatch**: Abort without deleting remote (preserves remote as backup)
+7. **Build commit graph** — Optimizes git operations (log, status, merge-base)
+
+The early capture (step 1) avoids prompting for `git remote add` or `git fetch` since remote tracking refs are lost when `.git` is destroyed.
+
+Both force and non-force modes end with the same operations: push to remote (force or normal), then build commit graph.
+
+### Usage
+
+```zsh
+recreate-repository.rb -d <repo-folder>          # Compress only
+recreate-repository.rb -f -d <repo-folder>       # Force squash
+recreate-repository.rb -n -f -d <repo-folder>    # Dry-run
+```
+
+**Profiles repo**: Always force-squashed automatically (no `-f` needed).
+
+### Safety features
+
+- **Pre-comparison**: File lists compared before remote deletion
+- **Remote preservation**: If files don't match, remote stays intact (can be re-cloned)
+- **Dry-run mode**: Preview operations with `-n` flag
+- **Early validation**: Checks remote ref exists before destroying local `.git`
 
 ## resurrect-repositories.rb
 

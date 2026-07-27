@@ -499,8 +499,7 @@ delete_caches() {
   # following) to avoid cycles in user home dirs. HOMEBREW_PREFIX must use -L so
   # that find descends into opt/<formula>/ directories, which are all symlinks to
   # Cellar/<formula>/<version>/. Without -L, stale .zwc files in those paths are
-  # silently skipped -- antidote.zsh.zwc in particular must be purged so that
-  # antidote's ZSH_EVAL_CONTEXT source-detection check works correctly on next start.
+  # silently skipped.
   find "${HOME}" -maxdepth 10 \( -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' \) -prune -o -name '*.zwc*' -type f -print -delete || warn "find command failed in ${HOME}"
   # macOS find forbids -delete when -L is active (safety guard against deleting
   # symlink targets). Use -exec rm -f instead, which is exempt from this restriction.

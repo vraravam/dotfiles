@@ -76,14 +76,9 @@ find_in_folder_and_recompile() {
     return
   fi
 
-  # antidote.zsh must NOT be compiled to .zwc -- it crashes when loaded from bytecode.
-  # When loaded from .zwc, zsh sets ZSH_EVAL_CONTEXT to 'filecode' instead of 'file',
-  # which doesn't match antidote's source-detection pattern '*:file:*'. The CLI branch
-  # then fires, calls exit 1, and crashes the interactive shell.
-  # Tracked at: https://github.com/mattmc3/antidote/issues/270
   find "${dir_to_scan}" -maxdepth 5 \
     \( \( -name 'node_modules' -o -name '.pnpm' \) -type d -prune \) -o \
-    \( \( -name '*.sh' -o -name '*.zsh' \) ! -name 'antidote.zsh' -type f -print0 \) |
+    \( \( -name '*.sh' -o -name '*.zsh' \) -type f -print0 \) |
     while IFS= read -r -d $'\0' f; do
       recompile_zsh_script "${f}"
     done
@@ -118,15 +113,7 @@ recompile_zsh_script "${XDG_CACHE_HOME}/zcompdump"
 # Compile it explicitly so every shell startup sources bytecode, not raw zsh text.
 recompile_zsh_script "${ANTIDOTE_PLUGIN_ZSH}"
 
-# antidote.zsh is intentionally NOT compiled to .zwc.
-# antidote 2.1.0 detects whether it is being sourced (vs run as a CLI) by checking
-# ZSH_EVAL_CONTEXT for the token 'file'. When loaded from .zwc bytecode, zsh sets
-# the token to 'filecode' instead, which does not match antidote's '*:file:*' pattern.
-# The CLI branch then fires, calls exit 1, and crashes the interactive shell.
-# Loading antidote.zsh from raw source on every startup is the only safe approach
-# until antidote fixes its source-detection check to also match 'filecode'.
-# Tracked at: https://github.com/mattmc3/antidote/issues/270
-
+# ANTIDOTE_HOME contains antidote.zsh and all plugin repositories.
 find_in_folder_and_recompile "${ANTIDOTE_HOME}"
 
 # Compile third-party completion scripts that are sourced directly at startup.

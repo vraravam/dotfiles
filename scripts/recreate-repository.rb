@@ -75,23 +75,98 @@ module RecreateRepository
     # resume_cron restores from the backup on any error path.
     Cron.with_cron_suspended(dry_run: dry_run) do
       if force
-        git.recreate(remote_url: git_url, user_name: user_name, user_email: user_email)
+        # Capture remote file list BEFORE destroying local .git
+        # (recreate removes .git which loses remote tracking refs)
+        remote_ref = "origin/#{branch}"
+        remote_files = git.ls_tree(remote_ref)
 
+        if remote_files.empty?
+          Logging.record_error "Failed to get file list from remote branch '#{remote_ref.cyan}' or remote is empty"
+          return false
+        end
+
+        # Now safe to recreate local repo (remote untouched)
+        git.recreate(remote_url: git_url, user_name: user_name, user_email: user_email)
+      end
+
+      # Stage and commit all files in local repo
+      git.stage_all
+      git.run_alias('sci', "#{force ? 'Initial' : 'Incremental'} commit: #{MacOS.current_timestamp}")
+
+      git.compress
+
+      if force
+        # Compare new local vs old remote BEFORE deleting remote.
+        # This ensures we don't lose any files when recreating the remote repo.
+        return false unless _verify_file_lists_match(git, remote_files, dry_run)
+
+        # File lists match - safe to delete remote and push
         # Keybase repo recreation only happens when force-squashing commits, because
         # that's when we've destroyed local history. Without force, we're just
         # compressing and pushing existing commits - no remote recreation needed.
-        return false unless Keybase.recreate_repo(git.remote_repo_name, dry_run: dry_run) if Keybase.keybase_url?(git_url)
+        if Keybase.keybase_url?(git_url)
+          return false unless Keybase.recreate_repo(git.remote_repo_name, dry_run: dry_run)
+        end
       end
 
-      git.stage_all
-      git.run_alias('sci', "Initial commit: #{MacOS.current_timestamp}")
-
-      git.compress
+      # Push to remote (force push after recreation, normal push otherwise)
       git.push(remote: 'origin', branch: branch, force: force)
+
+      # Build commit graph for optimized git operations (log, status, merge-base)
+      git.build_commit_graph
     end
 
     true
   end
+
+  # Verifies that new local repo and old remote file lists match.
+  # Called after local recreation with pre-captured remote file list.
+  #
+  # @param git [GitProcessor] Git processor instance
+  # @param remote_files [Array<String>] Pre-captured remote file list (before recreate)
+  # @param dry_run [Boolean] Dry run mode
+  # @return [Boolean] true if lists match (or dry_run), false otherwise
+  def _verify_file_lists_match(git, remote_files, dry_run)
+    Logging.info "Verifying file lists match between new local and old remote before deleting remote..."
+
+    if dry_run
+      Logging.info "Would compare #{'HEAD'.cyan} vs pre-captured remote file list"
+      return true
+    end
+
+    # Get local files list from new repo (HEAD - just committed)
+    local_files = git.ls_tree('HEAD')
+
+    # Compare the lists
+    if local_files == remote_files
+      Logging.success "✅ File lists match (#{local_files.size.to_s.purple} files) - safe to delete remote"
+      return true
+    end
+
+    # Lists don't match - compute differences and show detailed diagnostic output
+    local_only = local_files - remote_files
+    remote_only = remote_files - local_files
+
+    # Print all diagnostic information BEFORE raising error
+    Logging.warn "Aborting without deleting remote repo - local has been recreated but remote is preserved"
+
+    if local_only.any?
+      Logging.warn "Files only in new local (#{local_only.size.to_s.red}):"
+      local_only.first(10).each { |f| Logging.warn "  + #{f.cyan}" }
+      Logging.warn "  ... and #{local_only.size - 10} more" if local_only.size > 10
+    end
+
+    if remote_only.any?
+      Logging.warn "Files only in old remote (#{remote_only.size.to_s.red}):"
+      remote_only.first(10).each { |f| Logging.warn "  - #{f.cyan}" }
+      Logging.warn "  ... and #{remote_only.size - 10} more" if remote_only.size > 10
+    end
+
+    # Raise error AFTER printing all diagnostics
+    Logging.error "❌ File lists DO NOT match between new local and old remote!"
+  end
+
+  private_class_method :_verify_file_lists_match
 end
 
 # ---------------------------------------------------------------------------

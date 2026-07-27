@@ -30,7 +30,9 @@ count() {
 }
 
 # Run only when executed directly, not when sourced (e.g. to import the function into another script).
-[[ "${zsh_eval_context}" == *file* ]] || count "$@"
+# Pattern matches both 'file' (regular sourcing) and 'filecode' (.zwc bytecode).
+[[ ":${ZSH_EVAL_CONTEXT}:" == *:file(|code):* ]] || count "$@"
+
 # is_zsh returns false in bash (ZSH_VERSION unset), short-circuiting the zsh-only
 # '(( $+functions[...] ))' syntax so it is never evaluated by non-zsh runtimes.
 is_zsh && (($+functions[compdef])) && compdef count || true
