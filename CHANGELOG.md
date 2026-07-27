@@ -4,6 +4,12 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+#### Global gitignore enhancement: Ruby support and pattern standardization
+
+* *[files/--HOME--/.gitignore_global, files/--HOME--/custom.gitignore]* Regenerated from gitignore.io with expanded language/editor support.
+
+---
+
 ### 3.2.9
 
 #### Shell delegation standardization: Unified Ruby invocation pattern

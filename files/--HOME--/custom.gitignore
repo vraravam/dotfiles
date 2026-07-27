@@ -17,10 +17,7 @@
 # COMMON — OS / editor noise, applies everywhere in the repo tree
 # ══════════════════════════════════════════════════════════════════════════════
 
-.~lock*#
-.DS_Store
-.Trash/
-.thumbnails
+*-journal
 *.bak
 *.iso
 *.log
@@ -28,9 +25,13 @@
 *.sqlite-wal
 *.sw[nop]
 *.zcompdump*
-*-journal
 *db-shm
 *db-wal
+.*.log
+.DS_Store
+.thumbnails
+.Trash/
+.~lock*#
 Thumbs.db
 
 
@@ -118,7 +119,6 @@ Thumbs.db
 /.rvm/
 /.sbt/
 /.software-updates-run-log
-/.software-updates-cron-last-run.log
 /.swiftpm/
 /.terminfo/
 /.tldrc/
