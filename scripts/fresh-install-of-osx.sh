@@ -404,8 +404,7 @@ _ensure_keybase_logged_in() {
     error "'keybase' command not found in the PATH. Aborting!!!"
     return 1
   fi
-  setup_rubylib
-  COLUMNS="${COLUMNS}" ruby -e "require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
+  call_ruby_utility "require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
 }
 
 # Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.

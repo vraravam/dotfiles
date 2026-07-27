@@ -570,7 +570,7 @@ typeset -gU cdpath CPPFLAGS cppflags FPATH fpath infopath LDFLAGS ldflags MANPAT
 # environment, where they are inherited by every new shell before any rc file runs.
 # All other *path vars (PATH, MANPATH, INFOPATH, CPPFLAGS, LDFLAGS, PKG_CONFIG_PATH)
 # are intentionally exported -- child processes need them. RUBYLIB is also exported
-# but deduplicated separately by setup_rubylib above.
+# and deduplicated by setup_rubylib above.
 typeset +x FPATH fpath CDPATH cdpath
 
 # for profiling zsh, see: https://unix.stackexchange.com/a/329719/27109

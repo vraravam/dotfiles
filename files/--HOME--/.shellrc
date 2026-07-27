@@ -1169,6 +1169,16 @@ if is_zsh; then
   typeset -gT RUBYLIB rubylib ':' 2>/dev/null || true
 fi
 
+# Sets up RUBYLIB paths for Ruby to find utility modules.
+# Adds scripts/utilities/ and bin directories to Ruby's load path.
+# Deduplicates and exports RUBYLIB. Safe to call multiple times (idempotent).
+#
+# Called by:
+#   - .zshrc during shell startup (makes RUBYLIB available for all subprocesses)
+#   - call_ruby_utility before each ruby -e invocation (ensures paths are set)
+#
+# Usage:
+#   setup_rubylib
 setup_rubylib() {
   if is_zsh; then
     # Work directly with the rubylib array (tied to RUBYLIB scalar above).
@@ -1186,6 +1196,36 @@ setup_rubylib() {
     # Export RUBYLIB so Ruby can see it. typeset -gT does not export automatically.
     export RUBYLIB
   fi
+}
+
+# Invokes a Ruby utility module method with proper environment setup.
+# Automatically sets up RUBYLIB and preserves COLUMNS for Ruby scripts that
+# need terminal width information.
+#
+# Arguments:
+#   $1 - Ruby code to execute (require + method call)
+#
+# Usage:
+#   call_ruby_utility "require 'git_processor'; GitProcessor.migrate_to_reftable(folder: '${folder}')"
+#   call_ruby_utility "require 'macos'; MacOS.kill_login_item_apps"
+#
+# Example delegation pattern:
+#   my_wrapper() {
+#     call_ruby_utility "require 'my_module'; MyModule.my_method"
+#   }
+call_ruby_utility() {
+  local ruby_code="${1:?call_ruby_utility: Ruby code required}"
+
+  # Guard: Ruby must be available (vanilla OS before Homebrew installs it)
+  if ! command_exists ruby; then
+    debug "Ruby not available -- skipping Ruby call"
+    return 0
+  fi
+
+  # Set up RUBYLIB to include utility modules
+  setup_rubylib
+
+  COLUMNS="${COLUMNS}" ruby -e "${ruby_code}"
 }
 
 # Returns true if $1 is a non-empty path whose direct child .git directory exists.
@@ -1357,20 +1397,9 @@ keep_sudo_alive() {
 # Note: On vanilla macOS with system git < 2.45, this is a silent no-op.
 # fresh-install-of-osx.sh calls this again after Homebrew's git is on PATH.
 migrate_git_repo_to_reftable() {
-  local folder="${1:-}"
-  if is_zero_string "${folder}"; then
-    debug 'migrate_git_repo_to_reftable: folder argument required'
-    return 1
-  fi
+  local folder="${1:?migrate_git_repo_to_reftable: folder argument required}"
 
-  # Guard: Ruby must be available (vanilla OS before Homebrew installs it)
-  if ! command_exists ruby; then
-    debug "Ruby not available -- skipping reftable migration for '${folder}'"
-    return 0
-  fi
-
-  setup_rubylib
-  COLUMNS="${COLUMNS}" ruby -e "require 'git_processor'; GitProcessor.migrate_to_reftable(folder: '${folder}')"
+  call_ruby_utility "require 'git_processor'; GitProcessor.migrate_to_reftable(folder: '${folder}')"
 }
 
 # Clones a git repo into a temp folder, moves the .git dir into the real target
@@ -1560,18 +1589,8 @@ eval_shellenv() {
 # Example: _call_ruby_cron create_crontab "/path/to/file"
 #          _call_ruby_cron recron
 _call_ruby_cron() {
-  local method="${1:-}"
-  if is_zero_string "${method}"; then
-    error '_call_ruby_cron: method name required'
-    return 1
-  fi
+  local method="${1:?_call_ruby_cron: method name required}"
   shift
-
-  # Guard: Ruby must be available (vanilla OS before Homebrew installs it)
-  if ! command_exists ruby; then
-    debug "Ruby not available -- skipping Cron.${method}"
-    return 0
-  fi
 
   local args_str=""
   if [[ $# -gt 0 ]]; then
@@ -1585,8 +1604,7 @@ _call_ruby_cron() {
     args_str="${args_parts[*]}"
   fi
 
-  setup_rubylib
-  COLUMNS="${COLUMNS}" ruby -e "require 'cron'; Cron.${method}(${args_str})"
+  call_ruby_utility "require 'cron'; Cron.${method}(${args_str})"
 }
 
 # Loads a cron file into the system crontab. Shared by suspend_cron/resume_cron

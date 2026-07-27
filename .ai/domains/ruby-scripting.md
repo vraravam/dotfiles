@@ -930,26 +930,44 @@ require 'logging'  # works because RUBYLIB includes utilities/
 
 Choose based on preference. Option 1 is more idiomatic Ruby, Option 2 is more concise.
 
-### Shell integration with `ruby -e`
+### Shell integration with `call_ruby_utility`
 
-Shell functions can invoke Ruby utilities via `ruby -e` without any `$LOAD_PATH` manipulation because `.shellrc` sets `RUBYLIB` (line 1023):
+Shell functions invoke Ruby utilities via the `call_ruby_utility` helper function defined in `.shellrc`. This function automatically sets up `RUBYLIB` and preserves `COLUMNS` for terminal width information:
 
 ```zsh
 # Shell function in .shellrc or .aliases
 my_function() {
-  # Works because RUBYLIB includes ${DOTFILES_DIR}/scripts/utilities
-  ruby -e "require 'logging'; Logging.info('message')"
-  ruby -e "require 'git_processor'; GitProcessor.some_method(arg: 'value')"
+  # call_ruby_utility handles RUBYLIB setup automatically
+  call_ruby_utility "require 'logging'; Logging.info('message')"
+  call_ruby_utility "require 'git_processor'; GitProcessor.some_method(arg: 'value')"
 }
 ```
 
-**Do NOT use** `$LOAD_PATH.unshift` in `ruby -e` calls:
-```zsh
-# BAD -- unnecessary, RUBYLIB already set
-ruby -e "\$LOAD_PATH.unshift('${DOTFILES_DIR}/scripts/utilities'); require 'logging'; ..."
+**Benefits of `call_ruby_utility`:**
+- Automatic `RUBYLIB` setup (adds `utilities/` and bin directories)
+- Preserves `COLUMNS` env var (needed for terminal width)
+- Ruby availability check (graceful no-op if Ruby not installed)
+- Consistent pattern across all shell→Ruby calls
 
-# Good -- rely on RUBYLIB
-ruby -e "require 'logging'; ..."
+**Do NOT use raw `ruby -e` calls directly:**
+```zsh
+# BAD -- bypasses call_ruby_utility, no RUBYLIB setup
+ruby -e "require 'logging'; Logging.info('message')"
+
+# BAD -- manual RUBYLIB setup is redundant
+setup_rubylib
+COLUMNS="${COLUMNS}" ruby -e "require 'logging'; ..."
+
+# Good -- use call_ruby_utility wrapper
+call_ruby_utility "require 'logging'; Logging.info('message')"
+```
+
+**Pattern for delegation functions:**
+```zsh
+# Create a thin wrapper that delegates to Ruby module
+my_shell_function() {
+  call_ruby_utility "require 'my_module'; MyModule.my_method"
+}
 ```
 
 This works in all contexts (vanilla OS and configured OS) because `.shellrc` is always sourced before any shell functions are called.
@@ -1346,8 +1364,7 @@ context automatically.
 # Good -- multiple operations, block form
 GitProcessor.new(dir: repo_dir) do |git|
   git.add('.')
-  timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
-  git.commit("Update: #{timestamp}")
+  git.smart_commit
   git.push(branch: 'main')
 end
 
@@ -1360,8 +1377,7 @@ end
 GitProcessor.new(dir: repo_dir) do |git|
   rel_path = relative_path ? git.relative_path(relative_path) : '.'
   git.add(rel_path)
-  timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
-  git.run_alias('sci', "Incremental commit: #{timestamp}")
+  git.smart_commit
 end
 rescue RuntimeError => e
   Logging.warn "Skipping update -- #{e.message}"
@@ -1442,6 +1458,142 @@ When adding/editing git operations:
 3. Check if return value needed in outer scope → use instance form
 4. Check if inside another block (each, if/else) with single git call → use chaining
 5. Check if using `relative_path` → add `rescue RuntimeError` clause
+
+### Timestamp Standardization
+
+**Always use `Core.current_timestamp` for git commit messages and user-facing timestamps.**
+
+`Core.current_timestamp` (in `utilities/core.rb`) is the single source of truth for
+timestamp formatting. It returns `'YYYY-MM-DD HH:MM:SS'` format.
+
+```ruby
+# BAD -- direct Time.now.strftime scattered across codebase
+timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+git.commit("Update: #{timestamp}")
+
+# Good -- centralized via Core module
+require_relative 'core'
+git.commit("Update: #{Core.current_timestamp}")
+```
+
+**Files must require `core` module:**
+
+When adding timestamp usage to a file that doesn't already require it, add
+`require_relative 'core'` to the requires block:
+
+```ruby
+require_relative 'git_processor'
+require_relative 'logging'
+require_relative 'core'      # Add this
+```
+
+**Other timestamp patterns (keep as-is):**
+
+Not all `strftime` calls should be replaced:
+- **Date-only formats** (`%Y-%m-%d`): Different use case (date without time), keep direct `Time.now.strftime`
+- **Custom formats**: If you need a format other than `YYYY-MM-DD HH:MM:SS`, use direct `strftime`
+
+**Examples:**
+
+```ruby
+# Good -- git commit messages
+git.smart_commit("Incremental commit: #{Core.current_timestamp}")
+
+# Good -- date-only cutoff calculation (different format, keep direct strftime)
+cutoff = (Time.now - days * 24 * 3600).strftime('%Y-%m-%d')
+
+# Good -- custom format for specific use case
+export_name = Time.now.strftime('%Y%m%d_%H%M%S')
+```
+
+**Note on MacOS module:**
+`MacOS.current_timestamp` still exists as a delegation method to `Core.current_timestamp`
+for backward compatibility. New code should use `Core.current_timestamp` directly to
+avoid the extra module dependency (MacOS module requires logging, which creates
+unnecessary coupling for simple timestamp access).
+
+### Smart Commit vs Direct `run_alias('sci')`
+
+**Always use `smart_commit` instead of `run_alias('sci')` for git commits.**
+
+`GitProcessor.smart_commit(message = nil)` is a semantic wrapper around `run_alias('sci', message)`.
+It provides better API consistency, returns a boolean, and auto-generates commit messages with timestamps.
+
+```ruby
+# BAD -- direct run_alias call
+git.run_alias('sci', "Commit: #{Core.current_timestamp}")
+
+# BAD -- manual message construction
+git.smart_commit("Incremental commit: #{Core.current_timestamp}")
+
+# Good -- auto-generated message based on repo state
+git.smart_commit  # "Initial commit: <timestamp>" (no commits) or "Incremental commit: <timestamp>"
+
+# Good -- custom message when auto-generation isn't appropriate
+git.smart_commit("Feature: Add user authentication")
+```
+
+**Why `smart_commit` is better:**
+
+1. **Semantic clarity**: Name describes intent (not implementation detail)
+2. **Boolean return**: Returns true/false instead of `[stdout, stderr, status]`
+3. **Auto-generated messages**: No need to manually construct timestamp messages
+4. **Repo-aware**: Detects first commit vs subsequent commits automatically via `commit_count`
+5. **Consistent API**: Matches other GitProcessor methods (`commit`, `push`, etc.)
+6. **Easier testing**: Mock one method instead of `run_alias` with 'sci' check
+
+**Auto-generation behavior:**
+
+When called without a message (`git.smart_commit`):
+- Calls `commit_count` to check if any commits exist
+- Generates "Initial commit: <timestamp>" if count is 0 (no commits exist)
+- Generates "Incremental commit: <timestamp>" if count > 0 (commits exist)
+- Works correctly for brand new repos, repos without remotes, and after `git.recreate()`
+
+**Implementation reference:**
+
+```ruby
+# From git_processor.rb (simplified)
+def smart_commit(message = nil)
+  if nil_or_empty?(message)
+    prefix = commit_count.zero? ? 'Initial' : 'Incremental'
+    message = "#{prefix} commit: #{Core.current_timestamp}"
+  end
+  _out, _err, status = run_alias('sci', message)
+  status.success?
+end
+
+def commit_count
+  _execute('rev-list', '--all', '--count').strip.to_i
+end
+```
+
+The `sci` alias (smart commit interactive) handles the logic:
+- Aborts if nothing staged
+- Amends if 1 unpushed commit
+- Creates new commit otherwise
+
+**When to pass explicit messages:**
+
+Use custom messages for:
+- Feature commits: `git.smart_commit("Feature: Add user login")`
+- Bug fixes: `git.smart_commit("Fix: Resolve authentication issue")`
+- Refactoring: `git.smart_commit("Refactor: Extract validation logic")`
+- Any commit where the change is semantically meaningful
+
+Use auto-generated messages for:
+- Maintenance commits in automated scripts
+- Incremental backups/snapshots
+- Repository recreation operations
+- Automated cron job commits
+
+**Scan rule:**
+
+When editing files with git operations, check for:
+1. `Time.now.strftime('%Y-%m-%d %H:%M:%S')` → use `git.smart_commit` with no args
+2. `git.run_alias('sci', ...)` → replace with `git.smart_commit(...)`
+3. Manual timestamp construction → use `git.smart_commit` with no args
+4. Direct `_execute('rev-list', '--all', '--count').strip` → use `git.commit_count` method instead
 
 ## String Colors
 
@@ -1662,7 +1814,7 @@ end
 ```
 
 **Why this matters:**
-- Shell functions delegate to Ruby utilities via `ruby -e` (e.g., `suspend_cron` → `Cron.suspend_cron`)
+- Shell functions delegate to Ruby utilities via `call_ruby_utility` (e.g., `suspend_cron` → `Cron.suspend_cron`)
 - Ruby scripts call utility modules directly (e.g., `Cron.with_cron_suspended { }`)
 - Both contexts need the same behavior
 - Qualified calls work everywhere: module methods, class methods, instance methods

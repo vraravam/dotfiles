@@ -4,6 +4,27 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.9
+
+#### Shell delegation standardization: Unified Ruby invocation pattern
+
+* *[files/--HOME--/.shellrc]* Created `call_ruby_utility()` helper function to encapsulate Ruby invocation pattern. Accepts Ruby code string as argument, handles RUBYLIB setup automatically (adds utilities/ and bin directories to load path), preserves COLUMNS env var for terminal width detection, includes Ruby availability check (graceful no-op if Ruby not installed on vanilla OS). Added comprehensive 20-line documentation with usage examples and delegation pattern. Inlined `setup_rubylib()` function body into `call_ruby_utility()` and removed standalone `setup_rubylib()` (no longer needed as separate function). Updated 2 internal call sites: `migrate_git_repo_to_reftable()` and `_call_ruby_cron()` to use new helper. Standardized mandatory argument validation to use `${1:?function: arg required}` pattern (built-in shell error handling) instead of manual `${1:-}` + `is_zero_string` + `error` + `return 1` pattern (4 lines → 1 line). Removed 2 redundant Ruby availability guards (now handled centrally by `call_ruby_utility`).
+
+* *[scripts/fresh-install-of-osx.sh]* Updated `_ensure_keybase_logged_in()` to use `call_ruby_utility` instead of manual `setup_rubylib` + `ruby -e` sequence. Maintains same behavior (returns boolean via exit code) with cleaner implementation.
+
+* *[.ai/domains/ruby-scripting.md]* Updated "Shell integration" section to document `call_ruby_utility` as the standard pattern for all shell→Ruby delegation. Added benefits list (automatic RUBYLIB setup, COLUMNS preservation, Ruby availability check, consistency). Added examples showing correct usage and anti-patterns (raw `ruby -e` calls). Added delegation function pattern template. Replaced all references to manual `setup_rubylib` + `ruby -e` sequences with `call_ruby_utility` pattern.
+
+* *[.ai/context.md]* Updated "cron.rb Exception Propagation" section to reference `call_ruby_utility` instead of `ruby -e` in explanation of how Ruby exceptions propagate to shell. Updated "Shell delegation pattern" section to document `call_ruby_utility` handles RUBYLIB setup, COLUMNS preservation, and Ruby availability check automatically.
+
+#### Adopting these changes
+
+* No user action required - changes are internal refactoring
+* All shell→Ruby delegation now uses consistent `call_ruby_utility` pattern
+* Ruby availability check centralized (single guard instead of scattered checks)
+* Argument validation more concise (built-in shell error handling)
+
+---
+
 ### 3.2.8
 
 #### Core module refactoring: Eliminate circular dependencies and standardize timestamp handling

@@ -98,13 +98,13 @@ Higher priority always wins. Document tradeoffs in comments when they conflict.
 #### cron.rb Exception Propagation (June 2026)
 **Problem**: `restore_cron` raising exceptions when `crontab` command failed, causing fresh-install to abort via ERR trap.
 
-**Root cause**: Ruby `raise` statements propagate to shell as non-zero exit codes when called via `ruby -e` from shell functions. The shell ERR trap catches this and aborts the entire fresh-install process.
+**Root cause**: Ruby `raise` statements propagate to shell as non-zero exit codes when called via `call_ruby_utility` from shell functions. The shell ERR trap catches this and aborts the entire fresh-install process.
 
 **Solution**: Changed `restore_cron` to return `true`/`false` and log errors via `Logging.record_error` instead of raising. Updated callers (`resume_cron`, `recron`) to check return value before printing success message.
 
 **Impact**: Crontab installation failures are now recoverable - errors are logged and tracked in the summary but don't abort fresh-install. User can run `recron` manually later.
 
-**Key insight**: Ruby scripts called from shell (via `ruby -e` or subprocess) must return non-zero exit codes only for fatal errors. Recoverable failures should log warnings/errors and return false/success code, not raise exceptions.
+**Key insight**: Ruby scripts called from shell (via `call_ruby_utility` or subprocess) must return non-zero exit codes only for fatal errors. Recoverable failures should log warnings/errors and return false/success code, not raise exceptions.
 
 #### clone_repo_into Delegation Pattern (June 2026)
 **Problem**: Duplicate implementations - 79 lines in .shellrc, 98 lines in git_processor.rb.
@@ -375,8 +375,9 @@ For complete edit workflows (syntax checks, formatting, whitespace verification,
 
 7. **Shell delegation pattern**
    - Ruby utilities use `extend self`
-   - Shell functions call via `ruby -e "Module.method"`
+   - Shell functions call via `call_ruby_utility "Module.method"`
    - Single implementation, multiple entry points
+   - `call_ruby_utility` handles RUBYLIB setup, COLUMNS preservation, Ruby availability check
 
 8. **Logging auto-indents**
    - All methods use `log_indent` (depth * 2 spaces)
