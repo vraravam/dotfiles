@@ -1406,9 +1406,8 @@ migrate_git_repo_to_reftable() {
 # location, and does an initial checkout there. Works around git's refusal to
 # clone into a non-empty directory (e.g. HOME). If the target is already a git
 # repo, runs unshallow to convert to full clone, then fetches to get complete history.
-# Always updates submodules afterwards.
-# On FIRST_INSTALL (vanilla OS), uses --depth=1 for a shallow clone to save time
-# and bandwidth; repos can be converted to full clones later via 'git unshallow && git fetch'.
+# Always updates submodules afterwards. On FIRST_INSTALL uses --depth=1 --filter=blob:none
+# --single-branch for faster initial clone (convert to full via 'git unshallow && git fetch').
 # Usage: clone_repo_into <repo-url> <target-folder> [branch]
 clone_repo_into() {
   local start_time=${EPOCHSECONDS}  # $EPOCHSECONDS from zsh/datetime -- no $(date +%s) fork
@@ -1422,20 +1421,17 @@ clone_repo_into() {
     # Set trap to clean up temp folder on exit (normal or error)
     trap "rm -rf '${tmp_folder}'" EXIT INT TERM
 
-    # Use shallow clone during FIRST_INSTALL to save time and bandwidth on large repos.
-    # Repos can be converted to full clones later via 'git unshallow && git fetch'.
-    # On pre-configured machines, clone full history (supports upstream rebase workflows).
     local -a clone_args=()
     local target_branch="${3:-}"
     if is_non_zero_string "${FIRST_INSTALL:-}"; then
-      clone_args+=('--depth=1')
+      clone_args+=('--depth=1' '--filter=blob:none' '--single-branch')
       # If a target branch is specified, clone that branch directly to avoid the
       # "branch not found" error when switching after a shallow clone (which only
       # fetches the default branch). Without --branch, git switch would fail.
       if is_non_zero_string "${target_branch}"; then
         clone_args+=('--branch' "${target_branch}")
       fi
-      debug "Using shallow clone (${clone_args[*]}) for FIRST_INSTALL mode"
+      debug "Using shallow blobless single-branch clone (${clone_args[*]}) for FIRST_INSTALL mode"
     fi
 
     # Capture stderr to display on failure
@@ -1443,7 +1439,11 @@ clone_repo_into() {
     stderr_file="$(mktemp)"
     trap "rm -rf '${tmp_folder}' '${stderr_file}'" EXIT INT TERM
 
-    GIT_SSH_COMMAND="ssh -o ConnectTimeout=20" git -C "${tmp_folder}" clone -q -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" . 2>"${stderr_file}"
+    # -n (--no-checkout): Skip checkout in tmp (only .git needed; we restore in target).
+    # SSH: Uses core.sshCommand from ~/.gitconfig (pre-configured) or inherits GIT_SSH_COMMAND
+    # from parent environment (FIRST_INSTALL - exported by fresh-install-of-osx.sh, propagates
+    # through shell→Ruby→shell chain). No inline override needed.
+    git -C "${tmp_folder}" clone -q -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" . 2>"${stderr_file}"
     local clone_status=$?
 
     if [[ ${clone_status} -ne 0 ]]; then
@@ -1465,7 +1465,19 @@ clone_repo_into() {
     mv "${tmp_folder}/.git" "${target_folder}"
     rm -rf "${tmp_folder}" "${stderr_file}"
     trap - EXIT INT TERM  # Clear trap after successful move
-    git -C "${target_folder}" restore .
+    # Populate index from HEAD, then checkout files that don't exist locally.
+    # git checkout-index -a refuses to overwrite existing files (safe for $HOME cloning).
+    git -C "${target_folder}" read-tree HEAD
+    git -C "${target_folder}" checkout-index -a 2>/dev/null || true
+
+    # post-clone operations
+    git -C "${target_folder}" restore-mtime -c || true
+    # git maintenance register requires .gitconfig-oss.inc which comes from the home repo.
+    # On FIRST_INSTALL, dotfiles repo is cloned before home repo, so skip if file doesn't exist yet.
+    if is_file "${HOME}/.gitconfig-oss.inc"; then
+      git -C "${target_folder}" maintenance register --config-file "${HOME}/.gitconfig-oss.inc" || true
+      git -C "${target_folder}" maintenance start || true
+    fi
 
     # Correct HEAD file after reftable clone-via-mv (.git/HEAD retains a '.invalid' placeholder since
     # the move bypasses git's normal post-clone finalisation; shell prompts read .git/HEAD directly)
@@ -1496,6 +1508,7 @@ clone_repo_into() {
     # is_git_repo = (is_non_zero_string && is_directory .git) -- logical complement of the if above,
     # so this else is exhaustive and the condition check is redundant.
     debug "Fetching '$(yellow "${target_folder}")' since it's already a git repo"
+    # SSH: Same inheritance as clone operation above.
     git -C "${target_folder}" unshallow && git -C "${target_folder}" fetch
     success "Successfully fetched '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
     # Only warn if FETCH_HEAD has commits not yet in HEAD -- unshallow + fetch always
@@ -1515,7 +1528,7 @@ clone_repo_into() {
   fi
 
   # Always update submodules after clone or pull -- new commits may introduce submodule changes.
-  GIT_SSH_COMMAND="ssh -o ConnectTimeout=20 -o ServerAliveInterval=10 -o ServerAliveCountMax=3" git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
+  git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
   local end_time=${EPOCHSECONDS}  # no $(date +%s) fork
   local duration=$((end_time - start_time))
   debug "Process took ${duration} seconds"

@@ -473,13 +473,13 @@ main() {
   export ZDOTDIR="${ZDOTDIR:-"${HOME}"}"
 
   # On a first install ~/.gitconfig is not yet in place (install-dotfiles.rb runs later),
-  # so core.sshCommand is absent. Export GIT_SSH_COMMAND for the entire run to ensure the
-  # connect timeout is honoured uniformly for all git operations.
+  # so core.sshCommand is absent. Export GIT_SSH_COMMAND for the entire run to ensure
+  # consistent SSH options for all git operations. Keepalive prevents timeout on slow networks.
   # Raw form: this runs in main() before _download_and_source_shellrc has sourced .shellrc,
   # so is_first_install is not yet defined.
   # if/fi avoids the && pattern where [[ -n ... ]] returning false (not a first install,
   # the common case on a pre-configured machine) propagates a non-zero exit under the ERR trap.
-  if [[ -n "${FIRST_INSTALL:-}" ]]; then export GIT_SSH_COMMAND="ssh -o ConnectTimeout=20"; fi
+  if [[ -n "${FIRST_INSTALL:-}" ]]; then export GIT_SSH_COMMAND="ssh -o ConnectTimeout=20 -o Compression=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3"; fi
 
   # ~/.curlrc is not yet symlinked (install-dotfiles.rb runs later), so its defaults are
   # absent. Define resilient curl flags explicitly for all bootstrap curl calls in this

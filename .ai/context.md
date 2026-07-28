@@ -379,7 +379,14 @@ For complete edit workflows (syntax checks, formatting, whitespace verification,
    - Single implementation, multiple entry points
    - `call_ruby_utility` handles RUBYLIB setup, COLUMNS preservation, Ruby availability check
 
-8. **Logging auto-indents**
+8. **Environment variable inheritance across shell→Ruby→shell boundaries**
+   - Shell `export VAR=value` → Ruby subprocess inherits via ENV
+   - Ruby `system('zsh', '-c', cmd)` → child shell inherits Ruby's ENV
+   - **Verification requirement**: When relying on inheritance for correctness (not just convenience), add comment documenting the inheritance chain
+   - **Example**: `GIT_SSH_COMMAND` exported in fresh-install → Ruby `git_processor.rb` → shell `clone_repo_into()` inherits without inline override
+   - **Pattern**: Document inheritance when it's load-bearing (e.g., bootstrap SSH config before `.gitconfig` exists)
+
+9. **Logging auto-indents**
    - All methods use `log_indent` (depth * 2 spaces)
    - **Never** manually prepend spaces
    - External tool output intentionally unindented

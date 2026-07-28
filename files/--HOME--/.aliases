@@ -533,8 +533,8 @@ delete_caches() {
 # --------------------------------------------------------------------------
 
 # Clones all repositories listed in repositories-*.yml catalogue files under
-# PERSONAL_CONFIGS_DIR, then runs post-clone operations (restore-mtime, git
-# maintenance register/start, setup_dev_environment).
+# PERSONAL_CONFIGS_DIR, then runs post-clone operations (setup_dev_environment
+# regenerate_repo_aliases).
 resurrect_tracked_repos() {
   # Deferred-collection locals. _SCRIPT_NAME is read by logging functions via
   # dynamic scoping (no argument passing needed). _current_section is declared
@@ -596,19 +596,7 @@ resurrect_tracked_repos() {
   fi
 
   # post-clone operations for installing system dependencies
-  section_header 'Running post-clone operations'
-  # 'all' (alias: FOLDER='${HOME}' MAXDEPTH=7 rug → run-all.rb git) requires .aliases
-  # to be loaded so the alias is defined. Use the underlying command directly to avoid
-  # that dependency -- this function is called from fresh-install as a background job
-  # where the sourcing order may differ.
-  if command_exists 'run-all.rb'; then
-    COLUMNS="${COLUMNS}" FOLDER="${HOME}" MAXDEPTH=7 run-all.rb 'git restore-mtime -c'
-    COLUMNS="${COLUMNS}" FOLDER="${HOME}" MAXDEPTH=7 run-all.rb "git maintenance register --config-file '${HOME}/.gitconfig-oss.inc'"
-    COLUMNS="${COLUMNS}" FOLDER="${HOME}" MAXDEPTH=7 run-all.rb 'git maintenance start'
-  fi
-
   setup_dev_environment
-
   regenerate_repo_aliases
 
   # Only print success message if there were no warnings/errors. print_script_summary

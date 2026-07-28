@@ -85,8 +85,16 @@
   # same 1-week recovery window. --stale-fix is always applied to prune broken entries.
   # All other flags (e.g. --dry-run, --verbose) are passed to 'git reflog expire'.
   # The first argument is treated as <dir> if it does not start with '-'; flags follow.
+  # Cleanup operations:
+  #   - Expire reflog entries older than --expire (default: 1 week)
+  #   - Clean rerere cache (conflict resolutions) older than gc.rerereResolved/gc.rerereUnresolved
+  #   - Prune deleted worktrees
+  #   - Remove stale commit-graph files
+  #   - Repack all objects with optimal compression
+  #   - Run garbage collection
   # Usage: git cc [<dir>] [--expire=<when>] [<extra-reflog-flags>]
-  # Example: git cc --expire=now          (expire entire reflog immediately)
+  # Example: git cc --expire=now          (expire entire reflog immediately - aggressive)
+  # Example: git cc --expire=1.hour.ago   (expire reflog older than 1 hour - very aggressive)
   # Example: git cc --expire=3.days.ago   (expire entries older than 3 days)
   # Example: git cc /path/to/repo --expire=now
   cc = "!f() { \
@@ -106,10 +114,13 @@
     refs=$(git -C \"${dir}\" all-refs); \
     git -C \"${dir}\" size; \
     git -C \"${dir}\" remote prune origin; \
+    git -C \"${dir}\" worktree prune; \
     git -C \"${dir}\" pack-refs --all; \
     git -C \"${dir}\" repack -a -d -F --depth=250 --window=250; \
     [ -n \"${refs}\" ] && \
       git -C \"${dir}\" reflog expire --expire=\"${expire}\" --expire-unreachable=\"${expire}\" --stale-fix \"${rest[@]}\" ${refs}; \
+    git -C \"${dir}\" rerere gc; \
+    git -C \"${dir}\" commit-graph write --reachable --changed-paths; \
     git -C \"${dir}\" maintenance run --task=gc; \
     git -C \"${dir}\" size; \
   }; f"
@@ -221,10 +232,13 @@
     basename \"$(git -C \"${1:-.}\" remote get-url origin)\"; \
   }; f"
 
-  # Expires the entire reflog immediately (maximises cleanup when followed by 'git cc').
+  # Expires the entire reflog immediately (maximizes cleanup when followed by 'git cc').
   # --stale-fix prunes broken reflog entries pointing to missing objects.
   # Note: refs/stash is intentionally excluded to preserve stashes.
+  # This is more aggressive than 'git cc' (which defaults to 1.week.ago).
+  # Use when you want to completely remove reflog history (cannot undo amends/rebases after this).
   # Usage: git rfc [<dir>]
+  # Example: git rfc && git cc  (expire reflog + full cleanup)
   rfc = "!f() { \
     refs=$(git -C \"${1:-.}\" all-refs); \
     [ -n \"${refs}\" ] && git -C \"${1:-.}\" reflog expire --expire=now --expire-unreachable=now --stale-fix ${refs}; \
@@ -592,7 +606,7 @@
   # pager setting moved to ~/.gitconfig-delta.inc (conditionally included when delta is installed)
   preloadIndex = true              # parallel index loading (2-5x faster status/diff/checkout)
   # repositoryFormatVersion = 1   # Note: This can be uncommented to enable the new repository format for SHA256 support
-  sshCommand="ssh -o ConnectTimeout=20"
+  sshCommand="ssh -o ConnectTimeout=20 -o Compression=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3"  # keepalive prevents timeout on slow networks
   symlinks = false
   untrackedCache = true
   whitespace = fix
@@ -632,6 +646,7 @@
   reflogExpire = 2.weeks.ago
   reflogExpireUnreachable = 2.weeks.ago
   rerereResolved = 1.weeks.ago
+  rerereUnresolved = 3.days.ago
   worktreePruneExpire = 1.weeks.ago
   writeCommitGraph = true          # generate commit graph on GC (enables faster log/branch operations)
 [grep]

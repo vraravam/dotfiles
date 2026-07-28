@@ -146,8 +146,13 @@ module SoftwareUpdatesCron
       maxdepth = 7
 
       RunAll.run(command: ['git', 'restore-mtime', '-c'], folder: folder, maxdepth: maxdepth)
-      RunAll.run(command: ['git', 'maintenance', 'register', '--config-file', gitconfig.to_s], folder: folder, maxdepth: maxdepth)
-      RunAll.run(command: ['git', 'maintenance', 'start'], folder: folder, maxdepth: maxdepth)
+
+      # git maintenance register requires .gitconfig-oss.inc which comes from the home repo.
+      # Skip if file doesn't exist yet (unlikely in cron context, but defensive).
+      if gitconfig.file?
+        RunAll.run(command: ['git', 'maintenance', 'register', '--config-file', gitconfig.to_s], folder: folder, maxdepth: maxdepth)
+        RunAll.run(command: ['git', 'maintenance', 'start'], folder: folder, maxdepth: maxdepth)
+      end
     end
   end
 

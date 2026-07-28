@@ -4,6 +4,29 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.11
+
+#### Git clone optimization and SSH configuration standardization
+
+* *[files/--HOME--/.shellrc]* Enhanced `clone_repo_into()` with three clone optimizations:
+  * `-n` (no-checkout) prevents writing working tree to temp folder (security + speed)
+  * `--filter=blob:none` (FIRST_INSTALL) downloads only commits/trees without file contents (blobs fetched on-demand)
+  * `--single-branch` (FIRST_INSTALL) fetches only default branch
+
+  Standardized SSH options: removed all inline `GIT_SSH_COMMAND` overrides since keepalive options now default in `.gitconfig` and fresh-install export. Consolidated comments.
+
+* *[files/--HOME--/.gitconfig]* Updated `core.sshCommand` to `ssh -o ConnectTimeout=20 -o Compression=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3`. Keepalive options (10s interval, 3 max failures = 30s timeout) prevent timeout on slow networks and detect dead connections quickly. Compression disabled since git protocol already compresses.
+
+* *[scripts/fresh-install-of-osx.sh]* Updated `GIT_SSH_COMMAND` export to match `.gitconfig` options (added keepalive). Consistent SSH behavior across vanilla OS and pre-configured machines.
+
+* *[scripts/utilities/git_workspace.rb]* `update_repo` now accepts array of paths. Updated `update_all_repos` to stage both `sol` and `defaults` directories in home repo (previously only `defaults`).
+
+#### Adopting these changes
+
+* Restart terminal to pick up new `.shellrc` changes
+
+---
+
 #### Global gitignore enhancement: Ruby support and pattern standardization
 
 * *[files/--HOME--/.gitignore_global, files/--HOME--/custom.gitignore]* Regenerated from gitignore.io with expanded language/editor support.

@@ -22,16 +22,19 @@
 
 # Default GitHub identity (used when cloning via git@github.com directly - unless you use github-personal, etc while cloning)
 Host github.com
+  User git
   IdentityFile ~/.ssh/id_rsa-personal
 
 # Personal GitHub account (explicit alias — used with url rewriting in gitconfig-inc.template)
 Host github-personal
   HostName github.com
+  User git
   IdentityFile ~/.ssh/id_rsa-personal
 
 # <company-name> GitHub account (explicit alias — used with url rewriting in gitconfig-inc.template)
 Host github-<company-name>
   HostName github.com
+  User git
   IdentityFile ~/.ssh/id_ed25519-<company-name>
 
 Include ~/.ssh/global_config

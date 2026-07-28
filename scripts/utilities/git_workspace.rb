@@ -291,10 +291,10 @@ module GitWorkspace
   # where the caller does not need to review individual changes before committing.
   #
   # @param repo_dir [Pathname, String] The repository directory
-  # @param path [Pathname, String, nil] Optional path within the repo to stage
-  #   (defaults to entire repo). Can be relative or absolute - git handles both.
+  # @param paths [Array<Pathname, String>, nil] Optional array of paths to stage within the repo
+  #   (defaults to ['.'] - entire repo). Can be relative or absolute - git handles both.
   # @return [Boolean] true if successful, false if repo is invalid or git operations fail
-  def update_repo(repo_dir, path: nil)
+  def update_repo(repo_dir, paths: nil)
     repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
 
     unless GitProcessor.repo?(repo_dir)
@@ -312,8 +312,8 @@ module GitWorkspace
       # Stage and commit with timestamp (use block form for multiple operations)
       success = false
       GitProcessor.new(dir: repo_dir) do |git|
-        # Git accepts both absolute and relative paths directly
-        git.add(path || '.')
+        paths ||= ['.']
+        paths.each { |path| git.add(path) }
         success = git.smart_commit
       end
       success
@@ -331,12 +331,12 @@ module GitWorkspace
   def update_all_repos
     home_success = update_repo(
       EnvVars::HOME,
-      path: EnvVars::PERSONAL_CONFIGS_DIR.join('defaults')
+      paths: [EnvVars::XDG_CONFIG_HOME.join('sol'), EnvVars::PERSONAL_CONFIGS_DIR.join('defaults')]
     )
 
     profiles_success = update_repo(
       EnvVars::PERSONAL_PROFILES_DIR,
-      path: nil
+      paths: nil
     )
 
     home_success && profiles_success
