@@ -32,6 +32,80 @@ module Plist
   # @param domain [String] Defaults domain, e.g. 'com.apple.finder'.
   # @param file [String, Pathname] Destination file path.
   # @return [Boolean]
+
+  # ---------------------------------------------------------------------------
+  # Class methods
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # Query methods (read-only state inspection)
+  # ---------------------------------------------------------------------------
+
+  # Returns true if +plist_file+ exists and contains at least one top-level key.
+  # Used to detect empty plists after key stripping so they can be removed.
+  #
+  # @param plist_file [String, Pathname]
+  # @return [Boolean]
+  def has_keys?(plist_file)
+    plist_file = Pathname.new(plist_file) unless plist_file.is_a?(Pathname)
+    return false unless plist_file.file?
+    plist_file.read.match?(/<key>/)
+  end
+
+  # Loads +filepath+ (capture-prefs-excluded-keys.txt) into a Hash keyed by domain
+  # name whose values are newline-separated glob patterns.
+  # Format: one entry per line: <domain>|<key-or-glob-pattern>
+  # Lines starting with '#' and blank lines are ignored.
+  #
+  # @param filepath [Pathname] Path to the excluded-keys file.
+  # @return [Hash<String,String>] Domain → newline-separated pattern string
+  def load_excluded_keys(filepath)
+    result = Hash.new { |h, k| h[k] = [] }
+    _each_data_line(filepath) do |line|
+      domain, pattern = line.split('|', 2).map(&:strip)
+      result[domain] << pattern if domain && pattern
+    end
+    # Convert arrays to newline-separated strings for strip_excluded_keys
+    result.transform_values! { |patterns| patterns.join("\n") }
+    result
+  end
+
+  # Loads +filepath+ (capture-prefs-denied-list.txt) into a Set for O(1)
+  # membership lookups.
+  #
+  # @param filepath [Pathname] Path to the denied-list file.
+  # @return [Set<String>]
+  def load_denied_list(filepath)
+    result = Set.new
+    _each_data_line(filepath) { |line| result.add(line.strip) }
+    result
+  end
+
+  # Loads +filepath+ (capture-prefs-allowed-list.txt) into a Set of domain strings,
+  # filtering out entries that appear in +denied+.
+  #
+  # @param filepath [Pathname]
+  # @param denied [Set<String>] Set of denied domain names to filter out
+  # @return [Set<String>]
+  def load_domains_list(filepath, denied)
+    result = Set.new
+    _each_data_line(filepath) do |line|
+      domain = line.strip
+      result.add(domain) unless denied.include?(domain)
+    end
+    result
+  end
+
+  # ---------------------------------------------------------------------------
+  # Mutation methods (modify state)
+  # ---------------------------------------------------------------------------
+
+  # Exports a defaults domain to +file+ as an XML plist.
+  # Returns true on success, false if `defaults export` fails.
+  #
+  # @param domain [String] Defaults domain, e.g. 'com.apple.finder'.
+  # @param file [String, Pathname] Destination file path.
+  # @return [Boolean]
   def export_domain(domain, file)
     return false if nil_or_empty?(domain)
     file_str = file.is_a?(Pathname) ? file.to_s : file
@@ -52,10 +126,6 @@ module Plist
     file_str = file.is_a?(Pathname) ? file.to_s : file
     system(MacOS::DEFAULTS_CMD, 'import', domain, file_str, out: File::NULL, err: File::NULL)
   end
-
-  # ---------------------------------------------------------------------------
-  # Excluded-key stripping
-  # ---------------------------------------------------------------------------
 
   # Strips non-portable keys from +plist_file+ in-place. Keys are removed when
   # they match a pattern in +excluded_by_domain+ (for +domain+ or the global
@@ -117,67 +187,8 @@ module Plist
     system(MacOS::PLUTIL_CMD, '-convert', 'xml1', plist_file.to_s, out: File::NULL, err: File::NULL)
   end
 
-  # Returns true if +plist_file+ exists and contains at least one top-level key.
-  # Used to detect empty plists after key stripping so they can be removed.
-  #
-  # @param plist_file [String, Pathname]
-  # @return [Boolean]
-  def has_keys?(plist_file)
-    plist_file = Pathname.new(plist_file) unless plist_file.is_a?(Pathname)
-    return false unless plist_file.file?
-    plist_file.read.match?(/<key>/)
-  end
-
   # ---------------------------------------------------------------------------
-  # Data-file loaders
-  # ---------------------------------------------------------------------------
-
-  # Loads +filepath+ (capture-prefs-excluded-keys.txt) into a Hash keyed by domain
-  # name whose values are newline-separated glob patterns.
-  # Format: one entry per line: <domain>|<key-or-glob-pattern>
-  # Lines starting with '#' and blank lines are ignored.
-  #
-  # @param filepath [Pathname] Path to the excluded-keys file.
-  # @return [Hash<String,String>] Domain → newline-separated pattern string
-  def load_excluded_keys(filepath)
-    result = Hash.new { |h, k| h[k] = [] }
-    _each_data_line(filepath) do |line|
-      domain, pattern = line.split('|', 2).map(&:strip)
-      result[domain] << pattern if domain && pattern
-    end
-    # Convert arrays to newline-separated strings for strip_excluded_keys
-    result.transform_values! { |patterns| patterns.join("\n") }
-    result
-  end
-
-  # Loads +filepath+ (capture-prefs-denied-list.txt) into a Set for O(1)
-  # membership lookups.
-  #
-  # @param filepath [Pathname] Path to the denied-list file.
-  # @return [Set<String>]
-  def load_denied_list(filepath)
-    result = Set.new
-    _each_data_line(filepath) { |line| result.add(line.strip) }
-    result
-  end
-
-  # Loads +filepath+ (capture-prefs-allowed-list.txt) into a Set of domain strings,
-  # filtering out entries that appear in +denied+.
-  #
-  # @param filepath [Pathname]
-  # @param denied [Set<String>] Set of denied domain names to filter out
-  # @return [Set<String>]
-  def load_domains_list(filepath, denied)
-    result = Set.new
-    _each_data_line(filepath) do |line|
-      domain = line.strip
-      result.add(domain) unless denied.include?(domain)
-    end
-    result
-  end
-
-  # ---------------------------------------------------------------------------
-  # Private helpers
+  # Private methods
   # ---------------------------------------------------------------------------
 
   private

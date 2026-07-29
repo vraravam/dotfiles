@@ -25,6 +25,29 @@ module PathUtils
   include Core  # For instance methods (in blocks)
   extend Core   # For module methods
 
+  # Cache for command existence checks (reduces which forks from N per check → 1 per command)
+  @command_cache = {}
+
+  # Checks if a command exists in the system PATH.
+  # Mirrors command_exists() from .shellrc.
+  # Results are cached to avoid repeated which forks for the same command.
+  #
+  # @param command [String] The command name to check
+  # @return [Boolean] true if the command exists in PATH, false otherwise
+  #
+  # @example
+  #   PathUtils.command_exists?('ruby')  # => true (checks via which)
+  #   PathUtils.command_exists?('ruby')  # => true (cached, no fork)
+  #   PathUtils.command_exists?('nosuchcommand')  # => false
+
+  # ---------------------------------------------------------------------------
+  # Class methods
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # Query methods (read-only state inspection)
+  # ---------------------------------------------------------------------------
+
   # Checks if a command exists in the system PATH.
   # Mirrors command_exists() from .shellrc.
   #
@@ -35,7 +58,9 @@ module PathUtils
   #   PathUtils.command_exists?('ruby')  # => true
   #   PathUtils.command_exists?('nosuchcommand')  # => false
   def command_exists?(command)
-    system('which', command.to_s, out: File::NULL, err: File::NULL)
+    return @command_cache[command] if @command_cache.key?(command)
+
+    @command_cache[command] = system('which', command.to_s, out: File::NULL, err: File::NULL)
   end
 
   # Returns the size of a directory in kilobytes using du.
@@ -97,6 +122,10 @@ module PathUtils
       yield Pathname.new(path_str)
     end
   end
+
+  # ---------------------------------------------------------------------------
+  # Mutation methods (modify state)
+  # ---------------------------------------------------------------------------
 
   # Ensures the specified directories exist, creating them if necessary.
   # Accepts a single path or an array of paths. Skips any empty paths.

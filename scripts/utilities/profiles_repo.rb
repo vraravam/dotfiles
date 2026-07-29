@@ -28,6 +28,71 @@ module ProfilesRepo
   #
   # @param days [Integer] Age threshold in days (default: 7)
   # @return [void]
+
+  # ---------------------------------------------------------------------------
+  # Class methods
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # Query methods (read-only state inspection)
+  # ---------------------------------------------------------------------------
+
+  # Checks the size of the profiles repo .git directory and records an error
+  # if it exceeds the specified limit. Suggests running recreate-repository.rb when
+  # the threshold is breached.
+  #
+  # @param limit_gb [Integer] Size limit in gigabytes (default: 2)
+  # @return [void]
+  def check_size_limit(limit_gb: 2)
+    unless GitProcessor.repo?(EnvVars::PERSONAL_PROFILES_DIR)
+      Logging.debug "Skipping size check -- '#{EnvVars::PERSONAL_PROFILES_DIR}' is not a git repo"
+      return
+    end
+
+    git_dir = EnvVars::PERSONAL_PROFILES_DIR.join('.git')
+    size_kb = PathUtils.dir_size_kb(git_dir)
+    limit_kb = limit_gb * 1024 * 1024
+
+    if size_kb > limit_kb
+      size_human = PathUtils.dir_size_human(git_dir)
+      Logging.record_error(
+        "Profiles repo .git directory is #{size_human} -- exceeds #{limit_gb}GB threshold. " \
+        "Consider running: recreate-repository.rb -d \"#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}\""
+      )
+    else
+      Logging.debug "Profiles repo .git directory size within #{limit_gb}GB threshold"
+    end
+  end
+
+  # Finds all chrome folders in browser profiles under PERSONAL_PROFILES_DIR.
+  # Chrome folders are located at *Profile/Profiles/DefaultProfile/chrome.
+  # Returns only directories, not files.
+  #
+  # @return [Array<Pathname>] Array of chrome folder paths as Pathname objects
+  def find_chrome_folders
+    chrome_folders = []
+    chrome_pattern = EnvVars::PERSONAL_PROFILES_DIR.join('*Profile', 'Profiles', 'DefaultProfile', 'chrome')
+    PathUtils.glob_pathnames(chrome_pattern) do |path_pn|
+      chrome_folders << path_pn if path_pn.directory? && GitProcessor.repo?(path_pn)
+    end
+    chrome_folders
+  end
+
+  # ---------------------------------------------------------------------------
+  # Mutation methods (modify state)
+  # ---------------------------------------------------------------------------
+
+  # Note: Logging methods must be qualified (Logging.debug, Logging.success, etc.)
+  # because 'include Logging' + 'extend self' doesn't make included methods
+  # available as module methods.
+
+  # Prunes session backup files older than the specified number of days.
+  # Only tracked files matching the zen-sessions-backup pattern are considered.
+  # Uses `git rm --cached` to unpin old backups from the index without deleting
+  # the working tree files.
+  #
+  # @param days [Integer] Age threshold in days (default: 7)
+  # @return [void]
   def prune_old_session_backups(days: 7)
     unless GitProcessor.repo?(EnvVars::PERSONAL_PROFILES_DIR)
       Logging.debug "Skipping session backup pruning -- '#{EnvVars::PERSONAL_PROFILES_DIR}' is not a git repo"
@@ -64,33 +129,6 @@ module ProfilesRepo
     Logging.success "Pruned #{pruned_count} session backup file(s) older than #{days} days"
   end
 
-  # Checks the size of the profiles repo .git directory and records an error
-  # if it exceeds the specified limit. Suggests running recreate-repository.rb when
-  # the threshold is breached.
-  #
-  # @param limit_gb [Integer] Size limit in gigabytes (default: 2)
-  # @return [void]
-  def check_size_limit(limit_gb: 2)
-    unless GitProcessor.repo?(EnvVars::PERSONAL_PROFILES_DIR)
-      Logging.debug "Skipping size check -- '#{EnvVars::PERSONAL_PROFILES_DIR}' is not a git repo"
-      return
-    end
-
-    git_dir = EnvVars::PERSONAL_PROFILES_DIR.join('.git')
-    size_kb = PathUtils.dir_size_kb(git_dir)
-    limit_kb = limit_gb * 1024 * 1024
-
-    if size_kb > limit_kb
-      size_human = PathUtils.dir_size_human(git_dir)
-      Logging.record_error(
-        "Profiles repo .git directory is #{size_human} -- exceeds #{limit_gb}GB threshold. " \
-        "Consider running: recreate-repository.rb -d \"#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}\""
-      )
-    else
-      Logging.debug "Profiles repo .git directory size within #{limit_gb}GB threshold"
-    end
-  end
-
   # Finds and updates all browser profile chrome folders that are git repositories.
   # Chrome folders are expected at: PERSONAL_PROFILES_DIR/*Profile/Profiles/DefaultProfile/chrome
   # Each chrome folder is updated via `git pull -r` if it's a valid git repo.
@@ -111,8 +149,8 @@ module ProfilesRepo
         next
       end
 
-      Logging.with_step("update chrome #{folder_pn.basename}", "#{'Updating chrome folder:'.yellow} '#{folder_pn.to_s.cyan}'") do
-        _out, _err, status = GitProcessor.new(dir: folder_pn).pull(rebase: true)
+      Logging.with_step("update chrome #{folder_pn.basename.to_s}", "#{'Updating chrome folder:'.yellow} '#{folder_pn.to_s.cyan}'") do
+        _stdout, _stderr, status = GitProcessor.new(dir: folder_pn).pull(rebase: true)
         if status.success?
           Logging.success "Successfully updated: '#{folder_pn.to_s.cyan}'"
         else
@@ -122,19 +160,5 @@ module ProfilesRepo
     end
 
     Logging.success 'Finished updating chrome folders'
-  end
-
-  # Finds all chrome folders in browser profiles under PERSONAL_PROFILES_DIR.
-  # Chrome folders are located at *Profile/Profiles/DefaultProfile/chrome.
-  # Returns only directories, not files.
-  #
-  # @return [Array<Pathname>] Array of chrome folder paths as Pathname objects
-  def find_chrome_folders
-    chrome_folders = []
-    chrome_pattern = EnvVars::PERSONAL_PROFILES_DIR.join('*Profile', 'Profiles', 'DefaultProfile', 'chrome')
-    PathUtils.glob_pathnames(chrome_pattern) do |path_pn|
-      chrome_folders << path_pn if path_pn.directory? && GitProcessor.repo?(path_pn)
-    end
-    chrome_folders
   end
 end

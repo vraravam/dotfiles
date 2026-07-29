@@ -6,7 +6,6 @@ require 'ostruct'
 require 'pathname'
 require 'shellwords'
 
-require_relative 'command_utils'
 require_relative 'core'
 require_relative 'env_vars'
 require_relative 'logging'
@@ -41,435 +40,45 @@ class GitProcessor
 
   attr_reader :dir
 
-  # @param dir [String, Pathname] Repository directory
-  # @param dry_run [Boolean] When true, log operations instead of executing
-  def initialize(dir:, dry_run: false)
-    @dir = dir.is_a?(Pathname) ? dir : Pathname.new(dir)
-    @dry_run = dry_run
-    yield self if block_given?
-  end
+  # Class-level cache for repo? checks. Whether a directory is a git repo doesn't
+  # change during script execution, so we memoize at the class level.
+  @repo_cache = {}
 
-  # Returns the value of a git config key, or nil if absent.
-  # Mirrors get_git_config_value in .shellrc.
-  #
-  # @param key [String] Git config key, e.g. 'remote.origin.url'.
-  # @return [String, nil]
-  def config_value(key)
-    out, = _execute('config', '--get', key)
-    out = out.strip
-    nil_or_empty?(out) ? nil : out
-  end
-
-  # Sets a git config value.
-  #
-  # @param key [String] Git config key, e.g. 'user.name'.
-  # @param value [String] The value to set.
-  # @param local [Boolean] When true (default), sets --local scope.
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def config_set(key, value, local: true)
-    args = ['config']
-    args << '--local' if local
-    args << key << value
-    _execute(*args)
-  end
-
-  # Returns the URL for the specified remote, or nil.
-  #
-  # @param name [String] Remote name (defaults to 'origin').
-  # @return [String, nil]
-  def remote_url(name: 'origin')
-    config_value("remote.#{name}.url")
-  end
-
-  # Extracts the repository name from a remote URL.
-  # Strips trailing slash and returns the last path segment.
-  # Works with both SSH and HTTPS URLs.
-  #
-  # Examples:
-  #   keybase://private/user/dotfiles/ → dotfiles
-  #   git@github.com:user/repo.git → repo.git
-  #   https://github.com/user/repo → repo
-  #
-  # @param name [String] Remote name (defaults to 'origin').
-  # @return [String, nil] Repository name, or nil if remote doesn't exist.
-  def remote_repo_name(name: 'origin')
-    url = remote_url(name: name)
-    return nil if nil_or_empty?(url)
-    url.sub(/\/\z/, '').split('/').last
-  end
-
-  # Returns the current branch name, or nil if HEAD is detached or the repo is empty.
-  #
-  # @return [String, nil]
-  def current_branch
-    out, = _execute('branch', '--show-current')
-    out = out.strip
-    nil_or_empty?(out) ? nil : out
-  end
-
-  # Enumerates all remotes, yielding each remote name and URL.
-  # Uses `git config --get-regexp` to fetch all remotes in one call.
-  #
-  # @yield [remote_name, remote_url] Called for each remote found.
-  # @yieldparam remote_name [String] The name of the remote (e.g., 'origin').
-  # @yieldparam remote_url [String] The URL of the remote.
-  # @return [void]
-  def each_remote
-    return unless block_given?
-
-    stdout, _stderr, status = _execute('config', '--get-regexp', '^remote\\..*\\.url')
-    return unless status.success?
-
-    stdout.each_line do |line|
-      next if nil_or_empty?(line.strip)
-      key, url = line.strip.split(' ', 2) # key is like 'remote.origin.url'
-      remote_name = key.split('.')[1]
-      yield remote_name, url
-    end
-  end
-
-  # Adds a new remote.
-  #
-  # @param name [String] The remote name (e.g., 'upstream').
-  # @param url [String] The remote URL.
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def add_remote(name, url)
-    _execute('remote', 'add', name, url)
-  end
-
-  # Updates the URL of an existing remote.
-  #
-  # @param name [String] The remote name (e.g., 'origin').
-  # @param url [String] The new remote URL.
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def set_remote_url(name, url)
-    _execute('remote', 'set-url', name, url)
-  end
-
-  # Fetches from all remotes and all tags.
-  #
-  # @param quiet [Boolean] Whether to suppress git output (defaults to true).
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def fetch_all(quiet: true)
-    args = ['fetch']
-    args << '-q' if quiet
-    args << '--all' << '--tags'
-    _execute(*args)
-  end
-
-  # Initializes a new git repository in the directory.
-  #
-  # @param ref_format [String] The ref-format to use (defaults to 'reftable').
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def init(ref_format: 'reftable')
-    _execute('init', "--ref-format=#{ref_format}", '.')
-  end
-
-  # Recreates the local git repository by removing .git and reinitializing.
-  # Preserves working tree files, only destroys git history.
-  #
-  # @param ref_format [String] The ref-format to use (defaults to 'reftable').
-  # @param remote_name [String] Remote name to add (defaults to 'origin').
-  # @param remote_url [String, nil] Remote URL to add (optional).
-  # @param user_name [String, nil] Git user.name to set (optional).
-  # @param user_email [String, nil] Git user.email to set (optional).
-  # @return [Boolean] true on success, false on failure.
-  def recreate(ref_format: 'reftable', remote_name: 'origin', remote_url: nil, user_name: nil, user_email: nil)
-    git_path = @dir.join('.git')
-
-    if @dry_run
-      Logging.info "Would remove: '#{git_path.to_s.cyan}'"
-    else
-      return false unless repo?
-      # .git can be a directory (normal clone) or a file (worktree/submodule pointer).
-      # rmtree handles both: removes directory tree or deletes the file.
-      git_path.rmtree
-    end
-
-    _out, _err, status = init(ref_format: ref_format)
-    return false unless status.success?
-
-    # Add remote if URL provided
-    add_remote(remote_name, remote_url) if remote_url
-
-    # Set git config if provided
-    config_set('user.name', user_name) unless nil_or_empty?(user_name)
-    config_set('user.email', user_email) unless nil_or_empty?(user_email)
-
-    true
-  end
-
-  # Stages all changes (equivalent to `git add -A .`).
-  # Automatically removes stale index.lock before staging to prevent failures.
-  #
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def stage_all
-    if @dry_run
-      Logging.info 'Would stage all files after removing stale lock file if it exists'
-    else
-      delete_index_lock
-      _execute('add', '-A', '.')
-    end
-  end
-
-  # Stages a specific file or directory (equivalent to `git add <path>`).
-  #
-  # @param path [String, Pathname] Path to stage (relative to repo root).
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def add(path)
-    _execute('add', path.to_s)
-  end
-
-  # Returns true if a tag exists in the repository.
-  #
-  # @param name [String] Tag name to check.
-  # @return [Boolean] true if tag exists, false otherwise.
-  def tag_exists?(name)
-    _out, _err, status = _execute('rev-parse', '-q', '--verify', "refs/tags/#{name}")
-    status.success?
-  end
-
-  # Deletes a tag from the repository (local only, does not affect remote).
-  #
-  # @param name [String] Tag name to delete.
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def delete_tag(name)
-    _execute('tag', '-d', name)
-  end
-
-  # Pulls changes from upstream with optional rebase.
-  #
-  # @param rebase [Boolean] Whether to rebase instead of merge (defaults to false).
-  # @param quiet [Boolean] Whether to suppress git output (defaults to false).
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def pull(rebase: false, quiet: false)
-    args = ['pull']
-    args << '-r' if rebase
-    args << '-q' if quiet
-    _execute(*args)
-  end
-
-  # Removes a file from the index (staging area) without deleting it from the working directory.
-  # Equivalent to `git rm --cached <path>`.
-  #
-  # @param path [String, Pathname] Path to remove from index.
-  # @param quiet [Boolean] Whether to suppress git output (defaults to false).
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def rm_cached(path, quiet: false)
-    args = ['rm', '--cached']
-    args << '-q' if quiet
-    args << '--' << path.to_s
-    _execute(*args)
-  end
-
-  # Restores working tree files.
-  # Equivalent to `git restore <pathspec>`.
-  #
-  # @param pathspec [String] Path or pathspec to restore (e.g., '.' for all files).
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def restore(pathspec)
-    _execute('restore', pathspec)
-  end
-
-  # Reports the working tree status.
-  # Equivalent to `git status <switches>`.
-  #
-  # @param switches [Array<String>] Additional arguments to pass to git status.
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def status(*switches)
-    _execute('status', *switches)
-  end
-
-  # Lists tracked files matching the given pathspec patterns.
-  # Uses 'git ls-files' to query the git index.
-  #
-  # @param patterns [Array<String>] Pathspec patterns to match (e.g., '*.rb', 'src/**/*.js').
-  #   If no patterns given, returns all tracked files.
-  # @return [Array<String>] Array of tracked file paths (relative to repo root).
-  def ls_files(*patterns)
-    args = ['ls-files']
-    args += ['--'] + patterns unless nil_or_empty?(patterns)
-    stdout, = _execute(*args)
-    stdout.split("\n")
-  end
-
-  # Lists files in a ref (branch/tag/commit/remote ref) using ls-tree.
-  # Works for both local refs (HEAD, master) and remote refs (origin/main).
-  # Does not require fetching - reads from locally cached refs.
-  #
-  # Returns sorted list for consistent comparison operations.
-  # Git naturally outputs in sorted order, but we call .sort explicitly for guaranteed consistency.
-  #
-  # @param ref [String] Any git ref (e.g., 'HEAD', 'master', 'origin/main')
-  # @return [Array<String>] Sorted list of file paths, or empty array on failure
-  def ls_tree(ref)
-    stdout, stderr, status = _execute('ls-tree', '-r', '--name-only', ref)
-    return [] unless status.success?
-    stdout.split("\n").sort
-  end
-
-  # Creates a commit with the given message.
-  #
-  # @param message [String] Commit message.
-  # @param quiet [Boolean] Whether to suppress git output (defaults to false).
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def commit(message, quiet: false)
-    args = ['commit']
-    args << '-q' if quiet
-    args << '-m' << message
-    _execute(*args)
-  end
-
-  # Smart commit: amends if ahead of remote and not diverged, otherwise creates new commit.
-  # Equivalent to `git sci "<message>"` alias.
-  # Aborts if nothing is staged.
-  #
-  # When called without a message, auto-generates one based on repository state:
-  # - "Initial commit: <timestamp>" if no commits exist (commit_count == 0)
-  # - "Incremental commit: <timestamp>" otherwise (commit_count > 0)
-  #
-  # @param message [String, nil] Optional commit message. If nil, auto-generates based on repo state.
-  # @return [Boolean] true if commit succeeded, false if nothing staged or commit failed.
-  def smart_commit(message = nil)
-    # Auto-generate message if not provided
-    if nil_or_empty?(message)
-      prefix = commit_count.zero? ? 'Initial' : 'Incremental'
-      message = "#{prefix} commit: #{Core.current_timestamp}"
-    end
-
-    _out, _err, status = run_alias('sci', message)
-    status.success?
-  end
-
-  # Returns the total number of commits in the repository across all branches.
-  # Uses 'git rev-list --all --count' which counts all reachable commits.
-  #
-  # Works correctly for:
-  # - Brand new repos without any commits (returns 0)
-  # - Repos without remotes (counts local commits only)
-  # - Repos after git.recreate() (returns 0 for fresh .git directory)
-  # - Existing repos with commit history (returns total count)
-  #
-  # @return [Integer] Total commit count (0 for brand new repos, >0 for repos with history).
-  def commit_count
-    out, = _execute('rev-list', '--all', '--count')
-    out.strip.to_i
-  end
-
-  # Pushes to a remote and sets up upstream tracking.
-  #
-  # @param remote [String] Remote name (defaults to 'origin').
-  # @param branch [String] Branch name to push.
-  # @param force [Boolean] Whether to force push (defaults to false).
-  # @param force_with_lease [Boolean] Whether to use --force-with-lease (defaults to false).
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def push(remote: 'origin', branch:, force: false, force_with_lease: false)
-    if @dry_run
-      Logging.info 'Would push to remote'
-      Logging.info "Would set upstream tracking: #{remote}/#{branch}"
-      return _mock_status_response(true)
-    end
-
-    url = remote_url(name: remote)
-    Logging.debug "#{'Pushing'.yellow} from '#{@dir.to_s.cyan}' to #{url.cyan}"
-
-    args = ['push']
-    if force_with_lease
-      args << '--force-with-lease'
-    elsif force
-      args << '-f'
-    end
-    args << remote << branch
-
-    _execute(*args) do
-      # Clean up stale index.lock after push operations (common with force push)
-      delete_index_lock
-
-      # Set upstream tracking after successful push
-      _out, _err, status = _execute('branch', '-u', "#{remote}/#{branch}")
-      if status.success?
-        Logging.debug "Set upstream tracking: #{remote}/#{branch}"
-      else
-        Logging.warn "Failed to set upstream tracking for '#{branch}'"
-      end
-
-      Logging.success "Pushed from '#{@dir.to_s.cyan}' to #{url.cyan}"
-    end
-  end
-
-  # Compresses the repository by expiring reflog and running gc.
-  # Runs 'git rfc' (reflog expire) and 'git cc' (gc --aggressive) aliases.
-  #
-  # @return [Boolean] true on success, false on failure.
-  def compress
-    if @dry_run
-      Logging.info 'Would compress (reflog + gc)'
-      return true
-    end
-
-    Logging.debug "#{'Compressing'.yellow} '#{@dir.to_s.cyan}'"
-    run_alias('rfc')
-    run_alias('cc')
-    true
-  end
-
-  # Builds the commit graph for the repository to optimize git operations.
-  # Commit graphs speed up operations like git log, git merge-base, and git status.
-  # Use --reachable to include all commits reachable from any ref (branches, tags).
-  #
-  # @return [Boolean] true on success, false on failure
-  def build_commit_graph
-    if @dry_run
-      Logging.info 'Would build commit graph'
-      return true
-    end
-
-    Logging.debug "#{'Building commit graph'.yellow} for '#{@dir.to_s.cyan}'"
-    _out, _err, status = _execute('commit-graph', 'write', '--reachable', '--changed-paths')
-    status.success?
-  end
-
-  # Runs a git alias command (e.g., 'amq', 'rfc', 'cc').
-  # Git aliases are user-defined commands in .gitconfig.
-  #
-  # @param alias_name [String] The alias name (e.g., 'amq').
-  # @param args [Array<String>] Additional arguments to pass to the alias.
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def run_alias(alias_name, *args)
-    _execute(alias_name, *args)
-  end
-
-  # Deletes .git/index.lock if it exists. This is a recovery operation for
-  # stale lock files that can block git operations. Rescue nil because the
-  # file may not exist (which is fine -- that's the desired end state).
-  #
-  # @return [void]
-  def delete_index_lock
-    if @dry_run
-      Logging.info "Would delete: '#{@dir.join('.git', 'index.lock').to_s.cyan}' (if it exists)"
-    else
-      @dir.join('.git', 'index.lock').delete rescue nil
-    end
-  end
-
-  # Returns true if this path is a git repository.
-  # Checks for .git directory or file (worktree/submodule).
-  #
-  # @return [Boolean]
-  def repo?
-    @dir.join('.git').exist?
+  class << self
+    attr_accessor :repo_cache
   end
 
   # Class method for checking if any path is a git repo.
   # Mirrors is_git_repo in .shellrc.
+  # Result is cached at the class level since repo status doesn't change during
+  # script execution.
+  #
+  # @param path [String, Pathname] Path to check.
+  # @return [Boolean]
+
+  # ---------------------------------------------------------------------------
+  # Class methods
+  # ---------------------------------------------------------------------------
+
+  # Class method for checking if any path is a git repo.
+  # Mirrors is_git_repo in .shellrc.
+  #
+  # Caches results in a class-level hash for performance (directory tree traversal
+  # benefits from O(1) lookups). Cache persists for script lifetime. This is safe
+  # because the class method is used for validation checks where each path is
+  # typically checked once. If you create/remove repos during execution and need
+  # fresh checks, use the instance method or clear repo_cache manually.
   #
   # @param path [String, Pathname] Path to check.
   # @return [Boolean]
   def self.repo?(path)
     return false if nil_or_empty?(path)
-    # .git can be a directory (normal clone) or a file (worktree / submodule).
+
+    # Normalize to absolute path for cache key (handles relative paths, symlinks)
     path = Pathname.new(path) unless path.is_a?(Pathname)
-    path.join('.git').exist?
+
+    # .git can be a directory (normal clone) or a file (worktree / submodule).
+    repo_cache[path.expand_path.to_s] ||= path.join('.git').exist?
   end
 
   # Clones a git repo into a target directory, handling the non-empty target case.
@@ -517,48 +126,512 @@ class GitProcessor
   def self.migrate_to_reftable(folder: nil)
     return false if nil_or_empty?(folder)
 
-    folder = Pathname.new(folder) unless folder.is_a?(Pathname)
-
-    return unless repo?(folder)
-
-    # git rev-parse --show-ref-format was added in git 2.45; fall back to 'files'
-    # on older git so the guard below correctly detects a non-reftable repo.
-    ref_format = CommandUtils.query('git', '-C', folder.to_s, 'rev-parse', '--show-ref-format', err: File::NULL)
-    ref_format = 'files' if nil_or_empty?(ref_format)
-    return if ref_format == 'reftable'
-
-    # 'git refs migrate' requires git 2.45+. On older git (vanilla macOS system
-    # git) this returns non-zero; skip silently -- fresh-install calls this again
-    # after Homebrew's modern git is on PATH.
-    success = CommandUtils.capture_output('git', '-C', folder.to_s, 'refs', 'migrate', '--ref-format=reftable', err: File::NULL) do |st, output_msg|
-      Logging.debug "git refs migrate unavailable (requires git 2.45+, status: #{st.exitstatus})#{output_msg} -- skipping reftable migration for '#{folder.to_s.cyan}'"
-    end
-
-    return unless success
-
-    # 'git refs migrate' writes all refs to the reftable directory and should
-    # clear loose refs, but may leave behind empty files in the legacy
-    # .git/refs/{heads,tags,remotes}/ trees. Remove them so they cannot shadow
-    # the canonical reftable entries. Use Pathname#rmtree to recursively remove
-    # directories with nested refs (e.g. refs/heads/feature/mybranch).
-    git_dir = folder.join('.git')
-    refs_heads = git_dir.join('refs', 'heads')
-    refs_tags = git_dir.join('refs', 'tags')
-    refs_remotes = git_dir.join('refs', 'remotes')
-
-    [refs_heads, refs_tags, refs_remotes].each do |refs_subdir|
-      next unless refs_subdir.directory?
-      refs_subdir.children.each do |entry|
-        if entry.directory?
-          entry.rmtree
-        elsif entry.file?
-          entry.delete
-        end
-      end
-    end
-
-    Logging.success "Migrated '#{folder.to_s.cyan}' to reftable format"
+    new(dir: folder).migrate_refs_to_reftable
   end
+
+  # ---------------------------------------------------------------------------
+  # Constructor
+  # ---------------------------------------------------------------------------
+
+  # @param dir [String, Pathname] Repository directory
+  # @param dry_run [Boolean] When true, log operations instead of executing
+  def initialize(dir:, dry_run: false)
+    @dir = dir.is_a?(Pathname) ? dir : Pathname.new(dir)
+    @dry_run = dry_run
+    yield self if block_given?
+  end
+
+  # ---------------------------------------------------------------------------
+  # Query methods (read-only state inspection)
+  # ---------------------------------------------------------------------------
+
+  # Returns true if this path is a git repository.
+  # Checks for .git directory or file (worktree/submodule).
+  # Not memoized because repo state can change during instance lifetime (init, recreate, etc.).
+  #
+  # @return [Boolean]
+  def repo?
+    @dir.join('.git').exist?
+  end
+
+  # Returns the value of a git config key, or nil if absent.
+  # Mirrors get_git_config_value in .shellrc.
+  #
+  # @param key [String] Git config key, e.g. 'remote.origin.url'.
+  # @return [String, nil]
+  def config_value(key)
+    @_config_values ||= {}
+    @_config_values[key] ||= begin
+        out, = _execute('config', '--get', key)
+        nil_or_empty?(out) ? nil : out.strip
+      end
+  end
+
+  # Returns the URL for the specified remote, or nil.
+  #
+  # @param name [String] Remote name (defaults to 'origin').
+  # @return [String, nil]
+  def remote_url(name: 'origin')
+    @_remote_urls ||= {}
+    @_remote_urls[name] ||= config_value("remote.#{name}.url")
+  end
+
+  # Extracts the repository name from a remote URL.
+  # Strips trailing slash and returns the last path segment.
+  # Works with both SSH and HTTPS URLs.
+  #
+  # Examples:
+  #   keybase://private/user/dotfiles/ → dotfiles
+  #   git@github.com:user/repo.git → repo.git
+  #   https://github.com/user/repo → repo
+  #
+  # @param name [String] Remote name (defaults to 'origin').
+  # @return [String, nil] Repository name, or nil if remote doesn't exist.
+  def remote_repo_name(name: 'origin')
+    @_remote_repo_names ||= {}
+    return @_remote_repo_names[name] if @_remote_repo_names.key?(name)
+
+    url = remote_url(name: name)
+    @_remote_repo_names[name] = nil_or_empty?(url) ? nil : url.sub(/\/\z/, '').split('/').last
+  end
+
+  # Returns the current branch name, or nil if HEAD is detached or the repo is empty.
+  #
+  # @return [String, nil]
+  def current_branch
+    @_current_branch ||= begin
+        out, = _execute('branch', '--show-current')
+        nil_or_empty?(out) ? nil : out.strip
+      end
+  end
+  def shallow?
+    @_is_shallow ||= begin
+        out, = _execute('rev-parse', '--is-shallow-repository')
+        nil_or_empty?(out) ? false : out.strip == 'true'
+      end
+  end
+  def ref_format
+    @_ref_format ||= begin
+        out, = _execute('rev-parse', '--show-ref-format')
+        format = nil_or_empty?(out) ? 'files' : out.strip
+        format.empty? ? 'files' : format
+      end
+  end
+
+  # Enumerates all remotes, yielding each remote name and URL.
+  # Uses `git config --get-regexp` to fetch all remotes in one call.
+  #
+  # @yield [remote_name, remote_url] Called for each remote found.
+  # @yieldparam remote_name [String] The name of the remote (e.g., 'origin').
+  # @yieldparam remote_url [String] The URL of the remote.
+  # @return [void]
+  def each_remote
+    return unless block_given?
+
+    stdout, _stderr, status = _execute('config', '--get-regexp', '^remote\\..*\\.url')
+    return unless status.success?
+
+    stdout.each_line do |line|
+      next if nil_or_empty?(line.strip)
+      key, url = line.strip.split(' ', 2) # key is like 'remote.origin.url'
+      remote_name = key.split('.')[1]
+      yield remote_name, url
+    end
+  end
+
+  # Returns true if a tag exists in the repository.
+  #
+  # @param name [String] Tag name to check.
+  # @return [Boolean] true if tag exists, false otherwise.
+  def tag_exists?(name)
+    _stdout, _stderr, status = _execute('rev-parse', '-q', '--verify', "refs/tags/#{name}")
+    status.success?
+  end
+
+  # Reports the working tree status.
+  # Equivalent to `git status <switches>`.
+  #
+  # @param switches [Array<String>] Additional arguments to pass to git status.
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def status(*switches)
+    _execute('status', *switches)
+  end
+
+  # Lists tracked files matching the given pathspec patterns.
+  # Uses 'git ls-files' to query the git index.
+  #
+  # @param patterns [Array<String>] Pathspec patterns to match (e.g., '*.rb', 'src/**/*.js').
+  #   If no patterns given, returns all tracked files.
+  # @return [Array<String>] Array of tracked file paths (relative to repo root).
+  def ls_files(*patterns)
+    args = ['ls-files']
+    args += ['--'] + patterns unless nil_or_empty?(patterns)
+    stdout, _stderr, status = _execute(*args)
+    status.success? ? stdout.split("\n").sort : []
+  end
+
+  # Lists files in a ref (branch/tag/commit/remote ref) using ls-tree.
+  # Works for both local refs (HEAD, master) and remote refs (origin/main).
+  # Does not require fetching - reads from locally cached refs.
+  #
+  # Returns sorted list for consistent comparison operations.
+  # Git naturally outputs in sorted order, but we call .sort explicitly for guaranteed consistency.
+  #
+  # @param ref [String] Any git ref (e.g., 'HEAD', 'master', 'origin/main')
+  # @return [Array<String>] Sorted list of file paths, or empty array on failure
+  def ls_tree(ref)
+    stdout, _stderr, status = _execute('ls-tree', '-r', '--name-only', ref)
+    status.success? ? stdout.split("\n").sort : []
+  end
+
+  # Returns the total number of commits in the repository across all branches.
+  # Uses 'git rev-list --all --count' which counts all reachable commits.
+  #
+  # Works correctly for:
+  # - Brand new repos without any commits (returns 0)
+  # - Repos without remotes (counts local commits only)
+  # - Repos after git.recreate() (returns 0 for fresh .git directory)
+  # - Existing repos with commit history (returns total count)
+  #
+  # @return [Integer] Total commit count (0 for brand new repos, >0 for repos with history).
+  def commit_count
+    stdout, = _execute('rev-list', '--all', '--count')
+    nil_or_empty?(stdout) ? 0 : stdout.strip.to_i
+  end
+
+  # ---------------------------------------------------------------------------
+  # Mutation methods (modify state)
+  # ---------------------------------------------------------------------------
+
+  # Sets a git config value.
+  #
+  # @param key [String] Git config key, e.g. 'user.name'.
+  # @param value [String] The value to set.
+  # @param local [Boolean] When true (default), sets --local scope.
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def config_set(key, value, local: true)
+    return _mock_status_response(false) unless repo?
+
+    args = ['config']
+    args << '--local' if local
+    args << key << value
+    _execute(*args)
+  end
+
+  # Adds a new remote.
+  #
+  # @param name [String] The remote name (e.g., 'upstream').
+  # @param url [String] The remote URL.
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def add_remote(name, url)
+    return _mock_status_response(false) unless repo?
+
+    _execute('remote', 'add', name, url)
+  end
+
+  # Updates the URL of an existing remote.
+  #
+  # @param name [String] The remote name (e.g., 'origin').
+  # @param url [String] The new remote URL.
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def set_remote_url(name, url)
+    return _mock_status_response(false) unless repo?
+
+    _execute('remote', 'set-url', name, url)
+  end
+
+  # Fetches from all remotes and all tags.
+  #
+  # @param quiet [Boolean] Whether to suppress git output (defaults to true).
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def fetch_all(quiet: true)
+    return _mock_status_response(false) unless repo?
+
+    args = ['fetch']
+    args << '-q' if quiet
+    args << '--all' << '--tags'
+    _execute(*args)
+  end
+
+  # Initializes a new git repository in the directory.
+  #
+  # @param ref_format [String] The ref-format to use (defaults to 'reftable').
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def init(ref_format: 'reftable')
+    _execute('init', "--ref-format=#{ref_format}", '.')
+  end
+
+  # Recreates the local git repository by removing .git and reinitializing.
+  # Preserves working tree files, only destroys git history.
+  #
+  # @param ref_format [String] The ref-format to use (defaults to 'reftable').
+  # @param remote_name [String] Remote name to add (defaults to 'origin').
+  # @param remote_url [String, nil] Remote URL to add (optional).
+  # @param user_name [String, nil] Git user.name to set (optional).
+  # @param user_email [String, nil] Git user.email to set (optional).
+  # @return [Boolean] true on success, false on failure.
+  def recreate(ref_format: 'reftable', remote_name: 'origin', remote_url: nil, user_name: nil, user_email: nil)
+    git_path = @dir.join('.git')
+
+    if @dry_run
+      Logging.info "Would remove: '#{git_path.to_s.cyan}'"
+    else
+      return false unless repo?
+      # .git can be a directory (normal clone) or a file (worktree/submodule pointer).
+      # rmtree handles both: removes directory tree or deletes the file.
+      git_path.rmtree
+    end
+
+    _stdout, _stderr, status = init(ref_format: ref_format)
+    return false unless status.success?
+
+    # Add remote if URL provided
+    add_remote(remote_name, remote_url) if remote_url
+
+    # Set git config if provided
+    config_set('user.name', user_name) unless nil_or_empty?(user_name)
+    config_set('user.email', user_email) unless nil_or_empty?(user_email)
+
+    true
+  end
+
+  # Stages all changes (equivalent to `git add -A .`).
+  # Automatically removes stale index.lock before staging to prevent failures.
+  #
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def stage_all
+    if @dry_run
+      Logging.info 'Would stage all files after removing stale lock file if it exists'
+    else
+      return _mock_status_response(false) unless repo?
+
+      delete_index_lock
+      _execute('add', '-A', '.')
+    end
+  end
+
+  # Stages a specific file or directory (equivalent to `git add <path>`).
+  #
+  # @param path [String, Pathname] Path to stage (relative to repo root).
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def add(path)
+    return _mock_status_response(false) unless repo?
+
+    _execute('add', path.to_s)
+  end
+
+  # Deletes a tag from the repository (local only, does not affect remote).
+  #
+  # @param name [String] Tag name to delete.
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def delete_tag(name)
+    return _mock_status_response(false) unless repo?
+
+    _execute('tag', '-d', name)
+  end
+
+  # Pulls changes from upstream with optional rebase.
+  #
+  # @param rebase [Boolean] Whether to rebase instead of merge (defaults to false).
+  # @param quiet [Boolean] Whether to suppress git output (defaults to false).
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def pull(rebase: false, quiet: false)
+    return _mock_status_response(false) unless repo?
+
+    args = ['pull']
+    args << '-r' if rebase
+    args << '-q' if quiet
+    _execute(*args)
+  end
+
+  # Removes a file from the index (staging area) without deleting it from the working directory.
+  # Equivalent to `git rm --cached <path>`.
+  #
+  # @param path [String, Pathname] Path to remove from index.
+  # @param quiet [Boolean] Whether to suppress git output (defaults to false).
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def rm_cached(path, quiet: false)
+    return _mock_status_response(false) unless repo?
+
+    args = ['rm', '--cached']
+    args << '-q' if quiet
+    args << '--' << path.to_s
+    _execute(*args)
+  end
+
+  # Restores working tree files.
+  # Equivalent to `git restore <pathspec>`.
+  #
+  # @param pathspec [String] Path or pathspec to restore (e.g., '.' for all files).
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def restore(pathspec)
+    return _mock_status_response(false) unless repo?
+
+    _execute('restore', pathspec)
+  end
+
+  # Creates a commit with the given message.
+  #
+  # @param message [String] Commit message.
+  # @param quiet [Boolean] Whether to suppress git output (defaults to false).
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def commit(message, quiet: false)
+    return _mock_status_response(false) unless repo?
+
+    args = ['commit']
+    args << '-q' if quiet
+    args << '-m' << message
+    _execute(*args)
+  end
+
+  # Smart commit: amends if ahead of remote and not diverged, otherwise creates new commit.
+  # Equivalent to `git sci "<message>"` alias.
+  # Aborts if nothing is staged.
+  #
+  # When called without a message, auto-generates one based on repository state:
+  # - "Initial commit: <timestamp>" if no commits exist (commit_count == 0)
+  # - "Incremental commit: <timestamp>" otherwise (commit_count > 0)
+  #
+  # @param message [String, nil] Optional commit message. If nil, auto-generates based on repo state.
+  # @return [Boolean] true if commit succeeded, false if nothing staged or commit failed.
+  def smart_commit(message = nil)
+    return false unless repo?
+
+    # Auto-generate message if not provided
+    if nil_or_empty?(message)
+      prefix = commit_count.zero? ? 'Initial' : 'Incremental'
+      message = "#{prefix} commit: #{Core.current_timestamp}"
+    end
+
+    _stdout, _stderr, status = run_alias('sci', message)
+    status.success?
+  end
+
+  # Pushes to a remote and sets up upstream tracking.
+  #
+  # @param remote [String] Remote name (defaults to 'origin').
+  # @param branch [String] Branch name to push.
+  # @param force [Boolean] Whether to force push (defaults to false).
+  # @param force_with_lease [Boolean] Whether to use --force-with-lease (defaults to false).
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def push(remote: 'origin', branch:, force: false, force_with_lease: false)
+    if @dry_run
+      Logging.info 'Would push to remote'
+      Logging.info "Would set upstream tracking: #{remote}/#{branch}"
+      return _mock_status_response(true)
+    end
+
+    return _mock_status_response(false) unless repo?
+
+    url = remote_url(name: remote)
+    Logging.debug "#{'Pushing'.yellow} from '#{@dir.to_s.cyan}' to #{url.cyan}"
+
+    args = ['push']
+    if force_with_lease
+      args << '--force-with-lease'
+    elsif force
+      args << '-f'
+    end
+    args << remote << branch
+
+    _execute(*args) do
+      # Clean up stale index.lock after push operations (common with force push)
+      delete_index_lock
+
+      # Set upstream tracking after successful push
+      _stdout, _stderr, status = _execute('branch', '-u', "#{remote}/#{branch}")
+      if status.success?
+        Logging.debug "Set upstream tracking: #{remote}/#{branch}"
+      else
+        Logging.warn "Failed to set upstream tracking for '#{branch}'"
+      end
+
+      Logging.success "Pushed from '#{@dir.to_s.cyan}' to #{url.cyan}"
+    end
+  end
+
+  # Compresses the repository by expiring reflog and running gc.
+  # Runs 'git rfc' (reflog expire) and 'git cc' (gc --aggressive) aliases.
+  #
+  # @return [Boolean] true on success, false on failure.
+  def compress
+    if @dry_run
+      Logging.info 'Would compress (reflog + gc)'
+      return true
+    end
+
+    return false unless repo?
+
+    Logging.debug "#{'Compressing'.yellow} '#{@dir.to_s.cyan}'"
+    run_alias('rfc')
+    run_alias('cc')
+    true
+  end
+
+  # Builds the commit graph for the repository to optimize git operations.
+  # Commit graphs speed up operations like git log, git merge-base, and git status.
+  # Use --reachable to include all commits reachable from any ref (branches, tags).
+  #
+  # @return [Boolean] true on success, false on failure
+  def build_commit_graph
+    if @dry_run
+      Logging.info 'Would build commit graph'
+      return true
+    end
+
+    return false unless repo?
+
+    Logging.debug "#{'Building commit graph'.yellow} for '#{@dir.to_s.cyan}'"
+    _stdout, _stderr, status = _execute('commit-graph', 'write', '--reachable', '--changed-paths')
+    status.success?
+  end
+
+  # Runs a git alias command (e.g., 'amq', 'rfc', 'cc').
+  # Git aliases are user-defined commands in .gitconfig.
+  #
+  # @param alias_name [String] The alias name (e.g., 'amq').
+  # @param args [Array<String>] Additional arguments to pass to the alias.
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def run_alias(alias_name, *args)
+    _execute(alias_name, *args)
+  end
+
+  # Deletes .git/index.lock if it exists. This is a recovery operation for
+  # stale lock files that can block git operations. Rescue nil because the
+  # file may not exist (which is fine -- that's the desired end state).
+  #
+  # @return [void]
+  def delete_index_lock
+    if @dry_run
+      Logging.info "Would delete: '#{@dir.join('.git', 'index.lock').to_s.cyan}' (if it exists)"
+    else
+      @dir.join('.git', 'index.lock').delete rescue nil
+    end
+  end
+  def migrate_refs_to_reftable
+    # Not a repo - skip migration
+    return false unless repo?
+
+    # Check if already reftable
+    return true if ref_format == 'reftable'
+
+    # Attempt migration
+    _stdout, _stderr, status = _execute('refs', 'migrate', '--ref-format=reftable')
+    unless status.success?
+      Logging.debug "git refs migrate unavailable (requires git 2.45+, status: #{status.exitstatus}) -- skipping reftable migration for '#{@dir.to_s.cyan}'"
+      return false
+    end
+
+    # Clean up legacy loose refs after successful migration
+    _cleanup_legacy_refs
+
+    Logging.success "Migrated '#{@dir.to_s.cyan}' to reftable format"
+    true
+  end
+
+  # ---------------------------------------------------------------------------
+  # Private methods
+  # ---------------------------------------------------------------------------
 
   private
 
@@ -633,5 +706,23 @@ class GitProcessor
     ['', '', OpenStruct.new(success?: success, exitstatus: success ? 0 : 1)]
   end
 
-  private :_should_stream_output?, :_mock_status_response
+  def _cleanup_legacy_refs
+    git_dir = @dir.join('.git')
+    refs_heads = git_dir.join('refs', 'heads')
+    refs_tags = git_dir.join('refs', 'tags')
+    refs_remotes = git_dir.join('refs', 'remotes')
+
+    [refs_heads, refs_tags, refs_remotes].each do |refs_subdir|
+      next unless refs_subdir.directory?
+      refs_subdir.children.each do |entry|
+        if entry.directory?
+          entry.rmtree
+        elsif entry.file?
+          entry.delete
+        end
+      end
+    end
+  end
+
+  private :_should_stream_output?, :_mock_status_response, :_cleanup_legacy_refs
 end

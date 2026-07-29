@@ -65,6 +65,31 @@ module GitWorkspace
   #   the defaults (node_modules, .cache, .Trash). Pass [] for no additional pruning.
   # @param skip_symlinks [Boolean] Skip repo roots that are symlinks (default: true)
   # @return [Array<String>] Repo root paths, deduplicated and sorted alphabetically
+
+  # ---------------------------------------------------------------------------
+  # Class methods
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # Query methods (read-only state inspection)
+  # ---------------------------------------------------------------------------
+
+  # Finds all git repositories under the given directories, returning their root
+  # paths (directories containing .git). Supports filtering, depth control, and
+  # directory pruning.
+  #
+  # Delegates to CollectionProcessor.find_directories_matching for the low-level
+  # find operation, adding git-specific defaults and semantics (search for .git
+  # directories, return their parents as repo roots, prune common repo cruft).
+  #
+  # @param dirs [Array<String, Pathname>, String, Pathname] Root directory/directories to search
+  # @param mindepth [Integer] Minimum search depth (default: 1)
+  # @param maxdepth [Integer] Maximum search depth (default: 6)
+  # @param filter [String, Regexp, nil] Only include repos matching this pattern
+  # @param additional_prune [Array<String>] Additional directories to prune beyond
+  #   the defaults (node_modules, .cache, .Trash). Pass [] for no additional pruning.
+  # @param skip_symlinks [Boolean] Skip repo roots that are symlinks (default: true)
+  # @return [Array<String>] Repo root paths, deduplicated and sorted alphabetically
   def find_git_repos(dirs:, mindepth: 1, maxdepth: 6, filter: nil, additional_prune: [], skip_symlinks: true)
     prune_dirs = DEFAULT_PRUNE_DIRS + Array(additional_prune)
 
@@ -103,8 +128,45 @@ module GitWorkspace
     end
   end
 
+  # Reports git status for a single repository.
+  #
+  # @param repo_dir [Pathname, String] The repository directory
+  # @param switches [Array<String>] Additional git status flags (optional)
+  # @return [Boolean] true if status retrieved successfully
+  def status_repo(repo_dir, switches: [])
+    repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
+
+    unless GitProcessor.repo?(repo_dir)
+      Logging.debug "Skipping status -- '#{repo_dir.to_s.cyan}' is not a git repo"
+      return false
+    end
+
+    Logging.with_step("status #{repo_dir.to_s}", "#{'Status'.yellow} '#{repo_dir.to_s.cyan}'") do
+      _stdout, _stderr, status = GitProcessor.new(dir: repo_dir).status(*switches)
+      status.success?
+    end
+  end
+
+  # Reports git status for HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, and all
+  # chrome directories in browser profiles. Intended for quick status overview.
+  #
+  # @return [Boolean] true if all status checks succeeded
+  def status_all_repos
+    results = []
+
+    # Key repos
+    results << status_repo(EnvVars::HOME)
+    results << status_repo(EnvVars::DOTFILES_DIR)
+    results << status_repo(EnvVars::PERSONAL_PROFILES_DIR)
+
+    # Chrome directories in browser profiles
+    results.concat(ProfilesRepo.find_chrome_folders.map { |chrome_dir| status_repo(chrome_dir) })
+
+    results.all?
+  end
+
   # ---------------------------------------------------------------------------
-  # Mise version installation
+  # Mutation methods (modify state)
   # ---------------------------------------------------------------------------
 
   # Installs any missing tool versions declared via mise config files across
@@ -157,10 +219,6 @@ module GitWorkspace
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # direnv config authorisation
-  # ---------------------------------------------------------------------------
-
   # Runs 'direnv allow' for every directory that has an .envrc file across all
   # git repos and their ancestor directories. Skips silently if direnv is not
   # on PATH. Mirrors allow_all_direnv_configs in .aliases.
@@ -193,10 +251,6 @@ module GitWorkspace
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Combined dev environment setup (optimized batch operation)
-  # ---------------------------------------------------------------------------
-
   # Runs both mise installation and direnv authorization in a single pass,
   # collecting ancestor directories once and reusing for both operations.
   # This avoids redundant filesystem traversals -- saves 200-500ms per run
@@ -217,10 +271,6 @@ module GitWorkspace
       install_mise_versions(shared_dirs: shared_dirs, first_install: first_install)
     end
   end
-
-  # ---------------------------------------------------------------------------
-  # Repo alias cache regeneration
-  # ---------------------------------------------------------------------------
 
   # Regenerates the repo alias cache under XDG_CACHE_HOME.
   # Because the cache file is a zsh script consumed by the interactive shell
@@ -282,10 +332,6 @@ module GitWorkspace
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # Repo update and status operations
-  # ---------------------------------------------------------------------------
-
   # Stages and commits all changed files in a git repo without prompting.
   # Intended for repos that track auto-generated state (e.g., preference exports)
   # where the caller does not need to review individual changes before committing.
@@ -302,7 +348,7 @@ module GitWorkspace
       return false
     end
 
-    Logging.with_step("update #{repo_dir}", "#{'Updating'.yellow} '#{repo_dir.to_s.cyan}'") do
+    Logging.with_step("update #{repo_dir.to_s}", "#{'Updating'.yellow} '#{repo_dir.to_s.cyan}'") do
       # Clean up lock files and hooks
       index_lock = repo_dir.join('.git', 'index.lock')
       hooks_dir = repo_dir.join('.git', 'hooks')
@@ -342,45 +388,8 @@ module GitWorkspace
     home_success && profiles_success
   end
 
-  # Reports git status for a single repository.
-  #
-  # @param repo_dir [Pathname, String] The repository directory
-  # @param switches [Array<String>] Additional git status flags (optional)
-  # @return [Boolean] true if status retrieved successfully
-  def status_repo(repo_dir, switches: [])
-    repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
-
-    unless GitProcessor.repo?(repo_dir)
-      Logging.debug "Skipping status -- '#{repo_dir.to_s.cyan}' is not a git repo"
-      return false
-    end
-
-    Logging.with_step("status #{repo_dir}", "#{'Status'.yellow} '#{repo_dir.to_s.cyan}'") do
-      _out, _err, status = GitProcessor.new(dir: repo_dir).status(*switches)
-      status.success?
-    end
-  end
-
-  # Reports git status for HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR, and all
-  # chrome directories in browser profiles. Intended for quick status overview.
-  #
-  # @return [Boolean] true if all status checks succeeded
-  def status_all_repos
-    results = []
-
-    # Key repos
-    results << status_repo(EnvVars::HOME)
-    results << status_repo(EnvVars::DOTFILES_DIR)
-    results << status_repo(EnvVars::PERSONAL_PROFILES_DIR)
-
-    # Chrome directories in browser profiles
-    results.concat(ProfilesRepo.find_chrome_folders.map { |chrome_dir| status_repo(chrome_dir) })
-
-    results.all?
-  end
-
   # ---------------------------------------------------------------------------
-  # Private helpers
+  # Private methods
   # ---------------------------------------------------------------------------
 
   private

@@ -58,6 +58,48 @@ module Core
     Time.now.strftime('%Y-%m-%d %H:%M:%S')
   end
 
+  # Calculates elapsed time in seconds from a given start time.
+  # Returns integer seconds elapsed since the reference point.
+  #
+  # @param start_time [Integer] Unix epoch timestamp (from Time.now.to_i or File.mtime().to_i)
+  # @return [Integer] Seconds elapsed since start_time
+  #
+  # @example Duration since epoch timestamp
+  #   start = Time.now.to_i
+  #   # ... do work ...
+  #   elapsed = Core.duration_since(start)  # => 42 (seconds)
+  #
+  # @example Duration since file was modified
+  #   last_update_time = File.mtime('/path/to/cache.txt').to_i
+  #   elapsed = Core.duration_since(last_update_time)  # => 3600
+  def duration_since(start_time)
+    Time.now.to_i - start_time
+  end
+
+  # Checks if enough time has elapsed since a reference timestamp.
+  # Returns true if duration since start_time meets or exceeds the threshold.
+  #
+  # @param start_time [Integer] Unix epoch timestamp (from Time.now.to_i or File.mtime().to_i)
+  # @param threshold [Integer] Minimum seconds that must have elapsed
+  # @return [Boolean] true if duration_since(start_time) >= threshold
+  #
+  # @example Check if 6 hours have passed since file modification
+  #   cache_file = '/path/to/cache.txt'
+  #   six_hours = 6 * 3600
+  #   if Core.elapsed?(File.mtime(cache_file).to_i, six_hours)
+  #     # More than 6 hours have passed, update needed
+  #   end
+  #
+  # @example Check if script has been running for at least 60 seconds
+  #   start = Time.now.to_i
+  #   # ... do work ...
+  #   if Core.elapsed?(start, 60)
+  #     puts "At least 60 seconds have passed"
+  #   end
+  def elapsed?(start_time, threshold)
+    duration_since(start_time) >= threshold
+  end
+
   # Checks if the script is running in a TTY (terminal) context.
   # Returns true when stdout is a TTY or FORCE_COLOR env var is set.
   # Used to gate interactive operations (app kill/restart, prompts, etc.)

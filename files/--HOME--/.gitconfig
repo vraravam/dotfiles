@@ -30,7 +30,7 @@
   # Returns 0 if 'upstream' remote exists, 1 otherwise.
   # Usage: git has-upstream [<dir>]
   has-upstream = "!f() { \
-    git -C \"${1:-.}\" remote | /usr/bin/grep -x upstream &>/dev/null; \
+    git -C \"${1:-.}\" remote | /usr/bin/grep -Fxq upstream 2>/dev/null; \
   }; f"
 
   # Returns 0 if working tree is clean (no unstaged or staged changes), 1 otherwise.
@@ -43,13 +43,15 @@
   # Uses st-nolock for lock-free status check (safe for prompts/monitoring).
   # Usage: git is-dirty [<dir>]
   is-dirty = "!f() { \
-    git -C \"${1:-.}\" st-nolock | /usr/bin/grep -q .; \
+    output=$(git -C \"${1:-.}\" st-nolock); \
+    [ -n \"${output}\" ]; \
   }; f"
 
   # Returns 0 if repo is shallow (partial clone), 1 if it's a full clone.
   # Usage: git is-shallow [<dir>]
   is-shallow = "!f() { \
-    git -C \"${1:-.}\" rev-parse --is-shallow-repository | /usr/bin/grep -q true; \
+    output=$(git -C \"${1:-.}\" rev-parse --is-shallow-repository); \
+    [ \"${output}\" = \"true\" ]; \
   }; f"
 
   # Returns porcelain status output without locks (safe for prompts/monitoring).
@@ -71,7 +73,7 @@
   # Uses git-sizer for detailed breakdown. Shows top 30 lines of output.
   # Usage: git big [<dir>]
   big = "!f() { \
-    cd \"${1:-.}\" && git-sizer --verbose | head -30; \
+    ( cd \"${1:-.}\" && git-sizer --verbose | head -30 ); \
   }; f"
 
   # Prints the current branch name.
@@ -111,14 +113,14 @@
       esac; \
     done; \
     [ -n \"${expire}\" ] || expire=1.week.ago; \
-    refs=$(git -C \"${dir}\" all-refs); \
     git -C \"${dir}\" size; \
     git -C \"${dir}\" remote prune origin; \
     git -C \"${dir}\" worktree prune; \
     git -C \"${dir}\" pack-refs --all; \
     git -C \"${dir}\" repack -a -d -F --depth=250 --window=250; \
-    [ -n \"${refs}\" ] && \
-      git -C \"${dir}\" reflog expire --expire=\"${expire}\" --expire-unreachable=\"${expire}\" --stale-fix \"${rest[@]}\" ${refs}; \
+    refs_array=($(git -C \"${dir}\" all-refs)); \
+    [ ${#refs_array[@]} -gt 0 ] && \
+      git -C \"${dir}\" reflog expire --expire=\"${expire}\" --expire-unreachable=\"${expire}\" --stale-fix \"${rest[@]}\" \"${refs_array[@]}\"; \
     git -C \"${dir}\" rerere gc; \
     git -C \"${dir}\" commit-graph write --reachable --changed-paths; \
     git -C \"${dir}\" maintenance run --task=gc; \
@@ -139,7 +141,8 @@
   # Deletes all local branches whose remote-tracking counterpart has been deleted (gone).
   # Usage: git dlb [<dir>]
   dlb = "!f() { \
-    git -C \"${1:-.}\" branch -vv | /usr/bin/grep ': gone]' | awk '{print $1}' | xargs -r git -C \"${1:-.}\" branch -D; \
+    dir=\"${1:-.}\"; \
+    git -C \"${dir}\" branch -vv | /usr/bin/grep ': gone]' | awk '{print $1}' | xargs -r git -C \"${dir}\" branch -D; \
   }; f"
 
   # Opens the global git config file in the default editor.

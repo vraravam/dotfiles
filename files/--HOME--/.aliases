@@ -794,7 +794,8 @@ time_shell_startup() {
   local shell_bin
   # Resolve via PATH so the result is the PATH-located binary, not a version
   # that may differ from what cron or a fresh login shell would use.
-  shell_bin="$(which "$(basename "${1:-${SHELL}}")")"
+  # :t is the zsh tail modifier (equivalent to basename).
+  shell_bin="$(command -v "${${1:-${SHELL}}:t}")"
   # {1..10} brace expansion -- no $(seq 1 10) subprocess fork.
   local i
   for i in {1..10}; do /usr/bin/time "${shell_bin}" -i -c exit; done
@@ -941,7 +942,7 @@ with_cron_suspended() {
 # Usage: kbgc <repo-name>
 if command_exists keybase; then
   kbgc() {
-    if [ $# -ne 1 ]; then
+    if [[ $# -ne 1 ]]; then
       error "$(red 'Usage:') ${0} $(yellow '<repo name>')\n For eg: '\$KEYBASE_HOME_REPO_NAME' or '\$KEYBASE_PROFILES_REPO_NAME'"
       return
     fi

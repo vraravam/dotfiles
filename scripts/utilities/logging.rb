@@ -270,7 +270,7 @@ module Logging
   # @return [void]
   def print_script_duration(start_time)
     return unless outermost_script?
-    human = format_duration(Time.now.to_i - start_time)
+    human = format_duration(Core.duration_since(start_time))
     emit("#{script_name.cyan} #{'==>'.purple} #{'Script finished at:'.yellow} #{Core.current_timestamp.light_blue} " \
          "(#{'Total duration:'.yellow} #{human.light_blue} #{'seconds'.yellow}).", level: 0)
   end

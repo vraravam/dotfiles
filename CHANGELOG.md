@@ -4,6 +4,35 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+
+### 3.2.12
+
+#### GitProcessor robustness, duration utilities, and custom.gitignore maintenance
+
+* *[scripts/utilities/git_processor.rb]* Added `repo?` guards to 15 mutation methods (`config_set`, `add_remote`, `set_remote_url`, `fetch_all`, `stage_all`, `add`, `delete_tag`, `pull`, `rm_cached`, `restore`, `commit`, `smart_commit`, `push`, `compress`, `build_commit_group`) to prevent operations on non-repos. Removed instance `repo?` memoization (`@_is_repo ||=`) to prevent stale cache after `init`/`recreate` operations - now directly checks `@dir.join('.git').exist?` each time. Kept class-level `GitProcessor.repo?(path)` memoization with `@repo_cache` hash (appropriate for validation checks across different paths during tree traversal). Added documentation explaining cache difference. Guard placement preserves original behavior: dry-run checks first (return true), then repo checks (for actual execution).
+
+* *[scripts/utilities/core.rb]* Added `duration_since(start_time)` method to calculate elapsed seconds from Unix epoch timestamp - single source of truth for duration calculations across Ruby codebase. Added `elapsed?(start_time, threshold)` method to check if enough time has passed since reference timestamp - returns true when duration meets or exceeds threshold. Used for time-interval checks in rate-limiting scenarios (mise plugin updates, ollama model updates).
+
+* *[scripts/software-updates-cron.rb]* Replaced all manual `Time.now.to_i - start_time` calculations with `Core.duration_since(start_time)` (4 call sites). Replaced time comparison logic (`duration < threshold`) with semantic `Core.elapsed?(timestamp, threshold)` checks (2 call sites: mise plugin updates, ollama model updates). Eliminated duplicate `duration_since` calls in ollama check (was called twice per iteration - once for comparison, once for hours calculation). Removed redundant `repo?` check for zen-browser-desktop repo - internal GitProcessor guards provide same protection.
+
+* *[scripts/utilities/logging.rb]* Updated `print_script_duration()` to use `Core.duration_since(start_time)` instead of manual `Time.now.to_i - start_time` calculation.
+
+* *[scripts/utilities/*.rb]* Fixed Pathname color method usage in 8 utility modules (`antidote.rb`, `command_utils.rb`, `keybase.rb`, `macos.rb`, `path_utils.rb`, `plist.rb`, `profiles_repo.rb`, `git_workspace.rb`). Color methods (`.cyan`, `.yellow`, etc.) are defined on String, not Pathname - added `.to_s` calls before color methods. Removed redundant `.to_s` on variables already documented as String type. Kept informative `repo?` checks in `git_workspace.rb:status_repo` and `profiles_repo.rb` chrome folder loop where custom logging prevents misleading "attempting..." messages before failure.
+
+* *[files/--HOME--/.envrc]* Deleted file (no longer needed).
+
+* *[files/--HOME--/custom.gitignore]* Removed `/.envrc` entry - synced with deletion of source file per maintenance rule.
+
+#### Adopting these changes
+
+* Run `install-dotfiles.rb` to sync deleted `.envrc` file and updated `custom.gitignore`
+* No other user action required - changes are internal robustness improvements
+* GitProcessor now safely handles non-repo directories without crashes
+* Duration calculations now use consistent Core utility methods
+
+---
+
+
 ### 3.2.11
 
 #### Git clone optimization and SSH configuration standardization

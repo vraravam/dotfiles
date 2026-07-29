@@ -1465,10 +1465,19 @@ clone_repo_into() {
     mv "${tmp_folder}/.git" "${target_folder}"
     rm -rf "${tmp_folder}" "${stderr_file}"
     trap - EXIT INT TERM  # Clear trap after successful move
-    # Populate index from HEAD, then checkout files that don't exist locally.
-    # git checkout-index -a refuses to overwrite existing files (safe for $HOME cloning).
+
+    # Populate index from HEAD, then checkout files.
+    # For home directory clones: use 'git checkout --force' to overwrite existing files
+    # (e.g., ~/.ssh/config might exist as an empty stub on vanilla macOS). For other repos:
+    # use 'checkout-index -a' which refuses to overwrite (safer for repos in dev directories).
     git -C "${target_folder}" read-tree HEAD
-    git -C "${target_folder}" checkout-index -a 2>/dev/null || true
+    if [[ "${target_folder}" == "${HOME}" ]]; then
+      # Force overwrite existing files when cloning home repo
+      git -C "${target_folder}" checkout --force HEAD 2>/dev/null || true
+    else
+      # Don't overwrite existing files for non-home repos
+      git -C "${target_folder}" checkout-index -a 2>/dev/null || true
+    fi
 
     # post-clone operations
     git -C "${target_folder}" restore-mtime -c || true
@@ -1557,8 +1566,14 @@ set_ssh_folder_permissions() {
       warn "Failed to set file permissions in '$(cyan "${HOME}/.ssh")'"
     fi
 
-    if find "${HOME}/.ssh" -maxdepth 1 -name "id_*" ! -name '*.*' -type f -exec ssh-add -q "{}" \;; then
-      success "Added ssh identity files from '$(cyan "${HOME}/.ssh")'."
+    # Add keys to ssh-agent and store in macOS Keychain for persistence.
+    # --apple-use-keychain (macOS 12+) stores passphrases in Keychain so keys persist
+    # across reboots and are available to all processes. Without this, keys are only
+    # added to the current ssh-agent session and subprocesses may not have access.
+    # Fallback to -K for older macOS versions (deprecated but still works).
+    if find "${HOME}/.ssh" -maxdepth 1 -name "id_*" ! -name '*.*' -type f -exec ssh-add --apple-use-keychain "{}" \; 2>/dev/null ||
+       find "${HOME}/.ssh" -maxdepth 1 -name "id_*" ! -name '*.*' -type f -exec ssh-add -K "{}" \; 2>/dev/null; then
+      success "Added ssh identity files from '$(cyan "${HOME}/.ssh")' to ssh-agent and macOS Keychain."
     else
       warn "Failed to add ssh identity files from '$(cyan "${HOME}/.ssh")'"
     fi

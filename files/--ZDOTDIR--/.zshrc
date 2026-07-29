@@ -111,26 +111,15 @@ autoload -Uz zrecompile
   # is_file_older_than returns true when target is missing OR source is newer than target.
   # This ensures cache is force-created when brew exists but cache is missing.
   if is_executable "${brew_bin}" && is_file_older_than "${brew_shellenv_cache}" "${brew_bin}"; then
-    # Run brew shellenv in a subshell to get brew vars + path_helper result without polluting current PATH
-    local brew_cellar brew_repo brew_infopath brew_manpath brew_prefix
-    eval "$("${brew_bin}" shellenv 2>/dev/null)"
-    brew_prefix="${HOMEBREW_PREFIX}"
-    brew_cellar="${HOMEBREW_CELLAR:-}"
-    brew_repo="${HOMEBREW_REPOSITORY:-}"
-    brew_infopath="${INFOPATH:-}"
-    brew_manpath="${MANPATH:-}"
-    # Write a static cache: static exports + fpath update (no subprocess calls when cache is sourced)
-    {
-      echo "export HOMEBREW_PREFIX='${brew_prefix}';"
-      echo "export HOMEBREW_CELLAR='${brew_cellar}';"
-      echo "export HOMEBREW_REPOSITORY='${brew_repo}';"
-      echo "export INFOPATH='${brew_infopath}';"
-      echo "export MANPATH='${brew_manpath}';"
-      # fpath assignment is sufficient -- zsh keeps fpath and FPATH in sync automatically.
-      # Exporting FPATH leaks it into child processes and launchd user-session environment;
-      # typeset +x at the bottom of this file strips the export flag after all sources.
-      echo "fpath=('${brew_prefix}/share/zsh/site-functions' \"\${fpath[@]}\");"
-    } >|"${brew_shellenv_cache}" 2>/dev/null
+    # Write brew shellenv output directly to cache (no eval needed during regeneration).
+    # brew shellenv already outputs proper exports; we just append fpath update.
+    "${brew_bin}" shellenv 2>/dev/null >|"${brew_shellenv_cache}.tmp"
+    # fpath assignment is sufficient -- zsh keeps fpath and FPATH in sync automatically.
+    # Exporting FPATH leaks it into child processes and launchd user-session environment;
+    # typeset +x at the bottom of this file strips the export flag after all sources.
+    echo "fpath=('${HOMEBREW_PREFIX}/share/zsh/site-functions' \"\${fpath[@]}\");" \
+      >>"${brew_shellenv_cache}.tmp"
+    mv "${brew_shellenv_cache}.tmp" "${brew_shellenv_cache}"
     recompile_zsh_script "${brew_shellenv_cache}"
   fi
   # Source cache if it exists, otherwise manually add Homebrew to PATH.
@@ -181,23 +170,6 @@ compdef() { _compdef_queue+=("$*"); }
 # git_version var is available immediately when the git plugin (loaded via antidote)
 # initializes. If this were deferred, the plugin would fork `git version` before
 # the cache becomes available.
-if (($+commands[git])); then
-  # Anonymous function scopes git version cache locals; pure zsh file, () is idiomatic here.
-  () {
-    local git_bin="${commands[git]}"
-    local git_version_cache="${XDG_CACHE_HOME}/git-version-cache.zsh"
-    if is_file_older_than "${git_version_cache}" "${git_bin}"; then
-      # Optimization: Use git's --version flag instead of 'git version' subcommand.
-      # Both produce identical output, but --version is a built-in flag handled
-      # directly by the git binary (no subcommand dispatch overhead).
-      local ver="${${(As: :)$(git --version 2>/dev/null)}[3]}"
-      echo "git_version=\"${ver}\"" >|"${git_version_cache}" 2>/dev/null
-      recompile_zsh_script "${git_version_cache}"
-    fi
-    load_file_if_exists "${git_version_cache}"
-  }
-fi
-
 # Regenerate antidote bundle if plugins.txt is newer than the generated bundle.
 # Source .aliases to make the regeneration function available, then call it automatically.
 # The re-source guard in .aliases makes this safe even if .aliases loads again later via zsh-defer.
@@ -331,6 +303,25 @@ if (($+functions[zsh-defer])); then
   zsh-defer load_file_if_exists "${HOME}/.aliases"
 else
   load_file_if_exists "${HOME}/.aliases"
+fi
+
+# Git version cache: placed AFTER .aliases loads so ${commands[git]} reflects final PATH
+# (including Homebrew keg-only paths). Cache key must match the git binary OMZ actually uses.
+if (($+commands[git])); then
+  # Anonymous function scopes git version cache locals; pure zsh file, () is idiomatic here.
+  () {
+    local git_bin="${commands[git]}"
+    local git_version_cache="${XDG_CACHE_HOME}/git-version-cache.zsh"
+    if is_file_older_than "${git_version_cache}" "${git_bin}"; then
+      # Optimization: Use git's --version flag instead of 'git version' subcommand.
+      # Both produce identical output, but --version is a built-in flag handled
+      # directly by the git binary (no subcommand dispatch overhead).
+      local ver="${${(As: :)$(git --version 2>/dev/null)}[3]}"
+      echo "git_version=\"${ver}\"" >|"${git_version_cache}" 2>/dev/null
+      recompile_zsh_script "${git_version_cache}"
+    fi
+    load_file_if_exists "${git_version_cache}"
+  }
 fi
 
 # Run compinit after all plugins and .aliases have loaded so the fpath staleness

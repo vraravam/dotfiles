@@ -540,8 +540,51 @@ Quick summary for shell scripts:
 2. Scan for unsafe `&&` patterns (see [§ `&&` as Conditional](#-as-conditional----safety-under-set--e--err-trap))
 3. Syntax check: `zsh -n <file>`
 4. Format: `shfmt -w <file>` (check `.shfmtignore` first)
-5. Verify whitespace rules (see [`whitespace-rules.md`](./whitespace-rules.md))
-6. Ensure executable permission: `chmod +x <file>`
+5. Remove consecutive empty lines: `awk 'NF {blank=0; print} !NF {if (!blank) print; blank=1}' <file>`
+6. Verify whitespace rules (see [`whitespace-rules.md`](./whitespace-rules.md))
+7. Ensure executable permission: `chmod +x <file>`
+
+### Consecutive Empty Lines
+
+**Shell scripts must not have consecutive empty lines (2+ blank lines in a row).**
+
+```zsh
+# BAD -- two blank lines between functions
+
+
+function_one() {
+  # ...
+}
+
+
+function_two() {
+  # ...
+}
+
+# Good -- single blank line between functions
+
+function_one() {
+  # ...
+}
+
+function_two() {
+  # ...
+}
+```
+
+**Remove consecutive empty lines:**
+```bash
+# Collapse 2+ consecutive blank lines into 1
+awk 'NF {blank=0; print} !NF {if (!blank) print; blank=1}' <file> > <file>.tmp && mv <file>.tmp <file>
+```
+
+**Verification:**
+```bash
+# Check for consecutive empty lines (3+ newlines = 2+ blank lines)
+grep -Pzo '\n\n\n' <file> && echo "Has consecutive empty lines" || echo "OK"
+```
+
+This rule applies to all shell scripts in the repository.
 
 ## Shell Functions as First-Class Entry Points
 

@@ -151,7 +151,7 @@ module CapturePrefs
       begin
         GitProcessor.new(dir: EnvVars::HOME) do |git|
           # Git accepts absolute paths directly - no normalization needed
-          _out, _err, status = git.add(target_dir)
+          _stdout, _stderr, status = git.add(target_dir)
           Logging.record_warning("Failed to git add '#{target_dir.to_s.cyan}'") unless status.success?
         end
         Logging.success "Export complete. Staged changes in '#{target_dir.to_s.cyan}'."

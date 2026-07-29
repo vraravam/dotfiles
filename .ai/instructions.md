@@ -7,6 +7,7 @@ All domain-specific rules are in [`domains/`](./domains/):
 | Domain | File | Coverage |
 |--------|------|----------|
 | Character encoding | [`character-encoding.md`](./domains/character-encoding.md) | All cross-language scripts and configuration files (ASCII-only requirements) |
+| Custom gitignore maintenance | [`custom-gitignore-maintenance.md`](./domains/custom-gitignore-maintenance.md) | `files/` directory, `install-dotfiles.rb`, `files/--HOME--/custom.gitignore` |
 | Edit checklist | [`edit-checklist.md`](./domains/edit-checklist.md) | All cross-language scripts and configuration files (edit workflow) |
 | Fresh install | [`fresh-install.md`](./domains/fresh-install.md) | `fresh-install-of-osx.sh`, `install-dotfiles.rb`, `post-brew-install.rb`, `osx-defaults.sh`, `setup-login-item.rb`, `capture-prefs.rb`, `resurrect-repositories.rb` |
 | Git config | [`git-config.md`](./domains/git-config.md) | `.gitconfig`, git aliases, `.gitattributes` |
@@ -312,6 +313,8 @@ Both `~/.ssh/config` and `templates/ssh-config.template` must have this comment 
 ## Changelog Generation Rules
 
 - When generating a changelog, first examine the list of staged changes.
+- **Never include changes to `.ai/` directory** - AI instruction updates are not user-facing and don't belong in CHANGELOG.
+- **Never include line number references** - line numbers become stale as files are edited and add no value to users adopting changes.
 - For changes that affect the zwc cache (e.g., edits to autoloaded function files), prepend a call to `delete_caches` before any `unfunction` or re‑compile instructions so the cache is regenerated correctly.
 - If any function definitions in `~/.shellrc` have been added, renamed, or removed, include a run‑time instruction to reload the function definitions:
   ```zsh
@@ -334,9 +337,9 @@ When creating or editing CHANGELOG.md sections, follow these rules:
    - Example: Instead of separate bullets for `antidote.rb`, `cron.rb`, and `keybase.rb` when they all adopt the same pattern, write one bullet covering all affected files.
 
 2. **Keep essential technical details** while removing redundant specifics:
-   - Always include: line numbers, method names, key implementation details, specific behavior changes.
-   - Remove: repetitive file-by-file descriptions when a category description suffices.
-   - Example: Keep "`update_repo(dir)` - fetch all remotes and rebase onto upstream" but consolidate "uses `GitProcessor.repo?(path)` for validation" once rather than per file.
+   - Include: method names, key implementation details, specific behavior changes
+   - Remove: line numbers (they become stale as files are edited); repetitive file-by-file descriptions when a category description suffices
+   - Example: Keep "`update_repo(dir)` - fetch all remotes and rebase onto upstream" but consolidate "uses `GitProcessor.repo?(path)` for validation" once rather than per file
 
 3. **Use concise, high-level summaries** in the adoption section:
    - Focus on user-visible actions (restart terminal, run a script).
@@ -346,7 +349,7 @@ When creating or editing CHANGELOG.md sections, follow these rules:
 4. **Structure each version section consistently**:
    - Version number header (e.g., `### 3.1.23`)
    - Descriptive subheading summarizing the theme (e.g., `#### Backport utility enhancements and convert zsh autoload functions to Ruby`)
-   - Bullet points with specific changes (technical details with line numbers)
+   - Bullet points with specific changes (technical details without line numbers)
    - `#### Adopting these changes` section with user action items (optional - omit if no user actions required)
 
 5. **Version section spacing and visual separation**:
@@ -363,7 +366,7 @@ When creating or editing CHANGELOG.md sections, follow these rules:
 
 #### Backport utility enhancements and convert zsh autoload functions to Ruby
 
-* *[scripts/utilities/git_workspace.rb]* Added four new public methods for git operations (lines 278-377): `update_repo(dir)` - fetch all remotes and rebase onto upstream; `update_all_repos` - update key repos (home, dotfiles, profiles) plus Chrome profile directories; `status_repo(dir)` - show status with custom formatting; `status_all_repos` - status check all repos. All methods use `GitProcessor.repo?(path)` for validation and return boolean success.
+* *[scripts/utilities/git_workspace.rb]* Added four new public methods for git operations: `update_repo(dir)` - fetch all remotes and rebase onto upstream; `update_all_repos` - update key repos (home, dotfiles, profiles) plus Chrome profile directories; `status_repo(dir)` - show status with custom formatting; `status_all_repos` - status check all repos. All methods use `GitProcessor.repo?(path)` for validation and return boolean success.
 
 * *[all ruby scripts]* Ensures consistency with single source of truth for git repo detection across all utility modules. Also found and fixed premature conversion of `Pathname` instances to `String` (maintain rich object as much as possible only convert to String at interpolation boundaries).
 
@@ -374,7 +377,6 @@ When creating or editing CHANGELOG.md sections, follow these rules:
 * Restart terminal to reload zsh autoload functions.
 * New Ruby methods are immediately available to shell scripts via `ruby -e` pattern.
 ```
-
 
 ---
 

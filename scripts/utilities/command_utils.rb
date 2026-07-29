@@ -9,7 +9,8 @@ require_relative 'string'
 
 module CommandUtils
   extend self
-  include Core
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Executes a command via Open3.capture3 and yields failure details on error.
   #
@@ -25,29 +26,14 @@ module CommandUtils
   #   success = CommandUtils.capture_output('mise', '-C', dir, 'trust') do |status, output_msg|
   #     Logging.warn("mise trust failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
   #   end
-  def capture_output(*command)
-    stdout, stderr, status = Open3.capture3(*command)
-    check_status(stdout, stderr, status) { |st, msg| yield(st, msg) }
-  end
 
-  # Executes a command via system(), streaming stdout/stderr to terminal.
-  #
-  # Use this for interactive commands where users expect to see output in real-time
-  # (e.g., git log, ls, etc.). Unlike capture_output, this does not buffer output.
-  #
-  # @param command [Array<String>] Command and arguments to execute
-  # @yield Block receives no arguments; called on failure (can record warning/error)
-  # @return [Boolean] true if command succeeded, false otherwise
-  #
-  # @example
-  #   success = CommandUtils.run_interactive('git', '-C', dir, 'log', '--oneline', '-5') do
-  #     Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{$?.exitstatus})")
-  #   end
-  def run_interactive(*command)
-    success = system(*command)
-    yield unless success if block_given?
-    success
-  end
+  # ---------------------------------------------------------------------------
+  # Class methods
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # Query methods (read-only state inspection)
+  # ---------------------------------------------------------------------------
 
   # Executes a command and returns its stdout, stripped of whitespace.
   # Ignores stderr and exit status - use only for simple query commands where
@@ -105,6 +91,52 @@ module CommandUtils
 
     status.success?
   end
+
+  # ---------------------------------------------------------------------------
+  # Mutation methods (modify state)
+  # ---------------------------------------------------------------------------
+
+  # Executes a command via Open3.capture3 and yields failure details on error.
+  #
+  # Captures stdout and stderr, checks the exit status, and on failure yields
+  # the status object and a formatted output message string containing stdout
+  # and stderr sections (with stderr colored red).
+  #
+  # @param command [Array<String>] Command and arguments to execute
+  # @yield [status, output_message] Block receives status and formatted output on failure
+  # @return [Boolean] true if command succeeded, false otherwise
+  #
+  # @example
+  #   success = CommandUtils.capture_output('mise', '-C', dir, 'trust') do |status, output_msg|
+  #     Logging.warn("mise trust failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
+  #   end
+  def capture_output(*command)
+    stdout, stderr, status = Open3.capture3(*command)
+    check_status(stdout, stderr, status) { |st, msg| yield(st, msg) }
+  end
+
+  # Executes a command via system(), streaming stdout/stderr to terminal.
+  #
+  # Use this for interactive commands where users expect to see output in real-time
+  # (e.g., git log, ls, etc.). Unlike capture_output, this does not buffer output.
+  #
+  # @param command [Array<String>] Command and arguments to execute
+  # @yield Block receives no arguments; called on failure (can record warning/error)
+  # @return [Boolean] true if command succeeded, false otherwise
+  #
+  # @example
+  #   success = CommandUtils.run_interactive('git', '-C', dir, 'log', '--oneline', '-5') do
+  #     Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{$?.exitstatus})")
+  #   end
+  def run_interactive(*command)
+    success = system(*command)
+    yield unless success if block_given?
+    success
+  end
+
+  # ---------------------------------------------------------------------------
+  # Private methods
+  # ---------------------------------------------------------------------------
 
   private
 

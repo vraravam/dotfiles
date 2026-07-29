@@ -5,7 +5,8 @@ require_relative 'core'
 require_relative 'env_vars'
 
 class String
-  include Core
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Wraps the string in the ANSI escape sequence for +code+, after replacing
   # the HOME path with '~' so any path argument is display-ready automatically.

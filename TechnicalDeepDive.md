@@ -20,6 +20,8 @@ If you are setting up a new machine for the first time, start with [GettingStart
 10. [Per-Project Script Overrides](#10-per-project-script-overrides)
 11. [`capture-prefs.rb` Architecture](#11-capture-prefsrb-architecture)
 12. [`osx-defaults.sh` and `capture-prefs.rb` — Two-Phase Preference Architecture](#12-osx-defaultssh-and-capture-prefsrb--two-phase-preference-architecture)
+13. [Why `fresh-install-of-osx.sh` and `osx-defaults.sh` Remain Shell Scripts](#13-why-fresh-install-of-osxsh-and-osx-defaultssh-remain-shell-scripts)
+14. [Why Keybase Was Not Replaced with Public Encrypted GitHub Repos](#14-why-keybase-was-not-replaced-with-public-encrypted-github-repos)
 
 ---
 
@@ -604,6 +606,76 @@ Converting `osx-defaults.sh` to Ruby would eliminate a key usability feature:
 ### Implication for the Codebase
 
 These two scripts anchor the shell ecosystem: `.shellrc` must remain because `fresh-install-of-osx.sh` sources it during bootstrap. Other scripts (`software-updates-cron.sh` evolved to Ruby, `setup-login-item.sh` evolved to Ruby) were converted because they don't have the same constraints. The decision to keep these two as shell is about respecting the constraints of the problem domain, not lack of effort or willingness to modernize.
+
+### Experimental Validation: `fresh-install-ruby` and `osx-defaults-ruby` Branches
+
+Between 2025-2026, two experimental branches validated this reasoning by attempting full Ruby conversions:
+
+- **`fresh-install-ruby`** (commit `4145668`): Complete Ruby port of `fresh-install-of-osx.sh` — 677 lines, fully functional
+- **`osx-defaults-ruby`** (commit `fff3976`): Complete Ruby port of `osx-defaults.sh` — 1724 lines, idiomatic Ruby with elegant hash-based batch writes
+
+Both branches proved the conversions were **technically feasible** but **architecturally wrong**:
+
+1. **`fresh-install-ruby`**: The bootstrap command grew from a single `curl` pipe to a multi-line tarball download + extract + execute sequence. This increased complexity and reduced adopter trust — exactly the problem § 13 predicted.
+
+2. **`osx-defaults-ruby`**: The Ruby version was elegant and maintainable, but lost the copy-paste UX that makes the shell version valuable as a reference catalog. Users could no longer `cmd+c` a single setting and test it in terminal.
+
+These branches are preserved in git history for future reference but will not be merged. They serve as proof that the decision to keep these scripts as shell was based on real constraints, not lack of effort. If requirements change dramatically in the future, they provide a starting point.
+
+---
+
+## 14. Why Keybase Was Not Replaced with Public Encrypted GitHub Repos
+
+The `keybase-migration` branch (explored 2026) attempted to replace Keybase with **public GitHub repos encrypted by git-remote-gcrypt**. The approach:
+
+1. Home repo (`~/`) and browser-profiles repo become **public** GitHub repos (visibility is safe because contents are encrypted)
+2. Use `gcrypt::` remote URLs (e.g., `gcrypt::https://github.com/user/home.git`)
+3. Rely on symmetric encryption (password-based, no GPG keys needed)
+4. Clone via HTTPS (no SSH keys required on vanilla OS)
+
+**Why this was rejected:**
+
+1. **Chicken-and-egg authentication problem**: On a vanilla OS, the home repo contains SSH keys needed to authenticate git operations. But to clone the home repo without SSH keys, you need HTTPS authentication (GitHub PAT or password). This creates a circular dependency:
+   - Can't clone home repo without credentials
+   - Can't get credentials without home repo
+   - User must manually type GitHub PAT into bootstrap (bad UX, security risk if terminal history is logged)
+
+2. **Metadata exposure trade-off**: While file contents are encrypted, GitHub still sees:
+   - Repo existence (someone has an encrypted backup)
+   - Branch names (usually just `main`, low risk but still visible)
+   - Commit count and pack sizes (metadata leakage)
+
+   Keybase keeps **all** metadata private (repo existence, structure, everything). For a dotfiles repo, this difference matters: branch names might reveal workflow details, commit frequency reveals activity patterns.
+
+3. **Password prompt friction**: Every `git push`/`pull` prompts for the encryption password unless you configure git credential helpers. Keybase authenticates once per boot via the GUI app and caches credentials automatically. The git-remote-gcrypt approach adds friction to routine git operations.
+
+4. **No clear advantage over Keybase**:
+   - Both require trusting a third party (Keybase vs GitHub)
+   - Both require installation via Homebrew (`keybase` cask vs `git-remote-gcrypt` + `gnupg`)
+   - Keybase GUI provides better UX for encryption setup (no manual password entry in terminal)
+   - Keybase handles the SSH key bootstrap problem (KBFS mounts encrypted filesystem, SSH keys accessible before git clone)
+
+5. **Public repo visibility concern**: Even though contents are encrypted, having a public `github.com/user/home` repo advertises "this person backs up their home directory here." While not a critical security issue, it's unnecessary exposure. Keybase repos are private by default and invisible to non-collaborators.
+
+**Decision**: Keybase remains the encrypted backup mechanism. The git-remote-gcrypt approach solves the "no GUI dependency" goal but introduces worse UX problems (authentication friction, metadata exposure, bootstrap complexity). The current Keybase integration is battle-tested and handles the vanilla OS bootstrap cleanly via the two-phase sequence:
+
+1. `fresh-install-of-osx.sh` ensures Keybase.app is installed and user is logged in
+2. Keybase KBFS mounts `keybase://private/<user>/home` as a filesystem
+3. `clone_repo_into` clones from `keybase://` URL (no SSH keys needed, Keybase handles auth)
+4. After clone, SSH keys from home repo are available for subsequent git operations
+
+### Archived Branch Reference
+
+The `keybase-migration` branch (commit `b9ea5c9`) is preserved in git history for future reference but will not be merged. It includes:
+
+- Complete git-remote-gcrypt implementation (3 new Ruby scripts: `setup-git-remote-gcrypt.rb`, `migrate-keybase-to-gcrypt.rb`, `migrate-keybase-repos.rb`)
+- Updated Brewfile (removes Keybase, adds `git-remote-gcrypt` + `gnupg`)
+- Comprehensive migration documentation in `KEYBASE_MIGRATION.md`
+- All code is functional and tested
+
+If requirements change in the future (e.g., Keybase shuts down, or GitHub adds first-class encrypted repo support), this branch provides a complete starting point. The migration documentation remains accurate and can be adapted if needed.
+
+**Key lesson**: Some problems have constraints that make elegant solutions impractical. The "right" architecture respects those constraints rather than fighting them.
 
 ---
 

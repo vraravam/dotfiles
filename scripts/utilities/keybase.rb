@@ -24,9 +24,45 @@ module Keybase
   # Returns the configured Keybase username from ENV.
   #
   # @return [String, nil] KEYBASE_USERNAME or nil if not set
+
+  # ---------------------------------------------------------------------------
+  # Class methods
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # Query methods (read-only state inspection)
+  # ---------------------------------------------------------------------------
+
+  # Note: Logging methods must be qualified (Logging.debug, Logging.error, etc.)
+  # because 'include Logging' + 'extend self' doesn't make included methods
+  # available as module methods.
+
+  # Returns the configured Keybase username from ENV.
+  #
+  # @return [String, nil] KEYBASE_USERNAME or nil if not set
   def username
     EnvVars::KEYBASE_USERNAME
   end
+
+  # Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
+  #
+  # @param repo_name [String]
+  # @return [String] keybase://private/username/repo_name
+  def build_repo_url(repo_name)
+    "keybase://private/#{username}/#{repo_name}"
+  end
+
+  # Returns true if the URL is a Keybase git repo URL (keybase://...).
+  #
+  # @param url [String]
+  # @return [Boolean]
+  def keybase_url?(url)
+    url.to_s.start_with?('keybase://')
+  end
+
+  # ---------------------------------------------------------------------------
+  # Mutation methods (modify state)
+  # ---------------------------------------------------------------------------
 
   # Ensures keybase is installed and the current user is logged in.
   # Returns false on failure so callers can decide whether to abort or continue.
@@ -61,22 +97,6 @@ module Keybase
     end
 
     true
-  end
-
-  # Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
-  #
-  # @param repo_name [String]
-  # @return [String] keybase://private/username/repo_name
-  def build_repo_url(repo_name)
-    "keybase://private/#{username}/#{repo_name}"
-  end
-
-  # Returns true if the URL is a Keybase git repo URL (keybase://...).
-  #
-  # @param url [String]
-  # @return [Boolean]
-  def keybase_url?(url)
-    url.to_s.start_with?('keybase://')
   end
 
   # Deletes the named Keybase repo (irreversible). Passes -f to skip confirmation.

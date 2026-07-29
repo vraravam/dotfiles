@@ -22,6 +22,7 @@
 #   Standalone: software-updates-cron.rb
 #   Module:     SoftwareUpdatesCron.run
 
+require 'fileutils'
 require 'rbconfig'
 require 'shellwords'
 
@@ -49,7 +50,7 @@ module SoftwareUpdatesCron
   def run(start_time:)
     outdated_flat = _run_all_updates
     now = Core.current_timestamp
-    duration = Logging.format_duration(Time.now.to_i - start_time)
+    duration = Logging.format_duration(Core.duration_since(start_time))
 
     Logging.success "Finished software updates at #{now.purple} in #{duration.light_blue}"
 
@@ -139,25 +140,6 @@ module SoftwareUpdatesCron
 
   private_class_method :_upreb_oss_repos
 
-  def _restore_mtime_and_register_maintenance
-    Logging.with_step('restore mtime and register maintenance', 'Restore mtime and register for maintenance'.yellow) do
-      gitconfig = EnvVars::HOME.join('.gitconfig-oss.inc')
-      folder = EnvVars::HOME.to_s
-      maxdepth = 7
-
-      RunAll.run(command: ['git', 'restore-mtime', '-c'], folder: folder, maxdepth: maxdepth)
-
-      # git maintenance register requires .gitconfig-oss.inc which comes from the home repo.
-      # Skip if file doesn't exist yet (unlikely in cron context, but defensive).
-      if gitconfig.file?
-        RunAll.run(command: ['git', 'maintenance', 'register', '--config-file', gitconfig.to_s], folder: folder, maxdepth: maxdepth)
-        RunAll.run(command: ['git', 'maintenance', 'start'], folder: folder, maxdepth: maxdepth)
-      end
-    end
-  end
-
-  private_class_method :_restore_mtime_and_register_maintenance
-
   def _run_all_updates
     # Brew update: use bundle check before full bundle to avoid reinstalling
     # already-installed formulae on every cron run.
@@ -172,8 +154,23 @@ module SoftwareUpdatesCron
     end
     _perform_update('mise plugins', 'mise') do
       # mise binary is upgraded using homebrew
+      # Plugin registry updates moved to 6-hour schedule (balance between freshness and rate limiting).
+      # Check timestamp cache to avoid unnecessary API calls (GitHub rate limiting).
+      plugin_update_interval = 6 * 3600  # 6 hours in seconds
+      last_plugin_update_file = EnvVars::XDG_CACHE_HOME.join('mise-plugins-last-update')
+
+      # Update plugins (every 6 hours) - check timestamp to avoid rate limiting
       # Redirect stdout to suppress 'all tools are installed' messages
-      system('mise', 'plugins', 'update', out: File::NULL) && system('mise', 'upgrade', '--bump', out: File::NULL)
+      unless last_plugin_update_file.file? && Core.elapsed?(File.mtime(last_plugin_update_file).to_i, plugin_update_interval)
+        system('mise', 'plugins', 'update', out: File::NULL)
+        FileUtils.touch(last_plugin_update_file)
+      else
+        hours_since = Core.duration_since(File.mtime(last_plugin_update_file).to_i) / 3600
+        Logging.debug "mise plugins were updated #{hours_since} hour(s) ago -- skipping (interval: #{plugin_update_interval / 3600} hours)"
+      end
+
+      # Always run tool upgrades (hourly is appropriate for version updates)
+      system('mise', 'upgrade', '--bump', out: File::NULL)
     end
     _perform_update('tldr database', 'tldr') { system('tldr', '--update', out: File::NULL) }
     _perform_update('git-ignore database', 'git-ignore-io') { system('git', 'ignore-io', '--update-list') }
@@ -201,12 +198,10 @@ module SoftwareUpdatesCron
 
     Logging.with_step('zen-browser-desktop tag cleanup', "#{"Remove 'twilight' tag from".yellow} #{'zen-browser-desktop'.purple} repo") do
       zen_desktop = EnvVars::PROJECTS_BASE_DIR.join('oss', 'zen-browser-desktop')
-      if GitProcessor.repo?(zen_desktop)
-        GitProcessor.new(dir: zen_desktop) do |git|
-          if git.tag_exists?('twilight')
-            git.delete_tag('twilight')
-            Logging.success("Deleted #{'twilight'.purple} tag.")
-          end
+      GitProcessor.new(dir: zen_desktop) do |git|
+        if git.tag_exists?('twilight')
+          git.delete_tag('twilight')
+          Logging.success("Deleted #{'twilight'.purple} tag.")
         end
       end
     end
@@ -214,6 +209,20 @@ module SoftwareUpdatesCron
     # TODO: Similar to ollama, need to update the models used by omlx via cli
     Logging.with_step('ollama models update', 'Pull ollama models'.yellow) do
       if PathUtils.command_exists?('ollama')
+        # Pull models at most once per 24 hours (configurable interval).
+        # ollama pull downloads models even if already up to date (no --check flag),
+        # so timestamp-based caching prevents unnecessary large transfers.
+        model_update_interval = 24 * 3600  # seconds
+        last_update_file = EnvVars::XDG_CACHE_HOME.join('ollama-last-update')
+
+        if last_update_file.file?
+          hours_since = Core.duration_since(File.mtime(last_update_file).to_i) / 3600
+          unless Core.elapsed?(File.mtime(last_update_file).to_i, model_update_interval)
+            Logging.debug "Ollama models were updated #{hours_since} hour(s) ago -- skipping (interval: #{model_update_interval / 3600} hours)"
+            next
+          end
+        end
+
         # reference: https://insiderllm.com/guides/ollama-mac-setup-optimization/
         # reference: https://popularaitools.ai/blog/run-gemma-4-locally-opencode-2026
         # Note: This list is up-to-date as of 2026-06-06
@@ -249,6 +258,8 @@ module SoftwareUpdatesCron
               Logging.record_warning "Failed to pull model: '#{model.cyan}'"
             end
           end
+          # Touch timestamp file to mark successful update
+          FileUtils.touch(last_update_file)
         end
       else
         Logging.debug 'ollama not found -- skipping model pulls'
@@ -261,7 +272,9 @@ module SoftwareUpdatesCron
     _update_home_repos
     sleep 10  # Avoid GitHub rate-limiting between bursts of API calls.
     _upreb_oss_repos
-    _restore_mtime_and_register_maintenance
+    # git restore-mtime and git maintenance register/start now run once per repo at clone time
+    # (in clone_repo_into() in .shellrc:1472-1478). No need to repeat hourly - they're idempotent
+    # operations that only need to run once. Removed from cron to save thousands of git forks/hour.
 
     Logging.with_step('setup dev env', 'Setup dev environment'.yellow) do
       GitWorkspace.setup_dev_environment(first_install: EnvVars.first_install?)
@@ -330,7 +343,7 @@ if __FILE__ == $PROGRAM_NAME
     # Write failure marker if run had errors/warnings
     unless success
       end_timestamp = Core.current_timestamp
-      duration = Logging.format_duration(Time.now.to_i - start_time)
+      duration = Logging.format_duration(Core.duration_since(start_time))
       run_log.write("FAILED: #{end_timestamp} (took #{duration})\n", mode: 'a')
     end
 

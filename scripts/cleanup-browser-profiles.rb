@@ -132,7 +132,7 @@ module CleanupBrowserProfiles
 
     PathUtils.glob_pathnames(profile_dir.join('**', '*.sqlite')) do |db_file|
       db_count += 1
-      db_size = db_file.size rescue 0
+      db_size = db_file.exist? ? db_file.size : 0
       next if db_size <= min_db_size
 
       if dry_run
@@ -161,9 +161,7 @@ module CleanupBrowserProfiles
     items_to_delete = []
 
     unless nil_or_empty?(file_patterns)
-      file_patterns.each do |pattern|
-        items_to_delete.concat(Dir.glob(profile_dir.join('**', pattern), File::FNM_CASEFOLD))
-      end
+      items_to_delete.concat(file_patterns.flat_map { |pattern| Dir.glob(profile_dir.join('**', pattern), File::FNM_CASEFOLD) })
     end
 
     unless nil_or_empty?(dir_patterns)

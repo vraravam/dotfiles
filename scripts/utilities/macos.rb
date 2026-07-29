@@ -59,6 +59,25 @@ module MacOS
   # already started writing new values.
   #
   # @return [void]
+
+  # ---------------------------------------------------------------------------
+  # Class methods
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # Mutation methods (modify state)
+  # ---------------------------------------------------------------------------
+
+  # Sends SIGTERM to every app in LOGIN_ITEM_APPS. Called before writing
+  # defaults so in-memory state is flushed to disk first.
+  # Failures are silenced -- apps that are not running are not an error.
+  #
+  # Sleeps 1 second after sending signals to ensure apps have fully terminated
+  # before the caller proceeds with defaults writes. This prevents race conditions
+  # where an app's shutdown handler might flush preferences to disk after we've
+  # already started writing new values.
+  #
+  # @return [void]
   def kill_login_item_apps
     LOGIN_ITEM_APPS.each do |app|
       system('killall', app, out: File::NULL, err: File::NULL)
@@ -153,7 +172,7 @@ module MacOS
   end
 
   # ---------------------------------------------------------------------------
-  # Private helpers
+  # Private methods
   # ---------------------------------------------------------------------------
 
   private

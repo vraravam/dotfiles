@@ -791,8 +791,47 @@ Quick summary for Ruby scripts:
 2. Verify Ruby 2.6 compatibility (no endless range, pattern matching, etc.)
 3. Syntax check: `/usr/bin/ruby -c <file>`
 4. Format: `cd "${HOME}" && rufo <file>` (must run from `${HOME}`, not `${DOTFILES_DIR}`)
-5. Verify whitespace rules (see [`whitespace-rules.md`](./whitespace-rules.md))
-6. Ensure executable permission if in bin directory: `chmod +x <file>`
+5. Remove consecutive empty lines: `awk 'NF {blank=0; print} !NF {if (!blank) print; blank=1}' <file>`
+6. Verify whitespace rules (see [`whitespace-rules.md`](./whitespace-rules.md))
+7. Ensure executable permission if in bin directory: `chmod +x <file>`
+
+### Consecutive Empty Lines
+
+**Ruby files must not have consecutive empty lines (2+ blank lines in a row).**
+
+```ruby
+# BAD -- two blank lines between methods
+
+
+def method_one
+end
+
+
+def method_two
+end
+
+# Good -- single blank line between methods
+
+def method_one
+end
+
+def method_two
+end
+```
+
+**Remove consecutive empty lines:**
+```bash
+# Collapse 2+ consecutive blank lines into 1
+awk 'NF {blank=0; print} !NF {if (!blank) print; blank=1}' <file> > <file>.tmp && mv <file>.tmp <file>
+```
+
+**Verification:**
+```bash
+# Check for consecutive empty lines (3+ newlines = 2+ blank lines)
+grep -Pzo '\n\n\n' <file> && echo "Has consecutive empty lines" || echo "OK"
+```
+
+This rule applies to all Ruby files in the repository.
 
 ## Version Compatibility
 
@@ -1247,6 +1286,59 @@ hash.deep_sort              # recursive sort by keys
 'path/to/file'.cyan         # HOME->tilde substitution happens inside color methods
 ```
 
+## Mutating Methods -- Avoid `!` Variants
+
+**NEVER use mutating methods (`strip!`, `chomp!`, `gsub!`, `map!`, etc.) in this codebase.**
+
+### The Problem
+
+Mutating methods return `nil` when no modification is needed, which breaks assignments:
+
+```ruby
+# BAD -- strip! returns nil if string has no whitespace
+ref_format = 'files' if nil_or_empty?(ref_format)  # Assigns literal 'files'
+ref_format = ref_format.strip!  # Returns nil (no whitespace to strip)
+return true if ref_format == 'reftable'  # BROKEN - comparing nil == 'reftable'
+
+# Good -- strip always returns a string
+ref_format = 'files' if nil_or_empty?(ref_format)
+ref_format = ref_format.strip  # Always returns a string
+return true if ref_format == 'reftable'  # Works correctly
+```
+
+### The Rule
+
+**Always use non-mutating methods:**
+
+```ruby
+# String methods
+str.strip      # not str.strip!
+str.chomp      # not str.chomp!
+str.gsub(...)  # not str.gsub!(...)
+str.upcase     # not str.upcase!
+
+# Array methods
+arr.map { }     # not arr.map! { }
+arr.select { }  # not arr.select! { }
+arr.compact     # not arr.compact!
+arr.uniq        # not arr.uniq!
+```
+
+### Why This Rule
+
+1. **Safety**: Non-mutating methods always return a value, never `nil`
+2. **Immutability**: Easier to reason about - values don't change unexpectedly
+3. **Performance**: String/array allocation is cheap in Ruby for the small data in this codebase
+4. **Simplicity**: No need to check if the method will actually modify the object
+
+### When Mutating Would Be Appropriate
+
+Mutating methods are only appropriate when:
+- Processing very large datasets where allocation matters (not present in this codebase)
+- Using for side effect only (not assigning return value) - rare, use carefully
+
+**This codebase has ZERO usage of mutating methods - keep it that way.**
+
 ## Shell Command Execution -- `system()` and Escaping
 
 Ruby's `system()` and `Open3.capture3()` have two execution modes:
@@ -1663,6 +1755,135 @@ Logging.info 'Summary'.yellow
 ```
 
 ## Module / Class Structure
+
+### Ruby Class Organization Pattern
+
+**When creating or refactoring Ruby class/module files, follow this organization:**
+
+1. **Class methods** (public class methods first)
+2. **`initialize`** (constructor, if applicable)
+3. **Query methods** (read-only state inspection)
+   - Memoized queries first (methods using `@_var ||=`)
+   - Non-memoized queries second (computed/enumeration methods)
+4. **Mutation methods** (methods that modify state)
+5. **`private`** keyword followed by private methods
+
+This organization improves code navigation - readers see state inspection methods before
+state modification methods, and memoized queries are grouped together for easy identification.
+
+**Example structure:**
+
+```ruby
+class GitProcessor
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
+
+  # ---------------------------------------------------------------------------
+  # Class methods
+  # ---------------------------------------------------------------------------
+
+  def self.repo?(path)
+    return false if nil_or_empty?(path)
+    # ... implementation ...
+  end
+
+  def self.clone(url:, target:)
+    # ... implementation ...
+  end
+
+  # ---------------------------------------------------------------------------
+  # Constructor
+  # ---------------------------------------------------------------------------
+
+  def initialize(dir:, dry_run: false)
+    @dir = dir
+    @dry_run = dry_run
+  end
+
+  # ---------------------------------------------------------------------------
+  # Query methods (read-only state inspection)
+  # ---------------------------------------------------------------------------
+
+  # Memoized queries - core repo state that doesn't change during instance lifetime
+
+  def repo?
+    @_is_repo ||= @dir.join('.git').exist?
+  end
+
+  def config_value(key)
+    @_config_values ||= {}
+    @_config_values[key] ||= begin
+      # ... implementation ...
+    end
+  end
+
+  # Non-memoized queries - computed values or enumeration
+
+  def status(*switches)
+    _execute('status', *switches)
+  end
+
+  def commit_count
+    out, = _execute('rev-list', '--all', '--count')
+    out.strip.to_i
+  end
+
+  # ---------------------------------------------------------------------------
+  # Mutation methods (modify state)
+  # ---------------------------------------------------------------------------
+
+  def add(pathspec = '.')
+    _execute('add', pathspec)
+  end
+
+  def commit(message)
+    _execute('commit', '-m', message)
+  end
+
+  # ---------------------------------------------------------------------------
+  # Private methods
+  # ---------------------------------------------------------------------------
+
+  private
+
+  def _execute(*args)
+    # ... implementation ...
+  end
+
+  def _format_error(status, stdout, stderr)
+    # ... implementation ...
+  end
+end
+```
+
+**Why this order:**
+
+- **Class methods first**: Readers see the public API immediately (often used without instantiation)
+- **Initialize second**: Natural transition from class-level to instance-level concerns
+- **Query methods third**: State inspection before modification - shows "what can I check?" before "what can I change?"
+- **Memoized queries grouped**: Easy to see what's cached, what's computed fresh
+- **Mutation methods fourth**: Operations that change state come after queries
+- **Private last**: Implementation details that readers can skip
+
+**Query vs Mutation classification:**
+
+- **Query**: Method that only reads state, returns information, has no side effects
+  - Examples: `repo?`, `config_value`, `status`, `commit_count`, `ls_files`, `shallow?`
+  - Name patterns: Ends with `?`, reads config/state, enumerates/searches
+- **Mutation**: Method that modifies state (filesystem, git repo, system state)
+  - Examples: `add`, `commit`, `push`, `config_set`, `init`, `recreate`, `delete_tag`
+  - Name patterns: Imperative verbs, `set_*`, `delete_*`, `create_*`, `update_*`
+
+**Section separators**: Use `# ---------------------------------------------------------------------------` with descriptive labels for all sections in utility files (even short ones) to clearly demarcate organization.
+
+**Files reorganized** (June 2026): `git_processor.rb`, `git_workspace.rb`, `keybase.rb`, `macos.rb`, `profiles_repo.rb`, `plist.rb`, `path_utils.rb`, `command_utils.rb` - all follow this pattern.
+
+**GitProcessor as reference**: See `scripts/utilities/git_processor.rb` for a complete example:
+- Class methods: lines 59-94
+- Constructor: lines 96-105
+- Query methods: lines 107-199 (memoized 111-157, non-memoized 158-199)
+- Mutation methods: lines 200-398
+- Private methods: lines 399-end
 
 ### Core Module Usage Pattern
 

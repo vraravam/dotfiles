@@ -51,13 +51,18 @@ module Antidote
 
     if antidote_home.directory? && !nil_or_empty?(antidote_home)
       system('zsh', '-f', '-c', 'source "$1"; antidote update', '--', antidote_zsh.to_s)
+
+      # Only unshallow repos that are still shallow (idempotent check).
+      # After unshallow, pull to fetch complete history for all branches.
       PathUtils.glob_pathnames(antidote_home.join('github.com', '*', '*')) do |bundle_dir|
         next unless bundle_dir.directory?
-        next unless GitProcessor.repo?(bundle_dir)
+
         GitProcessor.new(dir: bundle_dir) do |git|
+          next unless git.repo? && git.shallow?  # Skip non-git directories and non-shallow repos
+
           git.config_set('fetch.fsckObjects', 'false')
-          git.run_alias('unshallow')
-          git.pull(quiet: true)
+          git.run_alias('unshallow')  # Configures all remotes, runs fetch --unshallow
+          git.pull(rebase: true, quiet: true)  # Fetch complete history for all branches
         end
       end
     end

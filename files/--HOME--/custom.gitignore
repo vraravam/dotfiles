@@ -410,7 +410,6 @@ node_modules/
 /.curlrc
 /.default-gems
 /.editorconfig
-/.envrc
 /.erdconfig
 /.eslintrc.js
 /.gemrc
