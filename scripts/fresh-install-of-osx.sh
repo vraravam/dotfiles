@@ -229,6 +229,7 @@ _clone_dot_files_repo() {
   _current_section='Clone dotfiles repo'; _current_section_manual=1
   step_start
   section_header "$(yellow 'Installing dotfiles') into '$(cyan "${DOTFILES_DIR}")'"
+  # Clone if DOTFILES_DIR is not a git repo. is_git_repo checks both existence and .git presence.
   if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
     # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
     rm -rf "${ZDOTDIR}/.zshrc"
@@ -240,14 +241,18 @@ _clone_dot_files_repo() {
         git -C "${DOTFILES_DIR}" config url.ssh://git@github.com/.pushInsteadOf https://github.com/
       fi
       append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
-      # Setup the DOTFILES_DIR repo's upstream if it doesn't already point to UPSTREAM_GH_USERNAME's repo
-      COLUMNS="${COLUMNS}" add-upstream-git-config.rb -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || _record_warning 'Failed to add upstream git config for dotfiles repo'
     else
       error 'Failed to clone dotfiles repo'
       exit 1
     fi
   else
-    info "Skipping cloning the dotfiles repo since '$(cyan "${DOTFILES_DIR}")' is either not defined or is already a git repo"
+    info "Skipping cloning the dotfiles repo since '$(cyan "${DOTFILES_DIR}")' already exists and is a git repo"
+  fi
+
+  # Setup the DOTFILES_DIR repo's upstream if GH_USERNAME differs from UPSTREAM_GH_USERNAME.
+  # This runs regardless of whether the repo was just cloned or already existed.
+  if [[ "${GH_USERNAME}" != "${UPSTREAM_GH_USERNAME}" ]]; then
+    COLUMNS="${COLUMNS}" add-upstream-git-config.rb -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || _record_warning 'Failed to add upstream git config for dotfiles repo'
   fi
   step_end
 }

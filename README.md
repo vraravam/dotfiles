@@ -33,124 +33,103 @@ All of the folder structures and the setup/backup operations are governed by the
 - **Plugins** — autosuggestions, syntax highlighting, selected OMZ libs and plugins managed via [antidote](./files/--ZDOTDIR--/.zsh_plugins.txt)
 - **Aliases** — Convenient shortcuts and functions
 
-# 🛠️ How to adopt/customize the scripts to your own settings
+# 🛠️ How to Adopt This System
 
-If you want to be able to re-image a new machine with your own settings (and overridden choices), and you do not want to repeat these steps manually, you would want to fork my repo and make appropriate changes into your fork.
+Want to use this dotfiles system for your own setup? See the **[Adoption Guide](Adoption.md)** for complete step-by-step instructions covering:
 
-_Note:_
+- **Preparing your existing machine** — capturing preferences, repo catalogs, and Brewfile
+- **Forking and customizing** — required username changes, optional path adjustments, Keybase setup
+- **First-time setup** — running the bootstrap command on a fresh machine
+- **Ongoing maintenance** — keeping backups current with regular snapshots
+- **Staying up-to-date** — syncing with upstream improvements while preserving your customizations
 
-- ***_DO NOT clone this repo into your local machine while forking/initial adoption. The setup script will put it in the correct folder and setup the PATH environment variable as well._***
-- Make the following changes via the Github web UI/portal itself.
-- If you end up with multiple commits on top of the parent repo, you can squash them at the end.
+For a quick summary of files you'll typically customize, see the [customization checklist below](#customization-checklist).
 
-In your forked repo, make the following changes, commit and push _via the Github web-UI itself_ (for the first time before running the script). Once the above steps are done, and committed into your fork, then everytime you need to run the setup, you can run the `curl` commands that point to _your_ fork:
+# 📝 Quick Start
 
-1. **Before running the bootstrap command in [GettingStarted.md](GettingStarted.md)**, you MUST customize the following environment variables in the curl command to match your setup:
-   - `GH_USERNAME='vraravam'` — **REQUIRED**: Change to your GitHub username (this determines where the script clones the dotfiles repo from)
-   - `DOTFILES_BRANCH='master'` — **OPTIONAL**: Change to a different branch name if you want to test changes before merging to master (see [How to test changes in your fork](#how-to-test-changes-in-your-fork-before-raising-a-pull-request))
-   - `FIRST_INSTALL='true'` — **DO NOT CHANGE**: Required for vanilla OS setup
-   - `CACHE_BUST_HEADERS='true'` — **DO NOT CHANGE**: Ensures latest version is fetched
-   - `CURL_RETRY_OPTS='true'` — **DO NOT CHANGE**: Enables retry logic for network issues
+**New to this system?** Follow these steps:
 
-2. **In `files/--HOME--/.shellrc`**: Update the hardcoded username defaults to match your setup:
-   - `export GH_USERNAME='vraravam'` — **REQUIRED**: Change to your GitHub username (must match the value used in the curl command above)
-   - `export DOTFILES_BRANCH='master'` — **OPTIONAL**: Typically leave as 'master' unless testing a specific branch
-   - `export UPSTREAM_GH_USERNAME='vraravam'` — **DO NOT CHANGE**: Must stay as 'vraravam' (parent repo owner)
-   - `export KEYBASE_USERNAME='avijayr'` — **OPTIONAL**: Change to your Keybase username, or comment out if not using Keybase
+1. **Prepare** (optional) — If migrating from an existing machine, see [Adoption.md § Phase 1](Adoption.md#phase-1-prepare-your-existing-machine) to capture your current setup
+2. **Adopt** — Fork and customize for your setup (see [Adoption.md § Phase 2](Adoption.md#phase-2-fork-and-customize) for complete guide)
+3. **Install** — Run the [bootstrap command](Adoption.md#32-run-bootstrap-command) (copy-paste the `curl` command)
+4. **Maintain** — Keep backups current (see [Adoption.md § Phase 4](Adoption.md#phase-4-ongoing-maintenance))
 
-3. **In `scripts/utilities/env_vars.rb`**: Update the fallback defaults to match your usernames:
-   - `GH_USERNAME = ENV.fetch('GH_USERNAME', 'vraravam').freeze` — **REQUIRED**: Change the fallback `'vraravam'` to your GitHub username
-   - `DOTFILES_BRANCH = ENV.fetch('DOTFILES_BRANCH', 'master').freeze` — **OPTIONAL**: Typically leave as 'master'
-   - `UPSTREAM_GH_USERNAME = ENV.fetch('UPSTREAM_GH_USERNAME', 'vraravam').freeze` — **DO NOT CHANGE**: Must stay as 'vraravam' (parent repo owner)
-   - `KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', 'avijayr'))` — **OPTIONAL**: Change the fallback `'avijayr'` to your Keybase username, or leave as empty string if not using Keybase
+> **⚡ Already forked and customized?** Jump straight to the [bootstrap command](Adoption.md#32-run-bootstrap-command) to copy-paste and run.
 
-4. **In this file (`README.md`) and `GettingStarted.md`**: Find and replace any remaining references to `vraravam` and `avijayr` with your usernames for consistency in documentation.
+**For contributors:** See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on submitting improvements.
 
-5. **Review and update path-related env vars in `files/--HOME--/.shellrc`** to match your preferred folder layout:
-   - `PROJECTS_BASE_DIR` (default: `${HOME}/dev`) — root folder where all your git repos will be cloned
-   - `PERSONAL_BIN_DIR` (default: `${HOME}/personal/dev/bin`) — folder for personal scripts and executables
-   - `PERSONAL_CONFIGS_DIR` (default: `${HOME}/personal/dev/configs`) — folder for private config files and repo catalogs
-   - `PERSONAL_PROFILES_DIR` (default: `${HOME}/personal/${USER}/browser-profiles`) — folder for browser profile backups
+# 🎯 What the Script Does
 
-6. **If you are not using Keybase** (or want to defer setting it up):
-   - In `files/--HOME--/.shellrc`: Comment out all lines starting with `KEYBASE_`
-   - In `scripts/utilities/env_vars.rb`: Change the fallback values to empty strings for `KEYBASE_USERNAME`, `KEYBASE_HOME_REPO_NAME`, and `KEYBASE_PROFILES_REPO_NAME` (e.g., change `'avijayr'` to `''`, `'home'` to `''`, `'profiles'` to `''`). You cannot comment out the entire lines as they are constants that Ruby scripts depend on.
-   - The script will skip Keybase-dependent steps silently when these variables are empty or not set.
+The [fresh-install-of-osx.sh](scripts/fresh-install-of-osx.sh) script runs in an **idempotent manner**, meaning it's safe to run multiple times without breaking anything. It automatically:
 
-7. Review all entries in the `files/--HOME--/Brewfile`, and ensure that there are no unwanted libraries/applications. If you have any doubts (if comparing with my [Brewfile](files/--HOME--/Brewfile)), you will need to search the internet for the uses of those libraries/applications and decide whether to retain each one or not.
-8. If you changed `PROJECTS_BASE_DIR` from its default (`~/dev`), update the corresponding entries in `files/--HOME--/custom.gitignore` — specifically the `/dev/` entry in the "HOME DIRECTORY TOP-LEVEL FOLDERS" section and all `/dev/**/` entries in the "DEV WORKSPACE" section. Prefer editing the repo source file directly, then run `install-dotfiles.rb` to propagate. See [Technical Deep Dive § 9](TechnicalDeepDive.md#9-install-dotfilesrb-mechanics) for details on how `install-dotfiles.rb` resolves conflicts between the repo copy and an existing file on disk.
+1. Downloads and sources `.shellrc` (provides logging and utilities)
+2. Installs **Homebrew** (or updates if already present)
+3. Clones your **dotfiles fork** to `~/.config/dotfiles`
+4. Runs **install-dotfiles.rb** to symlink config files
+5. Installs packages from your **Brewfile**
+6. Runs **post-brew-install.rb** (antidote setup, mise language versions)
+7. Seeds macOS preferences via **osx-defaults.sh -s** (baseline settings)
+8. Imports your custom preferences via **capture-prefs.rb -i** (UI-configured overrides)
+9. Sets up **cron jobs** for automated maintenance
+10. Resurrects tracked git repositories from catalogs
 
-## How to upgrade / catch-up to new changes
+### Two-Phase Preference Restoration
 
-1. My recommendation is to _always_ have all your customizations as a **single commit** on top of the upstream. This allows to easily rebase and adopt new changes in the future.
-2. Run the `git -C "${DOTFILES_DIR}" fetch --all` command.
-   - Run the `git -C "${DOTFILES_DIR}" upreb` command. Most of the times, this should simply rebase your changes on top of the latest upstream master.
-   - As an alternative to the above step, if there are too many commits to catch-up to, AND your fork had only 1 commit on top of any of my historical commits, then you can quickly re-apply your changes (remember: single commit) using the following script:
+The script automatically applies macOS preferences in two ordered phases:
 
-      ```zsh
-      latest_head="$(git -C "${DOTFILES_DIR}" rev-parse HEAD)"
-      git -C "${DOTFILES_DIR}" reset --hard upstream/master
-      git -C "${DOTFILES_DIR}" cherry-pick ${latest_head}
-      # TODO: manually fix any conflicts
-      ```
+1. **`osx-defaults.sh -s`** — Seeds a partial baseline of known-good starting values
+2. **`capture-prefs.rb -i`** — Imports preferences exported from your previous machine, overriding the baseline where they overlap
 
-3. _Hint:_ Before pushing your changes to your remote, if you want to ensure (diff) that your old changes are retained (for eg in `Brewfile`) and no new/unnecessary changes are present, you can run the following 2 commands and review the diffs manually
+If you haven't exported preferences from a previous machine yet, the script skips step 2 and you can run `capture-prefs.rb -i` later. See [Extras.md — osx-defaults.sh](Extras.md#osx-defaultssh) for details.
 
-   ```zsh
-    git -C "${DOTFILES_DIR}" diff @{u}  # will diff your local HEAD against the remote HEAD of your own fork. Please remember that this diff will show new changes that I have made in my repo, and which are now going-to-be-adopted into yours. It's a good idea to remove entries in Brewfile that you won't need
+### Shell Optimization
 
-    git -C "${DOTFILES_DIR}" diff upstream/`git br`  # will diff your local HEAD against the remote HEAD of the parent repo. These changes should be exactly the changes that you had done previously (most likely only in GettingStarted.md, files/--HOME--/.shellrc and files/--HOME--/Brewfile)
-   ```
-
-4. You will have to force-push to your fork's remote after the above step. To accomplish this, I recommend using `git -C "${DOTFILES_DIR}" push --all --force-with-lease`
-5. After the above step, it is always recommended to run the `install-dotfiles.rb` script once to ensure all (non symlinked) changes are setup on your machine correctly.
-6. In case there are any other changes that might be needed after updating, these steps will be detailed in the [changelog](./CHANGELOG.md). In such rare cases, you might have to run the appropriate steps in sequence as detailed out in that section for that version.
-7. After updating/catching-up, it is recommended to quit and restart the terminal app so that all "in session memory" aliases, etc are up-to-date and the dotfiles are sourced correctly.
-
-## How to test changes in your fork before raising a Pull Request
-
-1. **Especially if you are making changes to the fresh-install scripts and want to test it out on a vanilla OS**, you can change the github urls to refer to your branch in these files `GettingStarted.md` and `files/--HOME--/.shellrc`. For eg, if your PR branch is called `zdotdir-fixes`, you can search for `DOTFILES_BRANCH=` in those files, and replace `master` with `zddotdir-fixes`. Once your PR is tested and approved, please remember to revert `zddotdir-fixes` back to `master` and then merge the PR into the main working branch.
-
-# 📝 Pre-requisites
-
-If you want to capture data from your current mac, please follow the instructions [here](Prerequisites.md)
+All scripts are optimized for **fast shell loading** — startup time is typically under 200ms on modern hardware. You can work almost immediately upon starting the terminal app.
 
 # 🏗️ Complete setup
 
-The backup strategy is split into 2 stages - both of which are run by the [same script](scripts/fresh-install-of-osx.sh). The [basic "getting started"](GettingStarted.md) provides the instructions for the most common/basic setup. This covers everything that a typical user might need - without the need to backup other parts of the existing laptop.
+The backup strategy is split into 2 stages - both of which are run by the [same script](scripts/fresh-install-of-osx.sh). See [Adoption.md](Adoption.md) for the complete adoption workflow covering basic setup (Phase 1-3) and advanced features (Phase 4-5).
 
 The "advanced" setup captures application preferences (both system and custom apps) and backs them up into an _encrypted remote repository_. This requires [Keybase](https://keybase.io/) for the encrypted private storage. **Keybase is entirely optional** — if you skip it, everything else (dotfiles, Homebrew packages, zsh config, mise language versions, cron jobs) still works. Simply comment out the `KEYBASE_*` environment variables in `files/--HOME--/.shellrc` and the script will skip the Keybase-dependent steps silently.
 
 If you want to automate the repetitive running of these scripts/commands, you can use the system-level cronjobs to set this up, the details of which can be found in the [Extras](Extras.md#software-updates-cronrb) file, by which you can reduce more manual efforts.
 
-# 🎯 Finally...
+# 🎯 Post-Setup
 
-The softwares in the `files/--HOME--/Brewfile` will be run with the bare minimum of formulae initially; the full Brewfile install continues automatically in the background once the base setup completes.
+After running `fresh-install-of-osx.sh`, see [Adoption.md § Phase 3.3](Adoption.md#33-post-setup-manual-steps) for remaining configuration (git includes, SSH config, system preferences, commit squashing).
 
-Once the above is done, and if you have setup the [keybase](https://keybase.io)-based home repo, browser profiles repo, etc - you can then re-import your exported preferences from the [pre-requisites section](#-pre-requisites).
+## Customization Checklist
 
-Of course, you will have to manually take snapshots of your machine for backup from time-to-time as an _ongoing activity_. This can be done using the `scripts/capture-prefs.rb` script and pushing into the remote repo of your home folder. (More details can be found in the next section.)
+**Quick summary** of files you'll typically customize in your fork (see [Adoption.md § Phase 2](Adoption.md#phase-2-fork-and-customize) for detailed instructions):
 
-As a summary, these files will typically have changes between your setup and mine:
+- `Adoption.md` — Update bootstrap command in Phase 3.2 to reference YOUR_USERNAME instead of vraravam
+- `files/--HOME--/.shellrc` — Change `GH_USERNAME`, `UPSTREAM_GH_USERNAME`, `KEYBASE_USERNAME`, and path env vars (`PROJECTS_BASE_DIR`, `PERSONAL_CONFIGS_DIR`, `PERSONAL_BIN_DIR`, `PERSONAL_PROFILES_DIR`)
+- `scripts/utilities/env_vars.rb` — Update Ruby fallback defaults for `GH_USERNAME`, `UPSTREAM_GH_USERNAME`, `KEYBASE_USERNAME`
+- `files/--HOME--/Brewfile` — Remove unwanted packages or merge with your exported Brewfile
+- `scripts/data/capture-prefs-allowed-list.txt` — Add/remove preference domains to match your installed apps
+- `scripts/data/capture-prefs-denied-list.txt` — Add newly discovered unsafe domains (do not remove existing entries)
+- `files/--HOME--/custom.gitignore` — Update if you changed `PROJECTS_BASE_DIR` from default `~/dev`
 
-- `GettingStarted.md` (references to your usernames instead of mine, and typically any other changes that you introduce in the `files/--HOME--/.shellrc` - look below)
-- `files/--HOME--/.gitconfig` (the `IncludeIf` line to match your global/base configuration filename)
-- `files/--HOME--/.shellrc` (`GH_USERNAME`, `KEYBASE_USERNAME`, path env vars such as `PROJECTS_BASE_DIR` / `PERSONAL_CONFIGS_DIR` / `PERSONAL_BIN_DIR` / `PERSONAL_PROFILES_DIR`, and other changeable env vars to control which steps to perform vs which to bypass). See [ENV_VARS.md](ENV_VARS.md) for a complete reference of all environment variables.
-- `files/--HOME--/Brewfile` (the list of applications and command-line utilities that you choose to install in your local machine)
-- `scripts/data/capture-prefs-allowed-list.txt` (the preference domains you choose to back up — add or remove entries to match your installed apps)
-- `scripts/data/capture-prefs-denied-list.txt` (domains that must never be exported or imported — edit only to add newly discovered unsafe domains; do not remove existing entries)
-
-For a complete reference of all environment variables (where they're defined, how to access them in shell and Ruby, which ones require customization), see **[ENV_VARS.md](ENV_VARS.md)**.
+For troubleshooting environment variable issues, see [Adoption.md § Troubleshooting](Adoption.md#troubleshooting).
 
 For a deeper understanding of how the scripts work internally — the logging system, startup optimisation, `.shellrc` vs `.aliases` architecture, cron safety, and more — see the [Technical Deep Dive](TechnicalDeepDive.md).
 
-# 🔄 Ongoing tasks to keep your backup up-to-date on a regular basis
+# 🔄 Ongoing Maintenance
 
-The backup strategy is **not a one-off activity**. It will require you to take snapshots from time-to-time. Similarly, adherance to maintainence of the "catalogs" will need to be strictly upheld for the backup strategy to be effective. Most of the generic maintenance tasks can be automated using cronjobs, the details of which can be found in the [Extras](Extras.md#software-updates-cronrb) file.
+See **[Adoption.md § Phase 4](Adoption.md#phase-4-ongoing-maintenance)** for complete maintenance workflow including:
 
-# 🧰 Extras/Details
+- Exporting preferences after changes
+- Updating repository catalogs
+- Maintaining the Brewfile
+- Automating tasks via cron (see [Extras.md § software-updates-cron.rb](Extras.md#software-updates-cronrb))
 
-Some utility scripts have been provided in this repo - which you can use to manage the backup strategy in a better fashion. Details can be found [here](Extras.md)
+# 🧰 Documentation
+
+- **[Adoption.md](Adoption.md)** — Complete adoption guide (preparation, fork customization, first-time setup, maintenance, staying up-to-date, troubleshooting)
+- **[Extras.md](Extras.md)** — Reference documentation for all utility scripts
+- **[TechnicalDeepDive.md](TechnicalDeepDive.md)** — Internal architecture, design decisions, and implementation details
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — Guidelines for contributing code, documentation, and reporting issues
+- **[CHANGELOG.md](CHANGELOG.md)** — Version history and upgrade notes
 
 # 🙏 Attributions & Thanks
 

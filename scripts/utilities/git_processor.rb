@@ -204,12 +204,25 @@ class GitProcessor
         nil_or_empty?(out) ? nil : out.strip
       end
   end
+
+  # Returns true if the repository is a shallow clone (limited history depth).
+  # Shallow clones are created with --depth flag and can be converted to full
+  # clones via 'git unshallow && git fetch'.
+  #
+  # @return [Boolean] true if shallow clone, false if full clone
   def shallow?
     @_is_shallow ||= begin
         out, = _execute('rev-parse', '--is-shallow-repository')
         nil_or_empty?(out) ? false : out.strip == 'true'
       end
   end
+
+  # Returns the repository's reference storage format ('files' or 'reftable').
+  # Legacy repos use 'files' format (.git/refs/* hierarchy), modern repos use
+  # 'reftable' (single packed file). Git 2.45+ defaults to reftable for new
+  # repos when init.defaultRefFormat=reftable is set.
+  #
+  # @return [String] 'files' or 'reftable'
   def ref_format
     @_ref_format ||= begin
         out, = _execute('rev-parse', '--show-ref-format')
@@ -608,6 +621,16 @@ class GitProcessor
       @dir.join('.git', 'index.lock').delete rescue nil
     end
   end
+
+  # Migrates repository from legacy files format to reftable format.
+  # Reftable is the modern reference storage format (git 2.45+) that replaces
+  # the traditional .git/refs/* file hierarchy with a single packed file,
+  # improving performance and atomic operations.
+  #
+  # No-op if already reftable or if git version doesn't support migration.
+  # Requires git 2.45+ with 'git refs migrate' command.
+  #
+  # @return [Boolean] true if migration succeeded or already reftable, false if failed or unavailable
   def migrate_refs_to_reftable
     # Not a repo - skip migration
     return false unless repo?

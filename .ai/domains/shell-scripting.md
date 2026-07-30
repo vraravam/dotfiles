@@ -45,8 +45,8 @@ is_file() { ... }
 
 # Good -- private/internal functions use snake_case with leading underscore
 _log_indent() { ... }
-_section_header_impl() { ... }
 _colorize() { ... }
+_strip_ansi() { ... }
 
 # BAD -- kebab-case is for file names, not function names
 current-timestamp() { ... }   # Wrong
@@ -485,7 +485,7 @@ public_function() { ... }    # no prefix - part of public API
 - **All** helper functions that are not the main entry point or intended for external use must be prefixed with `_`
 - Main execution code (option parsing, main logic) comes after helper definitions
 - Functions in `.shellrc` and `.aliases` that are intended to be called by users or other scripts should NOT have underscore prefix
-- Functions in `.shellrc` and `.aliases` that are only called internally (like `_log_indent`, `_section_header_impl`, `_colorize`) MUST have underscore prefix
+- Functions in `.shellrc` and `.aliases` that are only called internally (like `_log_indent`, `_colorize`, `_strip_ansi`) MUST have underscore prefix
 
 **Applies to:**
 - Helper functions in standalone scripts (anything in `${DOTFILES_DIR}/scripts/*.sh`)
@@ -1347,7 +1347,7 @@ Zsh sets `COLUMNS` to `0` when no terminal is attached. Any code that uses
 local viewport_length=${COLUMNS:-80}
 ```
 
-This applies to `_section_header_impl` and `print_chars_for_length` in
+This applies to `section_header` and `print_chars_for_length` in
 `.shellrc` (already done). Apply the same pattern in any new code that
 reads `COLUMNS` outside the startup hot path.
 

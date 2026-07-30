@@ -246,6 +246,95 @@ After completing any rebase (whether manual conflict resolution or automated):
 
 **See also:** [FEATURE-PARITY-CHECKLIST.md](.ai/FEATURE-PARITY-CHECKLIST.md) for comprehensive post-rebase verification workflow.
 
+#### Pre-Commit Verification — Functional Completeness Check
+
+**Before creating or amending any commit, verify functional completeness of the changed code.**
+
+This applies to:
+- New branches with conversion work (shell → Ruby, refactoring, etc.)
+- Branches being rebased or merged
+- Any commit that modifies executable scripts or modules
+
+**Required verification steps:**
+
+1. **Syntax check all modified files**
+   ```bash
+   # Ruby files
+   find scripts -name "*.rb" -type f -exec /usr/bin/ruby -c {} \;
+
+   # Shell files
+   find scripts -name "*.sh" -type f -exec zsh -n {} \;
+   ```
+
+2. **Verify all dependencies exist**
+   ```ruby
+   # Check all require_relative statements resolve to existing files
+   ruby -e "
+   Dir['scripts/**/*.rb'].each do |script|
+     File.readlines(script).each do |line|
+       if line =~ /^require_relative ['\"](.*)['\"]$/
+         required = \$1
+         path = required.start_with?('utilities/') ? \"scripts/#{required}.rb\" : \"scripts/#{required}.rb\"
+         unless File.exist?(path)
+           puts \"❌ MISSING: #{script} requires #{required}\"
+         end
+       end
+     end
+   end
+   "
+   ```
+
+3. **Verify method calls match definitions**
+   - Extract all module method calls: `Module.method_name`
+   - Verify each method exists in the target module
+   - Check class vs instance method usage (don't call instance methods as class methods)
+
+4. **Test script invocation**
+   ```bash
+   # Verify main scripts run without errors (at least --help)
+   /usr/bin/ruby scripts/script-name.rb --help
+   ```
+
+5. **Check cross-script references**
+   - Verify any `system(RUBY_BIN, script.to_s, ...)` calls reference existing scripts
+   - Verify dual-mode modules (module + `if __FILE__ == $PROGRAM_NAME`) are correctly structured
+
+**Why this matters:**
+- Prevents broken commits that fail at runtime
+- Catches method signature mismatches (class vs instance)
+- Ensures all dependencies are tracked in the branch
+- Reduces debugging time after merge/rebase
+
+**When to run:**
+- Before `git commit` or `git commit --amend` on WIP branches
+- After completing a rebase or merge
+- When switching between branches with different conversion states
+
+**Checklist for WIP conversion branches:**
+```bash
+# Example: fresh-install-ruby branch
+cd /Users/vijay/.config/dotfiles
+git checkout fresh-install-ruby
+
+# 1. Syntax check all Ruby files
+for file in $(find scripts -name "*.rb" -type f); do
+  /usr/bin/ruby -c "$file" || echo "❌ FAILED: $file"
+done
+
+# 2. Check dependencies
+ruby -e "..." # (see step 2 above)
+
+# 3. Verify method calls (manual or scripted)
+# 4. Test main script
+/usr/bin/ruby scripts/fresh-install-of-osx.rb --help
+
+# 5. Verify external script references exist
+grep -E "system.*\.rb|RUBY_BIN.*\.rb" scripts/fresh-install-of-osx.rb
+# Check that each referenced script exists
+```
+
+**Exception:** This verification is not required for documentation-only changes (`.md` files, comments).
+
 ## SSH Config Rules — Variable Expansion Limitations
 
 **SSH config files (`~/.ssh/config`, `templates/ssh-config.template`) have strict limitations on variable expansion.**

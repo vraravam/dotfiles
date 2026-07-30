@@ -1,9 +1,12 @@
-As documented in the README's [adopting](README.md#how-to-adoptcustomize-the-scripts-to-your-own-settings) section, this repo and its scripts are aimed at developers/techies. If you are stuck or need help in any fashion, you can reach out to the [owner of the parent repo](https://github.com/vraravam) from where this was forked.
+As documented in the README's [adoption guide](README.md#-how-to-adopt-this-system) and [Adoption.md](Adoption.md), this repo and its scripts are aimed at developers/techies. If you are stuck or need help in any fashion, you can reach out to the [owner of the parent repo](https://github.com/vraravam) from where this was forked.
 
 For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.13
+
+#### Revamping documentation
 
 ### 3.2.12
 
@@ -789,9 +792,9 @@ All other issues already compliant: `.shellrc` logging guards use explicit if st
 
 #### Unified semantic indentation system for all logging output
 
-* *[files/--HOME--/.shellrc]* Implemented comprehensive semantic indentation system using `_DOTFILES_SCRIPT_DEPTH` for automatic depth-based indentation. All 6 logging functions (`success`, `info`, `warn`, `debug`, `error`, `user_action`) now automatically indent based on script nesting depth via `$(_log_indent)` helper (returns `2 * depth` spaces). Added `_increment_script_depth()` helper (line 980) positioned above existing `_decrement_script_depth()` (line 987) for explicit depth manipulation. Updated `_section_header_impl()` to use auto-indent via `_log_indent`, eliminating manual indent parameter from `section_header2()`. Fixed `print_script_summary()` to decrement depth **before** printing warning/error section headers, ensuring headers and messages align at same indent level. Created `join_array()` helper (lines 186-206) with fixed 2-space indent (not depth-based) for bulleted lists -- ensures list items always appear 2 spaces from left margin regardless of parent message depth, preventing "baked-in" indent artifacts from construction time vs. print time depth differences.
+* *[files/--HOME--/.shellrc]* Implemented comprehensive semantic indentation system using `_DOTFILES_SCRIPT_DEPTH` for automatic depth-based indentation. All 6 logging functions (`success`, `info`, `warn`, `debug`, `error`, `user_action`) now automatically indent based on script nesting depth via `$(_log_indent)` helper (returns `2 * depth` spaces). Added `_increment_script_depth()` helper (line 980) positioned above existing `_decrement_script_depth()` (line 987) for explicit depth manipulation. Updated `section_header()` to automatically derive visual style from script depth and use auto-indent via `_log_indent`. Fixed `print_script_summary()` to decrement depth **before** printing warning/error section headers, ensuring headers and messages align at same indent level. Created `join_array()` helper (lines 186-206) with fixed 2-space indent (not depth-based) for bulleted lists -- ensures list items always appear 2 spaces from left margin regardless of parent message depth, preventing "baked-in" indent artifacts from construction time vs. print time depth differences.
 
-* *[scripts/utilities/logging.rb]* Applied identical semantic indentation to Ruby implementation. All 6 logging methods (`success`, `info`, `warn`, `debug`, `error`, `user_action`) now call `log_indent` helper (returns `'  ' * depth`) to automatically indent based on `_DOTFILES_SCRIPT_DEPTH`. Updated `_section_header_impl` to use auto-indent. Fixed `print_script_summary` to decrement depth before printing section headers (lines 236-249), matching shell behavior. Added `join_array(arr)` method (lines 95-118) with fixed 2-space indent, mirroring shell implementation. Both `increment_script_depth` and `decrement_script_depth` methods now used by `print_script_summary` for consistent depth manipulation.
+* *[scripts/utilities/logging.rb]* Applied identical semantic indentation to Ruby implementation. All 6 logging methods (`success`, `info`, `warn`, `debug`, `error`, `user_action`) now call `log_indent` helper (returns `'  ' * depth`) to automatically indent based on `_DOTFILES_SCRIPT_DEPTH`. Updated `section_header` to automatically derive visual style from script depth and use auto-indent. Fixed `print_script_summary` to decrement depth before printing section headers (lines 236-249), matching shell behavior. Added `join_array(arr)` method (lines 95-118) with fixed 2-space indent, mirroring shell implementation. Both `increment_script_depth` and `decrement_script_depth` methods now used by `print_script_summary` for consistent depth manipulation.
 
 * *[scripts/resurrect-repositories.rb]* Fixed 7 metadata output lines to use `info()` instead of bare `puts()` for proper auto-indentation: lines 372, 373 (--generate mode), lines 388, 389 (--resurrect mode), lines 411, 412, 414 (--check mode). Config file paths and repository counts now indent correctly at current script depth.
 

@@ -106,7 +106,7 @@ regardless of `.curlrc` presence.
 Do NOT add `--retry-all-errors` -- it causes the terminal app to close
 unexpectedly (known issue, tracked in `.curlrc` comments).
 
-The bootstrap command in `GettingStarted.md` is a one-liner run manually by
+The bootstrap command in `Adoption.md § Phase 3.2` is a one-liner run manually by
 the user before `fresh-install` exists locally, so it must carry the full flags
 inline -- it cannot use `_curl_opts`.
 

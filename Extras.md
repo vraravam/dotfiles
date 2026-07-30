@@ -2,6 +2,24 @@
 
 Reference documentation for the utility scripts bundled in this repo. Each section describes what a script does and how to invoke it. For the internal architecture — how the logging system works, the `.shellrc` vs `.aliases` split, startup optimisation, cron safety, and more — see the [Technical Deep Dive](TechnicalDeepDive.md).
 
+## 📋 Table of Contents
+
+- [add-upstream-git-config.rb](#add-upstream-git-configrb)
+- [capture-prefs.rb](#capture-prefsrb)
+- [cleanup-browser-profiles.rb](#cleanup-browser-profilesrb)
+- [fresh-install-of-osx.sh](#fresh-install-of-osxsh)
+- [install-dotfiles.rb](#install-dotfilesrb)
+- [osx-defaults.sh](#osx-defaultssh)
+- [post-brew-install.rb](#post-brew-installrb)
+- [recreate-repo.rb](#recreate-reporb)
+- [resurrect-repositories.rb](#resurrect-repositoriesrb)
+- [run-all.rb](#run-allrb)
+- [setup-git-remote-gcrypt.rb](#setup-git-remote-gcryptrb)
+- [setup-login-item.rb](#setup-login-itemrb)
+- [software-updates-cron.rb](#software-updates-cronrb)
+
+---
+
 ## add-upstream-git-config.rb
 
 When you fork a repo, you need an `upstream` remote pointing to the original so you can fetch and rebase against it. This script adds that remote automatically, deriving the upstream URL from the existing `origin` URL by substituting the owner username — so you do not have to look up or copy-paste the URL manually. The new remote is always named `upstream`.
@@ -22,7 +40,7 @@ Three data files govern which domains are processed and how:
 
 **Backup staleness check:** On import (`-i`), the script validates that the backup preferences are not older than the last change to `osx-defaults.sh`. This prevents importing incomplete settings after `osx-defaults.sh` has been updated. On `FIRST_INSTALL`, this check is skipped because `fresh-install-of-osx.sh` runs `osx-defaults.sh -s` first to baseline current prefs, so the import is an incremental overlay — any backup is better than none.
 
-See [Technical Deep Dive § 11](TechnicalDeepDive.md#11-capture-prefssh-architecture) for how key stripping, XML plist conversion, and cron-safe export work internally.
+See [Technical Deep Dive § 11](TechnicalDeepDive.md#11-capture-prefsrb-architecture) for how key stripping, XML plist conversion, and cron-safe export work internally.
 
 ## cleanup-browser-profiles.rb
 
@@ -56,7 +74,7 @@ The script has two modes, distinguished by the `FIRST_INSTALL` environment varia
 - Preferences restoration accepts stale backups on `FIRST_INSTALL` (baseline already applied)
 - All automated tasks complete before any user interaction required
 
-See the [GettingStarted](GettingStarted.md) guide for the recommended invocation. See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-two-phase-preference-architecture) for the ordering rationale.
+See [Adoption.md § Phase 3](Adoption.md#phase-3-first-time-setup) for the bootstrap command. See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-osx-defaultssh-and-capture-prefsrb-two-phase-preference-architecture) for the ordering rationale.
 
 ## install-dotfiles.rb
 
@@ -101,7 +119,7 @@ Never reverse the order — running `capture-prefs.rb -i` before `osx-defaults.s
 | Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` (not `osx-defaults.sh`) |
 | Ephemeral state (window positions, sync cursors, UUIDs) | `capture-prefs-excluded-keys.txt` or `-denied-list.txt` — nowhere else |
 
-See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-two-phase-preference-architecture) for the full architectural rationale and ordering constraint.
+See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-osx-defaultssh-and-capture-prefsrb-two-phase-preference-architecture) for the full architectural rationale and ordering constraint.
 
 ## post-brew-install.rb
 
@@ -334,4 +352,4 @@ Removes all compiled zsh bytecode (`.zwc` files) and other generated cache files
 delete_caches
 ```
 
-Back to the [readme](README.md#extrasdetails)
+Back to the [readme](README.md#documentation)

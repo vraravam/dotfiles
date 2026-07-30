@@ -8,7 +8,11 @@ applyTo: "all cross-language scripts and configuration files"
 
 Never hardcode user-specific or machine-specific paths. Always use environment variables that are defined in `.shellrc` and centralized in the `EnvVars` module (Ruby).
 
-**For a complete reference of all environment variables, see [ENV_VARS.md](../../ENV_VARS.md) in the repository root.**
+**Environment variables are documented where they're defined:**
+- **Shell**: See comments in `files/--HOME--/.shellrc` (lines 40-85, 139-169)
+- **Ruby**: See RDoc comments in `scripts/utilities/env_vars.rb`
+- **Adoption**: See [Adoption.md § Phase 2](../../Adoption.md#phase-2-fork-and-customize) for customization instructions
+- **Troubleshooting**: See [Adoption.md § Troubleshooting](../../Adoption.md#-troubleshooting)
 
 ## Available Path Constants
 

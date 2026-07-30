@@ -2,11 +2,11 @@
 
 This document is for adopters who want to understand **how and why** this repo is built the way it is. It covers the internal architecture, design decisions, and the reasoning behind patterns you will encounter when reading or modifying the scripts.
 
-If you are setting up a new machine for the first time, start with [GettingStarted.md](GettingStarted.md) instead.
+If you are setting up a new machine for the first time, start with [Adoption.md](Adoption.md) instead.
 
 ---
 
-## Table of Contents
+## 📋 Table of Contents
 
 1. [Design Principles](#1-design-principles)
 2. [Repository Layout](#2-repository-layout)
@@ -129,15 +129,21 @@ The key distinction between `warn` and `error`: `warn` is for expected failure m
 
 ### Section headers and visual hierarchy
 
-Two levels of section header provide a visual indent stack:
+`section_header()` automatically derives visual style from script depth using the `_SECTION_STYLES` array. Each nesting level gets a distinct style (padding character, glyph, color):
 
 ```
-══════════════ ⏳ Top-level section ══════════════    ← section_header
-  ──────── 🔷 Sub-step inside section ────────        ← section_header2
+══════════════ ⏳ Top-level section ══════════════    ← depth 1 (level 0)
+  ──────── 🔷 Sub-step inside section ────────        ← depth 2 (level 1)
 ```
 
-`section_header` uses `=` padding, `light_blue` colour, and no indent.
-`section_header2` uses `-` padding, `cyan` colour, and 2-space indent.
+Level 0 uses `=` padding, ⏳ glyph, `light_blue` colour.
+Level 1 uses `-` padding, 🔷 glyph, `cyan` colour.
+Higher levels use additional styles defined in `_SECTION_STYLES`.
+
+The function automatically:
+- Derives level from `_DOTFILES_SCRIPT_DEPTH` (depth 1 → level 0, depth 2 → level 1, etc.)
+- Applies automatic indentation via `_log_indent` (2 spaces per depth)
+- Updates `_current_section` for error tracking (unless manually set)
 
 The padding width is computed from `${COLUMNS:-80}` (the terminal width) minus the header text length, split evenly on both sides. The fallback to `80` is deliberate: cron jobs run with no terminal attached, so zsh sets `COLUMNS` to `0` — without the fallback, the arithmetic yields zero or negative lengths and `printf` produces no output.
 
@@ -679,4 +685,9 @@ If requirements change in the future (e.g., Keybase shuts down, or GitHub adds f
 
 ---
 
-Back to [README.md](README.md)
+## Related Documentation
+
+- **[README.md](README.md)** — Project overview and quick start
+- **[Adoption.md](Adoption.md)** — Complete adoption workflow
+- **[Extras.md](Extras.md)** — Script reference documentation
+- **[CONTRIBUTING.md](CONTRIBUTING.md)** — Guidelines for contributing

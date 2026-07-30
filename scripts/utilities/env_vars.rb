@@ -212,6 +212,11 @@ module EnvVars
     ENV.fetch('MINDEPTH', '1').to_i
   end
 
+  # Maximum depth for recursive git operations (used by run-all.rb and shell
+  # equivalents like 'home pull'). Defaults to 4 levels deep. Can be overridden
+  # via MAXDEPTH env var for ad-hoc operations.
+  #
+  # @return [Integer] Maximum recursion depth (default: 4)
   def self.maxdepth
     ENV.fetch('MAXDEPTH', '4').to_i
   end

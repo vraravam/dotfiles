@@ -62,6 +62,12 @@ module Logging
     msg.each_line { |line| emit("✅ #{'**SUCCESS**'.green} #{line.chomp}", level: 0) }
   end
 
+  # Prints an informational message (normal progress, idempotency guards, etc.).
+  # Suppressed in direnv subshells to reduce noise. Use 'error' for messages
+  # that must always be visible regardless of context.
+  #
+  # @param message [String] The message to log
+  # @return [void]
   def info(message)
     # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
     # Use error for messages that must always be visible regardless of context.
@@ -70,6 +76,12 @@ module Logging
     msg.each_line { |line| emit("ℹ️ #{'**INFO**'.cyan} #{line.chomp}", level: 0) }
   end
 
+  # Prints a warning message (non-fatal operation failures, argument parse errors).
+  # Suppressed in direnv subshells. Use 'error' for messages that must always
+  # be visible.
+  #
+  # @param message [String] The warning message to log
+  # @return [void]
   def warn(message)
     # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
     # Use error for messages that must always be visible regardless of context.
@@ -78,6 +90,12 @@ module Logging
     msg.each_line { |line| emit("⚠️ #{'**WARN**'.light_red} #{line.chomp}", level: 0) }
   end
 
+  # Prints a debug message (only visible when DEBUG=true).
+  # Hidden by default. Use for expected-absent tools or optional steps that
+  # are silently skipped. Suppressed in direnv subshells.
+  #
+  # @param message [String] The debug message to log
+  # @return [void]
   def debug(message)
     # Hidden by default; only visible when DEBUG env var is set.
     # Also suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
