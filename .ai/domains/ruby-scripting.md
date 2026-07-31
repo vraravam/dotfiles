@@ -911,6 +911,52 @@ Exception: `require 'pathname'` must remain even when not directly referenced
 in the file body if the file defines Pathname constants at module level -- the
 require makes Pathname available to the constant initializers.
 
+### Deleting Methods/Functions -- Mandatory Codebase Scan
+
+**Before deleting ANY method or function as "unused", perform a comprehensive codebase scan to verify no call sites exist.**
+
+A method/function is NOT unused until verified by:
+1. **Grep all Ruby files**: `grep -rn "method_name" scripts/ files/`
+2. **Grep all shell files**: `grep -rn "function_name" files/ scripts/`
+3. **Check git history**: `git log --all -S"def method_name" --oneline` (verify not recently added elsewhere)
+4. **Check all branches**: `git grep "method_name" $(git branch -a | grep -v HEAD)`
+
+**Real incident (June 2026)**: Methods `fix_head_file`, `rev_list_count`, and `symbolic_ref` were deleted from `git_processor.rb` as "unused" 17 commits ago. Both methods were actually called:
+- `fix_head_file` at line 160 (fixes .git/HEAD after clone)
+- `rev_list_count` at line 206 (checks incoming commits after fetch)
+
+The deletion broke production code but went undetected until runtime failures occurred.
+
+**Why simple search isn't enough**:
+- Methods may be called dynamically (`send`, `public_send`, `method`)
+- Shell functions may be called from autoload scripts or other repositories
+- Call sites may use aliases or wrapper functions
+- Methods may be called from code in other branches being developed
+
+**Safe deletion checklist**:
+```bash
+# 1. Search all Ruby files for method name
+grep -rn "method_name" scripts/
+
+# 2. Search all shell files for function name
+grep -rn "function_name" files/
+
+# 3. Check if recently added in other branches
+git log --all --since="6 months ago" -S"def method_name" --oneline
+
+# 4. Search across all branches (not just current)
+for branch in $(git branch -a | grep -v HEAD); do
+  echo "=== $branch ==="
+  git grep "method_name" $branch -- '*.rb' '*.sh' || true
+done
+
+# 5. Syntax check all files after deletion
+find scripts -name "*.rb" -exec ruby -c {} \;
+find files -name "*.zsh" -o -name "*.sh" | xargs -n1 zsh -n
+```
+
+**Only delete when ALL checks pass**: No matches in current branch, no matches in other branches, no recent additions in git history.
+
 ### `require` vs `require_relative`
 
 **Ruby community best practice**: Use `require_relative` for all internal files, `require` only for external dependencies (gems, stdlib).

@@ -273,13 +273,6 @@ export WORDCHARS="${WORDCHARS:s#.#}"
 # String utilities (zsh-only; not needed in direnv/bash so lives here not .shellrc)
 # --------------------------------------------------------------------------
 
-# Returns the last path segment of $1, stripping any trailing slash.
-# Uses pure-zsh nested expansion -- safe here since .aliases is never sourced by bash.
-# Usage: extract_last_segment <path>
-extract_last_segment() {
-  echo "${"${1%/}"##*/}"
-}
-
 # --------------------------------------------------------------------------
 # Script utilities (zsh-only; not needed before dotfiles repo is cloned)
 # --------------------------------------------------------------------------
@@ -325,38 +318,6 @@ dispatch_or_fallback() {
   else
     "${fallback_fn}" "$@"
   fi
-}
-
-# Creates a new shell script with standard header boilerplate.
-# Usage: new_script <path> [shell_type]
-#   shell_type: 'zsh' (default) or 'bash'
-new_script() {
-  local script_path="${1:?Script path required}"
-  local shell_type="${2:-zsh}"
-
-  if is_file "${script_path}"; then
-    error "File already exists: ${script_path}"
-    return 1
-  fi
-
-  local dir="${script_path:h}"
-  if ! is_directory "${dir}"; then
-    error "Directory does not exist: ${dir}"
-    return 1
-  fi
-
-  cat >"${script_path}" <<EOF
-#!/usr/bin/env ${shell_type}
-
-# vim:filetype=${shell_type} syntax=${shell_type} tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
-
-set -euo pipefail
-
-# TODO: Add your code here
-EOF
-
-  chmod +x "${script_path}"
-  success "Created new ${shell_type} script: ${script_path}"
 }
 
 # Validates that a required environment variable is set.

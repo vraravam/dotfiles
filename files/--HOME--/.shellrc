@@ -1479,14 +1479,8 @@ clone_repo_into() {
       git -C "${target_folder}" checkout-index -a 2>/dev/null || true
     fi
 
-    # post-clone operations
-    git -C "${target_folder}" restore-mtime -c || true
-    # git maintenance register requires .gitconfig-oss.inc which comes from the home repo.
-    # On FIRST_INSTALL, dotfiles repo is cloned before home repo, so skip if file doesn't exist yet.
-    if is_file "${HOME}/.gitconfig-oss.inc"; then
-      git -C "${target_folder}" maintenance register --config-file "${HOME}/.gitconfig-oss.inc" || true
-      git -C "${target_folder}" maintenance start || true
-    fi
+    # post-clone operations - delegated to git maintain alias
+    git -C "${target_folder}" maintain
 
     # Correct HEAD file after reftable clone-via-mv (.git/HEAD retains a '.invalid' placeholder since
     # the move bypasses git's normal post-clone finalisation; shell prompts read .git/HEAD directly)

@@ -274,9 +274,10 @@ module SoftwareUpdatesCron
     _update_home_repos
     sleep 10  # Avoid GitHub rate-limiting between bursts of API calls.
     _upreb_oss_repos
-    # git restore-mtime and git maintenance register/start now run once per repo at clone time
-    # (in clone_repo_into() in .shellrc:1472-1478). No need to repeat hourly - they're idempotent
-    # operations that only need to run once. Removed from cron to save thousands of git forks/hour.
+    # git maintain (restore-mtime + maintenance register/start) now runs once per repo at clone time
+    # via clone_repo_into() in .shellrc and GitProcessor.clone_repo_into(). No need to repeat hourly -
+    # these are idempotent operations that only need to run once. Removed from cron to save thousands
+    # of git forks/hour.
 
     Logging.with_step('setup dev env', 'Setup dev environment'.yellow) do
       GitWorkspace.setup_dev_environment(first_install: EnvVars.first_install?)

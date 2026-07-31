@@ -4,6 +4,45 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.16
+
+#### Git alias consolidation and cleanup
+
+* *[files/--HOME--/.gitconfig]* Added new `list-old` alias to list all remote branches with no commits in a specified timeframe (defaults to 10 days). Accepts optional `--since` flag for custom timeframes (e.g., `--since 30.days`, `--since 2.weeks`). Output format shows `<last commit relative date> | <branch name>`, sorted oldest first. Supports optional directory argument. Complements existing `git old` alias which checks a single branch.
+
+* *[files/--HOME--/.gitconfig]* Consolidated incoming change aliases (`in`, `inc`, `inp`) into single `git in` with optional flags: default (commit summary with stats), `-d` (combined diff), `-p` (full patches). Removed redundant `inc` and `inp` aliases.
+
+* *[files/--HOME--/.gitconfig]* Consolidated outgoing change aliases (`out`, `outp`) into single `git out` with optional `-p` flag: default (commit summary), `-p` (full patches). Removed redundant `outp` alias.
+
+* *[files/--HOME--/.gitconfig]* Consolidated status aliases (`st`, `sts`, `stsub`) into single `git st` with optional flags and directory support: default (full status), `-s` (short status), `-m` (status with submodules). All modes accept optional `[<dir>]` argument. Removed redundant `sts` and `stsub` aliases.
+
+* *[files/--HOME--/.gitconfig]* Removed duplicate `co = checkout` alias definition (was defined in both "BASIC SHORTCUTS" and "LOCAL CHANGES & STAGING" sections). Kept single definition in "BASIC SHORTCUTS" section.
+
+* *[files/--HOME--/.gitconfig]* Removed `lt` alias marked as `[WIP/DUPLICATE]` - was incomplete and duplicative of existing `lc` alias.
+
+* *[files/--HOME--/.gitconfig]* Enhanced `git cc` (cleanup/compress) to delete stale `refs/prefetch/*` references before running garbage collection. These refs are created by `git maintenance` and can keep old commits reachable after rebasing, preventing cleanup. The prefetch refs are now deleted early in the cleanup process and recreated fresh by the `maintenance run --task=gc` step at the end. This ensures `git cc --expire=now` after a rebase fully removes all unreachable commits without requiring manual intervention.
+
+* *[files/--HOME--/.gitconfig]* Added `git maintain` alias to consolidate post-clone maintenance operations (restore-mtime, maintenance register/start). Idempotent and safe to run multiple times. Gracefully handles missing dependencies (restore-mtime not installed, .gitconfig-oss.inc not present on FIRST_INSTALL). Accepts optional `[<dir>]` argument. Useful for manually cloned repos or migrating old repos to background maintenance.
+
+* *[files/--HOME--/.shellrc]* Updated `clone_repo_into()` to use `git maintain` alias instead of inline post-clone logic (8 lines → 1 line).
+
+* *[scripts/software-updates-cron.rb]* Updated comment to reference `git maintain` alias instead of individual commands.
+
+#### Adopting these changes
+
+* New git alias available immediately: `git list-old [--since <timeframe>]` to find stale remote branches
+* New git alias available immediately: `git maintain [<dir>]` to run post-clone maintenance (restore-mtime, maintenance register/start)
+* Consolidated git aliases maintain backward compatibility via flags:
+  * `git inc` → `git in -d` (combined diff of incoming changes)
+  * `git inp` → `git in -p` (incoming commits with full patches)
+  * `git outp` → `git out -p` (outgoing commits with full patches)
+  * `git sts` → `git st -s` (short status)
+  * `git stsub` → `git st -m` (status with submodules)
+  * `git stsub /path` → `git st /path -m` (status with submodules in different repo)
+* No breaking changes - all previous functionality preserved with cleaner interface
+
+---
+
 ### 3.2.15
 
 #### Ruby filter_map polyfill optimization

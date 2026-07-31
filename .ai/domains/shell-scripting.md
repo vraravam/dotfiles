@@ -508,6 +508,50 @@ status_all_repos() {
 
 This pattern allows `dispatch_or_fallback` to choose between Ruby module mode (fast, when available) and shell fallback mode (when Ruby unavailable).
 
+## Deleting Functions -- Mandatory Codebase Scan
+
+**Before deleting ANY function as "unused", perform a comprehensive codebase scan to verify no call sites exist.**
+
+A function is NOT unused until verified by:
+1. **Grep all shell files**: `grep -rn "function_name" files/ scripts/`
+2. **Grep all Ruby files**: `grep -rn "function_name" scripts/` (Ruby may call shell functions via `system()`)
+3. **Check git history**: `git log --all -S"function_name()" --oneline` (verify not recently added elsewhere)
+4. **Check all branches**: `git grep "function_name" $(git branch -a | grep -v HEAD)`
+
+**Real incident (June 2026)**: Methods `fix_head_file`, `rev_list_count`, and `symbolic_ref` were deleted from `git_processor.rb` as "unused" 17 commits ago, but were actually called. The deletion broke production code but went undetected until runtime failures occurred.
+
+**Why simple search isn't enough**:
+- Functions may be called from autoload scripts or other repositories
+- Call sites may use aliases or wrapper functions
+- Functions may be called from code in other branches being developed
+- Ruby scripts may call shell functions via `system()`, `Open3.capture3()`, etc.
+
+**Safe deletion checklist**:
+```bash
+# 1. Search all shell files for function name
+grep -rn "function_name" files/ scripts/
+
+# 2. Search all Ruby files (may call via system/Open3)
+grep -rn "function_name" scripts/
+
+# 3. Check if recently added in other branches
+git log --all --since="6 months ago" -S"function_name()" --oneline
+
+# 4. Search across all branches (not just current)
+for branch in $(git branch -a | grep -v HEAD); do
+  echo "=== $branch ==="
+  git grep "function_name" $branch -- '*.sh' '*.zsh' '*.rb' || true
+done
+
+# 5. Syntax check all files after deletion
+find files -name "*.zsh" -o -name "*.sh" | xargs -n1 zsh -n
+find scripts -name "*.rb" -exec ruby -c {} \;
+```
+
+**Only delete when ALL checks pass**: No matches in current branch, no matches in other branches, no recent additions in git history.
+
+**Cross-reference**: See identical rule in [`ruby-scripting.md`](./ruby-scripting.md) § Deleting Methods/Functions for Ruby-specific guidance.
+
 ## Unified Color Standard (Shell + Ruby)
 
 **See [`logging-conventions.md`](./logging-conventions.md) for the complete unified color standard.**

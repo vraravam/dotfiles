@@ -88,6 +88,7 @@
   # All other flags (e.g. --dry-run, --verbose) are passed to 'git reflog expire'.
   # The first argument is treated as <dir> if it does not start with '-'; flags follow.
   # Cleanup operations:
+  #   - Delete stale prefetch refs (created by git maintenance, may reference old commits after rebase)
   #   - Expire reflog entries older than --expire (default: 1 week)
   #   - Clean rerere cache (conflict resolutions) older than gc.rerereResolved/gc.rerereUnresolved
   #   - Prune deleted worktrees
@@ -114,6 +115,7 @@
     done; \
     [ -n \"${expire}\" ] || expire=1.week.ago; \
     git -C \"${dir}\" size; \
+    git -C \"${dir}\" for-each-ref --format='delete %(refname)' refs/prefetch/ | git -C \"${dir}\" update-ref --stdin 2>/dev/null || true; \
     git -C \"${dir}\" remote prune origin; \
     git -C \"${dir}\" worktree prune; \
     git -C \"${dir}\" pack-refs --all; \
@@ -189,6 +191,46 @@
     esac; \
     [ \"$(git log \"${r}/${b}\" --since 10.days -1 -- 2>/dev/null | wc -l | xargs)\" -eq 0 ] && \
       printf \"Will need to delete %s/%s\n\" \"${r}\" \"${b}\"; \
+  }; f"
+
+  # Lists all remote branches that have had no commits in the specified timeframe.
+  # Scans all remote-tracking branches and reports which ones are stale.
+  # Output format: <last commit relative date> | <branch name>
+  # Sorted by oldest commit first.
+  # Usage: git list-old [[<dir>] [--since <timeframe>]]
+  # Example: git list-old
+  # Example: git list-old --since 30.days
+  # Example: git list-old . --since 2.weeks
+  # Example: git list-old /path/to/repo --since 1.month
+  list-old = "!f() { \
+    dir='.'; \
+    since='10.days'; \
+    while [ $# -gt 0 ]; do \
+      case \"${1}\" in \
+        --since) \
+          since=\"${2}\"; \
+          shift 2 \
+          ;; \
+        --since=*) \
+          since=\"${1#--since=}\"; \
+          shift \
+          ;; \
+        -*) \
+          printf 'Unknown option: %s\n' \"${1}\" >&2; \
+          return 1 \
+          ;; \
+        *) \
+          dir=\"${1}\"; \
+          shift \
+          ;; \
+      esac; \
+    done; \
+    git -C \"${dir}\" for-each-ref --sort=committerdate --format='%(refname:short)|%(committerdate:relative)' refs/remotes | \
+    while IFS='|' read -r branch last_commit; do \
+      if [ \"$(git -C \"${dir}\" log \"${branch}\" --since \"${since}\" -1 -- 2>/dev/null | wc -l | xargs)\" -eq 0 ]; then \
+        printf \"%s | %s\n\" \"${last_commit}\" \"${branch}\"; \
+      fi; \
+    done; \
   }; f"
 
   # Lists remote branches sorted by oldest commit date.
@@ -271,18 +313,31 @@
     fi; \
   }; f"
 
-  # Shows the working tree status.
-  # Usage: git st
-  st = status
-
-  # Shows a short branch+status summary (branch name and per-file status flags).
-  # Usage: git sts
-  sts = status -sb
-
-  # Shows working tree status along with submodule summary.
-  # Usage: git stsub [<dir>]
-  stsub = "!f() { \
-    git -C \"${1:-.}\" st && git -C \"${1:-.}\" submodule summary; \
+  # Shows the working tree status with different verbosity levels.
+  # Default: full status output.
+  # -s flag: short branch+status summary (branch name and per-file status flags).
+  # -m flag: status with submodule summary.
+  # Usage: git st [<dir>] [-s|-m]
+  # Example: git st          (full status)
+  # Example: git st -s       (short status)
+  # Example: git st -m       (with submodules)
+  # Example: git st /path/to/repo -m
+  st = "!f() { \
+    dir='.'; \
+    mode='full'; \
+    while [ $# -gt 0 ]; do \
+      case \"${1}\" in \
+        -s) mode='short'; shift ;; \
+        -m) mode='submodule'; shift ;; \
+        -*) printf 'Unknown option: %s\n' \"${1}\" >&2; return 1 ;; \
+        *) dir=\"${1}\"; shift ;; \
+      esac; \
+    done; \
+    case \"${mode}\" in \
+      short) git -C \"${dir}\" status -sb ;; \
+      submodule) git -C \"${dir}\" status && git -C \"${dir}\" submodule summary ;; \
+      *) git -C \"${dir}\" status ;; \
+    esac; \
   }; f"
 
   # Shows the upstream tracking branch for the current branch in <remote>/<branch> format.
@@ -307,17 +362,21 @@
   # dw = d --word-diff=color           # Note: Commented out since we use delta; but keeping for reference
   # dcw = d --word-diff=color --staged # Note: Commented out since we use delta; but keeping for reference
 
-  # Shows incoming commits (remote → local), without file diffs.
-  # Usage: git in
-  in = log --reverse ..@{u} --stat --no-merges
-
-  # Shows incoming changes as a single combined diff (not per-commit).
-  # Usage: git inc
-  inc = d ..@{u}
-
-  # Shows incoming commits with full file diffs.
-  # Usage: git inp
-  inp = log -p --reverse ..@{u} --no-merges
+  # Shows incoming commits (remote → local) with different verbosity levels.
+  # Default: shows commit summary with stats.
+  # -d flag: shows a single combined diff (not per-commit).
+  # -p flag: shows commits with full file diffs.
+  # Usage: git in [-d|-p]
+  # Example: git in          (summary with stats)
+  # Example: git in -d       (combined diff)
+  # Example: git in -p       (full patches)
+  in = "!f() { \
+    case \"${1:-}\" in \
+      -d) git d ..@{u} ;; \
+      -p) git log -p --reverse ..@{u} --no-merges ;; \
+      *) git log --reverse ..@{u} --stat --no-merges \"$@\" ;; \
+    esac; \
+  }; f"
 
   # Shows a colorful commit graph for the current branch.
   # Usage: git lg
@@ -331,10 +390,6 @@
   # Usage: git ll
   ll = log --decorate --graph --oneline --abbrev-commit
 
-  # [WIP/DUPLICATE] Like 'lc' but uses 'git log' so a --since date filter can be applied.
-  # Usage: git lt
-  lt = log --color --graph --pretty=format:'%Cred%h%Creset %C(bold)%(trailers:key=Refs,valueonly,separator=%x2c)%Creset - %s %Cgreen(%cr)%C(bold blue) <%an>%C(nobold yellow)%d%Creset' --abbrev-commit
-
   # Shows new commits on a branch since the last pull (useful after 'git pull').
   # Defaults to the current branch if no argument is given.
   # Usage: git new [<branch>]
@@ -345,13 +400,18 @@
     git log \"${b}@{1}\"..\"${b}@{0}\" \"$@\"; \
   }; f"
 
-  # Shows commits in the local branch not yet pushed to remote (outgoing), without file diffs.
-  # Usage: git out
-  out = log --reverse @{u}..
-
-  # Shows outgoing commits with full file diffs.
-  # Usage: git outp
-  outp = log -p --reverse @{u}..
+  # Shows commits in the local branch not yet pushed to remote (outgoing).
+  # Default: shows commit summary without file diffs.
+  # -p flag: shows commits with full file diffs.
+  # Usage: git out [-p]
+  # Example: git out         (summary only)
+  # Example: git out -p      (full patches)
+  out = "!f() { \
+    case \"${1:-}\" in \
+      -p) git log -p --reverse @{u}.. ;; \
+      *) git log --reverse @{u}.. \"$@\" ;; \
+    esac; \
+  }; f"
 
   # Outputs a plain unified diff (bypassing delta) suitable for use as a patch file.
   # Usage: git patch [<dir>] [<path>] > my.patch
@@ -397,11 +457,6 @@
   # Usage: git cn <commit>
   # Example: git cn abc1234
   cn = cherry-pick --no-commit
-
-  # Checks out a branch or file.
-  # Usage: git co <branch>
-  # Example: git co main
-  co = checkout
 
   # Cherry-picks a commit and commits it immediately.
   # Usage: git cr <commit>
@@ -491,6 +546,22 @@
   # Usage: git fo [<dir>]
   fo = "!f() { \
     git -C \"${1:-.}\" fetch && git -C \"${1:-.}\" dlb; \
+  }; f"
+
+  # Performs post-clone maintenance setup: restores mtimes from git history, registers
+  # repo for background maintenance, and starts maintenance tasks. Idempotent — safe
+  # to run multiple times. Gracefully handles missing dependencies (for eg restore-mtime not
+  # installed, .gitconfig-oss.inc not present on FIRST_INSTALL).
+  # Used by: clone_repo_into() in .shellrc and GitProcessor.clone_repo_into().
+  # Also useful for manually cloned repos or migrating old repos to maintenance.
+  # Usage: git maintain [<dir>]
+  maintain = "!f() { \
+    dir=\"${1:-.}\"; \
+    git -C \"${dir}\" restore-mtime -c 2>/dev/null || true; \
+    if [ -f \"${HOME}/.gitconfig-oss.inc\" ]; then \
+      git -C \"${dir}\" maintenance register --config-file \"${HOME}/.gitconfig-oss.inc\" 2>/dev/null || true; \
+      git -C \"${dir}\" maintenance start 2>/dev/null || true; \
+    fi; \
   }; f"
 
   # Fetches all remotes, then rebases onto @{u} only if the working tree is clean
