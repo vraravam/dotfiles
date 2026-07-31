@@ -5,6 +5,7 @@
 
 require 'open3'
 require_relative 'core'
+require_relative 'enumerable_ext'
 require_relative 'string'
 
 module CommandUtils
@@ -148,10 +149,12 @@ module CommandUtils
   def _filter_stderr_patterns(stderr, patterns)
     return '' if nil_or_empty?(stderr)
 
-    meaningful_lines = stderr.each_line.map(&:strip).reject do |line|
-      # Cannot use array intersection (patterns & [line]) since patterns may be
-      # substrings of the line (e.g., 'Permission denied' matches 'Permission denied (publickey)')
-      nil_or_empty?(line) || patterns.any? { |pattern| line.include?(pattern) }
+    # filter_map polyfill in enumerable_ext.rb provides optimized single-pass implementation for Ruby 2.6
+    # Cannot use array intersection (patterns & [line]) since patterns may be
+    # substrings of the line (e.g., 'Permission denied' matches 'Permission denied (publickey)')
+    meaningful_lines = stderr.each_line.filter_map do |line|
+      stripped = line.strip
+      stripped unless nil_or_empty?(stripped) || patterns.any? { |pattern| stripped.include?(pattern) }
     end
 
     meaningful_lines.join("\n")

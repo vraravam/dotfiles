@@ -217,7 +217,7 @@ cask 'windows-app'    # replacement for microsoft-remote-desktop
 # cask 'netspot'
 # cask 'ngrok'
 # cask 'notunes'
-# cask 'onyx' # if !is_beta_os && ::OS::Mac::version < 26
+cask 'onyx@beta' # if !is_beta_os && ::OS::Mac::version < 26
 # cask 'silicon' if is_arm
 # cask 'tempbox'
 # cask 'the-unarchiver'

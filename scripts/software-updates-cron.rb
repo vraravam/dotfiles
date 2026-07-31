@@ -30,6 +30,7 @@ require_relative 'run-all'
 require_relative 'utilities/antidote'
 require_relative 'utilities/command_utils'
 require_relative 'utilities/core'
+require_relative 'utilities/enumerable_ext'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
 require_relative 'utilities/git_workspace'
@@ -244,7 +245,8 @@ module SoftwareUpdatesCron
         # when ollama binary exists (already checked via command_exists?).
         stdout = CommandUtils.query('ollama', 'list')
         # Parse model names from output (skip header, extract first column)
-        ollama_models = stdout.lines[1..-1]&.map { |line| line.split.first }&.compact || []
+        # filter_map polyfill in enumerable_ext.rb provides optimized single-pass implementation for Ruby 2.6
+        ollama_models = Array(stdout.lines[1..-1]).filter_map { |line| line.split.first }
 
         if ollama_models.empty?
           Logging.info 'No ollama models found locally -- skipping updates'

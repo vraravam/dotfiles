@@ -6,6 +6,7 @@ require 'pathname'
 
 require_relative 'command_utils'
 require_relative 'core'
+require_relative 'enumerable_ext'
 require_relative 'env_vars'
 require_relative 'logging'
 require_relative 'string'
@@ -161,9 +162,11 @@ module MacOS
     return '' unless PathUtils.command_exists?('brew')
 
     outdated_raw = CommandUtils.query('brew', 'outdated', '--greedy')
-    outdated = outdated_raw.lines
-                           .reject { |l| nil_or_empty?(l.strip) || l.match?(/homebrew|Downloading/i) }
-                           .map(&:strip)
+    # filter_map polyfill in enumerable_ext.rb provides optimized single-pass implementation for Ruby 2.6
+    outdated = outdated_raw.lines.filter_map do |line|
+      stripped = line.strip
+      stripped unless nil_or_empty?(stripped) || stripped.match?(/homebrew|Downloading/i)
+    end
 
     return '' if nil_or_empty?(outdated)
 

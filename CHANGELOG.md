@@ -4,12 +4,24 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.15
+
+#### Ruby filter_map polyfill optimization
+
+* *[scripts/utilities/enumerable_ext.rb]* Optimized `filter_map` polyfill implementation from two-pass to single-pass with `each_with_object` loop. Reduces intermediate array allocations on Ruby 2.6 (macOS default system Ruby). Guard ensures native Ruby 2.7+ `filter_map` is used when available. Added TODO comment documenting this file can be removed once macOS ships Ruby 2.7+ as default.
+
+---
+
 ### 3.2.14
 
-#### Incorporate starship-ftl for instant-prompt
+#### Incorporate starship-ftl for instant-prompt and Terminal.app time_shell_startup fixes
 
 * Incorporate [starship-ftl](https://github.com/mattmc3/starship-ftl) for the instant-prompt
 * Fix issue with noise output from Terminal app when running `time_shell_startup` to behave exactly like how iTerm does.
+
+#### Adopting these changes
+
+* Restart terminal to reload `.aliases` with fixed `time_shell_startup`
 
 ### 3.2.13
 

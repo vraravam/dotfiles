@@ -6,6 +6,7 @@ require 'set'
 
 require_relative 'command_utils'
 require_relative 'core'
+require_relative 'enumerable_ext'
 require_relative 'logging'
 
 # Generic framework for processing collections of items (paths, hashes, objects)
@@ -83,7 +84,8 @@ module CollectionProcessor
   #   )
   def find_directories_matching(dirs:, name_pattern:, mindepth: 1, maxdepth: 6, filter: nil, prune_dirs: [], exclude_regex: nil, skip_symlinks: true, transform_result: nil, noise_patterns: nil)
     # Convert Pathname objects to strings, rejecting nil and empty strings
-    dirs = Array(dirs).compact.map(&:to_s).reject { |f| nil_or_empty?(f) }
+    # filter_map polyfill in enumerable_ext.rb provides optimized single-pass implementation for Ruby 2.6
+    dirs = Array(dirs).filter_map { |d| d.to_s unless nil_or_empty?(d) || nil_or_empty?(d.to_s) }
     prune = Array(prune_dirs)
 
     # Build prune expression: ( -name dir1 -o -name dir2 ... ) -prune -o
