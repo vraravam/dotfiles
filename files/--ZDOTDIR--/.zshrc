@@ -25,6 +25,36 @@ if [[ -n "${ZSH_PROFILE:-}" ]]; then zmodload zsh/zprof; fi
 source "${HOME}/.shellrc"
 
 # ──────────────────────────────────────────────────────────────────────────────
+# starship-ftl: Instant prompt (draw before rest of .zshrc loads)
+#
+# Draws the prompt immediately before heavy loading (antidote bundle, completions,
+# etc.), then swaps to the real prompt when ready. Provides instant visual feedback
+# while the rest of zsh initialization continues in the background.
+#
+# Requirements:
+#   - Interactive shell with ZLE on a terminal
+#   - starship binary in PATH (brew shellenv sourced in .zshenv)
+#   - antidote bundle must include mattmc3/starship-ftl (see .zsh_plugins.txt)
+#
+# The ftl-prompt.zsh file is sourced directly from antidote's cache because it
+# must run BEFORE the bundle loads (chicken-and-egg). The bundle itself only
+# adds starship-ftl to fpath for the theme lookup.
+# ──────────────────────────────────────────────────────────────────────────────
+
+if [[ -o interactive && -o zle && -t 1 ]] && (( $+commands[starship] )); then
+  # Set cursor style before drawing prompt (applies immediately, before plugins load)
+  # Note: blinking-bar requires iTerm Preferences → Profiles → Text → "Blinking cursor" enabled
+  zstyle ':ftl-prompt:' cursor blinking-bar
+
+  # Source ftl-prompt function directly from antidote cache
+  load_file_if_exists "${ANTIDOTE_HOME}/github.com/mattmc3/starship-ftl/ftl-prompt.zsh"
+
+  # Draw instant prompt (loads starship theme, captures output during startup)
+  # Only call if ftl-prompt function was successfully loaded
+  (( $+functions[ftl-prompt] )) && ftl-prompt starship
+fi
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Antidote -- static plugin bundle
 #
 # antidote is a zsh plugin manager distributed as a zsh script (not a binary).

@@ -16,6 +16,15 @@
 #                  the deliberate tradeoff for zero first-interaction latency.
 
 # ──────────────────────────────────────────────────────────────────────────────
+# starship-ftl -- instant prompt (draws before rest of .zshrc loads)
+#
+# NOTE: This plugin is loaded via antidote for updates, but the actual ftl-prompt
+# call must happen in .zshrc BEFORE the bundle loads.
+# kind:fpath adds it to fpath for autoload, but ftl-prompt is manually sourced.
+# ──────────────────────────────────────────────────────────────────────────────
+mattmc3/starship-ftl kind:fpath
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Oh-My-Zsh lib -- only the pieces actually used; replaces loading all of OMZ
 #
 # functions.zsh must come first -- provides env_default (used by misc.zsh) and

@@ -4,6 +4,13 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.14
+
+#### Incorporate starship-ftl for instant-prompt
+
+* Incorporate [starship-ftl](https://github.com/mattmc3/starship-ftl) for the instant-prompt
+* Fix issue with noise output from Terminal app when running `time_shell_startup` to behave exactly like how iTerm does.
+
 ### 3.2.13
 
 #### Revamping documentation

@@ -797,8 +797,14 @@ time_shell_startup() {
   # :t is the zsh tail modifier (equivalent to basename).
   shell_bin="$(command -v "${${1:-${SHELL}}:t}")"
   # {1..10} brace expansion -- no $(seq 1 10) subprocess fork.
+  # Redirect stdout to /dev/null to suppress prompt output (starship precmd hook fires
+  # even during 'zsh -i -c exit', drawing the prompt). Only timing stats (on stderr) are shown.
+  # Filter out Terminal.app's session restoration messages and blank lines.
+  # Use /usr/bin/grep (not bare grep) to avoid potential alias/function interference.
   local i
-  for i in {1..10}; do /usr/bin/time "${shell_bin}" -i -c exit; done
+  for i in {1..10}; do
+    /usr/bin/time "${shell_bin}" -i -c exit 2>&1 >/dev/null
+  done | /usr/bin/grep -vE "(Saving|Restored) session|^$"
 }
 
 if command_exists docker; then
