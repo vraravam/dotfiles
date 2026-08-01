@@ -44,6 +44,12 @@ class GitProcessor
   # change during script execution, so we memoize at the class level.
   @repo_cache = {}
 
+  # Commands that benefit from streaming output (push/pull/fetch progress bars)
+  STREAMING_COMMANDS = %w[push pull fetch].freeze
+
+  # Flags that indicate quiet mode (suppress streaming output)
+  QUIET_FLAGS = %w[-q --quiet].freeze
+
   class << self
     attr_accessor :repo_cache
   end
@@ -81,7 +87,10 @@ class GitProcessor
     repo_cache[path.expand_path.to_s] ||= path.join('.git').exist?
   end
 
-  # Clones a git repo into a target directory, handling the non-empty target case.
+  # Clones a git repo into a temp folder, moves the .git dir into the target location,
+  # and does an initial checkout there. Works around git's refusal to clone into a
+  # non-empty directory (e.g. HOME). If the target is already a git repo, fetches and
+  # unshallows instead. Always updates submodules afterwards.
   # On FIRST_INSTALL (vanilla OS), uses --depth=1 for a shallow clone to save time
   # and bandwidth; repos can be converted to full clones later via 'git unshallow && git fetch'.
   #
@@ -245,7 +254,7 @@ class GitProcessor
     return unless status.success?
 
     stdout.each_line do |line|
-      next if nil_or_empty?(line.strip)
+      next if nil_or_empty?(line)
       key, url = line.strip.split(' ', 2) # key is like 'remote.origin.url'
       remote_name = key.split('.')[1]
       yield remote_name, url
@@ -711,13 +720,11 @@ class GitProcessor
   def _should_stream_output?(args)
     return false if nil_or_empty?(args)
 
-    # Commands that benefit from streaming
-    streaming_commands = %w[push pull fetch]
-    return false if nil_or_empty?(args & streaming_commands)
+    # Check if command is one that benefits from streaming
+    return false if nil_or_empty?(args & STREAMING_COMMANDS)
 
     # Don't stream if quiet flag is present
-    quiet_flags = %w[-q --quiet]
-    nil_or_empty?(args & quiet_flags)
+    nil_or_empty?(args & QUIET_FLAGS)
   end
 
   # Creates a mock status response with the same format as captured command output.

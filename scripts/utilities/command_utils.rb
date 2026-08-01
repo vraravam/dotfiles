@@ -83,8 +83,8 @@ module CommandUtils
 
         # Build formatted output message (stdout/stderr sections)
         output_message = ''
-        output_message += "\nSTDOUT: #{stdout.strip}" unless nil_or_empty?(stdout.strip)
-        output_message += "\nSTDERR: #{filtered_stderr.strip}".red unless nil_or_empty?(filtered_stderr.strip)
+        output_message += "\nSTDOUT: #{stdout.strip}" unless nil_or_empty?(stdout)
+        output_message += "\nSTDERR: #{filtered_stderr.strip}".red unless nil_or_empty?(filtered_stderr)
 
         yield(status, output_message)
       end
@@ -96,6 +96,29 @@ module CommandUtils
   # ---------------------------------------------------------------------------
   # Mutation methods (modify state)
   # ---------------------------------------------------------------------------
+
+  # Executes a command with optional output redirection (stdout/stderr default to /dev/null).
+  #
+  # Useful for operations where output needs to be suppressed or redirected
+  # (e.g., background process cleanup, silent file operations, progress bars).
+  #
+  # @param command [Array<String>] Command and arguments to execute
+  # @param out [IO, String] Where to redirect stdout (default: File::NULL)
+  # @param err [IO, String] Where to redirect stderr (default: File::NULL)
+  # @return [Boolean] true if command succeeded (exit 0), false otherwise
+  #
+  # @example Suppress all output (both stdout and stderr)
+  #   CommandUtils.run_silent('killall', '-TERM', 'Dropbox')
+  #   CommandUtils.run_silent('defaults', 'write', domain, key, value)
+  #
+  # @example Suppress stdout only (show stderr)
+  #   CommandUtils.run_silent('brew', 'update', err: :err)
+  #
+  # @example Redirect stdout to file, suppress stderr
+  #   CommandUtils.run_silent('crontab', '-l', out: '/tmp/crontab.txt')
+  def run_silent(*command, out: File::NULL, err: File::NULL)
+    system(*command, out: out, err: err)
+  end
 
   # Executes a command via Open3.capture3 and yields failure details on error.
   #
@@ -153,8 +176,9 @@ module CommandUtils
     # Cannot use array intersection (patterns & [line]) since patterns may be
     # substrings of the line (e.g., 'Permission denied' matches 'Permission denied (publickey)')
     meaningful_lines = stderr.each_line.filter_map do |line|
+      next if nil_or_empty?(line)
       stripped = line.strip
-      stripped unless nil_or_empty?(stripped) || patterns.any? { |pattern| stripped.include?(pattern) }
+      stripped unless patterns.any? { |pattern| stripped.include?(pattern) }
     end
 
     meaningful_lines.join("\n")

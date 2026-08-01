@@ -147,7 +147,7 @@ module SoftwareUpdatesCron
     _perform_update('brews', 'brew') do
       # Update brew itself first to get latest formula definitions
       # Redirect stdout to suppress progress output in cron context
-      system('brew', 'update', out: File::NULL) || true
+      CommandUtils.run_silent('brew', 'update', err: :err) || true
       # 'brew bundle check' exits 0 when everything is installed -- skip the full
       # bundle install in that case to avoid re-checking every formula every hour.
       # Keep check output visible for debugging missing packages.
@@ -163,7 +163,7 @@ module SoftwareUpdatesCron
       # Update plugins (every 6 hours) - check timestamp to avoid rate limiting
       # Redirect stdout to suppress 'all tools are installed' messages
       unless last_plugin_update_file.file? && Core.elapsed?(File.mtime(last_plugin_update_file).to_i, plugin_update_interval)
-        system('mise', 'plugins', 'update', out: File::NULL)
+        CommandUtils.run_silent('mise', 'plugins', 'update', err: :err)
         FileUtils.touch(last_plugin_update_file)
       else
         hours_since = Core.duration_since(File.mtime(last_plugin_update_file).to_i) / 3600
@@ -171,9 +171,9 @@ module SoftwareUpdatesCron
       end
 
       # Always run tool upgrades (hourly is appropriate for version updates)
-      system('mise', 'upgrade', '--bump', out: File::NULL)
+      CommandUtils.run_silent('mise', 'upgrade', '--bump', err: :err)
     end
-    _perform_update('tldr database', 'tldr') { system('tldr', '--update', out: File::NULL) }
+    _perform_update('tldr database', 'tldr') { CommandUtils.run_silent('tldr', '--update', err: :err) }
     _perform_update('git-ignore database', 'git-ignore-io') { system('git', 'ignore-io', '--update-list') }
     _perform_update('claude-code', 'claude') { system('claude', 'update') }
 
@@ -193,7 +193,7 @@ module SoftwareUpdatesCron
           '-o', bat_syntax_dir_pn.join('zsh_plugins.sublime-syntax').to_s
         )
         # Redirect stdout to suppress 'Writing theme/syntax set' messages
-        system('bat', 'cache', '--build', out: File::NULL)
+        CommandUtils.run_silent('bat', 'cache', '--build', err: :err)
       end
     end
 
@@ -254,7 +254,7 @@ module SoftwareUpdatesCron
           Logging.info "Found #{ollama_models.size} ollama model(s) to update: #{ollama_models.join(', ')}"
           ollama_models.each do |model|
             # Redirect stdout/stderr to suppress progress bars and ANSI escape sequences in cron context
-            if system('ollama', 'pull', model, out: File::NULL, err: File::NULL)
+            if CommandUtils.run_silent('ollama', 'pull', model)
               Logging.success "Successfully pulled model: '#{model.cyan}'"
             else
               Logging.record_warning "Failed to pull model: '#{model.cyan}'"

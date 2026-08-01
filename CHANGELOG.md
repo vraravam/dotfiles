@@ -4,6 +4,21 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.17
+
+#### Ruby code quality improvements and pattern documentation
+
+* *[scripts/utilities/command_utils.rb, git_processor.rb, macos.rb]* Standardized `nil_or_empty?` guard pattern: check nil/empty BEFORE calling `.strip`, cache stripped result AFTER check (only if used multiple times). Eliminates redundant checks and prevents potential nil crashes.
+
+* *[scripts/utilities/git_processor.rb]* Hot path optimization: extracted static arrays (`STREAMING_COMMANDS`, `QUIET_FLAGS`) to frozen constants at class level. Eliminates repeated allocations (2 arrays per git command = 100s per cron run).
+
+* *[scripts/utilities/command_utils.rb]* Enhanced `CommandUtils.run_silent(*command, out:, err:)` to accept optional `out` and `err` parameters (both defaulting to `File::NULL`). Supports selective output suppression (`err: :err` shows stderr), output redirection (`out: '/path/to/file'`), and full suppression (default). Returns boolean (true if exit 0).
+
+* *[11 Ruby files]* Migrated 26 call sites from verbose `system(..., out: File::NULL)` and `system(..., out: File::NULL, err: File::NULL)` patterns to `CommandUtils.run_silent(...)`: software-updates-cron.rb (5), cron.rb (1), macos.rb (6), plist.rb (4), path_utils.rb (1), capture-prefs.rb (1), cleanup-browser-profiles.rb (2), setup-login-item.rb (1), plus 5 call sites updated to use optional parameters (selective suppression/redirection instead of both).
+
+
+---
+
 ### 3.2.16
 
 #### Git alias consolidation and cleanup

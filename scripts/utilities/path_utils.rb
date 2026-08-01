@@ -60,7 +60,7 @@ module PathUtils
   def command_exists?(command)
     return @command_cache[command] if @command_cache.key?(command)
 
-    @command_cache[command] = system('which', command.to_s, out: File::NULL, err: File::NULL)
+    @command_cache[command] = CommandUtils.run_silent('which', command.to_s)
   end
 
   # Returns the size of a directory in kilobytes using du.

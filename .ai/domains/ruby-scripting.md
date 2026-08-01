@@ -802,10 +802,8 @@ Quick summary for Ruby scripts:
 ```ruby
 # BAD -- two blank lines between methods
 
-
 def method_one
 end
-
 
 def method_two
 end
@@ -831,7 +829,9 @@ awk 'NF {blank=0; print} !NF {if (!blank) print; blank=1}' <file> > <file>.tmp &
 grep -Pzo '\n\n\n' <file> && echo "Has consecutive empty lines" || echo "OK"
 ```
 
-This rule applies to all Ruby files in the repository.
+**Exception:** `CHANGELOG.md` may have consecutive empty lines for visual separation between version sections.
+
+This rule applies to all Ruby files and markdown documentation in the repository (except CHANGELOG.md).
 
 ## Version Compatibility
 
@@ -921,11 +921,13 @@ A method/function is NOT unused until verified by:
 3. **Check git history**: `git log --all -S"def method_name" --oneline` (verify not recently added elsewhere)
 4. **Check all branches**: `git grep "method_name" $(git branch -a | grep -v HEAD)`
 
-**Real incident (June 2026)**: Methods `fix_head_file`, `rev_list_count`, and `symbolic_ref` were deleted from `git_processor.rb` as "unused" 17 commits ago. Both methods were actually called:
-- `fix_head_file` at line 160 (fixes .git/HEAD after clone)
-- `rev_list_count` at line 206 (checks incoming commits after fetch)
+**Why this matters**: A method may appear unused in the current branch but could be:
+- Called from code in other branches under development
+- Invoked dynamically via `send`, `public_send`, or `method`
+- Referenced in external repositories or scripts
+- Used by code that hasn't been committed yet
 
-The deletion broke production code but went undetected until runtime failures occurred.
+Deleting without verification can break production code in subtle ways that only appear at runtime.
 
 **Why simple search isn't enough**:
 - Methods may be called dynamically (`send`, `public_send`, `method`)
@@ -1431,6 +1433,45 @@ Open3.capture3('/bin/zsh', '-lc', "clone_repo_into #{url.shellescape} #{folder.s
 | Shell function (e.g., from `.shellrc`) | Shell execution with `shellescape` |
 | Pipeline or redirection | Shell execution with `shellescape` |
 | User-authored command string from config | Shell execution (no escaping -- user controls the command) |
+
+### Silent Execution with `CommandUtils.run_silent`
+
+For commands where output needs to be suppressed or redirected, use `CommandUtils.run_silent`:
+
+```ruby
+# BAD -- verbose repetition
+system('killall', '-TERM', 'Dropbox', out: File::NULL, err: File::NULL)
+system('defaults', 'write', domain, key, value, out: File::NULL, err: File::NULL)
+system('brew', 'update', out: File::NULL)
+system('crontab', '-l', out: temp_file.path, err: File::NULL)
+
+# Good -- concise utility method
+CommandUtils.run_silent('killall', '-TERM', 'Dropbox')
+CommandUtils.run_silent('defaults', 'write', domain, key, value)
+CommandUtils.run_silent('brew', 'update', err: :err)  # suppress stdout, show stderr
+CommandUtils.run_silent('crontab', '-l', out: temp_file.path)  # redirect stdout, suppress stderr
+```
+
+**Default behavior** (no parameters):
+- Suppresses stdout (`out: File::NULL`)
+- Suppresses stderr (`err: File::NULL`)
+- Returns boolean (true on success, false on failure)
+
+**Optional parameters:**
+- `out: target` - Redirect stdout (String path, IO object, or `:out` to show)
+- `err: target` - Redirect stderr (String path, IO object, or `:err` to show)
+
+**When to use:**
+- Background process termination (`killall`, `pkill`)
+- Silent configuration writes (`defaults write`)
+- Progress updates in cron context (`brew update`, `mise upgrade`)
+- Capturing command output to file (`crontab -l`)
+- Operations where only exit status matters
+
+**When NOT to use:**
+- Commands where output is needed for debugging
+- Operations where stdout/stderr should be visible to user
+- Commands where you need to parse stdout/stderr in Ruby code (use `Open3.capture3` instead)
 
 ### Exception: User-controlled command strings
 
@@ -2107,14 +2148,100 @@ Each Ruby script must print:
 ## `nil_or_empty?` Helper
 
 Always use `nil_or_empty?` to check for nil-or-empty conditions. It is defined
-in `logging.rb` (or injected globally). Never call `.empty?` directly on a
-value that might be `nil`.
+in `core.rb` and strips strings internally before checking emptiness. Never call
+`.empty?` directly on a value that might be `nil`.
 
 ```ruby
 nil_or_empty?(value)          # Good
 value.nil? || value.empty?    # Acceptable but verbose
 value.empty?                  # BAD if value could be nil
 ```
+
+### `nil_or_empty?` Implementation Details
+
+`nil_or_empty?` strips strings internally before checking emptiness:
+
+```ruby
+def nil_or_empty?(val)
+  return true if val.nil?
+  case val
+  when String
+    val.strip.empty?  # Strips whitespace before checking
+  when Array
+    val.empty?
+  else
+    val.to_s.empty?
+  end
+end
+```
+
+This means whitespace-only strings (`"   "`) are treated as empty.
+
+### Safe Method Call Pattern with `nil_or_empty?`
+
+When you need to call a method (like `.strip`, `.upcase`, `.split`) on a potentially-nil
+variable, use `nil_or_empty?` as a guard BEFORE calling the method. The `unless/if`
+check ensures the method is only called on non-nil values.
+
+**Core Pattern:**
+```ruby
+# Guard protects method call from nil
+output += "\nValue: #{value.strip}" unless nil_or_empty?(value)
+```
+
+**Why this works:**
+1. `nil_or_empty?(value)` evaluates first
+2. If nil/empty, the `unless` condition is true → entire line skipped
+3. If non-nil/non-empty, the `unless` condition is false → `value.strip` is evaluated safely
+
+**Common mistake - calling method inside check:**
+```ruby
+# BAD - strips twice (once in check, once for interpolation)
+output += "\nValue: #{value.strip}" unless nil_or_empty?(value.strip)
+
+# Good - check original, strip once for use
+output += "\nValue: #{value.strip}" unless nil_or_empty?(value)
+```
+
+**When to cache after check:**
+
+If the stripped value is used multiple times, cache it AFTER the nil check:
+
+```ruby
+# Single use - inline strip (no caching needed)
+meaningful_lines = lines.filter_map do |line|
+  next if nil_or_empty?(line)  # Guard against nil/empty/whitespace
+  line.strip unless line.strip.match?(/pattern/)  # Use stripped value once
+end
+
+# Multiple uses - cache after guard
+meaningful_lines = lines.filter_map do |line|
+  next if nil_or_empty?(line)  # Guard first
+  stripped = line.strip        # Safe to strip now
+  stripped unless patterns.any? { |p| stripped.include?(p) }  # Use twice
+end
+```
+
+**Redundant checks to avoid:**
+
+Because `nil_or_empty?` strips internally, checking the stripped result again is redundant:
+
+```ruby
+# BAD - nil_or_empty? already stripped for the check, so stripped can't be empty
+next if nil_or_empty?(line)
+stripped = line.strip
+next if nil_or_empty?(stripped)  # Redundant! line passed nil_or_empty check
+
+# Good - single check is sufficient
+next if nil_or_empty?(line)
+stripped = line.strip  # Safe now, and guaranteed non-empty after stripping
+```
+
+**Summary:**
+1. Check `nil_or_empty?` FIRST (on original, potentially-nil value)
+2. Call methods like `.strip` AFTER the check passes (safe from nil)
+3. Cache stripped value ONLY if used multiple times
+4. Avoid redundant `nil_or_empty?` checks on already-validated values
 
 ## Memoization
 
@@ -2274,6 +2401,64 @@ When you find a pattern repeated 3+ times:
 3. Replace all occurrences with the helper call
 4. Verify the value doesn't change during script execution
 
+### Proactive Memoization Review
+
+**When making changes to any Ruby file, proactively look for memoization opportunities.**
+
+This applies when:
+- Adding new functionality that queries system state
+- Refactoring code that calls the same method multiple times
+- Reviewing existing code for performance improvements
+- Implementing loops that check conditions repeatedly
+
+**Pattern recognition checklist:**
+- [ ] Are there repeated `command_exists?` calls?
+- [ ] Are there repeated `File.exist?` or `Dir.exist?` checks with same path?
+- [ ] Are there repeated string comparisons (`@var == 'value'`)?
+- [ ] Are there repeated ENV variable reads (`ENV.fetch('VAR', ...)`)?
+- [ ] Are there repeated method calls that return the same value?
+- [ ] Are there loop-based operations where guard checks are constant?
+
+**Examples of good opportunities:**
+
+```ruby
+# Repeated command checks across methods
+def method_a
+  return unless PathUtils.command_exists?('tool')  # 1st check
+end
+
+def method_b
+  return unless PathUtils.command_exists?('tool')  # 2nd check - memoize!
+end
+
+# Repeated array allocations in hot path
+def _should_stream_output?(args)
+  # BAD - creates new arrays every call
+  streaming_commands = %w[push pull fetch]
+  quiet_flags = %w[-q --quiet]
+  # Good - extract to frozen constants
+end
+
+# Repeated string operations
+def format_output
+  stdout.strip  # 1st strip
+  # ... later ...
+  if !stdout.strip.empty?  # 2nd strip on same value - cache it!
+end
+```
+
+**When to suggest memoization:**
+- Mention it in code review comments
+- Add it when performance profiling reveals hot spots
+- Include it when refactoring existing code
+- Consider it when writing new utility methods
+
+**Balance with readability:**
+- Don't over-optimize single-use code
+- Don't memoize unless called 3+ times
+- Don't memoize dynamic/changing state
+- Do document why memoization was added (performance, not premature optimization)
+
 ### Instance Variables for Memoization
 
 Memoization in top-level scripts uses instance variables (`@var`). This works because:
@@ -2305,6 +2490,105 @@ end
 
 # @_expensive_check lives on MyUtility's singleton, persists across calls
 ```
+
+## Hot Path Optimization -- Frozen Constants
+
+**Hot path**: Code that executes frequently (called in loops, once per git command, on every file, etc.)
+
+**Problem**: Allocating arrays/hashes repeatedly in hot paths creates garbage collection pressure.
+
+**Solution**: Extract to frozen constants at module/class level.
+
+### Pattern: Extract to Frozen Constants
+
+```ruby
+# BAD - allocates new arrays on every call (hot path in git operations)
+def _should_stream_output?(args)
+  streaming_commands = %w[push pull fetch]     # New array every call
+  quiet_flags = %w[-q --quiet]                 # New array every call
+
+  return false if (args & streaming_commands).empty?
+  (args & quiet_flags).empty?
+end
+
+# Good - allocate once at load time
+class GitProcessor
+  STREAMING_COMMANDS = %w[push pull fetch].freeze
+  QUIET_FLAGS = %w[-q --quiet].freeze
+
+  def _should_stream_output?(args)
+    return false if (args & STREAMING_COMMANDS).empty?
+    (args & QUIET_FLAGS).empty?
+  end
+end
+```
+
+### When to Use Frozen Constants
+
+Use frozen constants when:
+- **Hot path**: Method called frequently (loops, per-item processing, every git command)
+- **Static data**: Array/hash contents never change at runtime
+- **Repeated allocations**: Same literal array/hash created on every call
+
+**Example hot paths:**
+- `_should_stream_output?` - called once per git command
+- `_filter_stderr_patterns` - called for every command with stderr filtering
+- Validation methods called in loops over files/repos
+
+### Constant Naming and Location
+
+**Naming convention:**
+- Use SCREAMING_SNAKE_CASE for constants
+- Descriptive names based on purpose (e.g., `STREAMING_COMMANDS` not `COMMANDS`)
+
+**Location:**
+- Class-level constants: `class GitProcessor; CONST = ...; end`
+- Module-level constants: `module MyModule; CONST = ...; end`
+- Place near the top of the class/module (after includes/extends, before methods)
+
+### `.freeze` is Mandatory
+
+Always call `.freeze` on constant arrays/hashes:
+
+```ruby
+# BAD - not frozen, can be mutated accidentally
+STREAMING_COMMANDS = %w[push pull fetch]
+
+# Good - frozen, mutations raise FrozenError
+STREAMING_COMMANDS = %w[push pull fetch].freeze
+```
+
+Ruby does NOT auto-freeze constants. Without `.freeze`, constants can be accidentally mutated (`CONST << 'item'`), leading to hard-to-debug issues.
+
+### Scan Rule: Identify Hot Path Array Allocations
+
+When editing Ruby files, look for:
+
+1. **Methods called in loops** - check for array/hash literals inside
+2. **Guard methods called frequently** - validation, filtering, checking
+3. **Array literals in method bodies** - `%w[...]`, `[...]`, `{...}`
+4. **Methods with low call count but high time** - `zprof` profiling data
+
+**Search pattern:**
+```bash
+# Find methods with array/hash literals
+grep -n "def.*\n.*%w\[" file.rb
+grep -n "= \[" file.rb
+```
+
+**When you find array/hash literals in a method:**
+1. Is the method called frequently? (hot path?)
+2. Is the array/hash content static? (never changes?)
+3. If yes to both → extract to frozen constant
+
+### Real-World Impact
+
+**Example: GitProcessor._should_stream_output?**
+- **Before**: Created 2 arrays per git command (100s of commands per cron run)
+- **After**: Zero allocations per command
+- **Benefit**: Reduced GC pressure, cleaner code, no performance regression
+
+**Note**: Premature optimization is bad, but constants for hot path static data is a standard Ruby idiom (like `Regexp` constants for frequently-used patterns).
 
 ## Variable Scoping
 

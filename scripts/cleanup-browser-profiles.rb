@@ -59,7 +59,7 @@ module CleanupBrowserProfiles
   # Returns true if the named browser process is currently running.
   # Mirrors pgrep check from shell version.
   def _browser_running?(browser_name)
-    system('pgrep', '-i', '-f', '-q', browser_name, out: File::NULL, err: File::NULL)
+    CommandUtils.run_silent('pgrep', '-i', '-f', '-q', browser_name)
   end
 
   private_class_method :_browser_running?
@@ -139,7 +139,7 @@ module CleanupBrowserProfiles
         Logging.info "Would vacuum: '#{db_file.to_s.cyan}' (#{_bytes_to_mb(db_size).to_s.purple}MB)"
       else
         Logging.info "Vacuuming: '#{db_file.to_s.cyan}'"
-        if system('sqlite3', db_file.to_s, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;', out: File::NULL, err: File::NULL)
+        if CommandUtils.run_silent('sqlite3', db_file.to_s, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;')
           vacuumed += 1
         else
           failed_dbs << db_file

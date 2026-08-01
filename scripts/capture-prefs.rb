@@ -237,7 +237,7 @@ module CapturePrefs
     running = APPS_NEEDING_RESTART.select do |proc_name, display_name|
       # Skip login-item apps (auto-killed and restarted) and apps not currently running
       !MacOS::LOGIN_ITEM_APPS.include?(display_name) &&
-        system('pgrep', '-xq', proc_name, out: File::NULL, err: File::NULL)
+        CommandUtils.run_silent('pgrep', '-xq', proc_name)
     end.values.sort
 
     return if nil_or_empty?(running)

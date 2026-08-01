@@ -81,10 +81,10 @@ module MacOS
   # @return [void]
   def kill_login_item_apps
     LOGIN_ITEM_APPS.each do |app|
-      system('killall', app, out: File::NULL, err: File::NULL)
+      CommandUtils.run_silent('killall', app)
     end
     # Finder is launchd-managed; killall causes immediate relaunch
-    system('killall', 'Finder', out: File::NULL, err: File::NULL)
+    CommandUtils.run_silent('killall', 'Finder')
 
     # Give apps time to fully terminate before defaults writes begin
     sleep 1
@@ -101,10 +101,10 @@ module MacOS
   # @return [void]
   def restart_login_item_apps
     LOGIN_ITEM_APPS.each do |app|
-      system('open', '-a', app, out: File::NULL, err: File::NULL)
+      CommandUtils.run_silent('open', '-a', app)
     end
     # Finder is launchd-managed; killall causes immediate relaunch
-    system('killall', 'Finder', out: File::NULL, err: File::NULL)
+    CommandUtils.run_silent('killall', 'Finder')
   end
 
   # Turns off the macOS automatic software update schedule and starts a
@@ -134,9 +134,22 @@ module MacOS
   #
   # @return [void]
   def reload_macos_prefs
-    %w[cfprefsd Dock Finder SystemUIServer].each do |app|
-      system('killall', app, out: File::NULL, err: File::NULL)
+    # Kill cfprefsd first to flush the preferences cache to disk.
+    # cfprefsd is the macOS preferences daemon that caches defaults in memory.
+    # Killing it forces a write of all pending changes to the plist files.
+    CommandUtils.run_silent('killall', 'cfprefsd')
+
+    # Wait for cfprefsd to finish flushing changes to disk before restarting apps.
+    # Without this delay, Finder/Dock may restart and read stale preferences before
+    # cfprefsd has finished writing the new values.
+    sleep 1
+
+    # Now kill the apps so they reload preferences on restart.
+    # Finder and Dock restart automatically. SystemUIServer manages menu bar extras.
+    %w[Dock Finder SystemUIServer].each do |app|
+      CommandUtils.run_silent('killall', app)
     end
+
     system('/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings', '-u')
   end
 
@@ -150,7 +163,7 @@ module MacOS
     applescript = <<~APPLESCRIPT
       display notification "#{message}" with title "#{title}"
     APPLESCRIPT
-    system('osascript', '-e', applescript, out: File::NULL, err: File::NULL)
+    CommandUtils.run_silent('osascript', '-e', applescript)
   end
 
   # Checks for outdated Homebrew casks (with --greedy flag) and returns a
@@ -164,8 +177,9 @@ module MacOS
     outdated_raw = CommandUtils.query('brew', 'outdated', '--greedy')
     # filter_map polyfill in enumerable_ext.rb provides optimized single-pass implementation for Ruby 2.6
     outdated = outdated_raw.lines.filter_map do |line|
+      next if nil_or_empty?(line)
       stripped = line.strip
-      stripped unless nil_or_empty?(stripped) || stripped.match?(/homebrew|Downloading/i)
+      stripped unless stripped.match?(/homebrew|Downloading/i)
     end
 
     return '' if nil_or_empty?(outdated)
@@ -200,7 +214,7 @@ module MacOS
   #
   # @return [Boolean] true if sudo credentials are available
   def _has_sudo_credentials
-    system('sudo', '-n', 'true', out: File::NULL, err: File::NULL)
+    CommandUtils.run_silent('sudo', '-n', 'true')
   end
 
   # Starts a background thread that runs 'sudo -v' every 60 seconds to keep
@@ -215,7 +229,7 @@ module MacOS
     Thread.new do
       loop do
         sleep 60
-        break unless system('sudo', '-v', out: File::NULL, err: File::NULL)
+        break unless CommandUtils.run_silent('sudo', '-v')
       end
     end
   end

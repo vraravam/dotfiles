@@ -109,10 +109,10 @@ module Plist
   def export_domain(domain, file)
     return false if nil_or_empty?(domain)
     file_str = file.is_a?(Pathname) ? file.to_s : file
-    return false unless system(MacOS::DEFAULTS_CMD, 'export', domain, file_str, out: File::NULL, err: File::NULL)
+    return false unless CommandUtils.run_silent(MacOS::DEFAULTS_CMD, 'export', domain, file_str)
     # Convert binary plist to XML for human-readable git diffs.
     # JSON is not used: plutil -convert json is lossy for <data> and <date> types.
-    system(MacOS::PLUTIL_CMD, '-convert', 'xml1', file_str, out: File::NULL, err: File::NULL)
+    CommandUtils.run_silent(MacOS::PLUTIL_CMD, '-convert', 'xml1', file_str)
   end
 
   # Imports a plist file into a defaults domain.
@@ -124,7 +124,7 @@ module Plist
   def import_domain(domain, file)
     return false if nil_or_empty?(domain)
     file_str = file.is_a?(Pathname) ? file.to_s : file
-    system(MacOS::DEFAULTS_CMD, 'import', domain, file_str, out: File::NULL, err: File::NULL)
+    CommandUtils.run_silent(MacOS::DEFAULTS_CMD, 'import', domain, file_str)
   end
 
   # Strips non-portable keys from +plist_file+ in-place. Keys are removed when
@@ -184,7 +184,7 @@ module Plist
 
     # Write back and re-normalize to Apple XML plist format
     plist_file.write(doc.to_s)
-    system(MacOS::PLUTIL_CMD, '-convert', 'xml1', plist_file.to_s, out: File::NULL, err: File::NULL)
+    CommandUtils.run_silent(MacOS::PLUTIL_CMD, '-convert', 'xml1', plist_file.to_s)
   end
 
   # ---------------------------------------------------------------------------

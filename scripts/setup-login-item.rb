@@ -153,7 +153,7 @@ module SetupLoginItem
 
     script = "tell application \"System Events\" to make login item at end " \
              "with properties {path:\"#{app_path}\", hidden:#{hidden}}"
-    system(MacOS::OSASCRIPT_CMD, '-e', script, out: File::NULL, err: File::NULL)
+    CommandUtils.run_silent(MacOS::OSASCRIPT_CMD, '-e', script)
   end
 
   private_class_method :_register_legacy

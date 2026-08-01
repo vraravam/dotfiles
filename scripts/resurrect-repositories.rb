@@ -110,7 +110,7 @@ module ResurrectRepositories
 
       Logging.print_results_summary(results)
       @has_failures = true if results[:failed].any?
-      @has_failures = true if Logging.has_warnings?
+      @has_failures = true if Logging.has_warnings? || Logging.has_errors?
     end
   end
 

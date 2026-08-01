@@ -518,8 +518,6 @@ A function is NOT unused until verified by:
 3. **Check git history**: `git log --all -S"function_name()" --oneline` (verify not recently added elsewhere)
 4. **Check all branches**: `git grep "function_name" $(git branch -a | grep -v HEAD)`
 
-**Real incident (June 2026)**: Methods `fix_head_file`, `rev_list_count`, and `symbolic_ref` were deleted from `git_processor.rb` as "unused" 17 commits ago, but were actually called. The deletion broke production code but went undetected until runtime failures occurred.
-
 **Why simple search isn't enough**:
 - Functions may be called from autoload scripts or other repositories
 - Call sites may use aliases or wrapper functions
@@ -595,11 +593,9 @@ Quick summary for shell scripts:
 ```zsh
 # BAD -- two blank lines between functions
 
-
 function_one() {
   # ...
 }
-
 
 function_two() {
   # ...
@@ -627,6 +623,8 @@ awk 'NF {blank=0; print} !NF {if (!blank) print; blank=1}' <file> > <file>.tmp &
 # Check for consecutive empty lines (3+ newlines = 2+ blank lines)
 grep -Pzo '\n\n\n' <file> && echo "Has consecutive empty lines" || echo "OK"
 ```
+
+**Exception:** `CHANGELOG.md` may have consecutive empty lines for visual separation between version sections.
 
 This rule applies to all shell scripts in the repository.
 

@@ -309,6 +309,7 @@ parse_folder_and_switches() {
 # Example (in the 'push' autoload):
 #   push() { dispatch_or_fallback push _push "$@"; }
 dispatch_or_fallback() {
+  require_env_var PERSONAL_BIN_DIR || return 1
   local cmd="${1:-}"
   local fallback_fn="${2:-}"
   shift 2
@@ -946,13 +947,16 @@ implode() {
 # Convenience wrappers that invoke the per-project script in PERSONAL_BIN_DIR
 # corresponding to the current directory name, e.g. 'launch-ferdium.sh'.
 launch_me() {
+  require_env_var PERSONAL_BIN_DIR || return 1
   "${PERSONAL_BIN_DIR}/launch-${PWD##*/}.sh"
 }
 debug_me() {
+  require_env_var PERSONAL_BIN_DIR || return 1
   # Runs the per-project debug script in PERSONAL_BIN_DIR for the current directory.
   "${PERSONAL_BIN_DIR}/debug-${PWD##*/}.sh"
 }
 build_me() {
+  require_env_var PERSONAL_BIN_DIR || return 1
   # Runs the per-project build script in PERSONAL_BIN_DIR for the current directory.
   "${PERSONAL_BIN_DIR}/build-${PWD##*/}.sh"
 }

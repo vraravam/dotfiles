@@ -45,7 +45,7 @@ module EnvVars
   # feature is disabled or absent). Prevents returning empty strings that would
   # pass truthiness checks but fail nil_or_empty? checks.
   def self._normalize_optional_string(value)
-    value&.then { |s| nil_or_empty?(s.strip) ? nil : s.strip }
+    value&.then { |s| nil_or_empty?(s) ? nil : s.strip }
   end
   private_class_method :_normalize_optional_string
 

@@ -62,8 +62,10 @@ module Cron
     src_file = CRONTAB_FILE
 
     # Attempt to capture the active crontab into the backup file.
+    # crontab -l fails (exit 1) when no crontab exists - use check_status to detect success
     crontab_output, stderr_str, status = Open3.capture3('crontab', '-l')
     success = CommandUtils.check_status(nil, stderr_str, status)
+
     if success && !nil_or_empty?(crontab_output)
       backup_file.write(crontab_output)
       Logging.debug "Backed up existing crontab to '#{backup_file.to_s.cyan}'"
@@ -76,7 +78,7 @@ module Cron
       Logging.debug 'No existing crontab or crontab.txt; created empty backup'
     end
 
-    system('crontab', '-r', out: File::NULL, err: File::NULL)
+    CommandUtils.run_silent('crontab', '-r')
     Logging.success 'Cron jobs suspended'
   end
 
@@ -179,7 +181,7 @@ module Cron
       temp_crontab = Tempfile.new(['crontab', '.txt'])
       begin
         # crontab -l exits 1 if no crontab exists; redirect stderr to suppress "no crontab" message
-        system('crontab', '-l', out: temp_crontab.path, err: File::NULL)
+        CommandUtils.run_silent('crontab', '-l', out: temp_crontab.path)
         temp_crontab.close
 
         # Step 2: Check if temp file has content (existing crontab)
