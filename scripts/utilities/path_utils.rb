@@ -206,4 +206,84 @@ module PathUtils
       Logging.debug "Ensured directory exists: '#{dir.to_s.cyan}'"
     end
   end
+
+  # Prepends a directory to PATH if it exists and is not already in PATH.
+  # Mirrors the intent of append_to_path_if_dir_exists from .shellrc but prepends
+  # instead (scripts directories should override system versions, not be shadowed by them).
+  #
+  # @param dir [Pathname, String] Directory path to prepend to PATH
+  # @return [void]
+  #
+  # @example
+  #   PathUtils.prepend_to_path(EnvVars::DOTFILES_DIR.join('scripts'))
+  #   PathUtils.prepend_to_path('/usr/local/bin')
+  def prepend_to_path(dir)
+    return if nil_or_empty?(dir.to_s)
+
+    dir_str = dir.to_s
+    return unless Pathname.new(dir_str).directory?
+
+    current_path = EnvVars.path
+    # Check if directory is already in PATH (anywhere, not just at the start)
+    path_components = current_path.split(':')
+    return if path_components.include?(dir_str)
+
+    # Prepend to PATH
+    ENV['PATH'] = "#{dir_str}:#{current_path}"
+    Logging.debug "Prepended to PATH: '#{dir_str.cyan}'"
+  end
+
+  # Sets correct permissions on ~/.ssh directory and its contents.
+  # Directory: 700, Files: 600. Also adds SSH keys to macOS Keychain.
+  #
+  # @return [void]
+  def set_ssh_folder_permissions
+    ssh_dir = EnvVars::HOME.join('.ssh')
+
+    Logging.info "Setting ssh config file permissions".yellow
+    ensure_directories_exist(ssh_dir)
+
+    # Set directory permissions first
+    unless CommandUtils.run_silent('chmod', '700', ssh_dir.to_s)
+      Logging.warn "Failed to set permissions on '#{ssh_dir.to_s.cyan}'"
+      return
+    end
+
+    # Check if directory is empty
+    if Dir.empty?(ssh_dir)
+      Logging.warn "'#{ssh_dir.to_s.cyan}' exists but is empty. No file permissions to set."
+      return
+    end
+
+    # Set file permissions
+    files = ssh_dir.children.select(&:file?)
+    files.each do |file|
+      unless CommandUtils.run_silent('chmod', '600', file.to_s)
+        Logging.warn "Failed to set permissions on '#{file.to_s.cyan}'"
+      end
+    end
+    Logging.success "Ensured correct permissions for '#{ssh_dir.to_s.cyan}' and files within it."
+
+    # Add keys to ssh-agent and store in macOS Keychain for persistence.
+    # --apple-use-keychain (macOS 12+) stores passphrases in Keychain so keys persist
+    # across reboots and are available to all processes. Without this, keys are only
+    # added to the current ssh-agent session and subprocesses may not have access.
+    # Fallback to -K for older macOS versions (deprecated but still works).
+    key_files = ssh_dir.children.select { |f| f.file? && f.basename.to_s.start_with?('id_') && f.extname.empty? }
+    if key_files.empty?
+      Logging.debug "No SSH keys found in '#{ssh_dir.to_s.cyan}'"
+      return
+    end
+
+    success = key_files.all? do |key_file|
+      CommandUtils.run_silent('ssh-add', '--apple-use-keychain', key_file.to_s) ||
+        CommandUtils.run_silent('ssh-add', '-K', key_file.to_s)
+    end
+
+    if success
+      Logging.success "Added ssh identity files from '#{ssh_dir.to_s.cyan}' to ssh-agent and macOS Keychain."
+    else
+      Logging.warn "Failed to add some ssh identity files from '#{ssh_dir.to_s.cyan}'"
+    end
+  end
 end
