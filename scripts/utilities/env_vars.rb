@@ -79,6 +79,13 @@ module EnvVars
   # Mirrors: $SHELL (always set by the shell)
   SHELL = ENV.fetch('SHELL', '/bin/zsh').freeze
 
+  # Encrypted git repo names (used with git-remote-gcrypt).
+  # Mirrors: export ENCRYPTED_HOME_REPO_NAME='home'
+  ENCRYPTED_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('ENCRYPTED_HOME_REPO_NAME', 'home'))
+
+  # Mirrors: export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
+  ENCRYPTED_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('ENCRYPTED_PROFILES_REPO_NAME', 'browser-profiles'))
+
   # ---------------------------------------------------------------------------
   # Path variables (Pathname objects)
   # ---------------------------------------------------------------------------
@@ -168,16 +175,20 @@ module EnvVars
   # Mirrors: export DOTFILES_BRANCH (default: master)
   DOTFILES_BRANCH = ENV.fetch('DOTFILES_BRANCH', 'master').freeze
 
+  # DEPRECATED: Keybase support has been replaced with git-remote-gcrypt.
+  # These constants are kept for backward compatibility during migration.
+  # Use ENCRYPTED_HOME_REPO_NAME and ENCRYPTED_PROFILES_REPO_NAME instead.
+  #
   # Keybase username.
   # Mirrors: export KEYBASE_USERNAME (set in .shellrc or manually)
   # Returns nil when not set or empty (if user does not want Keybase functionality), otherwise returns stripped string.
-  KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', 'avijayr'))
+  KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', nil))
 
   # Keybase repository names for encrypted backups.
   # Mirrors: export KEYBASE_*_REPO_NAME (set in .shellrc or manually)
   # Returns nil when not set or empty (if user does not want Keybase functionality), otherwise returns stripped string.
-  KEYBASE_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_HOME_REPO_NAME', 'home'))
-  KEYBASE_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_PROFILES_REPO_NAME', 'profiles'))
+  KEYBASE_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_HOME_REPO_NAME', nil))
+  KEYBASE_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_PROFILES_REPO_NAME', nil))
 
   # ---------------------------------------------------------------------------
   # Runtime flags and temporary operation variables (evaluated dynamically)
