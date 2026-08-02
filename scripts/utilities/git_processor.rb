@@ -123,7 +123,7 @@ class GitProcessor
     # Execute via zsh with shell function
     # The shell function handles all the logic: temp folders, traps, error handling,
     # HEAD fix, reftable migration, submodule updates, etc.
-    system('zsh', '-c', cmd)
+    CommandUtils.run_interactive('zsh', '-c', cmd)
   end
 
   # Migrates the repository to reftable format if it's still using the legacy
@@ -699,7 +699,7 @@ class GitProcessor
     # Determine if we should stream output (for push/pull/fetch without quiet flag)
     if _should_stream_output?(args)
       # Stream output directly to terminal
-      success = system(*cmd)
+      success = CommandUtils.run_interactive(*cmd)
       yield if block_given? && success
       # Return format compatible with captured output
       _mock_status_response(success)

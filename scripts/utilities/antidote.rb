@@ -50,7 +50,7 @@ module Antidote
     end
 
     if antidote_home.directory? && !nil_or_empty?(antidote_home)
-      system('zsh', '-f', '-c', 'source "$1"; antidote update', '--', antidote_zsh.to_s)
+      CommandUtils.run_interactive('zsh', '-f', '-c', 'source "$1"; antidote update', '--', antidote_zsh.to_s)
 
       # Only unshallow repos that are still shallow (idempotent check).
       # After unshallow, pull to fetch complete history for all branches.

@@ -83,12 +83,11 @@ module Keybase
       return true
     end
 
-    unless system('keybase', 'login')
+    success = CommandUtils.run_interactive('keybase', 'login') do
       Logging.record_error 'Could not log into keybase -- retry after logging in manually'
-      return false
     end
 
-    true
+    success
   end
 
   # Deletes the named Keybase repo (irreversible). Passes -f to skip confirmation.
@@ -101,7 +100,9 @@ module Keybase
     if dry_run
       Logging.info "Would delete keybase repo: #{repo_name.yellow}"
     else
-      Logging.record_warning("Failed to delete keybase repo #{repo_name.yellow} (it might not exist)") unless system('keybase', 'git', 'delete', '-f', repo_name)
+      unless CommandUtils.run_silent('keybase', 'git', 'delete', '-f', repo_name)
+        Logging.record_warning("Failed to delete keybase repo #{repo_name.yellow} (it might not exist)")
+      end
     end
   end
 
@@ -116,7 +117,7 @@ module Keybase
       return true
     end
 
-    if system('keybase', 'git', 'create', repo_name)
+    if CommandUtils.run_interactive('keybase', 'git', 'create', repo_name)
       true
     else
       Logging.record_error "Failed to create keybase repo #{repo_name.yellow}"

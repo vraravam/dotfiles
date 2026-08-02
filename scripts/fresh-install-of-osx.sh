@@ -193,6 +193,11 @@ _ensure_filevault_is_on() {
 _install_xcode_command_line_tools() {
   _current_section='Install Xcode Command Line Tools'; _current_section_manual=1
   step_start
+  section_header "$(yellow 'Listing available software updates')"
+  softwareupdate --list 2>&1 | grep '^\*' || true
+  step_end
+
+  step_start
   section_header "$(yellow 'Installing xcode command-line tools')"
   if ! xcode-select -p &>/dev/null; then
     touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
@@ -696,13 +701,6 @@ main() {
     success 'Successfully restored preferences from backup'
   else
     _record_error "Skipping importing of preferences since '$(purple 'capture-prefs.rb')' couldn't be found in the PATH; Please set it up manually"
-  fi
-
-  # Launch Sol.app if installed and not already running
-  if is_directory '/Applications/Sol.app'; then
-    if ! pgrep -x 'Sol' &>/dev/null; then
-      open /Applications/Sol.app
-    fi
   fi
   step_end
 

@@ -16,7 +16,7 @@ cask_args appdir: '/Applications', fontdir: '/Library/Fonts', adopt: true
 
 # java_present = system('/usr/libexec/java_home --failfast')
 is_arm = ::Hardware::CPU.arm?
-# is_beta_os = ::OS::Mac::full_version.unsupported_release?
+is_beta_os = ::OS::Mac::full_version.unsupported_release?
 
 # TODO: Hardcoding of the dotfiles repo folder - since that env var is not available inside this env
 setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.rb"
@@ -58,7 +58,7 @@ brew 'mise'
 brew 'starship'
 
 # casks pulled in for base configs (if these are absent, you will get errors and things won't work)
-cask 'iterm2'
+cask 'iterm2@beta'
 
 # FIRST_INSTALL: While re-imaging the OS or setting up for the first time, install only the bare minimum apps/utilities above this line so that the rest of the backup restoration can proceed faster.
 
@@ -79,7 +79,6 @@ brew 'tlrc'
 
 cask 'clocker', postinstall: "\"#{setup_login_items_script}\" -a 'Clocker'"
 cask 'dbeaver-community'
-cask 'dockdoor', postinstall: "\"#{setup_login_items_script}\" -a 'Dockdoor'"
 cask 'drawio'
 cask 'firefox@nightly' #, greedy: true
 cask 'xykong/tap/flux-markdown', trusted: true, postinstall: 'qlmanage -r'
@@ -91,14 +90,12 @@ cask 'mechvibes', postinstall: "\"#{setup_login_items_script}\" -a 'Mechvibes'"
 cask 'onlyoffice'
 cask 'protonvpn' # , postinstall: "\"#{setup_login_items_script}\" -a 'ProtonVPN'"
 cask 'rancher' # if ::OS::Mac::version < 26
-cask 'sol', postinstall: "\"#{setup_login_items_script}\" -a 'Sol'"
 cask 'shortcat', postinstall: "\"#{setup_login_items_script}\" -a 'Shortcat'"
-cask 'stats', postinstall: "\"#{setup_login_items_script}\" -a 'Stats'"
 cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'" if ::OS::Mac::version >= 14 && ::OS::Mac::version < 27
+cask 'vorssaint/tap/vorssaint', trusted: true, postinstall: "\"#{setup_login_items_script}\" -a 'Vorssaint'"
 cask 'zed@preview',
   postinstall: "ln -sf '/Applications/Zed Preview.app/Contents/MacOS/cli' \"${HOMEBREW_PREFIX}/bin/zed\""
 cask 'zen@twilight'
-# cask 'zen'
 cask 'zoom'
 
 # local AI coding tools
@@ -108,9 +105,6 @@ cask 'zoom'
 brew 'ollama', link: true, restart_service: :changed
 # brew 'jundot/omlx/omlx', trusted: true, restart_service: :changed if is_arm
 brew 'opencode'
-
-# Vorssaint is causing zoom to hang while joining meetings
-# cask 'vorssaint/tap/vorssaint', trusted: true, postinstall: "\"#{setup_login_items_script}\" -a 'Vorssaint'"
 
 # brew 'mas'
 # mas 'PDFgear', id: 6469021132
@@ -217,7 +211,7 @@ cask 'windows-app'    # replacement for microsoft-remote-desktop
 # cask 'netspot'
 # cask 'ngrok'
 # cask 'notunes'
-cask 'onyx@beta' # if !is_beta_os && ::OS::Mac::version < 26
+cask is_beta_os ? 'onyx@beta' : 'onyx'
 # cask 'silicon' if is_arm
 # cask 'tempbox'
 # cask 'the-unarchiver'

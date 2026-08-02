@@ -151,7 +151,7 @@ module SoftwareUpdatesCron
       # 'brew bundle check' exits 0 when everything is installed -- skip the full
       # bundle install in that case to avoid re-checking every formula every hour.
       # Keep check output visible for debugging missing packages.
-      system('brew', 'bundle', 'check', '-v') || system('brew', 'bundle', 'install', '-q')
+      CommandUtils.run_interactive('brew', 'bundle', 'check', '-v') || CommandUtils.run_interactive('brew', 'bundle', 'install', '-q')
     end
     _perform_update('mise plugins', 'mise') do
       # mise binary is upgraded using homebrew
@@ -174,8 +174,8 @@ module SoftwareUpdatesCron
       CommandUtils.run_silent('mise', 'upgrade', '--bump', err: :err)
     end
     _perform_update('tldr database', 'tldr') { CommandUtils.run_silent('tldr', '--update', err: :err) }
-    _perform_update('git-ignore database', 'git-ignore-io') { system('git', 'ignore-io', '--update-list') }
-    _perform_update('claude-code', 'claude') { system('claude', 'update') }
+    _perform_update('git-ignore database', 'git-ignore-io') { CommandUtils.run_interactive('git', 'ignore-io', '--update-list') }
+    _perform_update('claude-code', 'claude') { CommandUtils.run_interactive('claude', 'update') }
 
     Logging.with_step('antidote plugin update', "#{'Updating'.yellow} #{'antidote plugins'.purple} and regenerating plugin bundle") do
       Antidote.update_and_regenerate_bundle
@@ -187,7 +187,7 @@ module SoftwareUpdatesCron
         bat_syntax_dir_pn = Pathname.new(bat_config_dir).join('syntaxes')
         PathUtils.ensure_directories_exist(bat_syntax_dir_pn)
 
-        system(
+        CommandUtils.run_silent(
           'curl', '--retry', '3', '--retry-delay', '5', '-fsSL',
           'https://raw.githubusercontent.com/mattmc3/antidote/main/misc/zsh_plugins.sublime-syntax',
           '-o', bat_syntax_dir_pn.join('zsh_plugins.sublime-syntax').to_s
@@ -288,10 +288,14 @@ module SoftwareUpdatesCron
     end
 
     Logging.with_step('capture preferences', 'Capture app preferences'.yellow) do
+      # capture-prefs.rb must run as subprocess (not direct module call) because it has
+      # at_exit hooks that manage system state (suspend/resume softwareupdate, kill/restart
+      # apps). If called as module, hooks would register in parent process and fire at wrong
+      # time (end of software-updates-cron instead of after export completes).
       capture_prefs_script = Pathname.new(__dir__).join('capture-prefs.rb')
       # Set COLUMNS for terminal width detection (cron has no TTY, defaults to 80)
       env = { 'COLUMNS' => EnvVars.columns.to_s }
-      if system(env, RbConfig.ruby, capture_prefs_script.to_s, '-e')
+      if CommandUtils.run_interactive(env, RbConfig.ruby, capture_prefs_script.to_s, '-e')
         Logging.success 'Finished capturing app preferences'
       else
         Logging.record_error('Failed to capture app preferences')

@@ -45,7 +45,7 @@ module Cron
       return false
     end
     PathUtils.ensure_directories_exist(cron_file.dirname)
-    unless system('crontab', cron_file.to_s)
+    unless CommandUtils.run_silent('crontab', cron_file.to_s)
       Logging.record_error "Failed to restore crontab from '#{cron_file.to_s.cyan}'"
       return false
     end

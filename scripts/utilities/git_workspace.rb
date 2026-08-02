@@ -244,7 +244,7 @@ module GitWorkspace
         dirs_with_envrc,
         operation_desc: 'Allowing direnv in'
       ) do |dir, _idx, _total|
-        system('direnv', 'allow', dir)
+        CommandUtils.run_silent('direnv', 'allow', dir)
       end
 
       Logging.print_results_summary(results)
@@ -377,7 +377,7 @@ module GitWorkspace
   def update_all_repos
     home_success = update_repo(
       EnvVars::HOME,
-      paths: [EnvVars::XDG_CONFIG_HOME.join('sol'), EnvVars::PERSONAL_CONFIGS_DIR.join('defaults')]
+      paths: [EnvVars::PERSONAL_CONFIGS_DIR.join('defaults')]
     )
 
     profiles_success = update_repo(

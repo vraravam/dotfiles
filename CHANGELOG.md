@@ -4,6 +4,14 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.18
+
+* *[Brewfile]* Replaced Sol, Stats, Thaw with Vorssaint (menu bar tools). Vorssaint provides Metrics (replaces Stats), window preview (replaces Dockdoor), extension of menubar (handled by macos 27 as overflow replacing thaw) and window tiling and clipboard history (replaces sol) in a single app. Issue #115 (Zoom hanging) was fixed in Vorssaint v3.1.8 (July 7, 2026); current version v3.2.0 includes the fix.
+* Switched back to using Spotlight for launching apps since Sol is no longer used/installed.
+* Use utility methods from `CommandUtils` instead of direct `system` calls in ruby classes.
+
+---
+
 ### 3.2.17
 
 #### Ruby code quality improvements and pattern documentation
@@ -15,7 +23,6 @@ For those who follow this repo, here's the changelog for ease of adoption:
 * *[scripts/utilities/command_utils.rb]* Enhanced `CommandUtils.run_silent(*command, out:, err:)` to accept optional `out` and `err` parameters (both defaulting to `File::NULL`). Supports selective output suppression (`err: :err` shows stderr), output redirection (`out: '/path/to/file'`), and full suppression (default). Returns boolean (true if exit 0).
 
 * *[11 Ruby files]* Migrated 26 call sites from verbose `system(..., out: File::NULL)` and `system(..., out: File::NULL, err: File::NULL)` patterns to `CommandUtils.run_silent(...)`: software-updates-cron.rb (5), cron.rb (1), macos.rb (6), plist.rb (4), path_utils.rb (1), capture-prefs.rb (1), cleanup-browser-profiles.rb (2), setup-login-item.rb (1), plus 5 call sites updated to use optional parameters (selective suppression/redirection instead of both).
-
 
 ---
 
@@ -107,7 +114,6 @@ For those who follow this repo, here's the changelog for ease of adoption:
 * Duration calculations now use consistent Core utility methods
 
 ---
-
 
 ### 3.2.11
 

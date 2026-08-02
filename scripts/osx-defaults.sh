@@ -203,7 +203,7 @@ main() {
   # Clock = off (use a dedicated clock app such as Clocker instead)
   defaults write com.apple.controlcenter 'NSStatusItem VisibleCC Clock' -bool false
   # Spotlight = off (use Sol instead)
-  defaults write com.apple.controlcenter 'NSStatusItem Visible Spotlight' -bool false
+  # defaults write com.apple.controlcenter 'NSStatusItem Visible Spotlight' -bool false
   # AirDrop = off
   defaults write com.apple.controlcenter 'NSStatusItem Visible AirDrop' -bool false
   # Text Input = off

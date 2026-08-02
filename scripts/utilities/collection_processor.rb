@@ -207,7 +207,7 @@ module CollectionProcessor
   #     operation_desc: 'Installing mise tools',
   #     skip_proc: ->(dir) { mise_already_installed?(dir) }
   #   ) do |dir, idx, total|
-  #     system('mise', '-C', dir, 'install')
+  #     CommandUtils.run_silent('mise', '-C', dir, 'install')
   #   end
   def process_items(items, item_name_proc: nil, operation_desc: nil, skip_proc: nil, dry_run: false)
     # Default name extraction: call .to_s on the item
