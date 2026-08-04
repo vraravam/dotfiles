@@ -407,7 +407,11 @@ if command_exists 'run-all.rb'; then
   alias rug='run-all.rb git'
   alias all="FOLDER='${HOME}' MAXDEPTH=7 rug"
   alias all-cache="FILTER='[cC]ache' all"
-  alias home="FOLDER='${HOME}' FILTER='.bin|.dotfiles|zsh|mise' MAXDEPTH=5 rug"
+  alias home="FOLDER='${HOME}' FILTER='.bin|${DOTFILES_DIR:t}|zsh|mise' MAXDEPTH=5 rug"
+  # my-repos - shorthand for running commands in home, dotfiles, and browser-profiles repos
+  # Filter matches .git dirs using basenames: /${HOME:t}/.git, /${DOTFILES_DIR:t}/.git, and /${PERSONAL_PROFILES_DIR:t}/.git
+  alias my-repos="FOLDER='${HOME}' FILTER='(/${HOME:t}/\.git|/${DOTFILES_DIR:t}/\.git|/${PERSONAL_PROFILES_DIR:t}/\.git)\$' MAXDEPTH=7 rug"
+
   if is_directory "${PERSONAL_PROFILES_DIR}"; then
     alias profiles="FOLDER='${PERSONAL_PROFILES_DIR}' MAXDEPTH=5 rug"
   fi
@@ -463,6 +467,11 @@ delete_caches() {
   # start or login shell.  .zshrc recreates XDG_CACHE_HOME with mkdir -p before
   # any cache write, so the missing directory is safe.
   if is_directory "${XDG_CACHE_HOME}"; then
+    # Prevent operations on paths in root directory
+    # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
+    if is_root_dir "${XDG_CACHE_HOME%/*}"; then
+      error "Refusing to delete cache directory in root: '$(cyan "${XDG_CACHE_HOME}")'"
+    fi
     rm -rfv "${XDG_CACHE_HOME}"
 
     # Ensure XDG_CACHE_HOME exists before any cache writes below. When ${XDG_CACHE_HOME} is removed above,
@@ -897,7 +906,15 @@ with_cron_suspended() {
   suspend_cron
   "${fn}" "$@"
   recron
-  rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
+  # Prevent operations on paths in root directory
+  # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
+  if is_non_zero_string "${_DOTFILES_CRON_BACKUP_FILE:-}"; then
+    if is_root_dir "${_DOTFILES_CRON_BACKUP_FILE%/*}"; then
+      warn "Refusing to delete cron backup file in root: '$(cyan "${_DOTFILES_CRON_BACKUP_FILE}")'"
+    else
+      rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
+    fi
+  fi
   trap - EXIT
 }
 

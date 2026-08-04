@@ -32,6 +32,7 @@ All of the folder structures and the setup/backup operations are governed by the
 - **Starship** — Modern cross-shell prompt
 - **Plugins** — autosuggestions, syntax highlighting, selected OMZ libs and plugins managed via [antidote](./files/--ZDOTDIR--/.zsh_plugins.txt)
 - **Aliases** — Convenient shortcuts and functions
+- **Per-repository customizations** — Add custom git hooks and command overrides for specific projects (see [Extras.md § Git hook customizations](Extras.md#git-hook-customizations))
 
 # 🛠️ How to Adopt This System
 

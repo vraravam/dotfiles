@@ -207,7 +207,7 @@ execution continues.
 **Manual template generation:**
 If you need a starting template, run:
 ```zsh
-create_crontab ~/personal/dev/configs/crontab.txt
+create_crontab ${PERSONAL_CONFIGS_DIR}/crontab.txt
 ```
 
 This creates the default schedule (software-updates-cron hourly). Edit as needed,

@@ -94,7 +94,13 @@ module Cron
     else
       Logging.info 'No cron backup to restore; skipping'
     end
-    backup_file.delete if backup_file.exist?
+    if backup_file.exist?
+      unless PathUtils.safe_for_write?(backup_file)
+        Logging.warn "Refusing to delete cron backup file in root directory: '#{backup_file.to_s.cyan}'"
+        return
+      end
+      backup_file.delete
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -105,7 +111,7 @@ module Cron
   # schedule. Can be called manually via the shell wrapper to generate a template.
   # No longer called by recron (which now preserves existing crontabs and falls back
   # to tracked crontab.txt). Users who need a template can run:
-  #   create_crontab ~/personal/dev/configs/crontab.txt
+  #   create_crontab ${PERSONAL_CONFIGS_DIR}/crontab.txt
   # Mirrors create_crontab in .aliases.
   def create_crontab(file)
     shell = EnvVars::SHELL
@@ -231,7 +237,13 @@ module Cron
       yield
       recron
       backup = EnvVars.cron_backup_file
-      backup.delete if backup.exist?
+      if backup.exist?
+        unless PathUtils.safe_for_write?(backup)
+          Logging.warn "Refusing to delete cron backup file in root directory: '#{backup.to_s.cyan}'"
+          return
+        end
+        backup.delete
+      end
     rescue StandardError
       resume_cron
       raise

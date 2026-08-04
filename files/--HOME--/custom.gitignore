@@ -401,6 +401,7 @@ node_modules/
 /.config/btop/btop.conf
 /.config/direnv/direnv.toml
 /.config/ghostty/config
+/.config/git/hooks/*
 /.config/mise/config.toml
 /.config/rubocop/config.yml
 /.config/starship.toml

@@ -67,6 +67,163 @@ clone-repo-into() { ... }     # Wrong
 - File naming: § File Naming Convention (above)
 - Private helpers: § Internal Helpers -- `_` Prefix Convention (below)
 
+## Mandatory: Source .shellrc for Utility Functions
+
+**All shell scripts MUST source `${HOME}/.shellrc` to access utility functions.**
+
+```zsh
+# At the top of every script, after set -euo pipefail
+# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
+source "${HOME}/.shellrc"
+```
+
+**Why this is mandatory:**
+- `.shellrc` provides essential utility functions used throughout scripts:
+  - Logging: `info`, `success`, `warn`, `error`, `debug`, `user_action`
+  - Validation: `is_file`, `is_directory`, `is_non_zero_string`, `nil_or_empty`
+  - Git operations: `clone_repo_into`, `migrate_git_repo_to_reftable`
+  - Script infrastructure: `print_script_start`, `print_script_summary`, `print_usage`
+  - Cron management: `suspend_cron`, `resume_cron`, `with_cron_suspended`
+  - Path utilities: `ensure_dir_exists`, `load_file_if_exists`
+  - Logging helpers: `section_header`, `current_timestamp`
+- Ensures consistent behavior across all scripts
+- Scripts without `.shellrc` sourced cannot use any utility functions
+- The re-source guard inside `.shellrc` prevents duplicate loading overhead
+
+**Exceptions:**
+- `.shellrc` itself (cannot source itself)
+- Scripts that run BEFORE `.shellrc` exists (bootstrap phase in `fresh-install-of-osx.sh`)
+- Git hooks that deliberately avoid dependencies (rare - most should still source it)
+
+**Pattern for git hooks:**
+Even simple git hooks should source `.shellrc` if they use any utility functions:
+
+```zsh
+#!/usr/bin/env zsh
+# Global pre-push hook
+
+set -euo pipefail
+
+# Source .shellrc for utility functions (is_file, suspend_cron, etc.)
+source "${HOME}/.shellrc"
+
+# Now you can use utility functions
+if is_file "${script}"; then
+  "${script}" "$@"
+fi
+```
+
+**Verification:**
+If a script uses functions like `info`, `warn`, `is_file`, `ensure_dir_exists`, etc., but does NOT source `.shellrc`, it will fail with "command not found" errors.
+
+## Prefer Utility Functions Over Raw Shell Tests
+
+**Always use `.shellrc` utility functions instead of raw shell test operators.**
+
+This improves:
+- **Readability**: `is_file "${path}"` vs `[[ -f "${path}" ]]`
+- **Consistency**: Single implementation across all scripts
+- **Maintainability**: Bug fixes in one place benefit all callers
+- **Safety**: Utility functions handle edge cases (empty strings, special characters)
+
+### Common Substitutions
+
+| Instead of | Use | Notes |
+|------------|-----|-------|
+| `[[ -f "${file}" ]]` | `is_file "${file}"` | File existence check |
+| `[[ -d "${dir}" ]]` | `is_directory "${dir}"` | Directory existence check (excludes root `/`) |
+| `[[ -x "${file}" ]]` | `is_executable "${file}"` | Executable file check |
+| `[[ -f "${file}" && -x "${file}" ]]` | `is_executable "${file}"` | Combines both checks |
+| `[[ -n "${var}" ]]` | `is_non_zero_string "${var}"` | Non-empty string check |
+| `[[ -z "${var}" ]]` | `nil_or_empty "${var}"` | Nil or empty check (handles nil safely) |
+| `[[ "${path}" == "/" ]]` | `is_root_dir "${path}"` | Check if path is root directory |
+| `$(basename "$(pwd)")` | `${PWD:t}` | Get directory basename (no subshell fork) |
+| `$(basename "${path}")` | `${path:t}` | Get path basename (no subshell fork) |
+
+**Note**: `is_directory` returns false for root (`/`) to prevent accidental operations on the filesystem root. Ruby equivalent: `PathUtils.valid_directory?` (see `scripts/utilities/path_utils.rb`).
+
+**Note**: `is_root_dir` is used to check if a directory path is root before write operations. Use bash-compatible `${path%/*}` to get parent directory (not `${path:h}` which is zsh-only). Pattern: `is_root_dir "${path%/*}"`. Ruby equivalent: `PathUtils.root_dir?`.
+
+### Examples
+
+```zsh
+# BAD -- raw shell tests
+if [[ -f "${config}" && -x "${config}" ]]; then
+  "${config}"
+fi
+
+if [[ -d "${PERSONAL_BIN_DIR}" ]]; then
+  basename="$(basename "$(pwd)")"
+  script="${PERSONAL_BIN_DIR}/${basename}.sh"
+  if [[ -x "${script}" ]]; then
+    "${script}"
+  fi
+fi
+
+# Good -- utility functions + zsh parameter expansion
+if is_executable "${config}"; then
+  "${config}"
+fi
+
+if is_directory "${PERSONAL_BIN_DIR}"; then
+  basename="${PWD:t}"
+  script="${PERSONAL_BIN_DIR}/${basename}.sh"
+  if is_executable "${script}"; then
+    "${script}"
+  fi
+fi
+
+# Good -- root directory protection before write operations
+# Use ${var%/*} for bash compatibility (direnv sources .shellrc in bash)
+if is_root_dir "${target_path%/*}"; then
+  error "Refusing to operate on path in root: '${target_path}'"
+fi
+rm -f "${target_path}"
+```
+
+### Bash vs Zsh Parameter Expansion
+
+**.shellrc must use bash-compatible syntax** because direnv sources it in a bash subshell.
+
+| Operation | Zsh-only | Bash-compatible | Notes |
+|-----------|----------|-----------------|-------|
+| Get parent directory | `${path:h}` | `${path%/*}` | Use `%/*` in .shellrc |
+| Get basename | `${path:t}` | `${path##*/}` | Use zsh `:t` where possible (faster) |
+
+**Rule**: In .shellrc and .aliases, use `${var%/*}` for parent directory extraction to support direnv's bash subprocess. In pure zsh files (.zshrc, .zlogin, autoload functions), `${var:h}` is preferred.
+
+### Zsh Parameter Expansion for Basename
+
+**Prefer `${PWD:t}` and `${path:t}` over `$(basename ...)` to avoid subshell forks.**
+
+The `:t` modifier extracts the tail (basename) of a path without creating subprocesses:
+
+```zsh
+# BAD -- two subshell forks
+basename="$(basename "$(pwd)")"
+filename="$(basename "${full_path}")"
+
+# Good -- zsh parameter expansion (no subshell, faster)
+basename="${PWD:t}"
+filename="${full_path:t}"
+```
+
+**Why this matters:**
+- **Performance**: Every `$(...)` forks a new process (expensive)
+- **Simplicity**: Fewer moving parts, less error-prone
+- **Consistency**: Idiomatic zsh pattern
+
+This applies to all zsh code: scripts, hooks, functions, startup files, interactive use.
+
+### When Raw Tests Are Acceptable
+
+Raw shell tests ARE acceptable when:
+- **Before `.shellrc` is sourced** (bootstrap phase in `fresh-install-of-osx.sh`)
+- **Performance-critical hot paths** where function call overhead matters (rare)
+- **Inside utility function implementations** in `.shellrc` itself
+
+In all other cases, prefer utility functions for consistency and maintainability.
+
 ## Script Template
 
 ```zsh

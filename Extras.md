@@ -255,7 +255,7 @@ This ensures existing schedules are preserved while supporting vanilla OS instal
 
 **Manual template generation:** If you need a starting template:
   ```zsh
-  create_crontab ~/personal/dev/configs/crontab.txt
+  create_crontab ${PERSONAL_CONFIGS_DIR}/crontab.txt
   ```
 This creates the default schedule (software-updates-cron hourly). Edit as needed, commit to home repo, and run `recron` to install.
 
@@ -343,6 +343,63 @@ _push "$@"
 The override file receives the same arguments the user passed to the public command (`"$@"`). It runs in the current shell, so `return 1` correctly aborts the operation without killing the terminal.
 
 See [Technical Deep Dive § 10](TechnicalDeepDive.md#10-per-project-script-overrides) for the internal mechanics.
+
+### Git hook customizations
+
+All repositories automatically use global git hooks (configured via `core.hooksPath = ~/.config/git/hooks` in `.gitconfig`). These hooks support per-repository customizations via simple scripts in `${PERSONAL_BIN_DIR}`.
+
+**Pattern**: Create executable scripts in `${PERSONAL_BIN_DIR}` named `{pre|post}-<command>-<repo-basename>.sh` for repository-specific behavior (follows git's standard hook naming convention).
+
+**Example**: Suspend cron during push operations in the `browser-profiles` repository:
+
+```zsh
+# ${PERSONAL_BIN_DIR}/pre-push-browser-profiles.sh
+#!/usr/bin/env zsh
+set -euo pipefail
+source "${HOME}/.shellrc"
+
+# IMPORTANT: If push reports "Everything up-to-date", post-push won't run.
+# Manually run: resume_cron
+
+suspend_cron
+
+# ${PERSONAL_BIN_DIR}/post-push-browser-profiles.sh
+#!/usr/bin/env zsh
+set -euo pipefail
+source "${HOME}/.shellrc"
+
+# IMPORTANT: This does NOT run when push reports "Everything up-to-date".
+# If cron remains suspended, manually run: resume_cron
+
+resume_cron
+```
+
+**After creating the files, make them executable**:
+
+```bash
+chmod +x ${PERSONAL_BIN_DIR}/pre-push-browser-profiles.sh
+chmod +x ${PERSONAL_BIN_DIR}/post-push-browser-profiles.sh
+```
+
+**IMPORTANT**: Git's `post-push` hook **does not run** when a push reports "Everything up-to-date" (nothing to push). For cleanup/restoration operations like resuming cron, you must **manually run the cleanup command** (`resume_cron`) when this happens. EXIT traps in pre-push hooks do NOT work because the trap fires when the hook script exits (before git starts the push operation).
+
+**Supported hooks**:
+- `pre-push-<repo-basename>.sh` - Runs before every `git push`
+- `post-push-<repo-basename>.sh` - Runs after successful `git push` (only if changes were actually pushed)
+
+**How it works**:
+1. Global hooks in `~/.config/git/hooks/` are active for ALL repositories
+2. Hooks check `${PERSONAL_BIN_DIR}` for repo-specific scripts (using repo folder name)
+3. If customization script exists and is executable, it runs automatically
+4. No installation needed - just create the script and make it executable
+
+**Benefits**:
+- ✅ Automatic activation (no per-repo hook installation)
+- ✅ Chains with repo-specific hooks (Husky, lint-staged, etc.)
+- ✅ Simple standalone scripts (source `.shellrc` for utilities)
+- ✅ Works for all git commands (push, pull, commit, merge, etc.)
+
+See `.ai/domains/git-config.md` for complete documentation on git hook architecture.
 
 ## delete_caches
 

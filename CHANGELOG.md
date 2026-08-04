@@ -4,6 +4,133 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.19
+
+#### Global git hooks + wrapper functions for lifecycle management
+
+* *[files/--XDG_CONFIG_HOME--/git/hooks/pre-push]* Added global git hook for pre-push validation. Uses optimized shell patterns: inline `${PWD:t}` for basename (no subshell), utility functions (`is_directory`, `is_executable`) instead of raw tests, local array for hook paths. Execution order: repo-specific `.git/hooks.local/pre-push` (e.g., Husky/lint-staged), then per-repo customization `${PERSONAL_BIN_DIR}/pre-<command>-<basename>.sh`.
+
+* *[files/--HOME--/.gitconfig]* Added `core.hooksPath = ~/.config/git/hooks` to enable global hooks for all repositories. Hooks are automatically active for all repositories (existing and newly cloned) without per-repo installation.
+
+* *[files/--HOME--/custom.gitignore]* Added `/.config/git/hooks/*` to symlinked files section (hooks are symlinked by `install-dotfiles.rb` from dotfiles repo to `~/.config/git/hooks/`).
+
+* *[Extras.md, .ai/domains/git-config.md, Adoption.md]* Updated documentation to reflect that **git has NO `post-push` hook** (only `pre-push` exists - this is intentional design, not a bug). For operations requiring cleanup after push completes (e.g., cron resume), use wrapper functions instead of hooks. EXIT traps in pre-push hooks do NOT work because the trap fires when the hook script exits (before git starts the push).
+
+* *[${PERSONAL_BIN_DIR}/push-browser-profiles.sh]* Created wrapper script for browser-profiles push with cron suspension. Uses `with_cron_suspended _push` pattern: suspends cron before push, restores it after push completes (regardless of whether data was pushed or "Everything up-to-date"), cleans up backup file. Handles errors via EXIT trap - cron always restored.
+
+**Benefits of hybrid approach**:
+- ✅ Works for all git operations with native hooks (pre-push, pre-commit, post-commit, post-merge, etc.)
+- ✅ Automatic installation on clone (no per-repo setup)
+- ✅ Simple pre-validation scripts (no autoload loading, no depth tracking)
+- ✅ Chains with repo-specific hooks (Husky, lint-staged, etc.)
+- ✅ Wrapper functions handle lifecycle management (before + after) without hook limitations
+
+**When to use each approach**:
+- **Pre-validation hooks:** Need validation BEFORE operation starts (tests, linting)
+- **Wrapper functions:** Need cleanup AFTER operation completes (cron resume, mtime restore)
+
+#### Root directory write protection
+
+* *[files/--HOME--/.shellrc]* Added `is_root_dir()` utility function to check if a path is root `/`. Mirrors shell pattern `[[ "${path}" == "/" ]]` with semantic name. Used inline with `${path:h}` parameter expansion to validate parent directories before write operations: `is_root_dir "${target_path:h}"`.
+
+* *[files/--HOME--/.shellrc]* Added root directory protection to `ensure_dir_exists()`, `recompile_zsh_script()`, and `clone_repo_into()`. Each function checks parent directory with `is_root_dir "${path:h}"` before performing write operations (mkdir, rm, zrecompile). Prevents catastrophic operations like creating `/mydir` or deleting `/.cache` when environment variables are unset or misconfigured.
+
+* *[files/--HOME--/.aliases]* Added root directory protection to `delete_caches()` and `with_cron_suspended()`. Uses same `is_root_dir "${path:h}"` pattern to prevent deleting cache directories or cron backup files in root.
+
+* *[scripts/utilities/path_utils.rb]* Added `PathUtils.root_dir?(path)` to check if path is root `/`. Mirrors shell `is_root_dir()` function. Added `PathUtils.safe_for_write?(path)` to check if parent directory is not root (safe for write operations). Both methods handle Pathname and String inputs, with automatic type conversion.
+
+* *[scripts/utilities/cron.rb]* Added root directory protection to `resume_cron()` and `with_cron_suspended()` using `PathUtils.safe_for_write?(backup_file)`. Prevents deleting cron backup files in root directory.
+
+* *[.ai/domains/shell-scripting.md]* Added `is_root_dir` to Common Substitutions table with usage pattern `is_root_dir "${path:h}"`. Added example demonstrating root directory protection before write operations. Cross-referenced Ruby equivalent `PathUtils.root_dir?`.
+
+* *[files/--HOME--/.shellrc]* Refactored `is_directory()` to use `! is_root_dir "${1}"` instead of hardcoded `[[ "${1}" != "/" ]]` for DRY principle. Single source of truth for root directory check.
+
+* *[files/--HOME--/.aliases]* Refactored `home` alias to use dynamic basename `${DOTFILES_DIR:t}` instead of hardcoded `.dotfiles` for portability across systems with different dotfiles directory names.
+
+All error/warn messages follow unified color conventions (paths use cyan + single quotes).
+
+#### Cross-platform path handling improvements
+
+* *[scripts/utilities/path_utils.rb]* Replaced hardcoded `'/'` with `File::SEPARATOR` in `root_dir?` method for cross-platform compatibility (Windows uses `\`). Refactored `valid_directory?` to use `root_dir?` method instead of inline check for DRY principle.
+
+* *[scripts/utilities/git_processor.rb]* Replaced hardcoded `'/'` with `File::SEPARATOR` in `basename_from_url` method's regex pattern and split operation for cross-platform compatibility.
+
+* *[scripts/recreate-repository.rb]* Replaced hardcoded `'/'` with `File::SEPARATOR` in directory path chomp operation for cross-platform compatibility.
+
+* *[scripts/utilities/antidote.rb]* Combined zsh flags from `'zsh', '-f', '-c'` to `'zsh', '-fc'` for consistency with shell flag combining conventions.
+
+#### Git GC optimization and rerere cache preservation
+
+* *[files/--HOME--/.gitconfig]* **CRITICAL FIX**: Changed `gc.pruneExpire = now` → `2.weeks.ago` to preserve amended commits and deleted branches for 2 weeks instead of deleting immediately. This was causing loss of recent history when running `git cc`.
+
+* *[files/--HOME--/.gitconfig]* Added git gc optimization settings:
+  - `autoDetach = true` - Runs gc in background (non-blocking) when auto-gc triggers
+  - `autoPackLimit = 50` - Consolidates packs when 50+ exist (prevents pack file proliferation)
+  - `bigPackThreshold = 512m` - Keeps packs >512MB separate to avoid expensive repacking of large unchanged packs
+  - `cruftPacks = true` - Stores unreachable objects in cruft packs instead of loose objects (better compression, faster gc)
+
+* *[files/--HOME--/.gitconfig]* Updated rerere cache retention from 1 week to 3 weeks (`gc.rerereResolved = 3.weeks.ago`) to prevent losing recent conflict resolutions. Unresolved conflicts kept for 1 week (`gc.rerereUnresolved = 1.week.ago`).
+
+* *[files/--HOME--/.gitconfig]* Removed redundant `git rerere gc` call from `cc` alias - `git maintenance run --task=gc` already includes `git gc`, which automatically runs rerere gc internally. Updated comment to document this behavior.
+
+**Disk space impact**:
+- Slightly more disk space for 2-week unreachable object window (vs immediate pruning)
+- Cruft packs compress better than loose objects, offsetting this
+- Large packs no longer repacked unnecessarily (saves CPU/disk I/O)
+
+**Recovery window**:
+- Amended commits: **2 weeks** (was immediate deletion)
+- Deleted branches: **2 weeks** (was immediate deletion)
+- Reflog entries: **2 weeks** (unchanged)
+- Rerere resolutions: **3 weeks** (was 1 week)
+
+#### Multi-repo command alias
+
+* *[files/--HOME--/.aliases]* Added `my-repos` alias as shorthand for running commands in home, dotfiles, and browser-profiles repos. Uses dynamic basename expansion: `FILTER='(/${HOME:t}/\.git|/${DOTFILES_DIR:t}/\.git|/${PERSONAL_PROFILES_DIR:t}/\.git)$' all <command>`. The FILTER regex matches `.git` directory paths using zsh parameter expansion (`:t` gets tail/basename), making it portable across systems regardless of username.
+
+**Usage examples**:
+```zsh
+my-repos st         # Runs 'git st' in home + dotfiles + browser-profiles
+my-repos push       # Runs 'git push' in all three repos
+my-repos upreb      # Runs 'git upreb' in all three repos
+
+# Or use FILTER directly for ad-hoc filtering:
+FILTER='dotfiles' all st                     # Only dotfiles repo
+FILTER='(vijay|profiles)$' all st            # Home + browser-profiles
+```
+
+**Comparison with existing autoload functions**:
+- `my-repos st` - Quick interactive status check (home + dotfiles + browser-profiles)
+- `status_all_repos` - Comprehensive check via Ruby (includes Chrome profile subdirs if they're git repos)
+- `update_all_repos` - Cron job automation (stages/commits auto-generated content in home + browser-profiles)
+
+**Why an alias instead of a function**:
+- 3 lines instead of 28 lines
+- No hardcoded usernames - uses `${HOME:t}`, `${DOTFILES_DIR:t}`, `${PERSONAL_PROFILES_DIR:t}`
+- No need for git command detection logic (handled by `all` alias)
+- Transparent - just sets FILTER env var before calling `all`
+- Easy to customize - users can set FILTER to any regex pattern
+
+#### Adopting these changes
+
+* Global git hooks are installed automatically by `install-dotfiles.rb` - no action required
+* **For repositories requiring lifecycle management** (e.g., cron suspension during push), create wrapper script in `${PERSONAL_BIN_DIR}`:
+  ```zsh
+  # push-browser-profiles.sh (see Adoption.md § 4.5.1 for complete example)
+  with_cron_suspended _push "$@"
+  ```
+  Make executable: `chmod +x ${PERSONAL_BIN_DIR}/push-browser-profiles.sh`
+  Invoke: `cd ~/personal/vijay/browser-profiles && ./push-browser-profiles.sh`
+* Root directory protection is defensive - no action required
+* Restart terminal to reload `.aliases` with new `my-repos` alias and `.shellrc` with root protection utilities
+* New utility functions available for use in custom scripts:
+  * Shell: `is_root_dir "${path}"` - returns true if path is root `/`
+  * Shell: `my-repos <command>` - runs command in home + dotfiles + browser-profiles repos
+  * Ruby: `PathUtils.root_dir?(path)` - returns true if path is root
+  * Ruby: `PathUtils.safe_for_write?(path)` - returns true if parent directory is not root
+
+---
+
 ### 3.2.18
 
 * *[Brewfile]* Replaced Sol, Stats, Thaw with Vorssaint (menu bar tools). Vorssaint provides Metrics (replaces Stats), window preview (replaces Dockdoor), extension of menubar (handled by macos 27 as overflow replacing thaw) and window tiling and clipboard history (replaces sol) in a single app. Issue #115 (Zoom hanging) was fixed in Vorssaint v3.1.8 (July 7, 2026); current version v3.2.0 includes the fix.

@@ -50,7 +50,7 @@ module Antidote
     end
 
     if antidote_home.directory? && !nil_or_empty?(antidote_home)
-      CommandUtils.run_interactive('zsh', '-f', '-c', 'source "$1"; antidote update', '--', antidote_zsh.to_s)
+      CommandUtils.run_interactive('zsh', '-fc', 'source "$1"; antidote update', '--', antidote_zsh.to_s)
 
       # Only unshallow repos that are still shallow (idempotent check).
       # After unshallow, pull to fetch complete history for all branches.
@@ -70,7 +70,7 @@ module Antidote
     # antidote bundle reads the plugin list from stdin; pass it via stdin_data
     # so no shell redirect (<) is needed -- array form avoids a shell layer.
     bundle_content, stderr_str, status = Open3.capture3(
-      'zsh', '-f', '-c', 'source "$1"; antidote bundle', '--', antidote_zsh.to_s,
+      'zsh', '-fc', 'source "$1"; antidote bundle', '--', antidote_zsh.to_s,
       stdin_data: plugin_txt.read
     )
 

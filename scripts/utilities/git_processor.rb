@@ -201,7 +201,7 @@ class GitProcessor
     return @_remote_repo_names[name] if @_remote_repo_names.key?(name)
 
     url = remote_url(name: name)
-    @_remote_repo_names[name] = nil_or_empty?(url) ? nil : url.sub(/\/\z/, '').split('/').last
+    @_remote_repo_names[name] = nil_or_empty?(url) ? nil : url.sub(/#{Regexp.escape(File::SEPARATOR)}\z/, '').split(File::SEPARATOR).last
   end
 
   # Returns the current branch name, or nil if HEAD is detached or the repo is empty.

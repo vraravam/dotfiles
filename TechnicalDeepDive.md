@@ -481,7 +481,7 @@ push() { dispatch_or_fallback push _push "$@"; }
 
 When called, `dispatch_or_fallback` looks for `${PERSONAL_BIN_DIR}/<cmd>-<cwd-basename>.sh`. If the file exists and is executable, it is **sourced in the current shell** (so it inherits all functions and env vars). Otherwise the default `_push` implementation is called.
 
-This means you can have a file `~/personal/dev/bin/push-my-project.sh` that overrides the push behaviour specifically when you are inside a directory named `my-project`, without touching the shared `push` function.
+This means you can have a file `${PERSONAL_BIN_DIR}/push-my-project.sh` that overrides the push behaviour specifically when you are inside a directory named `my-project`, without touching the shared `push` function.
 
 `status_all_repos` and `update_all_repos` intentionally do not use this pattern — they operate on a fixed set of repos and a cwd-based override would not be meaningful.
 

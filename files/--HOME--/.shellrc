@@ -1102,13 +1102,19 @@ is_file_older_than() {
   fi
 }
 
-# Returns true if $1 is a non-empty path pointing to a directory.
+# Returns true if $1 is a non-empty path pointing to a directory (excluding root '/').
 is_directory() {
-  if is_non_zero_string "${1:-}" && [[ -d "${1:-}" ]]; then
+  if is_non_zero_string "${1:-}" && ! is_root_dir "${1}" && [[ -d "${1:-}" ]]; then
     return 0
   else
     return 1
   fi
+}
+
+# Returns true if $1 is the root directory '/'.
+# Used to prevent write operations on paths in root directory.
+is_root_dir() {
+  [[ "${1:-}" == "/" ]]
 }
 
 # Returns true if $1 is a regular file with non-zero size.
@@ -1138,12 +1144,18 @@ is_directory_empty() {
 # Guards with is_directory to avoid forking mkdir when the directory already
 # exists -- the common case on every shell startup (e.g. XDG_CACHE_HOME).
 ensure_dir_exists() {
-  if is_non_zero_string "${1:-}"; then
-    if ! is_directory "${1:-}"; then
-      mkdir -pv "${1:-}"
-    fi
-  else
-    warn "Skipping creation of the directory since '$(purple "${1:-}")' is not defined"
+  local target_dir="${1:-}"
+  if is_zero_string "${target_dir}"; then
+    warn "Skipping creation of the directory since '$(cyan "${target_dir}")' is not defined"
+    return 1
+  fi
+  # Prevent operations on paths in root directory
+  # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
+  if is_root_dir "${target_dir%/*}"; then
+    error "Refusing to create directory in root: '$(cyan "${target_dir}")'"
+  fi
+  if ! is_directory "${target_dir}"; then
+    mkdir -pv "${target_dir}"
   fi
 }
 
@@ -1459,6 +1471,11 @@ clone_repo_into() {
 
     # Remove existing .git directory if present (safety - prevents corrupt state)
     if is_directory "${target_folder}/.git"; then
+      # Prevent operations on paths in root directory
+      # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
+      if is_root_dir "${target_folder%/*}"; then
+        error "Refusing to remove .git directory from path in root: '$(cyan "${target_folder}")'"
+      fi
       rm -rf "${target_folder}/.git"
     fi
 
@@ -1514,6 +1531,7 @@ clone_repo_into() {
     # SSH: Same inheritance as clone operation above.
     git -C "${target_folder}" unshallow && git -C "${target_folder}" fetch
     success "Successfully fetched '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
+
     # Only warn if FETCH_HEAD has commits not yet in HEAD -- unshallow + fetch always
     # runs but may bring in nothing new (repo already up to date).
     local incoming_count
@@ -1686,6 +1704,12 @@ recompile_zsh_script() {
   # Return early if no file path provided (defensive under set -u)
   if is_zero_string "${file}"; then
     return 0
+  fi
+  # Prevent operations on paths in root directory
+  # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
+  if is_root_dir "${file%/*}"; then
+    warn "Refusing to recompile file in root directory: '$(cyan "${file}")'"
+    return 1
   fi
   # Resolve symlinks explicitly: is_file_older_than handles this internally, but we need
   # the real path here for the is_non_empty_file check and because the .zwc file lives

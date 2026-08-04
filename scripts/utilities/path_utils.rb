@@ -63,6 +63,64 @@ module PathUtils
     @command_cache[command] = CommandUtils.run_silent('which', command.to_s)
   end
 
+  # Checks if a path is a valid directory (exists, is a directory, and is not root '/').
+  # Mirrors is_directory() from .shellrc.
+  #
+  # @param path [Pathname, String, nil] Path to check
+  # @return [Boolean] true if path is a non-root directory, false otherwise
+  #
+  # @example
+  #   PathUtils.valid_directory?(Pathname.new('/tmp'))  # => true
+  #   PathUtils.valid_directory?(Pathname.new('/'))     # => false (root excluded)
+  #   PathUtils.valid_directory?(nil)                   # => false
+  #   PathUtils.valid_directory?('')                    # => false
+  def valid_directory?(path)
+    return false if nil_or_empty?(path)
+    return false if root_dir?(path)
+
+    path_pn = path.is_a?(Pathname) ? path : Pathname.new(path.to_s)
+    path_pn.directory?
+  end
+
+  # Checks if a path is the root directory '/'.
+  # Mirrors is_root_dir() from .shellrc.
+  #
+  # @param path [Pathname, String, nil] Path to check
+  # @return [Boolean] true if path is root '/', false otherwise
+  #
+  # @example
+  #   PathUtils.root_dir?(Pathname.new('/'))      # => true
+  #   PathUtils.root_dir?('/')                    # => true
+  #   PathUtils.root_dir?(Pathname.new('/tmp'))   # => false
+  #   PathUtils.root_dir?(nil)                    # => false
+  def root_dir?(path)
+    return false if nil_or_empty?(path)
+
+    path_pn = path.is_a?(Pathname) ? path : Pathname.new(path.to_s)
+    path_pn.to_s == File::SEPARATOR
+  end
+
+  # Checks if a path's parent directory is not root '/'.
+  # Used to prevent write operations on paths directly in root directory.
+  # Safe to call on both files and directories.
+  #
+  # @param path [Pathname, String, nil] Path to check
+  # @return [Boolean] true if parent is not root, false if parent is root or path is invalid
+  #
+  # @example
+  #   PathUtils.safe_for_write?(Pathname.new('/tmp/file'))     # => true (parent is /tmp)
+  #   PathUtils.safe_for_write?(Pathname.new('/etc'))          # => false (parent is /)
+  #   PathUtils.safe_for_write?(Pathname.new('/rootfile.txt')) # => false (parent is /)
+  #   PathUtils.safe_for_write?(nil)                           # => false
+  def safe_for_write?(path)
+    return false if nil_or_empty?(path)
+
+    path_pn = path.is_a?(Pathname) ? path : Pathname.new(path.to_s)
+    parent = path_pn.parent
+
+    !root_dir?(parent)
+  end
+
   # Returns the size of a directory in kilobytes using du.
   # Uses MacOS::DU_CMD for reliability in cron/system contexts.
   #

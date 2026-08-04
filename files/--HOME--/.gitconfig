@@ -90,11 +90,12 @@
   # Cleanup operations:
   #   - Delete stale prefetch refs (created by git maintenance, may reference old commits after rebase)
   #   - Expire reflog entries older than --expire (default: 1 week)
-  #   - Clean rerere cache (conflict resolutions) older than gc.rerereResolved/gc.rerereUnresolved
   #   - Prune deleted worktrees
   #   - Remove stale commit-graph files
   #   - Repack all objects with optimal compression
-  #   - Run garbage collection
+  #   - Run garbage collection (NOTE: git gc includes rerere gc automatically - respects gc.rerereResolved/gc.rerereUnresolved)
+  # Supports folder-specific overrides: if ${PERSONAL_BIN_DIR}/cc-<basename>.sh exists, sources it
+  # instead of running the default implementation. Override scripts can customize behavior.
   # Usage: git cc [<dir>] [--expire=<when>] [<extra-reflog-flags>]
   # Example: git cc --expire=now          (expire entire reflog immediately - aggressive)
   # Example: git cc --expire=1.hour.ago   (expire reflog older than 1 hour - very aggressive)
@@ -105,6 +106,14 @@
       -*|'') dir='.' ;; \
       *) dir=\"${1:-}\"; shift ;; \
     esac; \
+    if [ -n \"${PERSONAL_BIN_DIR:-}\" ] && [ -z \"${_GIT_OVERRIDE_SKIP:-}\" ]; then \
+      basename=\"$(basename \"$(cd \"${dir}\" && pwd)\")\"; \
+      override=\"${PERSONAL_BIN_DIR}/cc-${basename}.sh\"; \
+      if [ -x \"${override}\" ]; then \
+        (cd \"${dir}\" && _GIT_OVERRIDE_SKIP=1 /bin/zsh -l \"${override}\" \"$@\"); \
+        return $?; \
+      fi; \
+    fi; \
     expire=''; \
     rest=(); \
     for a in \"$@\"; do \
@@ -123,7 +132,6 @@
     refs_array=($(git -C \"${dir}\" all-refs)); \
     [ ${#refs_array[@]} -gt 0 ] && \
       git -C \"${dir}\" reflog expire --expire=\"${expire}\" --expire-unreachable=\"${expire}\" --stale-fix \"${rest[@]}\" \"${refs_array[@]}\"; \
-    git -C \"${dir}\" rerere gc; \
     git -C \"${dir}\" commit-graph write --reachable --changed-paths; \
     git -C \"${dir}\" maintenance run --task=gc; \
     git -C \"${dir}\" size; \
@@ -564,6 +572,46 @@
     fi; \
   }; f"
 
+  # Pulls the current branch (wrapper for built-in git pull with override support).
+  # Supports folder-specific overrides: if ${PERSONAL_BIN_DIR}/pull-<basename>.sh exists, sources it
+  # instead of running the default implementation. Override scripts can customize pre/post behavior.
+  # Usage: git pull [<dir>] [<options>]
+  pull = "!f() { \
+    case \"${1:-}\" in \
+      -*|'') dir='.' ;; \
+      *) dir=\"${1:-}\"; shift ;; \
+    esac; \
+    if [ -n \"${PERSONAL_BIN_DIR:-}\" ] && [ -z \"${_GIT_OVERRIDE_SKIP:-}\" ]; then \
+      basename=\"$(basename \"$(cd \"${dir}\" && pwd)\")\"; \
+      override=\"${PERSONAL_BIN_DIR}/pull-${basename}.sh\"; \
+      if [ -x \"${override}\" ]; then \
+        (cd \"${dir}\" && _GIT_OVERRIDE_SKIP=1 /bin/zsh -l \"${override}\" \"$@\"); \
+        return $?; \
+      fi; \
+    fi; \
+    git -C \"${dir}\" pull \"$@\"; \
+  }; f"
+
+  # Pushes the current branch (wrapper for built-in git push with override support).
+  # Supports folder-specific overrides: if ${PERSONAL_BIN_DIR}/push-<basename>.sh exists, sources it
+  # instead of running the default implementation. Override scripts can customize pre/post behavior.
+  # Usage: git push [<dir>] [<options>]
+  push = "!f() { \
+    case \"${1:-}\" in \
+      -*|'') dir='.' ;; \
+      *) dir=\"${1:-}\"; shift ;; \
+    esac; \
+    if [ -n \"${PERSONAL_BIN_DIR:-}\" ] && [ -z \"${_GIT_OVERRIDE_SKIP:-}\" ]; then \
+      basename=\"$(basename \"$(cd \"${dir}\" && pwd)\")\"; \
+      override=\"${PERSONAL_BIN_DIR}/push-${basename}.sh\"; \
+      if [ -x \"${override}\" ]; then \
+        (cd \"${dir}\" && _GIT_OVERRIDE_SKIP=1 /bin/zsh -l \"${override}\" \"$@\"); \
+        return $?; \
+      fi; \
+    fi; \
+    git -C \"${dir}\" push \"$@\"; \
+  }; f"
+
   # Fetches all remotes, then rebases onto @{u} only if the working tree is clean
   # (no uncommitted or staged changes). If the tree is dirty, skips the rebase,
   # prints a message to stderr, and exits non-zero — callers such as run-all.rb
@@ -594,23 +642,35 @@
   # (after rebase but before push) that would leave the repo in an inconsistent state.
   # If no upstream remote exists, rebases from origin instead (gracefully falls back for non-fork repos).
   # Callers (e.g. run-all.rb in cron) receive a non-zero exit and surface a warning on dirty tree.
+  # Supports folder-specific overrides: if ${PERSONAL_BIN_DIR}/upreb-<basename>.sh exists, sources it
+  # instead of running the default implementation. Override scripts can customize pre/post behavior
+  # while calling the common implementation via the shell function _upreb from the autoload script.
   # Usage: git upreb [<dir>]
   upreb = "!f() { \
-    git -C \"${1:-.}\" fetch; \
-    if git -C \"${1:-.}\" is-clean; then \
-      git -C \"${1:-.}\" branch -u \"origin/$(git -C \"${1:-.}\" br)\"; \
-      if git -C \"${1:-.}\" has-upstream; then \
-        git -C \"${1:-.}\" rebase \"upstream/$(git -C \"${1:-.}\" br)\" --no-verify && \
-          git -C \"${1:-.}\" fetch upstream --tags; \
+    dir=\"${1:-.}\"; \
+    if [ -n \"${PERSONAL_BIN_DIR:-}\" ] && [ -z \"${_GIT_OVERRIDE_SKIP:-}\" ]; then \
+      basename=\"$(basename \"$(cd \"${dir}\" && pwd)\")\"; \
+      override=\"${PERSONAL_BIN_DIR}/upreb-${basename}.sh\"; \
+      if [ -x \"${override}\" ]; then \
+        (cd \"${dir}\" && _GIT_OVERRIDE_SKIP=1 /bin/zsh -l \"${override}\"); \
+        return $?; \
+      fi; \
+    fi; \
+    git -C \"${dir}\" fetch; \
+    if git -C \"${dir}\" is-clean; then \
+      git -C \"${dir}\" branch -u \"origin/$(git -C \"${dir}\" br)\"; \
+      if git -C \"${dir}\" has-upstream; then \
+        git -C \"${dir}\" rebase \"upstream/$(git -C \"${dir}\" br)\" --no-verify && \
+          git -C \"${dir}\" fetch upstream --tags; \
       else \
-        git -C \"${1:-.}\" rebase \"origin/$(git -C \"${1:-.}\" br)\" --no-verify; \
+        git -C \"${dir}\" rebase \"origin/$(git -C \"${dir}\" br)\" --no-verify; \
       fi && \
-      git -C \"${1:-.}\" push --no-verify && \
-      git -C \"${1:-.}\" push --tags --no-verify && \
-      git -C \"${1:-.}\" siu && \
-      git -C \"${1:-.}\" dlb; \
+      git -C \"${dir}\" push --no-verify && \
+      git -C \"${dir}\" push --tags --no-verify && \
+      git -C \"${dir}\" siu && \
+      git -C \"${dir}\" dlb; \
     else \
-      printf 'Skipping rebase/push in %s: working tree has uncommitted changes. Run manually.\n' \"${1:-.}\" >&2; \
+      printf 'Skipping rebase/push in %s: working tree has uncommitted changes. Run manually.\n' \"${dir}\" >&2; \
       exit 1; \
     fi; \
   }; f"
@@ -675,6 +735,7 @@
   excludesFile = ~/.gitignore_global
   fileMode = true
   fsMonitor = true
+  hooksPath = ~/.config/git/hooks  # global hooks directory (pre-push, post-push, etc.)
   logAllRefUpdates = true
   longPaths = true
   # pager setting moved to ~/.gitconfig-delta.inc (conditionally included when delta is installed)
@@ -716,11 +777,15 @@
   smudge = git-lfs smudge -- %f
 [gc]
   auto = 2000
-  pruneExpire = now
+  autoDetach = true                # run gc in background (non-blocking)
+  autoPackLimit = 50               # consolidate when 50+ packs exist
+  bigPackThreshold = 512m          # keep packs >512MB separate (avoid repacking large packs unnecessarily)
+  cruftPacks = true                # store unreachable objects in cruft packs (space efficient vs loose objects)
+  pruneExpire = 2.weeks.ago        # keep unreachable objects (amended commits, deleted branches) for 2 weeks
   reflogExpire = 2.weeks.ago
   reflogExpireUnreachable = 2.weeks.ago
-  rerereResolved = 1.weeks.ago
-  rerereUnresolved = 3.days.ago
+  rerereResolved = 3.weeks.ago     # expire resolved conflict resolutions after 3 weeks
+  rerereUnresolved = 1.week.ago    # expire unresolved conflicts after 1 week
   worktreePruneExpire = 1.weeks.ago
   writeCommitGraph = true          # generate commit graph on GC (enables faster log/branch operations)
 [grep]

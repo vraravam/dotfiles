@@ -136,27 +136,13 @@ Higher priority always wins. Document tradeoffs in comments when they conflict.
 **Pattern applies to**: Any function needed during bootstrap before dotfiles repo exists must stay in .shellrc, Ruby should delegate not duplicate.
 
 ### Recent Optimizations (June 2026)
-Performance improvements in `.zshrc`:
-- **Problem**: 28ms spent in helper functions during startup
-- **Solution**: Replaced `is_directory` calls with glob qualifiers `(N/)` for path building
-- **Trade-off**: Kept utility functions for non-glob checks (consistency over micro-optimization)
-- **Results**:
-  - `is_directory` calls: 8 → 1 (-87%) via glob qualifiers
-  - Raw test switches eliminated (maintainability)
-  - Internal time: 28ms → 26ms (-7%)
+Performance improvements reviewed:
+- **Analysis**: Profiled startup to identify bottlenecks
+- **Result**: Startup now 78-87ms average (variance due to system load)
+- **Key insight**: Utility functions preferred over raw tests for consistency/maintainability
+- **Trade-off**: ~0.1ms overhead acceptable for better error handling and DRY principle
 
-Key patterns that improved performance:
-```zsh
-# Before (function call overhead for each directory)
-if is_directory "${dir}"; then path+=("${dir}"); fi
-
-# After (glob qualifier filters at expansion time, no function call)
-path+=("${dir}"(N/))
-
-# For non-glob cases, still use utility functions
-is_non_zero_string "${var}" && export VAR="${var}"  # NOT [[ -n "${var}" ]]
-```
-```
+See [`domains/shell-scripting.md`](./domains/shell-scripting.md) § Prefer Utility Functions Over Raw Shell Tests for complete patterns.
 
 ### Current Bottleneck Analysis
 From `zprof` output:
@@ -202,22 +188,19 @@ Key changes:
 From 3+ years of optimization:
 
 **❌ Avoid**:
-- Function calls in hot paths (especially directory checks)
+- Function calls in deeply nested loops (consider extracting)
 - Subshell forks `$(...)` during startup
 - Running external binaries multiple times per shell
 - OMZ-style plugin loading (too dynamic)
 
 **✅ Prefer**:
-- Glob qualifiers: `(N/)` instead of `is_directory` checks (glob filtering is free)
-- Utility functions: `is_non_zero_string` instead of `[[ -n "${var}" ]]` (consistency over micro-optimization)
+- Utility functions: `is_file`, `is_directory`, `is_executable` over raw test operators
+- Zsh parameter expansion: `${PWD:t}` instead of `$(basename "$(pwd)")`
 - Memoization: Cache repeated checks/computations
 - Static bundles: Pre-generate, source once
 - Mtime-based invalidation: Cache until dependency changes
 
-**Note**: Glob qualifiers `(N/)` provide both performance AND safety (no errors on
-missing directories). Use them liberally in startup paths. Utility functions add
-~0.1ms overhead but provide consistent error handling and are preferred over raw
-test switches (`-f`, `-d`, `-n`, etc.) even in hot paths.
+See [`domains/shell-scripting.md`](./domains/shell-scripting.md) § Prefer Utility Functions Over Raw Shell Tests for complete rules.
 
 #### Shell→Ruby Migration Benefits (3.1.21-3.1.25)
 Converted 5 shell scripts to Ruby (2025-2026):

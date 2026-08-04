@@ -78,15 +78,15 @@ Run `capture-prefs.rb` to export preferences:
 cd /tmp/dotfiles-master
 ./scripts/capture-prefs.rb -e
 
-# Files are exported to ${HOME}/personal/dev/configs/defaults/
+# Files are exported to ${PERSONAL_CONFIGS_DIR}/defaults/
 # Verify they're there:
-ls -la "${HOME}/personal/dev/configs/defaults/"
+ls -la "${PERSONAL_CONFIGS_DIR}/defaults/"
 ```
 
 **What gets exported:**
 - System preferences (Finder, Dock, Mission Control, etc.) as `.plist` and `.defaults` files
 - Application preferences (iTerm, VS Code, etc.)
-- Files are exported to `${HOME}/personal/dev/configs/defaults/` (ready to be committed to your home git repo)
+- Files are exported to `${PERSONAL_CONFIGS_DIR}/defaults/` (ready to be committed to your home git repo)
 - Filters out machine-specific IDs, display geometry, ephemeral state
 
 **Note**: The `find_and_append_prefs` function is not available at this stage (it requires `.shellrc` to be installed). To add new app preferences, manually edit the downloaded `capture-prefs-allowed-list.txt` file before running the export.
@@ -487,6 +487,188 @@ See [Extras.md — software-updates-cron.rb](Extras.md#software-updates-cronrb) 
 - Git repo updates
 - Preference exports
 - Repository catalog regeneration
+
+### 4.5 Per-Repository Customizations
+
+Add repository-specific behavior without modifying the core dotfiles. Two patterns are available depending on whether you're customizing built-in git commands or custom aliases.
+
+#### 4.5.1 Built-In Git Commands (push, pull, commit, etc.)
+
+**For BEFORE-only validation:** Use **git hooks** in `~/.config/git/hooks/`
+**For lifecycle management (before + after):** Use **wrapper functions**
+
+##### Pre-Validation Hooks
+
+Create per-repository validation scripts in `${PERSONAL_BIN_DIR}` (default: `~/personal/dev/bin`).
+
+**Pattern:** `pre-<command>-<repo-basename>.sh`
+
+**Example: Pre-push validation**
+
+```zsh
+cat > ${PERSONAL_BIN_DIR}/pre-push-my-repo.sh << 'EOF'
+#!/usr/bin/env zsh
+set -euo pipefail
+source "${HOME}/.shellrc"
+
+# Validation only - no cleanup needed after push
+if ! run_tests; then
+  error "Tests failed - blocking push"
+  exit 1
+fi
+EOF
+
+chmod +x ${PERSONAL_BIN_DIR}/pre-push-my-repo.sh
+```
+
+**How it works:**
+1. Global hook in `~/.config/git/hooks/pre-push` checks for per-repo script
+2. If `${PERSONAL_BIN_DIR}/pre-push-<basename>.sh` exists and is executable, runs it
+3. Non-zero exit blocks the git operation
+
+**Available hooks:** `pre-push`, `pre-commit`, `post-commit`, `post-merge`, `pre-merge-commit` (see `man githooks`)
+
+**IMPORTANT: Git has NO `post-push` hook!** This is intentional design, not a bug.
+
+##### Wrapper Functions for Lifecycle Management
+
+**Problem:** Git has no `post-push` hook, and EXIT traps in `pre-push` fire before git starts pushing.
+
+**Solution:** Wrapper scripts that control the entire operation lifecycle.
+
+**Example: Suspend cron during browser-profiles push**
+
+```zsh
+cat > ${PERSONAL_BIN_DIR}/push-browser-profiles.sh << 'EOF'
+#!/usr/bin/env zsh
+set -euo pipefail
+
+_SCRIPT_NAME="${0:t}"
+source "${HOME}/.aliases"
+
+# Load autoload script to get _push function
+require_env_var XDG_CONFIG_HOME
+load_file_if_exists "${XDG_CONFIG_HOME}/zsh/push"
+
+main() {
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  trap '_decrement_script_depth' EXIT
+
+  local script_start_time="${EPOCHSECONDS}"
+  print_script_start
+
+  # Suspend cron, run push, restore cron automatically
+  with_cron_suspended _push "$@"
+
+  print_script_summary "${script_start_time}"
+}
+
+main "$@"
+EOF
+
+chmod +x ${PERSONAL_BIN_DIR}/push-browser-profiles.sh
+```
+
+**Usage:**
+```bash
+cd ~/personal/vijay/browser-profiles
+./push-browser-profiles.sh  # or add to PATH and call directly
+```
+
+**How `with_cron_suspended` works:**
+1. Suspends cron (backs up current crontab)
+2. Runs the wrapped function (`_push`)
+3. Calls `recron` to restore crontab from tracked file
+4. Cleans up backup file
+5. Handles errors via EXIT trap - cron is always restored
+
+**When to use wrapper functions vs hooks:**
+- **Wrapper:** Need cleanup AFTER operation completes (push/pull with cron suspension)
+- **Hook:** Need validation BEFORE operation starts (pre-push tests, pre-commit linting)
+
+#### 4.5.2 Custom Git Aliases (upreb, cc, etc.)
+
+Use **override scripts** in `${PERSONAL_BIN_DIR}` for custom aliases. These must source the corresponding autoload script to get the default implementation.
+
+**Pattern:** `<alias>-<repo-basename>.sh`
+
+**Example: Delete stale tag before upreb in zen-browser-desktop**
+
+```zsh
+cat > ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh << 'EOF'
+#!/usr/bin/env zsh
+set -euo pipefail
+
+_SCRIPT_NAME="${0:t}"
+source "${HOME}/.aliases"
+
+# Load autoload script to get _upreb function
+require_env_var XDG_CONFIG_HOME
+load_file_if_exists "${XDG_CONFIG_HOME}/zsh/upreb"
+
+main() {
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  trap '_decrement_script_depth' EXIT
+
+  local script_start_time="${EPOCHSECONDS}"
+  print_script_start
+
+  # Custom pre-logic: delete stale tag
+  if git rev-parse -q --verify refs/tags/twilight &>/dev/null; then
+    git delete-tag twilight
+  fi
+
+  # Call common implementation
+  _upreb
+
+  print_script_summary "${script_start_time}"
+}
+
+main "$@"
+EOF
+
+chmod +x ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh
+```
+
+**How it works:**
+1. Git alias checks for override script: `${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh`
+2. If exists and executable, sources it instead of running default implementation
+3. Override script loads autoload function (`_upreb`) and adds custom logic around it
+
+**Common use cases:**
+- `upreb-<repo>.sh` - Custom fetch/rebase/push workflow
+- `push-<repo>.sh` - Pre-push validation or cleanup
+- `pull-<repo>.sh` - Post-pull actions (submodule update, build trigger)
+- `cc-<repo>.sh` - Custom cache cleanup steps
+
+**Template structure:**
+1. Source `.aliases` to get utility functions
+2. Load corresponding autoload script (`load_file_if_exists "${XDG_CONFIG_HOME}/zsh/<alias>"`)
+3. Implement `main()` with script infrastructure (depth tracking, timing, summaries)
+4. Add custom pre-logic before calling `_<alias>` default implementation
+5. Add custom post-logic after calling `_<alias>`
+
+**Available for customization:**
+- `upreb` - Update via fetch + rebase
+- `push` - Push with custom pre/post logic
+- `pull` - Pull with custom post-processing
+- `cc` - Cache cleanup with repo-specific steps
+
+**Testing:**
+```zsh
+# Direct invocation
+cd ~/dev/oss/zen-browser-desktop
+git upreb
+
+# Via run-all.rb (multi-repo)
+all upreb  # Each repo uses its override if it exists
+```
 
 ---
 

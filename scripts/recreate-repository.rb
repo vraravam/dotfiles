@@ -31,7 +31,7 @@ module RecreateRepository
   # @param dry_run [Boolean] Show what would be done without making changes (default: false)
   # @return [Boolean] true on success, false on error
   def run(dir:, force: false, dry_run: false)
-    dir = dir.to_s.chomp('/')
+    dir = dir.to_s.chomp(File::SEPARATOR)
     dir_pn = Pathname.new(dir)
 
     Logging.info '🔍 DRY RUN MODE -- No changes will be made'.red if dry_run

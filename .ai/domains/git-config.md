@@ -77,6 +77,321 @@ allowing `git cc /path/to/repo --expire=now`.
 
 ---
 
+## Per-Repository Customization Architecture
+
+### Overview
+
+This repository uses a **hybrid approach** for per-repository git customizations:
+
+1. **Git native hooks** (for built-in commands: push, pull, commit, merge, etc.)
+2. **Git alias overrides** (for custom commands: upreb, cc, etc.)
+3. **Autoload scripts** (for complex shared logic)
+
+### Why Hybrid?
+
+**Problem**: Git built-in commands (push, pull) take precedence over aliases with the same name.
+- When you run `git push`, git executes the built-in push command, NOT `alias.push`
+- Custom aliases like `upreb` work fine (no built-in command to conflict with)
+
+**Solution**:
+- Use git's **native hook mechanism** for BEFORE logic (pre-push validation)
+- Use **wrapper functions** for AFTER logic (post-push cleanup)
+- Use **alias override dispatch** for custom commands (upreb/cc)
+
+### Architecture Diagram
+
+```
+Built-in commands with lifecycle management:
+  ./push-browser-profiles.sh (wrapper function)
+  └─> with_cron_suspended _push
+      ├─> suspend_cron (before)
+      ├─> _push (operation)
+      └─> recron (after)
+
+Built-in commands with pre-validation only:
+  git push
+  └─> core.hooksPath → ~/.config/git/hooks/pre-push
+      ├─> .git/hooks.local/pre-push (repo-specific, optional)
+      └─> ${PERSONAL_BIN_DIR}/pre-push-<basename>.sh (per-repo validation)
+
+Custom commands (upreb/cc):
+  git upreb
+  └─> alias.upreb
+      ├─> ${PERSONAL_BIN_DIR}/upreb-<basename>.sh (full override)
+      └─> ${XDG_CONFIG_HOME}/zsh/upreb (default implementation via _upreb)
+```
+
+---
+
+## Git Native Hooks
+
+### Global Hooks Directory
+
+All repositories use global hooks installed via `core.hooksPath` in `.gitconfig`:
+
+```ini
+[core]
+  hooksPath = ~/.config/git/hooks
+```
+
+Hook files are stored in `${DOTFILES_DIR}/files/--XDG_CONFIG_HOME--/git/hooks/` and symlinked by `install-dotfiles.rb`.
+
+### Hook Execution Order
+
+**IMPORTANT: Git only supports `pre-push`, NOT `post-push`**
+
+Git natively supports these client-side hooks:
+- `pre-push` - Runs before every `git push` (even when nothing to push)
+- `pre-commit`, `post-commit`, `post-merge`, `post-checkout` - Various other operations
+
+**Git does NOT have a `post-push` hook.** This is not a bug - it's intentional design.
+
+**pre-push execution order**:
+1. `.git/hooks.local/pre-push` - Repo-specific hook (optional, e.g., from Husky/lint-staged)
+2. `${PERSONAL_BIN_DIR}/pre-push-<basename>.sh` - Per-repo customization
+
+### Hook Installation
+
+Hooks are installed automatically via `core.hooksPath` configuration in `.gitconfig`. When you clone a repository, the global hooks in `~/.config/git/hooks/` are immediately active for that repository.
+
+No additional installation step is required - just create your per-repo customization scripts in `${PERSONAL_BIN_DIR}` with the pattern `pre-<command>-<basename>.sh`, and the global hooks will automatically discover and execute them.
+
+### Per-Repo Hook Scripts
+
+**For operations requiring cleanup AFTER push completes**, use wrapper functions instead of hooks (see § Wrapper Functions for Lifecycle Management below).
+
+Create simple scripts in `${PERSONAL_BIN_DIR}` with pattern: `pre-<command>-<basename>.sh` (follows git's standard hook naming convention).
+
+**CRITICAL: EXIT traps in pre-push hooks do NOT work** because the trap fires when the hook script exits (before git starts the actual push operation). For suspend/resume patterns, use wrapper functions instead.
+
+**Example: pre-push validation**
+
+```zsh
+# pre-push-my-repo.sh
+#!/usr/bin/env zsh
+set -euo pipefail
+source "${HOME}/.shellrc"
+
+# Validation only - no cleanup needed after push
+if ! run_tests; then
+  error "Tests failed - blocking push"
+  exit 1
+fi
+```
+
+**Benefits**:
+- ✅ Works for all git operations that have native hooks
+- ✅ Simple scripts - no autoload loading, no depth tracking, no script infrastructure
+- ✅ Automatic installation on clone
+- ✅ Chains with repo-specific hooks (Husky, lint-staged, etc.)
+
+**Limitation**: Only available for operations git provides hooks for (pre-push, pre-commit, etc.)
+
+---
+
+## Wrapper Functions for Lifecycle Management
+
+**Problem**: Git has NO `post-push` hook, and EXIT traps in `pre-push` fire before git starts pushing.
+
+**Solution**: Wrapper functions that control the entire operation lifecycle (before → operation → after).
+
+### Pattern: Suspend/Resume Around Git Operations
+
+Use `with_cron_suspended` (defined in `.aliases`) to wrap operations that need cleanup after completion:
+
+```zsh
+# push-browser-profiles.sh
+#!/usr/bin/env zsh
+set -euo pipefail
+
+_SCRIPT_NAME="${0:t}"
+source "${HOME}/.aliases"
+
+# Load autoload script to get _push function
+require_env_var XDG_CONFIG_HOME
+load_file_if_exists "${XDG_CONFIG_HOME}/zsh/push"
+
+main() {
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  trap '_decrement_script_depth' EXIT
+
+  local script_start_time="${EPOCHSECONDS}"
+  print_script_start
+
+  # Suspend cron, run push, restore cron automatically
+  with_cron_suspended _push "$@"
+
+  print_script_summary "${script_start_time}"
+}
+
+main "$@"
+```
+
+**Usage**:
+```bash
+cd ~/personal/vijay/browser-profiles
+./push-browser-profiles.sh  # or add to PATH and call directly
+```
+
+**How `with_cron_suspended` works**:
+1. Suspends cron (backs up current crontab)
+2. Runs the wrapped function (`_push`)
+3. Calls `recron` to restore crontab from tracked file
+4. Cleans up backup file
+5. Handles errors via EXIT trap - cron is always restored
+
+**Benefits**:
+- ✅ Works regardless of whether push transfers data
+- ✅ Handles errors - cron always restored
+- ✅ No manual cleanup needed
+- ✅ Reusable pattern for any operation needing lifecycle management
+
+**When to use wrapper functions vs hooks**:
+- **Wrapper**: Need cleanup AFTER operation completes (push, pull with cron suspension)
+- **Hook**: Need validation BEFORE operation starts (pre-push tests, pre-commit linting)
+
+---
+
+## Folder-Context-Aware Override Pattern (Custom Commands)
+
+Git aliases support folder-specific override scripts that allow customization of git commands on a per-repository basis. This enables workflows like `all upreb` where different repositories can have custom pre/post logic while sharing common implementation.
+
+### How It Works
+
+When a git alias runs, it checks for an override script at `${PERSONAL_BIN_DIR}/<alias>-<basename>.sh`:
+- `<alias>` - The git alias name (e.g., `upreb`, `push`, `cc`)
+- `<basename>` - The folder name of the current repository (e.g., `zen-browser-desktop`, `browser-profiles`)
+
+If the override exists and is executable, the alias sources it instead of running the default implementation.
+
+### Architecture
+
+```
+${PERSONAL_BIN_DIR}/
+├── upreb-zen-browser-desktop.sh     # Custom upreb for zen-browser-desktop repo
+├── push-browser-profiles.sh         # Custom push for browser-profiles repo
+├── pull-service-center.sh           # Custom pull for service-center repo
+└── cc-browser-profiles.sh           # Custom cc for browser-profiles repo
+```
+
+Each override script:
+1. Sources `.aliases` to get access to shell utilities
+2. Loads the corresponding autoload script to get the common `_<cmd>` implementation
+3. Defines `main()` with custom pre/post logic
+4. Calls `_<cmd>` for the common behavior
+
+### Implementation Pattern
+
+**Git alias with override support:**
+```ini
+upreb = "!f() { \
+  dir=\"${1:-.}\"; \
+  if [ -n \"${PERSONAL_BIN_DIR:-}\" ]; then \
+    basename=\"$(basename \"$(cd \"${dir}\" && pwd)\")\"; \
+    override=\"${PERSONAL_BIN_DIR}/upreb-${basename}.sh\"; \
+    if [ -x \"${override}\" ]; then \
+      (cd \"${dir}\" && . \"${override}\"); \
+      return $?; \
+    fi; \
+  fi; \
+  # ... default implementation ...; \
+}; f"
+```
+
+**Override script example** (`upreb-zen-browser-desktop.sh`):
+```zsh
+#!/usr/bin/env zsh
+set -euo pipefail
+
+_SCRIPT_NAME="${0:t}"
+source "${HOME}/.aliases"
+
+# Load autoload script to get _upreb function
+require_env_var XDG_CONFIG_HOME
+load_file_if_exists "${XDG_CONFIG_HOME}/zsh/upreb"
+
+main() {
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  trap '_decrement_script_depth' EXIT
+
+  local script_start_time="${EPOCHSECONDS}"
+  print_script_start
+
+  # Custom pre-logic: delete stale tag
+  if git rev-parse -q --verify refs/tags/twilight &>/dev/null; then
+    git delete-tag twilight
+  fi
+
+  # Call common implementation
+  _upreb
+
+  print_script_summary "${script_start_time}"
+}
+
+main "$@"
+```
+
+### Aliases with Override Support
+
+The following git aliases support folder-specific overrides:
+
+| Alias | Override Pattern | Common Implementation |
+|-------|------------------|----------------------|
+| `upreb` | `upreb-<basename>.sh` | `_upreb` in `${XDG_CONFIG_HOME}/zsh/upreb` |
+| `push` | `push-<basename>.sh` | `_push` in `${XDG_CONFIG_HOME}/zsh/push` |
+| `pull` | `pull-<basename>.sh` | `_pull` in `${XDG_CONFIG_HOME}/zsh/pull` |
+| `cc` | `cc-<basename>.sh` | Default git alias implementation |
+
+### Usage Examples
+
+**Interactive use:**
+```bash
+cd ~/dev/oss/zen-browser-desktop
+git upreb  # Uses upreb-zen-browser-desktop.sh if it exists
+
+cd ~/dev/project
+git upreb  # Uses default upreb implementation
+```
+
+**With `run-all.rb` (multi-repo):**
+```bash
+all upreb  # Each repo uses its override if it exists, otherwise default
+```
+
+**Direct invocation:**
+```bash
+git upreb ~/dev/oss/zen-browser-desktop  # Override based on basename
+```
+
+### When to Use Overrides
+
+Create folder-specific override scripts when a repository needs:
+- **Pre-operation cleanup** (delete stale tags, remove temp files)
+- **Post-operation actions** (trigger builds, update submodules)
+- **Custom validation** (check for specific branch names, verify tests pass)
+- **Wrapper behavior** (suspend cron during push, restore mtime after pull)
+
+### Relationship to Shell Autoload Functions
+
+The shell autoload functions in `${XDG_CONFIG_HOME}/zsh/` also support overrides via `dispatch_or_fallback`, but they only activate when:
+1. The function is called directly by name (e.g., `upreb` not `git upreb`)
+2. From a context where the autoload function is loaded (interactive shell)
+
+When using `run-all.rb git upreb`:
+- Executes `/bin/zsh -c "git upreb"` in each repo
+- Invokes the **git alias** (not the shell function)
+- Git alias override mechanism is the only way to customize behavior
+
+This is why git aliases need their own override dispatch logic — they're the actual entry point in the `run-all.rb` workflow.
+
+---
+
 ## Helper Predicates for DRY Principle
 
 Git aliases can call other git aliases. Extract repeated patterns into helper predicates

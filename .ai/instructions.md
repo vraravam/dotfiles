@@ -154,38 +154,45 @@ The Git‑related rules in `git-config.instructions.md` are unchanged.  Both edi
 
 **DO NOT modify Git state (staging area, commits, branches, remotes) without explicit permission from the user.**
 
+**DEFAULT WORKFLOW: The user reviews and stages changes manually.**
+
+After making edits:
+1. ✅ Make the requested edits to files
+2. ✅ Show `git status` or `git diff` to display what changed
+3. ❌ **STOP** - Do NOT stage, commit, or modify git state
+4. ✅ Let the user review changes and stage manually
+
 #### Staging Rules
 
-**DO NOT stage, unstage, add, or reset files without explicit permission.**
+**DO NOT stage, unstage, add, reset, or restore files without explicit permission.**
 
-When reviewing changes:
-- Use `git status` and `git diff` to inspect changes
-- Use `git diff --cached` to review staged changes
-- **NEVER** run `git add`, `git add -A`, `git reset`, `git restore`, or any other command that modifies the staging area unless the user explicitly requests it
-
-**Applies to:**
+**Prohibited without permission:**
 - `git add <file>` — stages a file
 - `git add -A` — stages all changes
 - `git add .` — stages all changes in current directory
 - `git reset <file>` — unstages a file
 - `git restore --staged <file>` — unstages a file
+- `git restore <file>` — discards unstaged changes
 - `git checkout -- <file>` — discards unstaged changes
 - `git rm <file>` — stages a deletion
+- `git stash` — stashes changes
+- `git stash pop` — applies stashed changes
 - Any other command that modifies the index/staging area
 
 **Why this matters:**
-- Users may have carefully staged specific hunks or files for different commits
-- Automatically staging all changes destroys that intent
+- Users manually review all changes before staging
+- Users may stage specific hunks or files for different commits
+- Automatically staging destroys the user's deliberate staging intent
 - Mixing unrelated changes into a single commit breaks atomic commit principles
-- The user's staging state is a deliberate choice, not something to override
+- The staging area reflects the user's workflow decisions
 
 **Correct workflow:**
 1. Make edits to files as requested
-2. Show `git status` or `git diff` to display what changed
-3. Ask the user if they want to stage the changes
-4. Only after explicit permission: run `git add` commands
+2. Verify syntax (if applicable)
+3. Show `git status` or `git diff` to display what changed
+4. **STOP** - User will stage manually
 
-**Exception:** When the user explicitly says "stage everything", "commit all changes", or similar clear intent to modify staging state, then `git add -A` is permitted.
+**Exception:** When the user explicitly says "stage these files", "stage everything", "commit all changes", or similar clear intent to modify staging state, then staging commands are permitted.
 
 #### Commit Rules
 
@@ -213,6 +220,33 @@ When reviewing changes:
 4. Only after explicit permission: run `git commit` with user-provided message
 
 **Exception:** When the user explicitly says "commit with message X", "create a commit", or similar clear intent, then `git commit` is permitted.
+
+#### Branch Management Rules
+
+**DO NOT switch branches, create branches, or modify branch state without explicit permission.**
+
+**Prohibited without permission:**
+- `git checkout <branch>` — switches branches
+- `git switch <branch>` — switches branches
+- `git checkout -b <branch>` — creates and switches to new branch
+- `git branch -d <branch>` — deletes a branch
+- `git branch -D <branch>` — force-deletes a branch
+- `git merge <branch>` — merges branches
+- `git rebase <branch>` — rebases current branch
+- Any other command that changes the current branch or branch state
+
+**Why this matters:**
+- Users may be working on a specific branch intentionally
+- Switching branches can lose uncommitted work
+- Creating branches should be a deliberate decision
+- Branch operations affect the entire repository state
+
+**Correct workflow:**
+1. Work on the current branch the user has checked out
+2. If a different branch is needed, inform the user and ask permission
+3. Only after explicit permission: run branch commands
+
+**Exception:** When the user explicitly says "switch to branch X", "checkout branch X", or similar clear intent, then branch commands are permitted.
 
 #### Rebase Rules
 

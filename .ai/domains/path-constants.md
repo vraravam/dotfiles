@@ -22,7 +22,7 @@ Never hardcode user-specific or machine-specific paths. Always use environment v
 | Dotfiles | `${DOTFILES_DIR}` | `EnvVars::DOTFILES_DIR` | `~/.config/dotfiles` |
 | Personal bin | `${PERSONAL_BIN_DIR}` | `EnvVars::PERSONAL_BIN_DIR` | `~/personal/dev/bin` |
 | Personal configs | `${PERSONAL_CONFIGS_DIR}` | `EnvVars::PERSONAL_CONFIGS_DIR` | `~/personal/dev/configs` |
-| Personal profiles | (N/A in shell) | `EnvVars::PERSONAL_PROFILES_DIR` | `~/personal/dev/profiles` |
+| Personal browser profiles | (N/A in shell) | `EnvVars::PERSONAL_PROFILES_DIR` | `~/personal/<local-user-name>/browser-profiles` |
 | Projects base | `${PROJECTS_BASE_DIR}` | `EnvVars::PROJECTS_BASE_DIR` | `~/dev` or custom |
 | XDG config | `${XDG_CONFIG_HOME}` | `EnvVars::XDG_CONFIG_HOME` | `~/.config` |
 | XDG cache | `${XDG_CACHE_HOME}` | `EnvVars::XDG_CACHE_HOME` | `~/.cache` |
