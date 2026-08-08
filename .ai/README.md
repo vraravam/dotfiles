@@ -63,12 +63,22 @@ Each domain file uses `applyTo` patterns to specify which files it covers:
 
 Each AI coding assistant has a minimal redirect file that points here:
 
-- **GitHub Copilot**: `.github/copilot-instructions.md`
+- **GitHub Copilot**: `.github/copilot-instructions.md` (enhanced with pre-task checklist)
 - **Cursor**: `.cursorrules`
 - **Windsurf**: `.windsurfrules`
 - **OpenCode**: `.opencode/skills/dotfiles-domain/SKILL.md`
 - **Aider**: `.aider.conf.yml` (if added)
 - **Others**: Can read `.ai/` directly
+
+### GitHub-Specific Additions
+
+The `.github/` folder includes Copilot-specific enhancements that complement the tool-agnostic `.ai/` structure:
+
+- **`pull_request_template.md`** - PR checklist for dotfiles changes
+- **`CODEOWNERS`** - Repository ownership
+- **`agents/`** - Custom review agents for shell and Ruby scripts (see [agents/README.md](../.github/agents/README.md))
+
+These files follow GitHub conventions but don't duplicate core rules (which remain in `.ai/`).
 
 ## Design Principles
 

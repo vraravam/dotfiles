@@ -71,7 +71,8 @@ module MacOS
 
   # Sends SIGTERM to every app in LOGIN_ITEM_APPS. Called before writing
   # defaults so in-memory state is flushed to disk first.
-  # Failures are silenced -- apps that are not running are not an error.
+  # Verifies each app is running before attempting to kill it.
+  # Retries with SIGKILL (-9) if SIGTERM fails after 2 seconds.
   #
   # Sleeps 1 second after sending signals to ensure apps have fully terminated
   # before the caller proceeds with defaults writes. This prevents race conditions
@@ -81,8 +82,23 @@ module MacOS
   # @return [void]
   def kill_login_item_apps
     LOGIN_ITEM_APPS.each do |app|
-      CommandUtils.run_silent('killall', app)
+      next unless _process_running?(app)
+
+      Logging.debug "Terminating '#{app.cyan}'..."
+      if CommandUtils.run_silent('killall', '-TERM', app)
+        # Wait for graceful shutdown
+        sleep 2
+        # Verify termination succeeded
+        if _process_running?(app)
+          Logging.warn "#{app.yellow} did not terminate gracefully, forcing kill..."
+          CommandUtils.run_silent('killall', '-9', app)
+          sleep 1
+        end
+      else
+        Logging.warn "Failed to terminate '#{app.yellow}'"
+      end
     end
+
     # Finder is launchd-managed; killall causes immediate relaunch
     CommandUtils.run_silent('killall', 'Finder')
 
@@ -155,15 +171,35 @@ module MacOS
 
   # Sends a macOS notification via osascript. Visible to the user even when
   # the script is running in a non-interactive context (cron, etc.).
+  # Rate-limits duplicate notifications within 60 seconds to prevent spam.
   #
   # @param message [String] The notification body text
   # @param title [String] The notification title (default: 'Dotfiles')
   # @return [void]
   def notify(message, title = 'Dotfiles')
+    key = "#{title}:#{message}"
+    now = Time.now.to_i
+
+    # Check if we've sent this notification recently
+    @_notification_history ||= {}
+    if @_notification_history.key?(key)
+      last_sent = @_notification_history[key]
+      if now - last_sent < 60
+        Logging.debug "Skipping duplicate notification (sent #{now - last_sent}s ago): #{message}"
+        return
+      end
+    end
+
     applescript = <<~APPLESCRIPT
       display notification "#{message}" with title "#{title}"
     APPLESCRIPT
     CommandUtils.run_silent('osascript', '-e', applescript)
+
+    # Record this notification
+    @_notification_history[key] = now
+
+    # Cleanup old entries (older than 5 minutes)
+    @_notification_history.delete_if { |_k, timestamp| now - timestamp > 300 }
   end
 
   # Checks for outdated Homebrew casks (with --greedy flag) and returns a
@@ -193,6 +229,15 @@ module MacOS
   # ---------------------------------------------------------------------------
 
   private
+
+  # Checks if a process with the given name is running.
+  # Uses pgrep to search for exact process name match.
+  #
+  # @param process_name [String] Name of the process to check
+  # @return [Boolean] true if process is running, false otherwise
+  def _process_running?(process_name)
+    CommandUtils.run_silent('pgrep', '-x', process_name)
+  end
 
   # Sets the macOS automatic software update schedule to ON or OFF.
   # Checks for sudo credentials, starts keep-alive thread, and runs softwareupdate.

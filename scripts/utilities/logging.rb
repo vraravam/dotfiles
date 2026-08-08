@@ -1,6 +1,9 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
+require 'json'
+require 'fileutils'
+
 require_relative 'core'
 require_relative 'env_vars'
 require_relative 'string'
@@ -8,6 +11,11 @@ require_relative 'string'
 # Logging helpers that replicate the shell functions defined in .shellrc
 # (success/info/warn/debug/error, section_header, print_script_start,
 # print_script_duration, print_script_summary, record_warning, record_error).
+#
+# Structured logging support:
+#   Set LOG_FORMAT=json to enable JSON-formatted log output
+#   Set LOG_FILE=/path/to/file to write logs to file (with rotation)
+#   Default: human-readable console output
 #
 # Color rendering is handled by the String extensions in string.rb and is
 # automatically suppressed when stdout is not a TTY.
@@ -38,12 +46,28 @@ module Logging
     { char: '·', glyph: '▪', color: :dark_gray }     # Level 4: Deep nesting (depth 5+)
   ].freeze
 
+  # Log levels in priority order (lowest to highest severity).
+  # Used for filtering based on LOG_LEVEL environment variable.
+  LOG_LEVELS = {
+    debug: 0,
+    info: 1,
+    success: 2,
+    warn: 3,
+    error: 4,
+    user_action: 5
+  }.freeze
+
   # ---------------------------------------------------------------------------
   # Semantic log-level helpers
   # These mirror success/info/warn/debug/error from .shellrc.
   #
   # All logging functions automatically prepend indentation based on
   # _DOTFILES_SCRIPT_DEPTH. Multi-line messages have each line indented.
+  #
+  # Log level filtering:
+  #   Set LOG_LEVEL=warn to show only warn/error/user_action messages
+  #   Set LOG_LEVEL=info to show info and above (default)
+  #   Set LOG_LEVEL=debug to show all messages
   #
   # These methods do NOT apply tilde substitution -- color methods (.yellow,
   # .cyan, etc.) do so automatically on their arguments. Logging methods are
@@ -55,6 +79,7 @@ module Logging
   # ---------------------------------------------------------------------------
 
   def success(message)
+    return unless _should_log?(:success)
     # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
     # Use error for messages that must always be visible regardless of context.
     return if EnvVars.suppress_log?
@@ -65,10 +90,12 @@ module Logging
   # Prints an informational message (normal progress, idempotency guards, etc.).
   # Suppressed in direnv subshells to reduce noise. Use 'error' for messages
   # that must always be visible regardless of context.
+  # Filtered by LOG_LEVEL environment variable.
   #
   # @param message [String] The message to log
   # @return [void]
   def info(message)
+    return unless _should_log?(:info)
     # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
     # Use error for messages that must always be visible regardless of context.
     return if EnvVars.suppress_log?
@@ -79,10 +106,12 @@ module Logging
   # Prints a warning message (non-fatal operation failures, argument parse errors).
   # Suppressed in direnv subshells. Use 'error' for messages that must always
   # be visible.
+  # Filtered by LOG_LEVEL environment variable.
   #
   # @param message [String] The warning message to log
   # @return [void]
   def warn(message)
+    return unless _should_log?(:warn)
     # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
     # Use error for messages that must always be visible regardless of context.
     return if EnvVars.suppress_log?
@@ -90,14 +119,16 @@ module Logging
     msg.each_line { |line| emit("⚠️ #{'**WARN**'.light_red} #{line.chomp}", level: 0) }
   end
 
-  # Prints a debug message (only visible when DEBUG=true).
+  # Prints a debug message (only visible when DEBUG=true or LOG_LEVEL=debug).
   # Hidden by default. Use for expected-absent tools or optional steps that
   # are silently skipped. Suppressed in direnv subshells.
+  # Filtered by LOG_LEVEL environment variable.
   #
   # @param message [String] The debug message to log
   # @return [void]
   def debug(message)
-    # Hidden by default; only visible when DEBUG env var is set.
+    return unless _should_log?(:debug)
+    # Hidden by default; only visible when DEBUG env var is set or LOG_LEVEL=debug.
     # Also suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
     # Use error for messages that must always be visible regardless of context.
     return unless EnvVars.debug?
@@ -110,7 +141,12 @@ module Logging
   # an app, run a command, open a URL). Distinct from warn (unexpected problem)
   # and info (purely informational). Suppressed in direnv subshells -- direnv
   # runs headlessly and cannot act on prompts. Mirrors user_action() in .shellrc.
+  # Filtered by LOG_LEVEL environment variable.
+  #
+  # @param message [String] The action message to log
+  # @return [void]
   def user_action(message)
+    return unless _should_log?(:user_action)
     return if EnvVars.suppress_log?
     msg = message.to_s.replace_home_path_with_tilde
     msg.each_line { |line| emit("➡️ #{'**ACTION**'.yellow} #{line.chomp}", level: 0) }
@@ -119,6 +155,9 @@ module Logging
   # Prints the error message and raises a +RuntimeError+ with that message,
   # terminating the current execution path unless rescued by the caller.
   # error() always prints regardless of context -- critical failures must be visible.
+  # Never filtered by LOG_LEVEL (errors always shown).
+  #
+  # @param message [String] The error message to log
   # @raise [RuntimeError]
   def error(message)
     msg = message.to_s.replace_home_path_with_tilde
@@ -191,7 +230,31 @@ module Logging
   #   Logging.emit("Details:", level: 1)
   #   # => "    Details:" (4 spaces)
   def emit(message, level:)
+    # Console output (with colors/indentation)
     puts "#{_subordinate_indent(level)}#{message}"
+
+    # File output (stripped of ANSI, plain text or JSON based on LOG_FORMAT)
+    # Extract log level from message prefix if present, otherwise default to :info
+    log_level = case message
+    when /\*\*SUCCESS\*\*/
+      :success
+    when /\*\*INFO\*\*/
+      :info
+    when /\*\*WARN\*\*/
+      :warn
+    when /\*\*DEBUG\*\*/
+      :debug
+    when /\*\*ERROR\*\*/
+      :error
+    when /\*\*ACTION\*\*/
+      :user_action
+    else
+      :info
+    end
+
+    # Strip ANSI codes for file output
+    plain_message = _strip_ansi(message)
+    _write_to_log_file(log_level, plain_message)
   end
 
   # ---------------------------------------------------------------------------
@@ -677,5 +740,111 @@ module Logging
 
     # Fall back to COLUMNS env var (set by parent shell), then hardcoded 80
     @terminal_width = cols.nonzero? || EnvVars.columns
+  end
+
+  # Checks if a log message at the given level should be printed.
+  # Compares requested level against LOG_LEVEL environment variable.
+  # Returns true if message level >= configured minimum level.
+  #
+  # Log levels (severity order): debug < info < success < warn < error < user_action
+  #
+  # Examples:
+  #   LOG_LEVEL=debug → show all messages
+  #   LOG_LEVEL=info  → show info, success, warn, error, user_action (default)
+  #   LOG_LEVEL=warn  → show only warn, error, user_action
+  #   LOG_LEVEL=error → show only error
+  #
+  # @param level [Symbol] The log level to check (:debug, :info, :success, :warn, :error, :user_action)
+  # @return [Boolean] true if message should be logged, false otherwise
+  def _should_log?(level)
+    # Cache the configured minimum level (avoid repeated ENV lookups)
+    @_min_log_level ||= begin
+      env_level = ENV.fetch('LOG_LEVEL', 'info').downcase.to_sym
+      LOG_LEVELS.key?(env_level) ? LOG_LEVELS[env_level] : LOG_LEVELS[:info]
+    end
+
+    # Allow message if its priority >= configured minimum
+    LOG_LEVELS[level] >= @_min_log_level
+  end
+
+  # Writes log entry to file if LOG_FILE is set.
+  # Handles log rotation (keeps last 5 files, max 10MB each).
+  # Format determined by LOG_FORMAT env var (json or human-readable).
+  #
+  # @param level [Symbol] Log level
+  # @param message [String] Log message (plain text, no color codes)
+  # @return [void]
+  def _write_to_log_file(level, message)
+    log_file = ENV.fetch('LOG_FILE', nil)
+    return if nil_or_empty?(log_file)
+
+    log_path = Pathname.new(log_file)
+    _rotate_log_if_needed(log_path)
+
+    # Determine format
+    format = ENV.fetch('LOG_FORMAT', 'text').downcase
+
+    entry = if format == 'json'
+      _format_json_log_entry(level, message)
+    else
+      _format_text_log_entry(level, message)
+    end
+
+    File.open(log_path, 'a') do |f|
+      f.puts(entry)
+    end
+  rescue StandardError => e
+    # Log file write failures should not crash the script
+    warn "Failed to write to log file: #{e.message}" if EnvVars.debug?
+  end
+
+  # Formats log entry as JSON.
+  #
+  # @param level [Symbol] Log level
+  # @param message [String] Log message
+  # @return [String] JSON-formatted log entry
+  def _format_json_log_entry(level, message)
+    {
+      timestamp: Time.now.utc.iso8601,
+      level: level.to_s.upcase,
+      message: message.strip,
+      script: ENV.fetch('SCRIPT_NAME', $PROGRAM_NAME),
+      depth: EnvVars.script_depth,
+      section: @current_section
+    }.to_json
+  end
+
+  # Formats log entry as human-readable text.
+  #
+  # @param level [Symbol] Log level
+  # @param message [String] Log message
+  # @return [String] Text-formatted log entry
+  def _format_text_log_entry(level, message)
+    timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
+    "[#{timestamp}] [#{level.to_s.upcase}] #{message.strip}"
+  end
+
+  # Rotates log file if it exceeds 10MB.
+  # Keeps last 5 log files (log.1, log.2, ..., log.5).
+  #
+  # @param log_path [Pathname] Path to log file
+  # @return [void]
+  def _rotate_log_if_needed(log_path)
+    return unless log_path.file?
+    return if log_path.size < 10 * 1024 * 1024 # 10MB
+
+    # Rotate existing backups (log.4 → log.5, log.3 → log.4, etc.)
+    (4).downto(1) do |i|
+      old_file = Pathname.new("#{log_path}.#{i}")
+      new_file = Pathname.new("#{log_path}.#{i + 1}")
+      FileUtils.mv(old_file.to_s, new_file.to_s) if old_file.exist?
+    end
+
+    # Move current log to .1
+    FileUtils.mv(log_path.to_s, "#{log_path}.1")
+
+    # Delete oldest backup if it exists
+    oldest = Pathname.new("#{log_path}.6")
+    oldest.delete if oldest.exist?
   end
 end
