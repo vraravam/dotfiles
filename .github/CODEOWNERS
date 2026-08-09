@@ -1,0 +1,8 @@
+# This file can be used to define individuals or teams that are responsible for the code.
+# Code owners are automatically requested for review when someone opens a pull request that modifies code that they own.
+#
+# The last matching pattern takes precedence.
+#
+# https://help.github.com/articles/about-codeowners/
+
+* @your-github-username

@@ -315,7 +315,10 @@ dispatch_or_fallback() {
   shift 2
   local override="${PERSONAL_BIN_DIR}/${cmd}-${PWD##*/}.sh"
   if is_executable "${override}"; then
-    . "${override}" "$@"
+    # Execute override script instead of sourcing to prevent EXIT traps and
+    # top-level main() execution from affecting the interactive shell.
+    # Matches git alias dispatch pattern.
+    "${override}" "$@"
   else
     "${fallback_fn}" "$@"
   fi

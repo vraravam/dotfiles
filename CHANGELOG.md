@@ -4,6 +4,46 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.20
+
+#### Enhanced logging and monitoring utilities
+
+* *[scripts/utilities/logging.rb]* Added structured logging with file output and log level filtering. Set `LOG_FILE=/path/to/file` to write logs to file with automatic rotation (keeps last 5 files, max 10MB each). Set `LOG_FORMAT=json` for JSON-formatted logs or `LOG_FORMAT=text` for human-readable logs. Set `LOG_LEVEL=debug|info|success|warn|error|user_action` to filter messages by severity (default: info). Console output unchanged (human-readable with colors). Required modules: `json`, `fileutils`.
+
+* *[scripts/utilities/cron.rb]* Added crontab validation to `restore_cron()` via `_valid_crontab?` helper. Validates syntax before installation: checks file is readable/non-empty, validates line format (comments, env vars, cron entries with 6+ fields). Prevents installing malformed crontab files. Added `_cleanup_old_backups` helper to `suspend_cron()` - keeps only the 5 most recent backup files in `$TMPDIR`, sorted by mtime, deletes oldest.
+
+* *[scripts/utilities/macos.rb]* Enhanced `kill_login_item_apps()` with process verification and graceful termination. Uses `_process_running?` helper (via `pgrep -x`) to check if process exists before kill. Sends SIGTERM, waits 2 seconds, verifies termination, falls back to SIGKILL (-9) if needed. Logs warnings for failed terminations. Added notification rate limiting to `notify()` - deduplicates notifications within 60-second window, tracks history in `@_notification_history`, auto-cleans entries older than 5 minutes. Prevents spam from repeated errors.
+
+**Usage examples**:
+```bash
+# Log level filtering
+LOG_LEVEL=warn ruby script.rb              # Show only warnings and errors
+LOG_LEVEL=debug DEBUG=true ruby script.rb  # Show all messages including debug
+
+# Structured logging with rotation
+LOG_FILE=~/logs/script.log LOG_FORMAT=json ruby script.rb  # JSON logs
+LOG_FILE=~/logs/script.log LOG_FORMAT=text ruby script.rb  # Human-readable logs
+```
+
+* *[scripts/add-upstream-git-config.rb]* Added `extend Core` after `extend self` to enable unqualified `nil_or_empty?` calls in module methods. Maintains consistency with other utility modules.
+
+**Enhancements impact**:
+- Logging methods now check `_should_log?(level)` before printing (filters based on LOG_LEVEL)
+- File output writes to `LOG_FILE` if set, with format determined by `LOG_FORMAT` env var
+- Log rotation prevents unbounded growth (10MB limit per file, 5 files max)
+- Cron operations validate syntax before modifying system crontab
+- Cron backups no longer accumulate indefinitely in `$TMPDIR`
+- Process termination is safer (verifies process exists, retries with SIGKILL if needed)
+- Notification spam prevented via 60-second deduplication window
+
+#### Adopting these changes
+
+* Restart terminal to reload zsh functions if using any autoload scripts that depend on updated utilities.
+* No action required for existing scripts - all enhancements are opt-in via environment variables.
+* To enable structured logging: set `LOG_FILE`, `LOG_FORMAT`, and/or `LOG_LEVEL` env vars.
+
+---
+
 ### 3.2.19
 
 #### Global git hooks + wrapper functions for lifecycle management

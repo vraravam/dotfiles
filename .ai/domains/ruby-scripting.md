@@ -1212,7 +1212,7 @@ end
 def self.cron_backup_file
   Pathname.new(
     ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do
-      File.join(ENV.fetch('TMPDIR', '/tmp'), 'crontab_backup')
+      TMPDIR.join('crontab_backup').to_s
     end
   )
 end

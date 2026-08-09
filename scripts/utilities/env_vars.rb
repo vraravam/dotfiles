@@ -125,6 +125,11 @@ module EnvVars
     ENV.fetch('XDG_STATE_HOME', HOME.join('.local', 'state'))
   ).expand_path.freeze
 
+  # Temporary directory for transient files.
+  # Mirrors: $TMPDIR (set by macOS, falls back to /tmp on other systems)
+  # Used for cron backups, cache invalidation markers, etc.
+  TMPDIR = Pathname.new(ENV.fetch('TMPDIR', '/tmp')).expand_path.freeze
+
   # Zsh dotfiles directory.
   # Mirrors: export ZDOTDIR="${ZDOTDIR:-"${HOME}"}" in .shellrc
   ZDOTDIR = Pathname.new(ENV.fetch('ZDOTDIR', HOME)).expand_path.freeze
@@ -260,7 +265,7 @@ module EnvVars
   def self.cron_backup_file
     Pathname.new(
       ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do
-        File.join(ENV.fetch('TMPDIR', '/tmp'), 'crontab_backup')
+        TMPDIR.join('crontab_backup').to_s
       end
     )
   end

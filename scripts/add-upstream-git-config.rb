@@ -18,6 +18,7 @@ require_relative 'utilities/logging'
 # Returns true on success, false on error (errors are logged via Logging.record_error).
 module AddUpstreamGitConfig
   extend self
+  extend Core  # For nil_or_empty? method
 
   # Adds upstream remote to the specified repo directory.
   #
