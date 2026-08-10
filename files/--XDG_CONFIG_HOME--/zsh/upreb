@@ -27,7 +27,9 @@ _upreb() {
     for branch in "${local_branches[@]}"; do
       debug "processing: $(yellow "${branch}")"
       git -C "${dir}" switch "${branch}"
-      git -C "${dir}" upreb || true
+      # Skip git alias override detection to prevent double-execution when called
+      # from wrapper scripts (dispatch_or_fallback already found the override).
+      _GIT_OVERRIDE_SKIP=1 git -C "${dir}" upreb || true
       # If incoming and outgoing commit counts are identical AND git diff @{u}
       # produces no diffs, the branch has diverged symmetrically with no content
       # difference (e.g. remote was force-pushed/rebased). Safe to rebase silently.
@@ -39,7 +41,7 @@ _upreb() {
         info "Symmetric diverge with no content diff -- rebasing $(yellow "${branch}") onto @{u}"
         git -C "${dir}" rebase @{u} || true
       fi
-      git -C "${dir}" push || true
+      _GIT_OVERRIDE_SKIP=1 git -C "${dir}" push || true
     done
   fi
 }

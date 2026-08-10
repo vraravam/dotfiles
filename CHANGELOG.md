@@ -4,6 +4,37 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.21
+
+#### Conditionally suppress section_header in autoload scripts when called from wrapper scripts
+
+* *[files/--XDG_CONFIG_HOME--/zsh/cc, files/--XDG_CONFIG_HOME--/zsh/push]* Added conditional `section_header` display based on `_DOTFILES_SCRIPT_DEPTH`. Headers are only shown when `_DOTFILES_SCRIPT_DEPTH <= 0` (direct invocation). When called from wrapper scripts that already printed their own header via `print_script_start`, the autoload scripts skip their `section_header` to avoid duplicate headers.
+
+* *[.ai/domains/script-depth-tracking.md]* Documented the conditional output pattern for autoload functions. Added "Conditional Output Based on Depth" section with complete examples of suppressing section_header when called from wrapper scripts, including wrapper script template and output comparison.
+
+**Why this matters**:
+- Eliminates duplicate headers when wrapper scripts call autoload functions
+- Wrapper scripts (e.g., `push-browser-profiles.sh`) use `print_script_start` for lifecycle management
+- Autoload scripts retain headers for direct invocation (`git push`, `git cc`, or direct function calls)
+- DRY principle: Wrapper provides overall context, autoload provides operation details only when not nested
+
+**Usage patterns**:
+```bash
+# Direct invocation - shows section_header
+git push                     # "Pushing '/path/to/repo'"
+git cc                       # "Compressing '/path/to/repo'"
+
+# Via wrapper script - no duplicate header
+push-browser-profiles.sh     # "Starting..." (from wrapper), then git output (no section_header)
+cc-browser-profiles.sh       # "Starting..." (from wrapper), then git output (no section_header)
+```
+
+#### Adopting these changes
+
+* Restart terminal to reload zsh autoload functions.
+
+---
+
 ### 3.2.20
 
 #### Enhanced logging and monitoring utilities

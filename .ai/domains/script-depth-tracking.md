@@ -166,6 +166,141 @@ The decrement ensures the counter returns to its pre-script value on exit. This 
 
 See `TechnicalDeepDive.md` § 6 for the full rationale on why the decrement is applied even for subprocess-only scripts.
 
+## Conditional Output Based on Depth
+
+Beyond banner suppression (depth ≤ 1), scripts can use `_DOTFILES_SCRIPT_DEPTH` to conditionally suppress other output when called from wrapper scripts.
+
+### Pattern: Suppress section_header in Autoload Functions
+
+Autoload functions that can be called directly OR from wrapper scripts should conditionally show `section_header`:
+
+```zsh
+_my_operation() {
+  local folder
+  local -a switches
+  parse_folder_and_switches "$@"
+
+  # Only show section_header when called directly (not from wrapper scripts).
+  # Wrapper scripts use print_script_start for their own headers.
+  if [[ "${_DOTFILES_SCRIPT_DEPTH:-0}" -le 0 ]]; then
+    section_header "$(yellow 'Operation name') '$(cyan "${folder}")'"
+  fi
+
+  # ... operation logic ...
+}
+```
+
+**Why this works:**
+- **Direct invocation** (`git operation` or `my_operation`): depth is 0, header shows
+- **Via wrapper script**: wrapper calls `print_script_start` (increments depth to 1), then calls autoload function, header is suppressed
+- Eliminates duplicate headers without code duplication
+
+**Example wrapper script pattern:**
+```zsh
+#!/usr/bin/env zsh
+set -euo pipefail
+
+_SCRIPT_NAME="${0:t}"
+source "${HOME}/.aliases"
+require_env_var XDG_CONFIG_HOME
+load_file_if_exists "${XDG_CONFIG_HOME}/zsh/my_operation"
+
+main() {
+  local _current_section='(init)'
+  local -a _step_warnings=()
+  local -a _step_errors=()
+  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  trap '_decrement_script_depth' EXIT
+
+  local script_start_time="${EPOCHSECONDS}"
+  print_script_start                # Shows wrapper's banner, sets depth=1
+
+  with_cron_suspended _my_operation "$@"  # Autoload skips section_header
+
+  print_script_summary "${script_start_time}"
+}
+
+main "$@"
+```
+
+**Output comparison:**
+```bash
+# Direct invocation - shows section_header
+$ git operation /path/to/repo
+Operation name '/path/to/repo'
+... operation output ...
+
+# Via wrapper - no duplicate header
+$ operation-wrapper.sh /path/to/repo
+[operation-wrapper.sh] Starting...
+... operation output (no section_header) ...
+[operation-wrapper.sh] Summary: completed in 2s
+```
+
+### Pattern: Skip Git Alias Override Detection in Autoload Functions
+
+Autoload functions that call git aliases with override detection MUST set `_GIT_OVERRIDE_SKIP=1` to prevent double-execution.
+
+**Problem:** When a wrapper script uses `dispatch_or_fallback`, the following sequence occurs:
+
+1. User types `cc` → `dispatch_or_fallback` finds `cc-browser-profiles.sh` → executes wrapper
+2. Wrapper increments depth, calls `with_cron_suspended _cc`
+3. `_cc` calls `git -C "${folder}" cc` (the git alias)
+4. Git alias detects override script exists → calls `cc-browser-profiles.sh` AGAIN
+5. Second invocation increments depth again, prints duplicate output
+
+**Solution:** Set `_GIT_OVERRIDE_SKIP=1` before calling git aliases from autoload functions:
+
+```zsh
+_cc() {
+  local folder
+  local -a switches
+  parse_folder_and_switches "$@"
+
+  # Only show section_header when called directly (not from wrapper scripts).
+  if [[ "${_DOTFILES_SCRIPT_DEPTH:-0}" -le 0 ]]; then
+    section_header "$(yellow 'Compressing') '$(cyan "${folder}")'"
+  fi
+
+  if ! is_git_repo "${folder}"; then
+    warn "Skipping repo '${folder}' -- not a git repo"
+  else
+    # Skip git alias override detection to prevent double-execution when called
+    # from wrapper scripts (dispatch_or_fallback already found the override).
+    _GIT_OVERRIDE_SKIP=1 git -C "${folder}" cc "${switches[@]}" || true
+  fi
+}
+```
+
+**Why this works:**
+- Git aliases check `[ -z "${_GIT_OVERRIDE_SKIP:-}" ]` before running override detection
+- When set, git alias bypasses override check and runs the actual git commands
+- Prevents wrapper script from being called twice
+
+**Applies to all git aliases with override detection:**
+- `cc` (compress/clean)
+- `push` (git push)
+- `pull` (git pull)
+- `upreb` (update+rebase)
+
+**Files affected:**
+- `files/--XDG_CONFIG_HOME--/zsh/cc` (line 36)
+- `files/--XDG_CONFIG_HOME--/zsh/push` (line 22)
+- `files/--XDG_CONFIG_HOME--/zsh/pull` (line 18)
+- `files/--XDG_CONFIG_HOME--/zsh/upreb` (lines 30, 42)
+
+**Pattern in upreb:**
+`upreb` autoload function calls both `git upreb` and `git push` in a loop, so both need `_GIT_OVERRIDE_SKIP=1`:
+
+```zsh
+for branch in "${local_branches[@]}"; do
+  git -C "${dir}" switch "${branch}"
+  _GIT_OVERRIDE_SKIP=1 git -C "${dir}" upreb || true
+  # ... symmetric diverge check ...
+  _GIT_OVERRIDE_SKIP=1 git -C "${dir}" push || true
+done
+```
+
 ## Summary
 
 | Aspect | Shell | Ruby |
@@ -173,5 +308,6 @@ See `TechnicalDeepDive.md` § 6 for the full rationale on why the decrement is a
 | Increment | `export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))` | `Logging.increment_script_depth` |
 | Decrement | `trap '_decrement_script_depth' EXIT` | Automatic via `at_exit` hook |
 | Check if outermost | `is_outermost_script` | `outermost_script?` |
+| Check if direct call | `[[ "${_DOTFILES_SCRIPT_DEPTH:-0}" -le 0 ]]` | `ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i <= 0` |
 | Indent calculation | `$(_log_indent)` returns `2 * depth` spaces | `log_indent` returns `'  ' * depth` |
 | Used by | All logging functions + section headers | All logging methods + section headers |

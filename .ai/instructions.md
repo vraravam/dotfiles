@@ -435,9 +435,24 @@ Both `~/.ssh/config` and `templates/ssh-config.template` must have this comment 
 
 ## Changelog Generation Rules
 
-- When generating a changelog, first examine the list of staged changes.
-- **Never include changes to `.ai/` directory** - AI instruction updates are not user-facing and don't belong in CHANGELOG.
-- **Never include line number references** - line numbers become stale as files are edited and add no value to users adopting changes.
+**MANDATORY: Every commit in `${DOTFILES_DIR}` MUST include a new CHANGELOG.md section.**
+
+### Workflow for Creating Commits
+
+1. Make all code/documentation changes
+2. Run `git next-version` to get the next version number
+3. Add a new section to CHANGELOG.md with that version number
+4. Document ALL changes in the commit (not just the "main" change)
+5. Stage all changes including CHANGELOG.md
+6. Create ONE atomic commit containing both the changes and the CHANGELOG entry
+
+### Rules
+
+- The CHANGELOG entry must document ALL changes in the commit (not just the "main" change)
+- Include changes to `.ai/` instructions when they're part of the same logical change (e.g., adding a feature + documenting the pattern in instructions)
+- Never create separate commits for CHANGELOG updates - include CHANGELOG in the same commit as the changes it documents
+- **Never include line number references** - line numbers become stale as files are edited and add no value to users adopting changes
+- When generating a changelog, first examine the list of staged changes
 - For changes that affect the zwc cache (e.g., edits to autoloaded function files), prepend a call to `delete_caches` before any `unfunction` or re‑compile instructions so the cache is regenerated correctly.
 - If any function definitions in `~/.shellrc` have been added, renamed, or removed, include a run‑time instruction to reload the function definitions:
   ```zsh

@@ -24,11 +24,17 @@ _cc() {
   local folder
   local -a switches
   parse_folder_and_switches "$@"
-  section_header "$(yellow 'Compressing') '$(cyan "${folder}")'"
+  # Only show section_header when called directly (not from wrapper scripts).
+  # Wrapper scripts use print_script_start for their own headers.
+  if [[ "${_DOTFILES_SCRIPT_DEPTH:-0}" -le 0 ]]; then
+    section_header "$(yellow 'Compressing') '$(cyan "${folder}")'"
+  fi
   if ! is_git_repo "${folder}"; then
     warn "Skipping finding size of the repo since '$(cyan "${folder}")' doesn't exist or is not a git repo"
   else
-    git -C "${folder}" cc "${switches[@]}" || true
+    # Skip git alias override detection to prevent double-execution when called
+    # from wrapper scripts (dispatch_or_fallback already found the override).
+    _GIT_OVERRIDE_SKIP=1 git -C "${folder}" cc "${switches[@]}" || true
   fi
 }
 
