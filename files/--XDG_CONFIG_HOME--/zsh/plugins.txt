@@ -146,8 +146,9 @@ ohmyzsh/ohmyzsh path:plugins/direnv
 # highlighting. It provides dynamic highlighting (invalid commands shown in red,
 # existing files underlined) and uses high-quality Sublime Text syntax definitions.
 
-# NOT deferred: hooks into ZLE to show ghost-text suggestions. Same reasoning
-# as FSH -- the async suggestion fetch (ZSH_AUTOSUGGEST_USE_ASYNC) means it
-# doesn't block ZLE, so the only cost is the one-time load at startup.
+# NOT deferred: hooks into ZLE via zle-line-init, precmd, and widget wrapping.
+# Provides predictive inline suggestions with fuzzy matching, directory-aware
+# context, and sequence prediction. Daemon-based (~0.3ms queries) after initial
+# ~30ms first-run init (cached to ~/.local/share/deja/init.zsh thereafter).
 # Must be last so it wraps all other ZLE widgets.
-zsh-users/zsh-autosuggestions
+Giammarco-Ferranti/deja
