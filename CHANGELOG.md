@@ -4,6 +4,14 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.23
+
+#### Fix git upreb for read-only repos, add non-interactive Homebrew upgrades, fix profiles repo squashing
+
+* *[scripts/recreate-repository.rb]* Fixed force-squash detection for profiles repo. Was comparing basename `'browser-profiles'` against `KEYBASE_PROFILES_REPO_NAME` `'profiles'`, which never matched. Now directly compares full path against `PERSONAL_PROFILES_DIR`. Result: profiles repo always force-squashed, HOME repo respects `-f` flag.
+
+---
+
 ### 3.2.22
 
 #### Optimize starship prompt, git size measurements, and migrate to zsh-patina instead of fast-syntax-highlighting

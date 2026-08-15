@@ -37,8 +37,7 @@ module RecreateRepository
     Logging.info '🔍 DRY RUN MODE -- No changes will be made'.red if dry_run
 
     # The profiles repo is always force-squashed.
-    profiles_repo_name = EnvVars::KEYBASE_PROFILES_REPO_NAME
-    force = true if profiles_repo_name && dir_pn.basename.to_s == profiles_repo_name
+    force = true if dir_pn == EnvVars::PERSONAL_PROFILES_DIR
 
     unless GitProcessor.repo?(dir)
       Logging.error "'#{dir.cyan}' is not a git repo. Please specify the root of a git repo."
