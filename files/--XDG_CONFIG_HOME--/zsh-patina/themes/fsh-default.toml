@@ -1,0 +1,72 @@
+# fsh-default theme for zsh-patina
+# file location: ~/.config/zsh-patina/fsh-default.toml (symlinked from dotfiles)
+#
+# This theme matches fast-syntax-highlighting's default color scheme.
+# Reference: https://github.com/zdharma-continuum/fast-syntax-highlighting
+#
+# FSH default theme structure:
+#   - Commands (builtins, executables):     GREEN
+#   - Keywords (if, then, while, etc):      YELLOW
+#   - Paths (existing files/directories):   MAGENTA + UNDERLINE
+#   - Strings (quoted text):                YELLOW
+#   - Variables ($VAR, ${VAR}):             CYAN
+#   - Comments:                             GRAY (#a0a0a0)
+
+# Comments
+"comment" = "#a0a0a0"
+
+# Strings - FSH uses yellow for all strings
+"string" = "yellow"
+
+# Regular expressions
+"keyword.operator.regexp" = "yellow"
+
+# Escape characters in strings
+"constant.character.escape" = "yellow"
+
+# Numeric file descriptors (e.g. `2> /dev/null`)
+"constant.numeric.integer.decimal.file-descriptor" = "yellow"
+
+# Parameters - FSH uses cyan for parameters
+"variable.parameter" = "cyan"
+
+# Environment variables - FSH uses cyan
+"variable.other" = "cyan"
+"punctuation.definition.variable" = "cyan"
+
+# Commands - FSH uses GREEN for all commands (builtins and executables)
+"variable.function" = "green"
+
+# Home directory ~ - FSH uses cyan
+"variable.language.tilde" = "cyan"
+
+# Keywords (if, then, while, for, etc) - FSH uses YELLOW
+"keyword" = "yellow"
+
+# Variable assignments (VAR=value) - FSH uses cyan for the variable name
+"storage" = "cyan"
+
+# Support terms (e.g. double braces, let)
+"support" = "yellow"
+
+# Function names - FSH uses yellow
+"entity.name.function" = "yellow"
+
+# Braces and punctuation - FSH uses yellow
+"punctuation.section" = "yellow"
+
+# History expansions (!!, !$, etc)
+"meta.group.expansion.history" = "yellow"
+
+# Command substitutions - reset to terminal defaults
+"meta.group.expansion.command.parens" = {}
+
+# Dynamic items (zsh-patina specific features)
+# Callable commands - GREEN when valid (matches FSH command color)
+"dynamic.callable" = "green"
+
+# Invalid/missing commands - RED (FSH shows these in red)
+"dynamic.callable.missing" = "red"
+
+# Existing paths - MAGENTA + UNDERLINE (matches FSH exactly)
+"dynamic.path" = { foreground = "magenta", underline = true }

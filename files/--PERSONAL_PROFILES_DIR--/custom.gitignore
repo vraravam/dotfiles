@@ -18,6 +18,7 @@
 .thumbnails
 .Trash
 *.bak-rebuild
+*.backup
 *.iso
 *.log
 *.sqlite-shm
@@ -209,6 +210,7 @@ ZenProfile/**/zen-sessions-backup/zen-sessions-*.jsonlz4
 #   chrome/userChrome.css + zen-themes/ — user CSS customisations
 
 # Override: keep the Zen chrome/ folder (it is NOT a git repo, unlike other profiles)
+!/FirefoxProfile/Profiles/DefaultProfile/chrome/
 !/ZenProfile/Profiles/DefaultProfile/chrome/
 
 

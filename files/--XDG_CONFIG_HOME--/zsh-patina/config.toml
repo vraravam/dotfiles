@@ -1,0 +1,24 @@
+# zsh-patina configuration
+# file location: ~/.config/zsh-patina/config.toml (symlinked from dotfiles)
+#
+# This config matches fast-syntax-highlighting's default color scheme.
+# Reference: https://github.com/zdharma-continuum/fast-syntax-highlighting
+#
+# Colors can be:
+#   - Named ANSI colors: black, red, green, yellow, blue, magenta, cyan, white
+#   - RGB hex codes: #RRGGBB
+#   - Terminal palette numbers: 0-255
+#
+# FSH default color mapping:
+#   commands (cd, ls, git):       green
+#   keywords (if, then, while):   yellow
+#   paths (existing files/dirs):  magenta + underline
+#   strings (quoted text):        yellow
+#   variables ($HOME, $PATH):     cyan
+#   comments:                     gray
+
+[highlighting]
+theme = "file:~/.config/zsh-patina/themes/fsh-default.toml"
+dynamic = true
+max_line_length = 20000
+timeout_ms = 500

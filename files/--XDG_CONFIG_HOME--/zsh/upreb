@@ -41,7 +41,6 @@ _upreb() {
         info "Symmetric diverge with no content diff -- rebasing $(yellow "${branch}") onto @{u}"
         git -C "${dir}" rebase @{u} || true
       fi
-      _GIT_OVERRIDE_SKIP=1 git -C "${dir}" push || true
     done
   fi
 }

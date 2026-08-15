@@ -12,8 +12,10 @@ insert_final_newline = true
 trim_trailing_whitespace = true
 max_line_length = off
 
-# JSON — no overrides needed; all [*] defaults are correct for JSON
-# (insert_final_newline = true is intentional: POSIX tools expect it and parsers tolerate it)
+# JSON — no overrides needed except insert_final_newline
+# Some tools (api-governance-agent) expect JSON without final newline
+[*.json]
+insert_final_newline = false
 
 # Markdown — trailing whitespace is semantically significant (two spaces = <br>), so do not
 # trim it. Indentation in Markdown is structural (code fences, lists), not a style choice,
@@ -58,56 +60,54 @@ keep_padding       = true
 indent_style = tab
 end_of_line = crlf
 
-# Ruby and Elixir — 2-space indent (both communities' standard)
-[*.{rb,iex.exs,exs}]
-indent_size = 2
-
-# Ruby project files with no extension
-[{Brewfile,Gemfile}]
-indent_size = 2
+# Ruby, Elixir, TOML, YAML, Java, Gradle, Groovy, TypeScript, JavaScript, HTML
+# all use 2-space indent from [*] defaults — no overrides needed
 
 # Lockfiles — generated, never hand-edited; no normalisation
-[*.lock]
+# Ruby/Bundler: Gemfile.lock, *.lock
+# NPM: package-lock.json, npm-shrinkwrap.json
+# Yarn: yarn.lock
+# pnpm: pnpm-lock.yaml
+# Gradle: gradle.lockfile
+# Hex/Elixir: mix.lock
+[{*.lock,package-lock.json,npm-shrinkwrap.json,yarn.lock,pnpm-lock.yaml,gradle.lockfile,mix.lock}]
 trim_trailing_whitespace = false
 insert_final_newline = false
 indent_size = unset
-
-# TOML — 2-space indent (TOML spec examples and most formatters use 2)
-[*.toml]
-indent_size = 2
-
-# YAML — 2-space indent (community standard)
-[*.{yml,yaml}]
-indent_size = 2
 
 # SQL — 4-space indent (sqlfluff, pgFormatter, and most SQL style guides default to 4)
 [*.sql]
 indent_size = 4
 
-# XML and text plist — 4-space indent (W3C tooling and most XML formatters default to 4)
-[*.{xml,plist}]
+# Python — Black formatter default line length (2-space indent from [*])
+[*.py]
+max_line_length = 88
+
+# Go — tabs for indentation (Go community standard; gofmt uses tabs)
+[*.go]
+indent_style = tab
+
+# Makefiles — must use tabs (required by make)
+[Makefile]
+indent_style = tab
+indent_size = unset
+
+# justfile (just command runner) — 4-space indent
+[justfile]
 indent_size = 4
-
-# Compiled zsh bytecode — binary; disable all text processing
-[*.zwc]
-charset = unset
-trim_trailing_whitespace = false
-insert_final_newline = false
-indent_size = unset
-
-[*.zwc.old]
-charset = unset
-trim_trailing_whitespace = false
-insert_final_newline = false
-indent_size = unset
-
-# Binary Apple property list captures — binary; disable all text processing
-[*.defaults]
-charset = unset
-trim_trailing_whitespace = false
-insert_final_newline = false
-indent_size = unset
 
 # gitignore/gitattributes files — columns of patterns use alignment spaces, not indentation
 [{.gitignore,.gitignore_global,custom.gitignore,.gitattributes,custom.gitattributes}]
+indent_size = unset
+
+# Compiled/binary files — disable all text processing
+# zsh bytecode: .zwc, .zwc.old
+# Python bytecode: .pyc, .pyo
+# Java bytecode: .class
+# Native binaries: .o, .so, .dll, .dylib, .exe
+# Apple binary plists: .defaults
+[*.{zwc,zwc.old,pyc,pyo,class,o,so,dll,dylib,exe,defaults}]
+charset = unset
+trim_trailing_whitespace = false
+insert_final_newline = false
 indent_size = unset

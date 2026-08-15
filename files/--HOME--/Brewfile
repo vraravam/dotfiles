@@ -56,6 +56,7 @@ brew 'git-tools'
 brew 'git-trim'
 brew 'mise'
 brew 'starship'
+brew 'zsh-patina'  # Rust-based syntax highlighter for cli
 
 # casks pulled in for base configs (if these are absent, you will get errors and things won't work)
 cask 'iterm2@beta'

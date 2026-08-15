@@ -243,6 +243,99 @@ if is_file "${ANTIDOTE_PLUGIN_ZSH}"; then
   unset _nounset_was_set
 fi
 
+# Activate zsh-patina for syntax highlighting (replaces fast-syntax-highlighting).
+# zsh-patina is 62% faster for input lag (1.4ms vs 3.6ms) and uses a Rust daemon
+# for sub-millisecond highlighting. It provides dynamic highlighting (invalid
+# commands shown in red, existing files underlined) and uses high-quality Sublime
+# Text syntax definitions via syntect.
+#
+# Installation: brew install zsh-patina (added to Brewfile)
+# Configuration: ~/.config/zsh-patina/config.toml (optional)
+# Theme: Uses default "patina" theme with balanced colors
+#
+# Activation must happen after antidote bundle loads (which sets up ZLE hooks).
+# The guard ensures graceful degradation on vanilla OS before brew installs it.
+#
+# Performance optimisation -- cache `zsh-patina activate` output to avoid forking
+# the binary on every shell start. Same pattern as mise/starship caches. The cache
+# is keyed on the zsh-patina binary mtime and regenerated only when zsh-patina is
+# updated (e.g. after `brew upgrade`).
+if (($+commands[zsh-patina])); then
+  # Anonymous function scopes cache-related locals; pure zsh file, () is idiomatic here.
+  () {
+    local patina_bin="${commands[zsh-patina]}"
+    local patina_activate_cache="${XDG_CACHE_HOME}/zsh-patina-activate-cache.zsh"
+    if is_file_older_than "${patina_activate_cache}" "${patina_bin}"; then
+      zsh-patina activate >|"${patina_activate_cache}"
+      recompile_zsh_script "${patina_activate_cache}"
+    fi
+    load_file_if_exists "${patina_activate_cache}"
+
+    # Auto-restart daemon if config/theme files are newer than daemon start time.
+    # The daemon caches config at startup and doesn't watch for changes, so edits
+    # to config.toml or theme files require a restart to take effect.
+    # Optimization: Cache-based check to avoid expensive pgrep/ps/date on every startup.
+    # Only performs full check if config changed or cache expired (5min TTL).
+    # Cost: ~1-2ms (cached) vs ~20ms (full check) = ~18ms savings on 95% of startups.
+    local config="${XDG_CONFIG_HOME}/zsh-patina/config.toml"
+    local theme="${XDG_CONFIG_HOME}/zsh-patina/themes/fsh-default.toml"
+    local cache="${XDG_CACHE_HOME}/zsh-patina-restart-check"
+
+    # Early return if config file doesn't exist (first-time setup, not yet installed)
+    if [[ ! -f "${config}" ]]; then return; fi
+
+    # Get current config/theme mtimes (cheap: ~1ms for both stats)
+    local config_mtime theme_mtime
+    config_mtime=$(stat -f %m "${config}" 2>/dev/null)
+    theme_mtime=$(stat -f %m "${theme}" 2>/dev/null)
+
+    # Rate-limit: If cache exists and is less than 5 minutes old, skip check entirely.
+    # Format: "last_check_epoch config_mtime theme_mtime"
+    if [[ -f "${cache}" ]]; then
+      local cache_data
+      read -r cache_data < "${cache}"
+      local -a cache_parts
+      cache_parts=(${(z)cache_data})
+
+      local last_check="${cache_parts[1]}"
+      local cached_config_mtime="${cache_parts[2]}"
+      local cached_theme_mtime="${cache_parts[3]}"
+
+      # Skip if cache is fresh (<5min old) AND config files haven't changed
+      local now="${EPOCHSECONDS}"
+      if [[ -n "${last_check}" ]] && (( now - last_check < 300 )) && \
+         [[ "${cached_config_mtime}" == "${config_mtime}" ]] && \
+         [[ "${cached_theme_mtime}" == "${theme_mtime}" ]]; then
+        return  # Fast path: cache valid, configs unchanged (~1ms total)
+      fi
+    fi
+
+    # Cache miss or stale - perform full check (expensive: ~20ms)
+    local daemon_pid
+    daemon_pid=$(pgrep -f "zsh-patina daemon" 2>/dev/null | head -1)
+    if [[ -z "${daemon_pid}" ]]; then return; fi
+
+    local daemon_start
+    daemon_start=$(ps -o lstart= -p "${daemon_pid}" 2>/dev/null)
+    if [[ -z "${daemon_start}" ]]; then return; fi
+
+    local daemon_epoch
+    daemon_epoch=$(date -j -f "%a %b %d %H:%M:%S %Y" "${daemon_start}" +%s 2>/dev/null)
+    if [[ -z "${daemon_epoch}" ]]; then return; fi
+
+    # Update cache with current check timestamp and config mtimes
+    echo "${EPOCHSECONDS} ${config_mtime} ${theme_mtime}" >| "${cache}"
+
+    # Restart if daemon is older than either config file (config newer than daemon).
+    # Background and disown to prevent blocking .zshrc (allows multiple shells to
+    # start simultaneously without the restart interfering with zsh-defer or ZLE).
+    if is_epoch_older_than "${daemon_epoch}" "${config_mtime}" || \
+       is_epoch_older_than "${daemon_epoch}" "${theme_mtime}"; then
+      (zsh-patina restart >/dev/null 2>&1 &)
+    fi
+  }
+fi
+
 # Activate mise -- the OMZ mise plugin referenced $ZSH_CACHE_DIR (undefined without OMZ)
 # so it has been removed from $ANTIDOTE_PLUGIN_TXT and replaced with a direct activation here.
 #
@@ -319,6 +412,8 @@ append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
 # append_to_path_if_dir_exists '/usr/local/bin'
 append_to_path_if_dir_exists "${HOME}/.rd/bin"
 append_to_path_if_dir_exists "${HOME}/.cargo/bin"
+# zsh-bench: interactive shell benchmarking tool (measures prompt lag, input lag, etc.)
+append_to_path_if_dir_exists "${PROJECTS_BASE_DIR}/oss/zsh-bench"
 
 # Defer .aliases (963 lines of function/alias definitions -- no ZLE hooks or setopts)
 # to after the first idle ZLE event. zsh-defer fires before any keypress, so all

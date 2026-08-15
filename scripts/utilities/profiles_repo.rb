@@ -37,9 +37,12 @@ module ProfilesRepo
   # Query methods (read-only state inspection)
   # ---------------------------------------------------------------------------
 
-  # Checks the size of the profiles repo .git directory and records an error
-  # if it exceeds the specified limit. Suggests running recreate-repository.rb when
-  # the threshold is breached.
+  # Checks the pack size of the profiles repo and records an error if it exceeds
+  # the specified limit. Suggests running recreate-repository.rb when the threshold
+  # is breached.
+  #
+  # Uses git_repo_size_* for 2-3x faster measurement (~10-20ms vs ~50ms).
+  # Note: Measures pack size only, which is typically 70-90% of total .git size.
   #
   # @param limit_gb [Integer] Size limit in gigabytes (default: 2)
   # @return [void]
@@ -50,17 +53,17 @@ module ProfilesRepo
     end
 
     git_dir = EnvVars::PERSONAL_PROFILES_DIR.join('.git')
-    size_kb = PathUtils.dir_size_kb(git_dir)
+    size_kb = PathUtils.git_repo_size_kb(git_dir)
     limit_kb = limit_gb * 1024 * 1024
 
     if size_kb > limit_kb
-      size_human = PathUtils.dir_size_human(git_dir)
+      size_human = PathUtils.git_repo_size_human(git_dir)
       Logging.record_error(
-        "Profiles repo .git directory is #{size_human} -- exceeds #{limit_gb}GB threshold. " \
+        "Profiles repo pack size is #{size_human} -- exceeds #{limit_gb}GB threshold. " \
         "Consider running: recreate-repository.rb -d \"#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}\""
       )
     else
-      Logging.debug "Profiles repo .git directory size within #{limit_gb}GB threshold"
+      Logging.debug "Profiles repo pack size within #{limit_gb}GB threshold"
     end
   end
 

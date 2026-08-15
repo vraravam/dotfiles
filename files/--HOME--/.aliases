@@ -693,7 +693,7 @@ if is_macos && command_exists brew; then
   alias bcg='brew outdated --greedy'
 
   # Upgrades all casks that are outdated (and which have version marked as 'latest')
-  alias bcug='brew upgrade --greedy'
+  alias bcug='brew upgrade --greedy -y'
 
   # Upgrades and cleans up all regular outdated casks and libs (non-greedy).
   # Antidote updates and tap trusting are handled via Brewfile postinstall hooks.
@@ -720,7 +720,7 @@ if is_macos && command_exists brew; then
     brew bundle cleanup -f || true
     brew cleanup --prune=all || true
     brew autoremove || true
-    brew upgrade || true
+    brew upgrade -y || true
 
     print_script_summary "${start_time}"
     # Manual decrement -- EXIT trap does not fire on function return in shell functions.
@@ -761,24 +761,18 @@ fi
 # 3h. Diagnostic & utility functions
 # --------------------------------------------------------------------------
 
-# Benchmarks shell startup by launching ${SHELL} 10 times and printing timing for each.
-# Reference: https://blog.jonlu.ca/posts/speeding-up-zsh
-# Usage: time_shell_startup [shell-path]  (defaults to $SHELL)
-time_shell_startup() {
-  local shell_bin
-  # Resolve via PATH so the result is the PATH-located binary, not a version
-  # that may differ from what cron or a fresh login shell would use.
-  # :t is the zsh tail modifier (equivalent to basename).
-  shell_bin="$(command -v "${${1:-${SHELL}}:t}")"
-  # {1..10} brace expansion -- no $(seq 1 10) subprocess fork.
-  # Redirect stdout to /dev/null to suppress prompt output (starship precmd hook fires
-  # even during 'zsh -i -c exit', drawing the prompt). Only timing stats (on stderr) are shown.
-  # Filter out Terminal.app's session restoration messages and blank lines.
-  # Use /usr/bin/grep (not bare grep) to avoid potential alias/function interference.
-  local i
-  for i in {1..10}; do
-    /usr/bin/time "${shell_bin}" -i -c exit 2>&1 >/dev/null
-  done | /usr/bin/grep -vE "(Saving|Restored) session|^$"
+# Benchmarks interactive zsh using romkatv/zsh-bench (measures actual prompt lag).
+# Measures: first_prompt_lag_ms, first_command_lag_ms, command_lag_ms, input_lag_ms.
+# Reference: https://github.com/romkatv/zsh-bench
+# Usage: bench_zsh [--iters N]  (defaults to 16 iterations)
+bench_zsh() {
+  local zsh_bench_bin="${PROJECTS_BASE_DIR}/oss/zsh-bench/zsh-bench"
+  if ! is_executable "${zsh_bench_bin}"; then
+    warn "zsh-bench not found at '${zsh_bench_bin}'"
+    warn "Clone it via: git clone https://github.com/romkatv/zsh-bench '${PROJECTS_BASE_DIR}/oss/zsh-bench'"
+    return 1
+  fi
+  "${zsh_bench_bin}" "$@"
 }
 
 if command_exists docker; then

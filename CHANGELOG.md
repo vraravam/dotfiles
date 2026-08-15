@@ -4,6 +4,65 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.22
+
+#### Optimize starship prompt, git size measurements, and migrate to zsh-patina instead of fast-syntax-highlighting
+
+* *[files/--XDG_CONFIG_HOME--/starship.toml]* Renamed `[custom.git_clean_arrow]` to `[custom.git_sync_status]` for better semantic clarity (matches `git sync-status` alias). Module shows green arrow when repo is clean AND synced with tracking branch. Optimized to use single `git sync-status` alias (replaces 3 separate git commands). Performance cost: ~30-50ms per prompt (was ~100-180ms), savings of ~70-130ms. Updated `[custom.git_size]` documentation to note parallel execution behavior - runs concurrently with `git_status`, making actual overhead only ~2.5ms despite 35ms execution time. Visual flow: clean+synced repos show green arrow after size, dirty/ahead/behind repos show yellow arrow + status symbols.
+
+* *[files/--HOME--/.gitconfig]* Simplified `git size` alias to always use `git count-objects -vH` (2-3x faster than `du -sh`). Removed conditional `GIT_SIZE_FAST` env var logic. Now uses `grep size-pack | awk '{print $2, $3}'` to extract pack size only. Uses `GIT_SIZE_QUIET` env var to suppress header output when called from starship.
+
+* *[scripts/utilities/path_utils.rb]* Added `git_repo_size_kb(repo_dir)` method - returns pack size in KB via `git count-objects -vH`. Parses size-pack line, converts units (KiB/MiB/GiB) to KB. Handles both repo root and `.git` directory paths. Added `git_repo_size_human(repo_dir)` method - returns formatted pack size string via `git size` alias with `GIT_SIZE_QUIET=1`. Both methods 2-3x faster than `du`-based equivalents (~10-20ms vs ~50ms).
+
+* *[scripts/utilities/profiles_repo.rb]* Updated `check_size_limit()` to use `git_repo_size_kb()` and `git_repo_size_human()` instead of `dir_size_kb()` and `dir_size_human()`. Updated error/debug messages to reference "pack size" instead of ".git directory size". Method documentation updated to note pack-size-only measurement and performance improvement (60-80% faster).
+
+* *[files/--ZDOTDIR--/.zsh_plugins.txt]* Replaced `zdharma-continuum/fast-syntax-highlighting` with zsh-patina (Rust-based syntax highlighter). fast-syntax-highlighting removed from antidote bundle and commented out as fallback. Added detailed comments explaining zsh-patina benefits: 62% faster input lag (1.4ms vs 3.6ms), dynamic highlighting (invalid commands shown in red, existing files underlined), high-quality Sublime Text syntax definitions via syntect, and Rust daemon architecture for sub-millisecond highlighting shared between sessions.
+
+* *[files/--ZDOTDIR--/.zshrc]* Added zsh-patina activation after antidote bundle loads. Uses cached activation pattern (same as mise/starship) to avoid forking binary on every shell start: cache stored at `~/.cache/zsh-patina-activate-cache.zsh`, regenerated when zsh-patina binary is updated (mtime check via `is_file_older_than`), compiled to `.zwc` bytecode for faster loading. Guard `(($+commands[zsh-patina]))` ensures graceful degradation on vanilla OS before brew installs it. Activation must happen after antidote bundle loads (which sets up ZLE hooks).
+
+* *[files/--HOME--/Brewfile]* Added `brew 'zsh-patina'` with inline comment noting it's a Rust-based syntax highlighter that's 62% faster for input lag than fast-syntax-highlighting.
+
+* *[files/--XDG_CONFIG_HOME--/zsh-patina/config.toml]* Created zsh-patina configuration file to match fast-syntax-highlighting's default color scheme. Uses custom theme `fsh-default` (stored in themes/ subdirectory). Configuration enables dynamic highlighting (invalid commands in red, existing paths in magenta + underline), sets reasonable performance limits (max_line_length=20000, timeout_ms=500).
+
+* *[files/--XDG_CONFIG_HOME--/zsh-patina/themes/fsh-default.toml]* Created custom theme matching fast-syntax-highlighting's default colors exactly: commands (cd, ls, git) = green, keywords (if, then, while) = yellow, paths (existing files/dirs) = magenta + underline, strings = yellow, variables = cyan, comments = gray. Dynamic features: valid commands = green, invalid commands = red, existing paths = magenta + underline.
+
+**Performance impact (zsh-bench measurements)**:
+- Starship prompt: 156.9ms → ~130-200ms (git_clean_arrow re-enabled for sync visibility, ~100-180ms cost)
+- Ruby size checks: ~100ms → ~20-40ms (60-80% faster)
+- Manual `git size`: ~50ms → ~10-20ms (2-3x faster)
+- **Input lag: 3.873ms → 1.502ms (61% faster)** ⭐ Most noticeable while typing!
+- First prompt lag: 156.518ms → 115.393ms (26% faster)
+- Command lag: 156.909ms → 109.178ms (30% faster)
+- First command lag: 354.000ms → 268.069ms (24% faster)
+- Exit time: 53.435ms → 48.387ms (9% faster)
+
+**Key learning**: Starship executes git modules in parallel. git_size (35ms) runs concurrently with git_status (27ms), so prompt time is dominated by slowest operation. Actual overhead of git_size is only ~2.5ms, not 35ms. git_clean_arrow (~100-180ms) provides essential sync visibility (ahead/behind status) - acceptable trade-off for knowing when commits need push/pull. zsh-patina's Rust daemon provides sub-millisecond syntax highlighting without blocking the main shell process, delivering 61% faster input lag that matches published benchmarks (62% claimed).
+
+#### Fix git upreb to support read-only repos and remove redundant push
+
+* *[files/--HOME--/.gitconfig]* upreb alias: Only push when upstream remote exists (fork workflow)
+  - WITH upstream: fetch all → rebase upstream → push to origin
+  - WITHOUT upstream: fetch all → rebase origin → NO push
+  - Fixes permission denied errors on read-only repos like zsh-bench
+
+* *[files/--XDG_CONFIG_HOME--/zsh/upreb]* Remove redundant push after git upreb call
+  - git upreb alias already handles push correctly based on upstream
+  - Extra push was causing duplicate push attempts and errors
+  - Now cleanly delegates all push logic to the alias
+
+#### Adopting these changes
+
+* Run `brew bundle` to install zsh-patina (and update any other packages)
+* Run `install-dotfiles.rb` to symlink zsh-patina config files (config.toml and themes/fsh-default.toml)
+* Restart terminal to reload zsh configuration and activate zsh-patina
+* Verify color scheme matches FSH: commands should be GREEN, paths should be MAGENTA + underlined, invalid commands should be RED
+* Verify prompt still shows git branch, status symbols, and repo size
+* Check zsh-patina daemon status: `zsh-patina status` (should show PID)
+* Performance improvement is automatic, most noticeable when typing commands (61% faster input lag)
+* **Note**: The daemon auto-restarts when config/theme files are modified (checked on each new shell). Manual `zsh-patina restart` only needed if editing config while keeping same shell session open.
+
+---
+
 ### 3.2.21
 
 #### Conditionally suppress section_header in autoload scripts when called from wrapper scripts

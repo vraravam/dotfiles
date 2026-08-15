@@ -140,12 +140,11 @@ zsh-users/zsh-history-substring-search kind:defer
 # which is undefined without OMZ, so it was replaced with a direct eval there)
 ohmyzsh/ohmyzsh path:plugins/direnv
 
-# NOT deferred: hooks into ZLE via zle -N to colour the command line as you
-# type. zsh-defer reschedules on PENDING > 0, so a fast typist gets no
-# highlighting on their first command. Loaded synchronously so highlighting
-# is present from the very first keypress.
-# Must come before autosuggestions so highlighting takes visual precedence.
-zdharma-continuum/fast-syntax-highlighting
+# Syntax highlighting is provided by zsh-patina (installed via Homebrew and
+# activated in .zshrc). zsh-patina is 62% faster than fast-syntax-highlighting
+# for input lag (1.4ms vs 3.6ms) and uses a Rust daemon for sub-millisecond
+# highlighting. It provides dynamic highlighting (invalid commands shown in red,
+# existing files underlined) and uses high-quality Sublime Text syntax definitions.
 
 # NOT deferred: hooks into ZLE to show ghost-text suggestions. Same reasoning
 # as FSH -- the async suggestion fetch (ZSH_AUTOSUGGEST_USE_ASYNC) means it

@@ -407,6 +407,8 @@ node_modules/
 /.config/starship.toml
 /.config/zed/keymap.json
 /.config/zed/settings.json
+/.config/zsh-patina/config.toml
+/.config/zsh-patina/themes/fsh-default.toml
 /.config/zsh/*
 /.curlrc
 /.default-gems

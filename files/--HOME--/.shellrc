@@ -140,6 +140,7 @@ case "${ARCH}" in
     ;;
 esac
 export HOMEBREW_NO_ANALYTICS=1
+export HOMEBREW_NO_ASK=1
 export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
 export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
 export HOMEBREW_BAT=1
@@ -1102,6 +1103,27 @@ is_file_older_than() {
   fi
 }
 
+# Returns true if target epoch time is older than source epoch time.
+# Used for comparing timestamps when -nt file comparison isn't applicable
+# (e.g., comparing file mtime against process start time from ps output).
+# Matches is_file_older_than naming pattern for consistency.
+#
+# Arguments:
+#   $1 - target epoch (what you're checking, e.g., daemon start time)
+#   $2 - source epoch (what you're comparing against, e.g., config file mtime)
+#
+# Returns:
+#   0 (true) if target is older than source (target < source)
+#   1 (false) if target is newer or equal, or if either argument is empty
+#
+# Example:
+#   if is_epoch_older_than "${daemon_epoch}" "${config_epoch}"; then
+#     restart_daemon  # daemon started before config was modified
+#   fi
+is_epoch_older_than() {
+  [[ -n "${1:-}" && -n "${2:-}" ]] && [[ ${1} -lt ${2} ]]
+}
+
 # Returns true if $1 is a non-empty path pointing to a directory (excluding root '/').
 is_directory() {
   if is_non_zero_string "${1:-}" && ! is_root_dir "${1}" && [[ -d "${1:-}" ]]; then
@@ -1498,6 +1520,16 @@ clone_repo_into() {
 
     # post-clone operations - delegated to git maintain alias
     git -C "${target_folder}" maintain
+
+    # Unshallow in background if this was a shallow clone (FIRST_INSTALL mode).
+    # Allows FIRST_INSTALL to continue without waiting for full history download.
+    # The subshell + background job (&) runs asynchronously - parent continues immediately.
+    # Output is redirected to /dev/null since unshallow is a nice-to-have optimization,
+    # not a critical operation. If it fails, next clone_repo_into call will retry.
+    if is_non_zero_string "${FIRST_INSTALL:-}"; then
+      (git -C "${target_folder}" unshallow >/dev/null 2>&1 &)
+      debug "Spawned background job to unshallow '$(yellow "${target_folder}")'"
+    fi
 
     # Correct HEAD file after reftable clone-via-mv (.git/HEAD retains a '.invalid' placeholder since
     # the move bypasses git's normal post-clone finalisation; shell prompts read .git/HEAD directly)

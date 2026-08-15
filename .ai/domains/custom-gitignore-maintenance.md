@@ -170,6 +170,7 @@ When editing `files/` directory:
 2. **After deleting a file**: Search `custom.gitignore` for the entry. If present, remove it.
 3. **After renaming a file**: Update the corresponding entry in `custom.gitignore`.
 4. **Always maintain alphabetical sort order** within each section of `custom.gitignore`.
+5. **After adding/deleting/renaming ANY file in `files/` directory**: Add `install-dotfiles.rb` instruction to CHANGELOG adoption section for that commit.
 
 ## Example Session
 
