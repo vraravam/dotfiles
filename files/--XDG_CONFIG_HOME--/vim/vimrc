@@ -1,7 +1,19 @@
-" file location: ${HOME}/.vimrc
+" file location: ${XDG_CONFIG_HOME}/vim/vimrc
 
 set nocompatible              " be iMproved, required
 " filetype off                  " required
+
+" XDG Base Directory support - use standard XDG paths for vim state/cache
+" State directory for persistent undo files
+if !empty($XDG_STATE_HOME)
+  let &undodir=$XDG_STATE_HOME . '/vim/undo'
+else
+  let &undodir=$HOME . '/.local/state/vim/undo'
+endif
+" Create undodir if it doesn't exist
+if !isdirectory(expand(&undodir))
+  call mkdir(expand(&undodir), 'p', 0700)
+endif
 
 " mouse navigation
 set mouse=a
@@ -38,7 +50,7 @@ set softtabstop=2
 set bs=2
 
 set undofile
-set undodir=/tmp
+" undodir is set via XDG_STATE_HOME above
 
 set nobackup
 " https://en.parceljs.org/hmr.html#safe-write

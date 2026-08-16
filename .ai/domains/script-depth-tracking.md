@@ -201,7 +201,7 @@ _my_operation() {
 set -euo pipefail
 
 _SCRIPT_NAME="${0:t}"
-source "${HOME}/.aliases"
+source "${ZDOTDIR}/.aliases"
 require_env_var XDG_CONFIG_HOME
 load_file_if_exists "${XDG_CONFIG_HOME}/zsh/my_operation"
 

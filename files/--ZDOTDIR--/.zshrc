@@ -65,19 +65,19 @@ fi
 # Source antidote itself so the 'antidote' function is available (for update/bundle).
 # Guarded so a vanilla OS (before brew installs antidote) still works fine.
 #
-# Unset $ZSH and $ZSH_CUSTOM before sourcing so that the OMZ lib files loaded
+# Unset ${ZSH} and ${ZSH_CUSTOM} before sourcing so that the OMZ lib files loaded
 # via antidote can self-initialise them to their actual locations in the antidote
 # cache.
 # Without this, stale values left over from a prior OMZ install (e.g.
-# $ZSH=~/.oh-my-zsh, $ZSH_CUSTOM=~/.oh-my-zsh/custom) would be kept and OMZ
+# ${ZSH}=~/.oh-my-zsh, ${ZSH_CUSTOM}=~/.oh-my-zsh/custom) would be kept and OMZ
 # internals would silently break.
 unset ZSH ZSH_CUSTOM
 load_file_if_exists "${ANTIDOTE_ZSH}"
 
 # Plugin option variables must be set before the bundle is sourced.
-# Pre-set iterm2_hostname to zsh's native $HOST (set from uname -n at shell init -- no subprocess).
+# Pre-set iterm2_hostname to zsh's native ${HOST} (set from uname -n at shell init -- no subprocess).
 # The iterm2 shell integration checks [ -z "${iterm2_hostname:-}" ] and forks `hostname -f` if unset.
-# $HOST equals `hostname -f` on macOS and avoids the ~4ms subprocess cost on every shell start.
+# ${HOST} equals `hostname -f` on macOS and avoids the ~4ms subprocess cost on every shell start.
 iterm2_hostname="${HOST}"
 
 # zsh-autosuggestions -- all options must be set before the antidote bundle is
@@ -123,6 +123,11 @@ export ENABLE_CORRECTION='true'
 # updates and other lazy-loaded config that only runs through the cache file.
 ensure_dir_exists "${XDG_CACHE_HOME}"
 
+# Ensure zsh history directory exists before zsh tries to write to HISTFILE.
+# HISTFILE is set in .shellrc to ${XDG_STATE_HOME}/zsh/history.
+# ${HISTFILE:h} is zsh parameter expansion for parent directory (dirname equivalent).
+ensure_dir_exists "${HISTFILE:h}"
+
 # Load zrecompile for cache bytecode compilation (used after each cache regeneration below).
 # Same tool as .zlogin uses for consistency.
 # <https://github.com/zimfw/zimfw/blob/master/login_init.zsh>
@@ -163,7 +168,7 @@ autoload -Uz zrecompile
     # This handles the case where .zshrc runs before Homebrew is installed.
     # Ensures PATH has Homebrew directories even when they don't exist yet on disk.
     export PATH="${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
-    export MANPATH="${HOMEBREW_PREFIX}/share/man${MANPATH+:$MANPATH}:"
+    export MANPATH="${HOMEBREW_PREFIX}/share/man${MANPATH+:${MANPATH}}:"
     export INFOPATH="${HOMEBREW_PREFIX}/share/info:${INFOPATH:-}"
     fpath=("${HOMEBREW_PREFIX}/share/zsh/site-functions" "${fpath[@]}")
   fi
@@ -205,7 +210,7 @@ compdef() { _compdef_queue+=("$*"); }
 # The re-source guard in .aliases makes this safe even if .aliases loads again later via zsh-defer.
 if is_file "${ANTIDOTE_PLUGIN_ZSH}" && is_file "${ANTIDOTE_PLUGIN_TXT}"; then
   if is_file_older_than "${ANTIDOTE_PLUGIN_ZSH}" "${ANTIDOTE_PLUGIN_TXT}"; then
-    load_file_if_exists "${HOME}/.aliases"
+    load_file_if_exists "${ZDOTDIR}/.aliases"
     if (($+functions[update_antidote_and_regenerate_plugin_bundle])); then
       info "antidote: '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is newer than the bundle -- regenerating automatically."
       update_antidote_and_regenerate_plugin_bundle
@@ -336,8 +341,8 @@ if (($+commands[zsh-patina])); then
   }
 fi
 
-# Activate mise -- the OMZ mise plugin referenced $ZSH_CACHE_DIR (undefined without OMZ)
-# so it has been removed from $ANTIDOTE_PLUGIN_TXT and replaced with a direct activation here.
+# Activate mise -- the OMZ mise plugin referenced ${ZSH_CACHE_DIR} (undefined without OMZ)
+# so it has been removed from ${ANTIDOTE_PLUGIN_TXT} and replaced with a direct activation here.
 #
 # Performance optimisation -- cache `mise activate zsh` output to avoid forking the mise
 # binary on every shell start (~5-10ms saving). Same pattern as the starship init cache
@@ -425,9 +430,9 @@ append_to_path_if_dir_exists "${PROJECTS_BASE_DIR}/oss/zsh-bench"
 # (defined in .aliases). In practice zsh-defer fires well before any keypress;
 # the risk only exists for scripted terminals that send input before ZLE is idle.
 if (($+functions[zsh-defer])); then
-  zsh-defer load_file_if_exists "${HOME}/.aliases"
+  zsh-defer load_file_if_exists "${ZDOTDIR}/.aliases"
 else
-  load_file_if_exists "${HOME}/.aliases"
+  load_file_if_exists "${ZDOTDIR}/.aliases"
 fi
 
 # Git version cache: placed AFTER .aliases loads so ${commands[git]} reflects final PATH
@@ -546,7 +551,7 @@ setopt pushd_silent      # do not print the directory stack after pushd or popd
 setopt share_history     # share history between different instances of the shell
 
 # Note: 'autoload -Uz colors && colors' was removed -- none of the active plugins
-# use $fg/$bg/$color from the colors function. Our own color vars ($BLUE, $RED, etc.)
+# use ${fg}/${bg}/${color} from the colors function. Our own color vars (${BLUE}, ${RED}, etc.)
 # are defined as $'\e[...' literals in .shellrc and don't depend on colors.
 
 # colorize completion
@@ -664,7 +669,7 @@ fi
 #   eval_shellenv mole completion zsh
 # fi
 
-# remove empty components to avoid '::' ending up + resulting in './' being in $PATH, etc
+# remove empty components to avoid '::' ending up + resulting in './' being in ${PATH}, etc
 path=("${path[@]:#}")
 fpath=("${fpath[@]:#}")
 # zsh does not auto-tie INFOPATH<->infopath (unlike PATH<->path); ensure the tie exists

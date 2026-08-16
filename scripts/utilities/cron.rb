@@ -133,6 +133,7 @@ module Cron
     shell = EnvVars::SHELL
     username = EnvVars::USER
     home = EnvVars::HOME
+    downloads = EnvVars::DOWNLOADS
     homebrew_prefix = EnvVars::HOMEBREW_PREFIX
     personal_bin = EnvVars::PERSONAL_BIN_DIR
     personal_configs = EnvVars::PERSONAL_CONFIGS_DIR
@@ -169,16 +170,16 @@ module Cron
       f.puts
       f.puts "# Note: Need to use the full path to scripts inside the sub-shell since that's not a logged-in shell"
       f.puts '# MAILTO="" (above) disables all mail generation.'
-      f.puts '# Wrapper script captures ALL output to temp file (~/.software-updates-cron-last-run.log).'
+      f.puts '# Wrapper script captures ALL output to temp file (~/Downloads/software-updates-cron-last-run.log).'
       f.puts '# Main log file only appended if exit code is non-zero (errors/warnings occurred).'
-      f.puts '# Run history (STARTED/COMPLETED/FAILED) written to ~/.software-updates-run-log for audit trail.'
-      f.puts '# Check: cat ~/.software-updates-run-log to see run history (start/completion/failure markers).'
-      f.puts '# Check: cat ~/.software-updates-cron-last-run.log to see all output from last run (debugging).'
-      f.puts '# Check: tail ~/software-updates-cron.log to see error/warning output only.'
+      f.puts '# Run history (STARTED/COMPLETED/FAILED) written to ~/Downloads/software-updates-run-log for audit trail.'
+      f.puts '# Check: cat ~/Downloads/software-updates-run-log to see run history (start/completion/failure markers).'
+      f.puts '# Check: cat ~/Downloads/software-updates-cron-last-run.log to see all output from last run (debugging).'
+      f.puts '# Check: tail ~/Downloads/software-updates-cron.log to see error/warning output only.'
       # Use expanded paths (cron doesn't expand ${VAR} in command lines reliably)
       # Run every hour at minute 0
       # Temp log captures ALL output; main log only gets appended on errors/warnings
-      f.puts "0 *   *   *   *   tmplog=#{home}/.software-updates-cron-last-run.log; ruby #{dotfiles_dir}/scripts/software-updates-cron.rb 2>&1 | tee \"${tmplog}\"; exitcode=$?; [ $exitcode -ne 0 ] && cat \"${tmplog}\" >> #{home}/software-updates-cron.log; exit $exitcode"
+      f.puts "0 *   *   *   *   tmplog=#{downloads}/software-updates-cron-last-run.log; ruby #{dotfiles_dir}/scripts/software-updates-cron.rb 2>&1 | tee \"${tmplog}\"; exitcode=$?; [ $exitcode -ne 0 ] && cat \"${tmplog}\" >> #{downloads}/software-updates-cron.log; exit $exitcode"
     end
   end
 

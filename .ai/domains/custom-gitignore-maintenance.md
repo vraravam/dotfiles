@@ -87,19 +87,30 @@ When removing a file from any `files/--VAR--/` directory that has a correspondin
 files/--PERSONAL_PROFILES_DIR--/firefox/prefs.js → Remove `/firefox/prefs.js` from files/--PERSONAL_PROFILES_DIR--/custom.gitignore
 ```
 
-### Renaming a File
+### Renaming or Moving a File
 
-When renaming a file in any `files/--VAR--/` directory that has a corresponding `custom.gitignore`:
+When renaming or moving a file in any `files/--VAR--/` directory that has a corresponding `custom.gitignore`:
 
-1. **Rename source file**: `git mv files/--VAR--/oldname files/--VAR--/newname`
+1. **Rename/move source file**: `git mv files/--VAR--/oldpath files/--VAR--/newpath`
 2. **Update gitignore**: Change the old pattern to the new pattern in `files/--VAR--/custom.gitignore`
 3. **Maintain sort order**: Move entry if alphabetical position changes
+4. **Cross-directory moves**: If moving from one `--VAR--` directory to another, remove the entry from the old `custom.gitignore` and add to the new one
 
 **Examples:**
 ```bash
 # Renaming in HOME repo
 git mv files/--HOME--/.oldname files/--HOME--/.newname
 # Update custom.gitignore: `/.oldname` → `/.newname`
+
+# Moving across directories in HOME repo (e.g., HOME root to XDG_CONFIG_HOME)
+git mv files/--HOME--/.vimrc files/--XDG_CONFIG_HOME--/vim/vimrc
+# Remove `/.vimrc` from files/--HOME--/custom.gitignore
+# Add `/.config/vim/vimrc` to files/--HOME--/custom.gitignore (if vim/ is in HOME repo)
+
+# Moving files between repos
+git mv files/--HOME--/.shellcheckrc files/--XDG_CONFIG_HOME--/shellcheck/shellcheckrc
+# Remove `/.shellcheckrc` from files/--HOME--/custom.gitignore
+# Add `/.config/shellcheck/shellcheckrc` to files/--HOME--/custom.gitignore
 
 # Renaming in browser profiles repo
 git mv files/--PERSONAL_PROFILES_DIR--/chrome/old.txt files/--PERSONAL_PROFILES_DIR--/chrome/new.txt
@@ -169,8 +180,9 @@ When editing `files/` directory:
 1. **After adding a file**: Search `custom.gitignore` for the transformed path. If missing, add it.
 2. **After deleting a file**: Search `custom.gitignore` for the entry. If present, remove it.
 3. **After renaming a file**: Update the corresponding entry in `custom.gitignore`.
-4. **Always maintain alphabetical sort order** within each section of `custom.gitignore`.
-5. **After adding/deleting/renaming ANY file in `files/` directory**: Add `install-dotfiles.rb` instruction to CHANGELOG adoption section for that commit.
+4. **After moving a file between directories**: Remove from old location's gitignore, add to new location's gitignore.
+5. **Always maintain alphabetical sort order** within each section of `custom.gitignore`.
+6. **After adding/deleting/renaming/moving ANY file in `files/` directory**: Add `install-dotfiles.rb` instruction to CHANGELOG adoption section for that commit.
 
 ## Example Session
 

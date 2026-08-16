@@ -10,7 +10,7 @@ If you are setting up a new machine for the first time, start with [Adoption.md]
 
 1. [Design Principles](#1-design-principles)
 2. [Repository Layout](#2-repository-layout)
-3. [Shell Architecture: `.shellrc` vs `.aliases`](#3-shell-architecture-shellrc-vs-aliases)
+3. [Shell Architecture: `.shellrc` vs `${ZDOTDIR}/.aliases`](#3-shell-architecture-shellrc-vs-aliases)
 4. [Logging System](#4-logging-system)
 5. [Exit Code Safety: `if` vs `&&`](#5-exit-code-safety-if-vs-)
 6. [Deferred Error and Warning Collection](#6-deferred-error-and-warning-collection)
@@ -79,34 +79,34 @@ To add a new dotfile, drop it under the appropriate `files/--VAR--/` directory. 
 | `${PERSONAL_BIN_DIR}` | `~/personal/dev/bin` | Private scripts and per-project overrides |
 | `${PERSONAL_CONFIGS_DIR}` | `~/personal/dev/configs` | Private config files (repo catalog YAML, exported prefs, etc.) |
 
-`${PERSONAL_BIN_DIR}` and `${PERSONAL_CONFIGS_DIR}` live outside the dotfiles repo. They are never present on a vanilla OS before the dotfiles repo is cloned, so any function that only these scripts need belongs in `.aliases` — not `.shellrc`. They are kept separate intentionally: they hold private data (credentials, personal scripts, site-specific configs) that must never appear in a public repository. The only personal identifiers that belong in this repo are `GH_USERNAME` (a public GitHub username, inherently non-sensitive) and references to Keybase (which handles its own encryption for private data).
+`${PERSONAL_BIN_DIR}` and `${PERSONAL_CONFIGS_DIR}` live outside the dotfiles repo. They are never present on a vanilla OS before the dotfiles repo is cloned, so any function that only these scripts need belongs in `${ZDOTDIR}/.aliases` — not `.shellrc`. They are kept separate intentionally: they hold private data (credentials, personal scripts, site-specific configs) that must never appear in a public repository. The only personal identifiers that belong in this repo are `GH_USERNAME` (a public GitHub username, inherently non-sensitive) and references to Keybase (which handles its own encryption for private data).
 
 ---
 
-## 3. Shell Architecture: `.shellrc` vs `.aliases`
+## 3. Shell Architecture: `.shellrc` vs `${ZDOTDIR}/.aliases`
 
 ### Why the split exists
 
 `.shellrc` is downloaded via `curl` early in `fresh-install-of-osx.sh`, **before** the dotfiles repo has been cloned and before `install-dotfiles.rb` has created symlinks. It must therefore stay lean — it holds only the functions that are genuinely needed in that pre-clone window.
 
-`.aliases` is available only after the dotfiles repo is cloned and `install-dotfiles.rb` has run. Everything that does not need to exist before that point lives in `.aliases`.
+`${ZDOTDIR}/.aliases` is available only after the dotfiles repo is cloned and `install-dotfiles.rb` has run. Everything that does not need to exist before that point lives in `${ZDOTDIR}/.aliases`.
 
 ### Decision rule
 
-A function belongs in `.shellrc` if it is called during a vanilla-OS fresh-install **before `install-dotfiles.rb` runs**. Everything else belongs in `.aliases`.
+A function belongs in `.shellrc` if it is called during a vanilla-OS fresh-install **before `install-dotfiles.rb` runs**. Everything else belongs in `${ZDOTDIR}/.aliases`.
 
-There is a second constraint: `.envrc` files are evaluated by direnv in a **bash subshell**. They must source `.shellrc` (not `.aliases`) because `.aliases` contains zsh-only syntax (`:h`, `:A`, associative array subscripts, zsh-specific glob qualifiers) that bash cannot parse. Any function called from a `.envrc` file — even one that is not needed during the pre-clone window — must therefore live in `.shellrc`, with a comment explaining the bash-compat reason.
+There is a second constraint: `.envrc` files are evaluated by direnv in a **bash subshell**. They must source `.shellrc` (not `${ZDOTDIR}/.aliases`) because `${ZDOTDIR}/.aliases` contains zsh-only syntax (`:h`, `:A`, associative array subscripts, zsh-specific glob qualifiers) that bash cannot parse. Any function called from a `.envrc` file — even one that is not needed during the pre-clone window — must therefore live in `.shellrc`, with a comment explaining the bash-compat reason.
 
 ### Sourcing discipline
 
 - Each script sources **only the tightest file** that provides what it needs.
 - If a script needs only `.shellrc` functions, it sources `.shellrc`.
-- If it needs `.aliases` functions, it sources `.aliases` — which already sources `.shellrc` internally.
+- If it needs `${ZDOTDIR}/.aliases` functions, it sources `${ZDOTDIR}/.aliases` — which already sources `.shellrc` internally.
 - Never source both in the same script.
 
 ### Re-source guards
 
-`.shellrc` defines a sentinel function `is_shellrc_sourced`. Other scripts source `.shellrc` unconditionally; the guard inside `.shellrc` itself prevents double-loading. The same applies to `.aliases` via `is_aliases_sourced`. Scripts add a comment — `# Re-source guard is inside .shellrc/.aliases itself — safe to call unconditionally.` — to make this explicit without repeating the guard logic.
+`.shellrc` defines a sentinel function `is_shellrc_sourced`. Other scripts source `.shellrc` unconditionally; the guard inside `.shellrc` itself prevents double-loading. The same applies to `${ZDOTDIR}/.aliases` via `is_aliases_sourced`. Scripts add a comment — `# Re-source guard is inside .shellrc/.aliases itself — safe to call unconditionally.` — to make this explicit without repeating the guard logic.
 
 ---
 
@@ -377,7 +377,7 @@ Running `ZSH_PROFILE=true zsh -i -c exit` reveals where time is actually spent d
 
 2. **Deferred plugins don't appear in profile**: The git plugin (431 lines), eza, iterm2, sudo, zbell, and history-substring-search are all loaded via `zsh-defer` — they fire after the first ZLE idle event, so they never block the prompt and don't appear in the `zprof` output at all.
 
-3. **`.aliases` deferred successfully**: Also loaded via `zsh-defer` (963 lines), so it contributes zero time to the measured startup sequence.
+3. **`${ZDOTDIR}/.aliases` deferred successfully**: Also loaded via `zsh-defer` (963 lines), so it contributes zero time to the measured startup sequence.
 
 4. **All cache strategies working correctly**:
    - `brew shellenv`: cached, only 0.62ms to source (anonymous function at line 103)
@@ -399,7 +399,7 @@ Scripts invoked from cron run in a minimal, non-interactive environment. Several
 
 `load_zsh_configs` sources `.zshrc`, which sources `.zlogin`. `.zlogin` triggers background ZWC compilation jobs. Launching these from a cron job with no terminal attached is disruptive and wasteful.
 
-**Rule:** call `load_zsh_configs` from a cron script only if the script uses variables or functions defined in `.zshrc` (e.g. `PROJECTS_BASE_DIR`, mise shims). Most cron scripts only need vars from `.shellrc`/`.aliases` — these are available after `load_file_if_exists "${HOME}/.aliases"` without calling `load_zsh_configs`.
+**Rule:** call `load_zsh_configs` from a cron script only if the script uses variables or functions defined in `.zshrc` (e.g. `PROJECTS_BASE_DIR`, mise shims). Most cron scripts only need vars from `.shellrc`/`${ZDOTDIR}/.aliases` — these are available after `load_file_if_exists "${HOME}/.aliases"` without calling `load_zsh_configs`.
 
 ### `sudo` — always guard with `has_sudo_credentials`
 

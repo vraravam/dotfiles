@@ -1,3 +1,11 @@
+# file location: ${XDG_CONFIG_HOME}/shellcheck/shellcheckrc
+#
+# ShellCheck configuration file.
+# Shellcheck searches for config in this order:
+# 1. .shellcheckrc in current directory
+# 2. $XDG_CONFIG_HOME/shellcheck/shellcheckrc (this file)
+# 3. ~/.shellcheckrc (legacy location)
+
 # Look for 'source'd files relative to the checked script,
 # and also look for absolute paths in /mnt/chroot
 source-path=SCRIPTDIR

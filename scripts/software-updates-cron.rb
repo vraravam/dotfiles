@@ -13,10 +13,10 @@
 #
 # Output behavior (when run from crontab with conditional logging):
 # - All runs: output captured to temp file during execution
-# - Success (exit 0): temp file discarded, writes ~/.software-updates-run-log timestamp
-# - Failure (exit non-zero): temp file appended to ~/software-updates-cron.log
-# - Check run history: cat ~/.software-updates-run-log
-# - Check errors: tail ~/software-updates-cron.log
+# - Success (exit 0): temp file discarded, writes ~/Downloads/software-updates-run-log timestamp
+# - Failure (exit non-zero): temp file appended to ~/Downloads/software-updates-cron.log
+# - Check run history: cat ~/Downloads/software-updates-run-log
+# - Check errors: tail ~/Downloads/software-updates-cron.log
 #
 # Usage:
 #   Standalone: software-updates-cron.rb
@@ -81,7 +81,7 @@ module SoftwareUpdatesCron
 
     # Write end marker for audit trail when run completes without errors/warnings
     if nil_or_empty?(step_errors) && nil_or_empty?(step_warnings)
-      run_log = EnvVars::HOME.join('.software-updates-run-log')
+      run_log = EnvVars::DOWNLOADS.join('software-updates-run-log')
       # Append completion marker (start marker was written before run began)
       run_log.write("COMPLETED: #{now} (took #{duration})\n", mode: 'a')
     end
@@ -341,7 +341,7 @@ if __FILE__ == $PROGRAM_NAME
 
   Logging.run_script do |start_time|
     # Write start marker before beginning work (shows cron is running)
-    run_log = EnvVars::HOME.join('.software-updates-run-log')
+    run_log = EnvVars::DOWNLOADS.join('software-updates-run-log')
     start_timestamp = Core.current_timestamp
     run_log.write("STARTED: #{start_timestamp}\n", mode: 'a')
 

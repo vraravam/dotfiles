@@ -11,7 +11,7 @@
 -- Use best available output format
 \x auto
 \set VERBOSITY verbose
-\set HISTFILE ~/.psql_history- :DBNAME
+\set HISTFILE ~/.local/state/postgresql/history- :DBNAME
 \set HISTCONTROL ignoreboth
 \set COMP_KEYWORD_CASE upper
 \unset QUIET

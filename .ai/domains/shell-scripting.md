@@ -1438,7 +1438,7 @@ mise shims, etc.). Do NOT call it unconditionally:
 
 ```zsh
 # Re-source guard is inside .aliases itself -- safe to call unconditionally.
-load_file_if_exists "${HOME}/.aliases"
+load_file_if_exists "${ZDOTDIR}/.aliases"
 
 # Call load_zsh_configs only when the script needs .zshrc-defined vars/functions
 # (e.g. PROJECTS_BASE_DIR, mise shims). Omit if only .shellrc/.aliases vars needed.
@@ -1798,7 +1798,7 @@ script:
 
 ```zsh
 # Re-source guard is inside .aliases itself -- safe to call unconditionally.
-load_file_if_exists "${HOME}/.aliases"
+load_file_if_exists "${ZDOTDIR}/.aliases"
   require_env_var PERSONAL_BIN_DIR
   load_file_if_exists "${PERSONAL_BIN_DIR}/upreb-homebrew-common.sh"
   ```

@@ -305,7 +305,7 @@ On your target machine (fresh or wiped):
 ### 3.2 Run Bootstrap Command
 
 ```zsh
-export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true' COLUMNS="${COLUMNS}"; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/fresh-install-of-osx.log"; unset FIRST_INSTALL
+export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true' COLUMNS="${COLUMNS}"; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/Downloads/fresh-install-of-osx.log"; unset FIRST_INSTALL
 ```
 
 Note: Change `vraravam` to your github username in the above command snippet. You can commit this change into your fork so that, for your own machine, you don't need to edit before copy-pasting every time.
@@ -544,7 +544,7 @@ cat > ${PERSONAL_BIN_DIR}/push-browser-profiles.sh << 'EOF'
 set -euo pipefail
 
 _SCRIPT_NAME="${0:t}"
-source "${HOME}/.aliases"
+source "${ZDOTDIR}/.aliases"
 
 # Load autoload script to get _push function
 require_env_var XDG_CONFIG_HOME
@@ -603,7 +603,7 @@ cat > ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh << 'EOF'
 set -euo pipefail
 
 _SCRIPT_NAME="${0:t}"
-source "${HOME}/.aliases"
+source "${ZDOTDIR}/.aliases"
 
 # Load autoload script to get _upreb function
 require_env_var XDG_CONFIG_HOME
@@ -648,7 +648,7 @@ chmod +x ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh
 - `cc-<repo>.sh` - Custom cache cleanup steps
 
 **Template structure:**
-1. Source `.aliases` to get utility functions
+1. Source `${ZDOTDIR}/.aliases` to get utility functions
 2. Load corresponding autoload script (`load_file_if_exists "${XDG_CONFIG_HOME}/zsh/<alias>"`)
 3. Implement `main()` with script infrastructure (depth tracking, timing, summaries)
 4. Add custom pre-logic before calling `_<alias>` default implementation

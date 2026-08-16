@@ -217,11 +217,18 @@ _install_xcode_command_line_tools() {
   step_end
 }
 
-# Create all directories referenced by env vars as a pre-emptive safety step
+# Create core XDG directories needed before install-dotfiles.rb runs.
+# Note: ${DOTFILES_DIR} is created by clone_repo_into's ensure_dir_exists call.
+# Note: ${ANTIDOTE_HOME} and other tool-specific subdirectories (e.g., ${XDG_CONFIG_HOME}/pg,
+# ${XDG_STATE_HOME}/vim/undo) are created automatically by their respective tools or by
+# install-dotfiles.rb when it creates symlinks to those locations.
 _ensure_directories_exist() {
   step_start
-  section_header "$(yellow 'Creating directories defined by various env vars')"
-  local -a dirs=("${ANTIDOTE_HOME}" "${DOTFILES_DIR}" "${PROJECTS_BASE_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${PERSONAL_PROFILES_DIR}" "${XDG_CACHE_HOME}" "${XDG_CONFIG_HOME}" "${XDG_DATA_HOME}" "${XDG_STATE_HOME}")
+  section_header "$(yellow 'Creating XDG base directories')"
+  local -a dirs=(
+    "${XDG_CACHE_HOME}"
+    "${XDG_CONFIG_HOME}"
+  )
   local dir
   for dir in "${dirs[@]}"; do
     ensure_dir_exists "${dir}"
@@ -336,7 +343,7 @@ _install_homebrew() {
     # The base section is done; fork the full Brewfile install in the background so
     # optional/heavy packages install without blocking the rest of this run.
     # FIRST_INSTALL is unset in the subshell so brew bundle runs the complete Brewfile.
-    local _full_bundle_log="${HOME}/brew-bundle-full-install.log"
+    local _full_bundle_log="${HOME}/Downloads/brew-bundle-full-install.log"
     # Temporarily disable ERR trap: background job failures should not abort the main script.
     # The background job logs to _full_bundle_log; users can check that file for issues.
     trap - ERR
@@ -361,7 +368,7 @@ _install_homebrew() {
 # macOS ships with /bin/zsh but Homebrew's zsh is newer and managed independently.
 # chsh requires the target shell to be listed in /etc/shells -- add it if absent.
 # Without this, iTerm2's "Login shell" setting uses /bin/zsh (system) even when
-# /opt/homebrew/bin/zsh is on PATH, and $SHELL stays /bin/zsh after a fresh install.
+# /opt/homebrew/bin/zsh is on PATH, and ${SHELL} stays /bin/zsh after a fresh install.
 _set_default_shell() {
   _current_section='Set default shell'; _current_section_manual=1
   step_start
@@ -383,8 +390,8 @@ _set_default_shell() {
     info "'$(yellow "${_brew_zsh}")' already in /etc/shells -- skipping."
   fi
 
-  # Check the user's configured default shell (not the current $SHELL env var).
-  # $SHELL reflects the current terminal session; dscl shows what chsh configured.
+  # Check the user's configured default shell (not the current ${SHELL} env var).
+  # ${SHELL} reflects the current terminal session; dscl shows what chsh configured.
   # This ensures we only run chsh if the login shell for future sessions needs updating.
   local configured_shell
   configured_shell="$(dscl . -read ~ UserShell | awk '{print $NF}')"
@@ -408,7 +415,7 @@ _set_default_shell() {
 # IMPORTANT: This is called after load_zsh_configs, which re-sources .shellrc
 # after unfunctioning the guard. By that point, DOTFILES_DIR exists (cloned by
 # _clone_dot_files_repo), so .shellrc sets RUBYLIB correctly, making 'require'
-# work without $LOAD_PATH.unshift.
+# work without ${LOAD_PATH}.unshift.
 _ensure_keybase_logged_in() {
   if ! command_exists keybase; then
     error "'keybase' command not found in the PATH. Aborting!!!"
@@ -480,7 +487,9 @@ main() {
   crontab -l >"${_DOTFILES_CRON_BACKUP_FILE}"  2>/dev/null || : >"${_DOTFILES_CRON_BACKUP_FILE}"
   crontab -r &>/dev/null || true
 
-  export ZDOTDIR="${ZDOTDIR:-"${HOME}"}"
+  # Set ZDOTDIR before sourcing .shellrc so the value is available immediately.
+  # Must match the default in .shellrc line 40 and env_vars.rb ZDOTDIR constant.
+  export ZDOTDIR="${ZDOTDIR:-"${XDG_CONFIG_HOME:-${HOME}/.config}/zsh"}"
 
   # On a first install ~/.gitconfig is not yet in place (install-dotfiles.rb runs later),
   # so core.sshCommand is absent. Export GIT_SSH_COMMAND for the entire run to ensure
@@ -531,7 +540,7 @@ main() {
   local -a _step_start_times=()
   export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
   # Note: Cannot load from shellrc since that file won't be present in a new machine (vanilla OS)
-  # $EPOCHSECONDS is provided by the zsh/datetime built-in module -- always available, no fork.
+  # ${EPOCHSECONDS} is provided by the zsh/datetime built-in module -- always available, no fork.
   # Capture start epoch into both a local variable and _script_start_times.
   # The local is passed explicitly to print_script_summary at the end of main.
   # _script_start_times is used by step_end (called throughout this script) to
@@ -626,7 +635,7 @@ main() {
    # load_zsh_configs internally calls unfunction for both is_shellrc_sourced and
    # is_aliases_sourced, so no need to do it here.
    DEBUG=true load_zsh_configs
-   # ~/.zsh_plugins.zsh (the antidote bundle) is checked into the home git repo and was
+   # ${XDG_CONFIG_HOME}/zsh/plugins.zsh (the antidote bundle) is checked into the home git repo and was
    # symlinked by install-dotfiles.rb above, so it is present on both vanilla OS and
    # pre-configured machines. .zshrc sources the bundle, which defines zsh-defer, and
    # then defers .aliases loading to the next ZLE idle event. In a non-interactive
@@ -634,7 +643,7 @@ main() {
    # Source .aliases directly to make its functions (resurrect_tracked_repos, etc.)
    # available in this process.
    # The is_aliases_sourced guard inside .aliases prevents double-loading.
-   load_file_if_exists "${HOME}/.aliases"
+   load_file_if_exists "${ZDOTDIR}/.aliases"
 
    _install_homebrew
 

@@ -24,7 +24,7 @@
 #   - Interactive ask-N settings (intentionally left to user choice)
 
 _SCRIPT_NAME="${0:t}"
-source "${HOME}/.aliases"
+source "${ZDOTDIR}/.aliases"
 
 # ERR trap for catastrophic failures (missing binaries, corrupted plists, etc.).
 # Individual `defaults write` / `killall` failures are expected (OS version

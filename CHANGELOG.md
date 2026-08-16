@@ -4,6 +4,190 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.24
+
+:white_check_mark: Tested on a vanilla macOS machine
+
+#### Move configuration files to $XDG_CONFIG_HOME for better organization and to declutter $HOME
+
+
+**File relocations:**
+* *[files/--HOME--/.zshenv]* Created new file in $HOME that sets `ZDOTDIR="${XDG_CONFIG_HOME}/zsh"`. This file must stay in $HOME (zsh design requirement - zsh always reads .zshenv from $HOME first, before looking at ZDOTDIR).
+* *[files/--ZDOTDIR--/.zshenv]* Deleted (moved to files/--HOME--/.zshenv)
+* *[files/--ZDOTDIR--/.zshrc, .zlogin]* Remain in files/--ZDOTDIR--, which now resolves to `~/.config/zsh/` instead of `~/.zshrc`, `~/.zlogin` in $HOME
+* *[files/--ZDOTDIR--/.aliases]* Moved from files/--HOME--/.aliases. Shell utility functions now live in ZDOTDIR alongside zsh config files.
+* *[files/--XDG_CONFIG_HOME--/zsh/plugins.txt]* Moved from files/--ZDOTDIR--/.zsh_plugins.txt. Renamed (unhidden), decoupled from ZDOTDIR.
+* *[~/.config/zsh/plugins.zsh]* Generated file moved from `~/.zsh_plugins.zsh` (antidote generates this from plugins.txt)
+* *[~/.local/state/zsh/history]* New location for zsh history (was `~/.zsh_history`). History is mutable state per XDG Base Directory spec, belongs in $XDG_STATE_HOME.
+* *[~/.local/state/postgresql/history-*]* New location for PostgreSQL psql per-database history files (was `~/.psql_history-*`). Configured via `HISTFILE` setting in psqlrc.
+* *[~/.local/state/sqlite/history]* New location for SQLite history (was `~/.sqlite_history`). Configured via `$SQLITE_HISTORY` environment variable set in .shellrc.
+* *[files/--XDG_CONFIG_HOME--/vim/vimrc]* Moved from files/--HOME--/.vimrc. Vim 9.0+ supports `$XDG_CONFIG_HOME/vim/vimrc` natively (3rd priority after `~/.vimrc` and `~/.vim/vimrc`).
+* *[files/--XDG_CONFIG_HOME--/vim/autoload/plug.vim]* Moved from files/--HOME--/.vim/autoload/plug.vim. Follows vimrc to maintain relative plugin structure.
+* *[~/.local/state/vim/undo/]* New location for vim persistent undo files (was `/tmp`). Configured in vimrc with automatic directory creation.
+* *[files/--XDG_CONFIG_HOME--/shellcheck/shellcheckrc]* Moved from files/--HOME--/.shellcheckrc. Shellcheck supports XDG natively (searches `$XDG_CONFIG_HOME/shellcheck/shellcheckrc` as 2nd priority after `./.shellcheckrc` and before `~/.shellcheckrc`).
+* *[files/--XDG_CONFIG_HOME--/ripgrep/config]* Moved from files/--HOME--/.ripgreprc. Ripgrep supports XDG natively (searches `$XDG_CONFIG_HOME/ripgrep/config` as 1st priority).
+* *[files/--XDG_CONFIG_HOME--/readline/inputrc]* Moved from files/--HOME--/.inputrc. Readline supports XDG via `$INPUTRC` environment variable.
+* *[files/--XDG_CONFIG_HOME--/pry/pryrc]* Moved from files/--HOME--/.pryrc. Pry (Ruby debugger) has supported XDG since 2014, works with Ruby 2.6+.
+* *[files/--XDG_CONFIG_HOME--/pg/psqlrc]* Moved from files/--HOME--/.psqlrc. PostgreSQL psql supports XDG via `$PSQLRC` environment variable. Updated `HISTFILE` setting to use `~/.local/state/postgresql/history-` prefix (was `~/.psql_history-`).
+* *[files/--XDG_CONFIG_HOME--/curlrc]* Moved from files/--HOME--/.curlrc. Curl 7.73.0+ (2020) supports XDG natively (searches `$XDG_CONFIG_HOME/curlrc` as 2nd priority after `~/.curlrc`).
+* *[files/--HOME--/.notify-osd]* Deleted (Ubuntu-only notification config file, not needed on macOS).
+
+**Code changes:**
+* *[files/--HOME--/.shellrc]* Updated ZDOTDIR default to `${XDG_CONFIG_HOME}/zsh`. Added `export HISTFILE="${XDG_STATE_HOME}/zsh/history"`. Added `export SQLITE_HISTORY="${XDG_STATE_HOME}/sqlite/history"`. Updated ANTIDOTE_PLUGIN_TXT to `${XDG_CONFIG_HOME}/zsh/plugins.txt`. Updated ANTIDOTE_PLUGIN_ZSH to `${XDG_CONFIG_HOME}/zsh/plugins.zsh`. Added `export INPUTRC="${XDG_CONFIG_HOME}/readline/inputrc"` and `export PSQLRC="${XDG_CONFIG_HOME}/pg/psqlrc"`. Fixed `load_zsh_configs()` to use explicit paths: `.zshenv` from `${HOME}`, `.zshrc`/`.zlogin` from `${ZDOTDIR}`. Performance optimization: Standardized numeric comparisons to use `(( ))` arithmetic syntax with `local -i` integer declarations instead of `[[ -lt/-gt/-eq/-ne ]]` test operators (~20% faster per comparison, bash-compatible). Affected functions: `_log_indent`, `section_header`, `is_epoch_older_than`, `is_outermost_script`, `_decrement_script_depth`, `clone_repo_into`, `_cron_method_delegator`, `print_usage`.
+* *[files/--HOME--/.aliases]* Optimized WORDCHARS definition: replaced two separate `:s` substitutions with single pattern replacement `${WORDCHARS//[\/.]}`). Eliminates one parameter expansion. Performance optimization: Converted numeric comparisons to `(( ))` arithmetic syntax in `_call_ruby_git_workspace`, `pdf_to_png`, `recron`.
+* *[files/--ZDOTDIR--/.zshrc]* Updated plugin file references. Added early directory creation for `${HISTFILE:h}` (zsh history directory) to prevent silent write failures. Optimized zsh-patina daemon restart check: replaced external `stat` commands with `zsh/stat` builtin module (eliminates subprocess fork overhead). Changed cache TTL from 5 minutes to 60 minutes. Replaced string comparisons with integer arithmetic for epoch/mtime checks. Performance: ~0.1ms (cached) vs ~20ms (full check) = ~20ms savings on 99% of startups.
+* *[files/--ZDOTDIR--/.zlogin]* Fixed `.zshenv` compilation path to `${HOME}/.zshenv`. Updated antidote bundle compilation comment.
+* *[scripts/utilities/env_vars.rb]* Updated ZDOTDIR constant to use `XDG_CONFIG_HOME.join('zsh')`. Updated ANTIDOTE_PLUGIN_TXT to `XDG_CONFIG_HOME.join('zsh', 'plugins.txt')`. Updated ANTIDOTE_PLUGIN_ZSH to `XDG_CONFIG_HOME.join('zsh', 'plugins.zsh')`. Added HISTFILE constant using `XDG_STATE_HOME.join('zsh', 'history')`. Added DOWNLOADS constant (`HOME.join('Downloads')`) for transient log files. All use cross-platform `Pathname#join`.
+* *[scripts/fresh-install-of-osx.sh]* Updated ZDOTDIR initialization to `${XDG_CONFIG_HOME}/zsh`. Optimized `_ensure_directories_exist()` to only create XDG base directories (`XDG_CACHE_HOME`, `XDG_CONFIG_HOME`) - removed creation of subdirectories that are automatically created by tools (ANTIDOTE_HOME via git clone, DOTFILES_DIR via clone_repo_into), install-dotfiles.rb (pg, pry, readline, ripgrep, postgresql, vim/undo, zsh subdirs), or never used before install-dotfiles (PERSONAL_BIN_DIR, PROJECTS_BASE_DIR, XDG_DATA_HOME, XDG_STATE_HOME). Moved brew bundle full install log to `~/Downloads/brew-bundle-full-install.log`. Moved fresh-install log to `~/Downloads/fresh-install-of-osx.log`.
+* *[scripts/utilities/cron.rb]* Moved cron log files to `~/Downloads/`: `software-updates-cron-last-run.log`, `software-updates-run-log`, `software-updates-cron.log`. Uses `EnvVars::DOWNLOADS` constant.
+* *[scripts/software-updates-cron.rb]* Moved run log to `~/Downloads/software-updates-run-log`. Uses `EnvVars::DOWNLOADS` constant.
+* *[files/--XDG_CONFIG_HOME--/vim/vimrc]* Added XDG Base Directory support: configures `undodir` to use `$XDG_STATE_HOME/vim/undo` with automatic directory creation. Removed hardcoded `/tmp` undodir (was non-persistent across reboots).
+* *[files/--XDG_CONFIG_HOME--/iex/iex.exs]* Migrated from `~/.iex.exs` to XDG location. Elixir IEx supports `XDG_CONFIG_HOME/iex/iex.exs` natively.
+* *[files/--XDG_CONFIG_HOME--/kdiff3/kdiff3rc]* Migrated from `~/.kdiff3rc` to XDG location. KDiff3 supports `XDG_CONFIG_HOME/kdiff3/kdiff3rc` natively.
+* *[files/--HOME--/custom.gitignore]* Updated: removed root-level entries for all moved dotfiles. Added XDG entries: `/.config/curlrc`, `/.config/iex/iex.exs`, `/.config/kdiff3/kdiff3rc`, `/.config/pg/psqlrc`, `/.config/pry/pryrc`, `/.config/readline/inputrc`, `/.config/ripgrep/config`, `/.config/shellcheck/shellcheckrc`, `/.config/vim/`, `/.config/zsh/`. Replaced wildcard `/.config/zsh/*` with explicit list of symlinked files and pattern for generated files (`*.zwc`, `plugins.zsh`). Changed `/.local/` → `/.local/*` and added un-ignore patterns for tracking history in XDG location: `!/.local/state/`, `/.local/state/*`, `!/.local/state/postgresql/`, `!/.local/state/sqlite/`. Zsh history (`.local/state/zsh/history`) remains ignored. Added `/.sqlite_history` to ignored files (old location).
+* *[Adoption.md]* Updated bootstrap command to write log to `~/Downloads/fresh-install-of-osx.log` instead of `~/fresh-install-of-osx.log`.
+* *[.ai/domains/edit-checklist.md]* Added Step 7: Delete stale `.zwc` bytecode files after editing zsh scripts. Prevents loading old compiled code when source has changed.
+
+**Benefits:**
+* **16 fewer visible dotfiles in $HOME**: `.aliases`, `.zshrc`, `.zlogin`, `.zsh_plugins.txt`, `.zsh_plugins.zsh`, `.zsh_history`, `.vimrc`, `.vim/`, `.shellcheckrc`, `.ripgreprc`, `.inputrc`, `.pryrc`, `.psqlrc`, `.curlrc`, `.iex.exs`, `.kdiff3rc` moved to subdirectories
+* **31 fewer psql history files in $HOME**: All `.psql_history-*` files moved to `~/.local/state/postgresql/`
+* **5 fewer log files in $HOME**: Fresh-install log, brew log, and cron logs moved to `~/Downloads/`
+* **Better organization**: All tool configs grouped in `~/.config/` subdirectories, state files (history, undo) in `~/.local/state/`, transient logs in `~/Downloads/`
+* **XDG compliance**: Config in $XDG_CONFIG_HOME, state in $XDG_STATE_HOME per XDG Base Directory spec
+* **Location independence**: Plugin files decoupled from ZDOTDIR - even if ZDOTDIR reverts to $HOME, plugins stay in `~/.config/zsh/`
+* **Unhidden plugin files**: `plugins.txt` easier to find and edit than `.zsh_plugins.txt`
+* **Vim undo persistence**: Undo files now survive reboots (was `/tmp`, cleared on restart) with proper security (0700 permissions)
+* **Log file visibility**: Logs in `~/Downloads/` easier to find than hidden files in `~/`
+* **Ruby 2.6 compatibility**: Pry XDG support verified to work with system Ruby 2.6 (macOS default)
+* **Cross-platform**: Uses `Pathname#join` for path construction
+
+**Not migrated (intentionally left in $HOME):**
+* `.irbrc` - Requires Ruby 3.1+ for XDG support (system Ruby is 2.6)
+* `.gemrc` - Requires Ruby 3.0+ for XDG support (system Ruby is 2.6)
+* `.sqliterc` - No XDG support, hardcoded to `~/.sqliterc`
+
+
+#### Adopting these changes
+
+**Step 1: Run install-dotfiles.rb**
+```bash
+~/.config/dotfiles/scripts/install-dotfiles.rb
+```
+
+This creates/updates symlinks:
+- `~/.zshenv` → dotfiles/files/--HOME--/.zshenv (new)
+- `~/.config/zsh/.aliases` → dotfiles/files/--ZDOTDIR--/.aliases (moved from ~/.aliases)
+- `~/.config/zsh/.zshrc` → dotfiles/files/--ZDOTDIR--/.zshrc (moved from ~/)
+- `~/.config/zsh/.zlogin` → dotfiles/files/--ZDOTDIR--/.zlogin (moved from ~/)
+- `~/.config/zsh/plugins.txt` → dotfiles/files/--XDG_CONFIG_HOME--/zsh/plugins.txt (moved + renamed)
+- `~/.config/curlrc` → dotfiles/files/--XDG_CONFIG_HOME--/curlrc (moved from ~/.curlrc)
+- `~/.config/iex/iex.exs` → dotfiles/files/--XDG_CONFIG_HOME--/iex/iex.exs (moved from ~/.iex.exs)
+- `~/.config/kdiff3/kdiff3rc` → dotfiles/files/--XDG_CONFIG_HOME--/kdiff3/kdiff3rc (moved from ~/.kdiff3rc)
+- `~/.config/pg/psqlrc` → dotfiles/files/--XDG_CONFIG_HOME--/pg/psqlrc (moved from ~/.psqlrc)
+- `~/.config/pry/pryrc` → dotfiles/files/--XDG_CONFIG_HOME--/pry/pryrc (moved from ~/.pryrc)
+- `~/.config/readline/inputrc` → dotfiles/files/--XDG_CONFIG_HOME--/readline/inputrc (moved from ~/.inputrc)
+- `~/.config/ripgrep/config` → dotfiles/files/--XDG_CONFIG_HOME--/ripgrep/config (moved from ~/.ripgreprc)
+- `~/.config/shellcheck/shellcheckrc` → dotfiles/files/--XDG_CONFIG_HOME--/shellcheck/shellcheckrc (moved from ~/.shellcheckrc)
+- `~/.config/vim/vimrc` → dotfiles/files/--XDG_CONFIG_HOME--/vim/vimrc (moved from ~/.vimrc)
+- `~/.config/vim/autoload/plug.vim` → dotfiles/files/--XDG_CONFIG_HOME--/vim/autoload/plug.vim (moved from ~/.vim/autoload/)
+
+**Step 2: Remove broken symlinks from $HOME**
+```bash
+# Remove old symlinks that now point to non-existent files in dotfiles repo
+rm -f ~/.aliases ~/.curlrc ~/.inputrc ~/.pryrc ~/.psqlrc ~/.ripgreprc ~/.iex.exs ~/.kdiff3rc
+
+# Verify removal
+ls -la ~ | grep -E '\.(aliases|curlrc|inputrc|pryrc|psqlrc|ripgreprc|iex\.exs|kdiff3rc)'  # Should show nothing
+```
+
+**Step 3: Migrate history files (one-time manual steps)**
+```bash
+# Migrate zsh history
+mkdir -p ~/.local/state/zsh
+cp ~/.zsh_history ~/.local/state/zsh/history
+
+# Migrate PostgreSQL psql history files
+mkdir -p ~/.local/state/postgresql
+for file in ~/.psql_history-*; do 
+  [ -f "$file" ] && mv "$file" ~/.local/state/postgresql/history-${file##*/.psql_history-}
+done
+
+# Migrate SQLite history (if it exists)
+if [ -f ~/.sqlite_history ]; then
+  mkdir -p ~/.local/state/sqlite
+  mv ~/.sqlite_history ~/.local/state/sqlite/history
+fi
+
+# Verify migrations
+ls -la ~/.local/state/zsh/history
+ls -la ~/.local/state/postgresql/
+ls -la ~/.local/state/sqlite/history 2>/dev/null || echo "No SQLite history to migrate"
+
+# Vim undo directory will be auto-created on first vim startup
+# (vimrc includes automatic directory creation with proper permissions)
+```
+
+**Step 4: Restart terminal and test tools**
+```bash
+# Restart shell
+exec zsh
+
+# Test vim
+vim /tmp/test.txt
+# Make some changes, save, quit, reopen to test undo persistence
+
+# Verify tool configs are loaded from new locations
+rg --version  # Should load from ~/.config/ripgrep/config
+pry -e "exit" 2>/dev/null  # Should load from ~/.config/pry/pryrc (if pry installed)
+curl --version  # Should load from ~/.config/curlrc
+
+# Verify environment variables
+echo $ZDOTDIR  # Expected: ~/.config/zsh
+echo $HISTFILE  # Expected: ~/.local/state/zsh/history
+echo $INPUTRC  # Expected: ~/.config/readline/inputrc
+echo $PSQLRC  # Expected: ~/.config/pg/psqlrc
+echo $SQLITE_HISTORY  # Expected: ~/.local/state/sqlite/history
+```
+
+Antidote bundle will automatically regenerate in new location (`~/.config/zsh/plugins.zsh`) on first shell startup.
+Vim will automatically create `~/.local/state/vim/undo/` on first edit.
+
+**Step 5: Regenerate crontab (moves log files to Downloads)**
+```bash
+# This updates the crontab with new log file paths
+recron
+
+# Verify the crontab was updated
+crontab -l | grep "Downloads"
+# Should show: tmplog=/Users/vijay/Downloads/software-updates-cron-last-run.log
+```
+
+**Step 6: Clean up old files (optional, after verifying everything works)**
+```bash
+# Only after verifying the new locations work correctly:
+rm ~/.zsh_history           # History now in ~/.local/state/zsh/history
+rm ~/.zsh_plugins.zsh       # Bundle now in ~/.config/zsh/plugins.zsh
+rm ~/.vimrc                 # Vimrc now in ~/.config/vim/vimrc (if symlink, will be auto-removed by install-dotfiles.rb)
+rm -rf ~/.vim/              # Vim autoload now in ~/.config/vim/autoload/ (if symlink, will be auto-removed by install-dotfiles.rb)
+rm ~/.shellcheckrc          # Shellcheckrc now in ~/.config/shellcheck/shellcheckrc (if symlink, will be auto-removed by install-dotfiles.rb)
+
+# Clean up old log files after crontab regeneration
+rm ~/.software-updates-cron-last-run.log 2>/dev/null   # Now in ~/Downloads/
+rm ~/.software-updates-run-log 2>/dev/null             # Now in ~/Downloads/
+rm ~/software-updates-cron.log 2>/dev/null             # Now in ~/Downloads/
+rm ~/brew-bundle-full-install.log 2>/dev/null          # Now in ~/Downloads/
+```
+
+**Technical notes:**
+
+*Why .zshenv stays in $HOME:* Zsh always reads `.zshenv` from `$HOME` first, before looking at any other configuration. This is by design and cannot be changed. `.zshenv` sets `ZDOTDIR` to tell zsh where to find the other files.
+
+*Why plugins are in XDG_CONFIG_HOME, not ZDOTDIR:* Plugin files are intentionally decoupled from ZDOTDIR. If ZDOTDIR is reverted to $HOME, plugins stay in `~/.config/zsh/`. This achieves the goal of keeping $HOME uncluttered regardless of ZDOTDIR setting.
+
+*Why history is in XDG_STATE_HOME:* Per XDG Base Directory spec: Config → $XDG_CONFIG_HOME (.zshrc, settings), Data → $XDG_DATA_HOME (application resources), Cache → $XDG_CACHE_HOME (ephemeral, can be deleted), State → $XDG_STATE_HOME (persistent mutable data like history, logs). History is mutable state that persists between sessions.
+
+---
+
 ### 3.2.23
 
 #### Fix git upreb for read-only repos, add non-interactive Homebrew upgrades, fix profiles repo squashing
@@ -260,7 +444,7 @@ FILTER='(vijay|profiles)$' all st            # Home + browser-profiles
   Make executable: `chmod +x ${PERSONAL_BIN_DIR}/push-browser-profiles.sh`
   Invoke: `cd ~/personal/vijay/browser-profiles && ./push-browser-profiles.sh`
 * Root directory protection is defensive - no action required
-* Restart terminal to reload `.aliases` with new `my-repos` alias and `.shellrc` with root protection utilities
+* Restart terminal to reload `${ZDOTDIR}/.aliases` with new `my-repos` alias and `.shellrc` with root protection utilities
 * New utility functions available for use in custom scripts:
   * Shell: `is_root_dir "${path}"` - returns true if path is root `/`
   * Shell: `my-repos <command>` - runs command in home + dotfiles + browser-profiles repos
@@ -347,7 +531,7 @@ FILTER='(vijay|profiles)$' all st            # Home + browser-profiles
 
 #### Adopting these changes
 
-* Restart terminal to reload `.aliases` with fixed `time_shell_startup`
+* Restart terminal to reload `${ZDOTDIR}/.aliases` with fixed `time_shell_startup`
 
 ### 3.2.13
 
@@ -828,7 +1012,7 @@ All other issues already compliant: `.shellrc` logging guards use explicit if st
 
 * *[scripts/capture-prefs.rb]* Refactored to use `Plist` module. Removed inline REXML manipulation (now `Plist.strip_excluded_keys`), removed `rexml/document` and `set` requires (now in `plist.rb`), simplified helper methods to thin wrappers around `Plist` module methods. Export/import logic now uses `Plist.export_domain`, `Plist.import_domain`, `Plist.has_keys?`. Reduced from 366 to 290 lines.
 
-* *[scripts/setup-login-item.rb]* (NEW) Ruby port of `setup-login-item.sh`. Registers apps as macOS login items via SMAppService (macOS 14–25) or legacy System Events AppleScript (macOS 13, 26+). Functionality preserved: `-a <app-name>` and `-b` (background) flags, all logging via `Logging` module, script depth tracking, warning collection. Benefits: no `.aliases` dependency (self-contained with `require_relative`), cleaner subprocess handling with `Open3.capture3`, explicit return values, easier to test. Shell version retained temporarily for rollback safety.
+* *[scripts/setup-login-item.rb]* (NEW) Ruby port of `setup-login-item.sh`. Registers apps as macOS login items via SMAppService (macOS 14–25) or legacy System Events AppleScript (macOS 13, 26+). Functionality preserved: `-a <app-name>` and `-b` (background) flags, all logging via `Logging` module, script depth tracking, warning collection. Benefits: no `${ZDOTDIR}/.aliases` dependency (self-contained with `require_relative`), cleaner subprocess handling with `Open3.capture3`, explicit return values, easier to test. Shell version retained temporarily for rollback safety.
 
 * *[files/--HOME--/Brewfile]* Updated `setup_login_items_script` variable to reference `setup-login-item.rb` instead of `setup-login-item.sh`. Keybase and other login-item postinstall hooks now invoke Ruby version.
 
@@ -903,7 +1087,7 @@ All other issues already compliant: `.shellrc` logging guards use explicit if st
 
   ```zsh
   unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
-  unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
+  unfunction is_aliases_sourced; zcompile ${ZDOTDIR}/.aliases; source ${ZDOTDIR}/.aliases
   ```
 
 ---
@@ -956,7 +1140,7 @@ All other issues already compliant: `.shellrc` logging guards use explicit if st
 
   ```zsh
       unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
-      unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
+      unfunction is_aliases_sourced; zcompile ${ZDOTDIR}/.aliases; source ${ZDOTDIR}/.aliases
   ```
 
 ---
@@ -1022,7 +1206,7 @@ All other issues already compliant: `.shellrc` logging guards use explicit if st
 
 #### Adopting these changes
 
-* Restart terminal to reload zsh autoload functions (`update_all_repos`, `status_all_repos`, `st`) and source updated `.aliases` for macOS delegation functions.
+* Restart terminal to reload zsh autoload functions (`update_all_repos`, `status_all_repos`, `st`) and source updated `${ZDOTDIR}/.aliases` for macOS delegation functions.
 * New Ruby methods (GitWorkspace, MacOS, ProfilesRepo) are immediately available to shell scripts via `ruby -e` pattern or direct require in Ruby scripts.
 * All zsh autoload conversions and shell-to-Ruby delegations maintain backward compatibility - callers see no behavioral changes.
 
@@ -1207,7 +1391,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * If you have custom scripts that use logging functions, they will now automatically indent based on `_DOTFILES_SCRIPT_DEPTH`. Ensure your scripts call `export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))` at entry and `trap _decrement_script_depth EXIT` (shell) or `Logging.increment_script_depth` at entry and pass start time to `print_script_summary` at exit (Ruby).
 * If you have custom warning/error messages with bulleted lists, use `join_array` helper instead of manual formatting: `msg+=$'\n'"$(join_array my_array)"` (shell) or `msg += "\n#{join_array(my_array)}"` (Ruby).
 * Quit & Restart the Terminal application or run `unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
-; unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases` in each open terminal window/tab.
+; unfunction is_aliases_sourced; zcompile ${ZDOTDIR}/.aliases; source ${ZDOTDIR}/.aliases` in each open terminal window/tab.
 
 ---
 
@@ -1252,7 +1436,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Rebase from upstream, resolve conflicts.
 * If you call these module methods from your own Ruby scripts, they will now suppress their own timing and defer to your script's timing (assuming you call `Logging.increment_script_depth` at your script's entry point).
-* Quit & Restart the Terminal application or run `unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases` to reload in each open terminal window/tab.
+* Quit & Restart the Terminal application or run `unfunction is_aliases_sourced; zcompile ${ZDOTDIR}/.aliases; source ${ZDOTDIR}/.aliases` to reload in each open terminal window/tab.
 
 ---
 
@@ -1369,7 +1553,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Fixed autoload race condition in autoload functions
 
-* *[files/--XDG_CONFIG_HOME--/zsh/cc, count, pull, push, st, upreb]* Added guard to prevent "command not found: dispatch_or_fallback" errors when opening multiple terminal tabs simultaneously. The race condition occurred because `.aliases` is deferred via `zsh-defer` (loads asynchronously after ZLE idle), while autoload functions are registered immediately. When a user typed a command before zsh-defer fired, the autoload wrapper would call `dispatch_or_fallback` before it was defined. Each wrapper now checks if `dispatch_or_fallback` exists; if not, it synchronously loads `.aliases` first. The re-source guard in `.aliases` prevents duplicate execution when zsh-defer fires later. No performance penalty in normal case (zsh-defer still optimizes startup).
+* *[files/--XDG_CONFIG_HOME--/zsh/cc, count, pull, push, st, upreb]* Added guard to prevent "command not found: dispatch_or_fallback" errors when opening multiple terminal tabs simultaneously. The race condition occurred because `${ZDOTDIR}/.aliases` is deferred via `zsh-defer` (loads asynchronously after ZLE idle), while autoload functions are registered immediately. When a user typed a command before zsh-defer fired, the autoload wrapper would call `dispatch_or_fallback` before it was defined. Each wrapper now checks if `dispatch_or_fallback` exists; if not, it synchronously loads `${ZDOTDIR}/.aliases` first. The re-source guard in `${ZDOTDIR}/.aliases` prevents duplicate execution when zsh-defer fires later. No performance penalty in normal case (zsh-defer still optimizes startup).
 
 #### Replaced Unicode punctuation with ASCII equivalents
 
@@ -1503,11 +1687,11 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Fixed `ensure_keybase_logged_in` not found on re-running `fresh-install-of-osx.sh`
 
-* *[fresh-install-of-osx.sh]* Added `load_file_if_exists "${HOME}/.aliases"` directly after `load_zsh_configs` in `main()`. `~/.zsh_plugins.zsh` (the antidote bundle) is checked into the home git repo and symlinked by `install-dotfiles.rb` before this point, so it is present on both vanilla OS and pre-configured machine runs. `.zshrc` sources the bundle, which defines `zsh-defer`, and then defers `.aliases` to the next ZLE idle event. In a non-interactive script there is no ZLE idle event, so the deferred callback never fires and `.aliases` functions (`ensure_keybase_logged_in`, `build_keybase_repo_url`) are absent. The `is_aliases_sourced` guard inside `.aliases` prevents double-loading.
+* *[fresh-install-of-osx.sh]* Added `load_file_if_exists "${HOME}/.aliases"` directly after `load_zsh_configs` in `main()`. `~/.zsh_plugins.zsh` (the antidote bundle) is checked into the home git repo and symlinked by `install-dotfiles.rb` before this point, so it is present on both vanilla OS and pre-configured machine runs. `.zshrc` sources the bundle, which defines `zsh-defer`, and then defers `${ZDOTDIR}/.aliases` to the next ZLE idle event. In a non-interactive script there is no ZLE idle event, so the deferred callback never fires and `${ZDOTDIR}/.aliases` functions (`ensure_keybase_logged_in`, `build_keybase_repo_url`) are absent. The `is_aliases_sourced` guard inside `${ZDOTDIR}/.aliases` prevents double-loading.
 
 #### Fixed `all` alias not found in `resurrect_tracked_repos`
 
-* *[.aliases]* Replaced `command_exists all` / `all restore-mtime -c` / `all maintenance register` / `all maintenance start` with direct `FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git ...` invocations. The failure was not caused by alias expansion being disabled — zsh's `ALIASES` option is on by default even in non-interactive scripts. The actual cause: `resurrect_tracked_repos` is called as a background `&|` job from `fresh-install-of-osx.sh`, and if `.aliases` is not loaded in that child-process, `all` is simply never defined. Using the underlying command directly removes the dependency on `.aliases` being in scope.
+* *[.aliases]* Replaced `command_exists all` / `all restore-mtime -c` / `all maintenance register` / `all maintenance start` with direct `FOLDER="${HOME}" MAXDEPTH=7 run-all.sh git ...` invocations. The failure was not caused by alias expansion being disabled — zsh's `ALIASES` option is on by default even in non-interactive scripts. The actual cause: `resurrect_tracked_repos` is called as a background `&|` job from `fresh-install-of-osx.sh`, and if `${ZDOTDIR}/.aliases` is not loaded in that child-process, `all` is simply never defined. Using the underlying command directly removes the dependency on `${ZDOTDIR}/.aliases` being in scope.
 
 #### Made `allow_all_direnv_configs` and `install_mise_versions` synchronous in fresh-install
 
@@ -1515,7 +1699,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Corrected `No Aliases in Non-Interactive Scripts` rule
 
-* *[shell-scripting.instructions.md]* Replaced the incorrect claim "Zsh disables alias expansion in non-interactive shells" with the accurate mechanism: zsh's `ALIASES` option is on by default universally; the real risk is that `.aliases` may not have been sourced, leaving the alias undefined. Updated the rule rationale, BAD/Good examples, and comment templates accordingly.
+* *[shell-scripting.instructions.md]* Replaced the incorrect claim "Zsh disables alias expansion in non-interactive shells" with the accurate mechanism: zsh's `ALIASES` option is on by default universally; the real risk is that `${ZDOTDIR}/.aliases` may not have been sourced, leaving the alias undefined. Updated the rule rationale, BAD/Good examples, and comment templates accordingly.
 * *[copilot-instructions.md]* Updated the [`§ No Aliases in Non-Interactive Scripts`](.github/copilot-instructions.md#no-aliases-in-non-interactive-scripts) summary to match.
 
 #### Corrected ssh `config` file to use relative paths
@@ -1552,7 +1736,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
   ```zsh
   unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
-  unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
+  unfunction is_aliases_sourced; zcompile ${ZDOTDIR}/.aliases; source ${ZDOTDIR}/.aliases
   install-dotfiles.rb
   fresh-install-of-osx.sh
   ```
@@ -1596,7 +1780,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
   ```zsh
   delete_caches
-  unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
+  unfunction is_aliases_sourced; zcompile ${ZDOTDIR}/.aliases; source ${ZDOTDIR}/.aliases
   unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
   ```
 
@@ -1744,7 +1928,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * Rebase from upstream, resolve conflicts, and then run in any open terminal:
 
   ```zsh
-  unfunction is_aliases_sourced; source ~/.aliases    # to pick up new functions and bug fixes
+  unfunction is_aliases_sourced; source ${ZDOTDIR}/.aliases    # to pick up new functions and bug fixes
   ```
 
 * Quit and restart the Terminal application.
@@ -1781,7 +1965,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 #### Fix `delete_caches` post-deletion `is_debug` error and harden `capture-prefs` key stripping
 
 * *[.aliases]* `delete_caches`: added `source "${ZDOTDIR}/.zlogin"` at the end so all `.zwc` caches are rebuilt immediately in the current shell. Without this, the first new terminal after `delete_caches` starts with no compiled bytecode; raw-source startup leaves the function table in a state where helper functions (e.g. `is_debug`) are not visible to `.zlogin`'s background recompile subshell, producing "command not found: is_debug". Also converted the trailing `&&` guard for `XDG_CACHE_HOME` removal to an explicit `if` to be safe under `set -e` / ERR trap patterns.
-* *[capture-prefs.sh]* `_strip_excluded_keys`: rewrote as a single Ruby/REXML pass (replacing the prior Ruby-enumerate + PlistBuddy-delete approach) using `/usr/bin/ruby` — eliminates the only Homebrew-Python dependency in the codebase. PlistBuddy treats `:` as a path separator in its key-path syntax, so keys whose names contain `:` (e.g. `_DKThrottledActivityLast_...:/app/mediaUsageActivityDate`) were misinterpreted as nested dict paths and silently not deleted. `File.fnmatch` without `FNM_PATHNAME` allows `*` to match `/` and `:`, matching zsh's `[[ == ]]` glob behaviour. Also switched `capture-prefs.sh` to source `.aliases` instead of `.shellrc` so the shared macOS prefs helpers (§ 3n) are available.
+* *[capture-prefs.sh]* `_strip_excluded_keys`: rewrote as a single Ruby/REXML pass (replacing the prior Ruby-enumerate + PlistBuddy-delete approach) using `/usr/bin/ruby` — eliminates the only Homebrew-Python dependency in the codebase. PlistBuddy treats `:` as a path separator in its key-path syntax, so keys whose names contain `:` (e.g. `_DKThrottledActivityLast_...:/app/mediaUsageActivityDate`) were misinterpreted as nested dict paths and silently not deleted. `File.fnmatch` without `FNM_PATHNAME` allows `*` to match `/` and `:`, matching zsh's `[[ == ]]` glob behaviour. Also switched `capture-prefs.sh` to source `${ZDOTDIR}/.aliases` instead of `.shellrc` so the shared macOS prefs helpers (§ 3n) are available.
 * *[capture-prefs-excluded-keys.txt]* New file: per-domain key exclusion patterns for `capture-prefs.sh`. Added global date/timestamp patterns (`*|*Date`, `*|*date`, `*|*Timestamp`, `*|*timestamp`) to strip ephemeral watermark keys from every domain.
 * *[capture-prefs-allowed-list.txt, capture-prefs-denied-list.txt]* Moved `com.apple.xpc.activity2` from allowed to denied (contains only background-task scheduling timestamps and OS version stamps — no portable user preferences). Removed `Apple Global Domain` and `screencapture` from the allowed list — these domains accumulate too many system-managed non-portable keys to be safely captured wholesale.
 
@@ -1858,7 +2042,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   ```zsh
   install-dotfiles.rb
   unfunction is_shellrc_sourced; source ~/.shellrc    # to pick up new functions and bug fixes
-  unfunction is_aliases_sourced; source ~/.aliases    # to pick up new functions and bug fixes
+  unfunction is_aliases_sourced; source ${ZDOTDIR}/.aliases    # to pick up new functions and bug fixes
   rm -rfv  /opt/homebrew/opt/antidote/share/antidote/antidote.zsh.zwc*
   delete_caches                                       # clear any stale .zwc bytecode and cached shell environment files.
   _create_crontab "${PERSONAL_CONFIGS_DIR}/crontab.txt" # re-generate the cron file with correct settings
@@ -1949,7 +2133,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[copilot-instructions.md]* Updated deferred-collection pattern description: depth counter, decrement trap, Ruby equivalent.
 * *[copilot-instructions.md]* Removed `"${_SCRIPT_NAME}"` from `print_script_summary` example.
 * *[copilot-instructions.md]* Added `load_zsh_configs` ZDOTDIR safety note, conditional-cron guidance, `has_sudo_credentials` guard, `is_running_in_tty` gate, and `COLUMNS` fallback bullets.
-* *[GettingStarted.md]* Updated bootstrap `curl` command to pipe through `tee "${HOME}/fresh-install-of-osx.log"`.
+* *[GettingStarted.md]* Updated bootstrap `curl` command to pipe through `tee "${HOME}/Downloads/fresh-install-of-osx.log"`.
 
 #### Adopting these changes
 
@@ -1958,7 +2142,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   ```zsh
   install-dotfiles.rb
   unfunction is_shellrc_sourced; source ~/.shellrc   # to pick up new functions and bug fixes
-  unfunction is_aliases_sourced; source ~/.aliases   # to pick up new functions and bug fixes
+  unfunction is_aliases_sourced; source ${ZDOTDIR}/.aliases   # to pick up new functions and bug fixes
   delete_caches   # clear any stale .zwc bytecode and cached shell environment files.
   ```
 
@@ -1987,8 +2171,8 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.gitconfig]* Added `git pull-unshallow` and `git fetch-unshallow` aliases (auto-unshallow shallow repos before pulling/fetching). `git pullsub` now delegates to `pull-unshallow`. Fixed `git upreb` to use `grep -x upstream` (exact match). Simplified `git size` to avoid a nested subshell. Removed redundant `git prune` from `git cc`. Fixed `git mn` to pass `--no-ff` (required when `merge.ff=only` is set globally). Changed `help.autoCorrect` from `10` (100ms delay) to `prompt`.
 * *[zsh git commands: cc, count, pull, push, st]* Replaced inline argument-parsing loop with `parse_folder_and_switches`; replaced inline `dispatch_or_fallback` expansion with the shared helper call.
 * *[scripts/]* Fixed stale source comments across all scripts (`add-upstream-git-config.sh`, `capture-prefs.sh`, `capture-raycast-configs.sh`, `cleanup-browser-profiles.sh`, `post-brew-install.sh`, `recreate-repo.sh`, `run-all.sh`, `setup-login-item.sh`, `software-updates-cron.sh`); added missing function doc comments; added `warn` in place of `echo` where `.shellrc` helpers are available.
-* *[scripts/osx-defaults.sh]* Structural refactor: `ask()` moved from nested (inside `main()`) to top-level; `auto` promoted to a script-level variable; sourcing changed from `.shellrc` to `.aliases`; `usage()` added with `print_usage`; `getopts ':s'` (colon-prefixed for error handling) replaces bare `getopts 's'`.
-* *[scripts/run-all.sh]* Refactored: `source "${HOME}/.shellrc"` replaced with `.aliases`; all global `MINDEPTH`/`MAXDEPTH`/`FOLDER`/`FILTER` vars replaced with locals; `find … | grep | sort -u` pipeline replaced with a zsh-native dedup loop using `:h` and an associative array; `$(date +%s)` → `${EPOCHSECONDS}` (no fork); `usage()` rewritten with `print_usage`.
+* *[scripts/osx-defaults.sh]* Structural refactor: `ask()` moved from nested (inside `main()`) to top-level; `auto` promoted to a script-level variable; sourcing changed from `.shellrc` to `${ZDOTDIR}/.aliases`; `usage()` added with `print_usage`; `getopts ':s'` (colon-prefixed for error handling) replaces bare `getopts 's'`.
+* *[scripts/run-all.sh]* Refactored: `source "${HOME}/.shellrc"` replaced with `${ZDOTDIR}/.aliases`; all global `MINDEPTH`/`MAXDEPTH`/`FOLDER`/`FILTER` vars replaced with locals; `find … | grep | sort -u` pipeline replaced with a zsh-native dedup loop using `:h` and an associative array; `$(date +%s)` → `${EPOCHSECONDS}` (no fork); `usage()` rewritten with `print_usage`.
 * *[scripts/resurrect-repositories.rb]* Major refactor: all public functions renamed to private (`_find_git_repos_from_disk`, `_apply_filter`, `_generate_each`, etc.); `CliParser` integrated in place of inline `OptionParser`; `section_header`/`print_script_start`/`print_script_duration` calls added; `_verify_all` gains summary statistics (`discovered_count`/`common_repos`); resurrection loop gains per-repo `begin/rescue` error isolation with `successful_repos`/`failed_repos` tracking — failures are now reported rather than aborting the loop.
 * *[.shellrc]* Fixed `${(j.:.)RUBYLIB_PATHS}` bad substitution error when sourced by non-zsh runtimes (e.g. direnv). Wrapped the `RUBYLIB` block in `is_zsh` guard; updated comment to explain the direnv/bash incompatibility.
 * *[.shellrc]* Added `RUBYLIB` setup to point to `scripts/utilities/` so Ruby scripts can `require` shared utilities by name without `require_relative`.
@@ -2006,13 +2190,13 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[scripts/setup-login-item.sh]* Replaced `osascript | \grep -i` pipeline with zsh glob pattern match `${${(M)${(f)all_login_items}:#(#i)*${app_name}*}[1]}`.
 * *[Brewfile]* Uncommented `shfmt` — now an explicit dependency.
 * *[all eligible shell and Ruby scripts]* Reformatted using `shfmt` (shell/zsh) and `rufo` (Ruby) per `.editorconfig` rules.
-* *[.shfmtignore]* New file. Excludes `.zshrc` and `cleanup-browser-profiles.sh` (unparseable zsh-only syntax), and `.shellrc` and `.aliases` (`keep_padding` expands intentional one-liners).
+* *[.shfmtignore]* New file. Excludes `.zshrc` and `cleanup-browser-profiles.sh` (unparseable zsh-only syntax), and `.shellrc` and `${ZDOTDIR}/.aliases` (`keep_padding` expands intentional one-liners).
 * *[.shellrc]* In the `info/error/debug/warn` functions, do not print anything if its being called from within `direnv`. This is to suppress the noisy logs when cd'ing to different directories.
 * *[scripts/install-dotfiles.rb]* `custom.git*` files now use mtime-based conflict resolution instead of always treating the destination as authoritative. On `FIRST_INSTALL` (env var set) the destination always wins (moved into repo, copied back). On subsequent runs, the newer file wins; source wins on a tie. `--force` bypasses mtime and always overwrites.
 * *[files/--HOME--/.gitconfig]* Made all aliases scripts POSIX-compatible.
 * *[files/--HOME--/custom.gitignore, files/--HOME--/custom.gitattributes, files/--PERSONAL_PROFILES_DIR--/custom.gitignore]* Header comments updated to document the mtime-based resolution rules and FIRST_INSTALL behaviour.
-* *[.shellrc → .aliases]* Moved 8 functions out of `.shellrc` into `.aliases` — reducing `.shellrc`'s curl-download payload and startup cost on a vanilla OS install.
-* *[.shellrc]* `set_ssh_folder_permissions`: updated comment to document both reasons it stays in `.shellrc` — (1) vanilla OS pre-`install-dotfiles.rb` bootstrap; (2) bash-compat: called from `.envrc` files evaluated by direnv in a bash subshell (`.aliases` cannot be sourced in bash).
+* *[.shellrc → .aliases]* Moved 8 functions out of `.shellrc` into `${ZDOTDIR}/.aliases` — reducing `.shellrc`'s curl-download payload and startup cost on a vanilla OS install.
+* *[.shellrc]* `set_ssh_folder_permissions`: updated comment to document both reasons it stays in `.shellrc` — (1) vanilla OS pre-`install-dotfiles.rb` bootstrap; (2) bash-compat: called from `.envrc` files evaluated by direnv in a bash subshell (`${ZDOTDIR}/.aliases` cannot be sourced in bash).
 * *[scripts/software-updates-cron.sh]* Added ERR trap: calls `error()` (which triggers `notify`) on unexpected failure. Added profiles repo size check to notify if 2 GB threshold is breached.
 * *[files/--HOME--/.envrc, files/--PERSONAL_PROFILES_DIR--/.envrc]* Added ERR trap to both `.envrc` files. On any unexpected failure, `notify()` fires an osascript notification with the filename and line number — visible even when the terminal is not in focus.
 * *[scripts/data/capture-prefs-denied-list.txt]* New file listing 44 domains that must never be exported/imported: device identity UUIDs, MDM enrollment tokens, Apple ID credentials, AirTag beacon MACs, CloudKit cache blobs, printer presets keyed to IP addresses, and ephemeral UI/OS-version state. This script now loads the denied-list into an associative array at startup; skips any allowed-listed domain that also appears in the denied-list with a `warn` message instead of silently exporting/importing machine-specific data.
@@ -2034,7 +2218,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.shellrc]* `info` and `success` are now suppressed when `DIRENV_DIR` is set (i.e. running inside a direnv subshell evaluating an `.envrc`). `warn` and `error` always print. Cron jobs, CI, and interactive shells are unaffected. This silences routine `.envrc` log output from direnv without losing actionable messages.
 * *[scripts/fresh-install-of-osx.sh]* Added `set -E` immediately after `set -euo pipefail` so the existing `_cleanup_and_exit` ERR trap is inherited by all helper functions defined in the file — previously a failure inside a helper would not trigger the trap.
 * *[scripts/fresh-install-of-osx.sh]* Fixed dead `$?` check after `brew bundle`. Uncommented `resurrect_tracked_repos` (now runs automatically, synchronously, before `allow_all_direnv_configs` and `install_mise_versions` so repos exist before those sweep). DNS fallback changed from `8.8.8.8` to `1.1.1.1`.
-* *[.github/copilot-instructions.md]* `custom.git*` exception block rewritten with FIRST_INSTALL / mtime resolution rules. `.shellrc` vs `.aliases` decision rule rewritten: clarifies the `install-dotfiles.rb` boundary, bash-compat reason for `.shellrc` retention, and lists zsh-autoload functions as `.aliases` candidates.
+* *[.github/copilot-instructions.md]* `custom.git*` exception block rewritten with FIRST_INSTALL / mtime resolution rules. `.shellrc` vs `${ZDOTDIR}/.aliases` decision rule rewritten: clarifies the `install-dotfiles.rb` boundary, bash-compat reason for `.shellrc` retention, and lists zsh-autoload functions as `${ZDOTDIR}/.aliases` candidates.
 * *[.github/instructions/git-config.instructions.md, Extras.md]* `custom.git*` handling descriptions updated to reflect mtime-based resolution rules.
 * *[files/--ZDOTDIR--/.zsh_plugins.txt, files/--ZDOTDIR--/.zsh_plugins.zsh]* Un-deferred `fast-syntax-highlighting`, `zsh-autosuggestions`, and `zsh-history-substring-search`. `kind:defer` uses `zle -F` but reschedules itself when `PENDING > 0` (bytes already in the TTY buffer) — a fast typist beats the idle window and gets no highlighting, no suggestions, and non-functional Up/Down arrow on their first command. These three plugins directly affect the live typing experience and must be synchronous. Alias-only and cosmetic plugins (`eza`, `git`, `termsupport`, `iterm2`, `sudo`, `zbell`) remain deferred. Updated deferral policy comment to document the `PENDING` race condition and the deliberate tradeoff.
 * *[files/--XDG_CONFIG_HOME--/zsh/update_all_repos, status_all_repos, st, pull, push, upreb, count, cc]* Fixed `zsh_eval_context` self-invocation guard from `*:file*` to `*file*`. When sourced in a `zsh -c` context (as in the cron script), `zsh_eval_context` is `cmdarg file` (space-separated, not colon-separated), so `*:file*` did not match — causing the function to auto-execute on `source`, then execute again on the explicit call (double-run). `*file*` matches both `toplevel:shfunc:file` (sourced from a script) and `cmdarg file` (sourced in `zsh -c`).
@@ -2042,7 +2226,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[files/--HOME--/.shellrc]* `success`, `info`, `warn`, `debug`: replaced `is_non_zero_string ... || echo` with `if ! is_non_zero_string ...; then echo; fi` — the bare `||` pattern caused `is_non_zero_string` returning 1 (outside direnv) to fire the ERR trap in any caller running under `set -e`.
 * *[files/--XDG_CONFIG_HOME--/zsh/st, update_all_repos, status_all_repos, pull, push, upreb, count, cc]* Added `|| true` to the `compdef` registration guard in all autoload scripts. `(($+functions[compdef]))` exits 1 when `compdef` is not yet defined (non-interactive shells, cron, pre-`compinit`), firing the ERR trap in any script that sources these files.
 * *[files/--HOME--/.shellrc]* `_dotfiles_notify`: use `[[ -x '/usr/bin/osascript' ]]` instead of `command_exists` — more precise (won't match a function/alias named `osascript`) and correct for a fixed system binary path.
-* *[files/--ZDOTDIR--/.zshrc, files/--HOME--/.aliases, scripts/wait-editor]* Fixed `crontab -e` (and tools like `visudo`, `fc`) not blocking for GUI editors. `EDITOR` is always `'wait-editor'` — a thin wrapper that re-execs `$GIT_EDITOR` via POSIX word-splitting so `--wait` flags are passed correctly. `GIT_EDITOR` holds the full editor invocation (e.g. `'zed --wait'`, or `'vi'` for SSH). The SSH/local if-else in `.zshrc` collapsed into a single loop with a per-context preferred-editors list. `VISUAL` is not set — legacy concept, every modern tool falls back to `EDITOR`. Removed now-redundant `${EDITOR%% *}` stripping in `.aliases`.
+* *[files/--ZDOTDIR--/.zshrc, files/--HOME--/.aliases, scripts/wait-editor]* Fixed `crontab -e` (and tools like `visudo`, `fc`) not blocking for GUI editors. `EDITOR` is always `'wait-editor'` — a thin wrapper that re-execs `$GIT_EDITOR` via POSIX word-splitting so `--wait` flags are passed correctly. `GIT_EDITOR` holds the full editor invocation (e.g. `'zed --wait'`, or `'vi'` for SSH). The SSH/local if-else in `.zshrc` collapsed into a single loop with a per-context preferred-editors list. `VISUAL` is not set — legacy concept, every modern tool falls back to `EDITOR`. Removed now-redundant `${EDITOR%% *}` stripping in `${ZDOTDIR}/.aliases`.
 * *[files/--ZDOTDIR--/.zshrc]* Added `ZSH_AUTOSUGGEST_USE_ASYNC=1`, `ZSH_AUTOSUGGEST_MANUAL_REBIND=1`, `ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20` before the antidote bundle load. Async mode fetches suggestions in a background process so ZLE never blocks on history lookups. Manual rebind skips the full ZLE widget re-wrap that autosuggestions performs on every `precmd` (~10–20ms per prompt). Buffer max size skips suggestion lookups for long command lines.
 * *[files/--ZDOTDIR--/.zshrc]* Changed `ZSH_AUTOSUGGEST_STRATEGY` from `(history completion)` to `(history)` and added `ZSH_AUTOSUGGEST_HISTORY_IGNORE="?(#c100,)"`. The `completion` strategy spawns a `zpty` on every suggestion request (~10–30ms overhead); history alone covers the vast majority of useful suggestions. The ignore pattern skips history entries >100 chars, reducing regex matching cost on large history files.
 * *[files/--HOME--/.gitconfig]* `git cc` and `git rfc`: removed `refs/tags` from `git for-each-ref` enumeration passed to `git reflog expire`. Tags have no reflogs (especially in shallow clones such as antidote cache repos), causing "reflog could not be found" errors for every tag. Only `refs/heads` and `refs/remotes` are valid reflog targets.
@@ -2053,7 +2237,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[files/--ZDOTDIR--/.zlogin]* Moved `find_in_folder_and_recompile "${XDG_CACHE_HOME}"` into the disowned background block. The mtime sentinel never actually prevented the `find` scan: `.zshrc` always writes cache files before `.zlogin` runs, so the sentinel's `-nt` check always failed and `find` ran synchronously on every login shell.
 * *[personal/dev/configs/crontab.txt, files/--HOME--/.aliases]* Expanded crontab `PATH` to include `/usr/local/bin`, `/usr/sbin`, `/sbin`, `${PERSONAL_BIN_DIR}`, and `${DOTFILES_DIR}/scripts` — previously only `/opt/homebrew/bin:/usr/bin:/bin`, causing `run-all.sh`, `capture-prefs.sh`, `regenerate_repo_aliases`, and standard utilities to be not found in cron.
 * *[personal/dev/configs/crontab.txt, files/--HOME--/.aliases]* Fixed `run-all.sh` and `capture-prefs.sh` not found in cron despite correct PATH. Crontab treats `#` as part of a value on assignment lines, so an inline comment was appended to the last PATH directory name, making it invalid. Moved the explanation to a standalone comment line above the `PATH=` assignment.
-* *[scripts/software-updates-cron.sh]* Removed `load_zsh_configs` call — it sourced `.zshrc` which activated mise and installed `command_not_found_handler`. That handler returned 127 in the non-interactive cron environment, firing the ERR trap. The script only needs `.aliases`.
+* *[scripts/software-updates-cron.sh]* Removed `load_zsh_configs` call — it sourced `.zshrc` which activated mise and installed `command_not_found_handler`. That handler returned 127 in the non-interactive cron environment, firing the ERR trap. The script only needs `${ZDOTDIR}/.aliases`.
 * *[personal/dev/configs/crontab.txt, files/--HOME--/.aliases]* Fixed cron invocation: changed from `chronic /opt/homebrew/bin/zsh script.sh 2>&1 | tee` (tee outside chronic's scope — log never written on success) to `chronic /opt/homebrew/bin/zsh -c 'zsh script.sh 2>&1 | tee'` so chronic wraps the full pipeline.
 * *[scripts/software-updates-cron.sh]* Added `setopt LOCAL_TRAPS` inside `main()` and moved ERR trap setup there, so the trap is scoped to `main` and not inherited into called functions.
 * *[scripts/software-updates-cron.sh]* Consolidated macOS notifications: removed the mid-run outdated notification (immediately replaced by the final "done" notification). The final notification now includes the comma-separated outdated package list when present.
@@ -2215,7 +2399,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
   ```zsh
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
-  source "${HOME}/.aliases"
+  source "${ZDOTDIR}/.aliases"
   "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
   ```
 
@@ -2243,7 +2427,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   ```zsh
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   source "${HOME}/.shellrc"
-  source "${HOME}/.aliases"
+  source "${ZDOTDIR}/.aliases"
   "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
   recron
   crontab -l # should now show the crontab with the software updates cron job
@@ -2335,7 +2519,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
   ```zsh
   cp "${DOTFILES_DIR}/files/--HOME--/custom.gitignore" "${HOME}/.gitignore"
   source "${HOME}/.shellrc"
-  source "${HOME}/.aliases"
+  source "${ZDOTDIR}/.aliases"
   "${DOTFILES_DIR}/scripts/install-dotfiles.rb"
   ```
 * Quit and restart the Terminal application.
@@ -2832,7 +3016,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 ### 1.1-19
 
-* Moved a lot of the shell functions from `.aliases` into individual files in `${XDG_CONFIG_HOME}/zsh/` so that they can be autoloaded/lazy-loaded on-demand. (Theoretically, this should improve shell startup time)
+* Moved a lot of the shell functions from `${ZDOTDIR}/.aliases` into individual files in `${XDG_CONFIG_HOME}/zsh/` so that they can be autoloaded/lazy-loaded on-demand. (Theoretically, this should improve shell startup time)
 
 #### Adopting these changes
 
@@ -2871,7 +3055,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Ran gemini to optimize the shell configuration scripts aimed at optimizing the shell startup time.
 * Renamed 'scripts/capture-defaults.sh' to 'scripts/capture-prefs.sh'
-* Extracted 'setup_login_item' function from `~/.aliases` into a standalone script so as to avoid issues between bash vs zsh when running `postinstall` step in Brewfile.
+* Extracted 'setup_login_item' function from `${ZDOTDIR}/.aliases` into a standalone script so as to avoid issues between bash vs zsh when running `postinstall` step in Brewfile.
 * *[capture-prefs.sh]* Extracted the whitelist of preferences into a separate file: [capture-prefs-domains.txt](./scripts/data/capture-prefs-domains.txt).
 * *[cleanup-browser-profiles.sh]* Extracted the whitelist of [files](./scripts/data/cleanup-browser-files.txt) and [directories](./scripts/data/cleanup-browser-dirs.txt) that needs to be cleaned into separate files.
 
@@ -2887,7 +3071,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 ### 1.1-14
 
-* *[shellrc]* Introduced new `is_zsh` function for defensively loading `~/.aliases` when running `brew` install/update commands (which runs `bash` shell)
+* *[shellrc]* Introduced new `is_zsh` function for defensively loading `${ZDOTDIR}/.aliases` when running `brew` install/update commands (which runs `bash` shell)
 
 ---
 

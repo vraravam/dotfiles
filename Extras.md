@@ -263,19 +263,19 @@ The generated crontab defines environment variables (`HOME`, `HOMEBREW_PREFIX`, 
 
 The crontab is configured with `MAILTO=""` to disable mail generation (notifications are sent via macOS native alerts instead). The cron job uses a temporary buffer to capture output during execution and only appends it to the main log file if the run exits with an error/warning. Three files track execution state:
 
-**Run history log**: `~/.software-updates-run-log`
+**Run history log**: `~/Downloads/software-updates-run-log`
 - Logs STARTED marker at the beginning of each run
 - Logs COMPLETED marker with timestamp and duration for successful runs (no errors/warnings)
 - Logs FAILED marker with timestamp and duration for runs with errors/warnings
 - Provides audit trail showing when jobs started, whether they completed, and how long they took
 - Useful for detecting if a job is currently running (STARTED without COMPLETED/FAILED) or hung
 
-**Last run output**: `~/.software-updates-cron-last-run.log`
+**Last run output**: `~/Downloads/software-updates-cron-last-run.log`
 - Captures ALL output from the most recent run (success or failure)
 - Overwrites on each run (only keeps last execution)
 - Useful for debugging - see complete output even from successful runs
 
-**Error/warning log**: `~/software-updates-cron.log`
+**Error/warning log**: `~/Downloads/software-updates-cron.log`
 - Captures full output only for runs that have errors or warnings (exit code non-zero)
 - Successful runs do not append to this file (keeps it clean)
 - Appends over time (older error entries preserved)
@@ -284,13 +284,13 @@ The crontab is configured with `MAILTO=""` to disable mail generation (notificat
 To check current run status:
 
   ```zsh
-  tail -2 ~/.software-updates-run-log
+  tail -2 ~/Downloads/software-updates-run-log
   ```
 
 To see all output from the last run (debugging):
 
   ```zsh
-  cat ~/.software-updates-cron-last-run.log
+  cat ~/Downloads/software-updates-cron-last-run.log
   ```
 
 To check for errors/warnings over time:

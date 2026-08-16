@@ -458,9 +458,9 @@ Both `~/.ssh/config` and `templates/ssh-config.template` must have this comment 
   ```zsh
   unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
   ```
-- If any function definitions in `~/.aliases` have been added, renamed, or removed, include a run‑time instruction to reload the function definitions:
+- If any function definitions in `${ZDOTDIR}/.aliases` have been added, renamed, or removed, include a run‑time instruction to reload the function definitions:
   ```zsh
-  unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases
+  unfunction is_aliases_sourced; zcompile ${ZDOTDIR}/.aliases; source ${ZDOTDIR}/.aliases
   ```
 - If any new files have been added or existing files have been deleted/renamed in the `files` folder, then add instructions to run `install-dotfiles.rb`.
 - If any modifications touch the zsh boot‑up files (`.zshenv`, `.zshrc`, `.zlogin`, `.aliases`, `.shellrc`, etc.) or other scripts that are sourced during a terminal start‑up, add a note that the user should quit and restart the Terminal/iTerm application to reload the configuration.

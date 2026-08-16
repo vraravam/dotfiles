@@ -142,11 +142,51 @@ chmod +x path/to/script.sh
 
 **Why:** Scripts must be executable to run. Without this permission, they fail with "Permission denied" errors.
 
+### Step 7 -- Delete Stale .zwc Files (Zsh Files Only)
+
+After editing any zsh file that may have compiled bytecode, delete the corresponding `.zwc` file to prevent stale cache issues.
+
+**Files that need .zwc deletion after edit:**
+- `~/.zshrc` → delete `~/.zshrc.zwc`
+- `${ZDOTDIR}/.aliases` → delete `${ZDOTDIR}/.aliases.zwc`
+- `~/.zshenv` → delete `~/.zshenv.zwc`
+- `~/.zlogin` → delete `~/.zlogin.zwc`
+- Files in `${ZDOTDIR}/` → delete corresponding `.zwc` in same directory
+- Autoload functions in `${XDG_CONFIG_HOME}/zsh/` → delete `.zwc` in same directory
+
+**Delete command:**
+```zsh
+# For a specific file
+rm -f ~/.zshrc.zwc
+
+# For multiple files edited in same session
+rm -f ~/.zshrc.zwc ${ZDOTDIR}/.aliases.zwc
+
+# Find all .zwc files in a directory
+find ~/.config/zsh -name "*.zwc" -type f -delete
+```
+
+**Why this matters:**
+- Zsh loads `.zwc` bytecode if it exists (faster than parsing source)
+- Stale `.zwc` files contain old code → runtime errors or wrong behavior
+- `.zlogin` automatically recompiles files on next startup, but ONLY if source is newer than `.zwc`
+- Manual deletion ensures fresh compilation on next shell start
+
+**When to skip:**
+- If you're editing a file that's never compiled (e.g., `.txt`, `.md`, config files)
+- If you're editing a non-zsh shell script (`.sh`, `.bash`) - these don't use `.zwc`
+
+**Automatic recompilation:**
+After deleting `.zwc` files, they will be automatically recreated on the next zsh startup by `.zlogin` via:
+- `find_in_folder_and_recompile` for regular files
+- `recompile_zsh_autoload_dir` for autoload functions
+
 ## Quick Reference
 
-| Language | Syntax Check | Format Command | Whitespace | Executable |
-|----------|-------------|----------------|------------|------------|
-| Shell    | `zsh -n file` | `shfmt -w file` (check `.shfmtignore` first) | ✅ | ✅ |
-| Ruby     | `/usr/bin/ruby -c file` | `cd "${HOME}" && rufo file` | ✅ | ❌ |
-| Markdown | N/A | N/A | ✅ (Check 2 exempt) | ❌ |
-| Other    | N/A | N/A | ✅ | ❌ |
+| Language | Syntax Check | Format Command | Whitespace | Executable | Delete .zwc |
+|----------|-------------|----------------|------------|------------|-------------|
+| Shell (zsh) | `zsh -n file` | `shfmt -w file` (check `.shfmtignore` first) | ✅ | ✅ | ✅ |
+| Shell (bash/sh) | `zsh -n file` | `shfmt -w file` (check `.shfmtignore` first) | ✅ | ✅ | ❌ |
+| Ruby     | `/usr/bin/ruby -c file` | `cd "${HOME}" && rufo file` | ✅ | ❌ | ❌ |
+| Markdown | N/A | N/A | ✅ (Check 2 exempt) | ❌ | ❌ |
+| Other    | N/A | N/A | ✅ | ❌ | ❌ |

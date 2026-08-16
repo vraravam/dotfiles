@@ -1,4 +1,4 @@
-# file location: ${ZDOTDIR}/.zsh_plugins.txt
+# file location: ${XDG_CONFIG_HOME}/zsh/plugins.txt
 #
 # Antidote plugin list (order matters for some of these).
 # Antidote reads this file and generates a static "${ANTIDOTE_PLUGIN_ZSH}" bundle.

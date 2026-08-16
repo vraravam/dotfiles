@@ -87,6 +87,10 @@ module EnvVars
   # Mirrors: export HOME (always set by the shell)
   HOME = Pathname.new(ENV.fetch('HOME', '~')).expand_path.freeze
 
+  # User's Downloads directory.
+  # Standard macOS location for temporary/transient files.
+  DOWNLOADS = HOME.join('Downloads').freeze
+
   # Dotfiles repository directory.
   # Mirrors: export DOTFILES_DIR="${XDG_CONFIG_HOME}/dotfiles"
   DOTFILES_DIR = _fetch_pathname('DOTFILES_DIR') { HOME.join('.config', 'dotfiles') }.freeze
@@ -131,8 +135,14 @@ module EnvVars
   TMPDIR = Pathname.new(ENV.fetch('TMPDIR', '/tmp')).expand_path.freeze
 
   # Zsh dotfiles directory.
-  # Mirrors: export ZDOTDIR="${ZDOTDIR:-"${HOME}"}" in .shellrc
-  ZDOTDIR = Pathname.new(ENV.fetch('ZDOTDIR', HOME)).expand_path.freeze
+  # Mirrors: export ZDOTDIR="${ZDOTDIR:-"${XDG_CONFIG_HOME:-${HOME}/.config}/zsh"}" in .shellrc
+  ZDOTDIR = Pathname.new(
+    ENV.fetch('ZDOTDIR', XDG_CONFIG_HOME.join('zsh').to_s)
+  ).expand_path.freeze
+
+  # Zsh history file location.
+  # Mirrors: export HISTFILE="${XDG_STATE_HOME}/zsh/history" in .shellrc
+  HISTFILE = Pathname.new(ENV.fetch('HISTFILE', XDG_STATE_HOME.join('zsh', 'history'))).expand_path.freeze
 
   # Homebrew paths.
   # Mirrors: HOMEBREW_* exports (set by brew shellenv, or fallback based on architecture)
@@ -154,8 +164,8 @@ module EnvVars
   # Note: On macOS ANTIDOTE_HOME defaults to ~/Library/Caches/antidote, on Linux to ${XDG_CACHE_HOME}/antidote
   ANTIDOTE_HOME = Pathname.new(ENV.fetch('ANTIDOTE_HOME', HOME.join('Library', 'Caches', 'antidote'))).expand_path.freeze
   ANTIDOTE_ZSH = Pathname.new(ENV.fetch('ANTIDOTE_ZSH', HOMEBREW_PREFIX.join('opt', 'antidote', 'share', 'antidote', 'antidote.zsh'))).expand_path.freeze
-  ANTIDOTE_PLUGIN_ZSH = Pathname.new(ENV.fetch('ANTIDOTE_PLUGIN_ZSH', HOME.join('.zsh_plugins.zsh'))).expand_path.freeze
-  ANTIDOTE_PLUGIN_TXT = Pathname.new(ENV.fetch('ANTIDOTE_PLUGIN_TXT', HOME.join('.zsh_plugins.txt'))).expand_path.freeze
+  ANTIDOTE_PLUGIN_ZSH = Pathname.new(ENV.fetch('ANTIDOTE_PLUGIN_ZSH', XDG_CONFIG_HOME.join('zsh', 'plugins.zsh'))).expand_path.freeze
+  ANTIDOTE_PLUGIN_TXT = Pathname.new(ENV.fetch('ANTIDOTE_PLUGIN_TXT', XDG_CONFIG_HOME.join('zsh', 'plugins.txt'))).expand_path.freeze
 
   # ---------------------------------------------------------------------------
   # Non-path variables (String objects)

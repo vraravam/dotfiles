@@ -101,7 +101,7 @@ recompile_zsh_script "${ZDOTDIR}/.zshenv"
 recompile_zsh_script "${ZDOTDIR}/.zshrc"
 recompile_zsh_script "${ZDOTDIR}/.zlogin"
 recompile_zsh_script "${HOME}/.shellrc"
-recompile_zsh_script "${HOME}/.aliases"
+recompile_zsh_script "${ZDOTDIR}/.aliases"
 
 # zcompdump has no extension so find_in_folder_and_recompile's *.sh/*.zsh glob
 # misses it. Compile it explicitly so compinit loads bytecode on subsequent

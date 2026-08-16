@@ -113,7 +113,7 @@ After running `fresh-install-of-osx.sh`, see [Adoption.md § Phase 3.3](Adoption
 
 For troubleshooting environment variable issues, see [Adoption.md § Troubleshooting](Adoption.md#troubleshooting).
 
-For a deeper understanding of how the scripts work internally — the logging system, startup optimisation, `.shellrc` vs `.aliases` architecture, cron safety, and more — see the [Technical Deep Dive](TechnicalDeepDive.md).
+For a deeper understanding of how the scripts work internally — the logging system, startup optimisation, `.shellrc` vs `${ZDOTDIR}/.aliases` architecture, cron safety, and more — see the [Technical Deep Dive](TechnicalDeepDive.md).
 
 # 🔄 Ongoing Maintenance
 

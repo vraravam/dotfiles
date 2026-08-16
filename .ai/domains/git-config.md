@@ -205,7 +205,7 @@ Use `with_cron_suspended` (defined in `.aliases`) to wrap operations that need c
 set -euo pipefail
 
 _SCRIPT_NAME="${0:t}"
-source "${HOME}/.aliases"
+source "${ZDOTDIR}/.aliases"
 
 # Load autoload script to get _push function
 require_env_var XDG_CONFIG_HOME
@@ -307,7 +307,7 @@ upreb = "!f() { \
 set -euo pipefail
 
 _SCRIPT_NAME="${0:t}"
-source "${HOME}/.aliases"
+source "${ZDOTDIR}/.aliases"
 
 # Load autoload script to get _upreb function
 require_env_var XDG_CONFIG_HOME

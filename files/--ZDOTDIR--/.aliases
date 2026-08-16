@@ -5,11 +5,11 @@
 ################################################################################
 # This file is sourced at the end of the .zshrc file and loads aliases & functions
 #
-# file location: ${HOME}/.aliases
+# file location: ${ZDOTDIR}/.aliases
 # load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
 ################################################################################
 
-# Guard against re-sourcing -- all call sites can unconditionally 'source ~/.aliases'
+# Guard against re-sourcing -- all call sites can unconditionally 'source ${ZDOTDIR}/.aliases'
 # without needing their own check. This return is a no-op cost (single builtin).
 # ZSH_VERSION guard ensures the zsh-only '(( $+functions[...] ))' syntax is never
 # evaluated by non-zsh runtimes (e.g. direnv's sandbox).
@@ -333,10 +333,10 @@ require_env_var() {
   local var_name
   for var_name in "$@"; do
     if is_zero_string "${(P)var_name:-}"; then
-      warn "'$(yellow "${var_name}")' must be set in either '$(cyan "~/.shellrc")' or '$(cyan "~/.aliases")'
+      warn "'$(yellow "${var_name}")' must be set in either '$(cyan "~/.shellrc")' or '$(cyan "${ZDOTDIR}/.aliases")'
   After adding, run:
     - unfunction is_shellrc_sourced; zcompile ~/.shellrc; source ~/.shellrc
-    - unfunction is_aliases_sourced; zcompile ~/.aliases; source ~/.aliases"
+    - unfunction is_aliases_sourced; zcompile ${ZDOTDIR}/.aliases; source ${ZDOTDIR}/.aliases"
       return 1
     fi
   done
@@ -499,7 +499,7 @@ delete_caches() {
   # A direct zcompile here always writes a fresh .zwc from the current source,
   # guaranteeing delete_caches leaves the two most-loaded files in a known-good state.
   zcompile "${HOME}/.shellrc"
-  zcompile "${HOME}/.aliases"
+  zcompile "${ZDOTDIR}/.aliases"
 }
 
 # --------------------------------------------------------------------------

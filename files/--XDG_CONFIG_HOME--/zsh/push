@@ -30,7 +30,7 @@ push() {
   # dispatch_or_fallback doesn't exist yet (multiple tabs opening simultaneously),
   # load .aliases synchronously now. The re-source guard in .aliases makes this safe.
   if ! (($+functions[dispatch_or_fallback])); then
-    source "${HOME}/.aliases"
+    source "${ZDOTDIR}/.aliases"
   fi
   dispatch_or_fallback push _push "$@"
 }

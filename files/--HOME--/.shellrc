@@ -32,19 +32,32 @@ is_shellrc_sourced() {
 if [[ -n "${DEBUG:-}" ]]; then echo "loading ${0}"; fi
 
 # BASH_VERSION is set by bash but unset in zsh. Any third-party script sourced
-# from here (e.g. antidote.zsh) that checks $BASH_VERSION bare will crash under
+# from here (e.g. antidote.zsh) that checks ${BASH_VERSION} bare will crash under
 # set -u with "parameter not set". Pre-set to empty once here so all downstream
 # sources are safe without needing per-callsite workarounds.
 BASH_VERSION="${BASH_VERSION:-}"
 
-export ZDOTDIR="${ZDOTDIR:-"${HOME}"}"
 export XDG_BIN_HOME="${XDG_BIN_HOME:-"${HOME}/.local/bin"}"
 export XDG_CACHE_HOME="${XDG_CACHE_HOME:-"${HOME}/.cache"}"
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-"${HOME}/.config"}"
 export XDG_DATA_HOME="${XDG_DATA_HOME:-"${HOME}/.local/share"}"
 export XDG_STATE_HOME="${XDG_STATE_HOME:-"${HOME}/.local/state"}"
+export ZDOTDIR="${ZDOTDIR:-"${XDG_CONFIG_HOME}/zsh"}"
 
-# zsh/datetime loaded in .zshenv to avoid repeated loading in interactive shells.
+# Tool configuration/state/history file locations (XDG compliance-equivalent so as to declutter ${HOME})
+export HISTFILE="${XDG_STATE_HOME}/zsh/history"
+export INPUTRC="${XDG_CONFIG_HOME}/readline/inputrc"
+export PSQLRC="${XDG_CONFIG_HOME}/pg/psqlrc"
+export SQLITE_HISTORY="${XDG_STATE_HOME}/sqlite/history"
+
+# zsh/datetime provides $EPOCHSECONDS (used by print_script_start, current_timestamp, etc).
+# This is the ONLY place we load it - works for interactive shells (via .zshrc sourcing
+# .shellrc) and scripts (which source .shellrc directly). zmodload doesn't propagate from
+# .zshenv to scripts run via shebang, so .zshenv doesn't load it anymore.
+# Safe to call multiple times - zmodload is idempotent. Guard prevents bash errors.
+if [[ -n "${ZSH_VERSION-}" ]]; then
+  zmodload zsh/datetime 2>/dev/null || true
+fi
 
 # Memoization cache for _log_indent: associative array depth → indent string.
 # Avoids repeated printf calls for the same depth. Zsh associative arrays are
@@ -156,7 +169,7 @@ export HOMEBREW_CURL_EXTRA_CURL_ARGS='--connect-timeout 300 --max-time 3600'
 # Antidote plugin manager home -- set explicitly so it is available before antidote.zsh
 # is sourced (e.g. in .zlogin). Mirrors antidote's own platform defaults (see get_dir()
 # in antidote.zsh): ~/Library/Caches/antidote on macOS, ${XDG_CACHE_HOME}/antidote on Linux.
-# Note: is_macos is not yet defined here; use $OSTYPE directly.
+# Note: is_macos is not yet defined here; use ${OSTYPE} directly.
 case "${OSTYPE}" in
   *darwin*)
     export ANTIDOTE_HOME="${HOME}/Library/Caches/antidote"
@@ -166,8 +179,8 @@ case "${OSTYPE}" in
     ;;
 esac
 export ANTIDOTE_ZSH="${HOMEBREW_PREFIX}/opt/antidote/share/antidote/antidote.zsh"
-export ANTIDOTE_PLUGIN_ZSH="${ZDOTDIR}/.zsh_plugins.zsh"
-export ANTIDOTE_PLUGIN_TXT="${ZDOTDIR}/.zsh_plugins.txt"
+export ANTIDOTE_PLUGIN_ZSH="${XDG_CONFIG_HOME}/zsh/plugins.zsh"
+export ANTIDOTE_PLUGIN_TXT="${XDG_CONFIG_HOME}/zsh/plugins.txt"
 
 # --------------------------------------------------------------------------
 # GROUP 1: Bootstrap Utilities
@@ -658,7 +671,7 @@ current_timestamp_for_filename() {
 }
 
 # Prints a timestamped "Script started at" banner. Call at the top of main() and
-# capture $EPOCHSECONDS before calling to pass to print_script_summary later.
+# capture ${EPOCHSECONDS} before calling to pass to print_script_summary later.
 # Only prints when this is the outermost script -- nested subprocess scripts
 # stay silent so the outer script's banner is unambiguous in cron output.
 print_script_start() {
@@ -985,7 +998,7 @@ _build_notification_parts() {
 #
 # Usage: print_script_summary [start_epoch_seconds [message]]
 #
-# Accepts an optional start time (epoch seconds from $EPOCHSECONDS, captured
+# Accepts an optional start time (epoch seconds from ${EPOCHSECONDS}, captured
 # before print_script_start). When provided, calls print_script_duration
 # internally -- no separate call needed. Omit when no start time is available
 # (e.g. early-exit paths before the start epoch was captured).
@@ -1591,7 +1604,7 @@ clone_repo_into() {
 # files) and adds any bare identity files (id_*) to the ssh-agent keychain.
 # Kept in .shellrc for two independent reasons:
 #   1. Bootstrap: called in fresh-install-of-osx.sh before install-dotfiles.rb
-#      creates the ~/.aliases symlink (vanilla OS pre-symlink window).
+#      creates the ${ZDOTDIR}/.aliases symlink (vanilla OS pre-symlink window).
 #   2. Bash-compat: called from .envrc files (evaluated by direnv in a bash
 #      subshell); .aliases contains zsh-only syntax and cannot be sourced in bash.
 set_ssh_folder_permissions() {
@@ -1656,7 +1669,7 @@ eval_shellenv() {
 # --------------------------------------------------------------------------
 
 # Internal helper: calls a Ruby Cron module method with positional arguments.
-# Eliminates duplication of $LOAD_PATH setup across cron wrapper functions.
+# Eliminates duplication of ${LOAD_PATH} setup across cron wrapper functions.
 # Usage: _call_ruby_cron <method_name> [args...]
 # Example: _call_ruby_cron create_crontab "/path/to/file"
 #          _call_ruby_cron recron

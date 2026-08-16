@@ -4,7 +4,7 @@
 # Also can be used to ensure that any package/apps that were installed as experimentation are uninstalled from the system.
 # For a more detailed explanation of the philosophy/reasoning behind this file, please see https://openfolder.sh/macos-migrations-with-brewfile
 
-# There are some common shell aliases that I have setup in the `${HOME}/.aliases` file for ease of running/typing (and also don't need to remember all those commands by-heart!). If you are using my `${HOME}/.aliases`, they will already be present for you.
+# There are some common shell aliases that I have setup in the `${ZDOTDIR}/.aliases` file for ease of running/typing (and also don't need to remember all those commands by-heart!). If you are using my `${ZDOTDIR}/.aliases`, they will already be present for you.
 
 # TODO: Need to find cask for:
 #   Tinkertool
@@ -45,8 +45,7 @@ brew 'wget'
 brew 'zsh'
 
 # formulae pulled in for base configs (if these are absent, you will get errors and things won't work)
-brew 'antidote',
-  postinstall: "[ -f '${HOME}/.aliases' ] && zsh -c 'source ${HOME}/.aliases && update_antidote_and_regenerate_plugin_bundle' || true"
+brew 'antidote'
 brew 'delta'
 brew 'direnv'
 brew 'eza'

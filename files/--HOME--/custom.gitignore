@@ -90,7 +90,12 @@ Thumbs.db
 /.hex/
 /.ivy2/
 /.java-caller/
-/.local/
+/.local/*
+# Un-ignore XDG state directories for tracking user data
+!/.local/state/
+/.local/state/*
+!/.local/state/postgresql/
+!/.local/state/sqlite/
 /.m2/
 /.mix/archives/
 /.mix/rebar
@@ -391,7 +396,6 @@ node_modules/
 # FILES SYMLINKED FROM THE DOTFILES REPO — tracked there, not here
 # ══════════════════════════════════════════════════════════════════════════════
 
-/.aliases
 /.angular-config.json
 /.ansible.cfg
 /.bash_profile
@@ -399,18 +403,41 @@ node_modules/
 /.config/bat/config
 /.config/bat/syntaxes/zsh_plugins.sublime-syntax
 /.config/btop/btop.conf
+/.config/curlrc
 /.config/direnv/direnv.toml
 /.config/ghostty/config
 /.config/git/hooks/*
+/.config/iex/iex.exs
+/.config/kdiff3/kdiff3rc
 /.config/mise/config.toml
+/.config/pg/psqlrc
+/.config/pry/pryrc
+/.config/readline/inputrc
+/.config/ripgrep/config
 /.config/rubocop/config.yml
+/.config/shellcheck/shellcheckrc
 /.config/starship.toml
+/.config/vim/autoload/plug.vim
+/.config/vim/vimrc
 /.config/zed/keymap.json
 /.config/zed/settings.json
 /.config/zsh-patina/config.toml
 /.config/zsh-patina/themes/fsh-default.toml
-/.config/zsh/*
-/.curlrc
+/.config/zsh/.aliases
+/.config/zsh/.zlogin
+/.config/zsh/.zshrc
+/.config/zsh/cc
+/.config/zsh/count
+/.config/zsh/plugins.txt
+/.config/zsh/pull
+/.config/zsh/push
+/.config/zsh/st
+/.config/zsh/status_all_repos
+/.config/zsh/update_all_repos
+/.config/zsh/upreb
+/.config/zsh/*.zwc
+/.config/zsh/plugins.zsh
+/.config/zsh/.zsh_history
 /.default-gems
 /.editorconfig
 /.erdconfig
@@ -424,35 +451,21 @@ node_modules/
 /.gitconfig-sqlite3.inc
 /.gitignore
 /.gitignore_global
-/.iex.exs
-/.inputrc
 /.irbrc
 /.jshintrc
-/.kdiff3rc
 /.mailrc
-/.notify-osd
 /.npmrc
 /.ollama/env
 /.profile
-/.pryrc
-/.psqlrc
 /.railsrc
-/.ripgreprc
 /.rspec
 /.rufo
 /.rvmrc
-/.shellcheckrc
 /.shellrc
 /.sqliterc
 /.ssh/global_config
 /.terraformrc
-/.vim/autoload/plug.vim
-/.vimrc
-/.zlogin
-/.zsh_plugins.txt
-/.zsh_plugins.zsh
 /.zshenv
-/.zshrc
 /Brewfile
 
 
