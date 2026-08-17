@@ -680,6 +680,8 @@ print_script_start() {
   # to exit 0 (|| only fires when is_outermost_script returns 1, and return 0
   # exits with 0). Avoids the && pattern where the false branch returns 1.
   is_outermost_script || return 0
+  # Suppressed when running inside a direnv subshell (same as info/success).
+  _should_suppress_log && return 0
   local start_time_human
   current_timestamp start_time_human
   echo "$(cyan "${_SCRIPT_NAME:-}") $(purple '==>') $(yellow 'Script started at:') $(light_blue "${start_time_human}")"
@@ -692,6 +694,8 @@ print_script_start() {
 # Only prints when this is the outermost script -- see print_script_start.
 print_script_duration() {
   is_outermost_script || return 0
+  # Suppressed when running inside a direnv subshell (same as info/success).
+  _should_suppress_log && return 0
   local start_time_seconds="${1:-}"
   if is_zero_string "${start_time_seconds}"; then return 0; fi
   local end_time_human

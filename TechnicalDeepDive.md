@@ -121,6 +121,8 @@ Six levels are defined in `.shellrc`, each with a distinct visual treatment:
 | `debug` | `**DEBUG**` (light purple) | Expected-absent optional tools, silently-skipped steps. Hidden by default; visible with `DEBUG=true`. |
 | `info` | no prefix (plain) | Normal progress and idempotency guards ("already installed — skipping"). Suppressed when `DIRENV_IN_ENVRC` is set (direnv subshell). |
 | `success` | `**SUCCESS**` (green) | An operation completed successfully. Suppressed when `DIRENV_IN_ENVRC` is set (direnv subshell). |
+| `print_script_start` | `<script> ==> Script started at:` | Script start banner. Suppressed when `DIRENV_IN_ENVRC` is set (direnv subshell). |
+| `print_script_duration` | `<script> ==> Script finished at:` | Script finish banner with duration. Suppressed when `DIRENV_IN_ENVRC` is set (direnv subshell). |
 | `warn` | `**WARN**` (light red) | Argument-parse failures (followed by `usage` + `return 1`); non-fatal recoverable failures. |
 | `error` | `**ERROR**` (red) | Unexpected mid-script failures. In shell: prints and fires a macOS notification via `osascript`. In Ruby: raises `RuntimeError`. |
 | `user_action` | `➡️` (bold yellow) | Manual steps the user must perform after the script exits (restart an app, run a command). |

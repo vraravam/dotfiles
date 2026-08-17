@@ -4,6 +4,37 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.28
+
+#### Fix nested script name leakage and direnv log suppression
+
+**Script name restoration in nested calls:**
+
+Fixed bug where nested `Logging.run_script` calls leaked inner script names to outer script summaries (e.g., `software-updates-cron.rb` showing `install_mise_versions` in final output).
+
+* *[scripts/utilities/logging.rb]* Save and restore `@script_name` in `run_script` ensure blocks
+
+**Complete direnv log suppression:**
+
+Script banners (`print_script_start`, `print_script_duration`) now respect `DIRENV_IN_ENVRC` suppression like `info`/`success` already did.
+
+* *[files/--HOME--/.shellrc]* Added `_should_suppress_log && return 0` to `print_script_start` and `print_script_duration`
+* *[scripts/utilities/logging.rb]* Added `return if EnvVars.suppress_log?` to `print_script_start` and `print_script_duration`
+* *[.ai/domains/shell-scripting.md]* Documented all suppressed functions
+* *[TechnicalDeepDive.md]* Added script banner functions to suppression table
+
+**Benefits:**
+
+* Clean direnv output (only "direnv: loading..." message, no script banners)
+* Correct script names in nested execution summaries
+* Consistent suppression behavior across all logging functions
+
+#### Adopting these changes
+
+No action required - fixes apply automatically on next shell/script execution.
+
+---
+
 ### 3.2.27
 
 #### Migrate from scheduled to automatic git maintenance

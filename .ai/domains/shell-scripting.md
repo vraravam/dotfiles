@@ -1413,11 +1413,12 @@ set -E
 trap 'notify "Error in ${BASH_SOURCE[0]##*/} (line ${LINENO})" "❌ direnv error"' ERR
 ```
 
-`info` and `success` are automatically suppressed in direnv subshells because
-`.shellrc` guards them with `is_non_zero_string "${DIRENV_IN_ENVRC:-}"`. `DIRENV_DIR`
-is intentionally not used: it does not survive direnv's `strict_env` mode. `warn` and
-`error` always print. This means `.envrc` files need no extra log suppression
-logic -- just use the standard logging functions as normal.
+`info`, `success`, `print_script_start`, and `print_script_duration` are automatically
+suppressed in direnv subshells because `.shellrc` guards them with
+`is_non_zero_string "${DIRENV_IN_ENVRC:-}"`. `DIRENV_DIR` is intentionally not used:
+it does not survive direnv's `strict_env` mode. `warn` and `error` always print.
+This means `.envrc` files need no extra log suppression logic -- just use the
+standard logging functions as normal.
 
 ## Cron Scripts
 

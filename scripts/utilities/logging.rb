@@ -340,9 +340,10 @@ module Logging
   # @return [Integer] Unix epoch of the logged start time.
   def print_script_start
     @script_start_time = Time.now.to_i
-    if outermost_script?
-      emit("#{script_name.cyan} #{'==>'.purple} #{'Script started at:'.yellow} #{Core.current_timestamp.light_blue}", level: 0)
-    end
+    return @script_start_time unless outermost_script?
+    # Suppressed when running inside a direnv subshell (same as info/success).
+    return @script_start_time if EnvVars.suppress_log?
+    emit("#{script_name.cyan} #{'==>'.purple} #{'Script started at:'.yellow} #{Core.current_timestamp.light_blue}", level: 0)
     @script_start_time
   end
 
@@ -352,6 +353,8 @@ module Logging
   # @return [void]
   def print_script_duration(start_time)
     return unless outermost_script?
+    # Suppressed when running inside a direnv subshell (same as info/success).
+    return if EnvVars.suppress_log?
     human = format_duration(Core.duration_since(start_time))
     emit("#{script_name.cyan} #{'==>'.purple} #{'Script finished at:'.yellow} #{Core.current_timestamp.light_blue} " \
          "(#{'Total duration:'.yellow} #{human.light_blue} #{'seconds'.yellow}).", level: 0)
@@ -531,6 +534,10 @@ module Logging
   #     # ... main logic ...
   #   end
   def run_script(script_name = nil, message = nil)
+    # Save the previous script name so we can restore it on exit.
+    # This prevents nested run_script calls from leaking their script name
+    # to the outer script's print_script_summary call.
+    previous_script_name = @script_name
     self.script_name = script_name if script_name
     # Initialize current_section to '(init)' for consistency with shell scripts.
     # Use direct assignment (not setter) to avoid setting the manual flag.
@@ -547,6 +554,8 @@ module Logging
         yield nil
       ensure
         decrement_script_depth
+        # Restore the previous script name (nested call cleanup)
+        @script_name = previous_script_name
       end
       return
     end
@@ -560,6 +569,8 @@ module Logging
     # Only print summary in standalone mode (depth <= 1).
     # The early return above ensures this only runs for standalone calls.
     print_script_summary(start_time, message) if start_time
+    # Restore the previous script name (standalone call cleanup)
+    @script_name = previous_script_name
   end
 
   # ---------------------------------------------------------------------------
