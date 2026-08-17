@@ -283,15 +283,15 @@ module InstallDotfiles
   # Generic helper to ensure a tool-specific gitconfig symlink exists when the tool
   # is installed, or removes it when the tool is not available.
   #
-  # Pattern: ~/.gitconfig-<tool>.inc (source, symlinked from repo)
-  #       → ~/.gitconfig-<tool>-enabled.inc (symlink, only exists when tool installed)
+  # Pattern: ~/.config/git/config-<tool>.inc (source, symlinked from repo)
+  #       → ~/.config/git/config-<tool>-enabled.inc (symlink, only exists when tool installed)
   #
   # @param tool_name [String] Name of the tool (e.g., 'delta', 'pandoc')
   # @param command_name [String] Command to check in PATH (defaults to tool_name)
-  def _ensure_gitconfig_tool_symlink(tool_name, command_name: nil)
+  def self._ensure_gitconfig_tool_symlink(tool_name, command_name: nil)
     command_name ||= tool_name
-    config_target = EnvVars::HOME.join(".gitconfig-#{tool_name}.inc")
-    config_symlink = EnvVars::HOME.join(".gitconfig-#{tool_name}-enabled.inc")
+    config_target = EnvVars::XDG_CONFIG_HOME.join('git', "config-#{tool_name}.inc")
+    config_symlink = EnvVars::XDG_CONFIG_HOME.join('git', "config-#{tool_name}-enabled.inc")
     display_name = tool_name.capitalize
 
     if PathUtils.command_exists?(command_name)
@@ -304,6 +304,8 @@ module InstallDotfiles
       end
 
       # Create symlink if it doesn't exist
+      # Note: Parent directory (~/.config/git/) is guaranteed to exist at this point because
+      # _process_dotfile already created it when processing the main config symlink.
       if config_symlink.exist?
         Logging.debug("#{display_name} config symlink already exists at '#{config_symlink.to_s.cyan}'")
       else

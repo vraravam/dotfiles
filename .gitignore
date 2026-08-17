@@ -6,3 +6,6 @@
 
 # Session-specific work products (transactional, no long-term value)
 /.ai/session-state/
+
+# Personal git config includes (user-specific, tracked in home repo)
+/files/--XDG_CONFIG_HOME--/git/includes/

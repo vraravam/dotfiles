@@ -1,3 +1,4 @@
+# file location: ${XDG_CONFIG_HOME}/git/config-sqlite3.inc
 # SQLite3 diff driver configuration
 # This file is conditionally included via ~/.gitconfig-sqlite3-enabled.inc
 # (symlink created by install-dotfiles.rb when sqlite3 is in PATH).

@@ -337,21 +337,23 @@ Use **[templates/gitconfig-inc.template](templates/gitconfig-inc.template)** to 
 
 ```zsh
 # Example: personal and work contexts
-cp templates/gitconfig-inc.template ~/.gitconfig-personal.inc
-cp templates/gitconfig-inc.template ~/.gitconfig-work.inc
+cp templates/gitconfig-inc.template ~/.config/git/includes/personal.inc
+cp templates/gitconfig-inc.template ~/.config/git/includes/work.inc
 
 # Edit each file with appropriate name, email, signing key
 # Then wire into ~/.gitconfig using includeIf
 ```
 
+**Note:** Personal git config includes are consolidated in `~/.config/git/includes/` following XDG organization principles.
+
 Example `~/.gitconfig` entry:
 
 ```ini
 [includeIf "gitdir:~/dev/personal/"]
-  path = ~/.gitconfig-personal.inc
+  path = ~/.config/git/includes/personal.inc
 
 [includeIf "gitdir:~/dev/work/"]
-  path = ~/.gitconfig-work.inc
+  path = ~/.config/git/includes/work.inc
 ```
 
 See [git conditional includes documentation](https://git-scm.com/docs/git-config#_conditional_includes) for full syntax.

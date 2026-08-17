@@ -4,6 +4,232 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.25
+
+#### Complete git config migration to XDG location
+
+**File relocations:**
+* *[~/.python_history]* Moved to `${XDG_STATE_HOME}/python/history`. Python 3.13+ respects `${PYTHONHISTORY}` environment variable.
+* *[~/.gitconfig]* Moved to `${XDG_CONFIG_HOME}/git/config`. Git reads XDG location before `~/.gitconfig`.
+* *[~/.gitconfig-{delta,pandoc,plist,sqlite3}.inc]* Moved to `${XDG_CONFIG_HOME}/git/config-{delta,pandoc,plist,sqlite3}.inc`. Tool-specific git config includes now in XDG location.
+* *[~/.gitconfig-{delta,pandoc,plist,sqlite3}-enabled.inc]* Symlinks now point to `${XDG_CONFIG_HOME}/git/config-*.inc` instead of `${HOME}/.gitconfig-*.inc`.
+* *[~/.gitconfig-{jd,oss,work}.inc]* Moved to `${XDG_CONFIG_HOME}/git/includes/{jd,oss,work}.inc`. Personal git config includes consolidated in dedicated `includes/` subdirectory.
+
+**Code changes:**
+* *[files/--HOME--/.shellrc]* Added `export PYTHONHISTORY="${XDG_STATE_HOME}/python/history"`. Added directory creation at end of file: `ensure_dir_exists "${PYTHONHISTORY%/*}"` (self-healing on every shell start, mirrors `${HISTFILE:h}` pattern in .zshrc).
+* *[files/--HOME--/.gitconfig → files/--XDG_CONFIG_HOME--/git/config]* Moved main git config to XDG location. Updated all include paths: `~/.gitconfig-*-enabled.inc` → `~/.config/git/config-*-enabled.inc`. Updated personal includes path: `~/.gitconfig-oss.inc` → `~/.config/git/includes/oss.inc`.
+* *[files/--HOME--/.gitconfig-*.inc → files/--XDG_CONFIG_HOME--/git/config-*.inc]* Moved all tool-specific git config includes to XDG location.
+* *[files/--ZDOTDIR--/.aliases]* Updated `edit-gist` alias: Changed `"${HOME}"/.gitconfig-*` to `"${XDG_CONFIG_HOME}/git"`. Added `"${XDG_CONFIG_HOME}/mise"` to include both mise configs (HOME and XDG).
+* *[scripts/install-dotfiles.rb]* Updated `_ensure_gitconfig_tool_symlink` to reference new XDG paths: `~/.config/git/config-#{tool_name}.inc` and `~/.config/git/config-#{tool_name}-enabled.inc`. Vanilla OS support: existing `PathUtils.ensure_directories_exist` creates `~/.config/git/` when processing main config symlink (which runs before tool symlinks), so no additional directory creation needed.
+* *[.gitignore]* Added `/files/--XDG_CONFIG_HOME--/git/includes/` to prevent personal git config includes from being tracked in dotfiles repo (they belong in home repo).
+* *[files/--HOME--/custom.gitignore]* Updated all git config patterns to XDG locations: `/.gitconfig` → `/.config/git/config`, `/.gitconfig-delta.inc` (and similar) → `/.config/git/config-delta.inc` (explicit list of 4 tool-specific includes in FILES SYMLINKED section), `/.gitconfig-*-enabled.inc` → `/.config/git/config-*-enabled.inc` (glob pattern in GENERATED/DERIVED section for conditional symlinks created by install-dotfiles.rb). Added `!/.local/state/python/` to un-ignore Python history directory for tracking in home repo (this file is symlinked to `~/.gitignore` for home repo).
+* *[templates/gitconfig-inc.template]* Updated all references: `${HOME}/.gitconfig-<context>.inc` → `${XDG_CONFIG_HOME}/git/includes/<context>.inc`, `~/.gitconfig` → `~/.config/git/config`, `~/.gitconfig-oss.inc` → `~/.config/git/includes/oss.inc`.
+
+**Benefits:**
+* **6 fewer visible dotfiles/symlinks in $HOME**: `.python_history`, `.gitconfig`, `.gitconfig-delta.inc`, `.gitconfig-pandoc.inc`, `.gitconfig-plist.inc`, `.gitconfig-sqlite3.inc` moved to XDG locations
+* **8 fewer conditional symlinks in $HOME**: `.gitconfig-{delta,pandoc,plist,sqlite3}-enabled.inc` now in `~/.config/git/`
+* **Complete XDG compliance**: All git configuration in `${XDG_CONFIG_HOME}/git/` following XDG Base Directory specification
+* **Better organization**: 
+  - Main config: `~/.config/git/config`
+  - Tool-specific includes: `~/.config/git/config-*.inc`
+  - Personal includes: `~/.config/git/includes/*.inc`
+  - All git config grouped together in one directory tree
+* **Python history**: Follows same pattern as zsh/sqlite/postgresql histories in `${XDG_STATE_HOME}`
+* **Portability**: All paths use `~/` tilde notation (Git's native expansion mechanism)
+* **Self-healing**: Python history directory created automatically on every shell start
+
+#### File renaming convention
+
+All git config files follow consistent naming based on their location:
+
+| Old Location | New Location | Naming Pattern |
+|--------------|--------------|----------------|
+| `~/.gitconfig` | `~/.config/git/config` | Main config: `config` (no suffix) |
+| `~/.gitconfig-{tool}.inc` | `~/.config/git/config-{tool}.inc` | Tool includes: `config-{tool}.inc` prefix |
+| `~/.gitconfig-{tool}-enabled.inc` | `~/.config/git/config-{tool}-enabled.inc` | Conditional symlinks: `config-{tool}-enabled.inc` |
+| `~/.gitconfig-{context}.inc` | `~/.config/git/includes/{context}.inc` | Personal includes: no `config-` prefix, in `includes/` subdirectory |
+
+**Naming rules:**
+* **Main config**: Simple `config` filename (Git's XDG standard)
+* **Tool-specific includes** (managed by install-dotfiles.rb): Prefix with `config-` to clearly identify as config fragments
+* **Conditional symlinks** (auto-created): Follow `config-{tool}-enabled.inc` pattern for consistency with source files
+* **Personal includes** (user-created contexts): No `config-` prefix, stored in dedicated `includes/` subdirectory to separate user content from dotfiles-managed content
+
+**Why this convention:**
+* `config-*.inc` pattern groups all dotfiles-managed tool includes together
+* `includes/*.inc` subdirectory clearly separates personal/context-specific includes
+* Consistent with Git's native XDG support (reads `~/.config/git/config` automatically)
+* Follows XDG Base Directory specification
+* All git configuration logically grouped in `~/.config/git/` directory tree
+
+#### Adopting these changes
+
+**Step 1: Run install-dotfiles.rb**
+```bash
+~/.config/dotfiles/scripts/install-dotfiles.rb
+```
+
+This creates/updates symlinks:
+- `~/.config/git/config` → dotfiles/files/--XDG_CONFIG_HOME--/git/config (was `~/.gitconfig`)
+- `~/.config/git/config-delta.inc` → dotfiles version (was `~/.gitconfig-delta.inc`)
+- `~/.config/git/config-pandoc.inc` → dotfiles version (was `~/.gitconfig-pandoc.inc`)
+- `~/.config/git/config-plist.inc` → dotfiles version (was `~/.gitconfig-plist.inc`)
+- `~/.config/git/config-sqlite3.inc` → dotfiles version (was `~/.gitconfig-sqlite3.inc`)
+- `~/.config/git/config-*-enabled.inc` → conditional symlinks (was in HOME)
+
+**Step 2: Remove old symlinks from HOME**
+```bash
+# Remove old git config symlink
+rm -f ~/.gitconfig
+
+# Remove old tool-specific include symlinks
+rm -f ~/.gitconfig-delta.inc ~/.gitconfig-pandoc.inc ~/.gitconfig-plist.inc ~/.gitconfig-sqlite3.inc
+
+# Remove old conditional symlinks
+rm -f ~/.gitconfig-delta-enabled.inc ~/.gitconfig-pandoc-enabled.inc
+rm -f ~/.gitconfig-plist-enabled.inc ~/.gitconfig-sqlite3-enabled.inc
+
+# Verify removal
+ls -la ~ | grep gitconfig  # Should show nothing
+```
+
+**Step 3: Migrate Python history**
+```bash
+# Create directory and move history file
+mkdir -p ~/.local/state/python
+mv ~/.python_history ~/.local/state/python/history 2>/dev/null || true
+```
+
+**Step 4: Migrate personal git config includes**
+```bash
+# Create directory structure
+mkdir -p ~/.config/git/includes
+
+# Identify personal git config includes (excludes tool-specific ones managed by dotfiles)
+# These are typically context-specific: work, personal projects, open source, etc.
+personal_includes=(~/.gitconfig-*.inc(N))
+tool_includes=(delta pandoc plist sqlite3)
+
+# Move personal includes to new location
+for include in "${personal_includes[@]}"; do
+  # Skip if it's a tool-specific include (managed by install-dotfiles.rb)
+  basename="${include:t:r}"  # Extract name without path and .inc extension
+  is_tool=false
+  for tool in "${tool_includes[@]}"; do
+    if [[ "${basename}" == "gitconfig-${tool}" || "${basename}" == "gitconfig-${tool}-enabled" ]]; then
+      is_tool=true
+      break
+    fi
+  done
+  
+  if [[ "${is_tool}" == "false" ]]; then
+    # This is a personal include - move it
+    new_name="${basename#gitconfig-}"  # Remove 'gitconfig-' prefix
+    mv "${include}" ~/.config/git/includes/"${new_name}.inc"
+    echo "Moved: ${include:t} → ~/.config/git/includes/${new_name}.inc"
+  fi
+done
+
+# Update any includeIf references in your includes files
+# This updates cross-references between your personal include files
+for include in ~/.config/git/includes/*.inc(N); do
+  # Update old paths to new paths in includeIf directives
+  sed -i '' 's|~/.gitconfig-\([^-]*\)\.inc|~/.config/git/includes/\1.inc|g' "${include}"
+done
+
+echo "Personal git config includes migrated to ~/.config/git/includes/"
+```
+
+**Step 5: Verify git config works**
+```bash
+# Test that git config loads correctly
+git config --get user.name
+git config --get user.email
+
+# Test conditional includes work
+cd ~/dev/your-project-dir
+git config --get user.email  # Should show context-specific email
+
+# Verify config file location
+git config --list --show-origin | head -5
+# Should show: file:/Users/yourname/.config/git/config
+```
+
+**Step 6: Restart shell**
+```bash
+# Restart terminal to reload .shellrc with PYTHONHISTORY
+exec zsh
+```
+
+**Step 7: Test Python history**
+```bash
+# Verify PYTHONHISTORY is set
+echo ${PYTHONHISTORY}
+# Should show: /Users/yourname/.local/state/python/history
+
+# Start Python and verify history works
+python3
+>>> import readline
+>>> print(readline.get_history_length())
+>>> exit()
+```
+
+**Step 8: Commit changes**
+```bash
+# Commit git config changes to home repo (if tracking .config/git/)
+cd ~
+git add .config/git/
+git status  # Verify no gitconfig files remain in HOME
+git sci "Move git config to XDG_CONFIG_HOME"
+```
+# To:     path = ~/.config/git/includes/jd.inc
+```
+
+**Step 4: Update your main git config**
+```bash
+# Edit ~/.gitconfig to point to the new location
+# Change: path = ~/.gitconfig-oss.inc
+# To:     path = ~/.config/git/includes/oss.inc
+```
+
+**Step 5: Verify git config works**
+```bash
+# Test that git config loads correctly
+git config --get user.name
+git config --get user.email
+
+# Test conditional includes work
+cd ~/dev/your-project-dir
+git config --get user.email  # Should show context-specific email
+```
+
+**Step 6: Restart shell**
+```bash
+# Restart terminal to reload .shellrc with PYTHONHISTORY
+exec zsh
+```
+
+**Step 7: Test Python history**
+```bash
+# Start Python and verify history location
+python3
+>>> import os
+>>> print(os.getenv('PYTHONHISTORY'))
+# Should show: /Users/yourname/.local/state/python/history
+>>> exit()
+```
+
+**Step 8: Commit changes to home repo**
+```bash
+# The moved git config includes should be tracked in your home git repo
+cd ~
+git add .config/git/includes/
+git status  # Verify .gitconfig changes are staged
+git sci "Move git config includes to XDG_CONFIG_HOME"
+```
+
+---
+
 ### 3.2.24
 
 :white_check_mark: Tested on a vanilla macOS machine

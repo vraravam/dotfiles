@@ -1,4 +1,4 @@
-# file location: ${HOME}/.gitconfig-delta.inc
+# file location: ${XDG_CONFIG_HOME}/git/config-delta.inc
 #
 # Delta-specific git configuration
 # Conditionally included from ~/.gitconfig only when 'delta' is in PATH

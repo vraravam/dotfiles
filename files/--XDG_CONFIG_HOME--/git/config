@@ -1,4 +1,4 @@
-# file location: ${HOME}/.gitconfig
+# file location: ${XDG_CONFIG_HOME}/git/config
 
 # Note:
 # [Windows users] If you are on windows, please search for the word 'windows' - and fix those lines - they seem to cause some trouble
@@ -576,15 +576,15 @@
   # Performs post-clone maintenance setup: restores mtimes from git history, registers
   # repo for background maintenance, and starts maintenance tasks. Idempotent — safe
   # to run multiple times. Gracefully handles missing dependencies (for eg restore-mtime not
-  # installed, .gitconfig-oss.inc not present on FIRST_INSTALL).
+  # installed, ${XDG_CONFIG_HOME}/git/includes/oss.inc not present prior to FIRST_INSTALL).
   # Used by: clone_repo_into() in .shellrc and GitProcessor.clone_repo_into().
   # Also useful for manually cloned repos or migrating old repos to maintenance.
   # Usage: git maintain [<dir>]
   maintain = "!f() { \
     dir=\"${1:-.}\"; \
     git -C \"${dir}\" restore-mtime -c 2>/dev/null || true; \
-    if [ -f \"${HOME}/.gitconfig-oss.inc\" ]; then \
-      git -C \"${dir}\" maintenance register --config-file \"${HOME}/.gitconfig-oss.inc\" 2>/dev/null || true; \
+    if [ -f \"${XDG_CONFIG_HOME}/git/includes/oss.inc\" ]; then \
+      git -C \"${dir}\" maintenance register --config-file \"${XDG_CONFIG_HOME}/git/includes/oss.inc\" 2>/dev/null || true; \
       git -C \"${dir}\" maintenance start 2>/dev/null || true; \
     fi; \
   }; f"
@@ -902,8 +902,9 @@
   # The install-dotfiles script creates ~/.gitconfig-<tool>-enabled.inc as a symlink to
   # ~/.gitconfig-<tool>.inc when the tool is installed and removes it if not found.
   # These files are always included in git config, but only exist when the tool is present.
-  path = ~/.gitconfig-delta-enabled.inc
-  path = ~/.gitconfig-pandoc-enabled.inc
-  path = ~/.gitconfig-plist-enabled.inc
-  path = ~/.gitconfig-sqlite3-enabled.inc
-  path = ~/.gitconfig-oss.inc
+  path = ~/.config/git/config-delta-enabled.inc
+  path = ~/.config/git/config-pandoc-enabled.inc
+  path = ~/.config/git/config-plist-enabled.inc
+  path = ~/.config/git/config-sqlite3-enabled.inc
+  # Personal git config includes (consolidated in XDG_CONFIG_HOME)
+  path = ~/.config/git/includes/oss.inc

@@ -48,6 +48,7 @@ export ZDOTDIR="${ZDOTDIR:-"${XDG_CONFIG_HOME}/zsh"}"
 export HISTFILE="${XDG_STATE_HOME}/zsh/history"
 export INPUTRC="${XDG_CONFIG_HOME}/readline/inputrc"
 export PSQLRC="${XDG_CONFIG_HOME}/pg/psqlrc"
+export PYTHONHISTORY="${XDG_STATE_HOME}/python/history"
 export SQLITE_HISTORY="${XDG_STATE_HOME}/sqlite/history"
 
 # zsh/datetime provides $EPOCHSECONDS (used by print_script_start, current_timestamp, etc).
@@ -1791,3 +1792,8 @@ print_usage() {
   done
   exit 1
 }
+
+# Ensure Python history directory exists (self-healing on every shell start).
+# Mirrors the pattern in .zshrc for ${HISTFILE:h} (zsh history directory).
+# ${var:h} is zsh-only syntax (not bash-compatible), so use ${var%/*} for parent directory.
+ensure_dir_exists "${PYTHONHISTORY%/*}"

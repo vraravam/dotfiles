@@ -95,6 +95,7 @@ Thumbs.db
 !/.local/state/
 /.local/state/*
 !/.local/state/postgresql/
+!/.local/state/python/
 !/.local/state/sqlite/
 /.m2/
 /.mix/archives/
@@ -138,17 +139,9 @@ Thumbs.db
 # GENERATED/DERIVED FILES — created by install-dotfiles.rb or other automation
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Delta config symlink — only exists when delta is installed (managed by install-dotfiles.rb)
-/.gitconfig-delta-enabled.inc
-
-# Pandoc config symlink — only exists when pandoc is installed (managed by install-dotfiles.rb)
-/.gitconfig-pandoc-enabled.inc
-
-# Plist config symlink — only exists when plutil is available, macOS only (managed by install-dotfiles.rb)
-/.gitconfig-plist-enabled.inc
-
-# SQLite3 config symlink — only exists when sqlite3 is installed (managed by install-dotfiles.rb)
-/.gitconfig-sqlite3-enabled.inc
+# Tool-specific config symlinks — only exist when tools are installed (managed by install-dotfiles.rb)
+# Pattern matches: config-delta-enabled.inc, config-pandoc-enabled.inc, config-plist-enabled.inc, config-sqlite3-enabled.inc, etc.
+/.config/git/config-*-enabled.inc
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -444,11 +437,11 @@ node_modules/
 /.eslintrc.js
 /.gemrc
 /.gitattributes
-/.gitconfig
-/.gitconfig-delta.inc
-/.gitconfig-pandoc.inc
-/.gitconfig-plist.inc
-/.gitconfig-sqlite3.inc
+/.config/git/config
+/.config/git/config-delta.inc
+/.config/git/config-pandoc.inc
+/.config/git/config-plist.inc
+/.config/git/config-sqlite3.inc
 /.gitignore
 /.gitignore_global
 /.irbrc

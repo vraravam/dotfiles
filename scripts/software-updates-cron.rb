@@ -114,7 +114,7 @@ module SoftwareUpdatesCron
       unless RunAll.run(
         command: ['git', 'pull-safe'],
         folder: EnvVars::HOME.to_s,
-        filter: '.bin|zsh|mise',
+        filter: '.config|zsh|mise',
         maxdepth: 5
       )
         Logging.record_warning('Some home repos could not be auto-updated -- working tree may be dirty. Rebase manually.')

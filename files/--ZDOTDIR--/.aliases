@@ -247,7 +247,8 @@ if command_exists "${EDITOR:-}"; then
   alias edit="${${GIT_EDITOR:-${EDITOR}}%% *}"
 
   # opens the relevant files and folders (used for laptop provisioning) in a single VSCode session
-  alias edit-gist='edit "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}"/.gitconfig-* "${HOME}/.gitignore" "${HOME}/.ssh" "${HOME}/.mise.toml" "${PERSONAL_PROFILES_DIR}/.gitignore"'
+  # Updated to reflect XDG migration: git config moved to ${XDG_CONFIG_HOME}/git/, mise config in both XDG and HOME
+  alias edit-gist='edit "${DOTFILES_DIR}" "${PERSONAL_BIN_DIR}" "${PERSONAL_CONFIGS_DIR}" "${HOME}/.gitignore" "${PERSONAL_PROFILES_DIR}/.gitignore" "${HOME}/.ssh" "${HOME}/.mise.toml" "${XDG_CONFIG_HOME}"'
 fi
 
 # Make VSCodium use the VS Code marketplace

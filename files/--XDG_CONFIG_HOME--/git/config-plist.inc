@@ -1,3 +1,4 @@
+# file location: ${XDG_CONFIG_HOME}/git/config-plist.inc
 # Plist diff driver configuration (macOS-specific)
 # This file is conditionally included via ~/.gitconfig-plist-enabled.inc
 # (symlink created by install-dotfiles.rb when plutil is in PATH).
