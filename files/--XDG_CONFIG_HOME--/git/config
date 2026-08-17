@@ -573,20 +573,15 @@
     git -C \"${1:-.}\" fetch && git -C \"${1:-.}\" dlb; \
   }; f"
 
-  # Performs post-clone maintenance setup: restores mtimes from git history, registers
-  # repo for background maintenance, and starts maintenance tasks. Idempotent — safe
-  # to run multiple times. Gracefully handles missing dependencies (for eg restore-mtime not
-  # installed, ${XDG_CONFIG_HOME}/git/includes/oss.inc not present prior to FIRST_INSTALL).
+  # Performs post-clone maintenance setup: restores mtimes from git history.
+  # Idempotent — safe to run multiple times. Gracefully handles missing restore-mtime tool.
   # Used by: clone_repo_into() in .shellrc and GitProcessor.clone_repo_into().
-  # Also useful for manually cloned repos or migrating old repos to maintenance.
+  # Also useful for manually cloned repos to restore file timestamps from git history.
+  # Note: Background maintenance is now handled automatically via global maintenance.auto=true
+  # (see git-config maintenance.* settings). No manual registration needed.
   # Usage: git maintain [<dir>]
   maintain = "!f() { \
-    dir=\"${1:-.}\"; \
-    git -C \"${dir}\" restore-mtime -c 2>/dev/null || true; \
-    if [ -f \"${XDG_CONFIG_HOME}/git/includes/oss.inc\" ]; then \
-      git -C \"${dir}\" maintenance register --config-file \"${XDG_CONFIG_HOME}/git/includes/oss.inc\" 2>/dev/null || true; \
-      git -C \"${dir}\" maintenance start 2>/dev/null || true; \
-    fi; \
+    git -C \"${1:-.}\" restore-mtime -c 2>/dev/null || true; \
   }; f"
 
   # Pulls the current branch (wrapper for built-in git pull with override support).
@@ -831,6 +826,12 @@
 [maintenance]
   auto = true
   strategy = incremental
+[maintenance "commit-graph"]
+  auto = 100
+[maintenance "loose-objects"]
+  auto = 50
+[maintenance "incremental-repack"]
+  auto = 5
 [log]
   decorate = auto
   # abbrevCommit = true

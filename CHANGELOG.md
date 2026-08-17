@@ -4,6 +4,101 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.27
+
+#### Migrate from scheduled to automatic git maintenance
+
+Replaced scheduled background maintenance (launchd-based) with foreground auto-maintenance for simpler, more intelligent repository cleanup.
+
+**Configuration changes:**
+
+* *[global git config]* Set aggressive auto-maintenance thresholds:
+  - `maintenance.loose-objects.auto = 50` (was: 100, now 2x more aggressive)
+  - `maintenance.incremental-repack.auto = 5` (was: 10, now 2x more aggressive)
+  - `maintenance.commit-graph.auto = 100` (unchanged, explicit for clarity)
+
+* *[${XDG_CONFIG_HOME}/git/includes/oss.inc]* Removed 40 lines of obsolete `[maintenance]` repo registrations (39 repos) - these were used by scheduled maintenance but are not needed by foreground auto-maintenance
+
+* *[${XDG_CONFIG_HOME}/git/config]* Simplified `git maintain` alias from 14 lines to 3 lines:
+  - Removed: `maintenance register` and `maintenance start` calls (scheduled maintenance setup)
+  - Kept: `restore-mtime` wrapper (still useful for preserving file timestamps after clone)
+  - Updated comment to clarify auto-maintenance is now handled globally via `maintenance.auto=true`
+
+* *[${DOTFILES_DIR}/.git/config]* Removed local `maintenance.auto=false` override that was blocking foreground auto-maintenance
+
+**How auto-maintenance works:**
+
+After `git fetch`, `git pull`, and other write commands, git automatically runs `git maintenance run --auto` which:
+1. Checks heuristics (loose objects count, pack count, commit-graph freshness)
+2. Only runs tasks when thresholds are met (intelligent, not wasteful)
+3. Executes in background via `maintenance.autoDetach=true` (non-blocking)
+4. Uses incremental strategy: `commit-graph`, `loose-objects`, `incremental-repack` tasks (not full `gc`)
+
+**Benefits:**
+
+* **Zero manual intervention** - maintenance runs automatically when needed
+* **No external dependencies** - no system scheduler (launchd/cron) required
+* **Portable** - works on any machine with Git 2.30+
+* **Intelligent triggering** - only runs when heuristics indicate need (50 loose objects, 5 packs, 100 commits)
+* **Simpler configuration** - no repo registrations to maintain
+
+**What still works:**
+
+* `git maintain` - now just restores mtimes (useful after clone, no registration)
+* `git cc` - unchanged, still provides manual aggressive cleanup with `--prune=now` semantics
+* Existing automation - `.shellrc` `clone_repo_into()` and `GitProcessor.clone_repo_into()` calls work unchanged
+
+**Old workflow (scheduled maintenance):**
+```bash
+git clone <url> && cd repo && git maintain  # Registered in oss.inc, started launchd
+# Maintenance ran hourly/daily/weekly via launchd scheduler
+```
+
+**New workflow (auto-maintenance):**
+```bash
+git clone <url> && cd repo && git maintain  # Just restores mtimes (no registration)
+# Maintenance runs automatically after git fetch/pull when thresholds met
+```
+
+**Manual aggressive cleanup still available:**
+```bash
+git cc [--expire=now]  # Explicit aggressive pruning (prune=now, expire reflogs immediately)
+```
+
+#### Adopting these changes
+
+**Action required: Clean up obsolete maintenance registrations in your fork**
+
+The changes to global git config and dotfiles repo are already applied, but you need to clean up your personal `oss.inc` file:
+
+```bash
+# Edit your personal oss.inc to remove [maintenance] section
+vi ~/.config/git/includes/oss.inc
+
+# Delete the entire [maintenance] section with all repo registrations
+# (should be 40 lines starting with [maintenance] and ending with repo = ...)
+# Keep only: [user], [url], and [includeIf] sections
+```
+
+**Verify auto-maintenance is active:**
+```bash
+git config --get maintenance.auto              # Should output: true
+git config --get maintenance.strategy          # Should output: incremental
+git config --get maintenance.loose-objects.auto    # Should output: 50
+git config --get maintenance.incremental-repack.auto  # Should output: 5
+```
+
+**Test auto-maintenance:**
+```bash
+cd any-repo
+git fetch origin  # Triggers auto-maintenance if thresholds met
+git count-objects -vH  # Check loose objects and pack count
+```
+
+Auto-maintenance will run automatically in the background when needed - no cron jobs, no manual `git maintain` calls required.
+
+---
+
 ### 3.2.26
 
 #### Proactive UTF-8 encoding directives for Ruby scripts
