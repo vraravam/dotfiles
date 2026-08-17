@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 # file location: ${DOTFILES_DIR}/scripts/cleanup-browser-profiles.rb
 #
@@ -49,7 +50,8 @@ module CleanupBrowserProfiles
   # Mirrors _read_pattern_file from the shell version.
   def _read_pattern_file(file)
     return [] unless file.file?
-    file.readlines.each_with_object([]) do |line, arr|
+    # Use Core.read_lines_utf8 to avoid encoding issues in non-UTF-8 environments.
+    Core.read_lines_utf8(file).each_with_object([]) do |line, arr|
       arr << line.chomp.strip unless line.comment_or_empty?
     end
   end

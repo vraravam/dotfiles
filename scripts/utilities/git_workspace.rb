@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 require 'pathname'
 require 'set'
@@ -327,7 +328,8 @@ module GitWorkspace
     end
 
     if force
-      count = cache_file.readlines.length
+      # Use Core.read_lines_utf8 to avoid encoding issues in non-UTF-8 environments.
+      count = Core.read_lines_utf8(cache_file).length
       Logging.success "Repo aliases cache regenerated (#{count.to_s.green} aliases)"
     end
   end

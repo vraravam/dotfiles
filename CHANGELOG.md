@@ -4,6 +4,48 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.26
+
+#### Proactive UTF-8 encoding directives for Ruby scripts
+
+Added `# encoding: utf-8` magic comment to all Ruby scripts that perform file I/O operations, preventing "invalid byte sequence in US-ASCII" errors when handling UTF-8 content in filenames, paths, or file data.
+
+**Files updated:**
+* *[scripts/capture-prefs.rb]* Reads/writes plist files with UTF-8 content
+* *[scripts/install-dotfiles.rb]* Filesystem operations with UTF-8 paths
+* *[scripts/utilities/cron.rb]* Writes crontab files
+* *[scripts/utilities/logging.rb]* Writes log files with UTF-8 messages
+* *[scripts/utilities/antidote.rb]* Reads/writes plugins.txt bundle files
+* *[scripts/utilities/plist.rb]* Already had encoding directive (no change needed)
+* *[scripts/resurrect-repositories.rb]* Reads YAML with UTF-8 paths
+* *[scripts/cleanup-browser-profiles.rb]* Filesystem operations
+
+**Ruby script template updated:**
+* *[.ai/domains/ruby-scripting.md]* Added `# encoding: utf-8` to all three script templates (dual-mode, legacy PERSONAL_BIN_DIR, legacy DOTFILES_DIR)
+
+**Standard Ruby file header:**
+```ruby
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# encoding: utf-8
+```
+
+**Benefits:**
+* Prevents encoding errors in file I/O operations
+* Handles UTF-8 in filenames, paths, and file content
+* Future-proof for non-ASCII characters
+* Explicit encoding declaration (no surprises)
+* Works with system Ruby 2.6 in cron contexts
+
+**Also fixed:**
+* *[files/--ZDOTDIR--/.zlogin]* Made shell function definitions callable from nested shells by defensively sourcing `.shellrc` before using `is_file_older_than` predicate (mirrors pattern in `.zshenv` where guard protects against stale function definitions in interactive vs login shell contexts)
+
+#### Adopting these changes
+
+No action required - encoding directives are backward compatible and have no runtime impact on existing functionality. The changes only prevent future encoding errors when scripts encounter UTF-8 content.
+
+---
+
 ### 3.2.25
 
 #### Complete git config migration to XDG location

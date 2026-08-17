@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 require 'fileutils'
 require 'open3'
@@ -292,7 +293,8 @@ module Cron
 
     # Basic validation: check for obviously malformed lines
     # Valid lines: comments (#), env vars (KEY=value), or cron entries (5-7 fields)
-    file.each_line do |line|
+    # Use Core.each_line_utf8 to avoid encoding issues in non-UTF-8 environments.
+    Core.each_line_utf8(file) do |line|
       stripped = line.strip
       next if stripped.empty?
       next if stripped.start_with?('#')

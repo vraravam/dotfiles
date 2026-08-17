@@ -16,11 +16,11 @@
 # execute 'DEBUG=true zsh' to debug the load order of the custom zsh configuration files
 if [[ -n "${DEBUG:-}" ]]; then echo "loading ${0}"; fi
 
-# .shellrc was already sourced by .zshrc (which runs before .zlogin).
-# The re-source guard makes this a no-op, but checking the guard itself adds
-# overhead. Skip the source call entirely -- .zlogin only uses utilities
-# (is_directory, is_file, ensure_dir_exists, recompile_zsh_script) that are
-# already loaded from .zshrc's earlier source.
+# .shellrc is normally already sourced by .zshrc (which runs before .zlogin).
+# However, in nested shells (e.g., upreb-zen-browser-desktop.sh spawning /bin/zsh -c "git upreb"),
+# .zlogin may run before .zshrc has sourced .shellrc. Defensively source it here.
+# The re-source guard inside .shellrc makes this a no-op if already loaded.
+source "${HOME}/.shellrc"
 
 # recompile_zsh_script is defined in .shellrc and used by both .zshrc (for cache
 # file compilation) and .zlogin (for bulk script recompilation). See .shellrc for

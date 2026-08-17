@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 # This script is used to install the dotfiles from this repo/dir structure to the user's home dir
 # It can be invoked from any location as long as its in the PATH (and you don't need to specify the fully qualified name while invoking it).
@@ -268,8 +269,10 @@ module InstallDotfiles
 
     include_line = 'Include ~/.ssh/global_config'
     begin
-      # Use Pathname#each_line to stream the file line-by-line instead of loading it all into memory.
-      if default_ssh_config.each_line.any? { |l| l.strip == include_line }
+      # Use Core.each_line_utf8 to avoid encoding issues in non-UTF-8 environments.
+      found = false
+      Core.each_line_utf8(default_ssh_config) { |l| found = true if l.strip == include_line }
+      if found
         Logging.success("'#{include_line.cyan}' already present in '#{default_ssh_config.to_s.cyan}'")
       else
         Logging.info("Adding '#{include_line.cyan}' to '#{default_ssh_config.to_s.cyan}'")

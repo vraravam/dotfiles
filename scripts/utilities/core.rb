@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 require 'pathname'
 
@@ -182,5 +183,36 @@ module Core
 
     # Return exit status
     $?.exitstatus || 0
+  end
+
+  # Reads all lines from a file with explicit UTF-8 encoding.
+  # Prevents "invalid byte sequence in US-ASCII" errors when reading UTF-8 files
+  # in environments without UTF-8 locale (e.g., cron jobs).
+  #
+  # @param filepath [String, Pathname] Path to file to read
+  # @return [Array<String>] Array of lines (with newlines preserved)
+  #
+  # @example
+  #   lines = Core.read_lines_utf8('data/config.txt')
+  #   lines.each { |line| puts line.chomp }
+  def read_lines_utf8(filepath)
+    File.open(filepath, 'r:UTF-8', &:readlines)
+  end
+
+  # Iterates over each line in a file with explicit UTF-8 encoding.
+  # Prevents "invalid byte sequence in US-ASCII" errors when reading UTF-8 files
+  # in environments without UTF-8 locale (e.g., cron jobs).
+  #
+  # @param filepath [String, Pathname] Path to file to read
+  # @yield [String] Each line from the file (with newline preserved)
+  #
+  # @example
+  #   Core.each_line_utf8('data/config.txt') do |line|
+  #     puts line.chomp
+  #   end
+  def each_line_utf8(filepath)
+    File.open(filepath, 'r:UTF-8') do |file|
+      file.each_line { |line| yield line }
+    end
   end
 end

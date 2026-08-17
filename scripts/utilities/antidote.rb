@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 require 'open3'
 
@@ -69,9 +70,10 @@ module Antidote
 
     # antidote bundle reads the plugin list from stdin; pass it via stdin_data
     # so no shell redirect (<) is needed -- array form avoids a shell layer.
+    # Use explicit UTF-8 encoding to avoid "invalid byte sequence in US-ASCII".
     bundle_content, stderr_str, status = Open3.capture3(
       'zsh', '-fc', 'source "$1"; antidote bundle', '--', antidote_zsh.to_s,
-      stdin_data: plugin_txt.read
+      stdin_data: plugin_txt.read(encoding: 'UTF-8')
     )
 
     success = CommandUtils.check_status(nil, stderr_str, status) do |st, output_msg|

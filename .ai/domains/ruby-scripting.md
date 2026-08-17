@@ -73,6 +73,7 @@ This rule applies to ALL Ruby-to-Ruby calls unless the callee has conflicting `a
 ```ruby
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 # file location: ${DOTFILES_DIR}/scripts/my-script.rb
 #
@@ -334,6 +335,7 @@ When editing any Ruby script, check:
 ```ruby
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 require 'pathname'                                     # stdlib
 require_relative '../../../.config/dotfiles/scripts/utilities/logging'
@@ -390,6 +392,7 @@ Logging.print_script_summary(script_start_time)
 ```ruby
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 require 'pathname'                           # stdlib
 require_relative 'utilities/logging'         # internal
@@ -2242,6 +2245,162 @@ stripped = line.strip  # Safe now, and guaranteed non-empty after stripping
 2. Call methods like `.strip` AFTER the check passes (safe from nil)
 3. Cache stripped value ONLY if used multiple times
 4. Avoid redundant `nil_or_empty?` checks on already-validated values
+
+## UTF-8 File Reading
+
+**CRITICAL: Always specify UTF-8 encoding when reading text files.**
+
+### The Problem
+
+Ruby file reading methods use the system's default encoding, which varies by environment:
+- **Interactive shells**: Usually UTF-8 (`LC_ALL=en_US.UTF-8`)
+- **Cron jobs**: Often US-ASCII (minimal environment)
+- **Background processes**: May inherit parent's encoding
+
+When a file contains UTF-8 characters (em dashes, curly quotes, non-ASCII symbols) and is read in a non-UTF-8 environment, Ruby raises:
+```
+ArgumentError: invalid byte sequence in US-ASCII
+```
+
+This commonly affects:
+- `scripts/data/capture-prefs-excluded-keys.txt` (UTF-8 content)
+- `scripts/data/capture-prefs-denied-list.txt` (UTF-8 content)
+- `scripts/data/cleanup-patterns/*.txt` (potentially UTF-8)
+- `~/.ssh/config` (potentially UTF-8)
+- XML plist files (may contain UTF-8 in values/comments)
+- YAML config files (potentially UTF-8)
+- Any `.txt` config files
+
+### The Solution
+
+**For line-by-line reading**, use Core module utility methods:
+
+**`Core.read_lines_utf8(filepath)`** - Read all lines into an array:
+```ruby
+# BAD -- encoding depends on environment
+lines = file.readlines
+lines = File.readlines(file)
+
+# Good -- explicit UTF-8 encoding
+lines = Core.read_lines_utf8(file)
+```
+
+**`Core.each_line_utf8(filepath) { |line| ... }`** - Iterate lines with a block:
+```ruby
+# BAD -- encoding depends on environment
+file.each_line { |line| process(line) }
+File.foreach(file) { |line| process(line) }
+File.open(file, 'r:UTF-8') { |f| f.each_line { |line| process(line) } }
+
+# Good -- explicit UTF-8 encoding
+Core.each_line_utf8(file) { |line| process(line) }
+```
+
+**For reading entire file content**, use `Pathname#read(encoding: 'UTF-8')`:
+```ruby
+# BAD -- encoding depends on environment
+content = file.read
+content = File.read(file)
+
+# Good -- explicit UTF-8 encoding
+content = file.read(encoding: 'UTF-8')
+content = File.read(file, encoding: 'UTF-8')
+```
+
+### When to Use Each Method
+
+**Use `Core.read_lines_utf8`** when:
+- You need the entire file as an array
+- You'll process the array multiple times
+- You need array methods (`.length`, `.select`, `.map`, etc.)
+
+```ruby
+# Example: Count non-empty lines
+lines = Core.read_lines_utf8(config_file)
+count = lines.reject { |l| l.strip.empty? }.length
+```
+
+**Use `Core.each_line_utf8`** when:
+- You process each line once and discard it
+- Memory efficiency matters (large files)
+- You break early from the loop
+
+```ruby
+# Example: Find first match
+Core.each_line_utf8(config_file) do |line|
+  next if line.strip.empty?
+  next if line.start_with?('#')
+  return line if line.include?(search_term)
+end
+```
+
+**Use `file.read(encoding: 'UTF-8')`** when:
+- You need the entire file content as a single string
+- Parsing XML/JSON/YAML (pass to parser)
+- Pattern matching against full file content
+
+```ruby
+# Example: Check if plist has any keys
+has_keys = plist_file.read(encoding: 'UTF-8').match?(/<key>/)
+
+# Example: Parse XML with explicit encoding
+doc = REXML::Document.new(plist_file.read(encoding: 'UTF-8'))
+
+# Example: Parse YAML with explicit encoding
+config = YAML.safe_load(config_file.read(encoding: 'UTF-8'))
+```
+
+### Implementation Details
+
+Both methods use `File.open(path, 'r:UTF-8')` internally:
+- `'r'` - Read-only mode
+- `':UTF-8'` - Explicit encoding (not environment-dependent)
+
+They accept both `String` and `Pathname` arguments and return UTF-8 encoded strings.
+
+### Exception: String#each_line (NOT File Reading)
+
+`String#each_line` operates on in-memory strings (not files) and does NOT need replacement:
+
+```ruby
+# This is FINE -- operating on String object, not reading a file
+error_message.each_line { |line| puts line }
+stdout_output.each_line { |line| process(line) }
+```
+
+Strings are already in UTF-8 in memory, so no encoding issues occur.
+
+**Files using String#each_line correctly:**
+- `scripts/utilities/logging.rb` - Processing multi-line log messages
+- `scripts/utilities/command_utils.rb` - Processing stderr output
+- `scripts/utilities/git_processor.rb` - Processing command stdout
+
+### Scan Rule
+
+When adding file reading code:
+1. ❌ **Never** use: `file.readlines`, `File.readlines(file)`, `file.each_line`, `File.foreach(file)`, `file.read`, `File.read(file)`
+2. ✅ **For line-by-line**: Use `Core.read_lines_utf8(file)` or `Core.each_line_utf8(file) { }`
+3. ✅ **For full content**: Use `file.read(encoding: 'UTF-8')` or `File.read(file, encoding: 'UTF-8')`
+4. ⚠️ **Exception**: `String#each_line` on in-memory strings is fine
+
+When editing existing code:
+1. Search for: `\.readlines`, `File\.readlines`, `\.each_line`, `File\.foreach`, `\.read\b`, `File\.read`
+2. Verify: Is this a file operation or string operation?
+3. If file (line-by-line): Replace with `Core.read_lines_utf8` or `Core.each_line_utf8`
+4. If file (full content): Add `encoding: 'UTF-8'` parameter
+5. If string: Keep as-is (no change needed)
+
+### Verification
+
+After replacing file reading calls, verify syntax:
+```bash
+/usr/bin/ruby -c path/to/script.rb
+```
+
+Test in cron-like environment (minimal locale):
+```bash
+env -i HOME=$HOME USER=$USER /usr/bin/ruby path/to/script.rb
+```
 
 ## Memoization
 

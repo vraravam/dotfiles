@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 require 'pathname'
 require 'rexml/document'
@@ -49,7 +50,9 @@ module Plist
   def has_keys?(plist_file)
     plist_file = Pathname.new(plist_file) unless plist_file.is_a?(Pathname)
     return false unless plist_file.file?
-    plist_file.read.match?(/<key>/)
+    # Use explicit UTF-8 encoding to avoid "invalid byte sequence in US-ASCII"
+    # errors when reading plist XML files in cron/background environments.
+    plist_file.read(encoding: 'UTF-8').match?(/<key>/)
   end
 
   # Loads +filepath+ (capture-prefs-excluded-keys.txt) into a Hash keyed by domain
@@ -151,8 +154,9 @@ module Plist
     combined.concat(excluded_by_domain[domain].split("\n")) if excluded_by_domain.key?(domain)
     combined.concat(excluded_by_domain['*'].split("\n")) if excluded_by_domain.key?('*')
 
-    # Load and parse the plist
-    doc = REXML::Document.new(plist_file.read) rescue return
+    # Load and parse the plist.
+    # Use explicit UTF-8 encoding to avoid "invalid byte sequence in US-ASCII".
+    doc = REXML::Document.new(plist_file.read(encoding: 'UTF-8')) rescue return
     dict = doc.root&.elements&.first
     return unless dict&.name == 'dict'
 
@@ -198,7 +202,9 @@ module Plist
   def _each_data_line(filepath)
     filepath = Pathname.new(filepath) unless filepath.is_a?(Pathname)
     return unless filepath.file?
-    filepath.each_line do |line|
+    # Use Core.each_line_utf8 to avoid "invalid byte sequence in US-ASCII" errors
+    # when reading UTF-8 files in cron/background environments without UTF-8 locale.
+    Core.each_line_utf8(filepath) do |line|
       stripped = line.chomp
       next if nil_or_empty?(stripped.strip)
       next if stripped =~ /\A\s*#/

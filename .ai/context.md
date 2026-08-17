@@ -106,6 +106,34 @@ Higher priority always wins. Document tradeoffs in comments when they conflict.
 
 **Key insight**: Ruby scripts called from shell (via `call_ruby_utility` or subprocess) must return non-zero exit codes only for fatal errors. Recoverable failures should log warnings/errors and return false/success code, not raise exceptions.
 
+#### UTF-8 File Reading (June 2026)
+**Problem**: Cron jobs failing with "ArgumentError: invalid byte sequence in US-ASCII" when reading config files containing UTF-8 characters (em dashes, curly quotes). Affected files: `capture-prefs-excluded-keys.txt`, `capture-prefs-denied-list.txt`, SSH config, cleanup patterns.
+
+**Root cause**: Ruby's `File.readlines`, `Pathname#readlines`, `File.foreach`, and `Pathname#each_line` use system default encoding. In cron jobs (minimal environment), this defaults to US-ASCII, not UTF-8. When reading UTF-8 content, Ruby raises encoding error.
+
+**Solution**: Created two utility methods in Core module with explicit UTF-8 encoding:
+- `Core.read_lines_utf8(filepath)` - Read all lines into array
+- `Core.each_line_utf8(filepath) { |line| }` - Iterate lines with block
+
+Updated 7 files across dotfiles and personal bin:
+- `scripts/utilities/plist.rb` - Excluded keys loading
+- `scripts/utilities/cron.rb` - Crontab validation
+- `scripts/utilities/git_workspace.rb` - Repo aliases counting
+- `scripts/install-dotfiles.rb` - SSH config detection
+- `scripts/cleanup-browser-profiles.rb` - Pattern file reading
+- `${PERSONAL_BIN_DIR}/java-gradle-guard-rails.rb` - Gradle properties processing
+- `${PERSONAL_BIN_DIR}/java-gradle-library-versions.rb` - Version detection
+
+**Impact**: All file reading operations now work correctly in cron jobs, background processes, and SSH sessions regardless of environment encoding.
+
+**Key insights**:
+- String#each_line (in-memory strings) does NOT need replacement - strings are already UTF-8 in memory
+- Files in `scripts/utilities/logging.rb`, `command_utils.rb`, `git_processor.rb` correctly use String#each_line
+- Core module is appropriate location (zero dependencies, OS-agnostic, single source of truth)
+- Both methods accept String or Pathname arguments
+
+**Documentation**: Complete rules, examples, and scan guidance added to `.ai/domains/ruby-scripting.md` § UTF-8 File Reading.
+
 #### clone_repo_into Delegation Pattern (June 2026)
 **Problem**: Duplicate implementations - 79 lines in .shellrc, 98 lines in git_processor.rb.
 

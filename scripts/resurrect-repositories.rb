@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 # file location: ${DOTFILES_DIR}/scripts/resurrect-repositories.rb
 #
@@ -207,7 +208,8 @@ module ResurrectRepositories
   # @return [Array<Hash>] An array of repository configuration hashes.
   def _read_git_repos_from_file(filename)
     filename = Pathname.new(filename) unless filename.is_a?(Pathname)
-    repositories = Array(YAML.safe_load(filename.read)).select { |repo| repo['active'] }
+    # Use explicit UTF-8 encoding to avoid "invalid byte sequence in US-ASCII".
+    repositories = Array(YAML.safe_load(filename.read(encoding: 'UTF-8'))).select { |repo| repo['active'] }
     repositories.each do |repo|
       if repo[FOLDER_KEY_NAME].is_a?(String)
         repo[FOLDER_KEY_NAME] = _find_and_replace_env_var(repo[FOLDER_KEY_NAME].strip)

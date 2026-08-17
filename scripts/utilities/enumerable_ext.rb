@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
+# encoding: utf-8
 
 # Polyfills for Enumerable methods added after Ruby 2.6 (system Ruby on vanilla macOS).
 # Each polyfill is guarded so the native method is used on Ruby 2.7+ without any overhead.
