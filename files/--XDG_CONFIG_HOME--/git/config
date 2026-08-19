@@ -552,17 +552,17 @@
   # ═══════════════════════════════════════════════════════════════════════════
 
   # Unshallows a shallow repository by configuring it to fetch full history.
-  # Configures all remotes to fetch all branches, then converts shallow clone to full clone.
-  # After running this, use 'git fetch' or 'git pull' to retrieve complete history for all branches.
-  # No-op if repo is already a full clone (not shallow).
+  # Configures all remotes to fetch all branches, then converts shallow clone to full clone
+  # (if shallow) or fetches all branches from all remotes (if already full). Always performs
+  # a fetch operation to retrieve complete history for all configured branches.
+  # No-op conversion if repo is already a full clone (just fetches).
   # Usage: git unshallow [<dir>]
-  # Example workflow: git unshallow && git fetch
   unshallow = "!f() { \
     dir=\"${1:-.}\"; \
     git -C \"${dir}\" remote | while IFS= read -r remote; do \
       git -C \"${dir}\" remote set-branches \"${remote}\" '*'; \
     done && \
-    ( git -C \"${dir}\" is-shallow && git -C \"${dir}\" fetch --unshallow || true ); \
+    ( git -C \"${dir}\" is-shallow && git -C \"${dir}\" fetch --unshallow || git -C \"${dir}\" fetch ) || true; \
   }; f"
 
   # Fetches all remotes and tags, then prunes local branches deleted on remote.

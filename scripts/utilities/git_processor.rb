@@ -90,10 +90,11 @@ class GitProcessor
 
   # Clones a git repo into a temp folder, moves the .git dir into the target location,
   # and does an initial checkout there. Works around git's refusal to clone into a
-  # non-empty directory (e.g. HOME). If the target is already a git repo, fetches and
-  # unshallows instead. Always updates submodules afterwards.
-  # On FIRST_INSTALL (vanilla OS), uses --depth=1 for a shallow clone to save time
-  # and bandwidth; repos can be converted to full clones later via 'git unshallow && git fetch'.
+  # non-empty directory (e.g. HOME). If the target is already a git repo, runs fetch
+  # to pull updates. New clones always use --depth=1 --filter=blob:none --single-branch
+  # for fast initial clone. All repos (new and existing) are converted to full clones
+  # asynchronously via background 'git unshallow' job after the main operation completes.
+  # Always updates submodules afterwards.
   #
   # **DELEGATES TO SHELL VERSION**: This Ruby method is a thin wrapper around the
   # shell function clone_repo_into() in .shellrc. The shell version is required
@@ -217,7 +218,7 @@ class GitProcessor
 
   # Returns true if the repository is a shallow clone (limited history depth).
   # Shallow clones are created with --depth flag and can be converted to full
-  # clones via 'git unshallow && git fetch'.
+  # clones via 'git unshallow' (which includes fetch operation).
   #
   # @return [Boolean] true if shallow clone, false if full clone
   def shallow?

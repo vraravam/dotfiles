@@ -54,7 +54,8 @@ module Antidote
       CommandUtils.run_interactive('zsh', '-fc', 'source "$1"; antidote update', '--', antidote_zsh.to_s)
 
       # Only unshallow repos that are still shallow (idempotent check).
-      # After unshallow, pull to fetch complete history for all branches.
+      # Unshallow fetches complete history but doesn't modify working tree (antidote
+      # manages plugin versions independently via bundle regeneration).
       PathUtils.glob_pathnames(antidote_home.join('github.com', '*', '*')) do |bundle_dir|
         next unless bundle_dir.directory?
 
@@ -62,8 +63,7 @@ module Antidote
           next unless git.repo? && git.shallow?  # Skip non-git directories and non-shallow repos
 
           git.config_set('fetch.fsckObjects', 'false')
-          git.run_alias('unshallow')  # Configures all remotes, runs fetch --unshallow
-          git.pull(rebase: true, quiet: true)  # Fetch complete history for all branches
+          git.run_alias('unshallow')  # Configures all remotes, fetches complete history
         end
       end
     end

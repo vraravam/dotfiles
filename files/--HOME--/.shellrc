@@ -1457,9 +1457,10 @@ migrate_git_repo_to_reftable() {
 # Clones a git repo into a temp folder, moves the .git dir into the real target
 # location, and does an initial checkout there. Works around git's refusal to
 # clone into a non-empty directory (e.g. HOME). If the target is already a git
-# repo, runs unshallow to convert to full clone, then fetches to get complete history.
-# Always updates submodules afterwards. On FIRST_INSTALL uses --depth=1 --filter=blob:none
-# --single-branch for faster initial clone (convert to full via 'git unshallow && git fetch').
+# repo, runs fetch to pull updates. New clones always use --depth=1 --filter=blob:none
+# --single-branch for fast initial clone. All repos (new and existing) are converted
+# to full clones asynchronously via background 'git unshallow' job after the main
+# operation completes. Always updates submodules afterwards.
 # Usage: clone_repo_into <repo-url> <target-folder> [branch]
 clone_repo_into() {
   local start_time=${EPOCHSECONDS}  # $EPOCHSECONDS from zsh/datetime -- no $(date +%s) fork
@@ -1473,18 +1474,15 @@ clone_repo_into() {
     # Set trap to clean up temp folder on exit (normal or error)
     trap "rm -rf '${tmp_folder}'" EXIT INT TERM
 
-    local -a clone_args=()
+    local -a clone_args=('--depth=1' '--filter=blob:none' '--single-branch')
     local target_branch="${3:-}"
-    if is_non_zero_string "${FIRST_INSTALL:-}"; then
-      clone_args+=('--depth=1' '--filter=blob:none' '--single-branch')
-      # If a target branch is specified, clone that branch directly to avoid the
-      # "branch not found" error when switching after a shallow clone (which only
-      # fetches the default branch). Without --branch, git switch would fail.
-      if is_non_zero_string "${target_branch}"; then
-        clone_args+=('--branch' "${target_branch}")
-      fi
-      debug "Using shallow blobless single-branch clone (${clone_args[*]}) for FIRST_INSTALL mode"
+    # If a target branch is specified, clone that branch directly to avoid the
+    # "branch not found" error when switching after a shallow clone (which only
+    # fetches the default branch). Without --branch, git switch would fail.
+    if is_non_zero_string "${target_branch}"; then
+      clone_args+=('--branch' "${target_branch}")
     fi
+    debug "Using shallow blobless single-branch clone (${clone_args[*]}) for fast initial clone"
 
     # Capture stderr to display on failure
     local stderr_file
@@ -1509,7 +1507,10 @@ clone_repo_into() {
       return 1
     fi
 
-    # Remove existing .git directory if present (safety - prevents corrupt state)
+    # Remove existing .git directory if present (cleanup from failed previous clone attempt).
+    # We're in the "not a git repo" branch (outer if), but .git directory might exist as
+    # leftover debris. Check directory existence directly, not is_git_repo (which would
+    # return false since we're already in the ! is_git_repo branch).
     if is_directory "${target_folder}/.git"; then
       # Prevent operations on paths in root directory
       # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
@@ -1536,19 +1537,6 @@ clone_repo_into() {
       git -C "${target_folder}" checkout-index -a 2>/dev/null || true
     fi
 
-    # post-clone operations - delegated to git maintain alias
-    git -C "${target_folder}" maintain
-
-    # Unshallow in background if this was a shallow clone (FIRST_INSTALL mode).
-    # Allows FIRST_INSTALL to continue without waiting for full history download.
-    # The subshell + background job (&) runs asynchronously - parent continues immediately.
-    # Output is redirected to /dev/null since unshallow is a nice-to-have optimization,
-    # not a critical operation. If it fails, next clone_repo_into call will retry.
-    if is_non_zero_string "${FIRST_INSTALL:-}"; then
-      (git -C "${target_folder}" unshallow >/dev/null 2>&1 &)
-      debug "Spawned background job to unshallow '$(yellow "${target_folder}")'"
-    fi
-
     # Correct HEAD file after reftable clone-via-mv (.git/HEAD retains a '.invalid' placeholder since
     # the move bypasses git's normal post-clone finalisation; shell prompts read .git/HEAD directly)
     local real_ref
@@ -1556,13 +1544,6 @@ clone_repo_into() {
     if is_non_zero_string "${real_ref}"; then
       echo "ref: ${real_ref}" >"${target_folder}/.git/HEAD"
     fi
-
-    # Migrate to reftable if the clone used the legacy files format. On a vanilla
-    # macOS the system git (< 2.45) ignores -c init.defaultRefFormat=reftable and
-    # 'git refs migrate' is unavailable, so this is a no-op until Homebrew's git
-    # is on PATH. fresh-install-of-osx.sh calls this again post-Homebrew for repos
-    # that were cloned with system git.
-    migrate_git_repo_to_reftable "${target_folder}"
 
     success "Successfully cloned '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
 
@@ -1577,19 +1558,30 @@ clone_repo_into() {
   else
     # is_git_repo = (is_non_zero_string && is_directory .git) -- logical complement of the if above,
     # so this else is exhaustive and the condition check is redundant.
-    debug "Fetching '$(yellow "${target_folder}")' since it's already a git repo"
-    # SSH: Same inheritance as clone operation above.
-    git -C "${target_folder}" unshallow && git -C "${target_folder}" fetch
-    success "Successfully fetched '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
-
-    # Only warn if FETCH_HEAD has commits not yet in HEAD -- unshallow + fetch always
-    # runs but may bring in nothing new (repo already up to date).
-    local incoming_count
-    incoming_count="$(git -C "${target_folder}" rev-list HEAD..FETCH_HEAD --count 2>/dev/null || echo 0)"
-    if [[ "${incoming_count}" -gt 0 ]]; then
-      warn 'Remember to merge the incoming changes into the working tree!'
-    fi
+    debug "Repo already exists at '$(yellow "${target_folder}")' -- will unshallow and fetch in background"
   fi
+
+  # Migrate to reftable format BEFORE background unshallow to avoid race conditions.
+  # Migrating refs while unshallow is fetching history could cause lock contention or
+  # corrupted refs. Migration must complete before any background ref writes begin.
+  # Idempotent -- safe to run multiple times (no-op if already reftable). On vanilla
+  # macOS with system git < 2.45, this is a silent no-op. fresh-install-of-osx.sh
+  # calls this again after Homebrew's git is on PATH to migrate repos that were
+  # initially cloned with system git.
+  migrate_git_repo_to_reftable "${target_folder}"
+
+  # Unshallow in background for both new clones and existing repos. Converts shallow
+  # repos to full clones asynchronously without blocking the caller. The subshell +
+  # background job (&) runs independently - parent continues immediately. Output is
+  # redirected to /dev/null since unshallow is a nice-to-have optimization, not a
+  # critical operation. If the repo is already a full clone, 'git unshallow' is a
+  # no-op. If it fails, the next clone_repo_into call will retry.
+  (git -C "${target_folder}" unshallow >/dev/null 2>&1 &)
+  debug "Spawned background job to unshallow '$(yellow "${target_folder}")'"
+
+  # Restore file mtimes from git history after clone/fetch (improves ls -lt output
+  # and preserves original timestamps). Idempotent -- safe to run multiple times.
+  git -C "${target_folder}" maintain
 
   # Generate commit graph after clone/fetch for performance (10-50x faster log/branch
   # operations). Failure is non-fatal -- repo is usable, just slower. Suppress output
