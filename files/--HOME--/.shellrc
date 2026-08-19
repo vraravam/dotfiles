@@ -76,8 +76,15 @@ fi
 # The github username where the setup scripts are downloaded from
 export GH_USERNAME='vraravam'
 
-# Keybase username (comment out if you don't use Keybase)
-export KEYBASE_USERNAME='avijayr'
+# Encrypted git repo names (used with git-remote-gcrypt)
+export ENCRYPTED_HOME_REPO_NAME='home'
+export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
+
+# DEPRECATED: Keybase support has been replaced with git-remote-gcrypt.
+# Uncomment these only if you need backward compatibility during migration.
+# export KEYBASE_USERNAME='avijayr'
+# export KEYBASE_HOME_REPO_NAME='home'
+# export KEYBASE_PROFILES_REPO_NAME='profiles'
 # --------------------------------------------------------------------------------
 
 # ---------- Env vars for basic/common setup (can be optionally changed) ---------
@@ -99,12 +106,6 @@ export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev/configs"
 # All browser profiles are captured in this folder (might contain sensitive info like browsing history and so is considered private)
 # Use ${USER} (zsh/PAM builtin) instead of $(whoami) to avoid forking a subprocess on every shell start.
 export PERSONAL_PROFILES_DIR="${HOME}/personal/${USER}/browser-profiles"
-
-# Keybase home repo name (comment out if you don't use Keybase)
-export KEYBASE_HOME_REPO_NAME='home'
-
-# Keybase profiles repo name (comment out if you don't use Keybase)
-export KEYBASE_PROFILES_REPO_NAME='profiles'
 # --------------------------------------------------------------------------------
 
 # ------------- Env vars for upstream setup (SHOULD NOT be changed) --------------

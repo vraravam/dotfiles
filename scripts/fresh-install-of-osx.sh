@@ -450,43 +450,60 @@ _build_keybase_repo_url() {
 _clone_home_repo() {
   _current_section='Clone home repo'; _current_section_manual=1
   step_start
-  section_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_HOME_REPO_NAME:-}")' repo"
-  if is_non_zero_string "${KEYBASE_HOME_REPO_NAME:-}"; then
-    if is_git_repo "${HOME}"; then
-      # Pre-configured machine: pull latest changes to get fresh backup files
-      info "Home repo already exists -- pulling latest changes"
-      if git -C "${HOME}" pull --rebase; then
-        success "Successfully updated home repo"
-      else
-        _record_warning "Failed to pull home repo -- continuing with existing backup files"
-      fi
-    elif clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME:-}")" "${HOME}"; then
-      # Vanilla OS: clone succeeded
+  section_header "$(yellow 'Cloning') '$(cyan "${ENCRYPTED_HOME_REPO_NAME:-home}")' repo"
+
+  if is_git_repo "${HOME}"; then
+    # Pre-configured machine: pull latest changes to get fresh backup files
+    info "Home repo already exists -- pulling latest changes"
+    if git -C "${HOME}" pull --rebase; then
+      success "Successfully updated home repo"
+    else
+      _record_warning "Failed to pull home repo -- continuing with existing backup files"
+    fi
+  elif is_non_zero_string "${GH_USERNAME:-}" && is_non_zero_string "${ENCRYPTED_HOME_REPO_NAME:-}"; then
+    # Use HTTPS (no authentication required if repo is public).
+    # Security: repo contents are encrypted by gcrypt, so public visibility is safe.
+    # Only the encryption password is needed to decrypt.
+    local gcrypt_url="gcrypt::https://github.com/${GH_USERNAME}/${ENCRYPTED_HOME_REPO_NAME}.git"
+
+    user_action "You will be prompted for the encryption password"
+    user_action "This is the password you used when creating the encrypted repo"
+
+    if clone_repo_into "${gcrypt_url}" "${HOME}"; then
       # Reset ssh keys' permissions so that git doesn't complain when using them
       set_ssh_folder_permissions
 
       # Fix /etc/hosts file to block facebook
       if is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts"; then sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts; fi
+
+      success "Successfully cloned home repo"
     else
       _record_error 'Failed to clone home repo'
     fi
   else
-    info "Skipping cloning of home repo since the '$(purple 'KEYBASE_HOME_REPO_NAME')' env var hasn't been set"
+    info "Skipping cloning of home repo since '$(yellow 'GH_USERNAME')' or '$(yellow 'ENCRYPTED_HOME_REPO_NAME')' env var hasn't been set"
   fi
   step_end
 }
 
-# Clone the Keybase profiles repo (browser profiles)
+# Clone the browser-profiles repo from encrypted git remote (gcrypt)
 _clone_profiles_repo() {
   _current_section='Clone profiles repo'; _current_section_manual=1
   step_start
-  section_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_PROFILES_REPO_NAME:-}")' repo"
-  if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME:-}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
-    if ! clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME:-}")" "${PERSONAL_PROFILES_DIR}"; then
-      _record_error 'Failed to clone profiles repo'
+  section_header "$(yellow 'Cloning') '$(cyan "${ENCRYPTED_PROFILES_REPO_NAME:-browser-profiles}")' repo"
+
+  if is_non_zero_string "${GH_USERNAME:-}" && is_non_zero_string "${ENCRYPTED_PROFILES_REPO_NAME:-}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
+    # Use HTTPS (no authentication required if repo is public).
+    # Security: repo contents are encrypted by gcrypt, so public visibility is safe.
+    local gcrypt_url="gcrypt::https://github.com/${GH_USERNAME}/${ENCRYPTED_PROFILES_REPO_NAME}.git"
+
+    if clone_repo_into "${gcrypt_url}" "${PERSONAL_PROFILES_DIR}"; then
+      success "Successfully cloned browser-profiles repo"
+    else
+      _record_error 'Failed to clone browser-profiles repo'
     fi
   else
-    info "Skipping cloning of profiles repo since either the '$(purple 'KEYBASE_PROFILES_REPO_NAME')' or the '$(purple 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
+    info "Skipping cloning of profiles repo since '$(yellow 'GH_USERNAME')', '$(yellow 'ENCRYPTED_PROFILES_REPO_NAME')', or '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
   fi
   step_end
 }
@@ -673,18 +690,30 @@ main() {
   migrate_git_repo_to_reftable "${DOTFILES_DIR}"
   step_end
 
-  if is_non_zero_string "${KEYBASE_USERNAME:-}"; then
-    # Login into Keybase
-    step_start
-    _ensure_keybase_logged_in || return 1
-    step_end
-
-    _clone_home_repo
-
-    _clone_profiles_repo
+  # Setup git-remote-gcrypt for encrypted remotes (Keybase replacement)
+  _current_section='Setup encrypted git remotes'
+  step_start
+  section_header "$(yellow 'Setup encrypted git remotes')"
+  if command_exists 'setup-git-remote-gcrypt.rb'; then
+    if setup-git-remote-gcrypt.rb; then
+      success 'git-remote-gcrypt configured successfully'
+    else
+      _record_warning 'Failed to configure git-remote-gcrypt'
+    fi
   else
-    info "Skipping cloning of any keybase repo since '$(yellow 'KEYBASE_USERNAME')' has not been set"
+    debug "setup-git-remote-gcrypt.rb not found in PATH -- skipping encrypted remote setup"
   fi
+  step_end
+
+  # Clone encrypted repos (home and browser-profiles)
+  _current_section='Clone encrypted repos'
+  step_start
+  section_header "$(yellow 'Cloning encrypted repos')"
+
+  _clone_home_repo
+  _clone_profiles_repo
+
+  step_end
 
   if is_file "${HOME}/.ssh/known_hosts.old"; then rm -f "${HOME}/.ssh/known_hosts.old"; fi
 
