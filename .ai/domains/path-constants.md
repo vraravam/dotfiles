@@ -8,6 +8,22 @@ applyTo: "all cross-language scripts and configuration files"
 
 Never hardcode user-specific or machine-specific paths. Always use environment variables that are defined in `.shellrc` and centralized in the `EnvVars` module (Ruby).
 
+## Scope
+
+**This file applies to**: All path references, directory construction, and environment variable usage across the repository, including:
+- Path construction in shell scripts (using `${DOTFILES_DIR}`, `${PERSONAL_BIN_DIR}`, etc.)
+- Path construction in Ruby scripts (using `EnvVars::DOTFILES_DIR`, `EnvVars::HOME`, etc.)
+- Configuration files that reference file paths (`.gitconfig`, SSH config, etc.)
+- Scripts that build or manipulate file system paths
+- Any code that references user directories, project directories, or tool directories
+
+**Related files**:
+- [`shell-scripting.md`](./shell-scripting.md) - Shell variable quoting and brace notation
+- [`ruby-scripting.md`](./ruby-scripting.md) - Pathname usage and `.to_s` conversion rules
+- [`fresh-install.md`](./fresh-install.md) - Bootstrap path availability order
+
+**Does NOT apply to**: Temporary file paths created by `mktemp`, system paths like `/etc` or `/usr/bin`, or paths to external tools discovered dynamically.
+
 **Environment variables are documented where they're defined:**
 - **Shell**: See comments in `files/--HOME--/.shellrc` (lines 40-85, 139-169)
 - **Ruby**: See RDoc comments in `scripts/utilities/env_vars.rb`

@@ -1,5 +1,5 @@
 ---
-applyTo: "all cross-language scripts that use deferred error collection"
+applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**/*.{sh,rb}"
 ---
 
 # Script Depth Tracking
@@ -7,6 +7,21 @@ applyTo: "all cross-language scripts that use deferred error collection"
 > Part of the [tool-agnostic instruction set](../instructions.md) for this repository.
 
 `_DOTFILES_SCRIPT_DEPTH` is an environment variable used to track script nesting levels. It serves two critical purposes in the logging infrastructure.
+
+## Scope
+
+**This file applies to**: All scripts (shell and Ruby) that use the deferred error collection pattern and logging infrastructure, including:
+- Scripts in `${DOTFILES_DIR}/scripts/` (both `.sh` and `.rb`)
+- Scripts in `${PERSONAL_BIN_DIR}/` (both `.sh` and `.rb`)
+- Autoload functions in `${XDG_CONFIG_HOME}/zsh/`
+- Any script that calls `print_script_start`, `print_script_summary`, or uses `_record_warning`/`_record_error`
+
+**Related files**:
+- [`logging-conventions.md`](./logging-conventions.md) - Logging functions that use depth-based indentation
+- [`ruby-scripting.md`](./ruby-scripting.md) - Ruby-specific implementation details
+- [`shell-scripting.md`](./shell-scripting.md) - Shell-specific implementation details
+
+**Does NOT apply to**: Simple utility functions that don't call logging infrastructure, one-off commands, or scripts without deferred error collection.
 
 ## Dual Purpose
 
@@ -68,6 +83,44 @@ Logging.print_script_summary(script_start_time)
 ```
 
 `print_script_start` and `print_script_summary` gate their output on `outermost_script?` (`depth <= 1`), so nested subprocess scripts stay silent and only the outermost script prints its banners and summary.
+
+## Calling print_script_summary
+
+**Rule**: Always pass `start_time` when available. Omit only in error handlers that lack access to the variable.
+
+### Shell
+
+```zsh
+# Normal case - always pass start_time
+main() {
+  local start_time="${EPOCHSECONDS}"
+  print_script_start
+  # ... logic ...
+  print_script_summary "${start_time}"  # REQUIRED
+}
+
+# Exception - error handler without access
+_error_handler() {
+  print_script_summary  # No start_time available - omit argument
+}
+```
+
+### Ruby
+
+```ruby
+# Normal case - always pass start_time
+start_time = print_script_start
+# ... logic ...
+print_script_summary(start_time)  # REQUIRED
+
+# Exception - early return in nested method
+def helper_method
+  return false unless valid?  # Can't access outer start_time
+  # If calling print_script_summary here, omit argument
+end
+```
+
+**Why this matters**: Passing `start_time` allows `print_script_summary` to calculate and display the total execution duration. Without it, the summary shows no duration information.
 
 ## Purpose 1: Nesting Suppression
 

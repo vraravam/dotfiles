@@ -13,6 +13,40 @@ Syntax choices follow the decision-making priority defined in
 zsh built-ins where they do not conflict with those). Document the tradeoff in
 a comment when they conflict.
 
+## Scope
+
+**This file applies to**: All shell scripts, zsh configuration, and shell functions in the repository, including:
+- Executable scripts in `${DOTFILES_DIR}/scripts/*.sh` (e.g., `fresh-install-of-osx.sh`, `osx-defaults.sh`)
+- Executable scripts in `${PERSONAL_BIN_DIR}/*.sh` (personal automation scripts)
+- Shell configuration files (`.shellrc`, `.aliases`, `.envrc`, `.zshenv`, `.zshrc`, `.zlogin`)
+- Autoload functions in `${XDG_CONFIG_HOME}/zsh/`
+- Git alias bodies in `.gitconfig` (shell command strings)
+- Shell scripts invoked via subprocess from Ruby (e.g., `system('zsh', '-c', '...')`)
+
+**Related files**:
+- [`logging-conventions.md`](./logging-conventions.md) - Cross-language logging and color standards
+- [`script-depth-tracking.md`](./script-depth-tracking.md) - Nesting depth tracking in shell
+- [`path-constants.md`](./path-constants.md) - Environment variable usage and quoting
+- [`zsh-startup.md`](./zsh-startup.md) - Zsh-specific startup optimizations
+- [`edit-checklist.md`](./edit-checklist.md) - Post-edit verification workflow
+
+**Does NOT apply to**: Ruby scripts (see `ruby-scripting.md`), external shell scripts from third-party tools, or shell commands in documentation examples.
+
+## Quick Reference
+
+| Task | Pattern | Section Link |
+|------|---------|--------------|
+| Source .shellrc | `source "${HOME}/.shellrc"` | [§ Mandatory: Source .shellrc](#mandatory-source-shellrc-for-utility-functions) |
+| Positional param with default | `dir="${1:-.}"` | [§ Positional Parameters](#positional-parameters) |
+| Check file exists | `is_file "${path}"` | [§ Prefer Utility Functions](#prefer-utility-functions-over-raw-shell-tests) |
+| Check directory exists | `is_directory "${path}"` | [§ Prefer Utility Functions](#prefer-utility-functions-over-raw-shell-tests) |
+| Avoid subshell fork | `${PWD:t}` not `$(basename "$PWD")` | [§ Zsh Parameter Expansion](#zsh-parameter-expansion-for-basename) |
+| For loop variable | `local item; for item in ...` | [§ `local` and `unset`](#local-and-unset----correct-usage) |
+| Safe conditional | `if A; then B; fi` not `A && B` | [§ `&&` as Conditional](#-as-conditional----safety-under-set--e--err-trap) |
+| Logging | `info`, `success`, `warn`, `error`, `debug` | [§ Logging](#logging) |
+| Git operations | `git -C "${dir}"` | [§ git-config.md](./git-config.md) |
+| Script depth tracking | `export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))` | [§ Script Depth Tracking](./script-depth-tracking.md) |
+
 ## File Naming Convention
 
 **All shell scripts use kebab-case (hyphens), matching Unix CLI tool conventions.**
@@ -32,6 +66,8 @@ a comment when they conflict.
 - `${DOTFILES_DIR}/scripts/*.sh` - All shell scripts use kebab-case
 - `${PERSONAL_BIN_DIR}/*.sh` - All shell scripts use kebab-case
 - Autoload functions in `${XDG_CONFIG_HOME}/zsh/` - Single-word names (no separator)
+
+**Autoload function naming**: Zsh autoload functions in `${XDG_CONFIG_HOME}/zsh/` use single-word names by design (e.g., `upreb`, `status`, `push`). This is not a "no separator needed" exception—it's a deliberate convention for autoloaded commands that matches shell built-in naming patterns (`cd`, `ls`, `git`, `grep`).
 
 ## Function Naming Convention
 
@@ -1056,6 +1092,29 @@ abort or fires the ERR trap, even though no actual error occurred.
 The fix is always an explicit `if` statement, which never propagates a non-zero
 exit code from the predicate to the enclosing scope.
 
+### Why `set -e` Triggers on `&&` False
+
+Bash/zsh's `set -e` (exit on error) considers ANY non-zero exit code an "error" unless explicitly handled. The `&&` operator returns the right-hand side's exit code if the left succeeds, OR the left-hand side's exit code if it fails.
+
+When the left side returns non-zero (false condition), the entire `&&` expression returns non-zero. Since it's not in an explicit conditional context (`if`), `set -e` sees "command returned 1" and triggers.
+
+**Example**:
+```zsh
+set -e
+is_file "${optional}"  # Returns 1 (false) - file doesn't exist
+# set -e sees: "Last command exited 1" → abort script
+
+# With &&
+is_file "${optional}" && process  # Left side returns 1
+# set -e sees: "&& expression exited 1" → abort script
+
+# With if
+if is_file "${optional}"; then process; fi
+# set -e sees: "if statement (success=0 even if condition false)" → continue
+```
+
+The `if` statement itself always exits 0 (it executed successfully), so `set -e` never triggers regardless of the condition's result.
+
 ```zsh
 # BAD -- is_file returning false (file absent) is normal; fires set -e / ERR trap
 is_file "${optional_config}" && cp "${optional_config}" "${dest}"
@@ -1802,4 +1861,103 @@ script:
 load_file_if_exists "${ZDOTDIR}/.aliases"
   require_env_var PERSONAL_BIN_DIR
   load_file_if_exists "${PERSONAL_BIN_DIR}/upreb-homebrew-common.sh"
-  ```
+```
+
+## Common Mistakes (Code Review Findings)
+
+Based on code review patterns and debugging sessions, here are the most common mistakes to avoid:
+
+1. **Using `&&` with `set -e` where false is expected** → Use explicit `if` statements
+   ```zsh
+   # BAD - triggers set -e when file doesn't exist (expected case)
+   is_file "${optional}" && process
+   # Good
+   if is_file "${optional}"; then process; fi
+   ```
+
+2. **Post-increment in arithmetic under `set -e`** → Returns 1 when value is 0
+   ```zsh
+   # BAD - (( 0 )) on first iteration triggers set -e
+   (( count++ ))
+   # Good
+   (( count += 1 )) || true
+   ```
+
+3. **For-loop variables leaking** → Not auto-local in zsh
+   ```zsh
+   # BAD - 'item' leaks into caller's scope
+   for item in "${arr[@]}"; do
+     info "${item}"
+   done
+   # Good - declare local first
+   local item
+   for item in "${arr[@]}"; do
+     info "${item}"
+   done
+   ```
+
+4. **Using `:-` vs `-` incorrectly** → Different semantics for unset vs empty
+   ```zsh
+   # BAD - inconsistent with user flag convention
+   [[ -n "${DEBUG-}" ]]
+   # Good - use :- for user flags (unset OR empty → fallback)
+   [[ -n "${DEBUG:-}" ]]
+   ```
+
+5. **Local + assignment masks exit codes** → Split into two lines
+   ```zsh
+   # BAD - local returns 0 even if cmd fails
+   local result="$(cmd)"
+   # Good - preserve cmd's exit code
+   local result
+   result="$(cmd)"
+   ```
+
+6. **Bare `setopt NULL_GLOB`** → Leaks to caller
+   ```zsh
+   # BAD - persists for rest of process
+   setopt NULL_GLOB
+   rm -f *.txt
+   unsetopt NULL_GLOB
+   # Good - scoped to anonymous function
+   () {
+     setopt localoptions NULL_GLOB
+     rm -f *.txt
+   }
+   ```
+
+7. **Not quoting variables** → Breaks with spaces
+   ```zsh
+   # BAD
+   cp $src_file $dest_dir/
+   # Good
+   cp "${src_file}" "${dest_dir}/"
+   ```
+
+8. **Using `exit` in `main()`** → Kills calling shell if sourced
+   ```zsh
+   # BAD
+   main() {
+     exit 1  # kills shell if script is sourced
+   }
+   # Good
+   main() {
+     return 1  # exits function only
+   }
+   ```
+
+9. **ERR trap with function handler loses `$LINENO`** → Use string form
+   ```zsh
+   # BAD - $LINENO is handler's line, not failing line
+   trap _cleanup_and_exit ERR
+   # Good - capture $LINENO in string before function call
+   trap '_cleanup_and_exit "${LINENO}"' ERR
+   ```
+
+10. **Using aliases in non-interactive scripts** → Not available in cron/background jobs
+    ```zsh
+    # BAD - 'bcg' alias requires .aliases to be loaded
+    bcg | grep ...
+    # Good - use underlying command
+    brew outdated --greedy | grep ...
+    ```

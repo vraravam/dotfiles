@@ -8,6 +8,38 @@ applyTo: "**/*.rb"
 
 Apply these rules when writing or editing any Ruby script in this repository.
 
+## Scope
+
+**This file applies to**: All Ruby code in the repository, including:
+- Executable scripts in `${DOTFILES_DIR}/scripts/*.rb` (e.g., `install-dotfiles.rb`, `capture-prefs.rb`)
+- Executable scripts in `${PERSONAL_BIN_DIR}/*.rb` (personal automation scripts)
+- Utility modules in `${DOTFILES_DIR}/scripts/utilities/*.rb` (e.g., `logging.rb`, `git_processor.rb`, `env_vars.rb`)
+- Dual-mode scripts (module + standalone CLI)
+- Any Ruby code that uses the logging infrastructure, EnvVars module, or GitProcessor
+
+**Related files**:
+- [`logging-conventions.md`](./logging-conventions.md) - Cross-language color standards and logging patterns
+- [`script-depth-tracking.md`](./script-depth-tracking.md) - Nesting depth and auto-indentation
+- [`path-constants.md`](./path-constants.md) - EnvVars module usage and Pathname patterns
+- [`edit-checklist.md`](./edit-checklist.md) - Post-edit verification workflow
+
+**Does NOT apply to**: Vendored Ruby gems, external Ruby libraries, or Ruby code in other repositories not using this dotfiles infrastructure.
+
+## Quick Reference
+
+| Task | Pattern | Section Link |
+|------|---------|--------------|
+| Script template | Module + CLI wrapper | [§ Dual-Mode Ruby Scripts](#dual-mode-ruby-scripts-module--standalone----mandatory) |
+| Logging | `Logging.info`, `Logging.success`, `Logging.warn` | [§ Logging](#logging) |
+| Path constants | `EnvVars::DOTFILES_DIR` | [§ Path Constants](#path-constants) |
+| Option parsing | `CliParser.parse` | [§ Option Parsing](#option-parsing----use-cliparser) |
+| Git operations | `GitProcessor.new(dir:)` | [§ GitProcessor Usage](#gitprocessor-usage-patterns) |
+| Nil check | `nil_or_empty?(value)` | [§ `nil_or_empty?` Helper](#nil_or_empty-helper) |
+| File reading (UTF-8) | `Core.read_lines_utf8(file)` | [§ UTF-8 File Reading](#utf-8-file-reading) |
+| Color methods | `string.to_s.cyan` (NOT on Pathname) | [§ String Colors](#string-colors) |
+| Script depth | `Logging.increment_script_depth` | [§ Script Depth Tracking](./script-depth-tracking.md) |
+| Memoization | `@_var ||= expensive_operation` | [§ Memoization](#memoization) |
+
 ## File Naming Convention
 
 **Executable scripts use kebab-case (hyphens), utility modules use snake_case (underscores).**
@@ -30,6 +62,8 @@ This follows standard Ruby community conventions:
 - `${DOTFILES_DIR}/scripts/utilities/*.rb` - All modules use snake_case
 - `${PERSONAL_BIN_DIR}/*.rb` - All executable scripts use kebab-case
 - Shell scripts follow same pattern: `fresh-install-of-osx.sh`, `osx-defaults.sh`
+
+**Autoload function naming**: Zsh autoload functions in `${XDG_CONFIG_HOME}/zsh/` use single-word names by design (e.g., `upreb`, `status`, `push`). This is not a "no separator needed" exception—it's a deliberate convention for autoloaded commands that matches shell built-in naming patterns.
 
 **Scan rule:** When creating or renaming Ruby files:
 1. Is it an executable entry point (has `if __FILE__ == $PROGRAM_NAME`)? → Use kebab-case
@@ -417,13 +451,13 @@ Logging.user_action "message"  # manual step the user must perform after the scr
 warn "message"               # BAD -- use Logging.warn instead
 ```
 
-The log levels mirror the shell functions in `.shellrc`. Use the same
-classification rules across both shell and Ruby.
-
-See [`logging-conventions.md`](./logging-conventions.md) for complete rules on:
+The log levels mirror the shell functions in `.shellrc`. See [`logging-conventions.md`](./logging-conventions.md) for complete rules on:
+- When to use each log level
 - Message prefixes (`[script][section]`) for RCA
 - Deferred error/warning collection
 - Color standards
+
+**Quick reference:**
 
 | Level | When to use |
 |---|---|
@@ -436,20 +470,9 @@ See [`logging-conventions.md`](./logging-conventions.md) for complete rules on:
 
 ### Deferred Error/Warning Collection
 
-`record_warning` and `record_error` mirror `_record_warning` / `_record_error`
-from `.shellrc`. Each entry is prefixed with `[script_name][current_section]`
-for traceability. Pass `start_time` to `print_script_summary` at the end of the
-script -- it prints collected issues and calls `print_script_duration` internally.
-Set `Logging.current_section = 'name'` to track which logical step is executing
--- mirrors `_current_section` in shell scripts.
+See [`logging-conventions.md`](./logging-conventions.md) § Deferred Error Collection for complete patterns.
 
-Call `Logging.increment_script_depth` once before `print_script_start`. It
-increments `ENV['_DOTFILES_SCRIPT_DEPTH']` and registers an `at_exit` hook that
-decrements it on both clean and error exits -- the exact mirror of the shell
-increment + EXIT trap pair. `print_script_start` and `print_script_summary` gate
-their output on `outermost_script?` (`depth <= 1`), so nested subprocess scripts
-stay silent and only the outermost script prints its banners and summary.
-
+**Quick summary for Ruby:**
 ```ruby
 Logging.increment_script_depth
 script_start_time = Logging.print_script_start
@@ -458,9 +481,11 @@ Logging.current_section = 'Checking dependencies'
 Logging.record_warning "optional tool missing -- some features disabled"
 Logging.record_error   "required env var FOO is not set"
 
-# At end of script -- duration is printed internally; no separate call needed:
+# At end of script
 Logging.print_script_summary(script_start_time)
 ```
+
+`record_warning` and `record_error` prefix each entry with `[script_name][current_section]` for traceability. Set `Logging.current_section` to track which logical step is executing.
 
 No macOS notification is sent from Ruby -- `osascript` is not appropriate for
 library code. Scripts that need a notification must handle it themselves.
@@ -1376,6 +1401,24 @@ arr.uniq        # not arr.uniq!
 ```
 
 ### Why This Rule
+
+Ruby's mutating methods (`strip!`, `gsub!`, etc.) return `nil` when no modification occurs as a design feature: it lets you detect whether the operation actually changed anything.
+
+**Design intent**:
+```ruby
+result = str.strip!
+if result.nil?
+  puts "Already stripped"
+else
+  puts "Stripped: #{result}"
+end
+```
+
+**Problem**: This breaks the common pattern `value = value.strip!` because:
+- If whitespace exists: `value` is the modified string (correct)
+- If no whitespace: `value` is `nil` (breaks subsequent use)
+
+**Our rule**: In this codebase, we never need to detect "did it change?" for strings/arrays. Always use non-mutating methods for predictability.
 
 1. **Safety**: Non-mutating methods always return a value, never `nil`
 2. **Immutability**: Easier to reason about - values don't change unexpectedly
@@ -2824,3 +2867,82 @@ When refactoring code:
 **Scan rule:** After editing any Ruby file, search for variables declared before
 blocks (`do |var|`, `if/else`, `each`) and verify they're used outside the block.
 If not, move them inside.
+
+## Common Mistakes (Code Review Findings)
+
+Based on code review patterns and debugging sessions, here are the most common mistakes to avoid:
+
+1. **Calling color methods on Pathname** → Must convert to String first (`.to_s.cyan`)
+   ```ruby
+   # BAD
+   info "Processing '#{profile_folder.cyan}'"  # NoMethodError
+   # Good
+   info "Processing '#{profile_folder.to_s.cyan}'"
+   ```
+
+2. **Hardcoding paths** → Use `EnvVars::HOME` and other constants
+   ```ruby
+   # BAD
+   config = Pathname.new("/Users/vijay/.config/file")
+   # Good
+   config = EnvVars::XDG_CONFIG_HOME.join('file')
+   ```
+
+3. **Using `exit()` in module methods** → Return boolean instead
+   ```ruby
+   # BAD - kills parent process if module is called directly
+   def run
+     exit(1) if error
+   end
+   # Good - let caller decide what to do
+   def run
+     return false if error
+     true
+   end
+   ```
+
+4. **Forgetting to increment script depth** → Indentation breaks for nested calls
+   ```ruby
+   # BAD - no depth tracking
+   start_time = print_script_start
+   # Good - always increment first
+   Logging.increment_script_depth
+   start_time = print_script_start
+   ```
+
+5. **Using `set -e` with `&&` conditionals in shell** → Use explicit `if` statements (see shell-scripting.md § `&&` as Conditional)
+
+6. **Forgetting `.freeze` on constant arrays** → Can be mutated accidentally
+   ```ruby
+   # BAD
+   STREAMING_COMMANDS = %w[push pull fetch]
+   # Good
+   STREAMING_COMMANDS = %w[push pull fetch].freeze
+   ```
+
+7. **Not quoting shell variables** → Breaks with spaces in paths (see shell-scripting.md § Quoting)
+
+8. **Using `ENV['VAR']` instead of `ENV.fetch`** → Returns nil silently on typos
+   ```ruby
+   # BAD - typo returns nil, hard to debug
+   value = ENV['FORCE_COLLOR']
+   # Good - raises KeyError on typo
+   value = ENV.fetch('FORCE_COLOR', '')
+   ```
+
+9. **Mutating methods returning nil** → Use non-mutating versions (`strip` not `strip!`)
+   ```ruby
+   # BAD - returns nil if no whitespace
+   value = value.strip!
+   # Good - always returns a string
+   value = value.strip
+   ```
+
+10. **Subprocess calls when Ruby mode available** → Use module methods for performance
+    ```ruby
+    # BAD - forks subprocess
+    system(RbConfig.ruby, 'scripts/install-dotfiles.rb')
+    # Good - direct module call
+    require_relative 'install-dotfiles'
+    InstallDotfiles.run
+    ```

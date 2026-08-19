@@ -9,6 +9,25 @@ applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install
 These rules apply specifically to the bootstrap and installation scripts, as well as
 scripts invoked during initial setup or backup/restore operations.
 
+## Scope
+
+**This file applies to**: Bootstrap, installation, and system setup scripts, including:
+- `scripts/fresh-install-of-osx.sh` - Main bootstrap script (vanilla OS and pre-configured modes)
+- `scripts/install-dotfiles.rb` - Symlink/copy manager for `files/` directory
+- `scripts/post-brew-install.rb` - Post-Homebrew installation configuration
+- `scripts/osx-defaults.sh` - macOS system preferences
+- `scripts/setup-login-item.rb` - Login item configuration
+- `scripts/capture-prefs.rb` - Preferences export/import with timestamp validation
+- `scripts/resurrect-repositories.rb` - Repository restoration from tracked state
+
+**Related files**:
+- [`shell-scripting.md`](./shell-scripting.md) - Shell patterns (curl flags, idempotency guards, error handling)
+- [`ruby-scripting.md`](./ruby-scripting.md) - Ruby patterns (dual-mode scripts, error handling)
+- [`custom-gitignore-maintenance.md`](./custom-gitignore-maintenance.md) - `install-dotfiles.rb` behavior details
+- [`path-constants.md`](./path-constants.md) - Environment variables and path construction
+
+**Does NOT apply to**: Regular maintenance scripts (software updates, cron jobs), user-initiated workflows (git operations, profile management), or scripts not involved in initial system setup.
+
 ## `fresh-install-of-osx.sh` -- Idempotency Contract
 
 This script runs in **two modes**:

@@ -1,5 +1,5 @@
 ---
-applyTo: "all cross-language scripts and configuration files"
+applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**/*.{sh,rb},**/*.{yml,yaml,json,xml,toml,ini,conf,rc}"
 ---
 
 # Edit Checklist
@@ -7,6 +7,34 @@ applyTo: "all cross-language scripts and configuration files"
 > Part of the [tool-agnostic instruction set](../instructions.md) for this repository.
 
 Apply this checklist after every edit to any script or configuration file in this repository.
+
+## Scope
+
+**This file applies to**: Post-edit verification workflow for all code and configuration files, including:
+- Shell scripts (`.sh`, `.zsh`, `.bash`, `.shellrc`, `.aliases`, `.envrc`)
+- Ruby scripts (`.rb`)
+- Configuration files (`.yml`, `.yaml`, `.json`, `.xml`, `.toml`, `.ini`, `.conf`, `.rc`)
+- Autoload functions in `${XDG_CONFIG_HOME}/zsh/`
+
+**Related files**:
+- [`shell-scripting.md`](./shell-scripting.md) - Shell-specific patterns and rules
+- [`ruby-scripting.md`](./ruby-scripting.md) - Ruby-specific patterns and rules
+- [`whitespace-rules.md`](./whitespace-rules.md) - Complete whitespace verification
+- [`character-encoding.md`](./character-encoding.md) - ASCII-only requirements
+
+**Does NOT apply to**: Markdown documentation (`.md`), images, binary files, or vendored dependencies.
+
+## Quick Reference
+
+| Step | Shell | Ruby | All Files |
+|------|-------|------|-----------|
+| 1. Philosophy | ✅ | ✅ | ✅ |
+| 2. Safety | Check `&&` patterns | Check Ruby 2.6 compat | N/A |
+| 3. Syntax | `zsh -n file` | `/usr/bin/ruby -c file` | N/A |
+| 4. Format | `shfmt -w file` | `cd ~ && rufo file` | N/A |
+| 5. Whitespace | ✅ | ✅ | ✅ |
+| 6. Executable | `chmod +x` if needed | N/A | N/A |
+| 7. Delete .zwc | `rm -f file.zwc` | N/A | N/A |
 
 ## Universal Steps (All Files)
 

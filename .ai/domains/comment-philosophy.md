@@ -1,11 +1,36 @@
 ---
-applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**,**/*.rb"
+applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**/*.{sh,rb}"
 ---
 
 # Comment Philosophy
 
 Comments must serve as **timeless reference documentation**, not as a changelog
 or commit message.
+
+## Scope
+
+**This file applies to**: All code comments in scripts throughout this repository, including:
+- Shell scripts (`.sh`, `.zsh`, `.bash`, `.shellrc`, `.aliases`, `.envrc`)
+- Ruby scripts (`.rb`)
+- Autoload functions in `${XDG_CONFIG_HOME}/zsh/`
+- Inline comments, function headers, and file headers
+
+**Related files**:
+- [`character-encoding.md`](./character-encoding.md) - ASCII-only requirements for comments
+- [`edit-checklist.md`](./edit-checklist.md) - Post-edit verification workflow
+
+**Does NOT apply to**: Commit messages (use git conventions), pull request descriptions, or markdown documentation files.
+
+## Quick Reference
+
+| Type | Good Example | Bad Example |
+|------|-------------|-------------|
+| **WHY** explanation | `# Resolves symlinks: .zwc file lives next to symlink` | `# Now resolves internally` |
+| **WHAT** edge case | `# Returns true if either argument is missing` | `# Updated to handle nil` |
+| **HOW** to use | `# Usage: my_func <dir> [options]` | `# Added options support` |
+| **WHEN** condition | `# Only needed before .shellrc is sourced` | `# Currently runs early` |
+| File header | `# Script purpose description` | `# Modified in this commit` |
+| Avoid | Present-tense explanation | Past-tense changelog |
 
 ## Comment Format
 

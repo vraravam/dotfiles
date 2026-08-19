@@ -6,6 +6,21 @@ applyTo: "**/files/**,**/scripts/install-dotfiles.rb,**/files/--HOME--/custom.gi
 
 > Part of the [tool-agnostic instruction set](../instructions.md) for this repository.
 
+## Scope
+
+**This file applies to**: All operations on the `files/` directory and `custom.gitignore` files, including:
+- Adding, deleting, renaming, or moving files in `${DOTFILES_DIR}/files/`
+- Editing `files/--HOME--/custom.gitignore` (home directory repo)
+- Editing `files/--PERSONAL_PROFILES_DIR--/custom.gitignore` (browser profiles repo)
+- Running `install-dotfiles.rb` (which processes `files/` and copies `custom.gitignore` files)
+
+**Related files**:
+- [`fresh-install.md`](./fresh-install.md) - Bootstrap and installation scripts that call `install-dotfiles.rb`
+- [`path-constants.md`](./path-constants.md) - Environment variable substitution rules (`--VAR--` patterns)
+- [`shell-scripting.md`](./shell-scripting.md) - Shell patterns for verification commands
+
+**Does NOT apply to**: Files outside the `files/` directory, temporary files, build artifacts, or content in `.gitignore` entries that are not managed by this repository's symlink system.
+
 ## Rule: Sync `custom.gitignore` with `files/` Directory
 
 **When adding/deleting/renaming files in `files/` directory, you MUST update `files/--HOME--/custom.gitignore` to match.**

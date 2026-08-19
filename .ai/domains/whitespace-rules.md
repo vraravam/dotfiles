@@ -6,6 +6,22 @@ applyTo: "**/*"
 
 After every edit to any file (except Markdown `.md` files), the file **MUST pass all three whitespace checks**.
 
+## Scope
+
+**This file applies to**: All text files in the repository except markdown, including:
+- Shell scripts (`.sh`, `.zsh`, `.bash`, `.shellrc`, `.aliases`, `.envrc`)
+- Ruby scripts (`.rb`)
+- Configuration files (`.yml`, `.yaml`, `.json`, `.xml`, `.toml`, `.ini`, `.conf`, `.rc`)
+- Git configuration (`.gitconfig`, `.gitattributes`, `.gitignore`)
+- Autoload functions in `${XDG_CONFIG_HOME}/zsh/`
+- Any text file edited as part of repository maintenance
+
+**Related files**:
+- [`edit-checklist.md`](./edit-checklist.md) - Complete post-edit verification workflow
+- [`character-encoding.md`](./character-encoding.md) - ASCII-only requirements
+
+**Does NOT apply to**: Markdown files (`.md`) are exempt from Check 2 only (trailing blank lines allowed). Cryptographic files (`.key`, `.pem`) must never be modified.
+
 ## Check 1: File Ends with Newline
 
 Every file must end with exactly one newline character (`\n`, hex `0a`).

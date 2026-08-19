@@ -14,6 +14,24 @@ Syntax choices follow the decision-making priority defined in
 zsh built-ins where they do not conflict with those). When a startup-path
 optimisation uses zsh-specific syntax, add a comment explaining why.
 
+## Scope
+
+**This file applies to**: Zsh startup files and performance-critical shell initialization, including:
+- `.zshenv` - Always sourced first (minimal, env vars only)
+- `.zshrc` - Interactive shell initialization (heavy lifting)
+- `.zprofile` - Login shell initialization (not used in this repository)
+- `.zlogin` - Post-initialization tasks (compilation, cache generation)
+- Autoload functions in `${XDG_CONFIG_HOME}/zsh/`
+- Cache generation scripts (Homebrew shellenv, Starship init, mise activate)
+- Plugin management (Antidote bundle, compinit)
+
+**Related files**:
+- [`shell-scripting.md`](./shell-scripting.md) - General shell patterns and utilities
+- [`logging-conventions.md`](./logging-conventions.md) - DEBUG and profiling output
+- [`path-constants.md`](./path-constants.md) - Environment variables set in `.zshenv`
+
+**Does NOT apply to**: Scripts that run after shell startup completes, non-interactive shell scripts, or Ruby scripts (which have their own performance considerations).
+
 ## Startup File Load Order
 
 ```
@@ -209,6 +227,42 @@ zprof
 
 Every startup file (`zshenv`, `zshrc`, `zlogin`, `.shellrc`, `.aliases`, etc.)
 has guards for both vars at the top. Do not remove them.
+
+## Performance Targets
+
+**Startup time benchmarks** (after optimizations):
+
+| Hardware | Target | Acceptable | Needs Work |
+|----------|--------|------------|------------|
+| Apple Silicon (M1+) | <80ms | <120ms | >150ms |
+| Intel (2019+) | <100ms | <150ms | >200ms |
+
+**Measure impact:**
+```zsh
+# Average of 10 runs
+for i in {1..10}; do
+  /usr/bin/time -p zsh -i -c exit 2>&1 | grep real
+done | awk '{sum+=$2} END {print "Avg:", sum/10, "sec"}'
+```
+
+**Profile bottlenecks:**
+```zsh
+# Profile with zprof
+ZSH_PROFILE=true zsh -i -c exit
+zprof
+
+# Analyze output for:
+# - Functions with high call counts
+# - Functions with high per-call time
+# - Unexpected subprocess forks
+```
+
+**Common bottlenecks and fixes:**
+- Antidote plugin loading (21ms) - already optimized with deferrals
+- Syntax highlighting (2-3ms) - minimize patterns, use fast plugin
+- Homebrew shellenv (15ms without cache) - cache based on binary mtime
+- Starship prompt (1-2ms) - cache init script
+- Mise activation (1-2ms) - cache activation script
 
 ## `zmodload` and `ZSH_VERSION`
 

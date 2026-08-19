@@ -2,6 +2,24 @@
 
 > Cross-language logging rules applicable to both shell and Ruby scripts.
 
+## Scope
+
+**This file applies to**: All logging, output formatting, and error collection patterns across the repository, including:
+- Logging function calls in shell scripts (`info`, `success`, `warn`, `error`, `debug`, `user_action`)
+- Logging module usage in Ruby scripts (`Logging.info`, `Logging.success`, etc.)
+- Deferred error/warning collection (`_record_error`, `record_warning`)
+- Script infrastructure (`print_script_start`, `print_script_summary`, `section_header`)
+- Color standards for paths, commands, components, counts, and booleans
+- Message prefixes for Root Cause Analysis (`[script_name][section]`)
+- Terminal output formatting (ANSI codes, indentation, padding)
+
+**Related files**:
+- [`script-depth-tracking.md`](./script-depth-tracking.md) - Auto-indentation based on nesting depth
+- [`shell-scripting.md`](./shell-scripting.md) - Shell-specific logging implementation
+- [`ruby-scripting.md`](./ruby-scripting.md) - Ruby-specific logging implementation
+
+**Does NOT apply to**: Raw command output (git, brew, etc.), external tool stdout/stderr, or debugging output not using the logging infrastructure.
+
 ## Unified Color Standard
 
 All logging messages across shell scripts and Ruby scripts follow this unified color classification for consistency.

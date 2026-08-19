@@ -6,6 +6,23 @@ applyTo: "**/.gitconfig,**/custom.gitattributes,**/add-upstream-git-config.rb"
 
 > Part of the [tool-agnostic instruction set](../instructions.md) for this repository.
 
+## Scope
+
+**This file applies to**: Git configuration files and scripts that interact with git repositories, including:
+- `~/.gitconfig` - User-level git configuration (aliases, settings, hooks)
+- `files/--HOME--/custom.gitattributes` - Custom git attributes
+- `files/--XDG_CONFIG_HOME--/git/hooks/*` - Global git hooks (pre-push, pre-commit, etc.)
+- `scripts/add-upstream-git-config.rb` - Repository upstream configuration
+- Per-repository override scripts in `${PERSONAL_BIN_DIR}` (e.g., `upreb-<basename>.sh`, `push-<basename>.sh`)
+- Autoload functions in `${XDG_CONFIG_HOME}/zsh/` that wrap git operations
+
+**Related files**:
+- [`shell-scripting.md`](./shell-scripting.md) - Shell scripting patterns used in git alias bodies
+- [`ruby-scripting.md`](./ruby-scripting.md) - Ruby patterns for git-related scripts
+- [`logging-conventions.md`](./logging-conventions.md) - Error collection for multi-repo operations
+
+**Does NOT apply to**: Repository-specific `.git/config` files, `.gitignore` files (see `custom-gitignore-maintenance.md`), or git internals unrelated to user configuration.
+
 ## Shell Scripting Rules Inside Aliases
 
 **All generic shell scripting rules from [`shell-scripting.md`](./shell-scripting.md) apply to git alias bodies.**

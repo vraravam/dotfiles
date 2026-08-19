@@ -1,5 +1,5 @@
 ---
-applyTo: "all cross-language scripts and configuration files"
+applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**/*.{sh,rb},**/*.{yml,yaml,json,xml,toml,ini,conf,rc},**/.gitconfig,**/.gitattributes,**/.gitignore"
 ---
 
 # Character Encoding and Punctuation
@@ -7,6 +7,32 @@ applyTo: "all cross-language scripts and configuration files"
 > Part of the [tool-agnostic instruction set](../instructions.md) for this repository.
 
 All scripts and comments must use **ASCII-only characters**. Never use Unicode punctuation characters such as em dashes, en dashes, curly quotes, or other typographic symbols.
+
+## Scope
+
+**This file applies to**: All scripts, configuration files, and comments in this repository, including:
+- Shell scripts (`.sh`, `.zsh`, `.bash`, `.shellrc`, `.aliases`, `.envrc`)
+- Ruby scripts (`.rb`)
+- Configuration files (`.yml`, `.yaml`, `.json`, `.xml`, `.toml`, `.ini`, `.conf`, `.rc`)
+- Git configuration (`.gitconfig`, `.gitattributes`, `.gitignore`)
+- Comments in all code files
+- Commit messages
+
+**Related files**:
+- [`edit-checklist.md`](./edit-checklist.md) - Verification workflow after edits
+- [`whitespace-rules.md`](./whitespace-rules.md) - Related text formatting rules
+
+**Does NOT apply to**: User-facing output strings where typography matters (see § Allowed Unicode below), markdown documentation files (`.md`) where Unicode may enhance readability, or data files containing user-generated content.
+
+## Quick Reference
+
+| Task | Pattern | Section Link |
+|------|---------|--------------|
+| Parenthetical comment | `# This caches the result -- no fork needed` | [§ ASCII Dashes](#rule-use-ascii-dashes-only) |
+| Hyphenated term | `cache-invalidation` | [§ ASCII Dashes](#rule-use-ascii-dashes-only) |
+| Quoted variable | `'cache_dir'` not `'cache_dir'` | [§ ASCII Quotes](#rule-use-ascii-quotes-only) |
+| User-facing output | `info "Processing — 50% complete"` | [§ Allowed Unicode](#allowed-unicode) |
+| Verify no Unicode | `grep -P -n '[^\x00-\x7F]' file.sh` | [§ Verification](#verification) |
 
 ## Rule: Use ASCII Dashes Only
 

@@ -4,6 +4,46 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.29
+
+#### Comprehensive AI instruction documentation improvements
+
+Enhanced all 13 domain instruction files in `.ai/domains/` with improved navigation, cross-references, and completeness.
+
+**Structural improvements:**
+
+* *[all domain files]* Added comprehensive Scope sections (files covered, related files, exclusions)
+* *[all domain files]* Converted prose `applyTo` patterns to explicit glob patterns for precise matching
+* *[shell-scripting.md, ruby-scripting.md, character-encoding.md, comment-philosophy.md, edit-checklist.md]* Added Quick Reference tables for instant pattern lookup
+
+**Content improvements:**
+
+* *[script-depth-tracking.md]* Added explicit `print_script_summary` argument passing rules (resolves contradiction)
+* *[shell-scripting.md]* Added "Why set -e triggers on && false" explanation with examples
+* *[ruby-scripting.md]* Added Ruby's nil-on-no-change design rationale for mutating methods
+* *[ruby-scripting.md, shell-scripting.md]* Added Common Mistakes sections (10 items each from code reviews)
+* *[ruby-scripting.md, shell-scripting.md]* Clarified autoload function naming as deliberate convention
+* *[zsh-startup.md]* Added performance benchmarks and measurement commands
+
+**Consolidation:**
+
+* *[ruby-scripting.md]* Consolidated logging section to reference logging-conventions.md (eliminates duplication)
+* *[all files]* Added cross-references to related sections across files
+
+**Benefits:**
+
+* Faster navigation via Quick Reference tables
+* Eliminated contradictory instructions
+* Added missing "why" explanations for critical rules
+* Common mistakes prevent repeated errors
+* Clear scope boundaries for each file
+
+#### Adopting these changes
+
+No action required - documentation improvements only.
+
+---
+
 ### 3.2.28
 
 #### Fix nested script name leakage and direnv log suppression
