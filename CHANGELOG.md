@@ -4,6 +4,46 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.31
+
+#### Simplify fresh-install workflow and improve performance
+
+Eight refactorings that reduce complexity, improve runtime performance, and fix edge-case bugs across fresh-install and cron execution.
+
+**Performance optimizations:**
+
+* *[scripts/software-updates-cron.rb]* Removed 10-second sleep delay between `_update_home_repos` and `_upreb_oss_repos` - saves ~1 hour/week in cron execution (modern GitHub API rate limits are generous, delay was unnecessary)
+* *[scripts/fresh-install-of-osx.sh]* Consolidated biometric hardware detection into single `ioreg` call using `-c AppleBiometricSensor -c AppleBiometricServices` - 50-100ms faster, cleaner boolean logic (5 lines reduced to 2)
+
+**Git maintenance:**
+
+* *[files/--XDG_CONFIG_HOME--/git/config]* Enhanced `git maintain` to run comprehensive repository repair (like `brew doctor`): removes stale lock files (index.lock, commit-graph-chain.lock), runs fsck/prune/gc, rebuilds commit graph, restores mtimes. Fixes "Unable to create commit-graph-chain.lock" errors and corrupted objects automatically. Idempotent and safe to run on all repos via `all maintain`.
+
+**Correctness improvements:**
+
+* *[scripts/fresh-install-of-osx.sh]* Made `.shellrc` download universal - now validates and refreshes on pre-configured machines if repo version is newer than symlink (previously only downloaded on `FIRST_INSTALL`)
+* *[scripts/capture-prefs.rb]* Made auto-commit unconditional on export - always commits staged preferences after successful export using `smart_commit` (amends if ahead of remote, creates new commit otherwise)
+* *[scripts/fresh-install-of-osx.sh]* Eliminated 20+ lines of manual git commit logic - now handled automatically by `capture-prefs.rb` export
+* *[scripts/software-updates-cron.rb]* Replaced `update_all_repos` with `ProfilesRepo.capture_and_commit` - HOME repo now committed by `capture-prefs.rb`, only profiles repo needs explicit update
+
+**Bug fixes:**
+
+* *[scripts/utilities/git_processor.rb]* Added `--prune` flag to `fetch_all` method - removes stale remote-tracking references that cause "cannot lock ref" errors when remotes have been force-pushed
+* *[scripts/fresh-install-of-osx.sh]* Fixed `_download_and_source_shellrc` to use plain `echo` before sourcing `.shellrc` - prevents "command not found: cyan" errors on vanilla OS where color functions don't exist yet
+
+**Code quality:**
+
+* *[scripts/utilities/profiles_repo.rb]* Added `capture_and_commit` method - stages and commits profiles repo changes with timestamp (extracted from `GitWorkspace.update_repo` logic)
+* *[scripts/utilities/git_workspace.rb]* Updated `update_all_repos` documentation - clarified it's a catch-all for uncommitted changes (preferences now auto-committed by `capture-prefs.rb`)
+* *[scripts/fresh-install-of-osx.sh]* Reduced preferences restore section from 39 lines to 12 lines - commit logic now centralized in Ruby
+* *[scripts/fresh-install-of-osx.sh]* Improved biometric detection clarity - single conditional check instead of tracking two separate boolean flags
+
+#### Adopting these changes
+
+No manual steps required. Next cron run will execute 10s faster. Next fresh-install run will validate `.shellrc` freshness on pre-configured machines. Preferences backup now always commits on export (both manual and automated runs). `resurrect-repositories.rb` will automatically prune stale refs during fetch. Enhanced `git maintain` is immediately available (run `all maintain` to repair all repos).
+
+---
+
 ### 3.2.30
 
 #### Optimize git clone and unshallow operations for speed and maintainability

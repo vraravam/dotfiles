@@ -273,7 +273,6 @@ module SoftwareUpdatesCron
 
     # Repo updates
     _update_home_repos
-    sleep 10  # Avoid GitHub rate-limiting between bursts of API calls.
     _upreb_oss_repos
     # git maintain (restore-mtime + maintenance register/start) now runs once per repo at clone time
     # via clone_repo_into() in .shellrc and GitProcessor.clone_repo_into(). No need to repeat hourly -
@@ -293,11 +292,12 @@ module SoftwareUpdatesCron
       # at_exit hooks that manage system state (suspend/resume softwareupdate, kill/restart
       # apps). If called as module, hooks would register in parent process and fire at wrong
       # time (end of software-updates-cron instead of after export completes).
+      # Export auto-commits inside capture-prefs.rb (uses smart_commit)
       capture_prefs_script = Pathname.new(__dir__).join('capture-prefs.rb')
       # Set COLUMNS for terminal width detection (cron has no TTY, defaults to 80)
       env = { 'COLUMNS' => EnvVars.columns.to_s }
       if CommandUtils.run_interactive(env, RbConfig.ruby, capture_prefs_script.to_s, '-e')
-        Logging.success 'Finished capturing app preferences'
+        Logging.success 'Finished capturing and committing app preferences'
       else
         Logging.record_error('Failed to capture app preferences')
       end
@@ -311,10 +311,8 @@ module SoftwareUpdatesCron
       ProfilesRepo.check_size_limit
     end
 
-    Logging.with_step('update home and profiles repos') do
-      unless GitWorkspace.update_all_repos
-        Logging.record_error('Failed to update home and profiles repos')
-      end
+    Logging.with_step('update profiles repo', 'Capture and commit browser-profiles changes'.yellow) do
+      Logging.record_error('Failed to update profiles repo') unless ProfilesRepo.capture_and_commit
     end
 
     Logging.with_step('report status of all repos') do

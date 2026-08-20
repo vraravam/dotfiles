@@ -373,7 +373,7 @@ class GitProcessor
 
     args = ['fetch']
     args << '-q' if quiet
-    args << '--all' << '--tags'
+    args << '--all' << '--tags' << '--prune'
     _execute(*args)
   end
 

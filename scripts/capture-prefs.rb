@@ -154,6 +154,16 @@ module CapturePrefs
           # Git accepts absolute paths directly - no normalization needed
           _stdout, _stderr, status = git.add(target_dir)
           Logging.record_warning("Failed to git add '#{target_dir.to_s.cyan}'") unless status.success?
+
+          # Auto-commit staged changes (both fresh-install and cron want this)
+          # Uses smart_commit: amends if ahead of remote (single commit), creates new if not
+          if git.repo?
+            if git.smart_commit("Preferences backup: #{Core.current_timestamp}")
+              Logging.success 'Committed preferences backup to HOME repo'
+            else
+              Logging.record_warning 'Failed to commit backup -- import timestamp check may fail'
+            end
+          end
         end
         Logging.success "Export complete. Staged changes in '#{target_dir.to_s.cyan}'."
       rescue RuntimeError => e

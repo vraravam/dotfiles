@@ -90,6 +90,37 @@ module ProfilesRepo
   # because 'include Logging' + 'extend self' doesn't make included methods
   # available as module methods.
 
+  # Captures current state of profiles repo and commits with timestamp.
+  # Used by software-updates-cron to snapshot browser profiles periodically.
+  #
+  # @return [Boolean] true if successful, false if repo is invalid or commit fails
+  def capture_and_commit
+    unless GitProcessor.repo?(EnvVars::PERSONAL_PROFILES_DIR)
+      Logging.warn "Skipping profiles repo update -- '#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}' is not a git repo"
+      return false
+    end
+
+    Logging.debug "Updating profiles repo at '#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}'"
+
+    # Clean up lock files and hooks
+    index_lock = EnvVars::PERSONAL_PROFILES_DIR.join('.git', 'index.lock')
+    hooks_dir = EnvVars::PERSONAL_PROFILES_DIR.join('.git', 'hooks')
+    index_lock.delete if index_lock.file?
+    hooks_dir.rmtree if hooks_dir.directory?
+
+    # Stage and commit with timestamp (use block form for multiple operations)
+    success = false
+    GitProcessor.new(dir: EnvVars::PERSONAL_PROFILES_DIR) do |git|
+      git.add('.')
+      success = git.smart_commit
+    end
+    success
+  rescue RuntimeError => e
+    # Git operations may raise RuntimeError on failures
+    Logging.warn "Skipping profiles repo update -- #{e.message}"
+    false
+  end
+
   # Prunes session backup files older than the specified number of days.
   # Only tracked files matching the zen-sessions-backup pattern are considered.
   # Uses `git rm --cached` to unpin old backups from the index without deleting

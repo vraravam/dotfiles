@@ -351,10 +351,12 @@ module GitWorkspace
     end
 
     Logging.with_step("update #{repo_dir.to_s}", "#{'Updating'.yellow} '#{repo_dir.to_s.cyan}'") do
-      # Clean up lock files and hooks
+      # Clean up stale lock files and hooks
       index_lock = repo_dir.join('.git', 'index.lock')
+      commit_graph_lock = repo_dir.join('.git', 'objects', 'info', 'commit-graphs', 'commit-graph-chain.lock')
       hooks_dir = repo_dir.join('.git', 'hooks')
       index_lock.delete if index_lock.file?
+      commit_graph_lock.delete if commit_graph_lock.file?
       hooks_dir.rmtree if hooks_dir.directory?
 
       # Stage and commit with timestamp (use block form for multiple operations)
@@ -372,8 +374,12 @@ module GitWorkspace
     false
   end
 
-  # Updates HOME and PERSONAL_PROFILES_DIR repos by staging and committing
-  # auto-generated content. Thin wrapper around update_repo for use by cron jobs.
+  # Updates HOME and PERSONAL_PROFILES_DIR repos by staging and committing changes.
+  # Can be called from command line (via `update_all_repos` autoload function) or scripts.
+  #
+  # Note: HOME repo's preferences (defaults/) are also committed by capture-prefs.rb -e
+  # (which auto-commits on export). This method provides a catch-all for any uncommitted
+  # changes (e.g., if capture-prefs was interrupted or skipped).
   #
   # @return [Boolean] true if both repos updated successfully
   def update_all_repos

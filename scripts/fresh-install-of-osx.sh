@@ -105,27 +105,47 @@ _setup_jio_dns() {
 
 # Download and source .shellrc from GitHub (before dotfiles are cloned)
 _download_and_source_shellrc() {
-  echo "==> Download the '~/.shellrc' for loading the utility functions"
+  echo "==> Ensuring '~/.shellrc' is current"
+
+  # Determine if download is needed
+  local reason=""
   # Raw form: this function runs before .shellrc is sourced, so is_first_install
-  # is not yet defined. All post-source occurrences use is_first_install instead.
+  # is not yet defined. Check FIRST_INSTALL env var directly.
   if [[ -n "${FIRST_INSTALL:-}" ]]; then
-    # Vanilla OS: always force a fresh download and re-source.
+    # Vanilla OS: always download
+    reason="first install"
+  elif [[ ! -f "${HOME}/.shellrc" ]]; then
+    # Pre-configured but .shellrc missing (deleted or corrupted symlink)
+    reason=".shellrc missing"
+  elif [[ ! -d "${DOTFILES_DIR}" ]]; then
+    # Pre-configured but DOTFILES_DIR missing (partial fresh-install or deleted repo)
+    # Cannot verify staleness without repo - re-download to ensure current version
+    reason="dotfiles repo missing"
+  elif [[ -f "${DOTFILES_DIR}/files/--HOME--/.shellrc" ]] && \
+       [[ "${DOTFILES_DIR}/files/--HOME--/.shellrc" -nt "${HOME}/.shellrc" ]]; then
+    # Pre-configured: repo file is newer than existing .shellrc (git pull updated repo)
+    # Downloads from GitHub to ensure fresh copy (not using potentially stale local repo file)
+    reason="local repo file is newer"
+  fi
+
+  if [[ -n "${reason}" ]]; then
+    echo "==> Downloading .shellrc from GitHub (${reason})"
     # Cache-busting: append timestamp to URL and add no-cache headers to ensure we bypass
     # GitHub's CDN cache and intermediate proxies to get the latest version.
     curl "${_cache_bust_headers[@]}" "${_curl_retry_opts[@]}" -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/files/--HOME--/.shellrc?$(/bin/date +%s)" -o "${HOME}/.shellrc"
-
-    # Validate download: check that file is non-empty and contains the re-source guard
-    # function (basic smoke test for successful download vs truncated/corrupted response).
-    if [[ ! -s "${HOME}/.shellrc" ]] || ! /usr/bin/grep -q 'is_shellrc_sourced' "${HOME}/.shellrc"; then
-      echo "ERROR: Downloaded .shellrc appears corrupted or empty" >&2
-      exit 1
-    fi
-
-    echo "==> Successfully downloaded '${HOME}/.shellrc'"
-  else
-    # Pre-configured OS: skip downloading; the built-in guard makes the source below a no-op if already loaded.
-    info "Skipping downloading '$(yellow "${HOME}/.shellrc")' since this is not a first install"
   fi
+
+  # Universal validation (both first-install and pre-configured)
+  # Validate: check that file is non-empty and contains the re-source guard
+  # function (basic smoke test for successful download vs truncated/corrupted response).
+  if [[ ! -s "${HOME}/.shellrc" ]] || ! /usr/bin/grep -q 'is_shellrc_sourced' "${HOME}/.shellrc"; then
+    echo "ERROR: .shellrc appears corrupted or empty" >&2
+    exit 1
+  fi
+
+  echo "==> Verified '${HOME}/.shellrc'"
+
+  # Universal sourcing (both paths)
   # Unfunction the guard so .shellrc's own re-source check is bypassed.
   # This handles both first install and retries on a vanilla OS where the script is re-run after an error.
   # if/fi avoids the && pattern where (($+functions[...])) returning false
@@ -142,16 +162,12 @@ _approve_fingerprint_sudo() {
   section_header "$(yellow 'Setting up touchId for sudo access in terminal shells')"
 
   # AppleBiometricSensor = T1/T2 chip (Intel Macs); AppleBiometricServices = Apple Silicon
-  # Note: pipe + grep -q triggers SIGPIPE on ioreg under pipefail (grep exits early after
-  # first match, ioreg gets SIGPIPE exit 141, pipefail surfaces that instead of grep's 0).
-  # Command substitution buffers all ioreg output first, avoiding the SIGPIPE entirely.
-  local has_biometric_sensor=0 has_biometric_services=0
-  local biometric_sensor_output biometric_services_output
-  biometric_sensor_output="$(/usr/sbin/ioreg -c AppleBiometricSensor 2>/dev/null | /usr/bin/grep AppleBiometricSensor)" || true
-  biometric_services_output="$(/usr/sbin/ioreg -c AppleBiometricServices 2>/dev/null | /usr/bin/grep AppleBiometricServices)" || true
-  if is_non_zero_string "${biometric_sensor_output}"; then has_biometric_sensor=1; fi
-  if is_non_zero_string "${biometric_services_output}"; then has_biometric_services=1; fi
-  if [[ "${has_biometric_sensor}" == 0 && "${has_biometric_services}" == 0 ]]; then
+  # Check for Touch ID hardware (single ioreg call for both classes)
+  # Note: Command substitution buffers all ioreg output first, avoiding SIGPIPE under pipefail
+  # (grep -q would exit early and trigger SIGPIPE on ioreg).
+  local biometric_output
+  biometric_output="$(/usr/sbin/ioreg -c AppleBiometricSensor -c AppleBiometricServices 2>/dev/null)" || true
+  if is_zero_string "${biometric_output}"; then
     info 'Touch ID hardware is not detected -- skipping configuration.'
     step_end
     return 0  # Exit successfully as no action is needed
@@ -684,23 +700,11 @@ main() {
 
   if command_exists 'capture-prefs.rb'; then
     # On pre-configured machines, refresh backup before import if stale
+    # Export auto-commits inside capture-prefs.rb (uses smart_commit)
     if ! is_first_install; then
       info "Pre-configured machine detected -- refreshing preferences backup first"
       if COLUMNS="${COLUMNS}" capture-prefs.rb -e; then
-        success 'Successfully refreshed preferences backup'
-        # Commit using git sci (amends if ahead of remote, creates new if not)
-        # capture-prefs.rb -e already staged the files, so just commit
-        # This updates the backup's git timestamp so import validation passes
-        if is_git_repo "${HOME}"; then
-          # sci aborts with message if nothing staged (returns 0 but doesn't commit)
-          if git -C "${HOME}" sci "Preferences backup: $(date '+%Y-%m-%d %H:%M:%S')"; then
-            success "Committed preferences backup"
-          else
-            _record_warning "Failed to commit backup -- timestamp check may fail"
-          fi
-        else
-          _record_warning "HOME is not a git repo -- skipping commit, timestamp check may fail"
-        fi
+        success 'Successfully refreshed and committed preferences backup'
       else
         _record_warning 'Failed to refresh backup -- will attempt import with existing backup'
       fi

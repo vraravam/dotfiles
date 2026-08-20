@@ -573,15 +573,31 @@
     git -C \"${1:-.}\" fetch && git -C \"${1:-.}\" dlb; \
   }; f"
 
-  # Performs post-clone maintenance setup: restores mtimes from git history.
-  # Idempotent — safe to run multiple times. Gracefully handles missing restore-mtime tool.
+  # Performs comprehensive repository maintenance and repair (like 'brew doctor').
+  # Automatically detects and fixes common git issues:
+  # - Cleans up stale lock files (index.lock, commit-graph-chain.lock)
+  # - Runs fsck to detect corrupted objects
+  # - Prunes unreachable objects
+  # - Runs garbage collection
+  # - Rebuilds commit graph
+  # - Restores mtimes from git history
+  # Idempotent — safe to run multiple times. Gracefully handles missing tools.
   # Used by: clone_repo_into() in .shellrc and GitProcessor.clone_repo_into().
-  # Also useful for manually cloned repos to restore file timestamps from git history.
+  # Also useful for manually cloned repos or to repair corruption.
   # Note: Background maintenance is now handled automatically via global maintenance.auto=true
   # (see git-config maintenance.* settings). No manual registration needed.
   # Usage: git maintain [<dir>]
   maintain = "!f() { \
-    git -C \"${1:-.}\" restore-mtime -c 2>/dev/null || true; \
+    dir=\"${1:-.}\"; \
+    fullpath=\"$(cd \"${dir}\" && pwd)\"; \
+    printf 'Running repository maintenance in %s...\n' \"${fullpath}\"; \
+    rm -f \"${dir}/.git/index.lock\" \"${dir}/.git/objects/info/commit-graphs/commit-graph-chain.lock\" 2>/dev/null || true; \
+    git -C \"${dir}\" fsck --full 2>&1 | grep -v 'Checking object directories' || true; \
+    git -C \"${dir}\" prune 2>/dev/null || true; \
+    git -C \"${dir}\" gc 2>/dev/null || true; \
+    git -C \"${dir}\" commit-graph write --reachable --changed-paths 2>/dev/null || true; \
+    git -C \"${dir}\" restore-mtime -c 2>/dev/null || true; \
+    printf 'Maintenance complete.\n'; \
   }; f"
 
   # Pulls the current branch (wrapper for built-in git pull with override support).
