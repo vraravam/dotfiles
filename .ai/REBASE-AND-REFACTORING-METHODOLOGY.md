@@ -343,9 +343,9 @@ find . -name "*.rb" -exec ruby -c {} \;
 find . -name "*.py" -exec python3 -m py_compile {} \;
 
 # Format (language-specific)
-cd "${HOME}" && rufo scripts/*.rb        # Ruby
-black scripts/*.py                       # Python
-prettier --write src/**/*.ts             # TypeScript
+rufo scripts/*.rb                         # Ruby
+black scripts/*.py                        # Python
+prettier --write src/**/*.ts              # TypeScript
 ```
 
 ---

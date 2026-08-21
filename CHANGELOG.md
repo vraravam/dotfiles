@@ -4,6 +4,105 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.32
+
+#### Add comprehensive Ruby static analysis infrastructure with direnv integration
+
+Implemented multi-tool static analysis for Ruby code quality and early error detection, with automatic gem installation via direnv when editing dotfiles.
+
+**Static analysis tools:**
+
+* *[files/--XDG_CONFIG_HOME--/mise/default-gems]* New file configures `mise` to auto-install analysis tools (`rubocop`, `reek`, `flay`, `flog`, `rufo`) when installing any Ruby version via mise
+* *[files/--XDG_CONFIG_HOME--/rubocop/config.yml]* Global `RuboCop` config (applies to all Ruby projects)
+* *[.rubocop.yml]* Project-specific `RuboCop` config for dotfiles - inherits global config and adds Ruby 2.6 target (system Ruby compatibility)
+* *[files/--XDG_CONFIG_HOME--/reek/config.yml]* New `Reek` configuration tuned for utility scripts: detects duplicate method calls (memoization opportunities), nested iterators, uncommunicative variable names, unused private methods
+* *[scripts/ruby-lint.rb]* New unified tool (116 lines) that runs all four analyzers (`RuboCop`, `Reek`, `Flay`, `Flog`) on a directory or file, reports summary of which checks passed/failed
+
+**Automated gem installation for dotfiles development:**
+
+* *[scripts/install-ruby26-gems.sh]* New script installs Ruby 2.6 compatible static analysis gems for system Ruby. Uses data-driven design with associative array mapping gem specs to dependencies. Idempotent (silent when gems exist, ~2 min first run). Only installs gems for Ruby 2.6.x (system Ruby).
+* *[.envrc]* New `direnv` config automatically runs `install-ruby26-gems.sh` and adds gem bin directory to `PATH` when entering dotfiles directory.
+* *[.gitignore]* Added `!/.envrc` force-include (direnv files are ignored by default in global gitignore)
+* *[files/--HOME--/.shellrc]* Made bash-compatible for direnv: guard `typeset -A _INDENT_CACHE` with `ZSH_VERSION` check, added sed fallback in `_strip_ansi()` for bash (zsh uses parameter expansion for performance)
+
+**Pre-commit validation:**
+
+* *[files/--XDG_CONFIG_HOME--/git/hooks/pre-commit]* New global pre-commit hook with three-stage validation:
+  1. Syntax check (`ruby -c / zsh -n`) on all staged files - always runs, blocks commits with parse errors
+  2. RuboCop static analysis on staged Ruby files - runs if RuboCop installed, shows actionable errors with auto-fix suggestion
+  3. Repo-specific hooks - allows per-repo customization via `.git/hooks.local/pre-commit` or `${PERSONAL_BIN_DIR}/pre-commit-<basename>.sh`
+  Skip all checks with `git commit --no-verify`
+
+**What each tool catches:**
+
+* **RuboCop** - Style consistency, unused variables, unreachable code, potential bugs
+* **Reek** - Code smells (excessive duplication, deep nesting, poor naming)
+* **Flay** - Structural duplication across files
+* **Flog** - Complexity metrics (high scores indicate refactoring candidates)
+
+**Design philosophy:**
+
+Tools are configured for utility scripts (not Rails apps): metrics cops disabled (method length, cyclomatic complexity don't apply to small scripts), style focused on Ruby 2.6 compatibility, lint rules aggressive (catch real bugs).
+
+**Documentation:**
+
+* *[docs/ruby-static-analysis.md]* New comprehensive guide (113 lines) covering tool purposes, installation methods, usage patterns, configuration details, and troubleshooting
+* *[.ai/domains/ruby-scripting.md]* Updated edit workflow to remove `cd HOME && rufo` pattern (rufo works from any directory with `~/.rufo` config)
+* *[.ai/domains/edit-checklist.md]* Updated Ruby formatting section to remove `cd HOME` requirement (2 occurrences)
+* *[.ai/REBASE-AND-REFACTORING-METHODOLOGY.md]* Updated edit workflow to remove `cd HOME` requirement
+* *[CONTRIBUTING.md]* Updated to remove `cd HOME` requirement
+
+#### Adopting these changes
+
+Run `install-dotfiles.rb` to install new configs and pre-commit hook.
+
+**Static analysis gems are automatically installed via direnv:**
+
+When you enter the dotfiles directory, direnv detects `.envrc` and prompts you to allow it (one-time):
+
+```zsh
+cd ~/.config/dotfiles
+# Output: direnv: error /Users/you/.config/dotfiles/.envrc is blocked. Run `direnv allow` to approve its content
+direnv allow
+```
+
+After allowing, direnv automatically:
+1. Runs `install-ruby26-gems.sh` (installs gems if missing, silent if already present)
+2. Adds gem bin directory to PATH (tools available: rubocop, reek, flay, flog, rufo)
+
+First run takes ~2 minutes (installs 5 tools + dependencies). Subsequent runs are instant (gems already installed).
+
+**Outside the dotfiles directory**, your project's Ruby and gems remain active (direnv is directory-scoped).
+
+**Why specific versions for Ruby 2.6?**
+
+RubyGems has updated dependencies for old gems to require Ruby 2.7+ or 3.2+. Even old versions (rubocop 0.93.1, reek 6.1.4, flay 2.11.0, flog 4.6.2) need specific transitive dependency versions. The installation script uses a data-driven associative array to map each tool to its pinned dependencies, ensuring compatibility with system Ruby 2.6.10.
+
+**Note**: Pre-commit hook works without gems installed (syntax check always runs, RuboCop only runs if available). Gems are optional but recommended for full static analysis when developing dotfiles.
+
+Run static analysis on all scripts:
+
+```zsh
+cd ~/.config/dotfiles       # direnv auto-installs gems and adds to PATH
+scripts/ruby-lint.rb        # Runs all tools (RuboCop, Reek, Flay, Flog)
+rubocop scripts/            # Individual tools
+reek scripts/
+rufo scripts/my-script.rb   # Auto-format specific file
+```
+
+Pre-commit hook activates immediately after `install-dotfiles.rb`. Test with:
+
+```zsh
+# Make a syntax error, try to commit
+echo "def foo" >> test.rb
+git add test.rb
+git commit -m "test"  # Should block with syntax error and show RuboCop output
+```
+
+* Restart terminal to reload `.shellrc`.
+
+---
+
 ### 3.2.31
 
 #### Simplify fresh-install workflow and improve performance
@@ -85,7 +184,7 @@ Eliminated redundant network operations and simplified control flow in `clone_re
 
 #### Adopting these changes
 
-Restart terminal to reload `.shellrc`. Next `clone_repo_into()` call (e.g., during `resurrect-repositories.rb` or fresh-install) will use optimized background unshallow. Existing repos will automatically get full history fetched in background on next access.
+* Restart terminal to reload `.shellrc`. Next `clone_repo_into()` call (e.g., during `resurrect-repositories.rb` or fresh-install) will use optimized background unshallow. Existing repos will automatically get full history fetched in background on next access.
 
 ---
 

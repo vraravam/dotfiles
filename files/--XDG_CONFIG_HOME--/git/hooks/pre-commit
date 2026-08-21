@@ -1,0 +1,103 @@
+#!/usr/bin/env zsh
+
+# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+
+# Global pre-commit hook that runs before every 'git commit' in any repository.
+# Installed via core.hooksPath in .gitconfig.
+#
+# Checks (in order):
+#   1. Ruby syntax validation (ruby -c) on all staged .rb files
+#   2. RuboCop static analysis on staged .rb files (if installed)
+#   3. Shell syntax validation (zsh -n) on all staged shell files
+#   4. Repo-specific hook (.git/hooks.local/pre-commit) if exists
+#   5. Per-repo customization (${PERSONAL_BIN_DIR}/pre-commit-<basename>.sh) if exists
+#
+# To skip these checks: git commit --no-verify
+
+set -euo pipefail
+
+# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
+source "${HOME}/.shellrc"
+
+# Get list of staged files
+staged_files=($(git diff --cached --name-only --diff-filter=ACM))
+
+# Exit early if no files staged
+if [[ ${#staged_files[@]} -eq 0 ]]; then
+  exit 0
+fi
+
+# Track validation failures
+local -a failed_files=()
+local -a validation_errors=()
+
+# Collect staged Ruby files for RuboCop
+local -a staged_ruby_files=()
+
+# Validate Ruby and shell files
+local file
+for file in "${staged_files[@]}"; do
+  # Skip if file doesn't exist (deleted files in index)
+  [[ ! -f "${file}" ]] && continue
+
+  case "${file}" in
+    *.rb)
+      # Ruby syntax check (always runs - no dependencies)
+      if ! /usr/bin/ruby -c "${file}" >/dev/null 2>&1; then
+        failed_files+=("${file}")
+        validation_errors+=("Ruby syntax error in ${file}")
+      else
+        # Collect for RuboCop if syntax is valid
+        staged_ruby_files+=("${file}")
+      fi
+      ;;
+    *.sh|*.zsh|*.bash)
+      # Shell syntax check
+      if ! /bin/zsh -n "${file}" 2>/dev/null; then
+        failed_files+=("${file}")
+        validation_errors+=("Shell syntax error in ${file}")
+      fi
+      ;;
+  esac
+done
+
+# Report syntax validation failures (abort before running RuboCop)
+if [[ ${#failed_files[@]} -gt 0 ]]; then
+  printf '\n%s\n' "$(red '❌ Syntax validation failed:')"
+  local error
+  for error in "${validation_errors[@]}"; do
+    printf '  %s\n' "${error}"
+  done
+  printf '\n%s\n' "Fix syntax errors and try again, or use $(yellow 'git commit --no-verify') to skip validation."
+  exit 1
+fi
+
+# Run RuboCop on staged Ruby files (if RuboCop is installed and there are Ruby files)
+if [[ ${#staged_ruby_files[@]} -gt 0 ]] && command -v rubocop >/dev/null 2>&1; then
+  printf '\n%s\n' "$(blue '🔍 Running RuboCop on staged Ruby files...')"
+
+  # Run RuboCop with --format simple for cleaner output in hook context
+  if ! rubocop --format simple "${staged_ruby_files[@]}" 2>&1; then
+    printf '\n%s\n' "$(red '❌ RuboCop found issues in staged files.')"
+    printf '%s\n' "Fix issues and try again, or use $(yellow 'git commit --no-verify') to skip validation."
+    printf '%s\n' "Run $(cyan 'rubocop -a') to auto-fix safe issues."
+    exit 1
+  fi
+
+  printf '%s\n' "$(green '✓ RuboCop checks passed')"
+fi
+
+# Run repo-specific hooks in sequence - abort commit if any hook fails
+local -a hooks=(
+  ".git/hooks.local/pre-commit"
+  "${PERSONAL_BIN_DIR}/pre-commit-${PWD:t}.sh"
+)
+
+local hook
+for hook in "${hooks[@]}"; do
+  if is_executable "${hook}"; then
+    "${hook}" "$@" || exit 1
+  fi
+done
+
+exit 0

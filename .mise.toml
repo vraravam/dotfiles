@@ -3,5 +3,12 @@
 # Ruby must use system Ruby (2.6) to ensure scripts work on vanilla macOS.
 # All Ruby scripts in this repo must be compatible with Ruby 2.6 for fresh-install-of-osx.sh
 # to work on a brand new Mac before mise/Homebrew Ruby is installed.
+#
+# Static analysis gems for Ruby 2.6 cannot be installed via mise because:
+# - RubyGems has updated dependencies for old gems to require Ruby 2.7+ or 3.2+
+# - mise cannot pin transitive dependency versions (e.g., sexp_processor:4.15.0)
+# - Manual installation with specific dependency versions is required
+#
+# To install gems for this repo, run: scripts/install-ruby26-gems.sh
 [settings]
 disable_tools = ["ruby"]

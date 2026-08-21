@@ -818,7 +818,7 @@ Quick summary for Ruby scripts:
 1. Verify decision-making philosophy
 2. Verify Ruby 2.6 compatibility (no endless range, pattern matching, etc.)
 3. Syntax check: `/usr/bin/ruby -c <file>`
-4. Format: `cd "${HOME}" && rufo <file>` (must run from `${HOME}`, not `${DOTFILES_DIR}`)
+4. Format: `rufo <file>`
 5. Remove consecutive empty lines: `awk 'NF {blank=0; print} !NF {if (!blank) print; blank=1}' <file>`
 6. Verify whitespace rules (see [`whitespace-rules.md`](./whitespace-rules.md))
 7. Ensure executable permission if in bin directory: `chmod +x <file>`

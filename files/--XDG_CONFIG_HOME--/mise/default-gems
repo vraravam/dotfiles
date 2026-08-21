@@ -1,0 +1,13 @@
+# Default gems installed automatically for every Ruby version managed by mise
+#
+# These gems are installed via ruby-build when mise installs a new Ruby version.
+# To install them in an existing Ruby version: `gem install <gem-name>`
+#
+# Static analysis and code quality tools (compatible with Ruby 2.6+):
+rubocop
+reek
+flay
+flog
+
+# Runtime dependencies (if needed by scripts):
+# bundler is already included by default in modern Ruby

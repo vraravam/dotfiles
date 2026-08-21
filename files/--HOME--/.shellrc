@@ -62,9 +62,11 @@ fi
 
 # Memoization cache for _log_indent: associative array depth → indent string.
 # Avoids repeated printf calls for the same depth. Zsh associative arrays are
-# only available in zsh; bash compatibility is not required (bash never calls
-# _log_indent since logging functions are zsh-only).
-typeset -A _INDENT_CACHE
+# only available in zsh; guard with ZSH_VERSION check for bash compatibility
+# (direnv sources this file in bash subshell).
+if [[ -n "${ZSH_VERSION-}" ]]; then
+  typeset -A _INDENT_CACHE
+fi
 
 # Note: Change these as per your settings. Removing or commenting out a variable
 # will leave it unset in all shells started after the next login, which will cause
@@ -553,17 +555,24 @@ _repeat_char() {
 
 # Strips ANSI escape codes from a string to get visual length.
 # Uses zsh parameter expansion to avoid subshell fork (critical for ERR trap contexts).
+# Falls back to sed in bash (direnv sources this file in bash subshell).
 # Returns the stripped string via stdout.
 # Usage: result="$(_strip_ansi "${colored_string}")"
 _strip_ansi() {
-  # Use zsh parameter expansion with extendedglob to strip ANSI codes without forking.
-  # (S) = shortest match; ## = one-or-more (requires extendedglob); replaces all globally.
-  # Pattern: ESC + '[' + zero-or-more digits/semicolons + final letter (e.g. \e[0;31m).
-  # local_options scopes extendedglob to this function only.
-  setopt local_options extendedglob
-  local _esc=$'\e'
   local _stripped="${1:-}"
-  _stripped="${(S)_stripped//${_esc}\[[0-9;]##[a-zA-Z]/}"
+  if [[ -n "${ZSH_VERSION-}" ]]; then
+    # Zsh: Use parameter expansion with extendedglob to avoid subshell fork.
+    # (S) = shortest match; ## = one-or-more (requires extendedglob); replaces all globally.
+    # Pattern: ESC + '[' + zero-or-more digits/semicolons + final letter (e.g. \e[0;31m).
+    # local_options scopes extendedglob to this function only.
+    setopt local_options extendedglob
+    local _esc=$'\e'
+    _stripped="${(S)_stripped//${_esc}\[[0-9;]##[a-zA-Z]/}"
+  else
+    # Bash: Use sed (forks subprocess, but bash context is rare - only direnv .envrc).
+    # Pattern matches ESC + '[' + any chars + letter (ANSI escape sequences).
+    _stripped="$(echo "${_stripped}" | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g')"
+  fi
   echo "${_stripped}"
 }
 

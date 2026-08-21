@@ -1,0 +1,58 @@
+# Reek configuration for dotfiles repository
+# Detects code smells in Ruby scripts
+#
+# Usage:
+#   reek scripts/                    # Check all scripts
+#   reek scripts/my-script.rb        # Check specific file
+
+detectors:
+  # Disable smells that don't apply to utility scripts
+  TooManyStatements:
+    enabled: false
+    # Scripts naturally have many statements in main execution
+
+  UtilityFunction:
+    enabled: false
+    # Helper functions without instance vars are common and correct
+
+  FeatureEnvy:
+    enabled: false
+    # Scripts delegate to utility modules by design
+
+  DataClump:
+    enabled: false
+    # Related parameters passed together are intentional
+
+  LongParameterList:
+    enabled: false
+    # Some methods need many named parameters for clarity
+
+  # Enable important code smells
+  DuplicateMethodCall:
+    enabled: true
+    max_calls: 2
+    # Catch excessive duplicate calls (memoization opportunities)
+
+  NestedIterators:
+    enabled: true
+    max_allowed_nesting: 2
+    # Flag deeply nested loops
+
+  UncommunicativeVariableName:
+    enabled: true
+    reject:
+      - /^[a-z]$/
+      - /^[a-z][0-9]$/
+    # accept:
+    #   - i
+    #   - j
+    #   - k
+    # Flag single-letter vars except loop counters
+
+  UnusedPrivateMethod:
+    enabled: true
+    # Catch dead code
+
+exclude_paths:
+  - vendor
+  - tmp

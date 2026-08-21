@@ -31,7 +31,7 @@ Apply this checklist after every edit to any script or configuration file in thi
 | 1. Philosophy | ✅ | ✅ | ✅ |
 | 2. Safety | Check `&&` patterns | Check Ruby 2.6 compat | N/A |
 | 3. Syntax | `zsh -n file` | `/usr/bin/ruby -c file` | N/A |
-| 4. Format | `shfmt -w file` | `cd ~ && rufo file` | N/A |
+| 4. Format | `shfmt -w file` | `rufo file` | N/A |
 | 5. Whitespace | ✅ | ✅ | ✅ |
 | 6. Executable | `chmod +x` if needed | N/A | N/A |
 | 7. Delete .zwc | `rm -f file.zwc` | N/A | N/A |
@@ -133,10 +133,10 @@ Do not add files to `.shfmtignore` for any other reason.
 
 #### Ruby Scripts
 
-Run `rufo` from `${HOME}` (required for correct path resolution):
+Run `rufo` on the file:
 
 ```bash
-cd "${HOME}" && rufo path/to/script.rb
+rufo path/to/script.rb
 ```
 
 ### Step 5 -- Verify All Whitespace Rules
@@ -215,6 +215,6 @@ After deleting `.zwc` files, they will be automatically recreated on the next zs
 |----------|-------------|----------------|------------|------------|-------------|
 | Shell (zsh) | `zsh -n file` | `shfmt -w file` (check `.shfmtignore` first) | ✅ | ✅ | ✅ |
 | Shell (bash/sh) | `zsh -n file` | `shfmt -w file` (check `.shfmtignore` first) | ✅ | ✅ | ❌ |
-| Ruby     | `/usr/bin/ruby -c file` | `cd "${HOME}" && rufo file` | ✅ | ❌ | ❌ |
+| Ruby     | `/usr/bin/ruby -c file` | `rufo file` | ✅ | ❌ | ❌ |
 | Markdown | N/A | N/A | ✅ (Check 2 exempt) | ❌ | ❌ |
 | Other    | N/A | N/A | ✅ | ❌ | ❌ |

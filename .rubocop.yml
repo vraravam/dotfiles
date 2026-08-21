@@ -1,0 +1,9 @@
+# RuboCop configuration for dotfiles repository
+# Inherits from global config (~/.config/rubocop/config.yml)
+# Adds dotfiles-specific settings (Ruby 2.6 compatibility)
+
+inherit_from: files/--XDG_CONFIG_HOME--/rubocop/config.yml
+
+AllCops:
+  TargetRubyVersion: 2.6
+  # Dotfiles scripts must maintain Ruby 2.6 compatibility (system Ruby on vanilla macOS)

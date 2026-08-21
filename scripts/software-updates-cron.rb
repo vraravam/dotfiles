@@ -338,7 +338,7 @@ end
 if __FILE__ == $PROGRAM_NAME
   include Logging
 
-  Logging.run_script do |start_time|
+  Logging.run_script(File.basename(__FILE__, '.rb')) do |start_time|
     # Write start marker before beginning work (shows cron is running)
     run_log = EnvVars::DOWNLOADS.join('software-updates-run-log')
     start_timestamp = Core.current_timestamp

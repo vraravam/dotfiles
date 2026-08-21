@@ -115,7 +115,7 @@ git rebase upstream/master
 2. **Ruby scripts**:
    ```zsh
    /usr/bin/ruby -c script.rb          # Ruby 2.6 syntax check
-   cd "${HOME}" && rufo script.rb      # format (must run from HOME)
+   rufo script.rb                      # format
    chmod +x script.rb                  # ensure executable (if in bin/)
    ```
 
