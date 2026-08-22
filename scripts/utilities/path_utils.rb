@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 require 'open3'
 require 'pathname'
@@ -26,7 +26,7 @@ module PathUtils
   include Core  # For instance methods (in blocks)
   extend Core   # For module methods
 
-  # Cache for command existence checks (reduces which forks from N per check → 1 per command)
+  # Cache for command existence checks (reduces which forks from N per check -> 1 per command)
   @command_cache = {}
 
   # Checks if a command exists in the system PATH.
@@ -97,8 +97,7 @@ module PathUtils
   def root_dir?(path)
     return false if nil_or_empty?(path)
 
-    path_pn = path.is_a?(Pathname) ? path : Pathname.new(path.to_s)
-    path_pn.to_s == File::SEPARATOR
+    path.to_s == File::SEPARATOR
   end
 
   # Checks if a path's parent directory is not root '/'.
@@ -117,9 +116,8 @@ module PathUtils
     return false if nil_or_empty?(path)
 
     path_pn = path.is_a?(Pathname) ? path : Pathname.new(path.to_s)
-    parent = path_pn.parent
 
-    !root_dir?(parent)
+    !root_dir?(path_pn.parent)
   end
 
   # Returns the size of a directory in kilobytes using du.
@@ -130,9 +128,9 @@ module PathUtils
   #
   # @example
   #   PathUtils.dir_size_kb(Pathname.new('/path/to/dir'))  # => 1024
+  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def dir_size_kb(dir)
-    size_out = CommandUtils.query(MacOS::DU_CMD, '-sk', dir.to_s)
-    size_out.split("\t").first.to_i
+    CommandUtils.query(MacOS::DU_CMD, '-sk', dir.to_s).split("\t").first.to_i
   end
 
   # Returns the size of a directory in human-readable format using du.
@@ -143,12 +141,12 @@ module PathUtils
   #
   # @example
   #   PathUtils.dir_size_human(Pathname.new('/path/to/dir'))  # => "1.5G"
+  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def dir_size_human(dir)
-    size_out = CommandUtils.query(MacOS::DU_CMD, '-sh', dir.to_s)
-    size_out.split("\t").first
+    CommandUtils.query(MacOS::DU_CMD, '-sh', dir.to_s).split("\t").first
   end
 
-  # Returns the pack size of a git repository in KB using git count-objects.
+  # Returns the pack size of a git repository in MB using git size alias.
   # Approximately 2-3x faster than dir_size_kb for git repos (~10-20ms vs ~50ms).
   # Shows pack size only (excludes refs, logs, indexes, config) which is typically
   # 70-90% of total .git directory size.
@@ -156,34 +154,37 @@ module PathUtils
   # Only works for git repositories. For non-git directories, use dir_size_kb.
   #
   # @param repo_dir [Pathname, String] Git repository root or .git directory path
-  # @return [Integer] Pack size in KB
+  # @return [Float] Pack size in MB
   #
   # @example
   #   git_dir = EnvVars::DOTFILES_DIR.join('.git')
-  #   PathUtils.git_repo_size_kb(git_dir)  # => 1408 (KB)
-  def git_repo_size_kb(repo_dir)
+  #   PathUtils.git_repo_size_mb(git_dir)  # => 1.37 (MB)
+  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
+  def git_repo_size_mb(repo_dir)
     repo_path = repo_dir.to_s
     # If passed .git directory, use parent as repo root for git -C
     repo_path = File.dirname(repo_path) if repo_path.end_with?('.git')
 
-    # Parse git count-objects output for size-pack line
-    size_out = CommandUtils.query('git', '-C', repo_path, 'count-objects', '-vH')
-    size_line = size_out.lines.find { |line| line.start_with?('size-pack:') }
-    return 0 unless size_line
+    # Call git size alias with GIT_SIZE_QUIET to get just the size (e.g., "1.37 MiB")
+    ENV['GIT_SIZE_QUIET'] = '1'
+    size_str = CommandUtils.query('git', '-C', repo_path, 'size').strip
+    ENV.delete('GIT_SIZE_QUIET')
 
-    # Extract number and unit (e.g., "1.37 MiB" -> ["1.37", "MiB"])
-    parts = size_line.split
-    size_value = parts[1].to_f
-    size_unit = parts[2]
+    # Parse value and unit (e.g., "1.37 MiB" -> ["1.37", "MiB"])
+    parts = size_str.split
+    return 0.0 if parts.size < 2
 
-    # Convert to KB based on unit
+    size_value = parts[0].to_f
+    size_unit = parts[1]
+
+    # Convert to MB based on unit
     case size_unit
-    when 'KiB' then size_value
-    when 'MiB' then size_value * 1024
-    when 'GiB' then size_value * 1024 * 1024
-    when 'bytes' then size_value / 1024.0
-    else 0
-    end.to_i
+    when 'KiB' then size_value / 1024.0
+    when 'MiB' then size_value
+    when 'GiB' then size_value * 1024
+    when 'bytes' then size_value / 1024.0 / 1024.0
+    else 0.0
+    end
   end
 
   # Returns the pack size of a git repository in human-readable format.
@@ -200,6 +201,7 @@ module PathUtils
   # @example
   #   git_dir = EnvVars::DOTFILES_DIR.join('.git')
   #   PathUtils.git_repo_size_human(git_dir)  # => "1.37 MiB"
+  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def git_repo_size_human(repo_dir)
     repo_path = repo_dir.to_s
     # If passed .git directory, use parent as repo root for git -C
@@ -207,10 +209,10 @@ module PathUtils
 
     # Call git size alias with GIT_SIZE_QUIET to get just the size
     ENV['GIT_SIZE_QUIET'] = '1'
-    size_out = CommandUtils.query('git', '-C', repo_path, 'size')
+    result = CommandUtils.query('git', '-C', repo_path, 'size').strip
     ENV.delete('GIT_SIZE_QUIET')
 
-    size_out.strip
+    result
   end
 
   # Extract a path segment at a given index from a dir path
@@ -221,6 +223,7 @@ module PathUtils
   #
   # @example
   #   PathUtils.extract_path_segment_at('/home/user/projects', -1)  # => 'projects'
+  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def extract_path_segment_at(dir, index = -1)
     File.dirname(dir).split(File::SEPARATOR)[index]
   end
@@ -268,8 +271,8 @@ module PathUtils
     Array(dirs).each do |dir|
       next if nil_or_empty?(dir.to_s)
 
-      (dir.is_a?(Pathname) ? dir : Pathname.new(dir)).mkpath
-      Logging.debug "Ensured directory exists: '#{dir.to_s.cyan}'"
+      Pathname.new(dir).mkpath
+      Logging.debug "Ensured directory exists: '#{dir.cyan}'"
     end
   end
 end

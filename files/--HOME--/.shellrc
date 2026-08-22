@@ -60,7 +60,7 @@ if [[ -n "${ZSH_VERSION-}" ]]; then
   zmodload zsh/datetime 2>/dev/null || true
 fi
 
-# Memoization cache for _log_indent: associative array depth → indent string.
+# Memoization cache for _log_indent: associative array depth -> indent string.
 # Avoids repeated printf calls for the same depth. Zsh associative arrays are
 # only available in zsh; guard with ZSH_VERSION check for bash compatibility
 # (direnv sources this file in bash subshell).
@@ -490,7 +490,7 @@ error() {
 # Terminal width fallback when COLUMNS is unavailable (cron, non-TTY contexts).
 # Standard assumption: 80-column terminal is the baseline for readability.
 # Minimum padding of 10 characters prevents headers from touching screen edges.
-# Exported so subprocesses (run-all.rb → git commands → section_header) can access them.
+# Exported so subprocesses (run-all.rb -> git commands -> section_header) can access them.
 export _FALLBACK_TERMINAL_WIDTH=80
 export _HEADER_MIN_PADDING=10
 
@@ -589,7 +589,7 @@ _strip_ansi() {
 section_header() {
   local header="${1:-}"
 
-  # Automatically derive level from script depth: depth 1 → level 0, depth 2 → level 1, etc.
+  # Automatically derive level from script depth: depth 1 -> level 0, depth 2 -> level 1, etc.
   local level=$((${_DOTFILES_SCRIPT_DEPTH:-1} - 1))
   [[ ${level} -lt 0 ]] && level=0
 
@@ -658,7 +658,7 @@ section_header() {
 # Formats a duration given in seconds into a human-readable string "HH:MM:SS".
 # Writes the result directly into the caller-supplied variable name (no subshell).
 # Usage: format_duration <seconds> <varname>
-# Example: format_duration 3725 my_var  →  my_var="01h:02m:05s"
+# Example: format_duration 3725 my_var  ->  my_var="01h:02m:05s"
 format_duration() {
   local _fd_seconds="${1:-}" _fd_varname="${2:-}"
   printf -v "${_fd_varname}" '%02dh:%02dm:%02ds' \
@@ -1123,7 +1123,7 @@ is_file_older_than() {
   if [[ -z "${1:-}" || -z "${2:-}" ]]; then return 0; fi
   local target="${1:A}"
   local source="${2:A}"
-  if [[ ! -f "${target}" || "${source}" -nt "${target}" ]]; then
+  if ! is_file "${target}" || [[ "${source}" -nt "${target}" ]]; then
     return 0
   else
     return 1
@@ -1501,7 +1501,7 @@ clone_repo_into() {
     # -n (--no-checkout): Skip checkout in tmp (only .git needed; we restore in target).
     # SSH: Uses core.sshCommand from ~/.gitconfig (pre-configured) or inherits GIT_SSH_COMMAND
     # from parent environment (FIRST_INSTALL - exported by fresh-install-of-osx.sh, propagates
-    # through shell→Ruby→shell chain). No inline override needed.
+    # through shell-> Ruby-> shell chain). No inline override needed.
     git -C "${tmp_folder}" clone -q -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" . 2>"${stderr_file}"
     local clone_status=$?
 
@@ -1722,7 +1722,7 @@ resume_cron() {
 # 1i. Config reloading (used post-bootstrap to apply changes)
 # --------------------------------------------------------------------------
 
-# Reloads zsh configuration files in order (.zshenv → .zshrc → .zlogin).
+# Reloads zsh configuration files in order (.zshenv -> .zshrc -> .zlogin).
 # WARNING: sourcing these files from a context that is itself sourced by them
 # can cause infinite loops. Use only for manual post-change reloads or targeted
 # bootstrap scenarios (e.g. fresh-install applying new config mid-run).

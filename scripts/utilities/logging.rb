@@ -1,13 +1,13 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 require 'json'
 require 'fileutils'
 
 require_relative 'core'
 require_relative 'env_vars'
-require_relative 'string'
+require_relative 'string_ext'
 
 # Logging helpers that replicate the shell functions defined in .shellrc
 # (success/info/warn/debug/error, section_header, print_script_start,
@@ -28,7 +28,7 @@ require_relative 'string'
 # Or call methods directly on the module:
 #   Logging.info('hello')
 module Logging
-  # Make the module usable both as `include Logging` and as `Logging.info(…)`.
+  # Make the module usable both as `include Logging` and as `Logging.info(...)`.
   extend self
   include Core  # For instance methods (in blocks)
   extend Core   # For module methods
@@ -80,12 +80,7 @@ module Logging
   # ---------------------------------------------------------------------------
 
   def success(message)
-    return unless _should_log?(:success)
-    # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
-    # Use error for messages that must always be visible regardless of context.
-    return if EnvVars.suppress_log?
-    msg = message.to_s.replace_home_path_with_tilde
-    msg.each_line { |line| emit("✅ #{'**SUCCESS**'.green} #{line.chomp}", level: 0) }
+    _emit_log(:success, message, "✅ #{'**SUCCESS**'.green}")
   end
 
   # Prints an informational message (normal progress, idempotency guards, etc.).
@@ -96,12 +91,7 @@ module Logging
   # @param message [String] The message to log
   # @return [void]
   def info(message)
-    return unless _should_log?(:info)
-    # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
-    # Use error for messages that must always be visible regardless of context.
-    return if EnvVars.suppress_log?
-    msg = message.to_s.replace_home_path_with_tilde
-    msg.each_line { |line| emit("ℹ️ #{'**INFO**'.cyan} #{line.chomp}", level: 0) }
+    _emit_log(:info, message, "ℹ️ #{'**INFO**'.cyan}")
   end
 
   # Prints a warning message (non-fatal operation failures, argument parse errors).
@@ -112,12 +102,7 @@ module Logging
   # @param message [String] The warning message to log
   # @return [void]
   def warn(message)
-    return unless _should_log?(:warn)
-    # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
-    # Use error for messages that must always be visible regardless of context.
-    return if EnvVars.suppress_log?
-    msg = message.to_s.replace_home_path_with_tilde
-    msg.each_line { |line| emit("⚠️ #{'**WARN**'.light_red} #{line.chomp}", level: 0) }
+    _emit_log(:warn, message, "⚠️ #{'**WARN**'.light_red}")
   end
 
   # Prints a debug message (only visible when DEBUG=true or LOG_LEVEL=debug).
@@ -134,6 +119,7 @@ module Logging
     # Use error for messages that must always be visible regardless of context.
     return unless EnvVars.debug?
     return if EnvVars.suppress_log?
+
     msg = message.to_s.replace_home_path_with_tilde
     msg.each_line { |line| emit("⚙️ #{'**DEBUG**'.light_purple} #{line.chomp}", level: 0) }
   end
@@ -147,10 +133,7 @@ module Logging
   # @param message [String] The action message to log
   # @return [void]
   def user_action(message)
-    return unless _should_log?(:user_action)
-    return if EnvVars.suppress_log?
-    msg = message.to_s.replace_home_path_with_tilde
-    msg.each_line { |line| emit("➡️ #{'**ACTION**'.yellow} #{line.chomp}", level: 0) }
+    _emit_log(:user_action, message, "➡️ #{'**ACTION**'.yellow}")
   end
 
   # Prints the error message and raises a +RuntimeError+ with that message,
@@ -191,6 +174,7 @@ module Logging
   #   # => "    - 'file1.rb'\n    - 'file2.rb'" (4 spaces + bullet)
   def join_array(arr, color, level: 1)
     return '' if nil_or_empty?(arr)
+
     # Compute indentation: base depth + level subordination.
     # Base depth is captured at construction time, ensuring the list indents
     # correctly even if parent message is printed at a different depth later
@@ -207,10 +191,10 @@ module Logging
   # Named 'emit' instead of 'puts' to avoid confusion with standard puts.
   #
   # Indentation formula: (depth - 1 + level) * 2 spaces
-  # - Outermost script (depth 1) with level 0 → 0 spaces
-  # - Outermost script (depth 1) with level 1 → 2 spaces
-  # - Nested script (depth 2) with level 0 → 2 spaces
-  # - Nested script (depth 2) with level 1 → 4 spaces
+  # - Outermost script (depth 1) with level 0 -> 0 spaces
+  # - Outermost script (depth 1) with level 1 -> 2 spaces
+  # - Nested script (depth 2) with level 0 -> 2 spaces
+  # - Nested script (depth 2) with level 1 -> 4 spaces
   #
   # @param message [String] The message to print
   # @param level [Integer] Number of subordinate nesting levels (required, no default)
@@ -237,21 +221,21 @@ module Logging
     # File output (stripped of ANSI, plain text or JSON based on LOG_FORMAT)
     # Extract log level from message prefix if present, otherwise default to :info
     log_level = case message
-    when /\*\*SUCCESS\*\*/
-      :success
-    when /\*\*INFO\*\*/
-      :info
-    when /\*\*WARN\*\*/
-      :warn
-    when /\*\*DEBUG\*\*/
-      :debug
-    when /\*\*ERROR\*\*/
-      :error
-    when /\*\*ACTION\*\*/
-      :user_action
-    else
-      :info
-    end
+                when /\*\*SUCCESS\*\*/
+                  :success
+                when /\*\*INFO\*\*/
+                  :info
+                when /\*\*WARN\*\*/
+                  :warn
+                when /\*\*DEBUG\*\*/
+                  :debug
+                when /\*\*ERROR\*\*/
+                  :error
+                when /\*\*ACTION\*\*/
+                  :user_action
+                else
+                  :info
+                end
 
     # Strip ANSI codes for file output
     plain_message = _strip_ansi(message)
@@ -269,6 +253,7 @@ module Logging
   #
   # @param str [String] String potentially containing ANSI escape codes
   # @return [String] String with all ANSI codes removed
+  # :reek:UtilityFunction -- Stateless string transformation utility
   def _strip_ansi(str)
     # ANSI escape sequences match pattern: ESC [ ... m
     # This regex removes all such sequences to get the visual text
@@ -283,13 +268,15 @@ module Logging
   # Output matches the shell version in .shellrc (section_header function).
   #
   # Visual styles:
+  # rubocop:disable Style/AsciiComments
   # - Level 0 (depth 1): = ⏳ light_blue (top-level sections)
   # - Level 1 (depth 2): - 🔷 cyan (sub-sections)
   # - Level 2+ (depth 3+): · ▸ yellow (nested sections)
+  # rubocop:enable Style/AsciiComments
   #
   # @param header [String] The header text
   def section_header(header)
-    level = [EnvVars.script_depth - 1, 0].max  # depth 1 → level 0, depth 2 → level 1, etc.
+    level = [EnvVars.script_depth - 1, 0].max # depth 1 -> level 0, depth 2 -> level 1, etc.
 
     # Auto-set current_section if nil/empty, at initial '(init)' value, OR not manually set.
     # This provides progressively more specific context as execution descends through nested
@@ -330,7 +317,7 @@ module Logging
   end
 
   # Prints the script start timestamp, prefixed with the script name. Mirrors:
-  #   echo "$(cyan "${_SCRIPT_NAME:-}") $(purple '==>') $(yellow 'Script started at:') $(light_blue "…")"
+  #   echo "$(cyan "${_SCRIPT_NAME:-}") $(purple '==>') $(yellow 'Script started at:') $(light_blue "...")"
   # Returns the start time as a Unix epoch integer so the caller can pass it to
   # print_script_duration. This deviates from the shell version (which cannot
   # return a value) but eliminates the two-call pattern and ensures the logged
@@ -343,6 +330,7 @@ module Logging
     return @script_start_time unless outermost_script?
     # Suppressed when running inside a direnv subshell (same as info/success).
     return @script_start_time if EnvVars.suppress_log?
+
     emit("#{script_name.cyan} #{'==>'.purple} #{'Script started at:'.yellow} #{Core.current_timestamp.light_blue}", level: 0)
     @script_start_time
   end
@@ -355,6 +343,7 @@ module Logging
     return unless outermost_script?
     # Suppressed when running inside a direnv subshell (same as info/success).
     return if EnvVars.suppress_log?
+
     human = format_duration(Core.duration_since(start_time))
     emit("#{script_name.cyan} #{'==>'.purple} #{'Script finished at:'.yellow} #{Core.current_timestamp.light_blue} " \
          "(#{'Total duration:'.yellow} #{human.light_blue} #{'seconds'.yellow}).", level: 0)
@@ -373,7 +362,7 @@ module Logging
   # Automatically strips ANSI codes to ensure clean error messages.
   def current_section=(name)
     @current_section = _strip_ansi(name.to_s)
-    @current_section_manual = true  # Mark as manually set
+    @current_section_manual = true # Mark as manually set
   end
 
   # Wraps a block of code with step lifecycle management (current_section, step_start, step_end).
@@ -401,15 +390,13 @@ module Logging
   # Appends a non-critical issue to the warnings collection and emits an inline
   # warn so the issue is visible in the log at the point it occurs.
   def record_warning(message)
-    step_warnings << "[#{script_name || 'unknown'}][#{@current_section || 'unknown'}] #{message}"
-    warn(message)
+    _record_message(step_warnings, message)
   end
 
   # Appends a significant non-fatal failure to the errors collection and emits
   # an inline warn so the failure is visible in the log at the point it occurs.
   def record_error(message)
-    step_errors << "[#{script_name || 'unknown'}][#{@current_section || 'unknown'}] #{message}"
-    warn(message)
+    _record_message(step_errors, message)
   end
 
   # Prints a grouped summary of all collected warnings and errors, prefixing
@@ -436,21 +423,9 @@ module Logging
     return unless outermost_script?
 
     info(message) unless nil_or_empty?(message)
-    unless nil_or_empty?(step_warnings)
-      # Temporarily decrement depth so both header and warnings print one level less indented
-      decrement_script_depth
-      section_header("#{script_name.cyan} #{("#{step_warnings.length} warning(s)").yellow}")
-      step_warnings.each { |w| warn(w) }
-      increment_script_depth
-    end
-    unless nil_or_empty?(step_errors)
-      # Temporarily decrement depth so both header and errors print one level less indented
-      decrement_script_depth
-      section_header("#{script_name.cyan} #{("#{step_errors.length} error(s) -- manual attention needed").red}")
-      step_errors.each { |e| warn(e) }
-      increment_script_depth
-    end
-    print_script_duration(start_time) unless start_time.nil?
+    _print_collected_messages(step_warnings, 'warning(s)', :yellow) unless nil_or_empty?(step_warnings)
+    _print_collected_messages(step_errors, 'error(s) -- manual attention needed', :red) unless nil_or_empty?(step_errors)
+    print_script_duration(start_time) if start_time
   end
 
   # Returns a frozen copy of collected warnings. Public so callers (e.g.
@@ -472,8 +447,8 @@ module Logging
   # @return [Boolean] true if warnings exist, false otherwise
   #
   # @example
-  #   @has_failures = true if Logging.has_warnings?
-  def has_warnings?
+  #   @has_failures = true if Logging.warnings? || Logging.errors?
+  def warnings?
     step_warnings.any?
   end
 
@@ -483,16 +458,19 @@ module Logging
   # @return [Boolean] true if errors exist, false otherwise
   #
   # @example
-  #   exit(1) if Logging.has_errors?
-  def has_errors?
+  #   exit(1) if Logging.errors?
+  def errors?
     step_errors.any?
   end
 
   # Formats +seconds+ as "Hh:MMm:SSs". Public so callers that build their own
   # notification or summary strings can format a duration without reaching into
   # private state via send().
+  # :reek:FeatureEnvy -- Stateless formatter operating on argument
   def format_duration(seconds)
+    # rubocop:disable Style/FormatStringToken
     format('%02dh:%02dm:%02ds', seconds / 3600, (seconds % 3600) / 60, seconds % 60)
+    # rubocop:enable Style/FormatStringToken
   end
 
   # Wraps the standard script lifecycle: increment depth, print start banner,
@@ -507,12 +485,15 @@ module Logging
   # The at_exit hook registered by increment_script_depth ensures depth is
   # decremented on both clean and error exits.
   #
-  # @param script_name [String, nil] Name to use for Logging.script_name (required for utility methods, optional for CLI scripts)
+  # Auto-detects script name from caller's filename (File.basename(caller, '.rb')).
+  # Performance: negligible overhead (~1 microsecond from caller_locations(1,1) per script).
+  #
+  # @param script_name [String, nil] Optional override for script name (auto-detected if omitted)
   # @param message [String, nil] Optional message to print before summary
   # @yield [start_time] Block containing the script's main logic; receives Unix epoch start time (or nil if nested)
   # @return [void]
   #
-  # @example CLI entry point script (script_name inferred from $PROGRAM_NAME)
+  # @example CLI entry point script (script_name auto-detected from filename)
   #   if __FILE__ == $PROGRAM_NAME
   #     include Logging
   #     # ... option parsing ...
@@ -522,15 +503,20 @@ module Logging
   #     end
   #   end
   #
-  # @example Utility module method (script_name explicit)
+  # @example Utility module method (script_name auto-detected from caller)
   #   def install_mise_versions(shared_dirs: nil, first_install: false)
-  #     Logging.run_script('install_mise_versions') do
+  #     Logging.run_script do
   #       # ... implementation ...
   #     end
   #   end
   #
+  # @example Override script name explicitly (rare, for custom naming)
+  #   Logging.run_script('custom-name') do
+  #     # ... main logic ...
+  #   end
+  #
   # @example With custom summary message
-  #   Logging.run_script('cleanup_profiles', 'Finished cleaning up browser profiles') do
+  #   Logging.run_script(nil, 'Finished cleaning up browser profiles') do
   #     # ... main logic ...
   #   end
   def run_script(script_name = nil, message = nil)
@@ -538,7 +524,16 @@ module Logging
     # This prevents nested run_script calls from leaking their script name
     # to the outer script's print_script_summary call.
     previous_script_name = @script_name
-    self.script_name = script_name if script_name
+
+    # Auto-detect script name from caller if not provided.
+    # caller_locations(1, 1) fetches exactly one frame (the immediate caller).
+    # Performance: negligible overhead (~1 microsecond), called once per script execution.
+    if nil_or_empty?(script_name)
+      caller_path = caller_locations(1, 1)&.first&.path
+      script_name = caller_path ? File.basename(caller_path, '.rb') : 'unknown'
+    end
+
+    self.script_name = script_name
     # Initialize current_section to '(init)' for consistency with shell scripts.
     # Use direct assignment (not setter) to avoid setting the manual flag.
     @current_section = '(init)'
@@ -586,6 +581,7 @@ module Logging
   # Used by print_script_start, print_script_summary, and print_results_summary
   # to suppress output from nested scripts so only the outermost script prints
   # banners and summaries.
+  # :reek:UtilityFunction -- Stateless query of global state
   def outermost_script?
     EnvVars.script_depth == 1
   end
@@ -650,6 +646,7 @@ module Logging
   # Decrements _DOTFILES_SCRIPT_DEPTH, guarding against underflow. Called
   # automatically by the at_exit hook registered in increment_script_depth.
   # Mirrors _decrement_script_depth in .shellrc.
+  # :reek:UtilityFunction -- Stateless modifier of global state
   def decrement_script_depth
     depth = EnvVars.script_depth
     ENV['_DOTFILES_SCRIPT_DEPTH'] = (depth - 1).to_s if depth.positive?
@@ -660,6 +657,23 @@ module Logging
   # ---------------------------------------------------------------------------
 
   private
+
+  # Common logging implementation for success/info/warn/user_action methods.
+  # Handles filtering, suppression, message processing, and emission.
+  #
+  # @param level [Symbol] Log level (:success, :info, :warn, :user_action)
+  # @param message [String] Message to log
+  # @param prefix [String] Formatted prefix with emoji and color
+  # @return [void]
+  def _emit_log(level, message, prefix)
+    return unless _should_log?(level)
+    # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
+    # Use error for messages that must always be visible regardless of context.
+    return if EnvVars.suppress_log?
+
+    msg = message.to_s.replace_home_path_with_tilde
+    msg.each_line { |line| emit("#{prefix} #{line.chomp}", level: 0) }
+  end
 
   # The name of the currently running script, mirroring _SCRIPT_NAME in shell.
   # Can be overridden by setting @script_name (used by module methods that act
@@ -748,7 +762,11 @@ module Logging
     return @terminal_width if @terminal_width
 
     # Try ioctl first (real terminal attached)
-    cols = $stdout.winsize[1] rescue 0
+    cols = begin
+      $stdout.winsize[1]
+    rescue StandardError
+      0
+    end
 
     # Fall back to COLUMNS env var (set by parent shell), then hardcoded 80
     @terminal_width = cols.nonzero? || EnvVars.columns
@@ -761,10 +779,10 @@ module Logging
   # Log levels (severity order): debug < info < success < warn < error < user_action
   #
   # Examples:
-  #   LOG_LEVEL=debug → show all messages
-  #   LOG_LEVEL=info  → show info, success, warn, error, user_action (default)
-  #   LOG_LEVEL=warn  → show only warn, error, user_action
-  #   LOG_LEVEL=error → show only error
+  #   LOG_LEVEL=debug -> show all messages
+  #   LOG_LEVEL=info  -> show info, success, warn, error, user_action (default)
+  #   LOG_LEVEL=warn  -> show only warn, error, user_action
+  #   LOG_LEVEL=error -> show only error
   #
   # @param level [Symbol] The log level to check (:debug, :info, :success, :warn, :error, :user_action)
   # @return [Boolean] true if message should be logged, false otherwise
@@ -797,10 +815,10 @@ module Logging
     format = ENV.fetch('LOG_FORMAT', 'text').downcase
 
     entry = if format == 'json'
-      _format_json_log_entry(level, message)
-    else
-      _format_text_log_entry(level, message)
-    end
+              _format_json_log_entry(level, message)
+            else
+              _format_text_log_entry(level, message)
+            end
 
     File.open(log_path, 'a') do |f|
       f.puts(entry)
@@ -845,7 +863,7 @@ module Logging
     return unless log_path.file?
     return if log_path.size < 10 * 1024 * 1024 # 10MB
 
-    # Rotate existing backups (log.4 → log.5, log.3 → log.4, etc.)
+    # Rotate existing backups (log.4 -> log.5, log.3 -> log.4, etc.)
     (4).downto(1) do |i|
       old_file = Pathname.new("#{log_path}.#{i}")
       new_file = Pathname.new("#{log_path}.#{i + 1}")
@@ -858,5 +876,29 @@ module Logging
     # Delete oldest backup if it exists
     oldest = Pathname.new("#{log_path}.6")
     oldest.delete if oldest.exist?
+  end
+
+  # Prints collected warnings or errors with proper indentation.
+  # Temporarily decrements depth so both header and messages print one level less indented.
+  #
+  # @param messages [Array<String>] Collection of warning/error messages
+  # @param label [String] Label for the message type (e.g., 'warning(s)', 'error(s)')
+  # @param color [Symbol] Color method to apply to count (e.g., :yellow, :red)
+  # @return [void]
+  def _print_collected_messages(messages, label, color)
+    decrement_script_depth
+    section_header("#{script_name.cyan} #{"#{messages.length} #{label}".send(color)}")
+    messages.each { |msg| warn(msg) }
+    increment_script_depth
+  end
+
+  # Appends a message to a collection with script/section prefix and emits inline warning.
+  #
+  # @param collection [Array<String>] Target collection (step_warnings or step_errors)
+  # @param message [String] The message to record
+  # @return [void]
+  def _record_message(collection, message)
+    collection << "[#{script_name || 'unknown'}][#{@current_section || 'unknown'}] #{message}"
+    warn(message)
   end
 end

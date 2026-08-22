@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 # file location: ${DOTFILES_DIR}/scripts/capture-prefs.rb
 #
@@ -24,14 +24,14 @@ require_relative 'utilities/logging'
 require_relative 'utilities/macos'
 require_relative 'utilities/path_utils'
 require_relative 'utilities/plist'
-require_relative 'utilities/string'
+require_relative 'utilities/string_ext'
 
 # Module contains the business logic.
 # Returns true/false instead of calling exit().
 module CapturePrefs
   extend self
 
-  # Process names (pgrep -x matches) → display names for restart notification.
+  # Process names (pgrep -x matches) -> display names for restart notification.
   # Only user-specified apps; login-item apps handled by kill/restart_login_item_apps.
   APPS_NEEDING_RESTART = {
     'Ghostty' => 'Ghostty',
@@ -43,22 +43,21 @@ module CapturePrefs
   #
   # @param operation [String] Either 'export' or 'import'
   # @return [Boolean] true on success, false on error
+  # :reek:UtilityFunction -- Uses instance variable @operation for memoized helpers
   def run(operation:)
-    unless %w[export import].include?(operation)
-      Logging.error "Invalid operation: '#{operation}'. Must be 'export' or 'import'."
-    end
+    Logging.error "Invalid operation: '#{operation}'. Must be 'export' or 'import'." unless %w[export import].include?(operation)
 
     @operation = operation
 
-    # Validate required env vars
-    unless EnvVars::PERSONAL_CONFIGS_DIR.directory?
-      Logging.error "PERSONAL_CONFIGS_DIR not found: '#{EnvVars::PERSONAL_CONFIGS_DIR.to_s.cyan}'"
-    end
-    unless EnvVars::DOTFILES_DIR.directory?
-      Logging.error "DOTFILES_DIR not found: '#{EnvVars::DOTFILES_DIR.to_s.cyan}'"
-    end
+    # Extract constants used multiple times
+    personal_configs_dir = EnvVars::PERSONAL_CONFIGS_DIR
+    dotfiles_dir = EnvVars::DOTFILES_DIR
 
-    target_dir = EnvVars::PERSONAL_CONFIGS_DIR.join('defaults')
+    # Validate required env vars
+    Logging.error "PERSONAL_CONFIGS_DIR not found: '#{personal_configs_dir.cyan}'" unless personal_configs_dir.directory?
+    Logging.error "DOTFILES_DIR not found: '#{dotfiles_dir.cyan}'" unless dotfiles_dir.directory?
+
+    target_dir = personal_configs_dir.join('defaults')
     PathUtils.ensure_directories_exist(target_dir)
 
     # Suspend the automatic software update schedule so background update
@@ -87,13 +86,13 @@ module CapturePrefs
 
     # Load data files (each helper validates its own file)
     denied = _load_denied_list(
-      EnvVars::DOTFILES_DIR.join('scripts', 'data', 'capture-prefs-denied-list.txt')
+      dotfiles_dir.join('scripts', 'data', 'capture-prefs-denied-list.txt')
     )
     excluded_by_domain = _load_excluded_keys(
-      EnvVars::DOTFILES_DIR.join('scripts', 'data', 'capture-prefs-excluded-keys.txt')
+      dotfiles_dir.join('scripts', 'data', 'capture-prefs-excluded-keys.txt')
     )
     domains = _load_domains_list(
-      EnvVars::DOTFILES_DIR.join('scripts', 'data', 'capture-prefs-allowed-list.txt'),
+      dotfiles_dir.join('scripts', 'data', 'capture-prefs-allowed-list.txt'),
       denied
     )
 
@@ -106,12 +105,14 @@ module CapturePrefs
     saved_count = 0
 
     domains.each do |app_pref|
-      Logging.debug "Processing '#{app_pref.light_cyan}'"
+      app_pref_colored = app_pref.light_cyan
+      Logging.debug "Processing '#{app_pref_colored}'"
+
+      target_file = target_dir.join("#{app_pref}.plist")
 
       if _exporting?
-        target_file = target_dir.join("#{app_pref}.plist")
         unless Plist.export_domain(app_pref, target_file)
-          Logging.record_warning("Failed to export '#{app_pref.light_cyan}'")
+          Logging.record_warning("Failed to export '#{app_pref_colored}'")
           next
         end
 
@@ -119,28 +120,26 @@ module CapturePrefs
         Plist.strip_excluded_keys(app_pref, target_file, excluded_by_domain)
 
         # Delete if stripping left an empty dict
-        if Plist.has_keys?(target_file)
+        if Plist.keys?(target_file)
           saved_count += 1
         else
           target_file.unlink
-          Logging.debug "Deleted empty plist for '#{app_pref.light_cyan}' -- no keys remain after stripping"
+          Logging.debug "Deleted empty plist for '#{app_pref_colored}' -- no keys remain after stripping"
         end
       else
         # Import
-        target_file = target_dir.join("#{app_pref}.plist")
-        unless target_file.file?
-          Logging.debug "Skipping import of '#{app_pref.light_cyan}' -- no exported plist found"
+        unless file?(target_file)
+          Logging.debug "Skipping import of '#{app_pref_colored}' -- no exported plist found"
           next
         end
 
         # Strip non-portable keys from a temp copy
         temp_plist = Tempfile.new(['capture-prefs-', '.plist'])
-        FileUtils.cp(target_file.to_s, temp_plist.path)
-        Plist.strip_excluded_keys(app_pref, Pathname.new(temp_plist.path), excluded_by_domain)
+        temp_plist_path = temp_plist.path
+        FileUtils.cp(target_file.to_s, temp_plist_path)
+        Plist.strip_excluded_keys(app_pref, Pathname.new(temp_plist_path), excluded_by_domain)
 
-        unless Plist.import_domain(app_pref, temp_plist.path)
-          Logging.record_warning("Failed to import '#{app_pref.light_cyan}'")
-        end
+        Logging.record_warning("Failed to import '#{app_pref_colored}'") unless Plist.import_domain(app_pref, temp_plist_path)
 
         temp_plist.close
         temp_plist.unlink
@@ -153,7 +152,7 @@ module CapturePrefs
         GitProcessor.new(dir: EnvVars::HOME) do |git|
           # Git accepts absolute paths directly - no normalization needed
           _stdout, _stderr, status = git.add(target_dir)
-          Logging.record_warning("Failed to git add '#{target_dir.to_s.cyan}'") unless status.success?
+          Logging.record_warning("Failed to git add '#{target_dir.cyan}'") unless status.success?
 
           # Auto-commit staged changes (both fresh-install and cron want this)
           # Uses smart_commit: amends if ahead of remote (single commit), creates new if not
@@ -165,7 +164,7 @@ module CapturePrefs
             end
           end
         end
-        Logging.success "Export complete. Staged changes in '#{target_dir.to_s.cyan}'."
+        Logging.success "Export complete. Staged changes in '#{target_dir.cyan}'."
       rescue RuntimeError => e
         Logging.record_warning "Skipping git add -- #{e.message}"
       end
@@ -187,9 +186,7 @@ module CapturePrefs
   # @param filepath [Pathname] Path to the denied list file
   # @return [Set<String>] Set of denied domain names
   def _load_denied_list(filepath)
-    unless filepath.file?
-      Logging.error("Denied list file not found: '#{filepath.to_s.cyan}'")
-    end
+    _ensure_file_exists(filepath, 'Denied list')
     Plist.load_denied_list(filepath)
   end
 
@@ -199,15 +196,26 @@ module CapturePrefs
   # Raises error if file not found.
   #
   # @param filepath [Pathname] Path to the excluded keys file
-  # @return [Hash<String, String>] Domain → newline-separated pattern string
+  # @return [Hash<String, String>] Domain -> newline-separated pattern string
   def _load_excluded_keys(filepath)
-    unless filepath.file?
-      Logging.error("Excluded keys file not found: '#{filepath.to_s.cyan}'")
-    end
+    _ensure_file_exists(filepath, 'Excluded keys')
     Plist.load_excluded_keys(filepath)
   end
 
   private_class_method :_load_excluded_keys
+
+  # Validates that a required file exists, raising error if not.
+  #
+  # @param filepath [Pathname] Path to validate
+  # @param description [String] Description for error message
+  # @return [void]
+  # @raise [RuntimeError] If file doesn't exist
+  # :reek:UtilityFunction -- Stateless validation helper (correct design)
+  def _ensure_file_exists(filepath, description)
+    Logging.error("#{description} file not found: '#{filepath.cyan}'") unless filepath.file?
+  end
+
+  private_class_method :_ensure_file_exists
 
   # Loads the domains list file, filtering out denied domains.
   # Raises error if file not found.
@@ -215,10 +223,9 @@ module CapturePrefs
   # @param filepath [Pathname] Path to the domains list file
   # @param denied [Set<String>] Set of denied domain names to filter out
   # @return [Set<String>] Set of allowed domain names
+  # :reek:UtilityFunction -- Stateless delegation wrapper (correct design)
   def _load_domains_list(filepath, denied)
-    unless filepath.file?
-      Logging.error("Domains list file not found: '#{filepath.to_s.cyan}'")
-    end
+    Logging.error("Domains list file not found: '#{filepath.cyan}'") unless filepath.file?
     Plist.load_domains_list(filepath, denied)
   end
 
@@ -289,7 +296,7 @@ if __FILE__ == $PROGRAM_NAME
     parser.abort_with_usage('Must specify either -e (export) or -i (import)')
   end
 
-  Logging.run_script(File.basename(__FILE__, '.rb')) do
+  Logging.run_script do
     success = CapturePrefs.run(operation: options[:export] ? 'export' : 'import')
     exit(success ? 0 : 1)
   end

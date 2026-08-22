@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
-require 'pathname'
+require_relative 'pathname_ext' # Extends Pathname with color methods - loaded here for universal availability
 
 # Core utility module with minimal dependencies.
 # Provides foundational helpers used by other utility modules.
@@ -31,12 +31,13 @@ require 'pathname'
 #    - Path constants (Pathname - Ruby stdlib)
 #
 # 5. **Examples of methods that belong elsewhere:**
-#    - macOS notifications → MacOS module
-#    - Git operations → GitProcessor module
-#    - Homebrew queries → CommandUtils module
-#    - Logging with colors → Logging module
+#    - macOS notifications -> MacOS module
+#    - Git operations -> GitProcessor module
+#    - Homebrew queries -> CommandUtils module
+#    - Logging with colors -> Logging module
 #
 # Other utility modules can include Core to get unqualified access to helpers.
+# :reek:UtilityFunction -- Intentional stateless utility module design
 module Core
   extend self
 
@@ -111,9 +112,10 @@ module Core
   # @example
   #   Core.running_in_tty?  # => true (in terminal), false (in cron)
   def running_in_tty?
-    # Check FORCE_COLOR directly to avoid circular dependency with EnvVars
-    # (EnvVars requires this module via Core)
-    $stdout.tty? || !ENV.fetch('FORCE_COLOR', '').strip.empty?
+    # NOTE: Uses ENV.fetch('FORCE_COLOR') directly instead of EnvVars.force_color?
+    # to avoid circular dependency. EnvVars requires Core, so Core cannot require EnvVars:
+    # env_vars.rb -> core.rb -> env_vars.rb (circular!)
+    $stdout.tty? || !nil_or_empty?(ENV.fetch('FORCE_COLOR', ''))
   end
 
   # Checks if a value is nil or empty.
@@ -143,6 +145,24 @@ module Core
     else
       val.to_s.empty?
     end
+  end
+
+  # Returns true if path is a non-empty value that refers to a regular file.
+  # Equivalent to shell's is_file function: checks both nil/empty and file existence.
+  #
+  # @param path [Object] Value to check (typically Pathname or String)
+  # @return [Boolean] true if path is non-empty and is a regular file
+  #
+  # @example
+  #   Core.file?(nil)                              # => false
+  #   Core.file?('')                               # => false
+  #   Core.file?('  ')                             # => false (whitespace-only)
+  #   Core.file?(Pathname.new('/nonexistent'))     # => false
+  #   Core.file?(Pathname.new('/etc/hosts'))       # => true
+  #   Core.file?('/etc')                           # => false (directory, not file)
+  # :reek:FeatureEnvy -- Delegates to path object's file? method (intentional delegation)
+  def file?(path)
+    !nil_or_empty?(path) && path.respond_to?(:file?) && path.file?
   end
 
   # Executes a command with real-time output streaming and optional stdin data.
@@ -181,8 +201,8 @@ module Core
     IO.copy_stream(io, $stdout)
     io.close
 
-    # Return exit status
-    $?.exitstatus || 0
+    # Return exit status (use safe navigation in case $CHILD_STATUS is nil)
+    $CHILD_STATUS&.exitstatus || 0
   end
 
   # Reads all lines from a file with explicit UTF-8 encoding.
@@ -210,9 +230,9 @@ module Core
   #   Core.each_line_utf8('data/config.txt') do |line|
   #     puts line.chomp
   #   end
-  def each_line_utf8(filepath)
+  def each_line_utf8(filepath, &block)
     File.open(filepath, 'r:UTF-8') do |file|
-      file.each_line { |line| yield line }
+      file.each_line(&block)
     end
   end
 end

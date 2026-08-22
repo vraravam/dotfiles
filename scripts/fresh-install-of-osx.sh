@@ -198,7 +198,7 @@ _ensure_filevault_is_on() {
   step_start
   section_header "$(yellow 'Verifying FileVault status')"
   if [[ "$(fdesetup isactive)" != 'true' ]]; then
-    user_action "Enable FileVault: System Settings → Privacy & Security → FileVault → Turn On FileVault"
+    user_action "Enable FileVault: System Settings -> Privacy & Security -> FileVault -> Turn On FileVault"
     error 'FileVault is not turned on. Please encrypt your hard disk!'
     exit 1
   fi

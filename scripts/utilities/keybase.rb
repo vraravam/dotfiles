@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 require 'open3'
 
@@ -49,6 +49,7 @@ module Keybase
   #
   # @param url [String]
   # @return [Boolean]
+  # :reek:UtilityFunction -- Stateless URL validator
   def keybase_url?(url)
     url.to_s.start_with?('keybase://')
   end
@@ -63,14 +64,17 @@ module Keybase
   #
   # @param dry_run [Boolean] When true, logs the operation instead of executing.
   # @return [Boolean] true if logged in (or would log in), false otherwise.
+  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def ensure_logged_in(dry_run: false)
     unless PathUtils.command_exists?('keybase')
       Logging.record_error "'keybase' command not found in PATH -- install via Homebrew first"
       return false
     end
 
+    keybase_username = EnvVars::KEYBASE_USERNAME
+
     if dry_run
-      Logging.info "Would ensure keybase login for '#{EnvVars::KEYBASE_USERNAME.purple}'"
+      Logging.info "Would ensure keybase login for '#{keybase_username.purple}'"
       return true
     end
 
@@ -80,15 +84,13 @@ module Keybase
     # keybase status --json returns a JSON blob; parse for logged_in:true.
     status_json = CommandUtils.query('keybase', 'status', '--json')
     if status_json.include?('"logged_in":true')
-      Logging.debug "Skipping keybase login -- '#{EnvVars::KEYBASE_USERNAME.purple}' is already logged in"
+      Logging.debug "Skipping keybase login -- '#{keybase_username.purple}' is already logged in"
       return true
     end
 
-    success = CommandUtils.run_interactive('keybase', 'login') do
+    CommandUtils.run_interactive('keybase', 'login') do
       Logging.record_error 'Could not log into keybase -- retry after logging in manually'
     end
-
-    success
   end
 
   # Deletes the named Keybase repo (irreversible). Passes -f to skip confirmation.
@@ -97,13 +99,12 @@ module Keybase
   # @param repo_name [String]
   # @param dry_run [Boolean] When true, logs the operation instead of executing.
   # @return [void]
+  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def delete_repo(repo_name, dry_run: false)
     if dry_run
       Logging.info "Would delete keybase repo: #{repo_name.yellow}"
     else
-      unless CommandUtils.run_silent('keybase', 'git', 'delete', '-f', repo_name)
-        Logging.record_warning("Failed to delete keybase repo #{repo_name.yellow} (it might not exist)")
-      end
+      Logging.record_warning("Failed to delete keybase repo #{repo_name.yellow} (it might not exist)") unless CommandUtils.run_silent('keybase', 'git', 'delete', '-f', repo_name)
     end
   end
 
@@ -112,6 +113,7 @@ module Keybase
   # @param repo_name [String]
   # @param dry_run [Boolean] When true, logs the operation instead of executing.
   # @return [Boolean] true on success or dry_run, false on failure
+  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def create_repo(repo_name, dry_run: false)
     if dry_run
       Logging.info "Would create keybase repo: #{repo_name.yellow}"

@@ -1,0 +1,142 @@
+# Reek configuration - code smell detector
+# This is a MANUAL analysis tool for periodic codebase health checks.
+# Not part of pre-commit validation (too slow, too opinionated).
+#
+# Strategy: Use inline :reek: suppression comments instead of file-level exclusions.
+# This ensures new violations are detected while intentional patterns are documented.
+#
+# TODO: Revisit and fix remaining warnings in batches:
+#   - UtilityFunction - many are dual-mode module methods (use inline suppressions)
+#   - FeatureEnvy - includes false positives for GitProcessor blocks (use inline suppressions)
+#   - DuplicateMethodCall - extract repeated .cyan/.to_s chains to variables
+#
+# Disabled detectors:
+#   - TooManyStatements - utility scripts naturally have longer methods
+#
+# Known patterns with inline suppressions:
+#   - Dual-mode modules: :reek:UtilityFunction on run() methods
+#   - GitProcessor blocks: :reek:FeatureEnvy (intentional delegation pattern)
+#   - Context-specific error handling: :reek:DuplicateMethodCall (different error messages)
+#
+# Run: ruby-lint.rb to see all warnings
+# Run: reek --todo to regenerate this config with current baseline
+
+# Directories to exclude
+exclude_paths:
+  - vendor
+  - tmp
+
+# Detectors we want to keep (useful for refactoring)
+detectors:
+
+  # Duplication and complexity (keep these - they're objective)
+  DuplicateMethodCall:
+    enabled: true
+    max_calls: 2
+    allow_calls: []
+
+  TooManyStatements:
+    enabled: false  # Disabled - utility scripts naturally have longer methods
+
+  NestedIterators:
+    enabled: true
+    max_allowed_nesting: 2
+
+  # Design smells (keep with relaxed thresholds)
+  UtilityFunction:
+    enabled: true
+    public_methods_only: true  # Only warn about public utility functions
+    # File-level exclusions removed - use inline :reek: comments instead
+
+  FeatureEnvy:
+    enabled: true
+    # File-level exclusions removed - use inline :reek: comments instead
+
+  # Nil handling (keep - suggests safe navigation)
+  NilCheck:
+    enabled: true
+    exclude:
+      - Core#nil_or_empty?           # Must check nil explicitly (core utility)
+      - Enumerable#filter_map        # Intentional nil filtering (Ruby 2.6 shim)
+      - CommandUtils#check_status    # Defensive nil guard for status parameter
+
+  # Disable noisy/opinionated detectors
+  IrresponsibleModule:
+    enabled: false
+    # Scripts are self-documenting with inline comments
+
+  TooManyInstanceVariables:
+    enabled: false
+    # Utility classes naturally have many state variables
+
+  TooManyMethods:
+    enabled: false
+    # Utility modules naturally have many public methods
+
+  LongParameterList:
+    enabled: false
+    # Prefer explicit parameters over hash options
+
+  DataClump:
+    enabled: false
+    # Parameters that travel together don't always need extraction
+
+  BooleanParameter:
+    enabled: false
+    # dry_run:, verbose:, etc. are clear and idiomatic
+
+  ControlParameter:
+    enabled: false
+    # Operation mode parameters are acceptable
+
+  ManualDispatch:
+    enabled: false
+    # Explicit dispatch is clearer than metaprogramming
+
+  ModuleInitialize:
+    enabled: false
+    # False positives for modules with extend self
+
+  UnusedParameters:
+    enabled: false
+    # RuboCop already catches this
+
+  Attribute:
+    enabled: false
+    # attr_accessor is fine for simple accessors
+
+  ClassVariable:
+    enabled: false
+    # Not used in this codebase
+
+  InstanceVariableAssumption:
+    enabled: false
+    # Too noisy for utility modules
+
+  SubclassedFromCoreClass:
+    enabled: false
+    # Not applicable to this codebase
+
+  UncommunicativeMethodName:
+    enabled: false
+    # RuboCop's naming rules are sufficient
+
+  UncommunicativeModuleName:
+    enabled: false
+    # RuboCop's naming rules are sufficient
+
+  UncommunicativeParameterName:
+    enabled: false
+    # RuboCop's naming rules are sufficient
+
+  UncommunicativeVariableName:
+    enabled: false
+    # RuboCop's naming rules are sufficient
+
+  UnusedPrivateMethod:
+    enabled: false
+    # RuboCop already catches this
+
+  MissingSafeMethod:
+    enabled: false
+    # Bank/Safe distinction not applicable

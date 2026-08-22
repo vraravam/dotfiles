@@ -15,44 +15,53 @@ AllCops:
     - 'vendor/**/*'
     - 'tmp/**/*'
 
-# Layout and Style
+# Layout (whitespace, indentation, line length)
 Layout/LineLength:
   Max: 170
   # Scripts use descriptive variable names and inline comments
 
-Style/StringLiterals:
-  EnforcedStyle: single_quotes
-  # Prefer single quotes unless interpolation needed
+# Lint (catch actual bugs)
+Lint/Debugger:
+  Enabled: true
+
+Lint/ShadowingOuterLocalVariable:
+  Enabled: true
+
+Lint/UnusedBlockArgument:
+  Enabled: true
+
+Lint/UnusedMethodArgument:
+  Enabled: true
+
+Lint/UselessAssignment:
+  Enabled: true
+
+# Metrics (disabled - small utility scripts don't benefit from strict limits)
+Metrics/AbcSize:
+  Enabled: false
+
+Metrics/BlockLength:
+  Enabled: false
+  # Option parsing blocks are legitimately long
+
+Metrics/CyclomaticComplexity:
+  Enabled: false
+
+Metrics/MethodLength:
+  Enabled: false
+
+Metrics/PerceivedComplexity:
+  Enabled: false
+
+# Style (formatting conventions)
+Style/Documentation:
+  Enabled: false
+  # Scripts are self-documenting with inline comments
 
 Style/FrozenStringLiteralComment:
   Enabled: true
   # Enforce frozen_string_literal: true for performance
 
-Style/Documentation:
-  Enabled: false
-  # Scripts are self-documenting with inline comments
-
-# Metrics (disabled - small utility scripts don't benefit from strict limits)
-Metrics/AbcSize:
-  Enabled: false
-Metrics/CyclomaticComplexity:
-  Enabled: false
-Metrics/MethodLength:
-  Enabled: false
-Metrics/PerceivedComplexity:
-  Enabled: false
-Metrics/BlockLength:
-  Enabled: false
-  # Option parsing blocks are legitimately long
-
-# Lint (catch actual bugs)
-Lint/UnusedBlockArgument:
-  Enabled: true
-Lint/UnusedMethodArgument:
-  Enabled: true
-Lint/UselessAssignment:
-  Enabled: true
-Lint/Debugger:
-  Enabled: true
-Lint/ShadowingOuterLocalVariable:
-  Enabled: true
+Style/StringLiterals:
+  EnforcedStyle: single_quotes
+  # Prefer single quotes unless interpolation needed

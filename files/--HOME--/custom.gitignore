@@ -403,9 +403,11 @@ node_modules/
 /.config/iex/iex.exs
 /.config/kdiff3/kdiff3rc
 /.config/mise/config.toml
+/.config/mise/default-gems
 /.config/pg/psqlrc
 /.config/pry/pryrc
 /.config/readline/inputrc
+/.config/reek/config.yml
 /.config/ripgrep/config
 /.config/rubocop/config.yml
 /.config/shellcheck/shellcheckrc

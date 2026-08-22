@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 # Command-line option parsing utilities with standard error handling
 #
@@ -21,6 +21,7 @@ module CliParser
 
     # Override OptionParser#warn to use Logging#warn instead of the default
     # behaviour which prepends the program name (e.g. "script: message").
+    # :reek:UtilityFunction -- Override hook for OptionParser (intentional delegation)
     def warn(message)
       Logging.warn(message)
     end

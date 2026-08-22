@@ -130,7 +130,7 @@ if (($+commands[brew])); then
 
     # Homebrew base bin/sbin appended after keg-only entries so keg-only tools take
     # priority. sbin is placed before bin to match the original prepend sequence
-    # (bin prepended first, sbin prepended second → sbin ends up in front of bin).
+    # (bin prepended first, sbin prepended second -> sbin ends up in front of bin).
     # /etc/paths.d/homebrew pre-populates /opt/homebrew/bin at a low priority position;
     # it is re-added here at the front. typeset -gU path at the bottom removes the dup.
     # Desired order: mise (_mise_hook via zsh-defer) > keg-only > homebrew base > system.
@@ -242,7 +242,7 @@ if command_exists "${EDITOR:-}"; then
 
   # add a generic alias for editing files and folders -- non-blocking (bare binary,
   # no --wait) so the shell prompt returns immediately after launching the editor.
-  # Non-blocking: strip flags (e.g. 'zed --wait' → 'zed') via nested expansion.
+  # Non-blocking: strip flags (e.g. 'zed --wait' -> 'zed') via nested expansion.
   # Falls back to $EDITOR if GIT_EDITOR is unset (e.g. non-interactive shells).
   alias edit="${${GIT_EDITOR:-${EDITOR}}%% *}"
 

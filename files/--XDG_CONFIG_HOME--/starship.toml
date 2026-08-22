@@ -2,8 +2,8 @@
 #
 # Starship prompt configuration mirroring the previous powerlevel10k rainbow setup.
 #
-# Left prompt:  os_icon → dir → git (branch + status symbols + repo size) → prompt char
-# Right prompt: status → cmd_duration (≥3s) → jobs → username@hostname (SSH/root only) → time
+# Left prompt:  os_icon -> dir -> git (branch + status symbols + repo size) -> prompt char
+# Right prompt: status -> cmd_duration (≥3s) -> jobs -> username@hostname (SSH/root only) -> time
 #
 # Colors:
 #   os_icon:   bg=white,  fg=#000000 (explicit black to avoid terminal remapping)
@@ -30,8 +30,8 @@ add_newline = false
 command_timeout = 1000
 
 # ── Left prompt ───────────────────────────────────────────────────────────────
-# Segment order: iterm2_mark → os → directory → git branch → git size → git status (if dirty/ahead/behind) → clean arrow (if clean) → git state → iterm2_end → character
-# Arrow separators transition: white→blue→green→(yellow if dirty/ahead/behind)→terminal default
+# Segment order: iterm2_mark -> os -> directory -> git branch -> git size -> git status (if dirty/ahead/behind) -> clean arrow (if clean) -> git state -> iterm2_end -> character
+# Arrow separators transition: white->blue->green->(yellow if dirty/ahead/behind)->terminal default
 #
 # OPTIMIZED for performance:
 #   git_branch - shows branch with green background (built-in Rust module, fast)
@@ -40,8 +40,8 @@ command_timeout = 1000
 #   git_status - shows status symbols with yellow background (ONLY when dirty/ahead/behind)
 #
 # Visual flow:
-#   Clean & synced: branch → size → green arrow → terminal bg
-#   Dirty/ahead/behind: branch → size → green→yellow arrow → status → yellow arrow
+#   Clean & synced: branch -> size -> green arrow -> terminal bg
+#   Dirty/ahead/behind: branch -> size -> green->yellow arrow -> status -> yellow arrow
 #
 # Performance notes:
 #   - git_size: ~10-20ms (git count-objects is 2-3x faster than du -sh)
@@ -64,7 +64,7 @@ ${custom.iterm2_end}\
 $character"""
 
 # ── Right prompt ──────────────────────────────────────────────────────────────
-# Segment order: status → cmd_duration → jobs → context → time
+# Segment order: status -> cmd_duration -> jobs -> context -> time
 # cmd_duration has its own embedded \uE0B2 separator (only appears when visible)
 # time is always shown, preceded by a \uE0B2 separator (white arrow into white bg)
 right_format = """

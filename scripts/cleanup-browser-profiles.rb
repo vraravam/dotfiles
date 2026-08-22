@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 # file location: ${DOTFILES_DIR}/scripts/cleanup-browser-profiles.rb
 #
@@ -28,15 +28,19 @@ module CleanupBrowserProfiles
   #
   # @param dry_run [Boolean] Show what would be done without doing it
   # @return [Boolean] true on success, false if any errors occurred
+  # :reek:UtilityFunction -- Module method pattern for dual-mode script (see ruby-scripting.md)
+  # :reek:FeatureEnvy -- Private helpers operate on local variables (intentional extraction)
   def run(dry_run: false)
     Logging.info 'Running in DRY-RUN mode -- no changes will be made' if dry_run
 
+    profiles_dir = EnvVars::PERSONAL_PROFILES_DIR
+
     browser_profiles = {
-      'brave' => EnvVars::PERSONAL_PROFILES_DIR.join('BraveProfile'),
-      'chrome' => EnvVars::PERSONAL_PROFILES_DIR.join('ChromeProfile'),
-      'firefox' => EnvVars::PERSONAL_PROFILES_DIR.join('FirefoxProfile'),
-      'thunderbird' => EnvVars::PERSONAL_PROFILES_DIR.join('ThunderbirdProfile'),
-      'zen' => EnvVars::PERSONAL_PROFILES_DIR.join('ZenProfile')
+      'brave' => profiles_dir.join('BraveProfile'),
+      'chrome' => profiles_dir.join('ChromeProfile'),
+      'firefox' => profiles_dir.join('FirefoxProfile'),
+      'thunderbird' => profiles_dir.join('ThunderbirdProfile'),
+      'zen' => profiles_dir.join('ZenProfile')
     }
 
     browser_profiles.each do |browser_name, profile_dir|
@@ -48,8 +52,10 @@ module CleanupBrowserProfiles
 
   # Reads non-blank, non-comment lines from +file+ into an Array.
   # Mirrors _read_pattern_file from the shell version.
+  # :reek:UtilityFunction -- Stateless file reader (correct design)
   def _read_pattern_file(file)
     return [] unless file.file?
+
     # Use Core.read_lines_utf8 to avoid encoding issues in non-UTF-8 environments.
     Core.read_lines_utf8(file).each_with_object([]) do |line, arr|
       arr << line.chomp.strip unless line.comment_or_empty?
@@ -60,6 +66,7 @@ module CleanupBrowserProfiles
 
   # Returns true if the named browser process is currently running.
   # Mirrors pgrep check from shell version.
+  # :reek:UtilityFunction -- Stateless process check (correct design)
   def _browser_running?(browser_name)
     CommandUtils.run_silent('pgrep', '-i', '-f', '-q', browser_name)
   end
@@ -69,7 +76,8 @@ module CleanupBrowserProfiles
   # Converts kilobytes to bytes.
   # @param kb [Integer] Size in kilobytes
   # @return [Integer] Size in bytes
-  def _kb_to_bytes(kb)
+  # :reek:UtilityFunction -- Pure conversion function (correct design)
+  def _kb_to_bytes(kb) # rubocop:disable Naming/MethodParameterName
     kb * 1024
   end
 
@@ -78,7 +86,8 @@ module CleanupBrowserProfiles
   # Converts megabytes to bytes.
   # @param mb [Integer] Size in megabytes
   # @return [Integer] Size in bytes
-  def _mb_to_bytes(mb)
+  # :reek:UtilityFunction -- Pure conversion function (correct design)
+  def _mb_to_bytes(mb) # rubocop:disable Naming/MethodParameterName
     mb * 1024 * 1024
   end
 
@@ -87,6 +96,7 @@ module CleanupBrowserProfiles
   # Converts bytes to megabytes.
   # @param bytes [Integer] Size in bytes
   # @return [Integer] Size in megabytes
+  # :reek:UtilityFunction -- Pure conversion function (correct design)
   def _bytes_to_mb(bytes)
     bytes / 1_048_576
   end
@@ -96,7 +106,7 @@ module CleanupBrowserProfiles
   # Converts KB to human-readable format.
   # @param kb [Integer] Size in kilobytes
   # @return [String] Human-readable size (e.g., "1.5G", "234M")
-  def _format_size(kb)
+  def _format_size(kb) # rubocop:disable Naming/MethodParameterName
     if PathUtils.command_exists?('numfmt')
       CommandUtils.query('numfmt', '--to=iec', _kb_to_bytes(kb).to_s)
     else
@@ -107,14 +117,15 @@ module CleanupBrowserProfiles
   private_class_method :_format_size
 
   # Returns true if the profile should be skipped (browser running or dir missing).
+  # :reek:FeatureEnvy -- Operates on method parameters (intentional helper extraction)
   def _should_skip_profile?(browser_name, profile_dir)
     if _browser_running?(browser_name)
-      Logging.user_action "Shutdown '#{browser_name.yellow}' first -- skipping processing for '#{browser_name.yellow}'"
+      Logging.user_action "Shutdown '#{browser_name.yellow}' first before we can process it"
       return true
     end
 
     unless profile_dir.directory?
-      Logging.info "Skipping '#{profile_dir.to_s.cyan}' -- directory does not exist"
+      Logging.info "Skipping '#{profile_dir.cyan}' -- directory does not exist"
       return true
     end
 
@@ -124,6 +135,7 @@ module CleanupBrowserProfiles
   private_class_method :_should_skip_profile?
 
   # Vacuums all SQLite databases in the profile dir larger than 10MB.
+  # :reek:FeatureEnvy -- Operates on method parameters and local variables (intentional helper extraction)
   def _vacuum_sqlite_databases(profile_dir, dry_run)
     return unless PathUtils.command_exists?('sqlite3')
 
@@ -137,11 +149,14 @@ module CleanupBrowserProfiles
       db_size = db_file.exist? ? db_file.size : 0
       next if db_size <= min_db_size
 
+      db_file_str = db_file.to_s
+      db_file_colored = db_file_str.cyan
+
       if dry_run
-        Logging.info "Would vacuum: '#{db_file.to_s.cyan}' (#{_bytes_to_mb(db_size).to_s.purple}MB)"
+        Logging.info "Would vacuum: '#{db_file_colored}' (#{_bytes_to_mb(db_size).to_s.purple}MB)"
       else
-        Logging.info "Vacuuming: '#{db_file.to_s.cyan}'"
-        if CommandUtils.run_silent('sqlite3', db_file.to_s, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;')
+        Logging.info "Vacuuming: '#{db_file_colored}'"
+        if CommandUtils.run_silent('sqlite3', db_file_str, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;')
           vacuumed += 1
         else
           failed_dbs << db_file
@@ -150,21 +165,18 @@ module CleanupBrowserProfiles
     end
 
     Logging.info "-> Processed #{vacuumed.to_s.purple} of #{db_count.to_s.purple} SQLite databases"
-    if failed_dbs.any?
-      Logging.record_warning("sqlite3 vacuum failed for #{failed_dbs.size.to_s.red} database(s):\n#{Logging.join_array(failed_dbs, :red)}")
-    end
+    Logging.record_warning("sqlite3 vacuum failed for #{failed_dbs.size.to_s.red} database(s):\n#{Logging.join_array(failed_dbs, :red)}") if failed_dbs.any?
   end
 
   private_class_method :_vacuum_sqlite_databases
 
   # Finds and deletes files and directories matching cleanup patterns.
+  # :reek:FeatureEnvy -- Operates on method parameters and local variables (intentional helper extraction)
   def _delete_items(profile_dir, file_patterns, dir_patterns, dry_run)
     # Find all items to delete
     items_to_delete = []
 
-    unless nil_or_empty?(file_patterns)
-      items_to_delete.concat(file_patterns.flat_map { |pattern| Dir.glob(profile_dir.join('**', pattern), File::FNM_CASEFOLD) })
-    end
+    items_to_delete.concat(file_patterns.flat_map { |pattern| Dir.glob(profile_dir.join('**', pattern), File::FNM_CASEFOLD) }) unless nil_or_empty?(file_patterns)
 
     unless nil_or_empty?(dir_patterns)
       dir_patterns.each do |pattern|
@@ -189,13 +201,11 @@ module CleanupBrowserProfiles
     Logging.info 'Deleting files and directories matching patterns...'
     deleted = 0
     items_to_delete.each do |path|
-      begin
-        path_pn = Pathname.new(path)
-        path_pn.directory? ? path_pn.rmtree : path_pn.delete
-        deleted += 1
-      rescue StandardError => e
-        Logging.record_warning("Failed to delete '#{path.cyan}': #{e.message}")
-      end
+      path_pn = Pathname.new(path)
+      path_pn.directory? ? path_pn.rmtree : path_pn.delete
+      deleted += 1
+    rescue StandardError => e
+      Logging.record_warning("Failed to delete '#{path.cyan}': #{e.message}")
     end
     Logging.info "-> Deleted #{deleted.to_s.purple} items"
   end
@@ -210,16 +220,17 @@ module CleanupBrowserProfiles
   # @param dry_run        [Boolean] When true, reports actions without performing them.
   def _vacuum_browser_profile_dir(browser_name, profile_dir, dry_run:)
     profile_dir = Pathname.new(profile_dir) unless profile_dir.is_a?(Pathname)
+    profile_dir_colored = profile_dir.cyan
     file_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-files.txt'))
     dir_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-dirs.txt'))
 
     return if _should_skip_profile?(browser_name, profile_dir)
 
-    Logging.with_step('vacuum', "#{'Vacuuming'.yellow} '#{browser_name.yellow}' in '#{profile_dir.to_s.cyan}'...") do
+    Logging.with_step('vacuum', "#{'Vacuuming'.yellow} '#{browser_name.yellow}' in '#{profile_dir_colored}'...") do
       # Measure size before cleanup (only for actual runs)
       unless dry_run
         size_before_kb = PathUtils.dir_size_kb(profile_dir)
-        Logging.info "--> Size before: '#{profile_dir.to_s.cyan}' --> #{_format_size(size_before_kb)}"
+        Logging.info "--> Size before: '#{profile_dir_colored}' --> #{_format_size(size_before_kb)}"
       end
 
       # Vacuum SQLite databases
@@ -231,7 +242,7 @@ module CleanupBrowserProfiles
       # Report space savings (only for actual runs)
       unless dry_run
         size_after_kb = PathUtils.dir_size_kb(profile_dir)
-        Logging.info "--> Size after: '#{profile_dir.to_s.cyan}' --> #{_format_size(size_after_kb)}"
+        Logging.info "--> Size after: '#{profile_dir_colored}' --> #{_format_size(size_after_kb)}"
         Logging.info "-> Space saved: #{_format_size(size_before_kb - size_after_kb)}"
       end
 
@@ -252,7 +263,7 @@ if __FILE__ == $PROGRAM_NAME
   include Logging
 
   options = { dry_run: false }
-  parser = CliParser.parse('[options]') do |opts|
+  CliParser.parse('[options]') do |opts|
     opts.separator 'Cleans up browser profile folders (vacuums SQLite DBs, deletes caches).'
     opts.separator ''
     opts.separator 'Options:'.purple
@@ -261,7 +272,7 @@ if __FILE__ == $PROGRAM_NAME
     opts.separator "  eg: #{File.basename(__FILE__).cyan} -n"
   end
 
-  Logging.run_script(File.basename(__FILE__, '.rb'), 'Finished cleaning up browser profiles') do
+  Logging.run_script(nil, 'Finished cleaning up browser profiles') do
     success = CleanupBrowserProfiles.run(dry_run: options[:dry_run])
     exit(success ? 0 : 1)
   end

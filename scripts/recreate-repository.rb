@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 # file location: ${DOTFILES_DIR}/scripts/recreate-repository.rb
 #
@@ -31,6 +31,7 @@ module RecreateRepository
   # @param force [Boolean] Squash all commits into one (default: false)
   # @param dry_run [Boolean] Show what would be done without making changes (default: false)
   # @return [Boolean] true on success, false on error
+  # :reek:UtilityFunction -- Module method pattern for dual-mode script (see ruby-scripting.md)
   def run(dir:, force: false, dry_run: false)
     dir = dir.to_s.chomp(File::SEPARATOR)
     dir_pn = Pathname.new(dir)
@@ -40,133 +41,48 @@ module RecreateRepository
     # The profiles repo is always force-squashed.
     force = true if dir_pn == EnvVars::PERSONAL_PROFILES_DIR
 
-    unless GitProcessor.repo?(dir)
-      Logging.error "'#{dir.cyan}' is not a git repo. Please specify the root of a git repo."
-    end
+    dir_colored = dir.cyan
+    Logging.error "'#{dir_colored}' is not a git repo. Please specify the root of a git repo." unless GitProcessor.repo?(dir)
 
-    Logging.section_header "#{'Processing dir:'.yellow} '#{dir.cyan}'"
+    Logging.section_header "#{'Processing dir:'.yellow} '#{dir_colored}'"
+    GitProcessor.new(dir: dir_pn, dry_run: dry_run) do |git|
+      # Verify and log required git metadata
+      git.verify_pre_recreation(force: force)
 
-    # Create GitProcessor instance for this repo with dry_run mode.
-    # This single instance is reused throughout for all git operations.
-    git = GitProcessor.new(dir: dir_pn, dry_run: dry_run)
+      # Suspend cron to prevent mid-operation conflicts with destructive git operations.
+      Cron.with_cron_suspended(dry_run: dry_run) do
+        is_keybase_repo = Keybase.keybase_url?(git.remote_url)
 
-    git_url = git.remote_url
-    user_name = git.config_value('user.name')
-    user_email = git.config_value('user.email')
-    branch = git.current_branch
+        # Before destroying git history, ensure Keybase is reachable so we do not end
+        # up with a deleted local .git and no way to push.
+        return false if is_keybase_repo && !Keybase.ensure_logged_in(dry_run: dry_run)
 
-    Logging.info "#{'Squash commits (will lose history!):'.yellow} #{force.to_s.orange}"
-    Logging.info "#{'Dry run:'.yellow} #{dry_run.to_s.orange}"
-    Logging.info "#{'Repo url:'.yellow} '#{git_url.cyan}'"
-    Logging.info "#{'User name:'.yellow} '#{user_name.cyan}'"
-    Logging.info "#{'User email:'.yellow} '#{user_email.cyan}'"
-    Logging.info "#{'Branch:'.yellow} '#{branch.cyan}'"
+        if force
+          # Recreate with verification (captures remote files, recreates, stages, commits, verifies)
+          return false unless git.verify_and_recreate_local_repo
 
-    if [git_url, user_name, user_email, branch].any? { |v| nil_or_empty?(v) }
-      Logging.error "One or more required git metadata values are missing for '#{dir.cyan}' -- see above"
-    end
-
-    # Before destroying git history, ensure Keybase is reachable so we do not end
-    # up with a deleted local .git and no way to push.
-    return false if Keybase.keybase_url?(git_url) && !Keybase.ensure_logged_in(dry_run: dry_run)
-
-    # Wrap the destructive operations in cron suspension so the cron job does not
-    # fire mid-operation. recron regenerates the crontab on the success path;
-    # resume_cron restores from the backup on any error path.
-    Cron.with_cron_suspended(dry_run: dry_run) do
-      if force
-        # Capture remote file list BEFORE destroying local .git
-        # (recreate removes .git which loses remote tracking refs)
-        remote_ref = "origin/#{branch}"
-        remote_files = git.ls_tree(remote_ref)
-
-        if remote_files.empty?
-          Logging.record_error "Failed to get file list from remote branch '#{remote_ref.cyan}' or remote is empty"
-          return false
+          # File lists match - safe to delete remote and push
+          # Keybase repo recreation only happens when force-squashing commits, because
+          # that's when we've destroyed local history. Without force, we're just
+          # compressing and pushing existing commits - no remote recreation needed.
+          return false if is_keybase_repo && !Keybase.recreate_repo(git.remote_repo_name, dry_run: dry_run)
+        else
+          # Stage and commit all files in local repo
+          git.stage_all
+          git.smart_commit
         end
 
-        # Now safe to recreate local repo (remote untouched)
-        git.recreate(remote_url: git_url, user_name: user_name, user_email: user_email)
+        git.compress
+        # Push to remote (force push after recreation, normal push otherwise)
+        git.push(remote: 'origin', branch: git.current_branch, force: force)
+
+        # Build commit graph for optimized git operations (log, status, merge-base)
+        git.build_commit_graph
       end
-
-      # Stage and commit all files in local repo
-      git.stage_all
-      git.smart_commit
-
-      git.compress
-
-      if force
-        # Compare new local vs old remote BEFORE deleting remote.
-        # This ensures we don't lose any files when recreating the remote repo.
-        return false unless _verify_file_lists_match(git, remote_files, dry_run)
-
-        # File lists match - safe to delete remote and push
-        # Keybase repo recreation only happens when force-squashing commits, because
-        # that's when we've destroyed local history. Without force, we're just
-        # compressing and pushing existing commits - no remote recreation needed.
-        if Keybase.keybase_url?(git_url)
-          return false unless Keybase.recreate_repo(git.remote_repo_name, dry_run: dry_run)
-        end
-      end
-
-      # Push to remote (force push after recreation, normal push otherwise)
-      git.push(remote: 'origin', branch: branch, force: force)
-
-      # Build commit graph for optimized git operations (log, status, merge-base)
-      git.build_commit_graph
     end
 
     true
   end
-
-  # Verifies that new local repo and old remote file lists match.
-  # Called after local recreation with pre-captured remote file list.
-  #
-  # @param git [GitProcessor] Git processor instance
-  # @param remote_files [Array<String>] Pre-captured remote file list (before recreate)
-  # @param dry_run [Boolean] Dry run mode
-  # @return [Boolean] true if lists match (or dry_run), false otherwise
-  def _verify_file_lists_match(git, remote_files, dry_run)
-    Logging.info "Verifying file lists match between new local and old remote before deleting remote..."
-
-    if dry_run
-      Logging.info "Would compare #{'HEAD'.cyan} vs pre-captured remote file list"
-      return true
-    end
-
-    # Get local files list from new repo (HEAD - just committed)
-    local_files = git.ls_tree('HEAD')
-
-    # Compare the lists
-    if local_files == remote_files
-      Logging.success "✅ File lists match (#{local_files.size.to_s.purple} files) - safe to delete remote"
-      return true
-    end
-
-    # Lists don't match - compute differences and show detailed diagnostic output
-    local_only = local_files - remote_files
-    remote_only = remote_files - local_files
-
-    # Print all diagnostic information BEFORE raising error
-    Logging.warn "Aborting without deleting remote repo - local has been recreated but remote is preserved"
-
-    if local_only.any?
-      Logging.warn "Files only in new local (#{local_only.size.to_s.red}):"
-      local_only.first(10).each { |f| Logging.warn "  + #{f.cyan}" }
-      Logging.warn "  ... and #{local_only.size - 10} more" if local_only.size > 10
-    end
-
-    if remote_only.any?
-      Logging.warn "Files only in old remote (#{remote_only.size.to_s.red}):"
-      remote_only.first(10).each { |f| Logging.warn "  - #{f.cyan}" }
-      Logging.warn "  ... and #{remote_only.size - 10} more" if remote_only.size > 10
-    end
-
-    # Raise error AFTER printing all diagnostics
-    Logging.error "❌ File lists DO NOT match between new local and old remote!"
-  end
-
-  private_class_method :_verify_file_lists_match
 end
 
 # ---------------------------------------------------------------------------
@@ -198,7 +114,12 @@ if __FILE__ == $PROGRAM_NAME
 
   parser.abort_with_usage('Missing required option: -d <dir>') if nil_or_empty?(options[:dir])
 
-  Logging.run_script(File.basename(__FILE__, '.rb')) do
+  # Standard dual-mode CLI wrapper pattern (Flay similarity with resurrect-repositories.rb is intentional):
+  # - Logging.run_script handles script infrastructure (depth tracking, timing, summary)
+  # - Module.run() contains business logic
+  # - exit(success ? 0 : 1) converts boolean to shell exit code
+  # See ruby-scripting.md section "Dual-Mode Ruby Scripts" for rationale.
+  Logging.run_script do
     success = RecreateRepository.run(dir: options[:dir], force: options[:force], dry_run: options[:dry_run])
     exit(success ? 0 : 1)
   end

@@ -43,7 +43,7 @@ source "${HOME}/.shellrc"
 
 if [[ -o interactive && -o zle && -t 1 ]] && (( $+commands[starship] )); then
   # Set cursor style before drawing prompt (applies immediately, before plugins load)
-  # Note: blinking-bar requires iTerm Preferences → Profiles → Text → "Blinking cursor" enabled
+  # Note: blinking-bar requires iTerm Preferences -> Profiles -> Text -> "Blinking cursor" enabled
   zstyle ':ftl-prompt:' cursor blinking-bar
 
   # Source ftl-prompt function directly from antidote cache

@@ -5,5 +5,66 @@
 inherit_from: files/--XDG_CONFIG_HOME--/rubocop/config.yml
 
 AllCops:
-  TargetRubyVersion: 2.6
   # Dotfiles scripts must maintain Ruby 2.6 compatibility (system Ruby on vanilla macOS)
+  TargetRubyVersion: 2.6
+
+# Brewfile uses Homebrew's DSL with specific formatting conventions
+Layout/ArgumentAlignment:
+  Exclude:
+    - 'files/--HOME--/Brewfile'
+
+Layout/ExtraSpacing:
+  Exclude:
+    - 'files/--HOME--/Brewfile'
+
+# Line length not enforced - descriptive variable names and paths often exceed 120 chars
+Layout/LineLength:
+  Enabled: false
+
+# Utility modules have shebangs but aren't executable (they're libraries)
+Lint/ScriptPermission:
+  Exclude:
+    - 'scripts/utilities/**/*.rb'
+
+# Class length not enforced - utility classes can be comprehensive
+Metrics/ClassLength:
+  Enabled: false
+
+# Module length not enforced - many utility modules naturally exceed 100 lines
+Metrics/ModuleLength:
+  Enabled: false
+
+# Parameter lists can be long for utility functions with many optional keyword arguments
+Metrics/ParameterLists:
+  Enabled: false
+
+# Brewfile uses Homebrew's DSL with specific formatting conventions
+Style/ColonMethodCall:
+  Exclude:
+    - 'files/--HOME--/Brewfile'
+
+# Keep explicit encoding comments for clarity across different environments
+Style/Encoding:
+  Enabled: false
+
+# Top-level include is used in standalone CLI mode blocks (if __FILE__ == $PROGRAM_NAME)
+# This is the standard pattern for dual-mode scripts (module + CLI)
+Style/MixinUsage:
+  Enabled: false
+
+# Dotfiles repository uses 'extend self' pattern for utility modules
+# This allows both module method calls (MyModule.method) and direct calls
+# when included. The 'module_function' alternative has different visibility
+# semantics that don't match our needs.
+Style/ModuleFunction:
+  Enabled: false
+
+# Endless range syntax (ary[n..]) requires Ruby 2.7+
+# Repository uses Ruby 2.6 (system Ruby on vanilla macOS)
+Style/SlicingWithRange:
+  Enabled: false
+
+# Brewfile uses shell variable interpolation (${VAR}), not Ruby interpolation
+Style/StringLiterals:
+  Exclude:
+    - 'files/--HOME--/Brewfile'

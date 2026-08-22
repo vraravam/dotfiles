@@ -107,7 +107,7 @@ ohmyzsh/ohmyzsh path:plugins/macos kind:defer
 # `hostname -f` fork-avoidance optimisation still applies after deferral.
 ohmyzsh/ohmyzsh path:plugins/iterm2 kind:defer
 
-# DEFERRED: registers ESC-ESC → add-sudo via `zle -N` + `bindkey`.
+# DEFERRED: registers ESC-ESC -> add-sudo via `zle -N` + `bindkey`.
 # Safe to defer because its absence is invisible -- you can't press ESC-ESC
 # before the shell is interactive, and the binding is cosmetic (not required
 # for any first-command behaviour).

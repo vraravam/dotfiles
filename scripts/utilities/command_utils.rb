@@ -1,13 +1,13 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 # Utility methods for executing external commands with consistent error handling.
 
 require 'open3'
 require_relative 'core'
 require_relative 'enumerable_ext'
-require_relative 'string'
+require_relative 'string_ext'
 
 module CommandUtils
   extend self
@@ -47,6 +47,7 @@ module CommandUtils
   # @example
   #   version = CommandUtils.query('sw_vers', '-productVersion')
   #   config_dir = CommandUtils.query('bat', '--config-dir')
+  # :reek:UtilityFunction -- Stateless wrapper for command output (intentional)
   def query(*command)
     stdout, = Open3.capture3(*command)
     stdout.strip
@@ -77,18 +78,19 @@ module CommandUtils
   #     Logging.record_warning("Find issues: #{output_msg}")
   #   end
   def check_status(stdout, stderr, status, noise_patterns: nil)
-    unless status.success?
-      if block_given?
-        # Filter stderr if patterns provided
-        filtered_stderr = !nil_or_empty?(noise_patterns) ? _filter_stderr_patterns(stderr, noise_patterns) : stderr
+    # Guard against nil status (shouldn't happen with Open3.capture3 but defensive coding)
+    return false if status.nil?
 
-        # Build formatted output message (stdout/stderr sections)
-        output_message = ''
-        output_message += "\nSTDOUT: #{stdout.strip}" unless nil_or_empty?(stdout)
-        output_message += "\nSTDERR: #{filtered_stderr.strip}".red unless nil_or_empty?(filtered_stderr)
+    if !status.success? && block_given?
+      # Filter stderr if patterns provided
+      filtered_stderr = !nil_or_empty?(noise_patterns) ? _filter_stderr_patterns(stderr, noise_patterns) : stderr
 
-        yield(status, output_message)
-      end
+      # Build formatted output message (stdout/stderr sections)
+      output_message = ''
+      output_message += "\nSTDOUT: #{stdout.strip}" unless nil_or_empty?(stdout)
+      output_message += "\nSTDERR: #{filtered_stderr.strip}".red unless nil_or_empty?(filtered_stderr)
+
+      yield(status, output_message)
     end
 
     status.success?
@@ -135,9 +137,16 @@ module CommandUtils
   #   success = CommandUtils.capture_output('mise', '-C', dir, 'trust') do |status, output_msg|
   #     Logging.warn("mise trust failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
   #   end
-  def capture_output(*command)
+  def capture_output(*command, &block)
     stdout, stderr, status = Open3.capture3(*command)
-    check_status(stdout, stderr, status) { |st, msg| yield(st, msg) }
+    check_status(stdout, stderr, status, &block)
+  rescue Errno::ENOENT => e
+    # Command not found - yield with nil status and error message
+    if block_given?
+      output_message = "\nERROR: #{e.message}".red
+      yield(nil, output_message)
+    end
+    false
   end
 
   # Executes a command via system(), streaming stdout/stderr to terminal.
@@ -155,7 +164,7 @@ module CommandUtils
   #   end
   def run_interactive(*command)
     success = system(*command)
-    yield unless success if block_given?
+    yield if block_given? && !success
     success
   end
 
@@ -178,6 +187,7 @@ module CommandUtils
     # substrings of the line (e.g., 'Permission denied' matches 'Permission denied (publickey)')
     meaningful_lines = stderr.each_line.filter_map do |line|
       next if nil_or_empty?(line)
+
       stripped = line.strip
       stripped unless patterns.any? { |pattern| stripped.include?(pattern) }
     end

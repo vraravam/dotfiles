@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # file location: ${HOME}/Brewfile
 
 # This file is used along with the `brew bundle` command to ensure that required packages and apps are installed.
@@ -80,7 +82,7 @@ brew 'tlrc'
 cask 'clocker', postinstall: "\"#{setup_login_items_script}\" -a 'Clocker'"
 cask 'dbeaver-community'
 cask 'drawio'
-cask 'firefox@nightly' #, greedy: true
+cask 'firefox@nightly' # , greedy: true
 cask 'xykong/tap/flux-markdown', trusted: true, postinstall: 'qlmanage -r'
 cask 'google-chrome@beta'
 cask 'keepassxc@beta'

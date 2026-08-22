@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 require 'open3'
 require 'pathname'
@@ -10,12 +10,13 @@ require_relative 'core'
 require_relative 'enumerable_ext'
 require_relative 'env_vars'
 require_relative 'logging'
-require_relative 'string'
+require_relative 'string_ext'
 
 # macOS-specific system operations: login-item app management, softwareupdate
 # schedule control, preference reload, and notification display.
 #
 # These are macOS-only -- callers should not require this module on Linux or Windows.
+# :reek:TooManyConstants -- macOS command paths need explicit definitions
 module MacOS
   extend self
   include Core  # For instance methods (in blocks)
@@ -37,7 +38,7 @@ module MacOS
   # Keep in sync with Brewfile setup_login_items_script entries and
   # defaults-write login-key sections in osx-defaults.sh.
   LOGIN_ITEM_APPS = [
-    'Clocker',    # startAtLogin = true (com.abhishek.Clocker)
+    'Clocker', # startAtLogin = true (com.abhishek.Clocker)
     # 'DockDoor',   # login item via Brewfile setup_login_items_script (SMAppService)
     'KeyCastr',   # login item via Brewfile setup_login_items_script (SMAppService)
     'KeyClu',     # launchAtLogin = true (com.0804Team.KeyClu)
@@ -47,8 +48,8 @@ module MacOS
     'Shortcat',   # login item via Brewfile setup_login_items_script (SMAppService)
     # 'Sol',        # login item via Brewfile setup_login_items_script (SMAppService)
     # 'Stats',      # LaunchAtLoginNext = true (eu.exelban.Stats)
-    'Thaw',       # login item via Brewfile setup_login_items_script (SMAppService)
-    'Vorssaint',  # login item via Brewfile setup_login_items_script (SMAppService)
+    'Thaw', # login item via Brewfile setup_login_items_script (SMAppService)
+    'Vorssaint' # login item via Brewfile setup_login_items_script (SMAppService)
   ].freeze
 
   # Sends SIGTERM to every app in LOGIN_ITEM_APPS. Called before writing
@@ -116,6 +117,7 @@ module MacOS
   # second relaunch that reads the newly-written defaults.
   #
   # @return [void]
+  # :reek:UtilityFunction -- Stateless utility that operates only on constants
   def restart_login_item_apps
     LOGIN_ITEM_APPS.each do |app|
       CommandUtils.run_silent('open', '-a', app)
@@ -215,6 +217,7 @@ module MacOS
     # filter_map polyfill in enumerable_ext.rb provides optimized single-pass implementation for Ruby 2.6
     outdated = outdated_raw.lines.filter_map do |line|
       next if nil_or_empty?(line)
+
       stripped = line.strip
       stripped unless stripped.match?(/homebrew|Downloading/i)
     end
@@ -279,6 +282,7 @@ module MacOS
       end
     end
   end
+
   private_class_method :_process_running?, :_set_softwareupdate_schedule,
                        :_has_sudo_credentials?, :_keep_sudo_alive
 end

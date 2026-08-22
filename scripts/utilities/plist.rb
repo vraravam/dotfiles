@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 require 'pathname'
 require 'rexml/document'
@@ -47,9 +47,11 @@ module Plist
   #
   # @param plist_file [String, Pathname]
   # @return [Boolean]
-  def has_keys?(plist_file)
+  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
+  def keys?(plist_file)
     plist_file = Pathname.new(plist_file) unless plist_file.is_a?(Pathname)
     return false unless plist_file.file?
+
     # Use explicit UTF-8 encoding to avoid "invalid byte sequence in US-ASCII"
     # errors when reading plist XML files in cron/background environments.
     plist_file.read(encoding: 'UTF-8').match?(/<key>/)
@@ -61,7 +63,8 @@ module Plist
   # Lines starting with '#' and blank lines are ignored.
   #
   # @param filepath [Pathname] Path to the excluded-keys file.
-  # @return [Hash<String,String>] Domain → newline-separated pattern string
+  # @return [Hash<String,String>] Domain -> newline-separated pattern string
+  # :reek:FeatureEnvy -- Accumulates patterns from file into result hash
   def load_excluded_keys(filepath)
     result = Hash.new { |h, k| h[k] = [] }
     _each_data_line(filepath) do |line|
@@ -111,8 +114,10 @@ module Plist
   # @return [Boolean]
   def export_domain(domain, file)
     return false if nil_or_empty?(domain)
-    file_str = file.is_a?(Pathname) ? file.to_s : file
+
+    file_str = file.to_s
     return false unless CommandUtils.run_silent(MacOS::DEFAULTS_CMD, 'export', domain, file_str)
+
     # Convert binary plist to XML for human-readable git diffs.
     # JSON is not used: plutil -convert json is lossy for <data> and <date> types.
     CommandUtils.run_silent(MacOS::PLUTIL_CMD, '-convert', 'xml1', file_str)
@@ -126,7 +131,8 @@ module Plist
   # @return [Boolean]
   def import_domain(domain, file)
     return false if nil_or_empty?(domain)
-    file_str = file.is_a?(Pathname) ? file.to_s : file
+
+    file_str = file.to_s
     CommandUtils.run_silent(MacOS::DEFAULTS_CMD, 'import', domain, file_str)
   end
 
@@ -145,6 +151,7 @@ module Plist
   # @param excluded_by_domain [Hash<String,String>] Map of domain => newline-separated
   #   glob patterns. Use '*' as the domain key for patterns that apply to every domain.
   # @return [void]
+  # :reek:FeatureEnvy -- Manages plist file lifecycle (read, parse, filter, write)
   def strip_excluded_keys(domain, plist_file, excluded_by_domain)
     plist_file = Pathname.new(plist_file) unless plist_file.is_a?(Pathname)
     return unless plist_file.file?
@@ -156,7 +163,11 @@ module Plist
 
     # Load and parse the plist.
     # Use explicit UTF-8 encoding to avoid "invalid byte sequence in US-ASCII".
-    doc = REXML::Document.new(plist_file.read(encoding: 'UTF-8')) rescue return
+    doc = begin
+      REXML::Document.new(plist_file.read(encoding: 'UTF-8'))
+    rescue StandardError
+      return
+    end
     dict = doc.root&.elements&.first
     return unless dict&.name == 'dict'
 
@@ -173,14 +184,18 @@ module Plist
       children = dict.to_a.select { |e| e.is_a?(REXML::Element) }
       hit = children.each_with_index.find do |e, idx|
         next unless e.name == 'key'
-        value = children[idx + 1]
+
+        next_idx = idx + 1
+        value = children[next_idx]
         combined.any? { |p| File.fnmatch(p, e.text.to_s) } || (value && value.name == 'date')
       end
       break unless hit
 
       el, idx = hit
+      next_idx = idx + 1
+      next_child = children[next_idx]
       dict.delete_element(el)
-      dict.delete_element(children[idx + 1]) if children[idx + 1]
+      dict.delete_element(next_child) if next_child
       modified = true
     end
 
@@ -199,15 +214,18 @@ module Plist
 
   # Enumerates the non-blank, non-comment lines from +filepath+.
   # Lines starting with '#' (optionally preceded by whitespace) are skipped.
+  # :reek:FeatureEnvy -- Validates file and iterates over lines with filtering
   def _each_data_line(filepath)
     filepath = Pathname.new(filepath) unless filepath.is_a?(Pathname)
     return unless filepath.file?
+
     # Use Core.each_line_utf8 to avoid "invalid byte sequence in US-ASCII" errors
     # when reading UTF-8 files in cron/background environments without UTF-8 locale.
     Core.each_line_utf8(filepath) do |line|
       stripped = line.chomp
       next if nil_or_empty?(stripped.strip)
       next if stripped =~ /\A\s*#/
+
       yield stripped
     end
   end

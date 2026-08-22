@@ -387,7 +387,7 @@
   # dw = d --word-diff=color           # Note: Commented out since we use delta; but keeping for reference
   # dcw = d --word-diff=color --staged # Note: Commented out since we use delta; but keeping for reference
 
-  # Shows incoming commits (remote → local) with different verbosity levels.
+  # Shows incoming commits (remote -> local) with different verbosity levels.
   # Default: shows commit summary with stats.
   # -d flag: shows a single combined diff (not per-commit).
   # -p flag: shows commits with full file diffs.
