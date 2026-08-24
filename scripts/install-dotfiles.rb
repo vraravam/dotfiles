@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 # This script is used to install the dotfiles from this repo/dir structure to the user's home dir
 # It can be invoked from any location as long as its in the PATH (and you don't need to specify the fully qualified name while invoking it).
@@ -8,7 +8,7 @@
 # If there is already a real file (not a symbolic link), then the script will move that file into this repo, and then create the corresponding symlink. This helps preserve the current settings from the user without forcefully overriding from my repo.
 # Special handling (copy instead of symlink) for 'custom.git*' files (.gitignore, .gitattributes, etc.):
 #   - On FIRST_INSTALL (FIRST_INSTALL env var is set): target always wins -- moved into repo, then repo is copied back.
-#   - Otherwise: mtime determines the winner. Target newer → moved into repo. Source newer or same age → target overwritten.
+#   - Otherwise: mtime determines the winner. Target newer -> moved into repo. Source newer or same age -> target overwritten.
 # To run it, just invoke by `install-dotfiles.rb` if this dir is already setup in the PATH
 #
 # Usage:
@@ -26,7 +26,7 @@ require_relative 'utilities/core'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/logging'
 require_relative 'utilities/path_utils'
-require_relative 'utilities/string'
+require_relative 'utilities/string_ext'
 
 # Installs dotfiles from the repo into the home directory.
 # Returns true on success (zero errors), false if any errors occurred.
@@ -52,6 +52,8 @@ module InstallDotfiles
   # @param verbose [Boolean] Print each file operation
   # @param force [Boolean] Overwrite existing files without backing them up
   # @return [Boolean] true if no errors, false if any errors occurred
+  # :reek:UtilityFunction -- Module method pattern for dual-mode script (see ruby-scripting.md)
+  # :reek:FeatureEnvy -- Private helpers operate on local variables (intentional extraction)
   def run(dry_run: false, verbose: false, force: false)
     stats = Stats.new(processed: 0, created: 0, updated: 0, skipped: 0, errors: 0)
 
@@ -84,11 +86,12 @@ module InstallDotfiles
     # Print statistics summary
     puts ''
     Logging.success('Summary:')
+    error_count = stats.errors
     Logging.emit("Processed: #{stats.processed.to_s.purple}", level: 1)
     Logging.emit("Created:   #{stats.created.to_s.green}", level: 1)
     Logging.emit("Updated:   #{stats.updated.to_s.green}", level: 1)
     Logging.emit("Skipped:   #{stats.skipped.to_s.purple}", level: 1)
-    Logging.emit("Errors:    #{stats.errors.positive? ? stats.errors.to_s.red : stats.errors}", level: 1)
+    Logging.emit("Errors:    #{error_count.positive? ? error_count.to_s.red : error_count}", level: 1)
 
     _ensure_ssh_include_line
     _ensure_gitconfig_tool_symlink('delta')
@@ -106,6 +109,7 @@ module InstallDotfiles
   # @param path_template [String] The path template containing --VAR-- placeholders.
   # @param source_file [String] The source file path, used for logging purposes.
   # @return [String, nil] The interpolated path, or +nil+ if any referenced environment variable is missing.
+  # :reek:UtilityFunction -- Stateless string transformation (correct design)
   def _interpolate_path(path_template, source_file)
     # First, check if all referenced environment variables exist.
     # Check both ENV (runtime) and EnvVars (constants) - on vanilla OS, env vars
@@ -142,9 +146,10 @@ module InstallDotfiles
   # @param verbose [Boolean] Verbose output.
   # @param force [Boolean] Force overwrite without backing up existing files.
   # @return [void]
+  # :reek:FeatureEnvy -- Operates on stats parameter (intentional - caller owns stats object)
   def _process_dotfile(source_pn, target_pn, stats, dry_run: false, verbose: false, force: false)
-    source_path = source_pn.to_s.cyan
-    target_path = target_pn.to_s.cyan
+    source_path = source_pn.cyan
+    target_path = target_pn.cyan
 
     stats.processed += 1
 
@@ -170,31 +175,10 @@ module InstallDotfiles
         Logging.info("  Forcefully overwriting existing file '#{target_path}'") if verbose
         target_pn.rmtree unless dry_run
       elsif is_custom_git && !EnvVars.first_install?
-        # For custom.git files, check if content is identical first.
-        # If content matches, synchronize timestamps (target may be out of sync after git restore-mtime).
-        # Only use mtime comparison when content differs to determine which version is authoritative.
-        if FileUtils.identical?(source_pn, target_pn)
-          # Content is identical - use source (repo) timestamp as authoritative.
-          if target_pn.mtime != source_pn.mtime
-            Logging.debug("  Content identical but timestamps differ; syncing to source timestamp") if verbose
-            _sync_timestamps(source_pn, target_pn) unless dry_run
-          else
-            Logging.debug("  Target '#{target_path}' is identical to source (content + timestamp); skipping") if verbose
-          end
+        result = _handle_custom_git_conflict(source_pn, target_pn, source_path, target_path, verbose, dry_run)
+        if result == :skipped
           stats.skipped += 1
           return
-        end
-
-        # Content differs - use mtime to determine which version is authoritative.
-        # Whichever file was modified more recently wins. On a tie, source wins (repo is authoritative).
-        target_mtime = target_pn.mtime
-        source_mtime = source_pn.mtime
-        if target_mtime > source_mtime
-          Logging.info("  Target '#{target_path}' is newer (#{target_mtime} > #{source_mtime}); adopting it into repo and re-copying")
-          FileUtils.mv(target_pn, source_pn, force: true) unless dry_run
-        else
-          Logging.info("  Source '#{source_path}' is newer or same age (#{source_mtime} >= #{target_mtime}); overwriting target") if verbose
-          target_pn.rmtree unless dry_run
         end
       else
         # FIRST_INSTALL, or a non-custom-git file: target is always authoritative -- move it into repo.
@@ -241,6 +225,7 @@ module InstallDotfiles
   # @param source_pn [Pathname] The source file (timestamp authority)
   # @param target_paths [Array<Pathname>, Pathname] One or more target files to sync
   # @return [void]
+  # :reek:UtilityFunction -- Stateless timestamp operation (correct design)
   def _sync_timestamps(source_pn, *target_paths)
     source_mtime = source_pn.mtime
     source_atime = source_pn.atime
@@ -255,12 +240,13 @@ module InstallDotfiles
   # Extracted from top-level code so it is testable and has a clear failure boundary.
   #
   # @return [void]
+  # :reek:UtilityFunction -- Stateless SSH config validation (correct design)
   def _ensure_ssh_include_line
     ssh_dir = EnvVars::HOME.join('.ssh').expand_path.freeze
     global_config_link = ssh_dir.join('global_config')
 
     unless global_config_link.exist? && global_config_link.symlink?
-      Logging.warn("Skipping SSH config update because '#{global_config_link.to_s.cyan}' does not exist or is not a symlink.")
+      Logging.warn("Skipping SSH config update because '#{global_config_link.cyan}' does not exist or is not a symlink.")
       return
     end
 
@@ -269,17 +255,18 @@ module InstallDotfiles
 
     include_line = 'Include ~/.ssh/global_config'
     begin
+      default_ssh_config_colored = default_ssh_config.cyan
       # Use Core.each_line_utf8 to avoid encoding issues in non-UTF-8 environments.
       found = false
       Core.each_line_utf8(default_ssh_config) { |l| found = true if l.strip == include_line }
       if found
-        Logging.success("'#{include_line.cyan}' already present in '#{default_ssh_config.to_s.cyan}'")
+        Logging.success("'#{include_line.cyan}' already present in '#{default_ssh_config_colored}'")
       else
-        Logging.info("Adding '#{include_line.cyan}' to '#{default_ssh_config.to_s.cyan}'")
+        Logging.info("Adding '#{include_line.cyan}' to '#{default_ssh_config_colored}'")
         default_ssh_config.write("\n#{include_line}\n", mode: 'a')
       end
     rescue StandardError => e
-      Logging.warn("Failed processing SSH config '#{default_ssh_config.to_s.cyan}': #{e.message}")
+      Logging.warn("Failed processing SSH config '#{default_ssh_config_colored}': #{e.message}")
     end
   end
 
@@ -287,22 +274,28 @@ module InstallDotfiles
   # is installed, or removes it when the tool is not available.
   #
   # Pattern: ~/.config/git/config-<tool>.inc (source, symlinked from repo)
-  #       → ~/.config/git/config-<tool>-enabled.inc (symlink, only exists when tool installed)
+  #       -> ~/.config/git/config-<tool>-enabled.inc (symlink, only exists when tool installed)
   #
   # @param tool_name [String] Name of the tool (e.g., 'delta', 'pandoc')
   # @param command_name [String] Command to check in PATH (defaults to tool_name)
   def self._ensure_gitconfig_tool_symlink(tool_name, command_name: nil)
     command_name ||= tool_name
-    config_target = EnvVars::XDG_CONFIG_HOME.join('git', "config-#{tool_name}.inc")
-    config_symlink = EnvVars::XDG_CONFIG_HOME.join('git', "config-#{tool_name}-enabled.inc")
+    git_config_dir = EnvVars::XDG_CONFIG_HOME.join('git')
+
+    config_target = git_config_dir.join("config-#{tool_name}.inc")
+    config_symlink = git_config_dir.join("config-#{tool_name}-enabled.inc")
     display_name = tool_name.capitalize
+
+    config_symlink_str = config_symlink.to_s
+    config_symlink_colored = config_symlink_str.cyan
+    config_target_str = config_target.to_s
 
     if PathUtils.command_exists?(command_name)
       # Tool is installed -- ensure symlink exists
 
       # Target must exist (should be symlinked by this script from repo)
       unless config_target.exist?
-        Logging.warn("Skipping #{tool_name} config symlink -- target file '#{config_target.to_s.cyan}' does not exist")
+        Logging.warn("Skipping #{tool_name} config symlink -- target file '#{config_target_str.cyan}' does not exist")
         return
       end
 
@@ -310,27 +303,64 @@ module InstallDotfiles
       # Note: Parent directory (~/.config/git/) is guaranteed to exist at this point because
       # _process_dotfile already created it when processing the main config symlink.
       if config_symlink.exist?
-        Logging.debug("#{display_name} config symlink already exists at '#{config_symlink.to_s.cyan}'")
+        Logging.debug("#{display_name} config symlink already exists at '#{config_symlink_colored}'")
       else
-        Logging.info("Creating #{tool_name} config symlink: '#{config_symlink.to_s.cyan}' → '#{config_target.to_s.cyan}'")
-        FileUtils.ln_sf(config_target.to_s, config_symlink.to_s)
+        Logging.info("Creating #{tool_name} config symlink: '#{config_symlink_colored}' -> '#{config_target_str.cyan}'")
+        FileUtils.ln_sf(config_target_str, config_symlink_str)
         Logging.success("Created #{tool_name} config symlink")
       end
-    else
+    elsif config_symlink.exist?
       # Tool is not installed -- remove symlink if it exists
-      if config_symlink.exist?
-        Logging.info("Removing #{tool_name} config symlink (#{command_name} not in PATH): '#{config_symlink.to_s.cyan}'")
-        FileUtils.rm_f(config_symlink.to_s)
-        Logging.success("Removed #{tool_name} config symlink")
-      else
-        Logging.debug("#{command_name} not in PATH and symlink doesn't exist -- nothing to do")
-      end
+      Logging.info("Removing #{tool_name} config symlink (#{command_name} not in PATH): '#{config_symlink_colored}'")
+      FileUtils.rm_f(config_symlink_str)
+      Logging.success("Removed #{tool_name} config symlink")
+    else
+      Logging.debug("#{command_name} not in PATH and symlink doesn't exist -- nothing to do")
     end
   rescue StandardError => e
     Logging.warn("Failed to ensure #{tool_name} symlink: #{e.message}")
   end
 
-  private_class_method :_ensure_ssh_include_line, :_ensure_gitconfig_tool_symlink
+  # Handles conflict resolution for custom.git files when target already exists.
+  # For custom.git files, check if content is identical first.
+  # If content matches, synchronize timestamps (target may be out of sync after git restore-mtime).
+  # Only use mtime comparison when content differs to determine which version is authoritative.
+  #
+  # @param source_pn [Pathname] Source file in repo
+  # @param target_pn [Pathname] Target file in home directory
+  # @param source_path [String] Source path for logging
+  # @param target_path [String] Target path for logging
+  # @param verbose [Boolean] Enable verbose logging
+  # @param dry_run [Boolean] Show what would happen without making changes
+  # @return [Symbol, nil] :skipped if files are identical (caller should skip), nil otherwise
+  # :reek:FeatureEnvy -- Operates on method parameters (intentional - conflict resolution logic)
+  def _handle_custom_git_conflict(source_pn, target_pn, source_path, target_path, verbose, dry_run)
+    if FileUtils.identical?(source_pn, target_pn)
+      # Content is identical - use source (repo) timestamp as authoritative.
+      if target_pn.mtime != source_pn.mtime
+        Logging.debug('  Content identical but timestamps differ; syncing to source timestamp') if verbose
+        _sync_timestamps(source_pn, target_pn) unless dry_run
+      elsif verbose
+        Logging.debug("  Target '#{target_path.cyan}' is identical to source (content + timestamp); skipping")
+      end
+      return :skipped
+    end
+
+    # Content differs - use mtime to determine which version is authoritative.
+    # Whichever file was modified more recently wins. On a tie, source wins (repo is authoritative).
+    target_mtime = target_pn.mtime
+    source_mtime = source_pn.mtime
+    if target_mtime > source_mtime
+      Logging.info("  Target '#{target_path.cyan}' is newer (#{target_mtime} > #{source_mtime}); adopting it into repo and re-copying")
+      FileUtils.mv(target_pn, source_pn, force: true) unless dry_run
+    else
+      Logging.info("  Source '#{source_path.cyan}' is newer or same age (#{source_mtime} >= #{target_mtime}); overwriting target") if verbose
+      target_pn.rmtree unless dry_run
+    end
+    nil
+  end
+
+  private_class_method :_ensure_ssh_include_line, :_ensure_gitconfig_tool_symlink, :_handle_custom_git_conflict
 end
 
 # ---------------------------------------------------------------------------
@@ -360,7 +390,7 @@ if __FILE__ == $PROGRAM_NAME
     end
   end
 
-  Logging.run_script(File.basename(__FILE__, '.rb')) do
+  Logging.run_script do
     success = InstallDotfiles.run(**options)
     exit(success ? 0 : 1)
   end

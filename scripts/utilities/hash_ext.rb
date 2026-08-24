@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 # Extend Hash class with deep sort functionality
 #
@@ -16,6 +16,7 @@ class Hash
   # @example
   #   { b: { d: 1, c: 2 }, a: 3 }.deep_sort
   #   # => { a: 3, b: { c: 2, d: 1 } }
+  # :reek:FeatureEnvy -- Intentional recursion on hash values
   def deep_sort
     transform_values { |v| v.is_a?(Hash) ? v.deep_sort : v }.sort.to_h
   end

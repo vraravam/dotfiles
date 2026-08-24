@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 require 'pathname'
 require 'set'
@@ -123,9 +123,11 @@ module GitWorkspace
 
         # Move up one directory
         new_parent = File.dirname(parent)
-        break if new_parent == parent  # Hit root
+        break if new_parent == parent # Hit root
+
         parent = new_parent
-      end == true  # Result of while loop - true means we found a parent repo
+        # Result of while loop - true means we found a parent repo
+      end == true
     end
   end
 
@@ -134,15 +136,16 @@ module GitWorkspace
   # @param repo_dir [Pathname, String] The repository directory
   # @param switches [Array<String>] Additional git status flags (optional)
   # @return [Boolean] true if status retrieved successfully
+  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def status_repo(repo_dir, switches: [])
     repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
 
     unless GitProcessor.repo?(repo_dir)
-      Logging.debug "Skipping status -- '#{repo_dir.to_s.cyan}' is not a git repo"
+      Logging.debug "Skipping status -- '#{repo_dir.cyan}' is not a git repo"
       return false
     end
 
-    Logging.with_step("status #{repo_dir.to_s}", "#{'Status'.yellow} '#{repo_dir.to_s.cyan}'") do
+    Logging.with_step("status #{repo_dir}", "#{'Status'.yellow} '#{repo_dir.cyan}'") do
       _stdout, _stderr, status = GitProcessor.new(dir: repo_dir).status(*switches)
       status.success?
     end
@@ -152,6 +155,7 @@ module GitWorkspace
   # chrome directories in browser profiles. Intended for quick status overview.
   #
   # @return [Boolean] true if all status checks succeeded
+  # :reek:FeatureEnvy -- Accumulates status results from multiple repos
   def status_all_repos
     results = []
 
@@ -200,17 +204,19 @@ module GitWorkspace
         sorted,
         operation_desc: 'Installing mise tools'
       ) do |dir, _idx, _total|
+        dir_str = dir.to_s
+        dir_colored = dir_str.cyan
+
         # mise trust can be captured (quick, no progress to show)
-        trust_success = CommandUtils.capture_output('mise', '-C', dir.to_s, 'trust', '-y', '-a') do |status, output_msg|
-          Logging.warn("mise trust failed in '#{dir.to_s.cyan}' (status: #{status.exitstatus})#{output_msg}")
+        trust_success = CommandUtils.capture_output('mise', '-C', dir_str, 'trust', '-y', '-a') do |status, output_msg|
+          exit_code = status&.exitstatus || 'unknown'
+          Logging.warn("mise trust failed in '#{dir_colored}' (status: #{exit_code})#{output_msg}")
         end
 
         # mise install needs streaming output (downloads/builds plugins, slow, users want progress)
-        install_exitstatus = stream_command(['mise', '-C', dir.to_s, 'install'])
+        install_exitstatus = stream_command(['mise', '-C', dir_str, 'install'])
         install_success = install_exitstatus.zero?
-        unless install_success
-          Logging.warn("mise install failed in '#{dir.to_s.cyan}' (exit code: #{install_exitstatus})")
-        end
+        Logging.warn("mise install failed in '#{dir_colored}' (exit code: #{install_exitstatus})") unless install_success
 
         # Return boolean: true only if both operations succeeded
         trust_success && install_success
@@ -237,8 +243,8 @@ module GitWorkspace
 
       # Filter to dirs with .envrc, sort parents before children.
       dirs_with_envrc = all_dirs
-        .select { |dir| Pathname.new(dir).join('.envrc').file? }
-        .sort_by { |d| d.count(File::SEPARATOR) }
+                        .select { |dir| Pathname.new(dir).join('.envrc').file? }
+                        .sort_by { |d| d.count(File::SEPARATOR) }
 
       # Use CollectionProcessor for unified progress logging and error tracking
       results = CollectionProcessor.process_items(
@@ -282,6 +288,7 @@ module GitWorkspace
   # @param force [Boolean] When true, always regenerates even if the cache is
   #   up to date. When false (default), only regenerates if the cache is missing
   #   or older than PROJECTS_BASE_DIR.
+  # :reek:FeatureEnvy -- Manages cache file lifecycle (stale check, write, compile)
   def regenerate_repo_aliases(force: false)
     projects_base = EnvVars::PROJECTS_BASE_DIR
     return unless projects_base.directory?
@@ -303,7 +310,7 @@ module GitWorkspace
     repo_roots = find_git_repos(
       dirs: projects_base,
       maxdepth: 6,
-      additional_prune: %w[Library Caches],  # Add to defaults (node_modules, .cache, .Trash)
+      additional_prune: %w[Library Caches], # Add to defaults (node_modules, .cache, .Trash)
       skip_symlinks: true
     )
 
@@ -322,16 +329,17 @@ module GitWorkspace
       sorted_dirs.each do |dir_path|
         relative = dir_path.sub("#{projects_base}#{File::SEPARATOR}", '')
         # Alias name: replace path separator with '-'; value: sets FOLDER for run-all.rb.
-        alias_name = relative.gsub(File::SEPARATOR, '-')
+        # Use tr instead of gsub for single-character replacement (3x faster).
+        alias_name = relative.tr(File::SEPARATOR, '-')
         f.puts "alias #{alias_name}=\"FOLDER='#{dir_path}' MAXDEPTH=4 rug\""
       end
     end
 
-    if force
-      # Use Core.read_lines_utf8 to avoid encoding issues in non-UTF-8 environments.
-      count = Core.read_lines_utf8(cache_file).length
-      Logging.success "Repo aliases cache regenerated (#{count.to_s.green} aliases)"
-    end
+    return unless force
+
+    # Use Core.read_lines_utf8 to avoid encoding issues in non-UTF-8 environments.
+    count = Core.read_lines_utf8(cache_file).length
+    Logging.success "Repo aliases cache regenerated (#{count.to_s.green} aliases)"
   end
 
   # Stages and commits all changed files in a git repo without prompting.
@@ -342,15 +350,16 @@ module GitWorkspace
   # @param paths [Array<Pathname, String>, nil] Optional array of paths to stage within the repo
   #   (defaults to ['.'] - entire repo). Can be relative or absolute - git handles both.
   # @return [Boolean] true if successful, false if repo is invalid or git operations fail
+  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def update_repo(repo_dir, paths: nil)
     repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
 
     unless GitProcessor.repo?(repo_dir)
-      Logging.warn "Skipping repo update -- '#{repo_dir.to_s.cyan}' is not a git repo"
+      Logging.warn "Skipping repo update -- '#{repo_dir.cyan}' is not a git repo"
       return false
     end
 
-    Logging.with_step("update #{repo_dir.to_s}", "#{'Updating'.yellow} '#{repo_dir.to_s.cyan}'") do
+    Logging.with_step("update #{repo_dir}", "#{'Updating'.yellow} '#{repo_dir.cyan}'") do
       # Clean up stale lock files and hooks
       index_lock = repo_dir.join('.git', 'index.lock')
       commit_graph_lock = repo_dir.join('.git', 'objects', 'info', 'commit-graphs', 'commit-graph-chain.lock')
@@ -427,6 +436,7 @@ module GitWorkspace
         end
 
         break if seen.include?(dir)
+
         seen.add(dir)
         dir = dir.dirname
       end
@@ -443,21 +453,23 @@ module GitWorkspace
   #   instead of 6) to keep vanilla-OS boot time low.
   # @return [Array<String>] Unique ancestor directory paths.
   def collect_ancestor_dirs(first_install: false)
+    home = EnvVars::HOME
+
     maxdepth = first_install ? 3 : 6
-    dirs = [EnvVars::HOME, EnvVars::DOTFILES_DIR, EnvVars::PROJECTS_BASE_DIR]
+    dirs = [home, EnvVars::DOTFILES_DIR, EnvVars::PROJECTS_BASE_DIR]
 
     # Find all repo roots using the consolidated method
     repo_roots = find_git_repos(
       dirs: dirs,
       maxdepth: maxdepth,
-      additional_prune: %w[Library Caches],  # Add to defaults (node_modules, .cache, .Trash)
+      additional_prune: %w[Library Caches], # Add to defaults (node_modules, .cache, .Trash)
       skip_symlinks: true
     )
 
     # Walk up from each repo root to HOME, collecting all ancestors
     _collect_ancestors(
       repo_roots,
-      stop_at: EnvVars::HOME,
+      stop_at: home,
       include_repo_root: true,
       include_stop_boundary: true
     )

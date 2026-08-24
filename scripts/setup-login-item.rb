@@ -1,12 +1,12 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 # file location: ${DOTFILES_DIR}/scripts/setup-login-item.rb
 #
 # Registers an app as a macOS login item.
 #
-# On macOS 14–25: uses SMAppService.loginItem(url:) via an inline Swift script.
+# On macOS 14-25: uses SMAppService.loginItem(url:) via an inline Swift script.
 #   Items appear under "Open at Login" in System Settings (not "Legacy").
 #   First-time registration lands in "Requires Approval" -- the user must
 #   approve in System Settings > General > Login Items before it is active.
@@ -20,7 +20,7 @@
 #
 # The -b flag enables hidden/background mode (no Dock icon at launch).
 #   macOS 13 and earlier: sets hidden:true in the legacy AppleScript call.
-#   macOS 14–25: background behaviour is determined by the app's own Info.plist
+#   macOS 14-25: background behaviour is determined by the app's own Info.plist
 #   (LSUIElement/LSBackgroundOnly); -b emits a user_action hint instead.
 #
 # Usage:
@@ -46,18 +46,19 @@ module SetupLoginItem
   # @return [Boolean] true on success, false on error
   def run(app_name:, background: false)
     app_path_pn = Core::ROOT.join('Applications', "#{app_name}.app")
+    app_path_str = app_path_pn.to_s
+    app_name_colored = app_name.yellow
 
     unless app_path_pn.directory?
-      Logging.info "Application '#{app_path_pn.to_s.cyan}' not found -- skipping login item setup."
-      return true  # Not an error, just nothing to do
+      Logging.info "Application '#{app_path_pn.cyan}' not found -- skipping login item setup."
+      return true # Not an error, just nothing to do
     end
 
     # Detect macOS major version to choose the registration path.
-    sw_out = CommandUtils.query('sw_vers', '-productVersion')
-    macos_major = sw_out.split('.').first.to_i
+    macos_major = CommandUtils.query('sw_vers', '-productVersion').split('.').first.to_i
 
     if macos_major >= 14 && macos_major < 26
-      # macOS 14–25: SMAppService.loginItem(url:) registers the app as a proper
+      # macOS 14-25: SMAppService.loginItem(url:) registers the app as a proper
       # login item (appears under "Open at Login", not "Legacy" in System Settings).
       # First registration lands in .requiresApproval -- the user must approve in
       # System Settings > General > Login Items before the item is active.
@@ -67,38 +68,37 @@ module SetupLoginItem
       # which only works for login item helpers bundled WITHIN an app -- not for
       # registering standalone third-party apps externally. macOS 26+ falls through
       # to the legacy System Events path below.
-      if _register_smappservice(app_path_pn.to_s)
-        Logging.success "Registered '#{app_name.yellow}' as a login item (SMAppService)"
-        Logging.user_action "Open System Settings > General > Login Items and approve '#{app_name.yellow}' under 'Open at Login'."
-        if background
-          Logging.user_action "'#{app_name.yellow}': enable background/hidden mode via the app's own preferences or System Settings -- SMAppService does not expose a hidden-at-launch flag."
-        end
+      if _register_smappservice(app_path_str)
+        Logging.success "Registered '#{app_name_colored}' as a login item (SMAppService)"
+        Logging.user_action "Open System Settings > General > Login Items and approve '#{app_name_colored}' under 'Open at Login'."
+        Logging.user_action "'#{app_name_colored}': enable background/hidden mode via the app's own preferences or System Settings -- SMAppService does not expose a hidden-at-launch flag." if background
         true
       else
-        Logging.record_warning("Failed to register '#{app_name.yellow}' via SMAppService")
+        Logging.record_warning("Failed to register '#{app_name_colored}' via SMAppService")
         false
       end
     else
       # macOS 13 and earlier, and macOS 26+: use the legacy System Events AppleScript.
       # Items registered this way show as "Legacy" in System Settings on macOS 13.
       # hidden=true suppresses the Dock icon at launch (background/hidden mode).
-      hidden_str = background ? 'true' : 'false'
-      if _register_legacy(app_name, app_path_pn.to_s, hidden_str)
-        mode_label = background ? 'login item (hidden/background mode)' : 'login item'
-        Logging.success "Registered '#{app_name.yellow}' as a #{mode_label} (legacy)"
+      # rubocop:disable Style/IfInsideElse
+      if _register_legacy(app_name, app_path_str, background ? 'true' : 'false')
+        Logging.success "Registered '#{app_name_colored}' as a #{background ? 'login item (hidden/background mode)' : 'login item'} (legacy)"
         true
       else
-        Logging.record_warning("Failed to register '#{app_name.yellow}' via System Events")
+        Logging.record_warning("Failed to register '#{app_name_colored}' via System Events")
         false
       end
+      # rubocop:enable Style/IfInsideElse
     end
   end
 
-  # Registers +app_path+ via SMAppService.loginItem(url:) -- macOS 14–25 only.
+  # Registers +app_path+ via SMAppService.loginItem(url:) -- macOS 14-25 only.
   # APP_PATH is passed via the environment rather than heredoc interpolation so
   # that paths containing spaces or special characters are handled safely.
   # Returns true if already registered or registration succeeded; false on failure.
   # Mirrors _register_smappservice in the shell version.
+  # :reek:UtilityFunction -- Stateless helper for SMAppService registration (intentional)
   def _register_smappservice(app_path)
     swift_src = <<~'SWIFT'
       import Foundation
@@ -135,7 +135,7 @@ module SetupLoginItem
     env = ENV.to_h.merge('APP_PATH' => app_path)
 
     # Log compilation errors if swift fails
-    CommandUtils.capture_output(env, 'swift', '-', stdin_data: swift_src, err: [:child, :out]) do |st, output_msg|
+    CommandUtils.capture_output(env, 'swift', '-', stdin_data: swift_src, err: %i[child out]) do |st, output_msg|
       Logging.debug("Swift compilation failed (status: #{st.exitstatus})#{output_msg}")
     end
   end
@@ -146,13 +146,14 @@ module SetupLoginItem
   # +hidden+ controls whether the app launches without a Dock icon.
   # Skips silently when already registered.
   # Mirrors _register_legacy in the shell version.
+  # :reek:UtilityFunction -- Stateless helper for legacy AppleScript registration (intentional)
   def _register_legacy(app_name, app_path, hidden)
     items_out = CommandUtils.query(MacOS::OSASCRIPT_CMD, '-e',
                                    'tell application "System Events" to get the name of every login item')
     already = items_out.split(',').any? { |i| i.strip.downcase.include?(app_name.downcase) }
     return true if already
 
-    script = "tell application \"System Events\" to make login item at end " \
+    script = 'tell application "System Events" to make login item at end ' \
              "with properties {path:\"#{app_path}\", hidden:#{hidden}}"
     CommandUtils.run_silent(MacOS::OSASCRIPT_CMD, '-e', script)
   end
@@ -195,7 +196,7 @@ if __FILE__ == $PROGRAM_NAME
   # so the simplified run_script wrapper is appropriate. If this script is later
   # integrated into a larger workflow, run_script automatically suppresses banners
   # when script_depth >= 1 (see logging.rb lines 464-471).
-  Logging.run_script(File.basename(__FILE__, '.rb')) do
+  Logging.run_script do
     success = SetupLoginItem.run(app_name: options[:app_name], background: options[:background] || false)
     exit(success ? 0 : 1)
   end

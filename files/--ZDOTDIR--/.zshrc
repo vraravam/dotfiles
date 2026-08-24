@@ -43,7 +43,7 @@ source "${HOME}/.shellrc"
 
 if [[ -o interactive && -o zle && -t 1 ]] && (( $+commands[starship] )); then
   # Set cursor style before drawing prompt (applies immediately, before plugins load)
-  # Note: blinking-bar requires iTerm Preferences → Profiles → Text → "Blinking cursor" enabled
+  # Note: blinking-bar requires iTerm Preferences -> Profiles -> Text -> "Blinking cursor" enabled
   zstyle ':ftl-prompt:' cursor blinking-bar
 
   # Source ftl-prompt function directly from antidote cache
@@ -275,13 +275,16 @@ if (($+commands[zsh-patina])); then
       recompile_zsh_script "${patina_activate_cache}"
     fi
     load_file_if_exists "${patina_activate_cache}"
+  }
 
-    # Auto-restart daemon if config/theme files are newer than daemon start time.
+  # Auto-restart daemon if config/theme files are newer than daemon start time.
+  # DEFERRED to first idle ZLE event to avoid blocking shell startup.
+  # Named function required (not anonymous ()) -- zsh-defer needs a function name.
+  _check_patina_restart() {
     # The daemon caches config at startup and doesn't watch for changes, so edits
     # to config.toml or theme files require a restart to take effect.
-    # Optimization: Cache-based check to avoid expensive pgrep/ps/date on every startup.
+    # Cache-based check to avoid expensive pgrep/ps/date on every startup.
     # Only performs full check if config changed or cache expired (5min TTL).
-    # Cost: ~1-2ms (cached) vs ~20ms (full check) = ~18ms savings on 95% of startups.
     local config="${XDG_CONFIG_HOME}/zsh-patina/config.toml"
     local theme="${XDG_CONFIG_HOME}/zsh-patina/themes/fsh-default.toml"
     local cache="${XDG_CACHE_HOME}/zsh-patina-restart-check"
@@ -289,13 +292,8 @@ if (($+commands[zsh-patina])); then
     # Early return if config file doesn't exist (first-time setup, not yet installed)
     if [[ ! -f "${config}" ]]; then return; fi
 
-    # Get current config/theme mtimes (cheap: ~1ms for both stats)
-    local config_mtime theme_mtime
-    config_mtime=$(stat -f %m "${config}" 2>/dev/null)
-    theme_mtime=$(stat -f %m "${theme}" 2>/dev/null)
-
     # Rate-limit: If cache exists and is less than 5 minutes old, skip check entirely.
-    # Format: "last_check_epoch config_mtime theme_mtime"
+    # Fast path validation using zsh/stat module (no subprocess fork).
     if [[ -f "${cache}" ]]; then
       local cache_data
       read -r cache_data < "${cache}"
@@ -307,18 +305,32 @@ if (($+commands[zsh-patina])); then
       local cached_theme_mtime="${cache_parts[3]}"
 
       # Skip if cache is fresh (<5min old) AND config files haven't changed
+      # Use zsh/stat module for zero-fork mtime access
+      zmodload -F zsh/stat b:zstat 2>/dev/null
+      local config_mtime theme_mtime
+      zstat -F "%s" +mtime -A config_mtime "${config}" 2>/dev/null
+      zstat -F "%s" +mtime -A theme_mtime "${theme}" 2>/dev/null
+
       local now="${EPOCHSECONDS}"
       if [[ -n "${last_check}" ]] && (( now - last_check < 300 )) && \
          [[ "${cached_config_mtime}" == "${config_mtime}" ]] && \
          [[ "${cached_theme_mtime}" == "${theme_mtime}" ]]; then
-        return  # Fast path: cache valid, configs unchanged (~1ms total)
+        return  # Fast path: cache valid, configs unchanged (~0.5ms, zero forks)
       fi
     fi
 
     # Cache miss or stale - perform full check (expensive: ~20ms)
     local daemon_pid
     daemon_pid=$(pgrep -f "zsh-patina daemon" 2>/dev/null | head -1)
-    if [[ -z "${daemon_pid}" ]]; then return; fi
+    if [[ -z "${daemon_pid}" ]]; then
+      # Update cache to prevent checking again for 5 minutes
+      zmodload -F zsh/stat b:zstat 2>/dev/null
+      local config_mtime theme_mtime
+      zstat -F "%s" +mtime -A config_mtime "${config}" 2>/dev/null
+      zstat -F "%s" +mtime -A theme_mtime "${theme}" 2>/dev/null
+      echo "${EPOCHSECONDS} ${config_mtime} ${theme_mtime}" >| "${cache}"
+      return
+    fi
 
     local daemon_start
     daemon_start=$(ps -o lstart= -p "${daemon_pid}" 2>/dev/null)
@@ -329,6 +341,10 @@ if (($+commands[zsh-patina])); then
     if [[ -z "${daemon_epoch}" ]]; then return; fi
 
     # Update cache with current check timestamp and config mtimes
+    zmodload -F zsh/stat b:zstat 2>/dev/null
+    local config_mtime theme_mtime
+    zstat -F "%s" +mtime -A config_mtime "${config}" 2>/dev/null
+    zstat -F "%s" +mtime -A theme_mtime "${theme}" 2>/dev/null
     echo "${EPOCHSECONDS} ${config_mtime} ${theme_mtime}" >| "${cache}"
 
     # Restart if daemon is older than either config file (config newer than daemon).
@@ -339,6 +355,13 @@ if (($+commands[zsh-patina])); then
       (zsh-patina restart >/dev/null 2>&1 &)
     fi
   }
+
+  # Defer the restart check to first idle ZLE event (non-blocking)
+  if (($+functions[zsh-defer])); then
+    zsh-defer _check_patina_restart
+  else
+    _check_patina_restart
+  fi
 fi
 
 # Activate mise -- the OMZ mise plugin referenced ${ZSH_CACHE_DIR} (undefined without OMZ)
@@ -760,3 +783,10 @@ if [[ -n "${ITERM_SESSION_ID:-}" ]]; then
   # will have marks via starship segments.
   iterm2_mark_prompt_start
 fi
+
+# Reset script depth counter for every new shell session.
+# Scripts increment this counter when they run; if a script exits with an error before
+# the EXIT trap fires, the counter can get stuck at 1+, causing subsequent scripts
+# to suppress their banners (they think they're nested when they're not).
+# Unsetting here ensures every new shell starts with a clean slate (defaults to 0).
+unset _DOTFILES_SCRIPT_DEPTH

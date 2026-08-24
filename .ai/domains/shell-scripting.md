@@ -251,6 +251,103 @@ filename="${full_path:t}"
 
 This applies to all zsh code: scripts, hooks, functions, startup files, interactive use.
 
+### Zsh Parameter Expansion Modifiers Reference
+
+**Zsh provides built-in modifiers that eliminate subprocess forks for common path operations.**
+
+Use these modifiers for zero-cost path manipulation (no fork, no external process):
+
+| Modifier | Operation | Example | Bash Alternative |
+|----------|-----------|---------|------------------|
+| `:t` | Basename (tail) | `${path:t}` | `${path##*/}` |
+| `:h` | Dirname (head) | `${path:h}` | `${path%/*}` |
+| `:r` | Remove extension | `${file:r}` | `${file%.*}` |
+| `:e` | Extension only | `${file:e}` | `${file##*.}` |
+| `:a` | Absolute path | `${path:a}` | `$(realpath "$path")` |
+| `:A` | Absolute + resolve symlinks | `${path:A}` | `$(readlink -f "$path")` |
+| `:u` | Uppercase | `${var:u}` | `${var^^}` (bash 4+) |
+| `:l` | Lowercase | `${var:l}` | `${var,,}` (bash 4+) |
+
+**Examples:**
+
+```zsh
+# Path manipulation (zero cost)
+full_path="/usr/local/bin/ruby"
+basename="${full_path:t}"           # "ruby" (not $(basename "$full_path"))
+dirname="${full_path:h}"            # "/usr/local/bin" (not $(dirname "$full_path"))
+without_ext="${full_path:r}"        # "/usr/local/bin/ruby" (no change, no extension)
+
+file="script.sh"
+name_only="${file:r}"               # "script" (not ${file%.sh})
+extension="${file:e}"               # "sh" (not ${file##*.})
+
+# Absolute paths (replaces realpath/readlink subprocess)
+relative="../../scripts/file.sh"
+absolute="${relative:a}"            # "/Users/vijay/.config/dotfiles/scripts/file.sh"
+resolved="${relative:A}"            # Same but follows symlinks
+
+# Case conversion (zero cost)
+upper="${var:u}"                    # "HELLO" (not $(echo "$var" | tr '[:lower:]' '[:upper:]'))
+lower="${var:l}"                    # "hello" (not $(echo "$var" | tr '[:upper:]' '[:lower:]'))
+
+# Script name extraction (common pattern)
+_SCRIPT_NAME="${0:t}"               # Basename of current script (not $(basename "$0"))
+script_dir="${0:a:h}"               # Absolute dir of current script (not $(cd "$(dirname "$0")" && pwd))
+```
+
+**Combining modifiers:**
+
+```zsh
+# Chain modifiers with multiple colons
+script_path="/path/to/script.rb"
+script_name="${script_path:t:r}"    # "script" (basename + remove extension)
+
+# Get absolute directory of current script
+script_dir="${0:a:h}"               # :a (absolute) then :h (dirname)
+
+# Get absolute path to sibling file
+sibling="${0:a:h}/config.yml"       # No subprocess needed
+```
+
+**When to use each:**
+
+| Use Case | Modifier | Replaces |
+|----------|----------|----------|
+| Get script name | `${0:t}` | `$(basename "$0")` |
+| Get script directory | `${0:a:h}` | `$(cd "$(dirname "$0")" && pwd)` |
+| Remove file extension | `${file:r}` | `${file%.ext}` or `$(basename "$file" .ext)` |
+| Get file extension | `${file:e}` | `${file##*.}` |
+| Resolve to absolute path | `${path:a}` | `$(realpath "$path")` |
+| Follow symlinks | `${path:A}` | `$(readlink -f "$path")` |
+
+**Bash compatibility notes:**
+
+- `:t` and `:h` modifiers are zsh-only
+- Use `${var##*/}` (basename) and `${var%/*}` (dirname) in bash-compatible code
+- `.shellrc` must use bash syntax (direnv sources it in bash subprocess)
+- Pure zsh files (.zshrc, .zlogin, autoload functions) can use `:t` and `:h` freely
+
+**Performance impact:**
+
+```zsh
+# BAD -- 3 subprocess forks
+script_dir="$(cd "$(dirname "$0")" && pwd)"
+basename="$(basename "$script_dir")"
+name_only="$(basename "${file}" .rb)"
+
+# Good -- zero forks
+script_dir="${0:a:h}"
+basename="${script_dir:t}"
+name_only="${file:t:r}"
+```
+
+Each `$(...)` fork costs ~1-2ms. In hot paths (startup, loops), this compounds quickly.
+
+**See also:**
+- § Bash vs Zsh Parameter Expansion (line 220) - Compatibility table
+- zsh-startup.md § No Subshell Forks - Hot path optimization patterns
+- `man zshexpn` - Complete zsh parameter expansion documentation
+
 ### When Raw Tests Are Acceptable
 
 Raw shell tests ARE acceptable when:

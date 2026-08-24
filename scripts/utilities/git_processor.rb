@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 require 'open3'
 require 'ostruct'
@@ -35,6 +35,7 @@ require_relative 'path_utils'
 #     git.stage_all
 #     git.commit('Initial commit')
 #   end
+# :reek:RepeatedConditional -- Defensive checks (@dry_run, repo?, quiet, status.success?) guard each operation independently
 class GitProcessor
   include Core  # For instance methods
   extend Core   # For class methods
@@ -50,6 +51,10 @@ class GitProcessor
 
   # Flags that indicate quiet mode (suppress streaming output)
   QUIET_FLAGS = %w[-q --quiet].freeze
+
+  # URL path separator. URLs always use '/' per RFC 3986, regardless of OS.
+  # This is distinct from File::SEPARATOR which is OS-specific ('/' on Unix, '\' on Windows).
+  URL_PATH_SEPARATOR = '/'
 
   class << self
     attr_accessor :repo_cache
@@ -117,7 +122,7 @@ class GitProcessor
 
     # Build the shell command
     # clone_repo_into accepts: url (arg 1), dest (arg 2), branch (optional arg 3)
-    cmd = "source #{EnvVars::HOME.join('.shellrc').to_s} && clone_repo_into"
+    cmd = "source #{EnvVars::HOME.join('.shellrc')} && clone_repo_into"
     cmd += " #{Shellwords.escape(url)}"
     cmd += " #{Shellwords.escape(dest.to_s)}"
     cmd += " #{Shellwords.escape(branch)}" if branch && !nil_or_empty?(branch)
@@ -173,9 +178,9 @@ class GitProcessor
   def config_value(key)
     @_config_values ||= {}
     @_config_values[key] ||= begin
-        out, = _execute('config', '--get', key)
-        nil_or_empty?(out) ? nil : out.strip
-      end
+      out, = _execute('config', '--get', key)
+      nil_or_empty?(out) ? nil : out.strip
+    end
   end
 
   # Returns the URL for the specified remote, or nil.
@@ -189,12 +194,13 @@ class GitProcessor
 
   # Extracts the repository name from a remote URL.
   # Strips trailing slash and returns the last path segment.
-  # Works with both SSH and HTTPS URLs.
+  # Works with any URL format (SSH, HTTPS, git+ssh, keybase, etc.) via simple string manipulation.
   #
   # Examples:
-  #   keybase://private/user/dotfiles/ → dotfiles
-  #   git@github.com:user/repo.git → repo.git
-  #   https://github.com/user/repo → repo
+  #   keybase://private/user/dotfiles/ -> dotfiles
+  #   git@github.com:user/repo.git -> repo.git
+  #   https://github.com/user/repo -> repo
+  #   ssh://git@host/user/my-repo.git -> my-repo.git
   #
   # @param name [String] Remote name (defaults to 'origin').
   # @return [String, nil] Repository name, or nil if remote doesn't exist.
@@ -203,17 +209,39 @@ class GitProcessor
     return @_remote_repo_names[name] if @_remote_repo_names.key?(name)
 
     url = remote_url(name: name)
-    @_remote_repo_names[name] = nil_or_empty?(url) ? nil : url.sub(/#{Regexp.escape(File::SEPARATOR)}\z/, '').split(File::SEPARATOR).last
+    @_remote_repo_names[name] = nil_or_empty?(url) ? nil : url.sub(/#{Regexp.escape(URL_PATH_SEPARATOR)}\z/, '').split(URL_PATH_SEPARATOR).last
+  end
+
+  # Constructs an upstream remote URL by parsing the origin URL and substituting the owner.
+  # Delegates to GitUrlParser for URL parsing and reconstruction.
+  #
+  # @param upstream_owner [String] The upstream repository owner username.
+  # @return [Array<String, String>, Array<nil, nil>] [upstream_url, cloned_owner] or [nil, nil] on error.
+  #   Errors are logged via Logging.record_error.
+  def construct_upstream_url(upstream_owner:)
+    origin_url = remote_url
+    unless origin_url
+      Logging.record_error("Could not retrieve URL for remote 'origin' in '#{@dir.cyan}'")
+      return [nil, nil]
+    end
+
+    begin
+      parser = GitUrlParser.new(origin_url)
+      [parser.with_owner(upstream_owner), parser.owner]
+    rescue ArgumentError => e
+      Logging.record_error(e.message.sub('git URL', 'origin remote URL').sub(origin_url, origin_url.cyan))
+      [nil, nil]
+    end
   end
 
   # Returns the current branch name, or nil if HEAD is detached or the repo is empty.
   #
   # @return [String, nil]
   def current_branch
-    @_current_branch ||= begin
-        out, = _execute('branch', '--show-current')
-        nil_or_empty?(out) ? nil : out.strip
-      end
+    @current_branch ||= begin
+      out, = _execute('branch', '--show-current')
+      nil_or_empty?(out) ? nil : out.strip
+    end
   end
 
   # Returns true if the repository is a shallow clone (limited history depth).
@@ -222,10 +250,10 @@ class GitProcessor
   #
   # @return [Boolean] true if shallow clone, false if full clone
   def shallow?
-    @_is_shallow ||= begin
-        out, = _execute('rev-parse', '--is-shallow-repository')
-        nil_or_empty?(out) ? false : out.strip == 'true'
-      end
+    @shallow ||= begin
+      out, = _execute('rev-parse', '--is-shallow-repository')
+      nil_or_empty?(out) ? false : out.strip == 'true'
+    end
   end
 
   # Returns the repository's reference storage format ('files' or 'reftable').
@@ -235,11 +263,11 @@ class GitProcessor
   #
   # @return [String] 'files' or 'reftable'
   def ref_format
-    @_ref_format ||= begin
-        out, = _execute('rev-parse', '--show-ref-format')
-        format = nil_or_empty?(out) ? 'files' : out.strip
-        format.empty? ? 'files' : format
-      end
+    @ref_format ||= begin
+      out, = _execute('rev-parse', '--show-ref-format')
+      format = nil_or_empty?(out) ? 'files' : out.strip
+      nil_or_empty?(format) ? 'files' : format
+    end
   end
 
   # Enumerates all remotes, yielding each remote name and URL.
@@ -257,6 +285,7 @@ class GitProcessor
 
     stdout.each_line do |line|
       next if nil_or_empty?(line)
+
       key, url = line.strip.split(' ', 2) # key is like 'remote.origin.url'
       remote_name = key.split('.')[1]
       yield remote_name, url
@@ -373,7 +402,7 @@ class GitProcessor
 
     args = ['fetch']
     args << '-q' if quiet
-    args << '--all' << '--tags' << '--prune'
+    args << '--all' << '-t' << '-p'
     _execute(*args)
   end
 
@@ -381,42 +410,107 @@ class GitProcessor
   #
   # @param ref_format [String] The ref-format to use (defaults to 'reftable').
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def init(ref_format: 'reftable')
-    _execute('init', "--ref-format=#{ref_format}", '.')
+  def init(ref_format: 'reftable', initial_branch: nil)
+    args = ['init', "--ref-format=#{ref_format}"]
+    args << "--initial-branch=#{initial_branch}" unless nil_or_empty?(initial_branch)
+    _execute(*args, '.')
   end
 
-  # Recreates the local git repository by removing .git and reinitializing.
-  # Preserves working tree files, only destroys git history.
+  # Verifies that all required git metadata is present before recreation.
+  # Logs the values and raises an error if any are missing.
   #
-  # @param ref_format [String] The ref-format to use (defaults to 'reftable').
-  # @param remote_name [String] Remote name to add (defaults to 'origin').
-  # @param remote_url [String, nil] Remote URL to add (optional).
-  # @param user_name [String, nil] Git user.name to set (optional).
-  # @param user_email [String, nil] Git user.email to set (optional).
-  # @return [Boolean] true on success, false on failure.
-  def recreate(ref_format: 'reftable', remote_name: 'origin', remote_url: nil, user_name: nil, user_email: nil)
-    git_path = @dir.join('.git')
+  # @param force [Boolean] Whether this is a force recreation (for logging)
+  # @return [Hash] Hash with keys: :git_url, :user_name, :user_email, :branch
+  # @raise [RuntimeError] If any required metadata is missing
+  def verify_pre_recreation(force:)
+    git_url = remote_url
+    user_name = config_value('user.name')
+    user_email = config_value('user.email')
+    branch = current_branch
 
-    if @dry_run
-      Logging.info "Would remove: '#{git_path.to_s.cyan}'"
-    else
-      return false unless repo?
-      # .git can be a directory (normal clone) or a file (worktree/submodule pointer).
-      # rmtree handles both: removes directory tree or deletes the file.
-      git_path.rmtree
+    Logging.info "#{'Squash commits (will lose history!):'.yellow} #{force.to_s.orange}"
+    Logging.info "#{'Dry run:'.yellow} #{@dry_run.to_s.orange}"
+    Logging.info "#{'Repo url:'.yellow} '#{git_url.cyan}'"
+    Logging.info "#{'User name:'.yellow} '#{user_name.cyan}'"
+    Logging.info "#{'User email:'.yellow} '#{user_email.cyan}'"
+    Logging.info "#{'Branch:'.yellow} '#{branch.cyan}'"
+
+    Logging.error "One or more required git metadata values are missing for '#{@dir.cyan}' -- see above" if [git_url, user_name, user_email, branch].any? { |v| nil_or_empty?(v) }
+  end
+
+  # Recreates the local git repository with verification against remote.
+  # Captures remote file list before recreation, recreates repo, stages/commits all files,
+  # then verifies the new local matches the old remote before allowing remote deletion.
+  #
+  # This is the safe force-recreate workflow that prevents data loss.
+  #
+  # @return [Boolean] true if recreation and verification succeeded, false otherwise.
+  def verify_and_recreate_local_repo
+    # Capture current branch BEFORE destroying .git
+    branch_name = current_branch
+    return false if nil_or_empty?(branch_name)
+
+    # Fetch from remote to ensure we have latest remote-tracking branches
+    # (needed to capture remote file list before destroying .git)
+    Logging.info 'Fetching from remote to capture file list...'
+    _stdout, stderr, fetch_status = fetch_all(quiet: false)
+    unless fetch_status.success?
+      Logging.record_error 'Failed to fetch from remote before recreation'
+      Logging.record_error "Stderr: #{stderr}" unless nil_or_empty?(stderr)
+      return false
     end
 
-    _stdout, _stderr, status = init(ref_format: ref_format)
-    return false unless status.success?
+    # Capture remote file list BEFORE destroying local .git
+    # (recreate removes .git which loses remote tracking refs)
+    remote_ref = "origin/#{branch_name}"
+    remote_files = ls_tree(remote_ref)
 
-    # Add remote if URL provided
-    add_remote(remote_name, remote_url) if remote_url
+    if nil_or_empty?(remote_files)
+      Logging.record_error "Failed to get file list from remote branch '#{remote_ref.cyan}' or remote is empty"
+      Logging.user_action "Ensure remote branch '#{remote_ref}' exists and has been pushed"
+      return false
+    end
 
-    # Set git config if provided
-    config_set('user.name', user_name) unless nil_or_empty?(user_name)
-    config_set('user.email', user_email) unless nil_or_empty?(user_email)
+    # Recreate repo (automatically restores config and branch name)
+    return false unless _recreate
 
-    true
+    # Stage and commit all files in local repo
+    Logging.info 'Staging all files in working directory...'
+    _stdout, _stderr, stage_status = stage_all
+    unless stage_status.success?
+      Logging.record_error 'Failed to stage files after recreation'
+      return false
+    end
+
+    # Check what was actually staged (might be nothing due to gitignore)
+    staged_files = ls_files
+    if staged_files.empty?
+      Logging.record_error 'No files staged after git add -A (check .gitignore rules in repo root)'
+      Logging.user_action 'Review .gitignore and ensure files you want tracked are not excluded'
+      return false
+    end
+
+    Logging.info "Staged #{staged_files.size.to_s.purple} files for commit"
+
+    # Create initial commit with --no-verify to skip pre-commit hooks
+    # (pre-commit runs RuboCop which may fail on personal scripts that don't follow dotfiles standards)
+    prefix = commit_count.zero? ? 'Initial' : 'Incremental'
+    message = "#{prefix} commit: #{Core.current_timestamp}"
+    _stdout, stderr, commit_status = commit(message, no_verify: true)
+    unless commit_status.success?
+      Logging.record_error 'Failed to create commit after recreation'
+      Logging.record_error "Stderr: #{stderr}" unless nil_or_empty?(stderr)
+      return false
+    end
+
+    # Verify commit has files (commit succeeded but might be empty)
+    if commit_count.zero?
+      Logging.record_error 'No commits created after staging and committing'
+      return false
+    end
+
+    # Verify file lists match
+    _verify_file_lists_match(remote_files)
   end
 
   # Stages all changes (equivalent to `git add -A .`).
@@ -499,11 +593,12 @@ class GitProcessor
   # @param message [String] Commit message.
   # @param quiet [Boolean] Whether to suppress git output (defaults to false).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def commit(message, quiet: false)
+  def commit(message, quiet: false, no_verify: false)
     return _mock_status_response(false) unless repo?
 
     args = ['commit']
     args << '-q' if quiet
+    args << '-n' if no_verify
     args << '-m' << message
     _execute(*args)
   end
@@ -527,7 +622,12 @@ class GitProcessor
       message = "#{prefix} commit: #{Core.current_timestamp}"
     end
 
-    _stdout, _stderr, status = run_alias('sci', message)
+    stdout, stderr, status = run_alias('sci', message)
+    unless status.success?
+      Logging.record_error 'smart_commit failed (sci alias returned non-zero)'
+      Logging.record_error "Stdout: #{stdout}" unless nil_or_empty?(stdout)
+      Logging.record_error "Stderr: #{stderr}" unless nil_or_empty?(stderr)
+    end
     status.success?
   end
 
@@ -538,7 +638,7 @@ class GitProcessor
   # @param force [Boolean] Whether to force push (defaults to false).
   # @param force_with_lease [Boolean] Whether to use --force-with-lease (defaults to false).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def push(remote: 'origin', branch:, force: false, force_with_lease: false)
+  def push(branch:, remote: 'origin', force: false, force_with_lease: false)
     if @dry_run
       Logging.info 'Would push to remote'
       Logging.info "Would set upstream tracking: #{remote}/#{branch}"
@@ -548,7 +648,7 @@ class GitProcessor
     return _mock_status_response(false) unless repo?
 
     url = remote_url(name: remote)
-    Logging.debug "#{'Pushing'.yellow} from '#{@dir.to_s.cyan}' to #{url.cyan}"
+    Logging.debug "#{'Pushing'.yellow} from '#{@dir.cyan}' to #{url.cyan}"
 
     args = ['push']
     if force_with_lease
@@ -570,7 +670,7 @@ class GitProcessor
         Logging.warn "Failed to set upstream tracking for '#{branch}'"
       end
 
-      Logging.success "Pushed from '#{@dir.to_s.cyan}' to #{url.cyan}"
+      Logging.success "Pushed from '#{@dir.cyan}' to #{url.cyan}"
     end
   end
 
@@ -586,7 +686,7 @@ class GitProcessor
 
     return false unless repo?
 
-    Logging.debug "#{'Compressing'.yellow} '#{@dir.to_s.cyan}'"
+    Logging.debug "#{'Compressing'.yellow} '#{@dir.cyan}'"
     run_alias('rfc')
     run_alias('cc')
     true
@@ -605,7 +705,7 @@ class GitProcessor
 
     return false unless repo?
 
-    Logging.debug "#{'Building commit graph'.yellow} for '#{@dir.to_s.cyan}'"
+    Logging.debug "#{'Building commit graph'.yellow} for '#{@dir.cyan}'"
     _stdout, _stderr, status = _execute('commit-graph', 'write', '--reachable', '--changed-paths')
     status.success?
   end
@@ -627,9 +727,13 @@ class GitProcessor
   # @return [void]
   def delete_index_lock
     if @dry_run
-      Logging.info "Would delete: '#{@dir.join('.git', 'index.lock').to_s.cyan}' (if it exists)"
+      Logging.info "Would delete: '#{@dir.join('.git', 'index.lock').cyan}' (if it exists)"
     else
-      @dir.join('.git', 'index.lock').delete rescue nil
+      begin
+        @dir.join('.git', 'index.lock').delete
+      rescue StandardError
+        nil
+      end
     end
   end
 
@@ -652,15 +756,102 @@ class GitProcessor
     # Attempt migration
     _stdout, _stderr, status = _execute('refs', 'migrate', '--ref-format=reftable')
     unless status.success?
-      Logging.debug "git refs migrate unavailable (requires git 2.45+, status: #{status.exitstatus}) -- skipping reftable migration for '#{@dir.to_s.cyan}'"
+      Logging.debug "git refs migrate unavailable (requires git 2.45+, status: #{status.exitstatus}) -- skipping reftable migration for '#{@dir.cyan}'"
       return false
     end
 
     # Clean up legacy loose refs after successful migration
     _cleanup_legacy_refs
 
-    Logging.success "Migrated '#{@dir.to_s.cyan}' to reftable format"
+    Logging.success "Migrated '#{@dir.cyan}' to reftable format"
     true
+  end
+
+  # ---------------------------------------------------------------------------
+  # Inner classes
+  # ---------------------------------------------------------------------------
+
+  # Parses and reconstructs git remote URLs with different owners.
+  # Supports multiple formats:
+  # - SCP-style SSH: git@host:owner/repo.git (most common)
+  # - HTTPS: https://host/owner/repo.git
+  # - git+ssh URL: git+ssh://git@host/owner/repo.git
+  # - ssh:// URL: ssh://git@host/owner/repo.git
+  class GitUrlParser
+    attr_reader :host, :owner, :repo_path, :format, :protocol, :port
+
+    # Parses a git remote URL.
+    #
+    # @param url [String] The git remote URL to parse
+    # @raise [ArgumentError] If URL format is not recognized
+    # :reek:DuplicateMethodCall -- Each case extracts different capture groups for different URL formats
+    def initialize(url)
+      case url
+      when %r{\Agit@([^:]+):([^/]+)/(.+)\z}
+        # SCP-style SSH URL format: git@host:owner/repo.git
+        @format = :scp_ssh
+        @host = Regexp.last_match(1)
+        @owner = Regexp.last_match(2)
+        @repo_path = _ensure_git_suffix(Regexp.last_match(3))
+      when %r{\A(https?)://([^/]+)/([^/]+)/(.+)\z}
+        # HTTPS URL format: https://host/owner/repo.git or http://host/owner/repo.git
+        @format = :https
+        @protocol = Regexp.last_match(1)
+        @host = Regexp.last_match(2)
+        @owner = Regexp.last_match(3)
+        @repo_path = _ensure_git_suffix(Regexp.last_match(4))
+      # Flay detects similarity between these two when clauses (git+ssh and ssh://).
+      # This is intentional - both URL formats require the same field extraction pattern.
+      # Extracting a helper would obscure the URL-format-to-field mapping.
+      when %r{\Agit\+ssh://git@([^/:]+)(?::(\d+))?/([^/]+)/(.+)\z}
+        # git+ssh URL format: git+ssh://git@host/owner/repo.git or git+ssh://git@host:port/owner/repo.git
+        @format = :git_ssh
+        @protocol = 'git+ssh'
+        @host = Regexp.last_match(1)
+        @port = Regexp.last_match(2)
+        @owner = Regexp.last_match(3)
+        @repo_path = _ensure_git_suffix(Regexp.last_match(4))
+      when %r{\Assh://git@([^/:]+)(?::(\d+))?/([^/]+)/(.+)\z}
+        # ssh:// URL format: ssh://git@host/owner/repo.git or ssh://git@host:port/owner/repo.git
+        @format = :ssh_url
+        @protocol = 'ssh'
+        @host = Regexp.last_match(1)
+        @port = Regexp.last_match(2)
+        @owner = Regexp.last_match(3)
+        @repo_path = _ensure_git_suffix(Regexp.last_match(4))
+      else
+        raise ArgumentError, "Cannot parse git URL format: '#{url}'"
+      end
+    end
+
+    # Constructs a new URL with a different owner.
+    #
+    # @param new_owner [String] The new repository owner
+    # @return [String] The reconstructed URL with .git suffix
+    def with_owner(new_owner)
+      sep = GitProcessor::URL_PATH_SEPARATOR
+      case @format
+      when :scp_ssh
+        "git@#{@host}:#{new_owner}#{sep}#{@repo_path}"
+      when :https
+        "#{@protocol}:#{sep}#{sep}#{@host}#{sep}#{new_owner}#{sep}#{@repo_path}"
+      when :git_ssh, :ssh_url
+        port_part = @port ? ":#{@port}" : ''
+        "#{@protocol}:#{sep}#{sep}git@#{@host}#{port_part}#{sep}#{new_owner}#{sep}#{@repo_path}"
+      end
+    end
+
+    private
+
+    # Ensures the repo path ends with .git suffix for consistency.
+    # Matches the standard format used by GitHub, GitLab, Bitbucket, and Gitea.
+    # Git accepts both forms, but .git is the official clone URL format.
+    #
+    # @param path [String] The repository path
+    # @return [String] Path with .git suffix
+    def _ensure_git_suffix(path)
+      path.end_with?('.git') ? path : "#{path}.git"
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -738,6 +929,7 @@ class GitProcessor
     ['', '', OpenStruct.new(success?: success, exitstatus: success ? 0 : 1)]
   end
 
+  # :reek:FeatureEnvy -- Standard filesystem traversal pattern (checks entry type before deletion)
   def _cleanup_legacy_refs
     git_dir = @dir.join('.git')
     refs_heads = git_dir.join('refs', 'heads')
@@ -746,6 +938,7 @@ class GitProcessor
 
     [refs_heads, refs_tags, refs_remotes].each do |refs_subdir|
       next unless refs_subdir.directory?
+
       refs_subdir.children.each do |entry|
         if entry.directory?
           entry.rmtree
@@ -756,5 +949,109 @@ class GitProcessor
     end
   end
 
-  private :_should_stream_output?, :_mock_status_response, :_cleanup_legacy_refs
+  # Verifies that new local repo file list matches the pre-captured remote file list.
+  # Logs detailed diagnostics if they don't match.
+  #
+  # @param remote_files [Array<String>] Pre-captured remote file list (before recreate)
+  # @return [Boolean] true if lists match, false otherwise
+  def _verify_file_lists_match(remote_files)
+    Logging.info 'Verifying file lists match between new local and old remote...'
+
+    if @dry_run
+      Logging.info "Would compare #{'HEAD'.cyan} vs pre-captured remote file list"
+      return true
+    end
+
+    # Get local files list from new repo (HEAD - just committed)
+    local_files = ls_tree('HEAD')
+
+    # Compare the lists
+    if local_files == remote_files
+      Logging.success "✅ File lists match (#{local_files.size.to_s.purple} files) - safe to delete remote"
+      return true
+    end
+
+    # Lists don't match - compute differences and show detailed diagnostic output
+    _log_file_list_mismatch(local_files, remote_files)
+    Logging.record_error '❌ File lists DO NOT match between new local and old remote!'
+    false
+  end
+
+  # Logs diagnostic output for file list mismatches.
+  #
+  # @param local_files [Array<String>] Files in new local repo
+  # @param remote_files [Array<String>] Files in old remote
+  # @return [void]
+  def _log_file_list_mismatch(local_files, remote_files)
+    local_only = local_files - remote_files
+    remote_only = remote_files - local_files
+
+    Logging.warn 'Aborting without deleting remote repo - local has been recreated but remote is preserved'
+
+    _print_file_diff('Files only in new local', local_only, '+')
+    _print_file_diff('Files only in old remote', remote_only, '-')
+  end
+
+  # Prints file diff diagnostics for verification failures.
+  #
+  # @param label [String] Description of the file set
+  # @param files [Array<String>] List of files
+  # @param prefix [String] Prefix character ('+' or '-')
+  # @return [void]
+  def _print_file_diff(label, files, prefix)
+    return unless files.any?
+
+    files_size = files.size
+    Logging.warn "#{label} (#{files_size.to_s.red}):"
+    files.first(10).each { |f| Logging.warn "  #{prefix} #{f.cyan}" }
+    Logging.warn "  ... and #{files_size - 10} more" if files_size > 10
+  end
+
+  # Recreates the local git repository by removing .git and reinitializing.
+  # Preserves working tree files, only destroys git history.
+  # Automatically restores origin remote, user.name, and user.email from current repo state.
+  #
+  # WARNING: This method does NOT verify against remote. For force-squash operations
+  # where you're destroying history, use verify_and_recreate_local_repo instead
+  # to prevent data loss.
+  #
+  # This method is currently private. If made public in the future, it should only be used when:
+  # - Converting ref format without changing history
+  # - Operating on local-only repos (no remote)
+  # - You have verified file lists match through other means
+  #
+  # @param ref_format [String] The ref-format to use (defaults to 'reftable').
+  # @param remote_name [String] Remote name to restore (defaults to 'origin').
+  # @return [Boolean] true on success, false on failure.
+  def _recreate(ref_format: 'reftable', remote_name: 'origin')
+    git_path = @dir.join('.git')
+
+    # Capture current state before destroying .git
+    branch_name = current_branch
+    remote_url = remote_url(name: remote_name)
+    user_name = config_value('user.name')
+    user_email = config_value('user.email')
+
+    if @dry_run
+      Logging.info "Would remove: '#{git_path.cyan}'"
+    else
+      return false unless repo?
+
+      # .git can be a directory (normal clone) or a file (worktree/submodule pointer).
+      # rmtree handles both: removes directory tree or deletes the file.
+      git_path.rmtree
+    end
+
+    _stdout, _stderr, status = init(ref_format: ref_format, initial_branch: branch_name)
+    return false unless status.success?
+
+    # Restore remote and config from captured state
+    add_remote(remote_name, remote_url) unless nil_or_empty?(remote_url)
+    config_set('user.name', user_name) unless nil_or_empty?(user_name)
+    config_set('user.email', user_email) unless nil_or_empty?(user_email)
+
+    true
+  end
+
+  private :_recreate, :_should_stream_output?, :_mock_status_response, :_cleanup_legacy_refs, :_verify_file_lists_match, :_log_file_list_mismatch, :_print_file_diff
 end

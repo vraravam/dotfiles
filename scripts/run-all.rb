@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 # file location: ${DOTFILES_DIR}/scripts/run-all.rb
 #
@@ -44,21 +44,19 @@ module RunAll
   # @param maxdepth [Integer, nil] Maximum search depth (uses ENV['MAXDEPTH'] if nil)
   # @return [Boolean] true on success (no command failures), false if any commands failed
   def run(command:, folder: nil, filter: nil, mindepth: nil, maxdepth: nil)
-    if nil_or_empty?(command)
-      Logging.error 'Missing required argument: command'
-    end
+    Logging.error 'Missing required argument: command' if nil_or_empty?(command)
 
-    dir = folder || EnvVars.folder || Dir.pwd
+    start_dir = folder || EnvVars.folder || Dir.pwd
     filter ||= EnvVars.filter
     mindepth ||= EnvVars.mindepth
     maxdepth ||= EnvVars.maxdepth
 
-    Logging.info "#{'Finding git repos starting in dir'.yellow} '#{dir.to_s.cyan}' " \
+    Logging.info "#{'Finding git repos starting in dir'.yellow} '#{start_dir.cyan}' " \
                  "for a min depth of #{mindepth} and max depth of #{maxdepth}"
     Logging.info "#{'Filtering with:'.yellow} '#{filter.cyan}'" if filter
 
     dir_array = GitWorkspace.find_git_repos(
-      dirs: dir,
+      dirs: start_dir,
       mindepth: mindepth,
       maxdepth: maxdepth,
       filter: filter,
@@ -76,7 +74,7 @@ module RunAll
     results = CollectionProcessor.process_items(
       dir_array,
       operation_desc: "Running '#{command.join(' ').cyan}' #{'in'.yellow}"
-    ) do |dir, idx, total|
+    ) do |dir, _idx, _total|
       # Invoke the user's shell to execute the command, mirroring the shell version's
       # `(cd dir && eval "$@")`. This gives access to shell functions, aliases, and
       # builtins defined in the user's shell config. The command string is passed to
@@ -91,7 +89,7 @@ module RunAll
       # even if an exception is raised.
       Dir.chdir(dir) do
         CommandUtils.run_interactive(shell, '-c', cmd_string) do
-          Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{$?.exitstatus})")
+          Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{$CHILD_STATUS.exitstatus})")
           has_failures = true
         end
       end
@@ -116,7 +114,7 @@ if __FILE__ == $PROGRAM_NAME
   include Logging
 
   # Handle --help manually (can't use CliParser because all args are the command)
-  if ARGV.empty? || ARGV.first == '-h' || ARGV.first == '--help'
+  if nil_or_empty?(ARGV) || ARGV.first == '-h' || ARGV.first == '--help'
     puts "#{'Usage'.red}: #{File.basename(__FILE__).cyan} #{'<command...>'.yellow}"
     puts ''
     puts 'Finds git repositories and runs the command in each repo directory.'
@@ -137,7 +135,7 @@ if __FILE__ == $PROGRAM_NAME
     exit 0
   end
 
-  Logging.run_script(File.basename(__FILE__, '.rb')) do
+  Logging.run_script do
     success = RunAll.run(command: ARGV.dup)
     exit(success ? 0 : 1)
   end

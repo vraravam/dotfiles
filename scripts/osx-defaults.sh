@@ -245,7 +245,7 @@ main() {
   # General UI/UX
   # ---------------------------------------------------------------------------
 
-  if ask 'Set computer name (as done via System Preferences → Sharing)' 'Y'; then
+  if ask 'Set computer name (as done via System Preferences -> Sharing)' 'Y'; then
     local username_in_camel_case="${(C)USER}"
     local human_date
     current_timestamp_for_filename human_date
@@ -368,7 +368,7 @@ main() {
       '{ on = 1; replace = omg; with = "Oh my God!"; }'
   fi
 
-  if ask 'Disable automatic period substitution (double-space → period)' 'Y'; then
+  if ask 'Disable automatic period substitution (double-space -> period)' 'Y'; then
     defaults write -g NSAutomaticPeriodSubstitutionEnabled -bool false
   fi
 
@@ -914,16 +914,16 @@ main() {
     # 10: Put display to sleep
     # 11: Launchpad
     # 12: Notification Center
-    # Top left screen corner → Desktop
+    # Top left screen corner -> Desktop
     defaults write com.apple.dock wvous-tl-corner -int 4
     defaults write com.apple.dock wvous-tl-modifier -int 0
-    # Bottom left screen corner → No-op
+    # Bottom left screen corner -> No-op
     defaults write com.apple.dock wvous-bl-corner -int 0
     defaults write com.apple.dock wvous-bl-modifier -int 0
-    # Top right screen corner → Mission Control
+    # Top right screen corner -> Mission Control
     defaults write com.apple.dock wvous-tr-corner -int 2
     defaults write com.apple.dock wvous-tr-modifier -int 0
-    # Bottom right screen corner → Start screen saver
+    # Bottom right screen corner -> Start screen saver
     defaults write com.apple.dock wvous-br-corner -int 5
     defaults write com.apple.dock wvous-br-modifier -int 0
   fi
@@ -1335,35 +1335,35 @@ main() {
     # Key format: hex-keycode-modifierflags (0x80000=Option, 0x100000=Cmd, 0x280000=Option+Shift(?), 0x300000=Ctrl+Shift(?)).
     /usr/libexec/PlistBuddy -c "Delete :'New Bookmarks':0:'Keyboard Map'" "${_iterm_plist}" 2>/dev/null || true
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map' dict" "${_iterm_plist}"
-    # Cmd+Delete → send Ctrl+U (delete to beginning of line)
+    # Cmd+Delete -> send Ctrl+U (delete to beginning of line)
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'0x7f-0x100000' dict" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'0x7f-0x100000':Action integer 11" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'0x7f-0x100000':Text string '0x15'" "${_iterm_plist}"
-    # Option+Delete → send Esc+Backspace (delete word backward)
+    # Option+Delete -> send Esc+Backspace (delete word backward)
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'0x7f-0x80000' dict" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'0x7f-0x80000':Action integer 11" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'0x7f-0x80000':Text string '0x1b 0x7f'" "${_iterm_plist}"
-    # Option+Left → send Esc+b (move back one word)
+    # Option+Left -> send Esc+b (move back one word)
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f702-0x280000' dict" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f702-0x280000':Action integer 10" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f702-0x280000':Text string b" "${_iterm_plist}"
-    # Ctrl+Left → send Ctrl+A (move to beginning of line)
+    # Ctrl+Left -> send Ctrl+A (move to beginning of line)
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f702-0x300000' dict" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f702-0x300000':Action integer 11" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f702-0x300000':Text string '0x1'" "${_iterm_plist}"
-    # Option+Right → send Esc+f (move forward one word)
+    # Option+Right -> send Esc+f (move forward one word)
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f703-0x280000' dict" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f703-0x280000':Action integer 10" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f703-0x280000':Text string f" "${_iterm_plist}"
-    # Ctrl+Right → send Ctrl+E (move to end of line)
+    # Ctrl+Right -> send Ctrl+E (move to end of line)
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f703-0x300000' dict" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f703-0x300000':Action integer 11" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f703-0x300000':Text string '0x5'" "${_iterm_plist}"
-    # Forward Delete → send Ctrl+D (delete character under cursor)
+    # Forward Delete -> send Ctrl+D (delete character under cursor)
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f728-0x0' dict" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f728-0x0':Action integer 11" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f728-0x0':Text string '0x4'" "${_iterm_plist}"
-    # Option+Forward Delete → send Esc+d (delete word forward)
+    # Option+Forward Delete -> send Esc+d (delete word forward)
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f728-0x80000' dict" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f728-0x80000':Action integer 10" "${_iterm_plist}"
     /usr/libexec/PlistBuddy -c "Add :'New Bookmarks':0:'Keyboard Map':'f728-0x80000':Text string d" "${_iterm_plist}"
@@ -1660,7 +1660,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
       for _ff_profile_dir in "${_ff_profiles_root}"/*/; do
         if is_directory "${_ff_profile_dir}"; then
           printf '%s' "${_firefox_user_js_content}" >"${_ff_profile_dir}user.js"
-          success "Wrote user.js → ${_ff_profile_dir}"
+          success "Wrote user.js -> ${_ff_profile_dir}"
         fi
       done
     fi
@@ -1955,7 +1955,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
       for _zen_profile_dir in "${_zen_profiles_root}"/*/; do
         if is_directory "${_zen_profile_dir}"; then
           printf '%s' "${_firefox_user_js_content}" >"${_zen_profile_dir}user.js"
-          success "Wrote user.js → ${_zen_profile_dir}"
+          success "Wrote user.js -> ${_zen_profile_dir}"
         fi
       done
     fi
@@ -2169,7 +2169,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     sudo mdutil -ai off &>/dev/null || true
   fi
 
-  user_action "Grant Full Disk Access to 'Terminal' and 'iTerm': System Settings → Privacy & Security → Full Disk Access → add 'Terminal.app' and 'iTerm.app' (cannot be automated -- TCC is SIP-protected)."
+  user_action "Grant Full Disk Access to 'Terminal' and 'iTerm': System Settings -> Privacy & Security -> Full Disk Access -> add 'Terminal.app' and 'iTerm.app' (cannot be automated -- TCC is SIP-protected)."
   user_action "Manually adjust the Finder sidebar content (which folders appear in Favorites): stored in LSSharedFileList binary files -- not scriptable via defaults."
   user_action "The following apps have to be manually quit and restarted for their settings to be reloaded:
   'Terminal' and 'iTerm' (since one of these might be running this script),

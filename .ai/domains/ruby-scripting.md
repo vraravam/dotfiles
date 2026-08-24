@@ -30,6 +30,7 @@ Apply these rules when writing or editing any Ruby script in this repository.
 | Task | Pattern | Section Link |
 |------|---------|--------------|
 | Script template | Module + CLI wrapper | [§ Dual-Mode Ruby Scripts](#dual-mode-ruby-scripts-module--standalone----mandatory) |
+| Method parameters | Named for 2+ params | [§ Method Parameters](#method-parameters----named-vs-positional) |
 | Logging | `Logging.info`, `Logging.success`, `Logging.warn` | [§ Logging](#logging) |
 | Path constants | `EnvVars::DOTFILES_DIR` | [§ Path Constants](#path-constants) |
 | Option parsing | `CliParser.parse` | [§ Option Parsing](#option-parsing----use-cliparser) |
@@ -359,6 +360,157 @@ When editing any Ruby script, check:
 3. Does it have complex `at_exit` hooks? → May need special handling
 
 **Exception**: Scripts that only ever run standalone (cron scripts, one-off utilities) MAY skip dual-mode, but prefer consistency.
+
+## Method Parameters -- Named vs Positional
+
+**Use named parameters for methods with 2+ parameters OR when parameter meaning is not obvious from name alone.**
+
+### Rules
+
+**1. Single obvious parameter → Positional OK:**
+```ruby
+# Good -- single parameter, meaning clear from method name
+def success(message)
+def dir_size_kb(dir)
+def file?(path)
+```
+
+**2. Two or more parameters → Use named parameters:**
+```ruby
+# BAD -- positional parameters, unclear order
+def export_domain(domain, file)
+def strip_excluded_keys(domain, plist_file, excluded_by_domain)
+
+# Good -- named parameters, self-documenting
+def export_domain(domain:, file:)
+def strip_excluded_keys(domain:, plist_file:, excluded_by_domain:)
+
+# Call sites are explicit
+export_domain(domain: 'com.apple.dock', file: export_path)
+strip_excluded_keys(domain: domain, plist_file: plist, excluded_by_domain: patterns)
+```
+
+**3. Optional parameters → Always named:**
+```ruby
+# BAD -- optional positional parameter
+def create_repo(repo_name, dry_run = false)
+
+# Good -- optional named parameter with default
+def create_repo(repo_name:, dry_run: false)
+```
+
+**4. Boolean flags → Always named:**
+```ruby
+# BAD -- boolean meaning unclear at call site
+def update_repo(repo_dir, true, false)  # What do these booleans mean?
+
+# Good -- boolean flags named
+def update_repo(repo_dir:, force: true, dry_run: false)
+```
+
+**5. Mixed positional + named OK when first param is obvious:**
+```ruby
+# Good -- message obvious, level requires clarification
+def emit(message, level:)
+
+# Good -- command obvious, options require names
+def run_command(cmd, timeout: 30, env: {})
+```
+
+### Why Named Parameters
+
+**Benefits:**
+- **Self-documenting**: Call sites show what each argument means
+- **Order-independent**: Can pass arguments in any order
+- **Refactor-safe**: Adding parameters doesn't break existing calls
+- **IDE-friendly**: Auto-completion shows parameter names
+- **Reduces errors**: Can't accidentally swap arguments
+
+**Performance:**
+- Negligible overhead in Ruby 2.6+ (~0.1% difference)
+- Readability gain far outweighs any micro-optimization
+
+### When to Keep Positional
+
+**Keep positional only when:**
+- Single parameter with obvious meaning from method name
+- Very common utility methods where brevity matters (logging, math operations)
+- Ruby stdlib-style APIs where convention is established (Array#map, String#split)
+
+**Examples of acceptable positional:**
+```ruby
+# Logging methods (single obvious parameter)
+def info(message)
+def success(message)
+def error(message)
+
+# Simple utilities (single parameter, name makes purpose clear)
+def duration_since(start_time)
+def nil_or_empty?(value)
+def file?(path)
+
+# Math/formatting utilities
+def format_counter(num, width)  # num and width order is conventional
+```
+
+### Migration Strategy
+
+**Existing code with positional parameters:**
+- **Don't refactor immediately** unless touching that method for other reasons
+- **Do convert** when adding new parameters
+- **Do convert** when parameter order is confusing at call sites
+- **Prioritize** methods called from multiple places (high impact)
+
+**New code:**
+- Start with named parameters for 2+ params from day one
+- Review: If call sites look verbose but code isn't confusing, named params are working correctly
+
+### Example Refactoring
+
+**Before:**
+```ruby
+# Method definition
+def strip_excluded_keys(domain, plist_file, excluded_by_domain)
+  # ...
+end
+
+# Call site (unclear what each argument represents)
+strip_excluded_keys(domain, plist, patterns)
+```
+
+**After:**
+```ruby
+# Method definition
+def strip_excluded_keys(domain:, plist_file:, excluded_by_domain:)
+  # ...
+end
+
+# Call site (self-documenting)
+strip_excluded_keys(
+  domain: domain,
+  plist_file: plist,
+  excluded_by_domain: patterns
+)
+```
+
+### Update Call Sites
+
+When converting a method to named parameters, update ALL call sites in the same commit:
+
+```bash
+# Find all call sites
+grep -rn "method_name(" scripts/ --include="*.rb"
+
+# Update each one to use named parameters
+# Before: method_name(arg1, arg2, arg3)
+# After:  method_name(param1: arg1, param2: arg2, param3: arg3)
+```
+
+**Verification:**
+```bash
+# Syntax check after conversion
+find scripts -name "*.rb" -exec /usr/bin/ruby -c {} \;
+```
 
 ## Script Template (Legacy Single-Mode)
 
@@ -809,6 +961,28 @@ rationale, and examples, including comment format conventions.
 ## Character Encoding and Punctuation
 
 See [`character-encoding.md`](./character-encoding.md) for complete rules on ASCII-only requirements, Unicode restrictions, and allowed exceptions.
+
+**Ruby-specific rule: Use only ASCII symbols in comments.**
+
+```ruby
+# BAD -- Unicode arrow in comment
+# All color methods apply HOME → ~ substitution automatically
+
+# Good -- ASCII arrow
+# All color methods apply HOME -> ~ substitution automatically
+
+# BAD -- Unicode emoji in comment
+# - Level 0 (depth 1): = ⏳ light_blue (top-level sections)
+
+# Good -- ASCII description
+# - Level 0 (depth 1): = (hourglass) light_blue (top-level sections)
+```
+
+Unicode is allowed ONLY in logged output strings where typography matters (see character-encoding.md § Allowed Unicode). It is NOT allowed in:
+- Comments (use ASCII equivalents or descriptions)
+- Variable names
+- Hash keys (as symbols or strings)
+- Any other code elements
 
 ## Formatting After Every Edit
 
@@ -1588,7 +1762,7 @@ context automatically.
 ```ruby
 # Good -- multiple operations, block form
 GitProcessor.new(dir: repo_dir) do |git|
-  git.add('.')
+  git.stage_all
   git.smart_commit
   git.push(branch: 'main')
 end
@@ -1822,29 +1996,35 @@ When editing files with git operations, check for:
 
 ## String Colors
 
-Color methods are defined on `String` in `utilities/string.rb`. They:
+Color methods are defined in `utilities/colorizable.rb` (shared module) and extended to both `String` (via `string_ext.rb`) and `Pathname` (via `pathname_ext.rb`). They:
 - Wrap the string in ANSI escape codes (no-op when stdout is not a TTY)
 - Automatically substitute `${HOME}` with `~` in any path passed to them
+- Return String objects (important for `Pathname#cyan` - it converts to colored string)
 
 **Never** call `replace_home_path_with_tilde` before passing a path to a color
 method -- the substitution happens inside. Only call it explicitly for bare
 `puts`/`print` call sites that display paths without any color method.
 
-**IMPORTANT**: Color methods are defined on `String`, not `Pathname`. Always
-call `.to_s` on Pathname objects before applying color methods:
+**Color methods work on both String and Pathname**: The `Colorizable` module is included
+in both `String` (via `string_ext.rb`) and `Pathname` (via `pathname_ext.rb`). Since
+`logging.rb` requires `pathname_ext`, all files that require logging automatically get
+Pathname color methods:
 
 ```ruby
-# BAD -- color methods don't exist on Pathname
+# Both work - Pathname color methods available everywhere logging is required
 profile_folder = EnvVars::HOME.join('.config')
-info "Processing '#{profile_folder.cyan}'"  # NoMethodError: undefined method `cyan' for #<Pathname>
+info "Processing '#{profile_folder.cyan}'"  # Works! Returns colored String
 
-# Good -- convert to String first
-info "Processing '#{profile_folder.to_s.cyan}'"
+# String color methods also work
+info "Processing '#{profile_folder.to_s.cyan}'"  # Also works, but .to_s is redundant
 
-# Also good -- assign to a variable after converting
-folder_path = profile_folder.to_s.cyan
-info "Processing '#{folder_path}'"
+# Non-Pathname objects still need .to_s
+count = 42
+info "Processed #{count.to_s.purple} files"  # .to_s required for Integer
 ```
+
+**Rule**: Call color methods directly on Pathname objects. Only use `.to_s` before color
+methods when the object is NOT a String or Pathname (e.g., Integer, Boolean, Array).
 
 ### Available methods
 
@@ -2843,19 +3023,6 @@ else
 end
 ```
 
-### Combine intermediate variables when they're only used once
-
-```ruby
-# BAD -- unnecessary intermediate variable
-bat_config_dir, = Open3.capture3('bat', '--config-dir')
-bat_config_dir_pn = Pathname.new(bat_config_dir.strip)
-bat_syntax_dir_pn = bat_config_dir_pn.join('syntaxes')
-
-# Good -- combine when intermediate is only used once
-bat_config_dir, = Open3.capture3('bat', '--config-dir')
-bat_syntax_dir_pn = Pathname.new(bat_config_dir.strip).join('syntaxes')
-```
-
 ### Check scoping when refactoring
 
 When refactoring code:
@@ -2868,15 +3035,490 @@ When refactoring code:
 blocks (`do |var|`, `if/else`, `each`) and verify they're used outside the block.
 If not, move them inside.
 
+## Variable Extraction vs Inlining
+
+**Extract a local variable when a value is used multiple times (2+):**
+
+```ruby
+# BAD -- repeated computation/access
+Logging.info "Processing '#{EnvVars::PERSONAL_CONFIGS_DIR.to_s.cyan}'"
+target = EnvVars::PERSONAL_CONFIGS_DIR.join('file.txt')
+unless EnvVars::PERSONAL_CONFIGS_DIR.directory?
+  # ...
+end
+
+# Good -- extract when used 2+ times
+configs_dir = EnvVars::PERSONAL_CONFIGS_DIR
+Logging.info "Processing '#{configs_dir.to_s.cyan}'"
+target = configs_dir.join('file.txt')
+unless configs_dir.directory?
+  # ...
+end
+```
+
+**Inline a variable when used only once AND no readability/maintainability benefit:**
+
+```ruby
+# BAD -- unnecessary intermediate variable (only used once)
+bat_config_dir, = Open3.capture3('bat', '--config-dir')
+bat_config_dir_pn = Pathname.new(bat_config_dir.strip)
+bat_syntax_dir_pn = bat_config_dir_pn.join('syntaxes')
+
+# Good -- inline single-use intermediate
+bat_config_dir, = Open3.capture3('bat', '--config-dir')
+bat_syntax_dir_pn = Pathname.new(bat_config_dir.strip).join('syntaxes')
+
+# BAD -- inlining hurts readability (complex expression)
+status = GitProcessor.new(
+  dir: Pathname.new(ENV.fetch('PERSONAL_PROFILES_DIR')).expand_path.join('Chrome')
+).pull(rebase: true)
+
+# Good -- keep variable for complex multi-step construction
+chrome_profiles = Pathname.new(ENV.fetch('PERSONAL_PROFILES_DIR')).expand_path.join('Chrome')
+status = GitProcessor.new(dir: chrome_profiles).pull(rebase: true)
+```
+
+**Keep variable even if used once when it provides:**
+
+1. **Semantic clarity** -- Variable name documents what the value represents:
+   ```ruby
+   # Good -- variable name adds meaning
+   is_shallow = git_dir.join('shallow').exist?
+   return unless is_shallow
+
+   # Acceptable but less clear
+   return unless git_dir.join('shallow').exist?
+   ```
+
+2. **Debugging convenience** -- Can inspect value in debugger:
+   ```ruby
+   # Good -- can inspect stderr in debugger
+   _out, stderr, status = Open3.capture3('git', 'push')
+   Logging.error(stderr) unless status.success?
+
+   # BAD -- can't inspect stderr after the fact
+   _, stderr, status = Open3.capture3('git', 'push')
+   Logging.error(stderr) unless status.success?  # stderr not available in debugger
+   ```
+
+3. **Complex computation** -- Breaking into steps improves readability:
+   ```ruby
+   # Good -- steps are clear
+   raw_output, = Open3.capture3('git', 'config', '--get', 'remote.origin.url')
+   normalized = raw_output.strip.gsub(%r{\.git$}, '')
+   owner = normalized.split('/')[-2]
+
+   # BAD -- hard to parse mentally
+   owner = Open3.capture3('git', 'config', '--get', 'remote.origin.url')[0].strip.gsub(%r{\.git$}, '').split('/')[-2]
+   ```
+
+4. **Repeated method arguments** -- Extract to avoid duplication:
+   ```ruby
+   # Good -- DRY
+   error_msg = "Failed to process '#{file.to_s.cyan}'"
+   Logging.record_error(error_msg)
+   notify('Error', error_msg)
+
+   # BAD -- duplicated string construction
+   Logging.record_error("Failed to process '#{file.to_s.cyan}'")
+   notify('Error', "Failed to process '#{file.to_s.cyan}'")
+   ```
+
+**When inlining is preferred:**
+
+- Simple value assignments: `count = 0`, `result = true`
+- Single chained method call: `items.select { }.first`
+- Direct constant/variable access: `dir = EnvVars::HOME`
+- Trivial transformations: `path.to_s`, `value.strip`
+
+**Scan rule:** When editing code, check:
+1. Is this variable used 2+ times? → Keep it (or extract if inlined)
+2. Used once + complex expression? → Keep it
+3. Used once + adds semantic clarity? → Keep it
+4. Used once + simple/trivial? → Inline it
+
+### Variable Extraction Rule (Universal)
+
+**MANDATORY: Extract ANY value to local variable when used 2+ times in the same method/block.**
+
+This rule applies universally to:
+- **EnvVars constants**: `EnvVars::PERSONAL_PROFILES_DIR`
+- **Method calls**: `some_object.method_call`
+- **Complex expressions**: `path.join('subdir').expand_path`
+- **Pathname operations**: `dir.join('.git')`
+- **Computed values**: `limit_gb * 1024`
+
+The 2+ usage threshold is strict - even if used only twice, extract it.
+
+```ruby
+# BAD -- EnvVars::PERSONAL_PROFILES_DIR used 4 times
+def capture_and_commit
+  unless GitProcessor.repo?(EnvVars::PERSONAL_PROFILES_DIR)
+    Logging.warn "Skipping profiles repo update -- '#{EnvVars::PERSONAL_PROFILES_DIR.cyan}' is not a git repo"
+    return false
+  end
+
+  Logging.debug "Updating profiles repo at '#{EnvVars::PERSONAL_PROFILES_DIR.cyan}'"
+  GitProcessor.new(dir: EnvVars::PERSONAL_PROFILES_DIR) do |git|
+    git.add('.')
+    git.smart_commit
+  end
+end
+
+# Good -- extract to local variable
+def capture_and_commit
+  profiles_dir = EnvVars::PERSONAL_PROFILES_DIR
+
+  unless GitProcessor.repo?(profiles_dir)
+    Logging.warn "Skipping profiles repo update -- '#{profiles_dir.cyan}' is not a git repo"
+    return false
+  end
+
+  Logging.debug "Updating profiles repo at '#{profiles_dir.cyan}'"
+  GitProcessor.new(dir: profiles_dir) do |git|
+    git.add('.')
+    git.smart_commit
+  end
+end
+
+# BAD -- git_dir.join('.git') computed twice
+def check_size_limit(limit_gb: 2)
+  size_mb = PathUtils.git_repo_size_mb(git_dir.join('.git'))
+  size_human = PathUtils.git_repo_size_human(git_dir.join('.git'))
+end
+
+# Good -- extract .git path
+def check_size_limit(limit_gb: 2)
+  git_path = git_dir.join('.git')
+  size_mb = PathUtils.git_repo_size_mb(git_path)
+  size_human = PathUtils.git_repo_size_human(git_path)
+end
+
+# BAD -- limit_gb * 1024 appears multiple times
+def check_size_limit(limit_gb: 2)
+  if size_mb > limit_gb * 1024
+    warn "Size exceeds #{limit_gb * 1024}MB"
+  end
+end
+
+# Good -- extract computed value
+def check_size_limit(limit_gb: 2)
+  limit_mb = limit_gb * 1024
+  if size_mb > limit_mb
+    warn "Size exceeds #{limit_mb}MB"
+  end
+end
+```
+
+**Single use → inline (no extraction needed):**
+
+```ruby
+# Good -- used only once, inline it
+def check_size
+  return unless EnvVars::PERSONAL_PROFILES_DIR.directory?  # Single use, inline
+  # ... rest of method doesn't use it again ...
+end
+```
+
+**Why this rule matters:**
+1. **Readability**: Shorter lines, clearer intent
+2. **Performance**: Avoid repeated expensive operations (Pathname construction, method calls, arithmetic)
+3. **Maintainability**: Change the value once instead of N times
+4. **DRY principle**: Single source of truth within method scope
+
+**Scan rule:** When editing code, check:
+1. Is this value/expression used 2+ times in this method? → Extract to local variable
+2. Used only once? → Inline (no extraction)
+3. Applies to: constants, method calls, complex expressions, computations - everything
+
+### Destructive Operations -- Capture Metadata Before Destruction
+
+**MANDATORY: Before any destructive operation (deleting `.git`, removing directories, truncating files), capture all required metadata into local variables.**
+
+This prevents data loss when the operation fails partway through.
+
+**Examples of destructive operations:**
+- `git_path.rmtree` (deletes `.git` directory)
+- `FileUtils.rm_rf(dir)` (deletes directory tree)
+- `file.truncate(0)` (empties file)
+- `db.execute('DROP TABLE...')` (deletes database table)
+
+**Required pattern:**
+
+```ruby
+# Good -- capture BEFORE destroying
+def _recreate(ref_format: 'reftable', remote_name: 'origin')
+  git_path = @dir.join('.git')
+
+  # Capture current state BEFORE destroying .git
+  branch_name = current_branch       # ← Reads from .git
+  remote_url = remote_url(name: remote_name)  # ← Reads from .git
+  user_name = config_value('user.name')      # ← Reads from .git
+  user_email = config_value('user.email')    # ← Reads from .git
+
+  # NOW it's safe to destroy
+  git_path.rmtree
+
+  # Restore from captured state
+  init(ref_format: ref_format, initial_branch: branch_name)
+  add_remote(remote_name, remote_url) unless nil_or_empty?(remote_url)
+  config_set('user.name', user_name) unless nil_or_empty?(user_name)
+  config_set('user.email', user_email) unless nil_or_empty?(user_email)
+end
+
+# BAD -- capture AFTER destroying (data loss!)
+def _recreate(ref_format: 'reftable', remote_name: 'origin')
+  git_path = @dir.join('.git')
+  git_path.rmtree  # ← .git is gone!
+
+  # These calls fail -- .git doesn't exist anymore!
+  branch_name = current_branch       # ← FAILS
+  remote_url = remote_url(name: remote_name)  # ← FAILS
+end
+```
+
+**Common destructive operations in this codebase:**
+- `GitProcessor#_recreate` → captures branch, remote, config before `rmtree`
+- `recreate-repository.rb` → captures remote file list before `_recreate`
+- `install-dotfiles.rb` → backs up existing files before symlinking
+- `capture-prefs.rb` → validates target dir exists before `unlink`
+
+**Verification checklist before destructive operation:**
+1. ✅ All required data captured into local variables
+2. ✅ Variables declared BEFORE destruction call
+3. ✅ Restoration logic uses captured variables (not re-queries)
+4. ✅ Error handling accounts for partial failures
+
+**Scan rule:** When reviewing code with destructive operations, trace backwards from the destruction call and verify all dependent data is captured first.
+
+## String Operations -- Performance-Aware Patterns
+
+Ruby provides multiple methods for string manipulation with significant performance differences. Choose the right method based on the operation type.
+
+### `String#tr` vs `String#gsub` for Single-Character Replacement
+
+**Use `String#tr` for single-character replacements (3x faster than `gsub`):**
+
+```ruby
+# BAD -- gsub for single-character replacement
+alias_name = relative.gsub(File::SEPARATOR, '-')
+cleaned = str.gsub('/', '_')
+
+# Good -- tr for single-character replacement (3x faster)
+alias_name = relative.tr(File::SEPARATOR, '-')
+cleaned = str.tr('/', '_')
+```
+
+**Why `tr` is faster:**
+- Optimized for character-to-character translation
+- No regex compilation overhead
+- Direct character mapping (not pattern matching)
+
+**When to use `tr`:**
+- Replacing single characters: `'/' -> '-'`, `' ' -> '_'`
+- Character class replacement: `tr('a-z', 'A-Z')` (lowercase to uppercase)
+- Character deletion: `tr('0-9', '')` (remove all digits)
+
+**When NOT to use `tr`:**
+- Multi-character replacements: `gsub('--', '-')` (can't use `tr`)
+- Pattern-based replacement: `gsub(/\s+/, ' ')` (regex needed)
+- Context-dependent replacement: `gsub(/foo/, 'bar')` (specific substring)
+
+**Benchmark data** (from fast-ruby repository):
+```
+String#tr:  9.1M i/s
+String#gsub: 3.0M i/s - 3.01x slower
+```
+
+### `String#delete` vs `String#tr` vs `String#gsub` for Character Removal
+
+**Use `String#delete` for removing characters (4x faster than `gsub`):**
+
+```ruby
+# BAD -- gsub for character removal
+cleaned = str.gsub('/', '')
+cleaned = str.gsub(/[^a-z]/, '')
+
+# Good -- delete for character removal (4x faster than gsub)
+cleaned = str.delete('/')
+cleaned = str.delete('^a-z')  # Keep only a-z, delete everything else
+
+# Also good -- tr for removal (faster than gsub, but delete is better)
+cleaned = str.tr('/', '')
+```
+
+**Why `delete` is fastest:**
+- Purpose-built for character removal
+- No replacement string allocation
+- Direct character filtering
+
+**Benchmark data:**
+```
+String#delete (const): 13.2M i/s
+String#delete:         11.6M i/s - 1.13x slower
+String#tr:              9.9M i/s - 1.34x slower
+String#gsub:            3.1M i/s - 4.26x slower
+```
+
+**Pattern**: Use frozen constant strings for common character sets:
+```ruby
+# Good -- frozen constant (13.2M i/s)
+CHARS_TO_REMOVE = '/\\'.freeze
+cleaned = str.delete(CHARS_TO_REMOVE)
+
+# Acceptable -- inline string (11.6M i/s)
+cleaned = str.delete('/\\')
+```
+
+### `String#sub` vs `String#gsub` for Single Replacement
+
+**Use `String#sub` when replacing only the first occurrence (2x faster):**
+
+```ruby
+# BAD -- gsub when you only need first match
+normalized = url.gsub(/\.git$/, '')
+name = file.gsub('.rb', '')
+
+# Good -- sub for single replacement (2x faster)
+normalized = url.sub(/\.git$/, '')
+name = file.sub('.rb', '')
+```
+
+**Why `sub` is faster:**
+- Stops after first match (no scanning rest of string)
+- Less work = faster execution
+
+**When to use `sub`:**
+- Removing prefix/suffix: `sub(/^prefix/, '')`, `sub(/suffix$/, '')`
+- First occurrence only: `sub('old', 'new')`
+- Single pattern match: `sub(/pattern/, 'replacement')`
+
+**When to use `gsub`:**
+- All occurrences: `gsub('//', '/')` (collapse multiple slashes)
+- Pattern appears multiple times: `gsub(/\s+/, ' ')` (normalize whitespace)
+
+**Benchmark data:**
+```
+String#sub:  4.7M i/s
+String#gsub: 2.3M i/s - 2.00x slower
+```
+
+### Modern Ruby Alternatives: `delete_prefix` / `delete_suffix`
+
+**Ruby 2.5+ provides specialized methods for prefix/suffix removal (3x faster than `sub`):**
+
+```ruby
+# Old (Ruby 2.4 and earlier)
+normalized = url.sub(/^https:\/\//, '')
+basename = file.sub(/\.rb$/, '')
+
+# Modern (Ruby 2.5+)
+normalized = url.delete_prefix('https://')
+basename = file.delete_suffix('.rb')
+```
+
+**Benefits:**
+- **3x faster** than `sub` with regex
+- **More readable** - intent is clearer
+- **No regex compilation** - direct string comparison
+
+**When to use:**
+- Removing known prefix: `delete_prefix('prefix')`
+- Removing known suffix: `delete_suffix('.ext')`
+- Static string removal (not pattern-based)
+
+**When NOT to use:**
+- Pattern-based removal: `sub(/prefix-\d+/, '')` still needs `sub`
+- Ruby 2.4 or earlier compatibility required
+- Multiple possible prefixes: `sub(/^(http|https):\/\//, '')` needs regex
+
+**Benchmark data:**
+```
+String#delete_prefix: 14.9M i/s
+String#delete_suffix: 14.9M i/s
+String#sub:            4.8M i/s - 3.11x slower
+```
+
+### String Method Selection Flowchart
+
+```
+Need to modify string?
+├─ Remove characters?
+│  ├─ Prefix/suffix? → delete_prefix / delete_suffix (3x faster than sub)
+│  └─ Any position? → delete (4x faster than gsub)
+├─ Replace characters?
+│  ├─ Single character? → tr (3x faster than gsub)
+│  ├─ First occurrence only? → sub (2x faster than gsub)
+│  └─ All occurrences? → gsub (no alternative)
+└─ Pattern-based? → gsub with regex (no alternative)
+```
+
+### Scan Rule: Identify String Optimization Opportunities
+
+When editing Ruby files, check for:
+
+1. **`gsub` with single character**: `gsub('/', '-')` → Use `tr('/', '-')`
+2. **`gsub` with empty replacement**: `gsub('/', '')` → Use `delete('/')`
+3. **`gsub` for single match**: `gsub(/\.git$/, '')` → Use `sub(/\.git$/, '')`
+4. **`sub` for prefix/suffix**: `sub(/^prefix/, '')` → Use `delete_prefix('prefix')`
+
+**Search patterns:**
+```bash
+# Find gsub with single-character args
+grep -rn "\.gsub('[^']\+', '[^']\+'" scripts/ --include="*.rb"
+
+# Find gsub with empty replacement
+grep -rn "\.gsub.*''" scripts/ --include="*.rb"
+
+# Find sub with anchored regex
+grep -rn "\.sub(/\^.*\\\$/, '')" scripts/ --include="*.rb"
+```
+
+**Example from this codebase:**
+```ruby
+# Before (git_workspace.rb:332)
+alias_name = relative.gsub(File::SEPARATOR, '-')
+
+# After
+alias_name = relative.tr(File::SEPARATOR, '-')  # 3x faster
+```
+
+### When NOT to Optimize
+
+**Don't optimize when:**
+- String operation is NOT in a loop or hot path
+- Method is called < 100 times per script execution
+- Readability would suffer significantly
+- Premature optimization (no profiling data)
+
+**Example - optimization NOT worth it:**
+```ruby
+# Called once per script execution - optimization has zero measurable impact
+script_name = ARGV[0].gsub('.rb', '')  # OK - not hot path
+```
+
+**Example - optimization IS worth it:**
+```ruby
+# Called once per repository (100+ repos) - 3x speedup = measurable gain
+repos.each do |dir|
+  alias_name = dir.tr(File::SEPARATOR, '-')  # 3x faster than gsub
+end
+```
+
 ## Common Mistakes (Code Review Findings)
 
 Based on code review patterns and debugging sessions, here are the most common mistakes to avoid:
 
-1. **Calling color methods on Pathname** → Must convert to String first (`.to_s.cyan`)
+1. **Calling color methods on Pathname without extension** → Ensure `pathname_ext.rb` is required
    ```ruby
-   # BAD
+   # BAD -- pathname_ext.rb not required
    info "Processing '#{profile_folder.cyan}'"  # NoMethodError
-   # Good
+
+   # Good -- require pathname_ext.rb at top of file
+   require_relative 'utilities/pathname_ext'
+   info "Processing '#{profile_folder.cyan}'"  # Works! Returns colored String
+
+   # Also acceptable -- explicit .to_s if pathname_ext not needed elsewhere
    info "Processing '#{profile_folder.to_s.cyan}'"
    ```
 

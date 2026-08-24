@@ -1,14 +1,18 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
-require_relative 'core'
-require_relative 'env_vars'
-
-class String
-  include Core  # For instance methods (in blocks)
-  extend Core   # For module methods
-
+# Provides ANSI color methods for strings and pathnames.
+# Included in both String and Pathname to allow colorization without explicit .to_s conversion.
+#
+# Design: When included in Pathname, color methods automatically convert to String first,
+# then apply colorization. This means:
+#   - pathname.cyan works (returns colored String)
+#   - system('ls', pathname) still works (system calls .to_s, gets plain String)
+#   - pathname.to_s.cyan can be simplified to pathname.cyan
+#
+# All color methods apply HOME -> ~ substitution automatically, so paths are display-ready.
+module Colorizable
   # Wraps the string in the ANSI escape sequence for +code+, after replacing
   # the HOME path with '~' so any path argument is display-ready automatically.
   # Returns the string unchanged (no ANSI, no substitution) when stdout is not
@@ -23,19 +27,18 @@ class String
   #
   # This is the Ruby equivalent of _colorize() in .shellrc -- both are the single
   # centralised implementation point that all public color functions delegate to.
-  # Why call replace_home_path_with_tilde directly here rather than inlining
-  # gsub(EnvVars::HOME.to_s, '~'): Ruby method calls have no fork overhead, so calling
-  # the utility method keeps the substitution logic in one place. The shell's
-  # _colorize inlines ${2//${HOME}/~} instead because replace_home_with_tilde
-  # prints via 'echo' and capturing it would require a $(...) subshell fork.
+  #
+  # When included in Pathname, this method automatically converts to String first.
   #
   # @api private
   # @param code [String] SGR parameter sequence, e.g. "0;31" (normal red) or "1;34" (bright blue).
   # @return [String]
   def colorize(code)
-    return self unless $stdout.isatty
+    # Delegate to replace_home_path_with_tilde for the string conversion + substitution
+    str = replace_home_path_with_tilde
+    return str unless $stdout.tty?
 
-    "\x1b[#{code}m#{replace_home_path_with_tilde}\x1b[0m"
+    "\x1b[#{code}m#{str}\x1b[0m"
   end
 
   private :colorize
@@ -49,10 +52,21 @@ class String
   #   - Bare puts/print call sites that display paths WITHOUT a color method.
   #   - Plain-text segments in section headers not wrapped in a color method.
   #
+  # When called on Pathname, converts to String first.
+  #
+  # NOTE: Uses ENV.fetch('HOME') directly instead of EnvVars::HOME to avoid circular
+  # dependency. This file is required by pathname_ext, which is required by core,
+  # which is required by env_vars. Using EnvVars here would create:
+  # core -> pathname_ext -> colorizable -> env_vars -> core (circular!)
+  #
   # @return [String]
   def replace_home_path_with_tilde
-    gsub(EnvVars::HOME.to_s, '~')
+    str = is_a?(String) ? self : to_s
+    home_dir = ENV.fetch('HOME', '')
+    str.gsub(home_dir, '~')
   end
+
+  # rubocop:disable Style/SingleLineMethods
 
   # @return [String] The string in black.
   def black; colorize('0;30'); end
@@ -102,13 +116,5 @@ class String
   # @return [String] The string in white.
   def white; colorize('1;37'); end
 
-  # Checks if the string should be skipped when reading config/data files.
-  # Returns true for empty lines (after stripping) or comment lines (starting with '#').
-  # Common pattern when parsing text files with comments.
-  #
-  # @return [true, false]
-  def comment_or_empty?
-    stripped = strip
-    nil_or_empty?(stripped) || stripped.start_with?('#')
-  end
+  # rubocop:enable Style/SingleLineMethods
 end

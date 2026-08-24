@@ -64,6 +64,55 @@ CURRENT_USER=$(whoami)
 CURRENT_USER="${USER}"
 ```
 
+## zsh/stat Module for Zero-Fork File Operations
+
+The `zsh/stat` module provides built-in access to file metadata without forking external commands.
+Use it for mtime checks, size queries, and permission checks in startup code.
+
+```zsh
+# BAD -- forks stat command on every shell start
+config_mtime=$(stat -f %m "${config}" 2>/dev/null)
+theme_mtime=$(stat -f %m "${theme}" 2>/dev/null)
+
+# Good -- zsh/stat module, zero forks
+zmodload -F zsh/stat b:zstat 2>/dev/null
+local config_mtime theme_mtime
+zstat -F "%s" +mtime -A config_mtime "${config}" 2>/dev/null
+zstat -F "%s" +mtime -A theme_mtime "${theme}" 2>/dev/null
+```
+
+**Benefits:**
+- **Zero subprocess overhead**: No fork/exec of `/usr/bin/stat`
+- **Faster**: ~0.1ms vs ~1-2ms per stat call
+- **Built-in**: Ships with zsh, no external dependencies
+
+**Common patterns:**
+```zsh
+# Check file mtime (modification time)
+zmodload -F zsh/stat b:zstat 2>/dev/null
+local file_mtime
+zstat -F "%s" +mtime -A file_mtime "${file}" 2>/dev/null
+
+# Check file size
+local file_size
+zstat +size -A file_size "${file}" 2>/dev/null
+
+# Multiple attributes at once
+local -a file_stats
+zstat -F "%s" +mtime +size -A file_stats "${file}" 2>/dev/null
+# file_stats[1] = mtime, file_stats[2] = size
+```
+
+**When to use:**
+- File mtime comparisons in cache validation
+- Size checks before expensive operations
+- Any file metadata access during startup
+
+**When NOT to use:**
+- One-time operations outside hot path (e.g., install scripts)
+- When external `stat` is already cached/optimized
+- Cross-platform scripts (zsh/stat is zsh-only)
+
 ## Function Existence Check
 
 ```zsh
@@ -211,6 +260,93 @@ export ZSH_COMPDUMP="${XDG_CACHE_HOME}/zcompdump"
 
 The anonymous function `()` scopes the `autoload` so it does not pollute the
 global function table.
+
+## Deferring Expensive Operations with zsh-defer
+
+**Pattern**: Defer non-essential operations to the first idle ZLE event using `zsh-defer`.
+
+zsh-defer schedules functions to run after the first prompt is rendered but before the user can type. This moves expensive work off the critical startup path without impacting user experience.
+
+**Benefits:**
+- **Faster first prompt**: 30-50% improvement by deferring heavy operations
+- **No user-visible impact**: Deferred work completes before first keypress
+- **Graceful degradation**: Falls back to synchronous load when zsh-defer unavailable
+
+**Common candidates for deferral:**
+- Large function/alias files (`.aliases` with 1000+ lines)
+- Completion system initialization (`compinit` with fpath scanning)
+- Background maintenance checks (daemon restart validation, update checks)
+- Tool activation caching (mise/direnv when cache exists)
+
+**Pattern: Named function + conditional defer**
+```zsh
+# Named function required (not anonymous ()) -- zsh-defer needs a function name
+_check_updates() {
+  # Expensive check logic here
+  if [[ -f "${cache}" ]]; then
+    # Fast path using cached data
+    return
+  fi
+  # Slow path: check for updates, write cache
+}
+
+# Defer if available, run synchronously otherwise
+if (($+functions[zsh-defer])); then
+  zsh-defer _check_updates
+else
+  _check_updates
+fi
+```
+
+**Pattern: Defer file loading**
+```zsh
+# .aliases contains 1000+ lines of function definitions
+# Defer to after first prompt (saves ~15-20ms on startup)
+if (($+functions[zsh-defer])); then
+  zsh-defer load_file_if_exists "${ZDOTDIR}/.aliases"
+else
+  load_file_if_exists "${ZDOTDIR}/.aliases"
+fi
+```
+
+**Pattern: Defer completion initialization**
+```zsh
+_deferred_compinit() {
+  unfunction compdef 2>/dev/null
+  autoload -Uz compinit
+  # ... compinit logic ...
+  unfunction _deferred_compinit  # Clean up after running
+}
+
+if (($+functions[zsh-defer])); then
+  zsh-defer _deferred_compinit
+else
+  _deferred_compinit
+fi
+```
+
+**When to defer:**
+- ✅ Large file sourcing (1000+ lines)
+- ✅ Background checks with caching (5min+ TTL)
+- ✅ Completion system setup (unless user needs tab-completion immediately)
+- ✅ Plugin initialization that doesn't affect prompt rendering
+
+**When NOT to defer:**
+- ❌ Environment variables needed by other startup code
+- ❌ PATH modifications (tools must be available immediately)
+- ❌ Prompt configuration (starship init, etc.)
+- ❌ Key bindings and ZLE widgets (user expects them immediately)
+- ❌ Small operations (<1ms cost)
+
+**Measurement:**
+- **Before**: 70ms startup (30ms zsh-patina restart check in hot path)
+- **After**: 40ms startup (30ms check deferred, runs after first prompt)
+- **Result**: 43% improvement in time-to-first-prompt
+
+**See also:**
+- `.zshrc` lines 268-365 (zsh-patina restart check deferral)
+- `.zshrc` lines 446-459 (.aliases deferral)
+- `.zshrc` lines 486-526 (compinit deferral)
 
 ## Debugging Startup
 

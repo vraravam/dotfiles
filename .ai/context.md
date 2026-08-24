@@ -185,6 +185,30 @@ From `zprof` output:
 
 ### Historical Optimization Milestones
 
+#### August 2026: Startup Optimization - zsh-patina Deferral
+**Achievement**: Shell startup reduced from **70ms to 40ms** (43% improvement)
+
+**Problem**: zsh-patina daemon restart check consumed 30ms (58% of startup time) on every shell start.
+
+**Root cause**:
+- `stat -f %m` command substitutions forked subprocesses for mtime checks
+- Cache validation logic ran synchronously in hot path before first prompt
+- Expensive operations (pgrep, ps, date) executed even when cache was valid
+
+**Solution**: Three-part optimization
+1. **Defer entire restart check**: Moved to `zsh-defer` (runs after first prompt, before first keypress)
+2. **Zero-fork mtime checks**: Replace `$(stat -f %m)` with `zsh/stat` module (`zstat +mtime`)
+3. **Update cache on daemon-not-found**: Prevent repeated checks for 5 minutes even when daemon offline
+
+**Impact**:
+- **Before**: 70ms startup (30ms patina check in hot path)
+- **After**: 40ms startup (30ms check deferred, runs after prompt renders)
+- **User experience**: No visible impact - deferred work completes before first keypress
+
+**Key insight**: Background maintenance checks (daemon restarts, update checks) are perfect deferral candidates - they don't affect prompt rendering and can run after shell becomes interactive.
+
+**Documentation**: Added complete deferral patterns to `zsh-startup.md` § Deferring Expensive Operations with zsh-defer.
+
 #### May 2026: Major Startup Overhaul (commit 72891ae)
 **Achievement**: Shell startup reduced from ~200ms to **7ms** (97% improvement)
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 # file location: ${DOTFILES_DIR}/scripts/software-updates-cron.rb
 #
@@ -62,15 +62,14 @@ module SoftwareUpdatesCron
     # Access logging module's private step tracking variables
     step_errors = Logging.instance_variable_get(:@step_errors) || []
     step_warnings = Logging.instance_variable_get(:@step_warnings) || []
+    has_errors = !nil_or_empty?(step_errors)
+    has_warnings = !nil_or_empty?(step_warnings)
+    success = !has_errors && !has_warnings
 
-    unless nil_or_empty?(step_errors)
-      notification_parts << "#{step_errors.length} error(s): #{step_errors.join('; ')}"
-    end
-    unless nil_or_empty?(step_warnings)
-      notification_parts << "#{step_warnings.length} warning(s): #{step_warnings.join('; ')}"
-    end
+    notification_parts << "#{step_errors.length} error(s): #{step_errors.join('; ')}" if has_errors
+    notification_parts << "#{step_warnings.length} warning(s): #{step_warnings.join('; ')}" if has_warnings
 
-    title_icon = (nil_or_empty?(step_errors) && nil_or_empty?(step_warnings)) ? '✅' : '⚠️'
+    title_icon = success ? '✅' : '⚠️'
     msg = nil_or_empty?(notification_parts) ? '.' : " -- #{notification_parts.join(' | ')}"
 
     unless nil_or_empty?(outdated_flat)
@@ -81,18 +80,19 @@ module SoftwareUpdatesCron
     MacOS.notify("Done at #{now} (took #{duration})#{msg}", "#{title_icon} Software Updates")
 
     # Write end marker for audit trail when run completes without errors/warnings
-    if nil_or_empty?(step_errors) && nil_or_empty?(step_warnings)
+    if success
       run_log = EnvVars::DOWNLOADS.join('software-updates-run-log')
       # Append completion marker (start marker was written before run began)
       run_log.write("COMPLETED: #{now} (took #{duration})\n", mode: 'a')
     end
 
     # Return false if there were any errors or warnings
-    nil_or_empty?(step_errors) && nil_or_empty?(step_warnings)
+    success
   end
 
   # Runs the block guarded by a check for +check_cmd+. Records a warning on
   # failure rather than aborting so all steps run regardless of earlier failures.
+  # :reek:UtilityFunction -- Stateless wrapper for command existence check (intentional)
   def _perform_update(title, check_cmd, &block)
     Logging.with_step("update #{title}", "#{'Updating'.yellow} #{title.purple}") do
       unless PathUtils.command_exists?(check_cmd)
@@ -110,10 +110,11 @@ module SoftwareUpdatesCron
 
   private_class_method :_perform_update
 
+  # :reek:UtilityFunction -- Stateless helper for git operations (intentional delegation)
   def _update_home_repos
     Logging.with_step('Update repos in home folder') do
       unless RunAll.run(
-        command: ['git', 'pull-safe'],
+        command: %w[git pull-safe],
         folder: EnvVars::HOME.to_s,
         filter: '.config|zsh|mise',
         maxdepth: 5
@@ -125,13 +126,14 @@ module SoftwareUpdatesCron
 
   private_class_method :_update_home_repos
 
+  # :reek:UtilityFunction -- Stateless helper for git operations (intentional delegation)
   def _upreb_oss_repos
     Logging.with_step('Upreb repos in oss folder') do
       oss_folder = EnvVars::PROJECTS_BASE_DIR.join('oss')
       return unless oss_folder.directory?
 
       unless RunAll.run(
-        command: ['git', 'upreb'],
+        command: %w[git upreb],
         folder: oss_folder.to_s,
         maxdepth: 4
       )
@@ -158,17 +160,17 @@ module SoftwareUpdatesCron
       # mise binary is upgraded using homebrew
       # Plugin registry updates moved to 6-hour schedule (balance between freshness and rate limiting).
       # Check timestamp cache to avoid unnecessary API calls (GitHub rate limiting).
-      plugin_update_interval = 6 * 3600  # 6 hours in seconds
+      plugin_update_interval = 6 * 3600 # 6 hours in seconds
       last_plugin_update_file = EnvVars::XDG_CACHE_HOME.join('mise-plugins-last-update')
 
       # Update plugins (every 6 hours) - check timestamp to avoid rate limiting
       # Redirect stdout to suppress 'all tools are installed' messages
-      unless last_plugin_update_file.file? && Core.elapsed?(File.mtime(last_plugin_update_file).to_i, plugin_update_interval)
-        CommandUtils.run_silent('mise', 'plugins', 'update', err: :err)
-        FileUtils.touch(last_plugin_update_file)
-      else
+      if last_plugin_update_file.file? && Core.elapsed?(File.mtime(last_plugin_update_file).to_i, plugin_update_interval)
         hours_since = Core.duration_since(File.mtime(last_plugin_update_file).to_i) / 3600
         Logging.debug "mise plugins were updated #{hours_since} hour(s) ago -- skipping (interval: #{plugin_update_interval / 3600} hours)"
+      else
+        CommandUtils.run_silent('mise', 'plugins', 'update', err: :err)
+        FileUtils.touch(last_plugin_update_file)
       end
 
       # Always run tool upgrades (hourly is appropriate for version updates)
@@ -214,7 +216,7 @@ module SoftwareUpdatesCron
         # Pull models at most once per 24 hours (configurable interval).
         # ollama pull downloads models even if already up to date (no --check flag),
         # so timestamp-based caching prevents unnecessary large transfers.
-        model_update_interval = 24 * 3600  # seconds
+        model_update_interval = 24 * 3600 # seconds
         last_update_file = EnvVars::XDG_CACHE_HOME.join('ollama-last-update')
 
         if last_update_file.file?
@@ -249,7 +251,7 @@ module SoftwareUpdatesCron
         # filter_map polyfill in enumerable_ext.rb provides optimized single-pass implementation for Ruby 2.6
         ollama_models = Array(stdout.lines[1..-1]).filter_map { |line| line.split.first }
 
-        if ollama_models.empty?
+        if nil_or_empty?(ollama_models)
           Logging.info 'No ollama models found locally -- skipping updates'
         else
           Logging.info "Found #{ollama_models.size} ollama model(s) to update: #{ollama_models.join(', ')}"
@@ -293,10 +295,8 @@ module SoftwareUpdatesCron
       # apps). If called as module, hooks would register in parent process and fire at wrong
       # time (end of software-updates-cron instead of after export completes).
       # Export auto-commits inside capture-prefs.rb (uses smart_commit)
-      capture_prefs_script = Pathname.new(__dir__).join('capture-prefs.rb')
       # Set COLUMNS for terminal width detection (cron has no TTY, defaults to 80)
-      env = { 'COLUMNS' => EnvVars.columns.to_s }
-      if CommandUtils.run_interactive(env, RbConfig.ruby, capture_prefs_script.to_s, '-e')
+      if CommandUtils.run_interactive({ 'COLUMNS' => EnvVars.columns.to_s }, RbConfig.ruby, Pathname.new(__dir__).join('capture-prefs.rb').to_s, '-e')
         Logging.success 'Finished capturing and committing app preferences'
       else
         Logging.record_error('Failed to capture app preferences')
@@ -338,7 +338,7 @@ end
 if __FILE__ == $PROGRAM_NAME
   include Logging
 
-  Logging.run_script(File.basename(__FILE__, '.rb')) do |start_time|
+  Logging.run_script do |start_time|
     # Write start marker before beginning work (shows cron is running)
     run_log = EnvVars::DOWNLOADS.join('software-updates-run-log')
     start_timestamp = Core.current_timestamp

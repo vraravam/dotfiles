@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 require 'open3'
 
@@ -10,6 +10,7 @@ require_relative 'env_vars'
 require_relative 'git_processor'
 require_relative 'logging'
 require_relative 'path_utils'
+require_relative 'pathname_ext'
 
 # Shared antidote plugin-manager helpers used by the antidote formula's
 # postinstall hook (in Brewfile) and software-updates-cron.rb.
@@ -38,15 +39,16 @@ module Antidote
   #   ANTIDOTE_PLUGIN_TXT path to the .zsh_plugins.txt input file
   #   ANTIDOTE_PLUGIN_ZSH path to the generated .zsh_plugins.zsh bundle
   #   ANTIDOTE_HOME       directory where antidote clones plugins
+  # :reek:FeatureEnvy -- Local variables track file paths during multi-step workflow
   def update_and_regenerate_bundle
     antidote_zsh = EnvVars::ANTIDOTE_ZSH
     plugin_txt = EnvVars::ANTIDOTE_PLUGIN_TXT
     plugin_zsh = EnvVars::ANTIDOTE_PLUGIN_ZSH
     antidote_home = EnvVars::ANTIDOTE_HOME
 
-    unless antidote_zsh.file? && !nil_or_empty?(antidote_zsh) && plugin_txt.file? && !nil_or_empty?(plugin_txt)
-      Logging.debug "Skipping antidote bundle regeneration: antidote not found at '#{antidote_zsh.to_s.cyan}' " \
-                    "or plugin list '#{plugin_txt.to_s.cyan}' is missing"
+    unless file?(antidote_zsh) && file?(plugin_txt)
+      Logging.debug "Skipping antidote bundle regeneration: antidote not found at '#{antidote_zsh.cyan}' " \
+                    "or plugin list '#{plugin_txt.cyan}' is missing"
       return
     end
 
@@ -60,10 +62,10 @@ module Antidote
         next unless bundle_dir.directory?
 
         GitProcessor.new(dir: bundle_dir) do |git|
-          next unless git.repo? && git.shallow?  # Skip non-git directories and non-shallow repos
+          next unless git.repo? && git.shallow? # Skip non-git directories and non-shallow repos
 
           git.config_set('fetch.fsckObjects', 'false')
-          git.run_alias('unshallow')  # Configures all remotes, fetches complete history
+          git.run_alias('unshallow') # Configures all remotes, fetches complete history
         end
       end
     end
@@ -80,9 +82,9 @@ module Antidote
       Logging.record_warning("Failed to regenerate antidote bundle (status: #{st.exitstatus})#{output_msg}")
     end
 
-    if success
-      plugin_zsh.write(bundle_content)
-      Logging.success "antidote bundle regenerated at '#{plugin_zsh.to_s.cyan}'"
-    end
+    return unless success
+
+    plugin_zsh.write(bundle_content)
+    Logging.success "antidote bundle regenerated at '#{plugin_zsh.cyan}'"
   end
 end

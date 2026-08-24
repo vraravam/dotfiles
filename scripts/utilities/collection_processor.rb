@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 require 'open3'
 require 'set'
@@ -124,7 +124,11 @@ module CollectionProcessor
 
     # Use Set for O(1) membership checks and deduplication
     seen = Set.new
-    filter_re = filter.is_a?(Regexp) ? filter : (filter ? Regexp.new(filter) : nil)
+    filter_re = if filter.is_a?(Regexp)
+                  filter
+                elsif filter
+                  Regexp.new(filter)
+                end
 
     stdout_str.split("\0").each do |path|
       next if filter_re && !path.match?(filter_re)
@@ -229,7 +233,7 @@ module CollectionProcessor
       one_based_idx = idx + 1
 
       # Check skip condition before any logging or processing
-      if skip_proc && skip_proc.call(item)
+      if skip_proc&.call(item)
         skipped_count += 1
         next
       end
@@ -243,11 +247,12 @@ module CollectionProcessor
       Logging.increment_script_depth
 
       # Print section header for this item
+      item_name_colored = item_name.cyan
       operation_part = operation_desc ? "#{operation_desc.yellow}: " : ''
-      Logging.section_header("#{progress} #{operation_part}'#{item_name.cyan}'")
+      Logging.section_header("#{progress} #{operation_part}'#{item_name_colored}'")
 
       if dry_run
-        Logging.info "Would process '#{item_name.cyan}'"
+        Logging.info "Would process '#{item_name_colored}'"
         Logging.decrement_script_depth
         successful << item_name
         next
@@ -267,17 +272,16 @@ module CollectionProcessor
           # resurrect-repositories.rb returns false for fatal failures (logs via record_error).
           # Provide a fallback warning in case a future caller returns false without logging.
           failed << item_name
-          Logging.record_warning("Processing failed for '#{item_name.cyan}'")
+          Logging.record_warning("Processing failed for '#{item_name_colored}'")
         end
       rescue StandardError => e
         failed << item_name
         # Exceptions are unexpected script errors (missing method, nil reference, etc.)
         # Record as error with context. Callers should not rescue StandardError.
-        Logging.record_error("Exception processing '#{item_name.cyan}': #{e.message}")
+        Logging.record_error("Exception processing '#{item_name_colored}': #{e.message}")
       ensure
         # Decrement depth twice: once for operations block, once for item header
-        Logging.decrement_script_depth
-        Logging.decrement_script_depth
+        2.times { Logging.decrement_script_depth }
       end
     end
 

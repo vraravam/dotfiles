@@ -83,7 +83,7 @@ All logging messages across shell scripts and Ruby scripts follow this unified c
 - **Context matters**: Neutral counts get purple; success/error counts get green/red
 - **Yellow-context rule**: When the main message text is already yellow (labels, action verbs), use purple for quoted special content (env vars, component names, script names) to create visual distinction
 
-**Implementation**: Color methods are defined in `string.rb` (Ruby) and `.shellrc` (shell functions).
+**Implementation**: Color methods are defined in `colorizable.rb` (shared Ruby module), `string_ext.rb` (String extension), `pathname_ext.rb` (Pathname extension), and `.shellrc` (shell functions).
 
 ## Deferred Error/Warning Collection
 

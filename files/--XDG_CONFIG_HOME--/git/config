@@ -78,6 +78,12 @@
   # INSPECTION & INFO (alphabetical)
   # ═══════════════════════════════════════════════════════════════════════════
 
+  # Lists all custom git aliases
+  aliases = config --get-regex 'alias*'
+
+  # Lists all branch tracking configuration (remote/merge/rebase settings)
+  branches = config --get-regexp '^branch\\.'
+
   # Lists branches (add -a for all, -r for remote).
   # Usage: git b [-a|-r]
   b = branch
@@ -298,6 +304,9 @@
     basename \"$(git -C \"${1:-.}\" remote get-url origin)\"; \
   }; f"
 
+  # Lists all remote configuration (url/fetch/promisor/partialclonefilter settings)
+  remotes = config --get-regexp '^remote\\.'
+
   # Expires the entire reflog immediately (maximizes cleanup when followed by 'git cc').
   # --stale-fix prunes broken reflog entries pointing to missing objects.
   # Note: refs/stash is intentionally excluded to preserve stashes.
@@ -387,7 +396,7 @@
   # dw = d --word-diff=color           # Note: Commented out since we use delta; but keeping for reference
   # dcw = d --word-diff=color --staged # Note: Commented out since we use delta; but keeping for reference
 
-  # Shows incoming commits (remote → local) with different verbosity levels.
+  # Shows incoming commits (remote -> local) with different verbosity levels.
   # Default: shows commit summary with stats.
   # -d flag: shows a single combined diff (not per-commit).
   # -p flag: shows commits with full file diffs.
@@ -450,11 +459,8 @@
   what = show -s --pretty='tformat:%h (%s, %ad)' --date=short
 
   # Prints the current user's configured name and email.
-  # With an optional <dir> argument, reads from that repo's local config instead.
-  # Usage: git who [<dir>]
-  who = "!f() { \
-    git -C \"${1:-.}\" config --get user.name && git -C \"${1:-.}\" config --get user.email; \
-  }; f"
+  # Usage: git who
+  who = config --get-regexp 'user\\.(name|email)'
 
   # ═══════════════════════════════════════════════════════════════════════════
   # LOCAL CHANGES & STAGING (alphabetical)

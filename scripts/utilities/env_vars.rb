@@ -1,8 +1,8 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
-require 'pathname'  # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
+require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
 require_relative 'core'
 
 # Centralized environment variable access for dotfiles scripts.
@@ -31,6 +31,7 @@ require_relative 'core'
 #     dir = EnvVars.folder || Dir.pwd            # String (expanded path) or nil
 #     filter = EnvVars.filter                       # String (stripped) or nil
 #   end
+# :reek:TooManyConstants -- Centralized env var access requires many path constants
 module EnvVars
   extend Core
 
@@ -86,6 +87,10 @@ module EnvVars
 
   # User's home directory.
   # Mirrors: export HOME (always set by the shell)
+  #
+  # NOTE: This is the single source of truth for HOME in Ruby code. The only
+  # exception is colorizable.rb which uses ENV.fetch('HOME') directly to avoid
+  # circular dependency (colorizable is required before env_vars in the load chain).
   HOME = Pathname.new(ENV.fetch('HOME', '~')).expand_path.freeze
 
   # User's Downloads directory.
@@ -251,6 +256,10 @@ module EnvVars
 
   # Returns true if FORCE_COLOR is set (used by color output methods).
   # Mirrors: FORCE_COLOR env var (standard convention for forcing color output)
+  #
+  # NOTE: This is the single source of truth for FORCE_COLOR in Ruby code. The only
+  # exception is core.rb which uses ENV.fetch('FORCE_COLOR') directly to avoid
+  # circular dependency (env_vars.rb requires core.rb, so core.rb cannot use EnvVars).
   def self.force_color?
     !nil_or_empty?(ENV.fetch('FORCE_COLOR', '').strip)
   end

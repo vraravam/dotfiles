@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 require 'fileutils'
 require 'open3'
@@ -18,6 +18,7 @@ require_relative 'path_utils'
 # The split between .shellrc and .aliases exists for bootstrap reasons: shell
 # needs suspend_cron before the dotfiles repo is cloned. Ruby scripts never
 # have that constraint -- the full interface lives here.
+# :reek:UtilityFunction -- Intentional stateless utility module design
 module Cron
   extend self
   include Core  # For instance methods (in blocks)
@@ -32,7 +33,7 @@ module Cron
   CRONTAB_FILE = EnvVars::PERSONAL_CONFIGS_DIR.join('crontab.txt')
 
   # ---------------------------------------------------------------------------
-  # Core primitives (mirror .shellrc § 1h)
+  # Core primitives (mirror .shellrc # 1h)
   # ---------------------------------------------------------------------------
 
   # Loads +cron_file+ into the system crontab via `crontab <file>`.
@@ -43,22 +44,26 @@ module Cron
   #
   # @param cron_file [String, Pathname] Path to crontab file
   # @return [Boolean] true on success, false on failure
+  # :reek:FeatureEnvy -- Local variable tracks file path through validation steps
   def restore_cron(cron_file)
     cron_file = Pathname.new(cron_file) unless cron_file.is_a?(Pathname)
-    unless cron_file.file?
-      Logging.warn "No '#{cron_file.to_s.cyan}' found; returning without any processing"
+    cron_file_str = cron_file.to_s
+    cron_file_colored = cron_file_str.cyan
+
+    unless file?(cron_file)
+      Logging.warn "No '#{cron_file_colored}' found; returning without any processing"
       return false
     end
 
     # Validate syntax before attempting to install
     unless _valid_crontab?(cron_file)
-      Logging.record_error "Invalid crontab syntax in '#{cron_file.to_s.cyan}'"
+      Logging.record_error "Invalid crontab syntax in '#{cron_file_colored}'"
       return false
     end
 
     PathUtils.ensure_directories_exist(cron_file.dirname)
-    unless CommandUtils.run_silent('crontab', cron_file.to_s)
-      Logging.record_error "Failed to restore crontab from '#{cron_file.to_s.cyan}'"
+    unless CommandUtils.run_silent('crontab', cron_file_str)
+      Logging.record_error "Failed to restore crontab from '#{cron_file_colored}'"
       return false
     end
     true
@@ -71,6 +76,7 @@ module Cron
   # Mirrors suspend_cron in .shellrc.
   #
   # @return [Boolean] true on success, false on failure
+  # :reek:FeatureEnvy -- Local variable tracks backup file through multi-step workflow
   def suspend_cron
     Logging.debug 'Suspending cron jobs...'
     backup_file = EnvVars.cron_backup_file
@@ -83,11 +89,11 @@ module Cron
 
     if success && !nil_or_empty?(crontab_output)
       backup_file.write(crontab_output)
-      Logging.debug "Backed up existing crontab to '#{backup_file.to_s.cyan}'"
+      Logging.debug "Backed up existing crontab to '#{backup_file.cyan}'"
     elsif src_file.file?
       # No active crontab (e.g. FIRST_INSTALL) but a known-good crontab.txt exists.
       FileUtils.cp(src_file.to_s, backup_file.to_s)
-      Logging.debug "Seeded cron backup from '#{src_file.to_s.cyan}'"
+      Logging.debug "Seeded cron backup from '#{src_file.cyan}'"
     else
       backup_file.write('')
       Logging.debug 'No existing crontab or crontab.txt; created empty backup'
@@ -102,6 +108,7 @@ module Cron
   # Restores the crontab from the backup written by suspend_cron and deletes
   # the backup file. If the backup is empty (genuine first-install with no prior
   # crontab.txt), does nothing. Mirrors resume_cron in .shellrc.
+  # :reek:FeatureEnvy -- Local variable tracks backup file through restoration steps
   def resume_cron
     Logging.debug 'Resuming cron jobs...'
     backup_file = EnvVars.cron_backup_file
@@ -111,17 +118,17 @@ module Cron
     else
       Logging.info 'No cron backup to restore; skipping'
     end
-    if backup_file.exist?
-      unless PathUtils.safe_for_write?(backup_file)
-        Logging.warn "Refusing to delete cron backup file in root directory: '#{backup_file.to_s.cyan}'"
-        return
-      end
-      backup_file.delete
+    return unless backup_file.exist?
+
+    unless PathUtils.safe_for_write?(backup_file)
+      Logging.warn "Refusing to delete cron backup file in root directory: '#{backup_file.cyan}'"
+      return
     end
+    backup_file.delete
   end
 
   # ---------------------------------------------------------------------------
-  # Higher-level helpers (mirror .aliases § 3j)
+  # Higher-level helpers (mirror .aliases # 3j)
   # ---------------------------------------------------------------------------
 
   # Seeds +file+ with the standard crontab header and the software-updates-cron
@@ -186,9 +193,9 @@ module Cron
 
   # Restores crontab schedule using fallback logic:
   # 1. Capture existing system crontab to temp file (crontab -l)
-  # 2. If empty → fallback to ${PERSONAL_CONFIGS_DIR}/crontab.txt (tracked in repo)
-  # 3. If both empty → user_action to create schedule, don't modify system crontab
-  # 4. If non-empty schedule found → load it into system crontab
+  # 2. If empty -> fallback to ${PERSONAL_CONFIGS_DIR}/crontab.txt (tracked in repo)
+  # 3. If both empty -> user_action to create schedule, don't modify system crontab
+  # 4. If non-empty schedule found -> load it into system crontab
   #
   # This ensures:
   # - Existing cron jobs are preserved (don't overwrite user's custom schedules)
@@ -196,6 +203,7 @@ module Cron
   # - No default schedule imposed if user has neither
   #
   # Mirrors recron in .aliases.
+  # :reek:FeatureEnvy -- Local variable manages temp file lifecycle through validation
   def recron
     Logging.run_script('recron') do
       Logging.debug 'Setting up crontab'
@@ -209,24 +217,23 @@ module Cron
         temp_crontab.close
 
         # Step 2: Check if temp file has content (existing crontab)
+        crontab_file_colored = CRONTAB_FILE.cyan
         schedule_source = nil
         if temp_crontab.size.positive?
           Logging.debug "Found existing crontab with #{temp_crontab.size} bytes"
           schedule_source = Pathname.new(temp_crontab.path)
-        elsif !nil_or_empty?(CRONTAB_FILE) && CRONTAB_FILE.file?
+        elsif file?(CRONTAB_FILE)
           # Step 2b: Fallback to tracked crontab.txt if it exists and is non-empty
-          Logging.debug "No existing crontab; falling back to '#{CRONTAB_FILE.to_s.cyan}'"
+          Logging.debug "No existing crontab; falling back to '#{crontab_file_colored}'"
           schedule_source = CRONTAB_FILE
         else
           # Step 3: Both empty - user action needed
-          Logging.user_action "No crontab found and '#{CRONTAB_FILE.to_s.cyan}' does not exist. Create '#{CRONTAB_FILE.to_s.cyan}' with your desired schedule and run '#{'recron'.yellow}' to install it. Track the file in your home repo for backup."
+          Logging.user_action "No crontab found and '#{crontab_file_colored}' does not exist. Create '#{crontab_file_colored}' with your desired schedule and run '#{'recron'.yellow}' to install it. Track the file in your home repo for backup."
         end
 
         # Step 4: Load non-empty schedule into system crontab
-        if schedule_source
-          Logging.success 'Crontab set up successfully' if restore_cron(schedule_source)
-          # Error already logged by restore_cron if it failed
-        end
+        Logging.success 'Crontab set up successfully' if schedule_source && restore_cron(schedule_source)
+        # Error already logged by restore_cron if it failed
       ensure
         temp_crontab.unlink
       end
@@ -257,7 +264,7 @@ module Cron
       backup = EnvVars.cron_backup_file
       if backup.exist?
         unless PathUtils.safe_for_write?(backup)
-          Logging.warn "Refusing to delete cron backup file in root directory: '#{backup.to_s.cyan}'"
+          Logging.warn "Refusing to delete cron backup file in root directory: '#{backup.cyan}'"
           return
         end
         backup.delete
@@ -280,6 +287,7 @@ module Cron
   #
   # @param file [Pathname] Crontab file to validate
   # @return [Boolean] true if valid, false if invalid
+  # :reek:FeatureEnvy -- Validates file properties and content line-by-line
   def _valid_crontab?(file)
     # crontab command validates syntax automatically when loading a file.
     # To test without modifying the active crontab, we'd need to:
@@ -296,7 +304,7 @@ module Cron
     # Use Core.each_line_utf8 to avoid encoding issues in non-UTF-8 environments.
     Core.each_line_utf8(file) do |line|
       stripped = line.strip
-      next if stripped.empty?
+      next if nil_or_empty?(stripped)
       next if stripped.start_with?('#')
       next if stripped =~ /^[A-Z_]+=.*/
 
@@ -325,7 +333,7 @@ module Cron
       next unless PathUtils.safe_for_write?(old_backup)
 
       old_backup.delete
-      Logging.debug "Deleted old cron backup: '#{old_backup.to_s.cyan}'"
+      Logging.debug "Deleted old cron backup: '#{old_backup.cyan}'"
     end
   end
 end

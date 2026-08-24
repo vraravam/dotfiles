@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
-# frozen_string_literal: true
 # encoding: utf-8
+# frozen_string_literal: true
 
 require 'time'
 require_relative 'core'
@@ -38,6 +38,15 @@ module ProfilesRepo
   # Query methods (read-only state inspection)
   # ---------------------------------------------------------------------------
 
+  # Memoized profiles directory (used across all methods).
+  # Returns the PERSONAL_PROFILES_DIR constant, cached after first access.
+  #
+  # @return [Pathname] Path to personal profiles directory
+  def _profiles_dir
+    @_profiles_dir ||= EnvVars::PERSONAL_PROFILES_DIR
+  end
+  private_class_method :_profiles_dir
+
   # Checks the pack size of the profiles repo and records an error if it exceeds
   # the specified limit. Suggests running recreate-repository.rb when the threshold
   # is breached.
@@ -48,20 +57,20 @@ module ProfilesRepo
   # @param limit_gb [Integer] Size limit in gigabytes (default: 2)
   # @return [void]
   def check_size_limit(limit_gb: 2)
-    unless GitProcessor.repo?(EnvVars::PERSONAL_PROFILES_DIR)
-      Logging.debug "Skipping size check -- '#{EnvVars::PERSONAL_PROFILES_DIR}' is not a git repo"
+    unless GitProcessor.repo?(_profiles_dir)
+      Logging.debug "Skipping size check -- '#{_profiles_dir}' is not a git repo"
       return
     end
 
-    git_dir = EnvVars::PERSONAL_PROFILES_DIR.join('.git')
-    size_kb = PathUtils.git_repo_size_kb(git_dir)
-    limit_kb = limit_gb * 1024 * 1024
+    git_dir = _profiles_dir.join('.git')
+    size_mb = PathUtils.git_repo_size_mb(git_dir)
+    limit_mb = limit_gb * 1024
 
-    if size_kb > limit_kb
+    if size_mb > limit_mb
       size_human = PathUtils.git_repo_size_human(git_dir)
       Logging.record_error(
         "Profiles repo pack size is #{size_human} -- exceeds #{limit_gb}GB threshold. " \
-        "Consider running: recreate-repository.rb -d \"#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}\""
+        "Consider running: recreate-repository.rb -d \"#{_profiles_dir.cyan}\""
       )
     else
       Logging.debug "Profiles repo pack size within #{limit_gb}GB threshold"
@@ -75,7 +84,7 @@ module ProfilesRepo
   # @return [Array<Pathname>] Array of chrome folder paths as Pathname objects
   def find_chrome_folders
     chrome_folders = []
-    chrome_pattern = EnvVars::PERSONAL_PROFILES_DIR.join('*Profile', 'Profiles', 'DefaultProfile', 'chrome')
+    chrome_pattern = _profiles_dir.join('*Profile', 'Profiles', 'DefaultProfile', 'chrome')
     PathUtils.glob_pathnames(chrome_pattern) do |path_pn|
       chrome_folders << path_pn if path_pn.directory? && GitProcessor.repo?(path_pn)
     end
@@ -95,22 +104,22 @@ module ProfilesRepo
   #
   # @return [Boolean] true if successful, false if repo is invalid or commit fails
   def capture_and_commit
-    unless GitProcessor.repo?(EnvVars::PERSONAL_PROFILES_DIR)
-      Logging.warn "Skipping profiles repo update -- '#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}' is not a git repo"
+    unless GitProcessor.repo?(_profiles_dir)
+      Logging.warn "Skipping profiles repo update -- '#{_profiles_dir.cyan}' is not a git repo"
       return false
     end
 
-    Logging.debug "Updating profiles repo at '#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}'"
+    Logging.debug "Updating profiles repo at '#{_profiles_dir.cyan}'"
 
     # Clean up lock files and hooks
-    index_lock = EnvVars::PERSONAL_PROFILES_DIR.join('.git', 'index.lock')
-    hooks_dir = EnvVars::PERSONAL_PROFILES_DIR.join('.git', 'hooks')
+    index_lock = _profiles_dir.join('.git', 'index.lock')
+    hooks_dir = _profiles_dir.join('.git', 'hooks')
     index_lock.delete if index_lock.file?
     hooks_dir.rmtree if hooks_dir.directory?
 
     # Stage and commit with timestamp (use block form for multiple operations)
     success = false
-    GitProcessor.new(dir: EnvVars::PERSONAL_PROFILES_DIR) do |git|
+    GitProcessor.new(dir: _profiles_dir) do |git|
       git.add('.')
       success = git.smart_commit
     end
@@ -129,28 +138,30 @@ module ProfilesRepo
   # @param days [Integer] Age threshold in days (default: 7)
   # @return [void]
   def prune_old_session_backups(days: 7)
-    unless GitProcessor.repo?(EnvVars::PERSONAL_PROFILES_DIR)
-      Logging.debug "Skipping session backup pruning -- '#{EnvVars::PERSONAL_PROFILES_DIR}' is not a git repo"
+    unless GitProcessor.repo?(_profiles_dir)
+      Logging.debug "Skipping session backup pruning -- '#{_profiles_dir}' is not a git repo"
       return
     end
 
     cutoff = (Time.now - days * 24 * 3600).strftime('%Y-%m-%d')
     pruned_count = 0
 
-    GitProcessor.new(dir: EnvVars::PERSONAL_PROFILES_DIR) do |git|
+    GitProcessor.new(dir: _profiles_dir) do |git|
       tracked = git.ls_files('*/zen-sessions-backup/zen-sessions-*.jsonlz4')
 
       old_backups = tracked.select do |tracked_file|
         tracked_path = Pathname.new(tracked_file)
-        basename = tracked_path.basename('.*').to_s  # strip .jsonlz4
-        basename = Pathname.new(basename).basename('.*').to_s  # strip potential second ext
+        basename = tracked_path.basename('.*').to_s # strip .jsonlz4
+        basename = Pathname.new(basename).basename('.*').to_s # strip potential second ext
         date_part = basename.sub('zen-sessions-', '').sub(/-\d{2}\z/, '')
         date_part < cutoff
       end
 
       if nil_or_empty?(old_backups)
         Logging.debug 'No old session backups to prune'
-        return
+        # rubocop:disable Lint/NonLocalExitFromIterator
+        return # Early exit from method (not from iterator) - false positive
+        # rubocop:enable Lint/NonLocalExitFromIterator
       end
 
       old_backups.each do |f|
@@ -170,8 +181,8 @@ module ProfilesRepo
   #
   # @return [void]
   def update_chrome_folders
-    unless EnvVars::PERSONAL_PROFILES_DIR.directory?
-      Logging.debug "Skipping chrome folder update -- PERSONAL_PROFILES_DIR not found: '#{EnvVars::PERSONAL_PROFILES_DIR.to_s.cyan}'"
+    unless _profiles_dir.directory?
+      Logging.debug "Skipping chrome folder update -- PERSONAL_PROFILES_DIR not found: '#{_profiles_dir.cyan}'"
       return
     end
 
@@ -179,15 +190,17 @@ module ProfilesRepo
     return if nil_or_empty?(chrome_folders)
 
     chrome_folders.each do |folder_pn|
+      folder_pn_colored = folder_pn.cyan
+
       unless GitProcessor.repo?(folder_pn)
-        Logging.debug "Skipping non-repo chrome folder: '#{folder_pn.to_s.cyan}'"
+        Logging.debug "Skipping non-repo chrome folder: '#{folder_pn_colored}'"
         next
       end
 
-      Logging.with_step("update chrome #{folder_pn.basename.to_s}", "#{'Updating chrome folder:'.yellow} '#{folder_pn.to_s.cyan}'") do
+      Logging.with_step("update chrome #{folder_pn.basename}", "#{'Updating chrome folder:'.yellow} '#{folder_pn_colored}'") do
         _stdout, _stderr, status = GitProcessor.new(dir: folder_pn).pull(rebase: true)
         if status.success?
-          Logging.success "Successfully updated: '#{folder_pn.to_s.cyan}'"
+          Logging.success "Successfully updated: '#{folder_pn_colored}'"
         else
           Logging.record_warning("Failed to update chrome folder: '#{folder_pn}'")
         end

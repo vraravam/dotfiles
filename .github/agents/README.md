@@ -11,7 +11,7 @@ These agents are specialized reviewers that understand the dotfiles repository's
 ## Available Agents
 
 ### 1. Shell Script Reviewer
-**File**: `shell-script-reviewer.agent.md`  
+**File**: `shell-script-reviewer.agent.md`
 **Invoke**: See usage section below
 
 **Purpose**: Reviews shell scripts (`.sh`, `.zsh`, `.bash`, `.shellrc`, `.aliases`, autoload functions) for correctness, style, performance, and adherence to `.ai/domains/shell-scripting.md`.
@@ -28,7 +28,7 @@ These agents are specialized reviewers that understand the dotfiles repository's
 ---
 
 ### 2. Ruby Script Reviewer
-**File**: `ruby-script-reviewer.agent.md`  
+**File**: `ruby-script-reviewer.agent.md`
 **Invoke**: See usage section below
 
 **Purpose**: Reviews Ruby scripts (`.rb` files) for correctness, Ruby 2.6 compatibility, style, performance, and adherence to `.ai/domains/ruby-scripting.md`.
@@ -45,7 +45,7 @@ These agents are specialized reviewers that understand the dotfiles repository's
 ---
 
 ### 3. Security Reviewer
-**File**: `security-reviewer.agent.md`  
+**File**: `security-reviewer.agent.md`
 **Invoke**: See usage section below
 
 **Purpose**: Reviews shell and Ruby scripts for security vulnerabilities including command injection, unsafe file operations, credential exposure, and privilege escalation.

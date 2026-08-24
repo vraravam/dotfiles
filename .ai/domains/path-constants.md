@@ -154,7 +154,11 @@ end
 puts "Processing #{EnvVars::HOME}"
 puts "Processing #{EnvVars::HOME.to_s}"
 
-# Color methods require explicit .to_s (they're defined on String, not Pathname)
+# Color methods work on both String and Pathname (via pathname_ext.rb)
+# Pathname color methods automatically convert to colored String
+info "Processing '#{EnvVars::HOME.join('dotfiles').cyan}'"
+
+# Explicit .to_s still works but is unnecessary
 info "Processing '#{EnvVars::HOME.join('dotfiles').to_s.cyan}'"
 ```
 
@@ -180,25 +184,24 @@ end
 
 1. **System commands**: `system()`, `Open3.capture3()`, backticks
 2. **String manipulation**: when you need String methods like `.gsub`, `.split`
-3. **Color methods**: they're defined on String, not Pathname (see logging-conventions.md)
-4. **String concatenation**: rare cases where `+` is required (prefer `Pathname#join` instead)
+3. **String concatenation**: rare cases where `+` is required (prefer `Pathname#join` instead)
 
 ```ruby
 # 1. System commands require String arguments
 system('git', '-C', repo_path.to_s, 'status')
 
-# 2. String manipulation (need .gsub for tilde replacement)
-display_path = folder.to_s.gsub(EnvVars::HOME.to_s, '~')
+# 2. String manipulation (need .gsub for custom replacements)
+display_path = folder.to_s.gsub('old', 'new')
 
-# 3. Color methods (defined on String, not Pathname)
-info "Processing '#{config_file.to_s.cyan}'"
-
-# 4. String concatenation (but prefer Pathname.join instead)
+# 3. String concatenation (but prefer Pathname.join instead)
 # BAD
 path = EnvVars::HOME.to_s + '/' + 'file.txt'
 # Good
 path = EnvVars::HOME.join('file.txt')
 ```
+
+**Note on color methods**: Color methods now work on both String and Pathname (via `pathname_ext.rb`).
+When called on Pathname, they automatically convert to colored String. See `logging-conventions.md` for details.
 
 **Use `PathUtils::ROOT` for filesystem root**:
 

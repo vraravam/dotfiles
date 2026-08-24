@@ -1408,6 +1408,9 @@ zsdoc/data
 
 # End of https://www.toptal.com/developers/gitignore/api/vim,zsh,dart,java,node,rust,linux,macos,csharp,python,eclipse,pycharm,windows,homebrew,intellij,webstorm,visualstudiocode,ruby,rubymine,sublimetext
 
+# AI-tooling that's specific to the local machine
+**/.claude/settings.local.json
+
 # Do NOT ignore the following files/directories (put these at the end)
 !.*keep
 !/personal/**/bin/
