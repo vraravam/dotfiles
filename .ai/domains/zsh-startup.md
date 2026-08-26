@@ -274,6 +274,7 @@ zsh-defer schedules functions to run after the first prompt is rendered but befo
 
 **Common candidates for deferral:**
 - Large function/alias files (`.aliases` with 1000+ lines)
+- Large completion files (git-extras: 482 lines, 16KB)
 - Completion system initialization (`compinit` with fpath scanning)
 - Background maintenance checks (daemon restart validation, update checks)
 - Tool activation caching (mise/direnv when cache exists)
@@ -288,6 +289,7 @@ _check_updates() {
     return
   fi
   # Slow path: check for updates, write cache
+  unfunction _check_updates
 }
 
 # Defer if available, run synchronously otherwise
@@ -345,8 +347,11 @@ fi
 
 **See also:**
 - `.zshrc` lines 268-365 (zsh-patina restart check deferral)
+- `.zshrc` lines 177-191 (git-extras completion deferral)
 - `.zshrc` lines 446-459 (.aliases deferral)
-- `.zshrc` lines 486-526 (compinit deferral)
+- `.zshrc` lines 461-485 (git version cache deferral)
+- `.zshrc` lines 486-541 (compinit deferral)
+- `.zshrc` lines 671-703 (autoload function enumeration deferral)
 
 ## Debugging Startup
 

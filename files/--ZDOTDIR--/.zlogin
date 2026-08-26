@@ -78,7 +78,7 @@ find_in_folder_and_recompile() {
 
   find "${dir_to_scan}" -maxdepth 5 \
     \( \( -name 'node_modules' -o -name '.pnpm' \) -type d -prune \) -o \
-    \( \( -name '*.sh' -o -name '*.zsh' \) -type f -print0 \) |
+    \( \( -name '*.sh' -o -name '*.zsh' \) \( -type f -o -type l \) -print0 \) |
     while IFS= read -r -d $'\0' f; do
       recompile_zsh_script "${f}"
     done
@@ -122,6 +122,14 @@ find_in_folder_and_recompile "${ANTIDOTE_HOME}"
 # not covered by the find_in_folder_and_recompile calls below. Add any new
 # third-party sourced completions here rather than extending those scans.
 recompile_zsh_script "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
+
+# Compile custom OMZ library files. These are symlinked by install-dotfiles.rb
+# from ${DOTFILES_DIR}/files/--ZDOTDIR--/lib/ to ${ZDOTDIR}/lib/.
+# The find_in_folder_and_recompile("${DOTFILES_DIR}") call below would compile
+# the source files, but zsh needs the .zwc at the symlink destination where
+# plugins.txt references them (${ZDOTDIR}/lib/omz-*.zsh).
+# Process the entire directory to pick up any new files added in future.
+find_in_folder_and_recompile "${ZDOTDIR}/lib"
 
 # Compile extensionless autoload function files under XDG_CONFIG_HOME/zsh/.
 # These are not *.sh / *.zsh so find_in_folder_and_recompile misses them.

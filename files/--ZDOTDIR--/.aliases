@@ -106,9 +106,9 @@ if (($+commands[brew])); then
     for pkg in 'curl' 'gnu-tar' 'grep' 'sqlite' 'zlib'; do
       _keg_collect "${pkg}"
     done
-    if is_directory "${HOMEBREW_PREFIX}/opt/openssl@3"; then
-      _keg_collect 'openssl@3'
-      _ruby_opt "--with-openssl-dir=${HOMEBREW_PREFIX}/opt/openssl@3"
+    if is_directory "${HOMEBREW_PREFIX}/opt/openssl"; then
+      _keg_collect 'openssl'
+      _ruby_opt "--with-openssl-dir=${HOMEBREW_PREFIX}/opt/openssl"
     fi
     if is_directory "${HOMEBREW_PREFIX}/opt/readline"; then
       _keg_collect 'readline'

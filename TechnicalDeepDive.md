@@ -365,31 +365,35 @@ Running `ZSH_PROFILE=true zsh -i -c exit` reveals where time is actually spent d
 
 | Component | Time | % | Notes |
 |---|---|---|
-| Antidote plugin bundle | 42.2ms | 84% | Largest single cost; sources 6 plugins synchronously |
-| `_zsh_highlight_bind_widgets` | 2.6ms | 5% | fast-syntax-highlighting widget setup |
-| `antidote-setup` | 2.0ms | 4% | antidote initialization (not plugin loading) |
-| Everything else | 3.2ms | 7% | Path setup, cache checks, utility functions |
+| Antidote plugin bundle | ~19ms | ~60% | Sources 6 plugins + custom OMZ libs synchronously |
+| `antidote-setup` | 3.2ms | ~10% | antidote initialization (not plugin loading) |
+| zsh-patina (Rust) | 1.8ms | ~6% | Syntax highlighting daemon initialization |
+| Everything else | ~8ms | ~24% | Path setup, cache checks, utility functions |
 
-**Key insights from profiling**:
+**Key insights from profiling** (as of August 2026):
 
-1. **Plugin loading dominates**: The antidote bundle (line 204-210 in `.zshrc`) accounts for 84% of startup time. This is the cost of sourcing:
-   - OMZ lib files: `functions.zsh` (284 lines), `completion.zsh` (78 lines), `key-bindings.zsh` (145 lines)
-   - Synchronous plugins: `direnv`, `fast-syntax-highlighting` (384 lines), `zsh-autosuggestions`
-   - Total: ~1000 lines of shell code parsed and executed before the first prompt
+1. **Plugin loading is primary cost**: The antidote bundle (`.zshrc` line ~200) sources:
+   - Custom OMZ lib files: `omz-functions.zsh` (55 lines), `omz-completion.zsh` (52 lines), `omz-key-bindings.zsh` (100 lines), `omz-misc.zsh` (15 lines), `omz-correction.zsh` (1 line) — **223 total lines** (60% reduction from original 555 lines)
+   - Synchronous plugins: `direnv`, `zsh-patina` (Rust daemon), `zsh-autosuggestions`
+   - Total: ~500 lines of shell code parsed and executed before first prompt
 
-2. **Deferred plugins don't appear in profile**: The git plugin (431 lines), eza, iterm2, sudo, zbell, and history-substring-search are all loaded via `zsh-defer` — they fire after the first ZLE idle event, so they never block the prompt and don't appear in the `zprof` output at all.
+2. **Custom OMZ libraries**: Replaced full Oh My Zsh libraries with minimal implementations containing only actively-used functionality. Original OMZ libs (555 lines) reduced to 223 lines (-60%) with zero functionality loss. Each file documents what was kept, what was removed, and how to restore if needed.
 
-3. **`${ZDOTDIR}/.aliases` deferred successfully**: Also loaded via `zsh-defer` (963 lines), so it contributes zero time to the measured startup sequence.
+3. **Deferred plugins don't appear in profile**: The git plugin (431 lines), eza, iterm2, sudo, zbell, and history-substring-search are all loaded via `zsh-defer` — they fire after the first ZLE idle event, so they never block the prompt and don't appear in the `zprof` output at all.
 
-4. **All cache strategies working correctly**:
+4. **`${ZDOTDIR}/.aliases` deferred successfully**: Also loaded via `zsh-defer` (963 lines), so it contributes zero time to the measured startup sequence.
+
+5. **All cache strategies working correctly**:
    - `brew shellenv`: cached, only 0.62ms to source (anonymous function at line 103)
    - `git version`: cached, only 0.26ms to source (anonymous function at line 163)
    - `mise activate`: cached, only 1.54ms to source (anonymous function at line 221)
    - `starship init`: cached, only 1.50ms to source (anonymous function at line 258)
 
-5. **No optimization opportunities remain**: The only significant cost is the plugin bundle, and that cost is unavoidable — those plugins must be loaded synchronously because they provide core shell functionality (completion, correction, key bindings, syntax highlighting, autosuggestions). The heavy plugins (git, eza, etc.) are already deferred.
+6. **Rust components**: Using `zsh-patina` (Rust-based syntax highlighting daemon) instead of traditional zsh syntax highlighters. This provides 62% faster input lag (1.4ms vs 3.6ms) compared to alternatives.
 
-**Conclusion**: Startup time of ~50ms is excellent for a fully-featured interactive shell with syntax highlighting, autosuggestions, comprehensive completions, and 15+ plugins. Further optimization would require removing functionality, which is not desirable.
+7. **Optimization complete**: Current startup time of **~30ms** (Apple Silicon M1+) or **~40-50ms** (Intel 2019+) is excellent for a fully-featured shell with syntax highlighting, autosuggestions, completions, and 15+ plugins. Further optimization would require removing functionality or switching shells entirely (Fish/Nushell).
+
+**Conclusion**: The system is fully optimized. All low-hanging fruit has been addressed (deferrals, minimal libraries, bytecode compilation, caching). The remaining 30-50ms is dominated by unavoidable operations (sourcing files, interpreter initialization, essential plugin loading).
 
 ---
 

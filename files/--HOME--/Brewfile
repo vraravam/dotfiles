@@ -39,7 +39,7 @@ brew 'grep'
 brew 'jemalloc'  # used for faster ruby
 brew 'less'
 brew 'libyaml'  # used for faster ruby
-brew 'openssl'  # used for faster ruby
+brew 'openssl', link: true  # used for faster ruby
 brew 'rsync'
 brew 'sqlite3'
 brew 'vim'

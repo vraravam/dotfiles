@@ -30,7 +30,7 @@ fetch_remote_versions_timeout = "30s"
 [settings.ruby]
 # Ruby always compiles from source via ruby-build (no pre-built binaries exist).
 # This setting may be redundant, but kept explicitly to ensure RUBY_CONFIGURE_OPTS
-# from .aliases is used (openssl@3, readline, jemalloc, YJIT).
+# from .aliases is used (openssl, readline, jemalloc, YJIT).
 # Results in 25-60% faster Ruby with ~1MB extra memory.
 compile = true
 

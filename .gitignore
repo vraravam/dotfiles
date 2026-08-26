@@ -10,3 +10,4 @@
 # Force-include .envrc (overrides global gitignore pattern .env*)
 # This repository's .envrc is shared configuration, not user-specific
 !/.envrc
+!/files/--ZDOTDIR--/lib/
