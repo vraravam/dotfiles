@@ -57,7 +57,7 @@ module RubyLint
       # URL parsing symmetry, validation error handling). Remaining duplications are documented
       # with inline comments explaining why they're acceptable.
       { name: 'Flay', command: 'flay', args: ['--mass', '51', target_path_str] },
-      { name: 'Flog', command: 'flog', args: [target_path_str] }
+      { name: 'Flog', command: 'flog', args: [target_path_str] },
     ]
 
     # Check for missing tools FIRST

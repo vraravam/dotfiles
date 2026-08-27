@@ -4,6 +4,36 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.36
+
+#### Upgrade notification system to use terminal-notifier
+
+Replaced osascript-only notifications with terminal-notifier (preferred) with osascript fallback for better user experience with audible alerts.
+
+* *[scripts/utilities/macos.rb]* Updated `MacOS.notify` to prefer terminal-notifier with `-sound default` flag; falls back to osascript for vanilla OS compatibility; strips ANSI codes from messages; maintains rate-limiting (60s window) to prevent notification spam
+* *[files/--HOME--/.shellrc]* Updated `_dotfiles_notify` to delegate to Ruby `MacOS.notify` when available (post-bootstrap); falls back to terminal-notifier then osascript for vanilla OS phase; properly escapes single quotes for Ruby string safety
+* *[.envrc]* Fixed bug: changed `notify` (non-existent function) to `_dotfiles_notify` in ERR trap
+* *[files/--PERSONAL_PROFILES_DIR--/.envrc]* Updated documentation comment to reflect terminal-notifier usage
+* *[.ai/domains/shell-scripting.md]* Updated documentation references from "osascript" to "terminal-notifier or osascript"
+
+**Architecture:**
+
+Shell `_dotfiles_notify` delegates to Ruby `MacOS.notify` (single source of truth with rate-limiting), with shell fallbacks for vanilla OS/bootstrap phase before Ruby utilities exist.
+
+**Benefits:**
+
+* ✅ Audible notifications (terminal-notifier plays system sound, osascript is silent)
+* ✅ Rate-limiting prevents duplicate notifications within 60 seconds (Ruby only)
+* ✅ Single source of truth in Ruby with advanced features
+* ✅ Bootstrap compatible (shell fallback for vanilla OS)
+* ✅ Works in cron/non-TTY contexts
+
+#### Adopting these changes
+
+No action required. Notifications from scripts and cron jobs will now play a sound. terminal-notifier is already installed via Homebrew.
+
+---
+
 ### 3.2.35
 
 :white_check_mark: Tested on a vanilla macOS machine

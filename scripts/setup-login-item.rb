@@ -44,6 +44,7 @@ module SetupLoginItem
   # @param app_name [String] Name of the application (e.g., 'Clocker')
   # @param background [Boolean] Enable hidden/background mode (default: false)
   # @return [Boolean] true on success, false on error
+  # :reek:FeatureEnvy
   def run(app_name:, background: false)
     app_path_pn = Core::ROOT.join('Applications', "#{app_name}.app")
     app_path_str = app_path_pn.to_s

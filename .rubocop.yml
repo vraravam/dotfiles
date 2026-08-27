@@ -13,7 +13,11 @@ Layout/ArgumentAlignment:
   Exclude:
     - 'files/--HOME--/Brewfile'
 
+# Allow extra spacing for comment alignment in arrays/hashes
+# Example: aligning inline comments like "# startAtLogin = true (com.abhishek.Clocker)"
 Layout/ExtraSpacing:
+  AllowForAlignment: true
+  AllowBeforeTrailingComments: true
   Exclude:
     - 'files/--HOME--/Brewfile'
 
@@ -63,6 +67,12 @@ Style/ModuleFunction:
 # Repository uses Ruby 2.6 (system Ruby on vanilla macOS)
 Style/SlicingWithRange:
   Enabled: false
+
+# Enforce trailing commas in multi-line arrays for cleaner diffs
+# When each element is on a separate line, trailing comma on last element
+# makes git diffs cleaner (adding new element only shows +1 line, not modified line + new line)
+Style/TrailingCommaInArrayLiteral:
+  EnforcedStyleForMultiline: comma
 
 # Brewfile uses shell variable interpolation (${VAR}), not Ruby interpolation
 Style/StringLiterals:

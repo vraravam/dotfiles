@@ -10,6 +10,7 @@ require_relative 'core'
 require_relative 'enumerable_ext'
 require_relative 'env_vars'
 require_relative 'logging'
+require_relative 'path_utils'
 require_relative 'string_ext'
 
 # macOS-specific system operations: login-item app management, softwareupdate
@@ -172,9 +173,12 @@ module MacOS
     system('/System/Library/PrivateFrameworks/SystemAdministration.framework/Resources/activateSettings', '-u')
   end
 
-  # Sends a macOS notification via osascript. Visible to the user even when
-  # the script is running in a non-interactive context (cron, etc.).
+  # Sends a macOS notification using terminal-notifier (preferred) or osascript (fallback).
+  # Visible to the user even when the script is running in a non-interactive context (cron, etc.).
   # Rate-limits duplicate notifications within 60 seconds to prevent spam.
+  #
+  # Prefers terminal-notifier for richer notification control (sound, subtitle, actions).
+  # Falls back to osascript (always available on macOS) if terminal-notifier not installed.
   #
   # @param message [String] The notification body text
   # @param title [String] The notification title (default: 'Dotfiles')
@@ -193,10 +197,21 @@ module MacOS
       end
     end
 
-    applescript = <<~APPLESCRIPT
-      display notification "#{message}" with title "#{title}"
-    APPLESCRIPT
-    CommandUtils.run_silent('osascript', '-e', applescript)
+    # Strip ANSI color codes (message may contain color methods like .cyan, .purple)
+    # ANSI escape sequences match pattern: ESC [ ... m
+    clean_message = message.to_s.gsub(/\e\[[0-9;]*m/, '')
+    clean_title = title.to_s.gsub(/\e\[[0-9;]*m/, '')
+
+    # Prefer terminal-notifier for richer notifications (sound, subtitle, actions, etc.)
+    # Fall back to osascript if terminal-notifier not installed (vanilla OS compatibility)
+    if PathUtils.command_exists?('terminal-notifier')
+      # terminal-notifier supports: custom sound, subtitle, group, actions, app bundle ID
+      # -sound default: plays system notification sound (osascript is silent by default)
+      CommandUtils.run_silent('terminal-notifier', '-message', clean_message, '-title', clean_title, '-sound', 'default')
+    else
+      # osascript fallback: simpler, no sound, but always available (single-line AppleScript)
+      CommandUtils.run_silent('osascript', '-e', "display notification \"#{clean_message}\" with title \"#{clean_title}\"")
+    end
 
     # Record this notification
     @_notification_history[key] = now

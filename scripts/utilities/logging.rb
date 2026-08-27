@@ -44,7 +44,7 @@ module Logging
     { char: '-', glyph: '🔷', color: :cyan },        # Level 1: Sub-sections (depth 2)
     { char: '·', glyph: '▸', color: :yellow },       # Level 2: Collection items (depth 3)
     { char: '·', glyph: '▫', color: :purple },       # Level 3: Operations within items (depth 4)
-    { char: '·', glyph: '▪', color: :dark_gray }     # Level 4: Deep nesting (depth 5+)
+    { char: '·', glyph: '▪', color: :dark_gray },    # Level 4: Deep nesting (depth 5+)
   ].freeze
 
   # Log levels in priority order (lowest to highest severity).

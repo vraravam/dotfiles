@@ -393,12 +393,24 @@ white()        { _colorize "${WHITE}"        "${1:-}"; }
 _dotfiles_notify() {
   local _msg="${1:-}"
   local _title="${2:-Dotfiles}"
-  # Use is_executable rather than command_exists -- osascript is a fixed macOS
-  # system binary at a known path, and is_executable checks the file directly
-  # ([[ -x ]]) rather than searching functions/aliases/builtins/PATH.
-  if is_executable '/usr/bin/osascript'; then
-    # Strip ANSI codes using shared helper (avoids subshell fork that would trigger ERR trap)
-    _msg="$(_strip_ansi "${_msg}")"
+
+  # Strip ANSI codes using shared helper (avoids subshell fork that would trigger ERR trap)
+  _msg="$(_strip_ansi "${_msg}")"
+
+  # Prefer Ruby implementation (single source of truth) if available (post-bootstrap).
+  # Fall back to shell implementation for vanilla OS / bootstrap phase.
+  if command_exists ruby && is_file "${DOTFILES_DIR}/scripts/utilities/macos.rb"; then
+    # Delegate to Ruby MacOS.notify (terminal-notifier with osascript fallback)
+    # Uses call_ruby_utility for proper RUBYLIB setup and error handling
+    # Escape single quotes in message and title for Ruby string safety
+    local _msg_escaped="${_msg//\'/\'\\\'\'}"
+    local _title_escaped="${_title//\'/\'\\\'\'}"
+    call_ruby_utility "require 'macos'; MacOS.notify('${_msg_escaped}', '${_title_escaped}')" 2>/dev/null || true
+  elif command_exists terminal-notifier; then
+    # Shell fallback: terminal-notifier for richer notifications
+    terminal-notifier -message "${_msg}" -title "${_title}" -sound default 2>/dev/null || true
+  elif is_executable '/usr/bin/osascript'; then
+    # Shell fallback: osascript (always available on vanilla OS)
     osascript -e "display notification \"${_msg}\" with title \"${_title}\"" 2>/dev/null || true
   fi
 }

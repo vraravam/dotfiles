@@ -1564,7 +1564,7 @@ set -euo pipefail
 source "${HOME}/.shellrc"
 
 # set -E ensures the ERR trap is inherited by functions called from this file.
-# notify() (from .shellrc) triggers an osascript notification -- no terminal needed.
+# notify() (from .shellrc) triggers a macOS notification (terminal-notifier or osascript fallback).
 set -E
 trap 'notify "Error in ${BASH_SOURCE[0]##*/} (line ${LINENO})" "❌ direnv error"' ERR
 ```
@@ -1613,7 +1613,7 @@ triggers a macOS notification visible to the user even without a terminal:
 
 ```zsh
 # Do not exit immediately -- each update step runs independently.
-# error() calls notify() which triggers an osascript notification on failure.
+# error() calls notify() which triggers a macOS notification (terminal-notifier or osascript).
 trap 'error "Script failed. Check the log for details."' ERR
 ```
 
