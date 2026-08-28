@@ -297,77 +297,55 @@ if (($+commands[zsh-patina])); then
   _check_patina_restart() {
     # The daemon caches config at startup and doesn't watch for changes, so edits
     # to config.toml or theme files require a restart to take effect.
-    # Cache-based check to avoid expensive pgrep/ps/date on every startup.
-    # Only performs full check if config changed or cache expired (5min TTL).
+    # This check runs once per shell startup (deferred), verifies daemon is running,
+    # and restarts if config files are newer than daemon start time.
     local config="${XDG_CONFIG_HOME}/zsh-patina/config.toml"
     local theme="${XDG_CONFIG_HOME}/zsh-patina/themes/fsh-default.toml"
-    local cache="${XDG_CACHE_HOME}/zsh-patina-restart-check"
 
     # Early return if config file doesn't exist (first-time setup, not yet installed)
     if [[ ! -f "${config}" ]]; then return; fi
 
-    # Rate-limit: If cache exists and is less than 5 minutes old, skip check entirely.
-    # Fast path validation using zsh/stat module (no subprocess fork).
-    if [[ -f "${cache}" ]]; then
-      local cache_data
-      read -r cache_data < "${cache}"
-      local -a cache_parts
-      cache_parts=(${(z)cache_data})
-
-      local last_check="${cache_parts[1]}"
-      local cached_config_mtime="${cache_parts[2]}"
-      local cached_theme_mtime="${cache_parts[3]}"
-
-      # Skip if cache is fresh (<5min old) AND config files haven't changed
-      # Use zsh/stat module for zero-fork mtime access
-      zmodload -F zsh/stat b:zstat 2>/dev/null
-      local config_mtime theme_mtime
-      zstat -F "%s" +mtime -A config_mtime "${config}" 2>/dev/null
-      zstat -F "%s" +mtime -A theme_mtime "${theme}" 2>/dev/null
-
-      local now="${EPOCHSECONDS}"
-      if [[ -n "${last_check}" ]] && (( now - last_check < 300 )) && \
-         [[ "${cached_config_mtime}" == "${config_mtime}" ]] && \
-         [[ "${cached_theme_mtime}" == "${theme_mtime}" ]]; then
-        return  # Fast path: cache valid, configs unchanged (~0.5ms, zero forks)
-      fi
-    fi
-
-    # Cache miss or stale - perform full check (expensive: ~20ms)
+    # Check if daemon is running (expensive: ~20ms, but only once per shell startup)
     local daemon_pid
-    daemon_pid=$(pgrep -f "zsh-patina daemon" 2>/dev/null | head -1)
+    daemon_pid=$(pgrep -f "zsh-patina" 2>/dev/null | head -1)
     if [[ -z "${daemon_pid}" ]]; then
-      # Update cache to prevent checking again for 5 minutes
-      zmodload -F zsh/stat b:zstat 2>/dev/null
-      local config_mtime theme_mtime
-      zstat -F "%s" +mtime -A config_mtime "${config}" 2>/dev/null
-      zstat -F "%s" +mtime -A theme_mtime "${theme}" 2>/dev/null
-      echo "${EPOCHSECONDS} ${config_mtime} ${theme_mtime}" >| "${cache}"
+      # Daemon not running - restart to ensure it starts fresh
+      # Common after OS reboot, system sleep, or manual 'zsh-patina stop'
+      # Use 'restart' instead of 'start' to handle edge cases where a stale
+      # process might exist (restart is idempotent: stops if running, then starts)
+      (zsh-patina restart >/dev/null 2>&1 &)
+      unfunction _check_patina_restart
       return
     fi
 
+    # Daemon is running - check if it needs restart due to config changes
     local daemon_start
     daemon_start=$(ps -o lstart= -p "${daemon_pid}" 2>/dev/null)
-    if [[ -z "${daemon_start}" ]]; then return; fi
+    if [[ -z "${daemon_start}" ]]; then
+      unfunction _check_patina_restart
+      return
+    fi
 
     local daemon_epoch
     daemon_epoch=$(date -j -f "%a %b %d %H:%M:%S %Y" "${daemon_start}" +%s 2>/dev/null)
-    if [[ -z "${daemon_epoch}" ]]; then return; fi
+    if [[ -z "${daemon_epoch}" ]]; then
+      unfunction _check_patina_restart
+      return
+    fi
 
-    # Update cache with current check timestamp and config mtimes
+    # Get config file mtimes
     zmodload -F zsh/stat b:zstat 2>/dev/null
     local config_mtime theme_mtime
     zstat -F "%s" +mtime -A config_mtime "${config}" 2>/dev/null
     zstat -F "%s" +mtime -A theme_mtime "${theme}" 2>/dev/null
-    echo "${EPOCHSECONDS} ${config_mtime} ${theme_mtime}" >| "${cache}"
 
     # Restart if daemon is older than either config file (config newer than daemon).
-    # Background and disown to prevent blocking .zshrc (allows multiple shells to
-    # start simultaneously without the restart interfering with zsh-defer or ZLE).
+    # Background to prevent blocking (allows multiple shells to start simultaneously)
     if is_epoch_older_than "${daemon_epoch}" "${config_mtime}" || \
        is_epoch_older_than "${daemon_epoch}" "${theme_mtime}"; then
       (zsh-patina restart >/dev/null 2>&1 &)
     fi
+
     unfunction _check_patina_restart
   }
 
