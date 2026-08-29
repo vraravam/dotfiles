@@ -137,7 +137,7 @@ module SetupLoginItem
 
     # Log compilation errors if swift fails
     CommandUtils.capture_output(env, 'swift', '-', stdin_data: swift_src, err: %i[child out]) do |st, output_msg|
-      Logging.debug("Swift compilation failed (status: #{st.exitstatus})#{output_msg}")
+      Logging.debug("Swift compilation failed (status: #{st&.exitstatus || 'unknown'})#{output_msg}")
     end
   end
 

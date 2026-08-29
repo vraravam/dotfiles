@@ -89,7 +89,7 @@ module RunAll
       # even if an exception is raised.
       Dir.chdir(dir) do
         CommandUtils.run_interactive(shell, '-c', cmd_string) do
-          Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{$CHILD_STATUS.exitstatus})")
+          Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{$CHILD_STATUS&.exitstatus || 'unknown'})")
           has_failures = true
         end
       end

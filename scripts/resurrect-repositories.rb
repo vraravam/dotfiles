@@ -474,7 +474,7 @@ module ResurrectRepositories
         post_clone_commands.each do |command_str|
           Logging.debug("Executing: #{command_str.dump}")
           CommandUtils.capture_output(command_str) do |status, output_msg|
-            Logging.record_warning("Post-clone command #{command_str.dump} failed for repo '#{dir_colored}' (status: #{status.exitstatus})#{output_msg}")
+            Logging.record_warning("Post-clone command #{command_str.dump} failed for repo '#{dir_colored}' (status: #{status&.exitstatus || 'unknown'})#{output_msg}")
           end
         end
       end

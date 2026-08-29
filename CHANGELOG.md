@@ -4,6 +4,41 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.38
+
+#### Fix "undefined method exitstatus for nil class" error in command execution
+
+Fixed crashes when commands fail or are not found, caused by calling `.exitstatus` on nil status objects without safe navigation.
+
+**Root cause:**
+
+`CommandUtils.capture_output` yields `nil` as the status object when a command is not found (`Errno::ENOENT` exception), but three scripts called `.exitstatus` directly without checking for nil:
+1. `scripts/setup-login-item.rb:140` - Swift compilation error logging
+2. `scripts/resurrect-repositories.rb:477` - Post-clone command error logging
+3. `scripts/run-all.rb:92` - Generic command failure logging (used `$CHILD_STATUS.exitstatus`)
+
+**Changes:**
+
+* *[scripts/setup-login-item.rb]* Changed `st.exitstatus` → `st&.exitstatus || 'unknown'` in Swift compilation error handler
+* *[scripts/resurrect-repositories.rb]* Changed `status.exitstatus` → `status&.exitstatus || 'unknown'` in post-clone command error handler
+* *[scripts/run-all.rb]* Changed `$CHILD_STATUS.exitstatus` → `$CHILD_STATUS&.exitstatus || 'unknown'` in command failure handler
+
+**Pattern:**
+
+All three now use Ruby's safe navigation operator (`&.`) with fallback to `'unknown'`, matching the pattern already used correctly in `git_workspace.rb:212`.
+
+**When this occurs:**
+
+- Command binary not installed (e.g., `swift` not in PATH on vanilla OS)
+- Command path incorrect or binary removed after installation
+- System command execution fails before process creation
+
+#### Adopting these changes
+
+No action required. Scripts will now handle missing commands gracefully instead of crashing with `NoMethodError`.
+
+---
+
 ### 3.2.37
 
 #### Fix zsh-patina daemon not auto-starting after OS reboot or manual stop
