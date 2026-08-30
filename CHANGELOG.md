@@ -4,6 +4,16 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.39
+
+#### Fixing some ignore rules for ${PERSONAL_PROFILES_DIR}
+
+#### Adopting these changes
+
+* Run `install-dotfiles.rb` after rebasing and resolving any conflicts.
+
+---
+
 ### 3.2.38
 
 #### Fix "undefined method exitstatus for nil class" error in command execution

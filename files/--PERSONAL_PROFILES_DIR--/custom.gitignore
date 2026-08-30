@@ -55,10 +55,9 @@ Thumbs.db
 /*Profile/**/GPUCache/
 
 # Crash / dump artefacts
-/*Profile/**/crashes/
-/*Profile/**/Crashpad*
+/*Profiles/**/*crash*
+/*Profiles/**/*Crash*
 /*Profile/**/minidumps
-/*Profile/**/Crash\ Reports/
 
 # Temporary / build artefacts
 /*Profile/**/.Default*/
@@ -123,6 +122,7 @@ Thumbs.db
 
 # Misc noise
 /*Profile/**/gcontactsync_log*.txt
+/*Profile/**/*logs*
 /*Profile/**/QuotaManager
 /*Profile/**/SS
 /*Profile/**/weave
@@ -200,7 +200,7 @@ Thumbs.db
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Timestamped hourly session snapshots — too noisy; current session tracked via sessionstore.jsonlz4
-ZenProfile/**/zen-sessions-backup/zen-sessions-*.jsonlz4
+/ZenProfile/**/zen-sessions-backup/zen-sessions-*.jsonlz4
 
 # Intentionally tracked (same rationale as Firefox, plus):
 #   zen-sessions-backup/clean.jsonlz4  — permanent clean-session snapshot
@@ -225,17 +225,17 @@ ZenProfile/**/zen-sessions-backup/zen-sessions-*.jsonlz4
 global-messages-db.sqlite
 
 # Local Folders: only Trash and Unsent Messages are ephemeral; msgFilterRules.dat is tracked
-ThunderbirdProfile/**/Local\ Folders/Trash
-ThunderbirdProfile/**/Local\ Folders/Unsent\ Messages
+/ThunderbirdProfile/**/Local\ Folders/Trash
+/ThunderbirdProfile/**/Local\ Folders/Unsent\ Messages
 # NOTE: Local Folders/msgFilterRules.dat is intentionally tracked (mail filter rules).
 # gitignore cannot negate files inside an ignored directory, so the directory itself
 # is not ignored — only the specific ephemeral files above are ignored.
 
 # Runtime state DBs
-ThunderbirdProfile/**/bounce-tracking-protection.sqlite
-ThunderbirdProfile/**/domain_to_categories.sqlite
-ThunderbirdProfile/**/webappsstore.sqlite
-ThunderbirdProfile/**/addonStartup.json.lz4
+/ThunderbirdProfile/**/bounce-tracking-protection.sqlite
+/ThunderbirdProfile/**/domain_to_categories.sqlite
+/ThunderbirdProfile/**/webappsstore.sqlite
+/ThunderbirdProfile/**/addonStartup.json.lz4
 
 # Intentionally tracked (no sync = lost):
 #   ImapMail/**/[mailbox] (no extension) — IMAP cached mail bodies (slow to re-download)
@@ -252,102 +252,102 @@ ThunderbirdProfile/**/addonStartup.json.lz4
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# CHROME BETA
+# CHROME
 # ══════════════════════════════════════════════════════════════════════════════
 
 # Downloaded ML / AI models — auto-downloaded by Chrome
-ChromeBetaProfile/optimization_guide_model_store/
-ChromeBetaProfile/TranslateKit/
-ChromeBetaProfile/WasmTtsEngine/
-ChromeBetaProfile/OnDeviceHeadSuggestModel/
+/Chrome*Profile/optimization_guide_model_store/
+/Chrome*Profile/TranslateKit/
+/Chrome*Profile/WasmTtsEngine/
+/Chrome*Profile/OnDeviceHeadSuggestModel/
 
 # Auto-downloaded component updates (versioned subdirs)
-ChromeBetaProfile/ActorSafetyLists/
-ChromeBetaProfile/AmountExtractionHeuristicRegexes/
-ChromeBetaProfile/CaptchaProviders/
-ChromeBetaProfile/CertificateRevocation/
-ChromeBetaProfile/Crowd\ Deny/
-ChromeBetaProfile/FileTypePolicies/
-ChromeBetaProfile/FirstPartySetsPreloaded/
-ChromeBetaProfile/MEIPreload/
-ChromeBetaProfile/OptimizationHints/
-ChromeBetaProfile/OriginTrials/
-ChromeBetaProfile/PKIMetadata/
-ChromeBetaProfile/SSLErrorAssistant/
-ChromeBetaProfile/SafetyTips/
-ChromeBetaProfile/Subresource\ Filter/
-ChromeBetaProfile/TrustTokenKeyCommitments/
-ChromeBetaProfile/ZxcvbnData/
+/Chrome*Profile/ActorSafetyLists/
+/Chrome*Profile/AmountExtractionHeuristicRegexes/
+/Chrome*Profile/CaptchaProviders/
+/Chrome*Profile/CertificateRevocation/
+/Chrome*Profile/Crowd\ Deny/
+/Chrome*Profile/FileTypePolicies/
+/Chrome*Profile/FirstPartySetsPreloaded/
+/Chrome*Profile/MEIPreload/
+/Chrome*Profile/OptimizationHints/
+/Chrome*Profile/OriginTrials/
+/Chrome*Profile/PKIMetadata/
+/Chrome*Profile/SSLErrorAssistant/
+/Chrome*Profile/SafetyTips/
+/Chrome*Profile/Subresource\ Filter/
+/Chrome*Profile/TrustTokenKeyCommitments/
+/Chrome*Profile/ZxcvbnData/
 
 # Runtime-generated feature / metrics state
-ChromeBetaProfile/Variations
-ChromeBetaProfile/ChromeFeatureState
-ChromeBetaProfile/BrowserMetrics-spare.pma
-ChromeBetaProfile/Last\ Version
-ChromeBetaProfile/first_party_sets.db
-ChromeBetaProfile/segmentation_platform/
+/Chrome*Profile/Variations
+/Chrome*Profile/ChromeFeatureState
+/Chrome*Profile/BrowserMetrics-spare.pma
+/Chrome*Profile/Last\ Version
+/Chrome*Profile/first_party_sets.db
+/Chrome*Profile/segmentation_platform/
 
 # Cosmetic caches
-ChromeBetaProfile/Default/Favicons
-ChromeBetaProfile/Default/Top\ Sites
-ChromeBetaProfile/Default/HistoryEmbeddings
+/Chrome*Profile/Default/Favicons
+/Chrome*Profile/Default/Top\ Sites
+/Chrome*Profile/Default/HistoryEmbeddings
 
 # Internal LevelDB state — runtime only
-ChromeBetaProfile/Default/Extension\ Rules/
-ChromeBetaProfile/Default/Extension\ Scripts/
-ChromeBetaProfile/Default/Extension\ State/
-ChromeBetaProfile/Default/GCM\ Store/
-ChromeBetaProfile/Default/Sync\ Data/
-ChromeBetaProfile/Default/Site\ Characteristics\ Database/
-ChromeBetaProfile/Default/Platform\ Notifications/
-ChromeBetaProfile/Default/shared_proto_db/
-ChromeBetaProfile/Default/Storage/
-ChromeBetaProfile/Default/Local\ Extension\ Settings/
+/Chrome*Profile/Default/Extension\ Rules/
+/Chrome*Profile/Default/Extension\ Scripts/
+/Chrome*Profile/Default/Extension\ State/
+/Chrome*Profile/Default/GCM\ Store/
+/Chrome*Profile/Default/Sync\ Data/
+/Chrome*Profile/Default/Site\ Characteristics\ Database/
+/Chrome*Profile/Default/Platform\ Notifications/
+/Chrome*Profile/Default/shared_proto_db/
+/Chrome*Profile/Default/Storage/
+/Chrome*Profile/Default/Local\ Extension\ Settings/
 
 # Runtime browsing-data DBs
-ChromeBetaProfile/Default/BrowsingTopicsSiteData
-ChromeBetaProfile/Default/BrowsingTopicsState
-ChromeBetaProfile/Default/Conversions
-ChromeBetaProfile/Default/DIPS
-ChromeBetaProfile/Default/InterestGroups
-ChromeBetaProfile/Default/SharedStorage
-ChromeBetaProfile/Default/Shared\ Dictionary/
-ChromeBetaProfile/Default/Account\ Web\ Data
-ChromeBetaProfile/Default/Affiliation\ Database
-ChromeBetaProfile/Default/heavy_ad_intervention_opt_out.db
-ChromeBetaProfile/Default/engine_allowlist.bf
-ChromeBetaProfile/Default/MediaDeviceSalts
-ChromeBetaProfile/Default/Device\ Bound\ Sessions
-ChromeBetaProfile/Default/BookmarkMergedSurfaceOrdering
-ChromeBetaProfile/Default/PreferredApps
-ChromeBetaProfile/Default/Safe\ Browsing\ Cookies
-ChromeBetaProfile/Default/ServerCertificate
-ChromeBetaProfile/Default/Trust\ Tokens
-ChromeBetaProfile/Default/passkey_enclave_state
-ChromeBetaProfile/Default/trusted_vault.pb
+/Chrome*Profile/Default/BrowsingTopicsSiteData
+/Chrome*Profile/Default/BrowsingTopicsState
+/Chrome*Profile/Default/Conversions
+/Chrome*Profile/Default/DIPS
+/Chrome*Profile/Default/InterestGroups
+/Chrome*Profile/Default/SharedStorage
+/Chrome*Profile/Default/Shared\ Dictionary/
+/Chrome*Profile/Default/Account\ Web\ Data
+/Chrome*Profile/Default/Affiliation\ Database
+/Chrome*Profile/Default/heavy_ad_intervention_opt_out.db
+/Chrome*Profile/Default/engine_allowlist.bf
+/Chrome*Profile/Default/MediaDeviceSalts
+/Chrome*Profile/Default/Device\ Bound\ Sessions
+/Chrome*Profile/Default/BookmarkMergedSurfaceOrdering
+/Chrome*Profile/Default/PreferredApps
+/Chrome*Profile/Default/Safe\ Browsing\ Cookies
+/Chrome*Profile/Default/ServerCertificate
+/Chrome*Profile/Default/Trust\ Tokens
+/Chrome*Profile/Default/passkey_enclave_state
+/Chrome*Profile/Default/trusted_vault.pb
 
 # Bundled extension source trees — auto-installed by Chrome, not user-installed
-ChromeBetaProfile/Default/Extensions/ghbmnnjooekpmoecnnnilnnbdlolhkhi/
-ChromeBetaProfile/Default/Extensions/nmmhkkegccagdldgiimedpiccmgmieda/
+/Chrome*Profile/Default/Extensions/ghbmnnjooekpmoecnnnilnnbdlolhkhi/
+/Chrome*Profile/Default/Extensions/nmmhkkegccagdldgiimedpiccmgmieda/
 
 # PWA — icons auto-downloaded, Temp is transient; nothing user-created here
-ChromeBetaProfile/Default/Web\ Applications/
+/Chrome*Profile/Default/Web\ Applications/
 
 # Runtime blob / web storage — ephemeral, no user data
-ChromeBetaProfile/Default/blob_storage/
-ChromeBetaProfile/Default/WebStorage/
+/Chrome*Profile/Default/blob_storage/
+/Chrome*Profile/Default/WebStorage/
 
 # Auto-downloaded component packages (binary CRX archives)
-ChromeBetaProfile/component_crx_cache/
-ChromeBetaProfile/extensions_crx_cache/
+/Chrome*Profile/component_crx_cache/
+/Chrome*Profile/extensions_crx_cache/
 
 # DRM plugin binary
-ChromeBetaProfile/WidevineCdm/
+/Chrome*Profile/WidevineCdm/
 
 # Auto-downloaded attestations / empty runtime dirs
-ChromeBetaProfile/PrivacySandboxAttestationsPreloaded/
-ChromeBetaProfile/RecoveryImproved/
-ChromeBetaProfile/NativeMessagingHosts/
+/Chrome*Profile/PrivacySandboxAttestationsPreloaded/
+/Chrome*Profile/RecoveryImproved/
+/Chrome*Profile/NativeMessagingHosts/
 
 # Intentionally tracked (no sync = lost):
 #   Default/History           — browsing history
