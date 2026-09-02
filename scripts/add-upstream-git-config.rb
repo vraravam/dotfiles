@@ -67,7 +67,7 @@ module AddUpstreamGitConfig
       end
 
       # Fetch all remotes, unshallowing if needed.
-      stdout, stderr, status = git.fetch_all(quiet: true)
+      stdout, stderr, status = git.fetch_all
       return false unless CommandUtils.check_status(stdout, stderr, status) do |st, output_msg|
         Logging.record_error("Failed to fetch upstream remote '#{upstream_url_colored}' after adding it (status: #{st.exitstatus})#{output_msg}")
       end

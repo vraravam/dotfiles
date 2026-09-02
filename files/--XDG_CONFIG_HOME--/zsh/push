@@ -21,7 +21,15 @@ _push() {
   else
     # Skip git alias override detection to prevent double-execution when called
     # from wrapper scripts (dispatch_or_fallback already found the override).
-    _GIT_OVERRIDE_SKIP=1 git -C "${folder}" push "${switches[@]}" || true
+    # Wrapped in 'git with-retry' (not a bare 'git push') for hang protection -- 'git push'
+    # is a builtin and always wins over the same-named git alias (confirmed empirically;
+    # see the NOTE on the (removed) 'push' alias in git/config), so this is the one place
+    # that actually needs to add retry protection for the bare 'push' command. Uses '-' for
+    # the progress-path (plain wall-clock timeout, not inactivity-based): unlike fetch/pull/
+    # backfill, a push doesn't write new objects to the LOCAL '.git/objects' as it progresses
+    # (it reads local objects and sends them to the remote), so there's no natural on-disk
+    # growth signal to poll here.
+    _GIT_OVERRIDE_SKIP=1 git with-retry 60 3 /dev/null - git -C "${folder}" push "${switches[@]}" || true
   fi
 }
 

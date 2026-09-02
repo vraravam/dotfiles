@@ -4,6 +4,101 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.40
+
+#### Convert git reftable migration to git alias for run-all.rb compatibility
+
+Converted `GitProcessor.migrate_refs_to_reftable` from Ruby implementation to a standalone git alias, enabling multi-repo migrations via `run-all.rb` and simplifying the codebase.
+
+**Changes:**
+
+* *[files/--XDG_CONFIG_HOME--/git/config]* Added `migrate-reftable` alias that checks current ref format, runs `git refs migrate --ref-format=reftable` if needed, and cleans up legacy loose refs after successful migration
+* *[files/--HOME--/.shellrc]* Updated `migrate_git_repo_to_reftable` function to delegate to `git migrate-reftable` instead of calling Ruby via `call_ruby_utility`
+* *[scripts/utilities/git_processor.rb]* Removed Ruby implementation (64 lines deleted):
+  - Removed `GitProcessor.migrate_to_reftable(folder:)` class method
+  - Removed `migrate_refs_to_reftable` instance method
+  - Removed `_cleanup_legacy_refs` private helper method
+
+**Benefits:**
+
+* ✅ Callable from `run-all.rb`: `all migrate-reftable` now works across all repos
+* ✅ Simpler implementation: Pure shell, no Ruby dependency
+* ✅ Smaller codebase: Net -40 lines removed
+* ✅ Consistent with other git operations: Follows standard `<dir>` argument pattern
+
+**Usage:**
+
+```bash
+# Single repo
+git migrate-reftable /path/to/repo
+
+# Multi-repo via run-all.rb (NEW!)
+all migrate-reftable
+
+# Current directory
+git migrate-reftable
+```
+
+#### Add hang/stall protection across all git fetch/pull/push/clone paths, remove dead aliases
+
+Replaced the original "corrupted objects" framing of `git unshallow` failures with a proper diagnosis based on real-world debugging: most fetch/clone failures observed in this environment were either (a) indefinite network stalls (VPN/MTU black-holes -- the process hangs at 0% CPU and never exits) or (b) a partial/blobless clone fetching from a non-promisor remote before its blobs were fully backfilled (a documented git protocol limitation, not local corruption). Rebuilt the retry/repair infrastructure around these actual root causes, then extended it to every other fetch/pull/push/submodule code path in this codebase that had the same unprotected pattern.
+
+**New reusable primitives:**
+
+* *[files/--XDG_CONFIG_HOME--/git/config]* Added `kill-process-tree <pid>` -- recursively kills a process and all descendants (a stalled `git fetch` may have already spawned an `ssh`/`git-remote-https` helper subprocess that a plain `kill -9` would orphan)
+* *[files/--XDG_CONFIG_HOME--/git/config]* Added `with-retry <timeout-secs> <max-attempts> <stderr-file> <progress-path|-> <command...>` -- runs any command with an **inactivity** timeout rather than a fixed wall-clock timeout: polls `<progress-path>`'s on-disk size (via `du -sk`) every 5s and resets the timeout clock on growth, so a transfer that is merely slow is never killed, only one that is genuinely stalled. Bounded overall by a 10x hard cap. Kills via `kill-process-tree`, disowning the backgrounded job only in the timeout/kill branch (not immediately after backgrounding) -- this avoids a leaked shell "Killed: 9" job-control message on the kill path while still preserving `wait`'s real exit status on the normal completion path (disowning immediately after backgrounding silently breaks `wait`'s exit status, converting every command failure into a false "success" -- confirmed empirically: `false & disown $!; wait $!` reports exit 0, not 1)
+
+**Restructured fetch mechanism:**
+
+* *[files/--XDG_CONFIG_HOME--/git/config]* `fo` is now the one robust fetch mechanism in this config -- `unshallow`, `pull-safe`, `upreb`, `antidote.rb` (via `GitProcessor`), and `pullsub` all delegate to it instead of calling `git fetch`/`git fetch --all` directly:
+  - Sweeps stale `tmp_pack_*`/`tmp_obj_*` files from `.git/objects` left by a previously-killed fetch (`with-retry`'s `SIGKILL` bypasses git's own cleanup-on-signal handling, so these otherwise accumulate indefinitely -- observed multiple gigabytes of orphaned pack files on one affected repo). Gated to files older than 15 minutes so a genuinely-concurrent fetch is never touched.
+  - Widens shallow single-branch tracking (`remote set-branches '*'`) for all remotes
+  - Always fetches the **promisor remote first** if the repo is a partial/blobless clone: fetching a non-promisor remote (e.g. `upstream` in a fork) before the promisor's blobs are fully backfilled can fail with `did not receive expected object <sha>` / `invalid index-pack output`, since the non-promisor remote may build thin-pack deltas against base objects the client doesn't actually have
+  - Each fetch wrapped in `with-retry`; on persistent failure, falls back to a single `prune` + `gc` (no `--prune=now`, preserving git's default unreachable-object grace period) and one more retry pass before logging and skipping
+* *[files/--XDG_CONFIG_HOME--/git/config]* Added `backfill-blobs` alias -- the blob-backfill step (`git backfill`, requires git 2.44+) extracted out of `unshallow` into its own alias, run after `fo` has fetched full history
+* *[files/--XDG_CONFIG_HOME--/git/config]* `unshallow` is now a thin wrapper (`fo` + `backfill-blobs`) kept under the same name so no call site needed to change
+* *[files/--XDG_CONFIG_HOME--/git/config]* `pull-safe` and `upreb` now fetch via `fo` instead of a bare `git fetch`/`git fetch --all`. `upreb`'s post-rebase `fetch upstream --tags` (checking for new tags pushed between the initial fetch and the push) is separately wrapped in `with-retry`; its trailing `dlb` call was removed since `fo` already runs it
+* *[files/--XDG_CONFIG_HOME--/git/config]* `siu` (submodule update) converted from a bare one-line alias into a function wrapped in `with-retry` (120s x 3, progress-path is `.git/modules` so growth in *any* submodule's fetch counts as progress) -- a stalled fetch inside a submodule previously hung indefinitely with zero protection
+* *[files/--HOME--/.shellrc]* `clone_repo_into`'s final submodule sync now calls the `siu` alias instead of a raw, unprotected `git submodule update` command
+
+**Removed dead `pull`/`push` git aliases, fixed the real interception points:**
+
+* *[files/--XDG_CONFIG_HOME--/git/config]* Removed the `pull` and `push` git aliases entirely -- confirmed empirically that git's built-in `pull`/`push` commands always take precedence over a same-named alias (setting `alias.pull` to a body that unconditionally echoes and exits still silently runs the real built-in, with zero trace of the alias ever executing), so these alias bodies were dead code that could never run via `git pull`/`git push`. This is also why `pull-safe` uses a different name.
+* *[files/--XDG_CONFIG_HOME--/zsh/pull]* `_pull` (the actual, reachable interception point for the bare `pull` command -- zsh resolves shell functions before git's alias/builtin dispatch) now wraps its `git pull` call in `with-retry`
+* *[files/--XDG_CONFIG_HOME--/zsh/push]* `_push` likewise now wraps its `git push` call in `with-retry` (using the plain wall-clock fallback mode, since push doesn't write growing local state the way fetch/pull/backfill do, so there's no on-disk progress signal to poll)
+* *[files/--XDG_CONFIG_HOME--/git/config]* `pullsub`'s embedded `git pull` (run per-submodule via `submodule foreach`) is now explicitly wrapped in `with-retry` too, for the same builtin-precedence reason
+
+**`GitProcessor` (Ruby) now delegates to the protected aliases instead of raw git commands:**
+
+* *[scripts/utilities/git_processor.rb]* `fetch_all` now calls `run_alias('fo')` instead of a bare `git fetch --all -t -p`; dropped the now-meaningless `quiet:` parameter (`fo` always prints its own diagnostics). Updated call sites in `add-upstream-git-config.rb` and the internal `verify_and_recreate_local_repo`
+* *[scripts/utilities/git_processor.rb]* `pull` now calls `run_alias('pull-safe')` instead of a bare `git pull`; dropped the `rebase:`/`quiet:` parameters since the only real caller (`ProfilesRepo.update_chrome_folders`, which runs **hourly via cron**) always passed `rebase: true` and never used `quiet:`. Updated that call site.
+
+**`clone_repo_into` (`files/--HOME--/.shellrc`):**
+
+* Initial clone now wrapped in `with-retry` (25s x 5 attempts, progress-path is the temp clone folder)
+* Post-clone `unshallow` + `maintain` now run **synchronously**, always (no longer backgrounded on `FIRST_INSTALL`): backgrounding during vanilla-OS bootstrap was reconsidered and dropped after finding a concrete conflict -- `fresh-install-of-osx.sh` re-runs `migrate_git_repo_to_reftable` on `DOTFILES_DIR` later in its sequence (once Homebrew's git is on `PATH`), which does a destructive `rm -rf .git/refs/*`; if the earlier background job were still fetching/gc'ing the same repo, that would race against this later step. The one-time wall-clock cost during bootstrap is an acceptable trade for eliminating the race entirely.
+* `maintain` is sequenced strictly after `unshallow` completes, not concurrently: `maintain` unconditionally removes `index.lock`/`commit-graph-chain.lock`, which could previously steal a lock `unshallow` legitimately held mid-write
+* Removed the redundant foreground `commit-graph write` call (duplicated what `maintain` already does internally)
+
+**`scripts/fresh-install-of-osx.sh`:**
+
+* Home repo pull (on pre-configured machines where the repo already exists) now uses `pull-safe` instead of a bare `git pull --rebase`, for the same hang protection and clean-tree guard as every other repo-sync path in this script
+
+#### Add step-count progress indicators to fresh-install and cron update scripts
+
+* *[scripts/fresh-install-of-osx.sh]* Added `_step_header` helper (wraps `section_header` with a `[Step N of 14]` prefix); replaced all `section_header` calls in `main`'s step sequence with `_step_header`
+* *[scripts/software-updates-cron.rb]* Added `_step` helper (wraps `Logging.with_step` with a `[Step N of 20]` prefix); replaced all `Logging.with_step` calls in `_run_all_updates` with `_step`
+
+#### Adopting these changes
+
+* Run `install-dotfiles.rb` to symlink the updated `.shellrc` and git config
+* Quit and restart Terminal/iTerm to reload the shell configuration
+* Optional: Run `all migrate-reftable` to migrate all repos to reftable format (no-op if already migrated)
+* If a repo previously had `unshallow`/`upstream` fetch failures, run `git fo` (or `all fo`) again -- the promisor-first ordering and stale-file cleanup may resolve issues that persisted under the old logic
+* If a repo has accumulated stray `tmp_pack_*`/`tmp_obj_*` files from earlier failed fetches, the next `git fo` run on that repo cleans them up automatically (gated to files older than 15 minutes so an in-progress fetch is never touched)
+
+---
+
 ### 3.2.39
 
 #### Fixing some ignore rules for ${PERSONAL_PROFILES_DIR}

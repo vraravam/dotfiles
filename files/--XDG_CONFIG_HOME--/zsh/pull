@@ -17,7 +17,11 @@ _pull() {
   else
     # Skip git alias override detection to prevent double-execution when called
     # from wrapper scripts (dispatch_or_fallback already found the override).
-    _GIT_OVERRIDE_SKIP=1 git -C "${folder}" pull "${switches[@]}" || true
+    # Wrapped in 'git with-retry' (not a bare 'git pull') for hang protection -- 'git pull'
+    # is a builtin and always wins over the same-named git alias (confirmed empirically;
+    # see the WARNING comment on the 'pull' alias in git/config), so this is the one place
+    # that actually needs to add retry protection for the bare 'pull' command.
+    _GIT_OVERRIDE_SKIP=1 git with-retry 60 3 /dev/null "${folder}/.git/objects" git -C "${folder}" pull "${switches[@]}" || true
   fi
 }
 

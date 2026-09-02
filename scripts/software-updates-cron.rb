@@ -90,11 +90,19 @@ module SoftwareUpdatesCron
     success
   end
 
+  # Helper to wrap Logging.with_step with step counter progress indicator.
+  # Automatically increments @current_step and prepends "[Step N of M]" to title.
+  def _step(title, message = nil, &block)
+    @current_step += 1
+    prefix = "[#{"Step #{@current_step} of #{@total_steps}".purple}] "
+    Logging.with_step("#{prefix}#{title}", message, &block)
+  end
+
   # Runs the block guarded by a check for +check_cmd+. Records a warning on
   # failure rather than aborting so all steps run regardless of earlier failures.
   # :reek:UtilityFunction -- Stateless wrapper for command existence check (intentional)
   def _perform_update(title, check_cmd, &block)
-    Logging.with_step("update #{title}", "#{'Updating'.yellow} #{title.purple}") do
+    _step("update #{title}", "#{'Updating'.yellow} #{title.purple}") do
       unless PathUtils.command_exists?(check_cmd)
         Logging.debug "Command not found: '#{check_cmd}'"
         return
@@ -112,7 +120,7 @@ module SoftwareUpdatesCron
 
   # :reek:UtilityFunction -- Stateless helper for git operations (intentional delegation)
   def _update_home_repos
-    Logging.with_step('Update repos in home folder') do
+    _step('Update repos in home folder') do
       unless RunAll.run(
         command: %w[git pull-safe],
         folder: EnvVars::HOME.to_s,
@@ -128,7 +136,7 @@ module SoftwareUpdatesCron
 
   # :reek:UtilityFunction -- Stateless helper for git operations (intentional delegation)
   def _upreb_oss_repos
-    Logging.with_step('Upreb repos in oss folder') do
+    _step('Upreb repos in oss folder') do
       oss_folder = EnvVars::PROJECTS_BASE_DIR.join('oss')
       return unless oss_folder.directory?
 
@@ -145,6 +153,9 @@ module SoftwareUpdatesCron
   private_class_method :_upreb_oss_repos
 
   def _run_all_updates
+    @total_steps = 20
+    @current_step = 0
+
     # Brew update: use bundle check before full bundle to avoid reinstalling
     # already-installed formulae on every cron run.
     _perform_update('brews', 'brew') do
@@ -180,11 +191,11 @@ module SoftwareUpdatesCron
     _perform_update('git-ignore database', 'git-ignore-io') { CommandUtils.run_interactive('git', 'ignore-io', '--update-list') }
     _perform_update('claude-code', 'claude') { CommandUtils.run_interactive('claude', 'update') }
 
-    Logging.with_step('antidote plugin update', "#{'Updating'.yellow} #{'antidote plugins'.purple} and regenerating plugin bundle") do
+    _step('antidote plugin update', "#{'Updating'.yellow} #{'antidote plugins'.purple} and regenerating plugin bundle") do
       Antidote.update_and_regenerate_bundle
     end
 
-    Logging.with_step('bat cache update', "#{'Updating'.yellow} #{'bat'.purple} cache") do
+    _step('bat cache update', "#{'Updating'.yellow} #{'bat'.purple} cache") do
       if PathUtils.command_exists?('bat')
         bat_config_dir = CommandUtils.query('bat', '--config-dir')
         bat_syntax_dir_pn = Pathname.new(bat_config_dir).join('syntaxes')
@@ -200,7 +211,7 @@ module SoftwareUpdatesCron
       end
     end
 
-    Logging.with_step('zen-browser-desktop tag cleanup', "#{"Remove 'twilight' tag from".yellow} #{'zen-browser-desktop'.purple} repo") do
+    _step('zen-browser-desktop tag cleanup', "#{"Remove 'twilight' tag from".yellow} #{'zen-browser-desktop'.purple} repo") do
       zen_desktop = EnvVars::PROJECTS_BASE_DIR.join('oss', 'zen-browser-desktop')
       GitProcessor.new(dir: zen_desktop) do |git|
         if git.tag_exists?('twilight')
@@ -211,7 +222,7 @@ module SoftwareUpdatesCron
     end
 
     # TODO: Similar to ollama, need to update the models used by omlx via cli
-    Logging.with_step('ollama models update', 'Pull ollama models'.yellow) do
+    _step('ollama models update', 'Pull ollama models'.yellow) do
       if PathUtils.command_exists?('ollama')
         # Pull models at most once per 24 hours (configurable interval).
         # ollama pull downloads models even if already up to date (no --check flag),
@@ -281,15 +292,15 @@ module SoftwareUpdatesCron
     # these are idempotent operations that only need to run once. Removed from cron to save thousands
     # of git forks/hour.
 
-    Logging.with_step('setup dev env', 'Setup dev environment'.yellow) do
+    _step('setup dev env', 'Setup dev environment'.yellow) do
       GitWorkspace.setup_dev_environment(first_install: EnvVars.first_install?)
     end
 
-    Logging.with_step('regenerate repo aliases', 'Regenerate repo aliases'.yellow) do
+    _step('regenerate repo aliases', 'Regenerate repo aliases'.yellow) do
       GitWorkspace.regenerate_repo_aliases
     end
 
-    Logging.with_step('capture preferences', 'Capture app preferences'.yellow) do
+    _step('capture preferences', 'Capture app preferences'.yellow) do
       # capture-prefs.rb must run as subprocess (not direct module call) because it has
       # at_exit hooks that manage system state (suspend/resume softwareupdate, kill/restart
       # apps). If called as module, hooks would register in parent process and fire at wrong
@@ -303,27 +314,27 @@ module SoftwareUpdatesCron
       end
     end
 
-    Logging.with_step('prune session backups', 'Prune old timestamped session backups from browser-profiles repo'.yellow) do
+    _step('prune session backups', 'Prune old timestamped session backups from browser-profiles repo'.yellow) do
       ProfilesRepo.prune_old_session_backups
     end
 
-    Logging.with_step('check profiles repo size') do
+    _step('check profiles repo size') do
       ProfilesRepo.check_size_limit
     end
 
-    Logging.with_step('update profiles repo', 'Capture and commit browser-profiles changes'.yellow) do
+    _step('update profiles repo', 'Capture and commit browser-profiles changes'.yellow) do
       Logging.record_error('Failed to update profiles repo') unless ProfilesRepo.capture_and_commit
     end
 
-    Logging.with_step('report status of all repos') do
+    _step('report status of all repos') do
       GitWorkspace.status_all_repos
     end
 
-    Logging.with_step('update browser-profiles nested chrome repos', 'Updating all browser profile chrome folders if they are git repos'.yellow) do
+    _step('update browser-profiles nested chrome repos', 'Updating all browser profile chrome folders if they are git repos'.yellow) do
       ProfilesRepo.update_chrome_folders
     end
 
-    Logging.with_step('check outdated greedy brew apps', 'Checking if any greedy applications are outdated'.yellow) do
+    _step('check outdated greedy brew apps', 'Checking if any greedy applications are outdated'.yellow) do
       MacOS.check_and_notify_outdated_apps
     end
   end

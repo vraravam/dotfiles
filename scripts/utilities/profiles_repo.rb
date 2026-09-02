@@ -198,7 +198,7 @@ module ProfilesRepo
       end
 
       Logging.with_step("update chrome #{folder_pn.basename}", "#{'Updating chrome folder:'.yellow} '#{folder_pn_colored}'") do
-        _stdout, _stderr, status = GitProcessor.new(dir: folder_pn).pull(rebase: true)
+        _stdout, _stderr, status = GitProcessor.new(dir: folder_pn).pull
         if status.success?
           Logging.success "Successfully updated: '#{folder_pn_colored}'"
         else

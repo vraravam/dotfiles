@@ -133,18 +133,6 @@ class GitProcessor
     CommandUtils.run_interactive('zsh', '-c', cmd)
   end
 
-  # Migrates the repository to reftable format if it's still using the legacy
-  # files format. Requires git 2.45+ (git refs migrate command).
-  # On older git (system git on vanilla macOS), silently skips migration.
-  #
-  # @param folder [String, Pathname, nil] Repository directory (required)
-  # @return [Boolean] false if folder is nil or empty, true/void otherwise
-  def self.migrate_to_reftable(folder: nil)
-    return false if nil_or_empty?(folder)
-
-    new(dir: folder).migrate_refs_to_reftable
-  end
-
   # ---------------------------------------------------------------------------
   # Constructor
   # ---------------------------------------------------------------------------
@@ -393,17 +381,18 @@ class GitProcessor
     _execute('remote', 'set-url', name, url)
   end
 
-  # Fetches from all remotes and all tags.
+  # Fetches from all remotes and all tags via the 'fo' git alias -- not a bare
+  # 'git fetch --all', so this gets 'with-retry' hang protection (inactivity-based,
+  # not a fixed timeout) and promisor-first remote ordering (avoids 'did not receive
+  # expected object' failures on secondary remotes of a partial/blobless clone) for
+  # free, same as every other fetch path in this codebase. No 'quiet' option --
+  # 'fo' always prints its own progress/diagnostic output to stderr regardless.
   #
-  # @param quiet [Boolean] Whether to suppress git output (defaults to true).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def fetch_all(quiet: true)
+  def fetch_all
     return _mock_status_response(false) unless repo?
 
-    args = ['fetch']
-    args << '-q' if quiet
-    args << '--all' << '-t' << '-p'
-    _execute(*args)
+    run_alias('fo')
   end
 
   # Initializes a new git repository in the directory.
@@ -453,7 +442,7 @@ class GitProcessor
     # Fetch from remote to ensure we have latest remote-tracking branches
     # (needed to capture remote file list before destroying .git)
     Logging.info 'Fetching from remote to capture file list...'
-    _stdout, stderr, fetch_status = fetch_all(quiet: false)
+    _stdout, stderr, fetch_status = fetch_all
     unless fetch_status.success?
       Logging.record_error 'Failed to fetch from remote before recreation'
       Logging.record_error "Stderr: #{stderr}" unless nil_or_empty?(stderr)
@@ -548,18 +537,19 @@ class GitProcessor
     _execute('tag', '-d', name)
   end
 
-  # Pulls changes from upstream with optional rebase.
+  # Pulls changes from upstream via the 'pull-safe' git alias -- not a bare 'git pull',
+  # so this gets 'with-retry' hang protection (via the 'fo' fetch inside pull-safe) and
+  # a clean-working-tree guard for free (pull-safe skips the rebase and exits non-zero
+  # if the tree is dirty, rather than risking a rebase failing mid-way on uncommitted
+  # changes). Always rebases onto '@{u}' -- this codebase has no caller that wants a
+  # merge-pull (verified: the only caller, ProfilesRepo.update_chrome_folders, already
+  # passed rebase: true), so no rebase/quiet options are exposed.
   #
-  # @param rebase [Boolean] Whether to rebase instead of merge (defaults to false).
-  # @param quiet [Boolean] Whether to suppress git output (defaults to false).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def pull(rebase: false, quiet: false)
+  def pull
     return _mock_status_response(false) unless repo?
 
-    args = ['pull']
-    args << '-r' if rebase
-    args << '-q' if quiet
-    _execute(*args)
+    run_alias('pull-safe')
   end
 
   # Removes a file from the index (staging area) without deleting it from the working directory.
@@ -737,36 +727,6 @@ class GitProcessor
     end
   end
 
-  # Migrates repository from legacy files format to reftable format.
-  # Reftable is the modern reference storage format (git 2.45+) that replaces
-  # the traditional .git/refs/* file hierarchy with a single packed file,
-  # improving performance and atomic operations.
-  #
-  # No-op if already reftable or if git version doesn't support migration.
-  # Requires git 2.45+ with 'git refs migrate' command.
-  #
-  # @return [Boolean] true if migration succeeded or already reftable, false if failed or unavailable
-  def migrate_refs_to_reftable
-    # Not a repo - skip migration
-    return false unless repo?
-
-    # Check if already reftable
-    return true if ref_format == 'reftable'
-
-    # Attempt migration
-    _stdout, _stderr, status = _execute('refs', 'migrate', '--ref-format=reftable')
-    unless status.success?
-      Logging.debug "git refs migrate unavailable (requires git 2.45+, status: #{status.exitstatus}) -- skipping reftable migration for '#{@dir.cyan}'"
-      return false
-    end
-
-    # Clean up legacy loose refs after successful migration
-    _cleanup_legacy_refs
-
-    Logging.success "Migrated '#{@dir.cyan}' to reftable format"
-    true
-  end
-
   # ---------------------------------------------------------------------------
   # Inner classes
   # ---------------------------------------------------------------------------
@@ -929,26 +889,6 @@ class GitProcessor
     ['', '', OpenStruct.new(success?: success, exitstatus: success ? 0 : 1)]
   end
 
-  # :reek:FeatureEnvy -- Standard filesystem traversal pattern (checks entry type before deletion)
-  def _cleanup_legacy_refs
-    git_dir = @dir.join('.git')
-    refs_heads = git_dir.join('refs', 'heads')
-    refs_tags = git_dir.join('refs', 'tags')
-    refs_remotes = git_dir.join('refs', 'remotes')
-
-    [refs_heads, refs_tags, refs_remotes].each do |refs_subdir|
-      next unless refs_subdir.directory?
-
-      refs_subdir.children.each do |entry|
-        if entry.directory?
-          entry.rmtree
-        elsif entry.file?
-          entry.delete
-        end
-      end
-    end
-  end
-
   # Verifies that new local repo file list matches the pre-captured remote file list.
   # Logs detailed diagnostics if they don't match.
   #
@@ -1053,5 +993,5 @@ class GitProcessor
     true
   end
 
-  private :_recreate, :_should_stream_output?, :_mock_status_response, :_cleanup_legacy_refs, :_verify_file_lists_match, :_log_file_list_mismatch, :_print_file_diff
+  private :_recreate, :_should_stream_output?, :_mock_status_response, :_verify_file_lists_match, :_log_file_list_mismatch, :_print_file_diff
 end

@@ -1464,15 +1464,15 @@ keep_sudo_alive() {
 }
 
 # Migrates a git repository to reftable format if git 2.45+ is available.
-# Thin wrapper that delegates to Ruby GitProcessor.migrate_to_reftable.
+# Thin wrapper that delegates to the git migrate-reftable alias.
 # Usage: migrate_git_repo_to_reftable <repo-directory>
-# Returns: 0 on success or silent skip (older git), 1 on error
-# Note: On vanilla macOS with system git < 2.45, this is a silent no-op.
+# Returns: 0 on success or if already reftable, 1 if git 2.45+ unavailable
+# Note: On vanilla macOS with system git < 2.45, this returns 1 (unsupported).
 # fresh-install-of-osx.sh calls this again after Homebrew's git is on PATH.
 migrate_git_repo_to_reftable() {
   local folder="${1:?migrate_git_repo_to_reftable: folder argument required}"
 
-  call_ruby_utility "require 'git_processor'; GitProcessor.migrate_to_reftable(folder: '${folder}')"
+  git migrate-reftable "${folder}"
 }
 
 # Clones a git repo into a temp folder, moves the .git dir into the real target
@@ -1514,7 +1514,17 @@ clone_repo_into() {
     # SSH: Uses core.sshCommand from ~/.gitconfig (pre-configured) or inherits GIT_SSH_COMMAND
     # from parent environment (FIRST_INSTALL - exported by fresh-install-of-osx.sh, propagates
     # through shell-> Ruby-> shell chain). No inline override needed.
-    git -C "${tmp_folder}" clone -q -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" . 2>"${stderr_file}"
+    # Wrapped with 'git with-retry': flaky networks (VPN/MTU black-holes) can cause this
+    # clone to stall indefinitely rather than fail fast. Implemented as a git alias (not a
+    # shell function) so the retry/timeout/process-tree-kill logic lives in one place and
+    # is reusable by any other git alias (e.g. 'unshallow') without sourcing ~/.shellrc.
+    # Passes tmp_folder as the progress-path so with-retry only kills on genuine inactivity
+    # (no growth in the folder being cloned into) rather than a fixed wall-clock timeout --
+    # a large repo that is transferring slowly but steadily is not killed prematurely.
+    local clone_timeout_secs=25
+    local clone_max_attempts=5
+    git with-retry "${clone_timeout_secs}" "${clone_max_attempts}" "${stderr_file}" "${tmp_folder}" \
+      git -C "${tmp_folder}" clone -q -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" .
     local clone_status=$?
 
     if [[ ${clone_status} -ne 0 ]]; then
@@ -1591,28 +1601,37 @@ clone_repo_into() {
   # initially cloned with system git.
   migrate_git_repo_to_reftable "${target_folder}"
 
-  # Unshallow in background for both new clones and existing repos. Converts shallow
-  # repos to full clones asynchronously without blocking the caller. The subshell +
-  # background job (&) runs independently - parent continues immediately. Output is
-  # redirected to /dev/null since unshallow is a nice-to-have optimization, not a
-  # critical operation. If the repo is already a full clone, 'git unshallow' is a
-  # no-op. If it fails, the next clone_repo_into call will retry.
-  (git -C "${target_folder}" unshallow >/dev/null 2>&1 &)
-  debug "Spawned background job to unshallow '$(yellow "${target_folder}")'"
-
-  # Restore file mtimes from git history after clone/fetch (improves ls -lt output
-  # and preserves original timestamps). Idempotent -- safe to run multiple times.
+  # Unshallow and run repository maintenance for both new clones and existing repos.
+  # Converts shallow repos to full clones. If the repo is already a full clone, 'git
+  # unshallow' is a no-op. 'unshallow' wraps its own fetch/backfill steps in 'git
+  # with-retry' internally (see git/config) so a stalled fetch (flaky network) cannot
+  # hang this step forever -- every other caller of 'git unshallow' (e.g. antidote.rb,
+  # 'pullsub') gets the same hang protection automatically. 'maintain' (mtime restore +
+  # prune/gc/commit-graph) is run sequentially AFTER unshallow completes -- running it
+  # concurrently would race both processes against the same .git directory: 'maintain'
+  # unconditionally removes index.lock and commit-graph-chain.lock, which could steal a
+  # lock 'unshallow' legitimately holds mid-write.
+  #
+  # On FIRST_INSTALL and non-FIRST_INSTALL callers alike, this runs SYNCHRONOUSLY.
+  # Backgrounding this during FIRST_INSTALL bootstrap was considered for wall-clock
+  # savings (bootstrap also installs Homebrew/brew bundle in parallel), but rejected:
+  # fresh-install-of-osx.sh re-runs 'migrate_git_repo_to_reftable "${DOTFILES_DIR}"'
+  # later in its sequence (once Homebrew's newer git is on PATH), which does a
+  # destructive 'rm -rf .git/refs/*' on the SAME repo this function may have just
+  # spawned a background fetch/gc for -- with no synchronization between the two, a
+  # sufficiently large history/backfill could still be running when that later step
+  # fires, reintroducing exactly the concurrent-git-operation race this whole retry/
+  # maintenance chain is designed to avoid. The one-time wall-clock cost during vanilla
+  # OS bootstrap is an acceptable trade for eliminating that race entirely.
+  # If all attempts fail, the next clone_repo_into call will retry.
+  git -C "${target_folder}" unshallow
   git -C "${target_folder}" maintain
-
-  # Generate commit graph after clone/fetch for performance (10-50x faster log/branch
-  # operations). Failure is non-fatal -- repo is usable, just slower. Suppress output
-  # unless it fails (avoid noise during bulk cloning).
-  if ! git -C "${target_folder}" commit-graph write --reachable --changed-paths >/dev/null 2>&1; then
-    debug "Failed to generate commit graph for '$(yellow "${target_folder}")' -- repo will work but may be slower"
-  fi
+  debug "Completed unshallow + maintain for '$(yellow "${target_folder}")'"
 
   # Always update submodules after clone or pull -- new commits may introduce submodule changes.
-  git -C "${target_folder}" submodule update --init --recursive --remote --rebase --force
+  # Uses the 'siu' git alias (not a bare 'submodule update') for 'with-retry' hang protection --
+  # a stalled fetch inside any submodule would otherwise hang this function indefinitely.
+  git -C "${target_folder}" siu
   local end_time=${EPOCHSECONDS}  # no $(date +%s) fork
   local duration=$((end_time - start_time))
   debug "Process took ${duration} seconds"

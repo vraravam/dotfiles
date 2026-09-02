@@ -159,7 +159,7 @@ _download_and_source_shellrc() {
 # Enable Touch ID for sudo command when running on the terminal
 _approve_fingerprint_sudo() {
   step_start
-  section_header "$(yellow 'Setting up touchId for sudo access in terminal shells')"
+  _step_header "$(yellow 'Setting up touchId for sudo access in terminal shells')"
 
   # AppleBiometricSensor = T1/T2 chip (Intel Macs); AppleBiometricServices = Apple Silicon
   # Check for Touch ID hardware (single ioreg call for both classes)
@@ -196,7 +196,7 @@ _approve_fingerprint_sudo() {
 # Verify FileVault disk encryption is active
 _ensure_filevault_is_on() {
   step_start
-  section_header "$(yellow 'Verifying FileVault status')"
+  _step_header "$(yellow 'Verifying FileVault status')"
   if [[ "$(fdesetup isactive)" != 'true' ]]; then
     user_action "Enable FileVault: System Settings -> Privacy & Security -> FileVault -> Turn On FileVault"
     error 'FileVault is not turned on. Please encrypt your hard disk!'
@@ -209,12 +209,12 @@ _ensure_filevault_is_on() {
 _install_xcode_command_line_tools() {
   _current_section='Install Xcode Command Line Tools'; _current_section_manual=1
   step_start
-  section_header "$(yellow 'Listing available software updates')"
+  _step_header "$(yellow 'Listing available software updates')"
   softwareupdate --list 2>&1 | grep '^\*' || true
   step_end
 
   step_start
-  section_header "$(yellow 'Installing xcode command-line tools')"
+  _step_header "$(yellow 'Installing xcode command-line tools')"
   if ! xcode-select -p &>/dev/null; then
     touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
     sudo softwareupdate -ia --agree-to-license --force || _record_warning 'softwareupdate encountered errors'
@@ -240,7 +240,7 @@ _install_xcode_command_line_tools() {
 # install-dotfiles.rb when it creates symlinks to those locations.
 _ensure_directories_exist() {
   step_start
-  section_header "$(yellow 'Creating XDG base directories')"
+  _step_header "$(yellow 'Creating XDG base directories')"
   local -a dirs=(
     "${XDG_CACHE_HOME}"
     "${XDG_CONFIG_HOME}"
@@ -256,7 +256,7 @@ _ensure_directories_exist() {
 _clone_dot_files_repo() {
   _current_section='Clone dotfiles repo'; _current_section_manual=1
   step_start
-  section_header "$(yellow 'Installing dotfiles') into '$(cyan "${DOTFILES_DIR}")'"
+  _step_header "$(yellow 'Installing dotfiles') into '$(cyan "${DOTFILES_DIR}")'"
   # Clone if DOTFILES_DIR is not a git repo. is_git_repo checks both existence and .git presence.
   if is_non_zero_string "${DOTFILES_DIR}" && ! is_git_repo "${DOTFILES_DIR}"; then
     # Delete the auto-generated .zshrc since that needs to be replaced by the one in the DOTFILES_DIR repo
@@ -289,7 +289,7 @@ _clone_dot_files_repo() {
 _install_homebrew() {
   _current_section='Install Homebrew'; _current_section_manual=1
   step_start
-  section_header "$(yellow 'Installing homebrew') into '$(cyan "${HOMEBREW_PREFIX}")'"
+  _step_header "$(yellow 'Installing homebrew') into '$(cyan "${HOMEBREW_PREFIX}")'"
   if is_zero_string "${HOMEBREW_PREFIX}"; then
     error "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!"
     exit 1  # Irrecoverable failure
@@ -388,7 +388,7 @@ _install_homebrew() {
 _set_default_shell() {
   _current_section='Set default shell'; _current_section_manual=1
   step_start
-  section_header "$(yellow 'Setting default shell to Homebrew zsh')"
+  _step_header "$(yellow 'Setting default shell to Homebrew zsh')"
 
   local _brew_zsh="${HOMEBREW_PREFIX}/bin/zsh"
 
@@ -450,12 +450,14 @@ _build_keybase_repo_url() {
 _clone_home_repo() {
   _current_section='Clone home repo'; _current_section_manual=1
   step_start
-  section_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_HOME_REPO_NAME:-}")' repo"
+  _step_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_HOME_REPO_NAME:-}")' repo"
   if is_non_zero_string "${KEYBASE_HOME_REPO_NAME:-}"; then
     if is_git_repo "${HOME}"; then
-      # Pre-configured machine: pull latest changes to get fresh backup files
+      # Pre-configured machine: pull latest changes to get fresh backup files.
+      # Uses 'pull-safe' (not a bare 'pull --rebase') for 'with-retry' hang protection and
+      # a clean-working-tree guard, consistent with every other repo-sync path in this script.
       info "Home repo already exists -- pulling latest changes"
-      if git -C "${HOME}" pull --rebase; then
+      if git -C "${HOME}" pull-safe; then
         success "Successfully updated home repo"
       else
         _record_warning "Failed to pull home repo -- continuing with existing backup files"
@@ -480,7 +482,7 @@ _clone_home_repo() {
 _clone_profiles_repo() {
   _current_section='Clone profiles repo'; _current_section_manual=1
   step_start
-  section_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_PROFILES_REPO_NAME:-}")' repo"
+  _step_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_PROFILES_REPO_NAME:-}")' repo"
   if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME:-}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
     if ! clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME:-}")" "${PERSONAL_PROFILES_DIR}"; then
       _record_error 'Failed to clone profiles repo'
@@ -547,10 +549,20 @@ main() {
   local -a _step_warnings=()
   local -a _step_errors=()
 
+  # Progress tracking: Shows [Step N of TOTAL] in section headers
+  local total_steps=14
+  local current_step=0
+
   # Set ERR trap AFTER initializing arrays to prevent "parameter not set" errors in _cleanup_and_exit
   # if an error occurs during initialization. The trap accesses these arrays via dynamic scoping.
   trap '_cleanup_and_exit "${LINENO}"' ERR
   trap 'rm -f "${_DOTFILES_CRON_BACKUP_FILE}"; _decrement_script_depth' EXIT
+
+  # Helper function to show progress through steps
+  _step_header() {
+    current_step=$((current_step + 1))
+    section_header "[$(purple "Step ${current_step} of ${total_steps}")] $*"
+  }
 
   local -a _script_start_times=()
   local -a _step_start_times=()
@@ -669,7 +681,7 @@ main() {
   # for those early clones. Now that Homebrew's git is available, migrate them.
   _current_section='Migrate repos to reftable'; _current_section_manual=1
   step_start
-  section_header "$(yellow 'Migrating repos to reftable format')"
+  _step_header "$(yellow 'Migrating repos to reftable format')"
   migrate_git_repo_to_reftable "${DOTFILES_DIR}"
   step_end
 
@@ -690,7 +702,7 @@ main() {
 
   # Restore the preferences from the older machine into the new one.
   step_start
-  section_header "$(yellow 'Restore preferences')"
+  _step_header "$(yellow 'Restore preferences')"
   if command_exists 'osx-defaults.sh'; then
     osx-defaults.sh -s
     success 'Successfully baselines preferences'
@@ -719,14 +731,14 @@ main() {
 
   # Recreate the zsh completions.
   step_start
-  section_header "$(yellow 'Recreate zsh completions')"
+  _step_header "$(yellow 'Recreate zsh completions')"
   rm -rf "${XDG_CACHE_HOME}/zcompdump"* &>/dev/null  || true
   autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump" &>/dev/null  || true
   step_end
 
   # Setup cron jobs.
   step_start
-  section_header "$(yellow 'Setup cron jobs')"
+  _step_header "$(yellow 'Setup cron jobs')"
   if command_exists recron; then
     # Call recron first; only delete backup after successful execution.
     # This ensures the EXIT trap can still restore the original schedule if recron fails.

@@ -219,6 +219,24 @@ After making edits:
 3. Ask the user if they want to commit and what message to use
 4. Only after explicit permission: run `git commit` with user-provided message
 
+**Verifying an amend:** This check only applies once an amend has already been explicitly
+authorized and performed -- it is a post-amend verification step, not something to run
+speculatively beforehand. After running `git commit --amend`, diff the pre-amend commit
+against the new one using the reflog: `git diff HEAD@{1} HEAD` (the reflog entry
+immediately before an amend is always `HEAD@{1}`). This confirms the amend contains
+exactly the intended staged changes -- nothing more, nothing less -- and is more reliable
+than eyeballing `git status`/`git log` alone, since it directly compares the resulting
+tree rather than the commit metadata. Prefer this over `git diff @{u}` (diff against the
+upstream tracking branch): `@{u}` only equals "the state before the amend" when the local
+branch and its upstream have not diverged. If the local branch has any unpushed commits,
+or the remote has commits the local branch doesn't (e.g. `ahead 1, behind 1`),
+`git diff @{u}` conflates that divergence with the amend's own effect, making it an
+unreliable signal -- `git diff HEAD@{1} HEAD` is correct regardless of upstream state.
+This check is narrow and mechanical: it only confirms the git *operation* did what was
+asked (folded in exactly the staged changes). It does NOT verify that the *content* of
+those changes is functionally correct -- e.g. that a conflict resolution preserved both
+branches' logic. For that, see the separate checklist under Rebase Rules below.
+
 **Exception:** When the user explicitly says "commit with message X", "create a commit", or similar clear intent, then `git commit` is permitted.
 
 #### Branch Management Rules
@@ -278,7 +296,7 @@ After completing any rebase (whether manual conflict resolution or automated):
 - Ensure no functionality was lost in conflict resolution
 - Run syntax checks on all modified files
 
-**See also:** [FEATURE-PARITY-CHECKLIST.md](.ai/FEATURE-PARITY-CHECKLIST.md) for comprehensive post-rebase verification workflow.
+**See also:** [FEATURE-PARITY-CHECKLIST.md](.ai/FEATURE-PARITY-CHECKLIST.md) for comprehensive post-rebase verification workflow. This checklist verifies *content* correctness (no lost functionality, no duplication); it is separate from the mechanical `git diff HEAD@{1} HEAD` amend-verification check above, which only confirms a `git commit --amend` folded in exactly the intended staged changes.
 
 #### Pre-Commit Verification — Functional Completeness Check
 

@@ -554,29 +554,219 @@
   }; f"
 
   # ═══════════════════════════════════════════════════════════════════════════
+  # PROCESS CONTROL UTILITIES (alphabetical)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # Kills a process and all of its descendants. A plain 'kill -9 $pid' only kills
+  # the direct process -- if it has already spawned children (e.g. a stalled git
+  # command that spawned an ssh or git-remote-https helper subprocess), those
+  # children become orphans and keep running indefinitely. Used by 'with-retry'
+  # to fully clean up a stalled command tree before retrying. Recurses via 'git
+  # kill-process-tree' rather than a shell function so it stays a self-contained
+  # git alias, callable from any other alias without sourcing external files.
+  # Usage: git kill-process-tree <pid>
+  kill-process-tree = "!f() { \
+    pid=\"${1:?kill-process-tree: pid required}\"; \
+    for child in $(pgrep -P \"${pid}\" 2>/dev/null); do \
+      git kill-process-tree \"${child}\"; \
+    done; \
+    kill -9 \"${pid}\" 2>/dev/null || true; \
+  }; f"
+
+  # Runs an arbitrary command with an inactivity timeout, retrying on failure or true
+  # stall while tolerating work that is merely slow. Works around commands that hang
+  # indefinitely on flaky networks (observed: VPN/MTU black-hole symptom -- 'unexpected
+  # disconnect while reading sideband packet' printed immediately, followed by a silent
+  # stall at 0% CPU that never exits) without killing a transfer that is still actively
+  # making progress (e.g. a large blob backfill on a modest connection) -- a plain fixed
+  # wall-clock timeout cannot tell those two cases apart. macOS has no 'timeout'/
+  # 'gtimeout' by default, so this implements a manual background-job + poll + kill
+  # loop. If <progress-path> is not '-', its on-disk size (via 'du -sk', works for both
+  # files and directories -- e.g. pass a repo's '.git/objects' dir to track fetch/
+  # backfill progress) is polled every 5s; growth resets the inactivity clock, so
+  # <timeout-secs> only fires after that many seconds of NO observed growth. Bounded
+  # overall by a hard cap of 10x <timeout-secs> regardless of trickling progress, so a
+  # command that technically inches forward forever cannot run unbounded. Pass '-' for
+  # <progress-path> to fall back to a plain fixed wall-clock timeout (original
+  # behavior) when there is no natural on-disk growth signal to poll (e.g. non-git
+  # commands). Not git-specific -- can wrap any command -- but expressed as a git alias
+  # so any other alias (e.g. 'unshallow') can call it directly without sourcing
+  # ~/.shellrc.
+  #
+  # 'disown' is called ONLY in the timeout/kill branch, right before 'kill-process-tree'
+  # -- never immediately after backgrounding. 'disown' stops the shell from printing a
+  # leaked 'Killed: 9 <command>' job-control message when the process is later killed by
+  # signal, but it ALSO breaks 'wait <pid>' -- once disowned, 'wait' unconditionally
+  # returns 0 regardless of the process's real exit status (tested empirically: 'false &
+  # disown $!; wait $!' prints exit code 0, not 1). Disowning immediately after
+  # backgrounding (an earlier version of this alias did this) silently converted every
+  # command failure into a false "success", since the normal (non-timeout) completion
+  # path relies on 'wait's real exit status to detect failure. Disowning only in the
+  # kill branch is safe because that branch already knows the attempt failed (timed out)
+  # and discards the exit status of the post-kill 'wait' regardless.
+  # Usage: git with-retry <timeout-secs> <max-attempts> <stderr-file|/dev/null> <progress-path|-> <command...>
+  with-retry = "!f() { \
+    timeout_secs=\"${1:?with-retry: timeout_secs required}\"; \
+    max_attempts=\"${2:?with-retry: max_attempts required}\"; \
+    stderr_file=\"${3:?with-retry: stderr_file required}\"; \
+    progress_path=\"${4:?with-retry: progress_path required (pass '-' for none)}\"; \
+    if [ \"${progress_path}\" = '-' ]; then progress_path=''; fi; \
+    hard_cap_secs=$((timeout_secs * 10)); \
+    shift 4; \
+    attempt=1; \
+    while [ \"${attempt}\" -le \"${max_attempts}\" ]; do \
+      printf 'Attempt %s/%s (timeout %ss): %s\n' \"${attempt}\" \"${max_attempts}\" \"${timeout_secs}\" \"$*\" >&2; \
+      \"$@\" >/dev/null 2>\"${stderr_file}\" & \
+      pid=$!; \
+      waited=0; \
+      elapsed=0; \
+      last_size=''; \
+      if [ -n \"${progress_path}\" ]; then last_size=$(du -sk \"${progress_path}\" 2>/dev/null | cut -f1); fi; \
+      while kill -0 \"${pid}\" 2>/dev/null && [ \"${waited}\" -lt \"${timeout_secs}\" ] && [ \"${elapsed}\" -lt \"${hard_cap_secs}\" ]; do \
+        sleep 5; \
+        elapsed=$((elapsed + 5)); \
+        if [ -n \"${progress_path}\" ]; then \
+          cur_size=$(du -sk \"${progress_path}\" 2>/dev/null | cut -f1); \
+          if [ \"${cur_size}\" != \"${last_size}\" ]; then \
+            waited=0; \
+            last_size=\"${cur_size}\"; \
+          else \
+            waited=$((waited + 5)); \
+          fi; \
+        else \
+          waited=$((waited + 5)); \
+        fi; \
+      done; \
+      if kill -0 \"${pid}\" 2>/dev/null; then \
+        disown \"${pid}\" 2>/dev/null || true; \
+        git kill-process-tree \"${pid}\"; \
+        wait \"${pid}\" 2>/dev/null; \
+        printf 'No progress for %ss on attempt %s/%s -- retrying\n' \"${timeout_secs}\" \"${attempt}\" \"${max_attempts}\" >&2; \
+      else \
+        wait \"${pid}\"; \
+        cmd_status=$?; \
+        if [ \"${cmd_status}\" -eq 0 ]; then \
+          exit 0; \
+        fi; \
+        printf 'Failed (exit %s) on attempt %s/%s -- retrying\n' \"${cmd_status}\" \"${attempt}\" \"${max_attempts}\" >&2; \
+      fi; \
+      attempt=$((attempt + 1)); \
+    done; \
+    exit 1; \
+  }; f"
+
+  # ═══════════════════════════════════════════════════════════════════════════
   # REMOTE OPERATIONS (alphabetical)
   # ═══════════════════════════════════════════════════════════════════════════
 
-  # Unshallows a shallow repository by configuring it to fetch full history.
-  # Configures all remotes to fetch all branches, then converts shallow clone to full clone
-  # (if shallow) or fetches all branches from all remotes (if already full). Always performs
-  # a fetch operation to retrieve complete history for all configured branches.
-  # No-op conversion if repo is already a full clone (just fetches).
-  # Usage: git unshallow [<dir>]
-  unshallow = "!f() { \
+  # Fetches all remotes and tags, then prunes local branches deleted on remote. This
+  # is the one robust fetch mechanism in this config -- 'unshallow', antidote.rb (via
+  # GitProcessor), and the 'pullsub' alias all delegate here rather than calling 'git
+  # fetch' directly, so hang protection and repair logic live in one place. Before
+  # fetching, sweeps any stale 'tmp_pack_*'/'tmp_obj_*' files left in '.git/objects' by
+  # a previous killed/interrupted fetch (with-retry's SIGKILL bypasses git's own
+  # cleanup-on-signal handling, so these otherwise accumulate indefinitely) -- gated to
+  # files older than 15 minutes (matches the longest with-retry hard-cap in use here:
+  # 90s x 10) so a genuinely-concurrent fetch elsewhere on this same repo is never
+  # touched. Configures all remotes to fetch all branches (widens a shallow clone's
+  # default single-branch tracking; idempotent, cheap to redo every call). If the repo
+  # has a promisor remote (partial/blobless clone), that remote is always fetched
+  # FIRST, before any other remote: fetching a non-promisor remote (e.g. 'upstream' in
+  # a fork) while blobs are still missing from the promisor can fail with 'did not
+  # receive expected object <sha>' / 'invalid index-pack output', because the
+  # non-promisor remote may build thin-pack deltas against base objects the client
+  # doesn't actually have yet. Each fetch is wrapped in 'git with-retry' (inactivity-
+  # based, not a fixed wall-clock timeout, so a slow-but-progressing transfer is not
+  # killed early). If a fetch still fails after retries, that most likely means locally
+  # corrupted objects rather than a network stall (with-retry already absorbs
+  # transient/stall failures) -- a single prune + gc is attempted, followed by one more
+  # retry pass. A failure past that point is logged and skipped rather than escalated
+  # further: more aggressive local repair (removing the remote, 'gc --aggressive
+  # --prune=now') is expensive, drops git's default unreachable-object grace period,
+  # and risks colliding with a concurrent 'git maintain' call run nearby. Remote is the
+  # source of truth. Note: --all/--tags/--prune flags on the fetches themselves are
+  # omitted -- fetch.all, fetch.pruneTags, and fetch.prune=true in config make each
+  # 'git fetch <remote>' below equivalent to 'git fetch <remote> --tags --prune'.
+  # Usage: git fo [<dir>]
+  fo = "!f() { \
     dir=\"${1:-.}\"; \
+    find \"${dir}/.git/objects/pack\" -name 'tmp_*' -type f -mmin +15 -delete 2>/dev/null || true; \
+    find \"${dir}/.git/objects\" -maxdepth 1 -name 'tmp_*' -type f -mmin +15 -delete 2>/dev/null || true; \
     git -C \"${dir}\" remote | while IFS= read -r remote; do \
       git -C \"${dir}\" remote set-branches \"${remote}\" '*'; \
     done && \
-    ( git -C \"${dir}\" is-shallow && git -C \"${dir}\" fetch --unshallow || git -C \"${dir}\" fetch ) || true; \
+    promisor_remote=''; \
+    for remote in $(git -C \"${dir}\" remote); do \
+      if [ -z \"${promisor_remote}\" ] && [ \"$(git -C \"${dir}\" config --get \"remote.${remote}.promisor\" 2>/dev/null)\" = 'true' ]; then \
+        promisor_remote=\"${remote}\"; \
+      fi; \
+    done; \
+    remotes_ordered=\"${promisor_remote}\"; \
+    for remote in $(git -C \"${dir}\" remote); do \
+      if [ \"${remote}\" != \"${promisor_remote}\" ]; then \
+        remotes_ordered=\"${remotes_ordered} ${remote}\"; \
+      fi; \
+    done; \
+    for remote in ${remotes_ordered}; do \
+      printf 'Fetching %s\n' \"${remote}\"; \
+      fetch_cmd='fetch'; \
+      git -C \"${dir}\" is-shallow && fetch_cmd='fetch --unshallow'; \
+      fetch_stderr=\"$(mktemp)\"; \
+      if ! git with-retry 60 3 \"${fetch_stderr}\" \"${dir}/.git/objects\" git -C \"${dir}\" ${fetch_cmd} \"${remote}\"; then \
+        printf 'Fetch from %s still failing after retries, trying prune + gc...\n' \"${remote}\" >&2; \
+        git -C \"${dir}\" prune 2>/dev/null || true; \
+        git -C \"${dir}\" gc 2>/dev/null || true; \
+        if ! git with-retry 60 2 \"${fetch_stderr}\" \"${dir}/.git/objects\" git -C \"${dir}\" ${fetch_cmd} \"${remote}\"; then \
+          printf 'Warning: could not fetch from %s after retries and local repair -- skipping. Last error:\n' \"${remote}\" >&2; \
+          cat \"${fetch_stderr}\" >&2; \
+        fi; \
+      fi; \
+      rm -f \"${fetch_stderr}\"; \
+    done; \
+    git -C \"${dir}\" dlb; \
   }; f"
 
-  # Fetches all remotes and tags, then prunes local branches deleted on remote.
-  # Note: --all/--tags/--prune flags are omitted — fetch.all, fetch.pruneTags, and
-  # fetch.prune=true in config make plain 'git fetch' equivalent to 'git fetch --all --tags --prune'.
-  # Usage: git fo [<dir>]
-  fo = "!f() { \
-    git -C \"${1:-.}\" fetch && git -C \"${1:-.}\" dlb; \
+  # Backfills any missing blob objects if the repo is a partial/blobless clone
+  # (--filter=blob:none). Fetching full commit/tree history (via 'git fo') does NOT
+  # fetch blob content -- these are two independent axes, so this is a separate step.
+  # No-op if not a partial clone, or if the installed git version predates 'git
+  # backfill' (2.44+). Run this AFTER 'git fo' has fetched from the promisor remote --
+  # backfilling against stale/incomplete history would be wasted work. Wrapped in 'git
+  # with-retry' (inactivity-based) since a full backfill can be a much larger, longer
+  # transfer than a regular fetch and is prone to the same network stalls.
+  # Usage: git backfill-blobs [<dir>]
+  backfill-blobs = "!f() { \
+    dir=\"${1:-.}\"; \
+    if [ \"$(git -C \"${dir}\" config --get remote.origin.promisor 2>/dev/null)\" = 'true' ]; then \
+      if git backfill -h 2>&1 | grep -q 'is not a git command'; then \
+        printf 'Skipping blob backfill -- installed git version predates git backfill (needs 2.44+)\n' >&2; \
+      else \
+        printf 'Backfilling missing blob objects (partial clone)...\n'; \
+        backfill_stderr=\"$(mktemp)\"; \
+        if git with-retry 90 5 \"${backfill_stderr}\" \"${dir}/.git/objects\" git -C \"${dir}\" backfill --min-batch-size=500; then \
+          printf 'Backfill complete.\n'; \
+        else \
+          printf 'Warning: could not backfill all blobs after retries -- will lazy-fetch on demand. Last error:\n' >&2; \
+          cat \"${backfill_stderr}\" >&2; \
+        fi; \
+        rm -f \"${backfill_stderr}\"; \
+      fi; \
+    fi; \
+  }; f"
+
+  # Converts a shallow and/or partial (blobless) clone into a full clone: fetches
+  # complete history (via 'git fo', which also widens a shallow clone's default
+  # single-branch tracking to all branches and repairs a promisor-first fetch order)
+  # then backfills any missing blob objects (via 'git backfill-blobs'). Kept as a
+  # separate alias name for backward compatibility and because the combined operation
+  # (history + blobs) is what callers converting a fresh shallow/partial clone
+  # actually want -- 'git fo' alone is the lighter-weight, faster, routine-sync
+  # operation used everywhere else (interactive use, cron via antidote.rb,
+  # clone_repo_into's background job -- none of these call sites needed to change:
+  # this alias still does the same combined job under the same name).
+  # Usage: git unshallow [<dir>]
+  unshallow = "!f() { \
+    git -C \"${1:-.}\" fo && git -C \"${1:-.}\" backfill-blobs; \
   }; f"
 
   # Performs comprehensive repository maintenance and repair (like 'brew doctor').
@@ -606,54 +796,49 @@
     printf 'Maintenance complete.\n'; \
   }; f"
 
-  # Pulls the current branch (wrapper for built-in git pull with override support).
-  # Supports folder-specific overrides: if ${PERSONAL_BIN_DIR}/pull-<basename>.sh exists, sources it
-  # instead of running the default implementation. Override scripts can customize pre/post behavior.
-  # Usage: git pull [<dir>] [<options>]
-  pull = "!f() { \
-    case \"${1:-}\" in \
-      -*|'') dir='.' ;; \
-      *) dir=\"${1:-}\"; shift ;; \
-    esac; \
-    if [ -n \"${PERSONAL_BIN_DIR:-}\" ] && [ -z \"${_GIT_OVERRIDE_SKIP:-}\" ]; then \
-      basename=\"$(basename \"$(cd \"${dir}\" && pwd)\")\"; \
-      override=\"${PERSONAL_BIN_DIR}/pull-${basename}.sh\"; \
-      if [ -x \"${override}\" ]; then \
-        (cd \"${dir}\" && _GIT_OVERRIDE_SKIP=1 /bin/zsh -l \"${override}\" \"$@\"); \
-        return $?; \
-      fi; \
+  # Migrates repository from legacy files format to reftable format (git 2.45+).
+  # Reftable is the modern reference storage format that replaces the traditional
+  # .git/refs/* file hierarchy with a single packed file, improving performance.
+  # No-op if already reftable or if git version doesn't support migration.
+  # Cleans up legacy loose refs after successful migration.
+  # Usage: git migrate-reftable [<dir>]
+  migrate-reftable = "!f() { \
+    dir=\"${1:-.}\"; \
+    format=$(git -C \"${dir}\" rev-parse --show-ref-format 2>/dev/null || echo 'files'); \
+    if [ \"${format}\" = 'reftable' ]; then \
+      printf 'Already reftable format in %s -- skipping\n' \"${dir}\"; \
+      return 0; \
     fi; \
-    git -C \"${dir}\" pull \"$@\"; \
+    if git -C \"${dir}\" refs migrate --ref-format=reftable 2>/dev/null; then \
+      rm -rf \"${dir}/.git/refs/heads\"/* \"${dir}/.git/refs/tags\"/* \"${dir}/.git/refs/remotes\"/* 2>/dev/null || true; \
+      printf 'Migrated %s to reftable format\n' \"${dir}\"; \
+    else \
+      printf 'git refs migrate unavailable (requires git 2.45+) -- skipping migration in %s\n' \"${dir}\" >&2; \
+      return 1; \
+    fi; \
   }; f"
 
-  # Pushes the current branch (wrapper for built-in git push with override support).
-  # Supports folder-specific overrides: if ${PERSONAL_BIN_DIR}/push-<basename>.sh exists, sources it
-  # instead of running the default implementation. Override scripts can customize pre/post behavior.
-  # Usage: git push [<dir>] [<options>]
-  push = "!f() { \
-    case \"${1:-}\" in \
-      -*|'') dir='.' ;; \
-      *) dir=\"${1:-}\"; shift ;; \
-    esac; \
-    if [ -n \"${PERSONAL_BIN_DIR:-}\" ] && [ -z \"${_GIT_OVERRIDE_SKIP:-}\" ]; then \
-      basename=\"$(basename \"$(cd \"${dir}\" && pwd)\")\"; \
-      override=\"${PERSONAL_BIN_DIR}/push-${basename}.sh\"; \
-      if [ -x \"${override}\" ]; then \
-        (cd \"${dir}\" && _GIT_OVERRIDE_SKIP=1 /bin/zsh -l \"${override}\" \"$@\"); \
-        return $?; \
-      fi; \
-    fi; \
-    git -C \"${dir}\" push \"$@\"; \
-  }; f"
+  # NOTE: Git's built-in commands always take precedence over a same-named alias.
+  # This has been empirically confirmed using 'alias.pull' and 'alias.push', but
+  # the end effect was that the built-command ran and the alias was "dead code".
+  # The actual, reachable interception point for the bare 'pull' nad 'push' commands
+  # (override-script dispatch, 'with-retry' hang protection) is the zsh function
+  # 'pull'/'_pull' and 'push'/'_push' in files/--XDG_CONFIG_HOME--/zsh/pull and
+  # files/--XDG_CONFIG_HOME--/zsh/push -- shell function resolution happens before git's
+  # alias/builtin dispatch, so it correctly intercepts 'pull'/'push' (not 'git pull'
+  # or 'git push').
 
   # Fetches all remotes, then rebases onto @{u} only if the working tree is clean
   # (no uncommitted or staged changes). If the tree is dirty, skips the rebase,
   # prints a message to stderr, and exits non-zero — callers such as run-all.rb
   # surface this as a per-repo warning so the user knows to pull manually.
   # Designed for cron: a dirty skip is surfaced as a warning, not silently dropped.
+  # Uses 'git fo' (not a bare 'git fetch') for the same reason every other alias in
+  # this config does: hang protection via 'with-retry' and promisor-first remote
+  # ordering for partial/blobless clones -- a bare 'git fetch' here would bypass both.
   # Usage: git pull-safe [<dir>]
   pull-safe = "!f() { \
-    git -C \"${1:-.}\" fetch; \
+    git -C \"${1:-.}\" fo; \
     if git -C \"${1:-.}\" is-clean; then \
       git -C \"${1:-.}\" rebase '@{u}'; \
     else \
@@ -663,8 +848,14 @@
   }; f"
 
   # Pulls all submodules (runs unshallow + pull in each submodule).
+  # The embedded pull is 'git with-retry ... git pull' (not a bare 'git pull') for hang
+  # protection -- 'git pull' is a builtin and always wins over the same-named git alias
+  # (see the WARNING on the 'pull' alias above), so wrapping it explicitly here is the
+  # only way this specific pull gets retry protection. Runs inside each submodule's own
+  # directory (via 'submodule foreach'), so '.git/objects' is a relative path here, not
+  # '${dir}/.git/objects' like other with-retry call sites.
   # Usage: git pullsub
-  pullsub = sf "git unshallow && git pull"
+  pullsub = sf "git unshallow && git with-retry 60 3 /dev/null .git/objects git pull"
 
   # Pushes current branch with submodules.
   # Usage: git pushsub
@@ -679,6 +870,12 @@
   # Supports folder-specific overrides: if ${PERSONAL_BIN_DIR}/upreb-<basename>.sh exists, sources it
   # instead of running the default implementation. Override scripts can customize pre/post behavior
   # while calling the common implementation via the shell function _upreb from the autoload script.
+  # Uses 'git fo' (not a bare 'git fetch --all') for the initial fetch: hang protection via
+  # 'with-retry' and promisor-first remote ordering matter here just as much as anywhere else --
+  # 'fo' already prunes gone branches ('dlb'), so no separate 'dlb' call is needed at the end. The
+  # later 'fetch upstream --tags' (checking for new tags pushed between the initial fetch and now,
+  # right before this alias pushes) is wrapped directly in 'with-retry' rather than calling 'fo'
+  # again, since only that one remote/ref needs re-checking at that point.
   # Usage: git upreb [<dir>]
   upreb = "!f() { \
     dir=\"${1:-.}\"; \
@@ -690,19 +887,18 @@
         return $?; \
       fi; \
     fi; \
-    git -C \"${dir}\" fetch --all; \
+    git -C \"${dir}\" fo; \
     if git -C \"${dir}\" is-clean; then \
       git -C \"${dir}\" branch -u \"origin/$(git -C \"${dir}\" br)\"; \
       if git -C \"${dir}\" has-upstream; then \
         git -C \"${dir}\" rebase \"upstream/$(git -C \"${dir}\" br)\" --no-verify && \
-          git -C \"${dir}\" fetch upstream --tags && \
+          git with-retry 60 3 /dev/null \"${dir}/.git/objects\" git -C \"${dir}\" fetch upstream --tags && \
           git -C \"${dir}\" push --no-verify && \
           git -C \"${dir}\" push --tags --no-verify; \
       else \
         git -C \"${dir}\" rebase \"origin/$(git -C \"${dir}\" br)\" --no-verify; \
       fi && \
-      git -C \"${dir}\" siu && \
-      git -C \"${dir}\" dlb; \
+      git -C \"${dir}\" siu; \
     else \
       printf 'Skipping rebase/push in %s: working tree has uncommitted changes. Run manually.\n' \"${dir}\" >&2; \
       exit 1; \
@@ -719,8 +915,16 @@
   sf = submodule foreach
 
   # Initialises and updates all submodules recursively (use after a fresh clone or pull).
-  # Usage: git siu
-  siu = submodule update --init --recursive --remote --rebase --force
+  # Wrapped in 'git with-retry' (not a bare 'submodule update') for the same reason every
+  # other network-touching alias in this config is: a stalled fetch inside any submodule
+  # would otherwise hang indefinitely. Uses '.git/modules' (the object store shared by all
+  # submodules) as the progress-path so growth in ANY submodule's fetch counts as progress,
+  # not just the one currently being processed.
+  # Usage: git siu [<dir>]
+  siu = "!f() { \
+    dir=\"${1:-.}\"; \
+    git with-retry 120 3 /dev/null \"${dir}/.git/modules\" git -C \"${dir}\" submodule update --init --recursive --remote --rebase --force; \
+  }; f"
 
   # undo the last N commits (1 by default) - provided by git-extras
   # Usage: git undo [<N>]
