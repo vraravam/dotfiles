@@ -9,6 +9,20 @@
 # Functions that are only needed in interactive sessions and depend on DOTFILES_DIR
 # or other post-clone env vars should live in .aliases instead.
 #
+# BASH COMPATIBILITY: this file must remain not just bash-*parseable* but
+# bash-*functionally correct* -- direnv sources it in a bash subshell (see
+# .envrc), and any script may 'source ~/.shellrc' directly from bash. Zsh-only
+# syntax falls into three failure classes when bash encounters it, from most
+# to least dangerous: (1) silently wrong with no error at all (e.g. ${var:A},
+# path+=/fpath+=, $EPOCHSECONDS/strftime) -- the most dangerous, since nothing
+# looks broken; (2) parses fine, fails only if actually executed (e.g. ${+var},
+# ${(P)name}, arr[-1], typeset -A) -- safe to guard with 'if is_zsh; then ...
+# fi'; (3) breaks bash's own parser even inside a never-called function (e.g.
+# '[[ -v "arr[key]" ]]') -- an is_zsh guard does NOT help here; the construct
+# must be avoided entirely in this file. See shell-scripting.md's "Bash
+# Compatibility Gotchas Discovered in .shellrc" section for the full catalog
+# and the portable replacement used for each one.
+#
 # file location: ${HOME}/.shellrc
 # load order: .zshenv [.shellrc], .zshrc [.shellrc, .aliases [.shellrc]], .zlogin
 ################################################################################
@@ -155,6 +169,20 @@ case "${ARCH}" in
     export HOMEBREW_PREFIX='/usr/local'
     ;;
 esac
+
+# Prepend Homebrew to PATH immediately (no subprocess fork -- just a string
+# concat) so every context that sources .shellrc directly (cron jobs, scripts,
+# direnv's bash subshell, non-interactive/non-login shells) gets Homebrew-first
+# PATH ordering, not just full interactive login shells.
+#
+# Without this, 'brew doctor' reports "/usr/bin occurs before /opt/homebrew/bin
+# in your PATH" for any such context, since only .zshrc (interactive shells)
+# previously ran the richer 'brew shellenv' caching mechanism below. That
+# mechanism still runs for interactive shells and supersedes this -- the final
+# 'typeset -gU ... PATH path ...' in .zshrc dedupes the resulting PATH, so this
+# early prepend is harmless (not just redundant) when .zshrc runs afterward.
+export PATH="${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
+
 export HOMEBREW_NO_ANALYTICS=1
 export HOMEBREW_NO_ASK=1
 export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
@@ -215,20 +243,66 @@ is_non_zero_string() {
 }
 
 # Returns true if the array named $1 has no elements.
+# ${(P)1} (zsh indirect-parameter expansion) has no bash equivalent syntax; the
+# bash fallback uses eval to build the same indirect array-length lookup --
+# portable back to bash 3.2 (macOS's default -- no namerefs, no associative
+# arrays). Confirmed empirically: bash's parser tokenizes ${(P)1} fine (unlike
+# '-v "arr[key]"', which fails at parse time -- see shell-scripting.md), it only
+# fails with 'bad substitution' when actually expanded at runtime, so a plain
+# runtime is_zsh guard (not a separate never-called function) is sufficient here.
 is_empty_array() {
-  if ((${#${(P)1}[@]} == 0)); then
-    return 0
+  if is_zsh; then
+    if ((${#${(P)1}[@]} == 0)); then
+      return 0
+    else
+      return 1
+    fi
   else
-    return 1
+    local _count
+    eval "_count=\${#${1}[@]}"
+    [[ "${_count}" -eq 0 ]]
   fi
 }
 
 # Returns true if the array named $1 has at least one element.
 is_non_empty_array() {
-  if ((${#${(P)1}[@]} > 0)); then
-    return 0
+  if is_zsh; then
+    if ((${#${(P)1}[@]} > 0)); then
+      return 0
+    else
+      return 1
+    fi
   else
-    return 1
+    local _count
+    eval "_count=\${#${1}[@]}"
+    [[ "${_count}" -gt 0 ]]
+  fi
+}
+
+# Prints (via stdout) the last element of the array named $1. Empty output if
+# the array is empty. Zsh arrays are 1-indexed with native negative-index
+# support ('[-1]'); bash's default /bin/bash (3.2, macOS) predates negative
+# indices (added in bash 4.3) and is 0-indexed, so 'last index' is computed as
+# count-1 instead. Used by step_end below as a portable stack "peek".
+_array_last() {
+  if is_zsh; then
+    print -r -- "${${(P)1}[-1]}"
+  else
+    eval "printf '%s' \"\${${1}[\$((\${#${1}[@]} - 1))]}\""
+  fi
+}
+
+# Removes the last element from the array named $1 in place (a stack "pop").
+# Zsh: reslice to drop the last element ('[1,-2]' = everything except the
+# last). Bash: 'unset' the highest-index element directly -- safe even though
+# it can leave a "hole" in the underlying index sequence, because bash's
+# "${arr[@]}" and "${#arr[@]}" only ever consider populated indices, not the
+# raw index range.
+_array_pop_last() {
+  if is_zsh; then
+    eval "${1}=(\"\${(@)${1}[1,-2]}\")"
+  else
+    eval "unset '${1}[\$((\${#${1}[@]} - 1))]'"
   fi
 }
 
@@ -255,7 +329,16 @@ is_running_in_tty() {
 # Output at depth 2, level 1: "    - 'item1'\n    - 'item2'"
 # Output at depth 1, level 2: "    - 'item1'\n    - 'item2'"
 join_array() {
-  local -a arr=("${(@P)${1:?join_array: array name required}}")
+  local _array_name="${1:?join_array: array name required}"
+  local -a arr
+  if is_zsh; then
+    arr=("${(@P)_array_name}")
+  else
+    # Bash (even old 3.2, no namerefs): indirect array copy via eval. Standard
+    # array building/iteration below (+=, "${arr[@]}") is portable as-is --
+    # only the indirect *reference by name* needs a bash-specific path.
+    eval "arr=(\"\${${_array_name}[@]}\")"
+  fi
   if is_empty_array arr; then return; fi
 
   local level="${2:-1}"
@@ -272,7 +355,9 @@ join_array() {
   for item in "${arr[@]}"; do
     formatted+=("${base_indent}- '${item}'")
   done
-  echo "${(j:\n:)formatted}"
+  # printf (not zsh's '${(j:\n:)formatted}') -- confirmed byte-for-byte identical
+  # output in both shells, so no is_zsh branch needed here.
+  printf '%s\n' "${formatted[@]}"
 }
 
 # Returns true if the current shell is zsh.
@@ -434,11 +519,34 @@ _log_indent() {
   # to prevent negative multiplication. This can happen when print_script_summary
   # decrements depth before calling section_header. Default to 1 if unset.
   [[ ${depth} -lt 1 ]] && depth=1
-  if [[ ! -v "_INDENT_CACHE[${depth}]" ]]; then
-    # Outermost script (depth 1) has 0 indentation, depth 2 has 2 spaces, etc.
-    _INDENT_CACHE[${depth}]="$(printf '%*s' $(((depth - 1) * 2)) '')"
+  # _INDENT_CACHE (associative array) is a zsh/bash-4+ feature -- macOS's
+  # default /bin/bash (3.2, no Homebrew bash guaranteed in PATH) doesn't
+  # support it, so this whole function must branch. The zsh path keeps the
+  # memoization (this runs on every log call in the interactive hot path);
+  # the bash fallback recomputes directly each call -- acceptable since
+  # direnv/.envrc logging is far less frequent.
+  #
+  # Note: uses '-z "${...:-}"' (emptiness), not the '-v' test operator, to
+  # check whether the cache entry is already populated. '-v' is itself a
+  # bash-4.2+/zsh feature -- unlike 'setopt'/'autoload' (runtime-only zsh
+  # commands that bash's parser tokenizes fine as plain words, only failing
+  # when actually executed), '-v "arr[key]"' fails bash's OWN '[[ ]]' parser
+  # at *parse time* -- confirmed empirically that even wrapping it in
+  # 'if is_zsh; then ... fi', or moving it into a separate function that is
+  # never called, does not help: bash must still tokenize a function's body
+  # to find its closing brace when *defining* it, so a parse-time error
+  # inside an unreached branch still breaks sourcing the whole file. See
+  # shell-scripting.md's 'is_zsh guards are for parse-time zsh-only syntax
+  # only' section for the general rule this is an instance of.
+  if is_zsh; then
+    if [[ -z "${_INDENT_CACHE[${depth}]:-}" ]]; then
+      # Outermost script (depth 1) has 0 indentation, depth 2 has 2 spaces, etc.
+      _INDENT_CACHE[${depth}]="$(printf '%*s' $(((depth - 1) * 2)) '')"
+    fi
+    printf '%s' "${_INDENT_CACHE[${depth}]}"
+  else
+    printf '%*s' $(((depth - 1) * 2)) ''
   fi
-  printf '%s' "${_INDENT_CACHE[${depth}]}"
 }
 
 success() {
@@ -509,12 +617,17 @@ export _HEADER_MIN_PADDING=10
 # Section header styles by level. Each level has a distinct visual style
 # (character, glyph, color) to create a clear visual hierarchy.
 # Format: "char|glyph|color_function"
-typeset -A _SECTION_STYLES
-_SECTION_STYLES[0]="=|⏳|light_blue"   # Level 0: Top-level sections (depth 1)
-_SECTION_STYLES[1]="-|🔷|cyan"         # Level 1: Sub-sections (depth 2)
-_SECTION_STYLES[2]="·|▸|yellow"        # Level 2: Collection items (depth 3)
-_SECTION_STYLES[3]="·|▫|purple"        # Level 3: Operations within items (depth 4)
-_SECTION_STYLES[4]="·|▪|dark_gray"     # Level 4: Deep nesting (depth 5+)
+# Associative array is a zsh/bash-4+ feature; guard for bash compatibility
+# (direnv sources this file in a bash subshell) -- mirrors _INDENT_CACHE above.
+# section_header falls back to a plain, unstyled header under bash.
+if is_zsh; then
+  typeset -A _SECTION_STYLES
+  _SECTION_STYLES[0]="=|⏳|light_blue"   # Level 0: Top-level sections (depth 1)
+  _SECTION_STYLES[1]="-|🔷|cyan"         # Level 1: Sub-sections (depth 2)
+  _SECTION_STYLES[2]="·|▸|yellow"        # Level 2: Collection items (depth 3)
+  _SECTION_STYLES[3]="·|▫|purple"        # Level 3: Operations within items (depth 4)
+  _SECTION_STYLES[4]="·|▪|dark_gray"     # Level 4: Deep nesting (depth 5+)
+fi
 
 # --------------------------------------------------------------------------
 # 1c-1. iTerm2 shell integration marks
@@ -616,6 +729,14 @@ section_header() {
     _current_section="$(_strip_ansi "${header}")"
   fi
 
+  # _SECTION_STYLES is a zsh-only associative array (see its declaration above) --
+  # bash falls back to a plain, unstyled header (direnv/.envrc context only;
+  # visual styling is an interactive-shell nicety, not load-bearing behavior).
+  if ! is_zsh; then
+    echo "===== ${header} ====="
+    return 0
+  fi
+
   # Get style for this level (fallback to highest defined level if out of bounds)
   # Cap level at max defined level to prevent undefined key access under set -u
   # Use (( ... )) for array length - safer under set -u than ${#...[@]}
@@ -625,7 +746,9 @@ section_header() {
   [[ ${level} -gt ${max_level} ]] && level=${max_level}
 
   # If array key doesn't exist, fall back to simple output without style
-  # Use ${+...} to check if parameter is set (works under set -u)
+  # Use ${+...} to check if parameter is set (works under set -u). This is a
+  # zsh-only parameter expansion flag -- safe here since the ! is_zsh check
+  # above already returned for bash.
   if (( ! ${+_SECTION_STYLES[${level}]} )); then
     echo "===== ${header} ====="
     return 0
@@ -679,17 +802,49 @@ format_duration() {
     $((_fd_seconds % 60))
 }
 
+# Writes the current epoch seconds into the caller-supplied variable. Zsh:
+# reads $EPOCHSECONDS directly (zero-cost, from zsh/datetime, loaded near the
+# top of this file) -- critical for the interactive-shell hot path. Bash forks
+# 'date +%s' instead (zsh/datetime has no bash equivalent) -- acceptable since
+# bash sources this file rarely (direnv .envrc only).
+# Usage: _epoch_seconds <varname>
+_epoch_seconds() {
+  if is_zsh; then
+    eval "${1}=\${EPOCHSECONDS}"
+  else
+    eval "${1}=\$(date +%s)"
+  fi
+}
+
+# Writes a formatted datetime string for the given epoch seconds into the
+# caller-supplied variable. Zsh: 'strftime -s' (zsh/datetime builtin, no fork).
+# Bash: BSD 'date -j -f "%s"' (this codebase is macOS-only, so BSD date's
+# syntax is safe to assume) -- forks a subprocess, acceptable for the rare
+# bash/.envrc context.
+# Usage: _strftime <varname> <format> <epoch-seconds>
+_strftime() {
+  if is_zsh; then
+    strftime -s "${1}" "${2}" "${3}"
+  else
+    eval "${1}=\$(/bin/date -j -f '%s' '${3}' '+${2}')"
+  fi
+}
+
 # Writes the current datetime as "YYYY-MM-DD HH:MM:SS" into the caller-supplied variable.
 # Usage: current_timestamp <varname>
 current_timestamp() {
-  strftime -s "${1:-}" '%Y-%m-%d %H:%M:%S' "${EPOCHSECONDS}"
+  local _epoch
+  _epoch_seconds _epoch
+  _strftime "${1:-}" '%Y-%m-%d %H:%M:%S' "${_epoch}"
 }
 
 # Writes the current datetime as "YYYY-MM-DD-HH-MM" into the caller-supplied variable.
 # Suitable for use in filenames and hostnames (no colons or spaces).
 # Usage: current_timestamp_for_filename <varname>
 current_timestamp_for_filename() {
-  strftime -s "${1:-}" '%Y-%m-%d-%H-%M' "${EPOCHSECONDS}"
+  local _epoch
+  _epoch_seconds _epoch
+  _strftime "${1:-}" '%Y-%m-%d-%H-%M' "${_epoch}"
 }
 
 # Prints a timestamped "Script started at" banner. Call at the top of main() and
@@ -721,7 +876,8 @@ print_script_duration() {
   if is_zero_string "${start_time_seconds}"; then return 0; fi
   local end_time_human
   current_timestamp end_time_human
-  local end_time_seconds="${EPOCHSECONDS}"
+  local end_time_seconds
+  _epoch_seconds end_time_seconds
   local duration=$((end_time_seconds - start_time_seconds))
 
   local duration_human
@@ -851,20 +1007,24 @@ export _DOTFILES_CRON_BACKUP_FILE="${TMPDIR:-/tmp}/crontab_backup"
 # call multiple times.
 step_timing_init() {
   if is_empty_array _script_start_times; then
-    _script_start_times+=("${EPOCHSECONDS}")
+    local _now
+    _epoch_seconds _now
+    _script_start_times+=("${_now}")
   fi
 }
 
 # Record the start of a step.  Should be called just before section_header.
 step_start() {
   step_timing_init
-  _step_start_times+=("${EPOCHSECONDS}")
+  local _now
+  _epoch_seconds _now
+  _step_start_times+=("${_now}")
 }
 
 # Print how long the most recent step took, plus total elapsed since init.
 step_end() {
   local now delta_step delta_total
-  now="${EPOCHSECONDS}"
+  _epoch_seconds now
 
   # Pop the most recent step start time from the stack.
   # If the step stack is empty (e.g. step_end called without a matching
@@ -873,15 +1033,15 @@ step_end() {
   local step_start_time
   if is_empty_array _step_start_times; then
     if is_non_empty_array _script_start_times; then
-      step_start_time="${_script_start_times[-1]}"
+      step_start_time="$(_array_last _script_start_times)"
       warn "step_end called without matching step_start; using current epoch start time as fallback"
     else
       step_start_time="${now}"
       warn "step_end called without any timing stack initialised; using current time as fallback"
     fi
   else
-    step_start_time="${_step_start_times[-1]}"
-    _step_start_times=("${(@)_step_start_times[1,-2]}")
+    step_start_time="$(_array_last _step_start_times)"
+    _array_pop_last _step_start_times
   fi
 
   delta_step=$((now - step_start_time))
@@ -891,7 +1051,7 @@ step_end() {
   # Use the most recently pushed script-start epoch for total elapsed.
   local script_start_time
   if is_non_empty_array _script_start_times; then
-    script_start_time="${_script_start_times[-1]}"
+    script_start_time="$(_array_last _script_start_times)"
   else
     script_start_time="${now}"
     warn "step_end: _script_start_times is empty; total elapsed will be 0"
@@ -1113,6 +1273,46 @@ is_file() {
   fi
 }
 
+# Resolves $2 to its canonical absolute path (following symlinks), writing the
+# result into the caller-supplied variable named $1. Zsh: '${path:A}' (zero-
+# fork parameter expansion). Bash: a small pure-shell symlink-resolution loop
+# plus 'cd ... && pwd -P' for final directory canonicalization -- macOS ships
+# neither GNU 'readlink -f' nor 'realpath' by default, so this avoids both.
+#
+# Note: bash's ${var:A} is NOT a parse or runtime error -- it silently does
+# the WRONG thing. Bash interprets ':A' as substring-expansion offset
+# arithmetic (${var:offset}); an undefined arithmetic identifier like 'A'
+# evaluates to 0, so ${var:A} == ${var:0} == the original string, unresolved.
+# Confirmed empirically: this returns a plausible-looking but incorrect result
+# rather than failing loudly, making it easy to miss without a dedicated test.
+#
+# Usage: _resolve_absolute_path <varname> <path>
+_resolve_absolute_path() {
+  local _varname="${1:-}"
+  local p="${2:-}"
+  if is_zsh; then
+    eval "${_varname}=\${p:A}"
+  else
+    local link
+    while [[ -L "${p}" ]]; do
+      link="$(readlink "${p}")"
+      if [[ "${link}" == /* ]]; then
+        p="${link}"
+      else
+        p="$(dirname "${p}")/${link}"
+      fi
+    done
+    local dir base
+    dir="$(cd "$(dirname "${p}")" 2>/dev/null && pwd -P)"
+    base="$(basename "${p}")"
+    if [[ -n "${dir}" ]]; then
+      eval "${_varname}=\"\${dir}/\${base}\""
+    else
+      eval "${_varname}=\"\${p}\""
+    fi
+  fi
+}
+
 # Returns true if target file ($1) is missing or older than source file ($2).
 # Resolves symlinks before comparison to ensure edits/upgrades to symlink targets
 # are detected (e.g., Homebrew binaries, dotfiles symlinked from the repo).
@@ -1133,8 +1333,9 @@ is_file() {
 is_file_older_than() {
   # Return true (needs regeneration) if either argument is missing/empty
   if [[ -z "${1:-}" || -z "${2:-}" ]]; then return 0; fi
-  local target="${1:A}"
-  local source="${2:A}"
+  local target source
+  _resolve_absolute_path target "${1}"
+  _resolve_absolute_path source "${2}"
   if ! is_file "${target}" || [[ "${source}" -nt "${target}" ]]; then
     return 0
   else
@@ -1313,12 +1514,69 @@ is_git_repo() {
   fi
 }
 
+# Recompiles a zsh script file to bytecode (.zwc) if the source is newer than the compiled form.
+# Used by .zlogin for bulk recompilation, by .zshrc when regenerating cache files, and by
+# load_file_if_exists below (defined here, before its caller, so a top-to-bottom reader
+# sees the dependency before its use).
+# Resolves symlinks explicitly so the .zwc is written next to the symlink, not the target.
+# Handles cleanup of stale .zwc.old files left by failed zrecompile runs.
+# Usage: recompile_zsh_script <file-path>
+recompile_zsh_script() {
+  local file="${1:-}"
+  # Return early if no file path provided (defensive under set -u)
+  if is_zero_string "${file}"; then
+    return 0
+  fi
+  # Prevent operations on paths in root directory
+  # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
+  if is_root_dir "${file%/*}"; then
+    warn "Refusing to recompile file in root directory: '$(cyan "${file}")'"
+    return 1
+  fi
+  # Resolve symlinks explicitly: is_file_older_than handles this internally, but we need
+  # the real path here for the is_non_empty_file check and because the .zwc file lives
+  # next to the symlink (${file}.zwc), not next to the target file.
+  local real
+  _resolve_absolute_path real "${file}"
+  if is_non_empty_file "${real}" && is_file_older_than "${file}.zwc" "${real}"; then
+    debug "recompiling '${file}'"
+    # zrecompile is only autoloaded by .zshrc (interactive shells). Any caller
+    # that reaches this point without .zshrc having run yet (cron jobs,
+    # scripts, load_file_if_exists's safeguard from a non-interactive context)
+    # would otherwise call an undefined function, silently swallowed by the
+    # '|| true' below -- recompilation would appear to succeed (exit 0) but
+    # never actually write a fresh .zwc. autoload -Uz is idempotent and cheap
+    # (no fork) -- safe to call unconditionally every time. Guarded on
+    # is_zsh since .shellrc must remain bash-parseable for direnv's bash
+    # subshell, and autoload is a zsh-only builtin.
+    if is_zsh; then
+      autoload -Uz zrecompile
+    fi
+    # Remove any stale .zwc.old left by a previously failed zrecompile run before
+    # attempting recompilation. zrecompile writes .zwc files read-only; if zcompile
+    # fails mid-write the .zwc.old backup is left behind -- clean it up unconditionally.
+    rm -f "${file}.zwc.old" || true
+    zrecompile -pq "${file}" &>/dev/null || true
+    # Remove .zwc.old again in case this run moved the old file there before failing.
+    rm -f "${file}.zwc.old" || true
+  fi
+}
+
 # Sources $1 if it is a non-empty path pointing to a regular file; warns otherwise.
 load_file_if_exists() {
   if is_file "${1:-}"; then
-    # || true catches source failures from external files that may contain
-    # standalone && chains or other constructs that return non-zero in normal
-    # operation (e.g., completion scripts). Logs a warning but continues.
+    # Keep the .zwc bytecode cache in sync before sourcing. Cheap (a couple of
+    # stat calls via recompile_zsh_script's is_file_older_than check, no fork;
+    # measured at ~0.05ms) and only actually recompiles when stale. This is a
+    # safeguard for contexts that never go through .zlogin's bulk recompile
+    # pass (cron jobs, scripts, direnv's bash subshell -- anything sourcing
+    # .shellrc/.aliases/etc directly outside a login shell) -- without it,
+    # such contexts would never pick up the compiled-bytecode form, forever.
+    recompile_zsh_script "${1:-}"
+    # || warn (not a hard failure) catches source failures from external files
+    # that may contain standalone && chains or other constructs that return
+    # non-zero in normal operation (e.g., completion scripts). Logs a warning
+    # but continues.
     source "${1:-}" || warn "Failed to source file: '$(cyan "${1:-}")' - continuing anyway"
   fi
 }
@@ -1427,14 +1685,31 @@ has_sudo_credentials() {
 # Append helpers: each adds $1 to the named variable only if $1 is an
 # existing directory. No-op if the directory does not exist. Safe to call
 # multiple times -- the underlying path arrays deduplicate in zsh.
+#
+# Zsh's 'path'/'fpath' are special arrays automatically tied to the $PATH/
+# $FPATH scalar strings. Bash has no such tying -- 'path+=...'/'fpath+=...'
+# under bash would silently create an unrelated ordinary variable named
+# 'path'/'fpath', never touching $PATH/$FPATH at all (confirmed empirically;
+# no error, just silently wrong -- the same class of bug as ${var:A} above).
 append_to_path_if_dir_exists() {
   if is_non_zero_string "${1:-}" && is_directory "${1:-}"; then
-    path+="${1:-}"
+    if is_zsh; then
+      path+="${1:-}"
+    else
+      # Bash: manipulate $PATH directly, with the same dedup guarantee zsh's
+      # tied array gives for free.
+      case ":${PATH}:" in
+        *":${1}:"*) ;; # already present -- no-op
+        *) PATH="${PATH}:${1}" ;;
+      esac
+    fi
   fi
 }
 
+# Bash has no FPATH/function-autoloading concept at all (that's a zsh-only
+# feature), so this is an intentional no-op under bash, not an oversight.
 append_to_fpath_if_dir_exists() {
-  if is_non_zero_string "${1:-}" && is_directory "${1:-}"; then
+  if is_non_zero_string "${1:-}" && is_directory "${1:-}" && is_zsh; then
     fpath+="${1:-}"
   fi
 }
@@ -1484,7 +1759,8 @@ migrate_git_repo_to_reftable() {
 # operation completes. Always updates submodules afterwards.
 # Usage: clone_repo_into <repo-url> <target-folder> [branch]
 clone_repo_into() {
-  local start_time=${EPOCHSECONDS}  # $EPOCHSECONDS from zsh/datetime -- no $(date +%s) fork
+  local start_time
+  _epoch_seconds start_time  # zsh: $EPOCHSECONDS (no fork); bash: 'date +%s' fork
   local target_folder="${2:-}"
   ensure_dir_exists "${target_folder}"
   if ! is_git_repo "${target_folder}"; then
@@ -1632,7 +1908,8 @@ clone_repo_into() {
   # Uses the 'siu' git alias (not a bare 'submodule update') for 'with-retry' hang protection --
   # a stalled fetch inside any submodule would otherwise hang this function indefinitely.
   git -C "${target_folder}" siu
-  local end_time=${EPOCHSECONDS}  # no $(date +%s) fork
+  local end_time
+  _epoch_seconds end_time
   local duration=$((end_time - start_time))
   debug "Process took ${duration} seconds"
 }
@@ -1774,39 +2051,6 @@ load_zsh_configs() {
     debug "load_zsh_configs: loading '$(cyan "${ZDOTDIR}/${file}")'"
     load_file_if_exists "${ZDOTDIR}/${file}"
   done
-}
-
-# Recompiles a zsh script file to bytecode (.zwc) if the source is newer than the compiled form.
-# Used by .zlogin for bulk recompilation and by .zshrc when regenerating cache files.
-# Resolves symlinks explicitly so the .zwc is written next to the symlink, not the target.
-# Handles cleanup of stale .zwc.old files left by failed zrecompile runs.
-# Usage: recompile_zsh_script <file-path>
-recompile_zsh_script() {
-  local file="${1:-}"
-  # Return early if no file path provided (defensive under set -u)
-  if is_zero_string "${file}"; then
-    return 0
-  fi
-  # Prevent operations on paths in root directory
-  # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
-  if is_root_dir "${file%/*}"; then
-    warn "Refusing to recompile file in root directory: '$(cyan "${file}")'"
-    return 1
-  fi
-  # Resolve symlinks explicitly: is_file_older_than handles this internally, but we need
-  # the real path here for the is_non_empty_file check and because the .zwc file lives
-  # next to the symlink (${file}.zwc), not next to the target file.
-  local real="${file:A}"
-  if is_non_empty_file "${real}" && is_file_older_than "${file}.zwc" "${real}"; then
-    debug "recompiling '${file}'"
-    # Remove any stale .zwc.old left by a previously failed zrecompile run before
-    # attempting recompilation. zrecompile writes .zwc files read-only; if zcompile
-    # fails mid-write the .zwc.old backup is left behind -- clean it up unconditionally.
-    rm -f "${file}.zwc.old" || true
-    zrecompile -pq "${file}" &>/dev/null || true
-    # Remove .zwc.old again in case this run moved the old file there before failing.
-    rm -f "${file}.zwc.old" || true
-  fi
 }
 
 # Prints a standardized usage message and exits.

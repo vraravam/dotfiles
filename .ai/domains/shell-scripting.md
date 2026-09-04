@@ -1358,6 +1358,15 @@ failures from external files (e.g., Homebrew completion scripts) without trigger
 ERR traps. This is safe because external files may contain `&&` chains or other
 constructs that return non-zero in normal operation.
 
+**Note:** `load_file_if_exists` also calls `recompile_zsh_script` on the target
+file before sourcing it, keeping its `.zwc` bytecode cache in sync in every
+context that uses it -- not just interactive shells covered by `.zlogin`'s bulk
+recompile pass (cron jobs, scripts, direnv's bash subshell all benefit too).
+Overhead is negligible: a couple of stat calls (no fork), and it only actually
+recompiles when the source is newer than the existing `.zwc`. `recompile_zsh_script`
+guards its `autoload -Uz zrecompile` call behind `is_zsh` since `.shellrc` (where
+both functions live) must remain bash-parseable for direnv's bash subshell.
+
 ## Array Operations
 
 ```zsh
@@ -1521,10 +1530,14 @@ _remove_loose_files
 ## `is_zsh` guards are for parse-time zsh-only syntax only
 
 Do not wrap a function definition in `if is_zsh; then` unless its body contains
-syntax that bash **cannot parse** (e.g. `${(j.:.)array}`, `(( $+functions[...] ))`).
-Runtime-only zsh constructs (`setopt`, `autoload`) inside functions that bash
-never calls do not need a guard -- bash defines the function but never invokes it,
-so the runtime failure never occurs.
+syntax that bash **cannot parse**. Runtime-only zsh constructs (`setopt`,
+`autoload`, `${(j.:.)array}`, `(( $+functions[...] ))`, `${+var}`, `${(P)var}`,
+negative array indices) inside functions that bash never calls do not need a
+guard -- bash defines the function but never invokes it, so the runtime failure
+never occurs. See § Bash Compatibility Gotchas Discovered in `.shellrc` below
+for the full catalog of constructs, split by parse-time vs runtime-only, plus
+a third category that is far more dangerous than either: constructs that parse
+AND run under bash but silently produce the *wrong result* with no error at all.
 
 ```zsh
 # BAD -- setopt is runtime-only; bash can parse this function definition fine.
@@ -1543,12 +1556,97 @@ _my_helper() {
   rm -f "${dir}"/*.plist
 }
 
-# Good -- guard IS needed: ${(j.:.)array} is zsh-only syntax that bash cannot
-# parse at all, causing a syntax error when the file is loaded
+# BAD -- ${(j.:.)array} is NOT a parse-time failure (confirmed empirically:
+# 'bash -n' accepts this fine) -- it only fails with 'bad substitution' if
+# actually *evaluated*. A guard is still correct here, but for the runtime
+# reason, not a parse-time one.
 if is_zsh; then
   export RUBYLIB="${(j.:.)rubylib_paths}"
 fi
+
+# Good -- guard IS needed for a genuine parse-time reason: '-v "arr[key]"'
+# breaks bash's own '[[ ]]' conditional-expression parser, not just its
+# runtime evaluator. Confirmed empirically: even wrapping it in
+# 'if is_zsh; then ... fi', or moving it into a separate function that bash
+# never calls, does not help -- bash must still tokenize a function's body to
+# find its closing brace when *defining* it, so a parse-time error inside an
+# unreached branch still breaks sourcing the whole file. The only fix is to
+# avoid the construct in files bash may source at all (see the '-v' entry in
+# § Bash Compatibility Gotchas below for the actual portable replacement used
+# in this codebase).
+if is_zsh; then
+  if [[ ! -v "_SOME_ARRAY[${key}]" ]]; then
+    echo "not cached"
+  fi
+fi
 ```
+
+## Bash Compatibility Gotchas Discovered in `.shellrc`
+
+`.shellrc` must remain not just bash-*parseable* but bash-*functionally
+correct*, since direnv sources it in a bash subshell (see `path-constants.md`
+and the `.envrc` rules below) and scripts are free to `source ~/.shellrc`
+directly from bash. A systematic audit of every zsh-specific construct in
+`.shellrc` surfaced three distinct failure classes, ordered from most to least
+dangerous:
+
+### Class 1: Silently wrong, no error at all (most dangerous)
+
+These constructs neither fail to parse nor throw a runtime error under bash --
+they just quietly compute the wrong answer, which is why they went unnoticed
+for a long time. **Always add an explicit regression test comparing output
+across both shells when touching code in this class.**
+
+| Construct | Bash behavior | Fix used in `.shellrc` |
+|---|---|---|
+| `${var:A}` (zsh absolute-path resolution) | Bash parses `:A` as substring-offset arithmetic; an undefined identifier like `A` evaluates to `0` in arithmetic context, so `${var:A}` == `${var:0}` == the original string, completely unresolved -- no symlink following, no absolute-path conversion, no error | `_resolve_absolute_path <varname> <path>` helper: zsh branch uses `${path:A}` directly (zero-fork); bash branch is a `readlink`-loop + `cd ... && pwd -P` (no dependency on GNU `readlink -f`/`realpath`, neither of which macOS ships by default) |
+| `path+=...` / `fpath+=...` (zsh's `$PATH`/`$FPATH`-tied special arrays) | Bash has no such tying -- `path`/`fpath` are just ordinary, unrelated variables there. `path+="/foo"` silently creates/appends to a scalar named `path`, never touching `$PATH` at all | `append_to_path_if_dir_exists`: bash branch manipulates `$PATH` directly with an idempotent `case` dedup check. `append_to_fpath_if_dir_exists` is a documented **intentional no-op** under bash -- bash has no `$FPATH`/function-autoloading concept at all, so there is nothing meaningful to fall back to |
+| `$EPOCHSECONDS` / `strftime` (zsh's `zsh/datetime` module) | Both are simply undefined under bash -- `${EPOCHSECONDS}` expands to an empty string (no error), and bare `strftime` is "command not found" (but only surfaces if stderr isn't redirected) | `_epoch_seconds <varname>` (zsh: `$EPOCHSECONDS`, zero-fork; bash: forks `date +%s`) and `_strftime <varname> <format> <epoch>` (zsh: `strftime -s`; bash: BSD `date -j -f '%s'`, since this codebase is macOS-only) |
+
+### Class 2: Parses under bash, fails only at runtime (safe to guard with `is_zsh`)
+
+These constructs are real bash tokens that bash's parser accepts without
+complaint -- the failure only happens if the branch is actually *executed*.
+A plain `if is_zsh; then ... fi` (or `... else <bash fallback> fi`) is the
+correct and sufficient fix.
+
+| Construct | Runtime failure under bash | Confirmed via |
+|---|---|---|
+| `${+var}` / `${+arr[key]}` (zsh "is-set" flag) | `bad substitution` | `bash -c '(( ! ${+arr[0]} ))'` |
+| `${(P)1}` / `${(@P)name}` (indirect parameter/array-by-name expansion) | `bad substitution` | `bash -c 'echo ${#${(P)1}[@]}'` called with an array name |
+| `${(j:...:)array}` / `${(j.:.)array}` (array join) | `bad substitution` | `bash -c 'x="${(j:; :)arr}"'` |
+| `arr[-1]` (negative array index) | `bad array subscript` | bash added negative indices in 4.3+; macOS's default `/bin/bash` is 3.2 |
+| `${(@)arr[1,-2]}` (zsh array slice) | `bad substitution` | same reasoning as negative indices above |
+| `typeset -A` / `typeset -gT` (associative arrays / scalar-array ties) | `typeset: -A: invalid option` | bash 3.2 predates both (added in bash 4.0/4.2 respectively); no guaranteed Homebrew bash in `PATH` either |
+
+### Class 3: Fails to parse under bash -- breaks the entire file (most obviously dangerous, but not fixable with `is_zsh`)
+
+Only one construct in `.shellrc` fell into this class, but it's the one that
+matters most to recognize, because the usual `is_zsh` guard **does not help**:
+
+| Construct | Why `is_zsh` doesn't help |
+|---|---|
+| `[[ -v "arr[key]" ]]` (associative-array key-existence test) | Confirmed empirically (see § `is_zsh` guards are for parse-time zsh-only syntax only above): bash's own `[[ ]]` parser rejects this token sequence at *definition* time, before any runtime guard is ever consulted. Even isolating it into a helper function that is only ever called from an `is_zsh`-guarded call site still breaks sourcing, because bash must fully tokenize a function's body (to find its closing brace) the moment it *defines* the function, not when it's called |
+
+The fix used in `.shellrc`'s `_log_indent`: replace `[[ ! -v "arr[key]" ]]` with
+`[[ -z "${arr[key]:-}" ]]` (emptiness check instead of existence check). This
+is not a universal drop-in replacement -- it changes behavior for keys whose
+legitimate value IS an empty string (they will be needlessly recomputed every
+call instead of using the cached empty value) -- but for `_log_indent`'s cache
+specifically, an empty string is only ever the depth-1 value, where
+recomputation is a single trivial `printf` call, so the correctness/performance
+tradeoff is negligible.
+
+**General principle when auditing zsh-only syntax for bash compatibility**:
+1. Check with `bash -n <file>` first -- Class 3 constructs abort the *entire
+   file*, so fix these before anything else.
+2. For everything that parses, actually **execute** the code path under bash
+   (not just `bash -n`) -- Class 1 constructs produce no diagnostic of any
+   kind, so a clean `bash -n` and even a clean run with no visible errors does
+   not mean the output is correct. Compare actual output between `zsh -c` and
+   `bash -c` invocations of the same function call.
+3. Only Class 2 constructs are safe to fix with a bare `if is_zsh; then ... fi`
+   guard around the existing zsh code, optionally with an `else` bash fallback.
 
 ## `.envrc` Special Rules
 

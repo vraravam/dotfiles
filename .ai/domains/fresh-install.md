@@ -160,6 +160,30 @@ print a `success` message. If `info` is not yet defined (pre-source), use `echo`
 
 Add comment about retry behavior in error scenarios.
 
+## `load_file_if_exists` / `recompile_zsh_script` Safety Before Homebrew Is Installed
+
+`load_file_if_exists` calls `recompile_zsh_script` on its target file before
+sourcing it (see `shell-scripting.md` § `source` vs `load_file_if_exists`).
+This is safe to call anywhere in `fresh-install-of-osx.sh`, including points
+where Homebrew has not been installed yet (e.g. the `load_zsh_configs` +
+`load_file_if_exists "${ZDOTDIR}/.aliases"` call that runs right after
+`install-dotfiles.rb` but before `_install_homebrew`):
+
+- `recompile_zsh_script` only uses `autoload`/`zrecompile`, both zsh shell
+  builtins with no dependency on Homebrew or any installed binary.
+- `recompile_zsh_script` and `load_file_if_exists` always exit `0` regardless
+  of whether recompilation happened (the `if` construct and the `|| true` /
+  `|| warn` patterns guarantee this), so neither can trigger the script's
+  `set -euo pipefail` + ERR trap.
+- Verified empirically: sourcing a file via `load_file_if_exists` with its
+  `.zwc` completely absent (the true vanilla-OS first-run state, before
+  anything has ever been compiled) under `set -euo pipefail` with an active
+  ERR trap does not fire the trap, and correctly writes a fresh `.zwc` from
+  scratch.
+- The very first `.shellrc` sourcing in `_download_and_source_shellrc` uses a
+  plain `source "${HOME}/.shellrc"`, not `load_file_if_exists` -- it is
+  unaffected by any of this regardless.
+
 ## `install_homebrew`
 
 The logic for installing brew for first-time vs updating must not be duplicated.
