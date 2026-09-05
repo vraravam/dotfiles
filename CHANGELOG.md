@@ -4,6 +4,29 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.43
+
+#### Document and apply additional Ruby/shell performance optimization patterns
+
+* *[.ai/domains/ruby-scripting.md]* Added four new optimization patterns: Loop-Invariant Hoisting (compute once before a loop, not per-iteration), Set vs Array for `.include?` membership checks (O(1) vs O(n)), Enumerable Chains (`.select{}.any?`/`.sort.first` -> `.any?{}`/`.min`, avoiding intermediate collection allocation), and Early-Exit Before Expensive Computation (cheap guard before expensive work).
+* *[scripts/utilities/git_workspace.rb]* Hoisted `search_roots` out of a nested loop in `find_git_repos` and converted it to a `Set`; `.sub` -> `.delete_prefix` in `regenerate_repo_aliases`.
+* *[scripts/resurrect-repositories.rb]* Hoisted Regexp compilation out of `_apply_filter`'s per-repo loop; extracted the env-var reverse-lookup order to a frozen constant.
+* *[scripts/utilities/git_processor.rb]* Regex-based suffix strip -> `.delete_suffix` in `remote_repo_name`.
+* *[scripts/utilities/colorizable.rb]* `.gsub` -> `.sub` in `replace_home_path_with_tilde` (runs on nearly every logged path).
+* *[scripts/install-dotfiles.rb]* `.gsub` -> `.sub` for the `custom.git*` filename transform (runs once per file in the `files/` tree walk).
+* *[scripts/cleanup-browser-profiles.rb]* Hoisted the two cleanup-pattern file reads out of the per-browser-profile loop.
+* *[scripts/utilities/logging.rb]* `emit` now checks `LOG_FILE` presence before its log-level regex detection and ANSI-stripping, which were previously computed unconditionally on every log call.
+* *[files/--HOME--/.shellrc]* `_resolve_absolute_path`'s bash-fallback branch: 3 `dirname`/`basename` forks replaced with `${p%/*}`/`${p##*/}`; `_call_ruby_cron`'s loop variable `arg` declared `local`.
+* *[files/--ZDOTDIR--/.aliases]* Declared `local` for 3 previously-leaking for-loop variables: `arg` in `parse_folder_and_switches` and `_call_ruby_git_workspace`, `f` in `implode`.
+
+Found via a full audit of all Ruby/shell scripts across `${DOTFILES_DIR}`, `${PERSONAL_BIN_DIR}`, and `${PERSONAL_CONFIGS_DIR}`; all fixes are behavior-preserving (verified with rubocop/reek, `bash -n`/`zsh -n`, and functional smoke-tests).
+
+#### Adopting these changes
+
+* Restart terminal (or run `unfunction is_shellrc_sourced; load_file_if_exists ~/.shellrc` and `unfunction is_aliases_sourced; load_file_if_exists ${ZDOTDIR}/.aliases`) to pick up the `.shellrc`/`.aliases` fixes in existing sessions.
+
+---
+
 ### 3.2.42
 
 #### Add git bundle export/import support to resurrect-repositories.rb

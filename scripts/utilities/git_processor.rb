@@ -249,7 +249,7 @@ class GitProcessor
     return @_remote_repo_names[name] if @_remote_repo_names.key?(name)
 
     url = remote_url(name: name)
-    @_remote_repo_names[name] = nil_or_empty?(url) ? nil : url.sub(/#{Regexp.escape(URL_PATH_SEPARATOR)}\z/, '').split(URL_PATH_SEPARATOR).last
+    @_remote_repo_names[name] = nil_or_empty?(url) ? nil : url.delete_suffix(URL_PATH_SEPARATOR).split(URL_PATH_SEPARATOR).last
   end
 
   # Constructs an upstream remote URL by parsing the origin URL and substituting the owner.

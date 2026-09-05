@@ -59,6 +59,9 @@ module ResurrectRepositories
   OTHER_REMOTES_KEY_NAME = 'other_remotes' # Key name for additional remotes
   POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
   BUNDLE_KEY_NAME = 'bundle' # Key name for an optional local git bundle file
+  # Preference order for reverse env-var substitution in _find_and_reverse_replace_env_var
+  # (most specific/deepest path first -- see that method's docs for why order matters).
+  ENV_VAR_REVERSE_LOOKUP_ORDER = %w[PROJECTS_BASE_DIR XDG_CONFIG_HOME XDG_DATA_HOME HOME].freeze
 
   # Repository configuration object with validation
   class RepositoryConfig
@@ -144,10 +147,10 @@ module ResurrectRepositories
 
     # Returns true if this repository should be processed based on filter
     #
-    # @param filter [String, nil] Regex filter to match against folder path
+    # @param filter_re [Regexp, nil] Pre-compiled case-insensitive regex to match against folder path
     # @return [Boolean]
-    def matches_filter?(filter)
-      nil_or_empty?(filter) || @folder.match?(/#{filter}/i)
+    def matches_filter?(filter_re)
+      nil_or_empty?(filter_re) || @folder.match?(filter_re)
     end
 
     # Converts back to hash for YAML generation
@@ -353,8 +356,7 @@ module ResurrectRepositories
     # NOTE: List order matters -- more specific (deeper) paths must come before their parents.
     # e.g. PROJECTS_BASE_DIR (a sub-path of HOME) must precede HOME; otherwise HOME would
     # match first and leave the PROJECTS_BASE_DIR-specific portion unexpanded.
-    env_vars = %w[PROJECTS_BASE_DIR XDG_CONFIG_HOME XDG_DATA_HOME HOME]
-    env_vars.each do |env_var|
+    ENV_VAR_REVERSE_LOOKUP_ORDER.each do |env_var|
       value = ENV.fetch(env_var, nil)
       next if nil_or_empty?(value)
       return dir.sub(value, "${#{env_var}}").strip if dir.start_with?(value)
@@ -421,15 +423,19 @@ module ResurrectRepositories
   def _apply_filter(repos, filter)
     return repos if nil_or_empty?(filter)
 
+    # Compile once here rather than once per repo_item -- avoids recompiling the same
+    # Regexp on every element of repos.select (see ruby-scripting.md's hot-path guidance).
+    filter_re = Regexp.new(filter, Regexp::IGNORECASE)
+
     repos.select do |repo_item|
       case repo_item
       when String
-        repo_item.match?(/#{filter}/i)
+        repo_item.match?(filter_re)
       when RepositoryConfig
-        repo_item.matches_filter?(filter)
+        repo_item.matches_filter?(filter_re)
       when Hash
         path = repo_item[FOLDER_KEY_NAME]
-        !nil_or_empty?(path) && path.match?(/#{filter}/i)
+        !nil_or_empty?(path) && path.match?(filter_re)
       else
         false
       end

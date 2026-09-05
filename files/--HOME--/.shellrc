@@ -1299,12 +1299,14 @@ _resolve_absolute_path() {
       if [[ "${link}" == /* ]]; then
         p="${link}"
       else
-        p="$(dirname "${p}")/${link}"
+        # Bash-compatible parent-dir extraction (no dirname fork) -- this file must
+        # remain bash-parseable since direnv sources it in a bash subshell.
+        p="${p%/*}/${link}"
       fi
     done
     local dir base
-    dir="$(cd "$(dirname "${p}")" 2>/dev/null && pwd -P)"
-    base="$(basename "${p}")"
+    dir="$(cd "${p%/*}" 2>/dev/null && pwd -P)"
+    base="${p##*/}"
     if [[ -n "${dir}" ]]; then
       eval "${_varname}=\"\${dir}/\${base}\""
     else
@@ -1995,6 +1997,7 @@ _call_ruby_cron() {
   if [[ $# -gt 0 ]]; then
     # Build comma-separated list of single-quoted Ruby string literals.
     local -a args_parts=()
+    local arg
     for arg in "$@"; do
       args_parts+=("'${arg}'")
     done

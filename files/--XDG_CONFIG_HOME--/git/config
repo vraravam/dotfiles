@@ -853,6 +853,12 @@
   # Usage: git pullsub
   pullsub = sf "git unshallow && git with-retry 60 3 /dev/null .git/objects git pull"
 
+  # Safer alternative to 'push --force': aborts if the remote moved since our last fetch,
+  # instead of blindly overwriting it. push.useForceIfIncludes = true (set above) also
+  # applies automatically here, without needing to repeat --force-if-includes.
+  # Usage: git pushf
+  pushf = push --force-with-lease
+
   # Pushes current branch with submodules.
   # Usage: git pushsub
   pushsub = push --recurse-submodules=on-demand
@@ -1082,6 +1088,11 @@
   default = upstream
   followTags = true
   recurseSubmodules = check
+  # Only affects --force-with-lease pushes (no effect on plain --force): also verifies
+  # via reflog that the remote-tracking tip is an ancestor of what's being pushed, not
+  # just that the remote currently matches it. See git-config.md for the caveat around
+  # gc.reflogexpire aging out the reflog history this check depends on.
+  useForceIfIncludes = true
 [rebase]
   abbreviateCommands = true
   autoSquash = true

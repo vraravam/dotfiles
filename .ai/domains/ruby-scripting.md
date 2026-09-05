@@ -40,6 +40,10 @@ Apply these rules when writing or editing any Ruby script in this repository.
 | Color methods | `string.to_s.cyan` (NOT on Pathname) | [§ String Colors](#string-colors) |
 | Script depth | `Logging.increment_script_depth` | [§ Script Depth Tracking](./script-depth-tracking.md) |
 | Memoization | `@_var ||= expensive_operation` | [§ Memoization](#memoization) |
+| Loop-invariant work | Compute once before the loop | [§ Loop-Invariant Hoisting](#loop-invariant-hoisting----move-unchanging-work-outside-loops) |
+| Repeated `.include?` checks | `Set.new(arr)` instead of `Array` | [§ Set vs Array](#set-vs-array----membership-checks) |
+| `.select{}.any?`/`.sort.first` | `.any?{}`/`.min` (no intermediate collection) | [§ Enumerable Chains](#enumerable-chains----avoid-intermediate-collection-allocation) |
+| Guard before expensive work | Cheap check first, expensive work after | [§ Early-Exit](#early-exit-before-expensive-computation) |
 
 ## File Naming Convention
 
@@ -3504,6 +3508,241 @@ repos.each do |dir|
   alias_name = dir.tr(File::SEPARATOR, '-')  # 3x faster than gsub
 end
 ```
+
+## Loop-Invariant Hoisting -- Move Unchanging Work Outside Loops
+
+**If a computation's result does not change across loop iterations, compute it once before the loop, not on every iteration.**
+
+This is distinct from [Memoization](#memoization) (which caches a result across multiple *method calls* using `@_var ||=`) and from [Hot Path Optimization -- Frozen Constants](#hot-path-optimization----frozen-constants) (which hoists *static* literals to the class/module level once for the process lifetime). Loop-invariant hoisting is about a single method call: work that depends only on values already known before the loop starts must not be repeated inside it.
+
+### Pattern: Hoist Regexp Compilation
+
+`Regexp.new(str)` and `/#{str}/` (interpolated regex literals) compile a new `Regexp` object every time they execute. A regex literal with **no** interpolation is compiled once by the Ruby VM and reused automatically -- but an **interpolated** pattern (`/#{filter}/i` or `Regexp.new(filter)`) is recompiled on every evaluation, since the VM cannot know the interpolated value is unchanged.
+
+```ruby
+# BAD -- recompiles the same Regexp on every element of repos.select
+def _apply_filter(repos, filter)
+  return repos if nil_or_empty?(filter)
+
+  repos.select { |repo_item| repo_item.match?(/#{filter}/i) }
+end
+
+# Good -- compiled once, reused for every element
+def _apply_filter(repos, filter)
+  return repos if nil_or_empty?(filter)
+
+  filter_re = Regexp.new(filter, Regexp::IGNORECASE)
+  repos.select { |repo_item| repo_item.match?(filter_re) }
+end
+```
+
+`scripts/utilities/collection_processor.rb` already demonstrates this correctly (regex compiled once before `Find.find`'s traversal block). `scripts/resurrect-repositories.rb`'s `_apply_filter` was fixed to match this pattern.
+
+### Pattern: Hoist File I/O
+
+Reading the same file inside a loop that iterates over *other* items (not the file itself) re-reads unchanged content from disk on every iteration.
+
+```ruby
+# BAD -- re-reads the same two pattern files from disk once per browser profile
+def run
+  browser_profiles.each do |browser_name, profile_dir|
+    _vacuum_browser_profile_dir(browser_name, profile_dir, dry_run: dry_run)
+  end
+end
+
+def _vacuum_browser_profile_dir(browser_name, profile_dir, dry_run:)
+  file_patterns = _read_pattern_file(FILES_PATTERN_PATH)  # same file, every call
+  dir_patterns = _read_pattern_file(DIRS_PATTERN_PATH)    # same file, every call
+  # ...
+end
+
+# Good -- read once, pass down to each iteration
+def run
+  file_patterns = _read_pattern_file(FILES_PATTERN_PATH)
+  dir_patterns = _read_pattern_file(DIRS_PATTERN_PATH)
+
+  browser_profiles.each do |browser_name, profile_dir|
+    _vacuum_browser_profile_dir(browser_name, profile_dir, file_patterns: file_patterns, dir_patterns: dir_patterns, dry_run: dry_run)
+  end
+end
+```
+
+### Pattern: Hoist Derived-Value Computation
+
+A value derived from a loop's own invariant inputs (not the current item) must not be recomputed per-item.
+
+```ruby
+# BAD -- search_roots depends only on 'dirs' (invariant for the whole call), but is
+# rebuilt on every iteration of the inner while loop, for every repo in repos.reject
+repos.reject do |repo|
+  parent = File.dirname(repo)
+  while parent != Core::ROOT.to_s
+    search_roots = Array(dirs).map { |d| File.expand_path(d.to_s) }
+    break if search_roots.include?(parent)
+    # ...
+  end
+end
+
+# Good -- computed once, before the outer repos.reject even starts
+search_roots = Set.new(Array(dirs).map { |d| File.expand_path(d.to_s) })
+repos.reject do |repo|
+  parent = File.dirname(repo)
+  while parent != Core::ROOT.to_s
+    break if search_roots.include?(parent)
+    # ...
+  end
+end
+```
+
+(This example also applies [Set vs Array -- Membership Checks](#set-vs-array----membership-checks) below.)
+
+### Scan Rule
+
+When reviewing a method containing a loop (`each`, `while`, `map`, `select`, nested iteration, etc.), check every line inside the loop body:
+1. Does this line's result depend only on values that are the same across all iterations (method parameters, ivars, constants -- not the loop variable)?
+2. If yes, move it above the loop.
+3. Does it involve `Regexp.new`/interpolated regex, `File.read`/`Core.read_lines_utf8`, or a `.map`/`.select` building a lookup collection? These are the highest-value hoisting targets since they involve real compilation/I/O/allocation cost, not just cheap arithmetic.
+
+## Set vs Array -- Membership Checks
+
+**`Array#include?` is O(n) (linear scan); `Set#include?` is O(1) average (hash lookup).** When a collection is checked repeatedly with `.include?` -- especially inside a loop, or built once and queried many times -- use `Set` instead of `Array`.
+
+```ruby
+# BAD -- Array#include? scans the whole array on every call
+require 'set' # not required if only using Array
+
+search_roots = Array(dirs).map { |d| File.expand_path(d.to_s) }
+repos.each do |repo|
+  next if search_roots.include?(File.dirname(repo)) # O(n) per check
+end
+
+# Good -- Set#include? is O(1) average
+require 'set'
+
+search_roots = Set.new(Array(dirs).map { |d| File.expand_path(d.to_s) })
+repos.each do |repo|
+  next if search_roots.include?(File.dirname(repo)) # O(1) per check
+end
+```
+
+### When to Convert
+
+Convert an `Array` to a `Set` when **both** are true:
+- The collection is checked with `.include?` **more than once** (a single check has no benefit -- `Set.new` itself is an O(n) allocation, so converting for a single lookup is strictly worse).
+- The collection has enough elements, or is checked often enough, that the O(n) vs O(1) difference is measurable (a handful of elements checked a handful of times is not worth the conversion -- see "When NOT to Convert" below).
+
+### When NOT to Convert
+
+Do NOT convert to `Set` when:
+- The array is small (roughly under 10-20 elements) and checked infrequently (a few times per script run) -- e.g. a frozen constant like `MacOS::LOGIN_ITEM_APPS` checked once or twice. The `Set.new` allocation cost and the extra `require 'set'` dependency aren't worth it for a scan that's already effectively instant.
+- Order matters and is relied upon elsewhere (`Set` does not guarantee insertion order the way `Array` does, though Ruby's `Set` happens to preserve it in practice -- don't rely on this).
+- The collection is only ever used with `.each`/`.map`, never `.include?`/`.member?` -- `Set` has no advantage there.
+
+### `require 'set'`
+
+`Set` is part of Ruby's standard library but must be explicitly required: `require 'set'` (not `require_relative`). Add it to the stdlib group of requires (see § Sorting and grouping `require` statements), sorted alphabetically alongside `pathname`, `open3`, etc.
+
+## Enumerable Chains -- Avoid Intermediate Collection Allocation
+
+**Chaining `Enumerable` methods where the first method builds a full intermediate array/collection, only for the second method to immediately reduce it to a boolean/count/single-element, wastes an allocation the direct method avoids entirely.**
+
+| Wasteful (builds an intermediate collection) | Direct (no intermediate allocation) |
+|---|---|
+| `arr.select { \|x\| cond }.any?` | `arr.any? { \|x\| cond }` |
+| `arr.select { \|x\| cond }.count` / `.size` / `.length` | `arr.count { \|x\| cond }` |
+| `arr.select { \|x\| cond }.empty?` | `arr.none? { \|x\| cond }` |
+| `arr.select { \|x\| cond }.first` | `arr.find { \|x\| cond }` (aka `.detect`) |
+| `arr.reject { \|x\| cond }.empty?` | `arr.none? { \|x\| !cond }` (or restate `cond` to fit `.all?`) |
+| `arr.map { \|x\| transform }.first` | `arr.find { \|x\| ... }` when really searching, not transforming every element |
+| `arr.sort.first` / `arr.sort_by { \|x\| key }.first` | `arr.min` / `arr.min_by { \|x\| key }` |
+| `arr.sort.last` / `arr.sort_by { \|x\| key }.last` | `arr.max` / `arr.max_by { \|x\| key }` |
+
+```ruby
+# BAD -- allocates a full filtered array just to check if it's non-empty
+if repos.select { |r| r.active? }.any?
+  # ...
+end
+
+# Good -- any? short-circuits on the first match, no array allocated
+if repos.any?(&:active?)
+  # ...
+end
+
+# BAD -- sort is O(n log n) and allocates a fully sorted array, just to grab one element
+oldest = commits.sort_by { |c| c.timestamp }.first
+newest = commits.sort_by { |c| c.timestamp }.last
+
+# Good -- min_by/max_by are O(n), no intermediate array
+oldest = commits.min_by { |c| c.timestamp }
+newest = commits.max_by { |c| c.timestamp }
+```
+
+### Why This Matters
+
+- `.select`/`.reject`/`.sort`/`.sort_by` allocate a brand-new `Array` holding (in the worst case) every element of the original collection.
+- `.any?`/`.all?`/`.none?`/`.count`/`.find` iterate the collection directly and can **short-circuit** (`.any?`/`.find` stop at the first match; `.none?`/`.all?` stop at the first counter-example) -- `.select` cannot short-circuit because it must produce the complete result set.
+- `.min`/`.max`/`.min_by`/`.max_by` are a single O(n) pass; `.sort`/`.sort_by` are O(n log n) and must fully order every element even though only one (the first or last) is kept.
+
+### When NOT to Apply
+
+- If the intermediate collection from `.select`/`.sort` is **also used elsewhere** (not immediately discarded), keep the chain as-is -- there is no waste since the collection isn't thrown away.
+- If the block passed to `.select`/`.sort_by` is itself very cheap and the collection is tiny (a handful of elements, called once), the difference is not worth a less-obvious refactor. Prioritize clarity for one-off, small-N code.
+
+### Scan Rule
+
+Search for `.select`/`.reject`/`.sort`/`.sort_by` immediately followed by `.any?`, `.all?`, `.none?`, `.count`, `.size`, `.length`, `.empty?`, `.first`, or `.last` in the same expression or on the very next line where the intermediate value has no other name/use. Rewrite using the direct combinator from the table above.
+
+## Early-Exit Before Expensive Computation
+
+**When a method does expensive work that is conditionally discarded by a check further down the call chain, move the cheap check to the top of the method so the expensive work is skipped entirely when it isn't needed.**
+
+```ruby
+# BAD -- log_level detection (multi-branch regex case/when) and ANSI-stripping (regex
+# gsub) run on every single log call, even though _write_to_log_file immediately
+# discards both and returns if LOG_FILE isn't set (the common case -- it's opt-in)
+def emit(message, level:)
+  puts "#{_subordinate_indent(level)}#{message}"
+
+  log_level = case message
+              when /\*\*SUCCESS\*\*/ then :success
+              when /\*\*WARN\*\*/ then :warn
+              # ... more branches ...
+              else :info
+              end
+
+  plain_message = _strip_ansi(message)
+  _write_to_log_file(log_level, plain_message)
+end
+
+def _write_to_log_file(level, message)
+  log_file = ENV.fetch('LOG_FILE', nil)
+  return if nil_or_empty?(log_file) # discards all the work above, most of the time
+  # ...
+end
+
+# Good -- cheap ENV check moved to the top; expensive work only runs when it will
+# actually be used
+def emit(message, level:)
+  puts "#{_subordinate_indent(level)}#{message}"
+
+  return if nil_or_empty?(ENV.fetch('LOG_FILE', nil))
+
+  log_level = case message
+              when /\*\*SUCCESS\*\*/ then :success
+              # ...
+              end
+  plain_message = _strip_ansi(message)
+  _write_to_log_file(log_level, plain_message)
+end
+```
+
+### Why Not Just Memoize?
+
+This is not a memoization opportunity (see [Memoization](#memoization) § When NOT to Memoize) -- the check itself (`ENV.fetch('LOG_FILE', nil)`) is already cheap (a single hash lookup). The point is not to avoid re-checking the condition; it's to avoid doing the *expensive* work (regex matching, string building, I/O) that the condition guards, by checking the cheap condition **first** instead of last.
+
+### Scan Rule
+
+When a method does non-trivial work (regex matching across multiple branches, string transformation, file I/O, subprocess calls) unconditionally, then calls another method that immediately discards the result based on a cheap, already-known-early condition (an ENV var, a boolean flag, an early state check) -- move that cheap condition to the top of the calling method as an early `return`/`next`.
 
 ## Common Mistakes (Code Review Findings)
 

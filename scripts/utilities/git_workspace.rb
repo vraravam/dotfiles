@@ -110,12 +110,15 @@ module GitWorkspace
     # the repo and the search root) contains a .git directory.
     # Example: ~/dev/project/.git is found, then ~/dev/project/nested/.git is
     # rejected because ~/dev/project is between ~/dev/project/nested and ~/dev.
+    # search_roots is computed once here (not per-repo, not per-ancestor-level) and
+    # uses a Set for O(1) membership checks instead of Array#include?'s O(n) scan.
+    search_roots = Set.new(Array(dirs).map { |d| File.expand_path(d.to_s) })
+
     repos.reject do |repo|
       parent = File.dirname(repo)
       # Walk up until we hit a search root or find a .git directory
       while parent != Core::ROOT.to_s
         # Check if we've reached any of the search roots - stop here
-        search_roots = Array(dirs).map { |d| File.expand_path(d.to_s) }
         break if search_roots.include?(parent)
 
         # If this ancestor is a git repo, current repo is nested
@@ -327,7 +330,7 @@ module GitWorkspace
 
     cache_file.open('w') do |f|
       sorted_dirs.each do |dir_path|
-        relative = dir_path.sub("#{projects_base}#{File::SEPARATOR}", '')
+        relative = dir_path.delete_prefix("#{projects_base}#{File::SEPARATOR}")
         # Alias name: replace path separator with '-'; value: sets FOLDER for run-all.rb.
         # Use tr instead of gsub for single-character replacement (3x faster).
         alias_name = relative.tr(File::SEPARATOR, '-')
