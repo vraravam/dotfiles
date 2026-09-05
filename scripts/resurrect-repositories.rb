@@ -4,14 +4,27 @@
 
 # file location: ${DOTFILES_DIR}/scripts/resurrect-repositories.rb
 #
-# Generates, resurrects, or verifies a set of known git repositories from a YAML config file.
+# Generates, resurrects, verifies, or exports git bundles for a set of known git
+# repositories from a YAML config file.
 #
 # It assumes the following:
 #   1. Ruby language is present in the system prior to this script being run.
 #
+# Environment variable support:
+#   - FILTER and REF_FOLDER scope which repos are processed / verified against (see -h).
+#   - The YAML config's 'folder' and 'bundle' values support '${VAR}' expansion (eg
+#     "${PROJECTS_BASE_DIR}/oss/foo") via ENV.fetch -- an unset var keeps the literal
+#     placeholder and logs a warning rather than failing. A bare '~' is NOT expanded;
+#     use '${HOME}' instead. 'other_remotes' values are used as-is (no expansion).
+#   - 'post_clone' commands are run through a shell, so normal shell '$VAR'/'${VAR}'
+#     expansion applies there at execution time -- a different mechanism from the above.
+#   - '-g' (generate) does the reverse: absolute paths discovered on disk are rewritten
+#     back to their '${VAR}' placeholder form (checking PROJECTS_BASE_DIR, XDG_CONFIG_HOME,
+#     XDG_DATA_HOME, HOME in that order) so the generated YAML stays portable.
+#
 # Usage:
-#   Standalone: resurrect-repositories.rb [-g <folder>] [-r <config-file>] [-c <config-file>]
-#   Module:     ResurrectRepositories.run(generate: nil, resurrect: nil, check: nil, filter: nil)
+#   Standalone: resurrect-repositories.rb [-g <folder>] [-r <config-file>] [-c <config-file>] [-b <config-file>]
+#   Module:     ResurrectRepositories.run(generate: nil, resurrect: nil, check: nil, bundle_export: nil, filter: nil)
 
 require 'open3'
 require 'pathname'
@@ -31,6 +44,9 @@ require_relative 'utilities/path_utils'
 
 # Module contains the business logic.
 # Returns true/false instead of calling exit().
+# :reek:TooManyConstants -- One constant per YAML key name; grouping them into a
+# single Hash/Struct would obscure the direct correspondence to YAML keys used
+# throughout RepositoryConfig.from_hash/to_h below.
 module ResurrectRepositories
   extend self
   include Core  # For instance methods (in blocks)
@@ -42,10 +58,11 @@ module ResurrectRepositories
   REMOTE_KEY_NAME = 'remote' # Key name for the primary remote
   OTHER_REMOTES_KEY_NAME = 'other_remotes' # Key name for additional remotes
   POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
+  BUNDLE_KEY_NAME = 'bundle' # Key name for an optional local git bundle file
 
   # Repository configuration object with validation
   class RepositoryConfig
-    attr_reader :folder, :remote, :other_remotes, :post_clone
+    attr_reader :folder, :remote, :other_remotes, :post_clone, :bundle
 
     # Creates a new repository configuration from a hash.
     #
@@ -98,19 +115,31 @@ module ResurrectRepositories
         return nil
       end
 
+      # Validate bundle (optional) -- path to a local git bundle file. When present and the
+      # target folder is not yet a git repo, resurrect mode imports from this bundle instead
+      # of cloning from 'remote' over the network; bundle-export mode writes to this path.
+      bundle = hash[BUNDLE_KEY_NAME]
+      if bundle && (!bundle.is_a?(String) || nil_or_empty?(bundle.strip))
+        Logging.record_warning("Repository entry '#{remote}' has invalid 'bundle' (must be a non-empty string)")
+        return nil
+      end
+      expanded_bundle = ResurrectRepositories.expand_env_vars(bundle&.strip)
+
       new(
         folder: expanded_folder,
         remote: remote.strip,
         other_remotes: other_remotes || {},
-        post_clone: post_clone || []
+        post_clone: post_clone || [],
+        bundle: expanded_bundle
       )
     end
 
-    def initialize(folder:, remote:, other_remotes:, post_clone:)
+    def initialize(folder:, remote:, other_remotes:, post_clone:, bundle: nil)
       @folder = folder
       @remote = remote
       @other_remotes = other_remotes
       @post_clone = post_clone
+      @bundle = bundle
     end
 
     # Returns true if this repository should be processed based on filter
@@ -130,7 +159,8 @@ module ResurrectRepositories
         'active' => true,
         REMOTE_KEY_NAME => @remote,
         OTHER_REMOTES_KEY_NAME => nil_or_empty?(@other_remotes) ? nil : @other_remotes,
-        POST_CLONE_KEY_NAME => nil_or_empty?(@post_clone) ? nil : @post_clone
+        POST_CLONE_KEY_NAME => nil_or_empty?(@post_clone) ? nil : @post_clone,
+        BUNDLE_KEY_NAME => @bundle
       }.compact
     end
   end
@@ -140,11 +170,12 @@ module ResurrectRepositories
   # @param generate [String, nil] Directory to scan for repos and generate YAML config
   # @param resurrect [String, nil] Config file to resurrect repos from
   # @param check [String, nil] Config file to verify against disk
+  # @param bundle_export [String, nil] Config file to export git bundles from (for repos with a 'bundle' key)
   # @param filter [String, nil] Regex filter to apply (uses ENV['FILTER'] if nil)
   # @return [Boolean] true on success, false on error
-  def run(generate: nil, resurrect: nil, check: nil, filter: nil)
-    options_count = [generate, resurrect, check].compact.size
-    Logging.error 'Exactly one of generate, resurrect, or check must be specified.' if options_count != 1
+  def run(generate: nil, resurrect: nil, check: nil, bundle_export: nil, filter: nil)
+    options_count = [generate, resurrect, check, bundle_export].compact.size
+    Logging.error 'Exactly one of generate, resurrect, check, or bundle_export must be specified.' if options_count != 1
 
     filter ||= EnvVars.filter
     @has_failures = false
@@ -155,6 +186,8 @@ module ResurrectRepositories
       _run_resurrect(resurrect, filter)
     elsif check
       _run_check(check, filter)
+    elsif bundle_export
+      _run_bundle_export(bundle_export, filter)
     end
 
     !@has_failures
@@ -224,15 +257,77 @@ module ResurrectRepositories
 
   private_class_method :_run_check
 
+  # Run bundle-export mode: create git bundle files for repos that have a 'bundle' key.
+  def _run_bundle_export(config_file, filter)
+    config_file = Pathname.new(config_file).expand_path
+
+    Logging.with_step('bundle export', "Processing '#{config_file.cyan}'") do
+      _log_filter_if_present(filter)
+      repositories = _read_git_repos_from_file(config_file.to_s)
+      repositories = _apply_filter(repositories, filter)
+      repositories = repositories.reject { |repo| nil_or_empty?(repo.bundle) }
+
+      if repositories.empty?
+        Logging.info("No repository entries with a '#{BUNDLE_KEY_NAME}' key found -- nothing to export.")
+        next
+      end
+
+      results = CollectionProcessor.process_items(
+        repositories,
+        item_name_proc: :folder.to_proc,
+        operation_desc: 'Exporting'
+      ) do |repo, _idx, _total|
+        _bundle_export_each(repo)
+      end
+
+      Logging.print_results_summary(results)
+      @has_failures = true if results[:failed].any?
+      @has_failures = true if Logging.warnings? || Logging.errors?
+    end
+  end
+
+  private_class_method :_run_bundle_export
+
+  # Exports a single repository to its configured 'bundle' file.
+  #
+  # @param repo [RepositoryConfig] The repository configuration object (must have a 'bundle' value).
+  # @return [Boolean] true on success, false on error.
+  # :reek:UtilityFunction -- Stateless helper operating on a RepositoryConfig (correct design)
+  def _bundle_export_each(repo)
+    folder = repo.folder
+    dir_colored = folder.cyan
+    bundle_colored = repo.bundle.cyan
+
+    unless GitProcessor.repo?(folder)
+      Logging.record_error("'#{dir_colored}' is not a git repo -- cannot export bundle '#{bundle_colored}'")
+      return false
+    end
+
+    Logging.info("Exporting '#{dir_colored}' to bundle '#{bundle_colored}' (this may take a while for large repos)...")
+    unless GitProcessor.new(dir: folder).bundle_create(file: repo.bundle)
+      Logging.record_error("Failed to export '#{dir_colored}' to bundle '#{bundle_colored}'")
+      return false
+    end
+
+    Logging.success("Successfully exported '#{dir_colored}' to bundle '#{bundle_colored}'")
+    true
+  end
+
+  private_class_method :_bundle_export_each
+
   # Expands environment variables in a string.
   # Handles multiple ${VAR} patterns. If an environment variable is not set,
   # the placeholder ${VAR} is kept and a warning is printed (not accumulated in summary).
   # Public method called by RepositoryConfig.from_hash for validation.
   #
+  # Safe to call with nil (e.g. an optional YAML field that wasn't present) --
+  # returned unchanged, no error. Callers do not need to guard against nil
+  # themselves.
+  #
   # @param dir [Object] The value in which to expand `${VAR}` patterns.
-  #   Non-String values and strings without `${` are returned unchanged.
+  #   nil, other non-String values, and strings without `${` are returned unchanged.
   # @return [Object] The string with all matching `${VAR}` patterns expanded,
-  #   or the original object if it was not a String or did not contain `${...}` patterns.
+  #   or the original object if it was nil, not a String, or did not contain `${...}` patterns.
   def self.expand_env_vars(dir)
     # Early exit if dir is not a string or doesn't contain the pattern
     return dir unless dir.is_a?(String) && dir.include?('${')
@@ -371,6 +466,19 @@ module ResurrectRepositories
 
   private_class_method :_generate_each
 
+  # Returns true if the repo config has a usable bundle file (key present and file
+  # exists on disk). Used by _resurrect_each to decide whether to import from the
+  # bundle instead of cloning from the network.
+  #
+  # @param repo [RepositoryConfig] The repository configuration object.
+  # @return [Boolean]
+  # :reek:FeatureEnvy -- Stateless helper operating on a RepositoryConfig (correct design)
+  def _bundle_available?(repo)
+    !nil_or_empty?(repo.bundle) && Pathname.new(repo.bundle).file?
+  end
+
+  private_class_method :_bundle_available?
+
   # Resurrects a single repository based on its configuration.
   # This involves cloning if it doesn't exist, verifying the clone, ensuring remotes are
   # correctly configured, fetching all data, and running post-clone commands.
@@ -393,11 +501,27 @@ module ResurrectRepositories
 
     PathUtils.ensure_directories_exist(dir)
 
-    # Clone or update the repository using GitProcessor module method
-    unless GitProcessor.clone_repo_into(remote_url, dir)
-      # Clone failure is fatal for this repo -- cannot proceed without a cloned repository
-      Logging.record_error("Failed to clone '#{remote_url.cyan}' into '#{dir_colored}'")
-      return false
+    if !GitProcessor.repo?(dir) && _bundle_available?(repo)
+      # Not yet a git repo, and a usable bundle file is configured -- import from the
+      # bundle instead of cloning from the network (much faster/more reliable for huge
+      # repos). Deliberately does NOT apply when dir is already a git repo -- an existing
+      # repo (however it got there) is handled by the normal clone_repo_into path below,
+      # which no-ops and just verifies/fixes up remotes. Bundle import leaves 'origin'
+      # missing on purpose (git clone <bundle-file> would otherwise point it at the
+      # literal bundle path) -- the verification step below adds it back from config.
+      bundle_colored = repo.bundle.cyan
+      Logging.info("Bundle '#{bundle_colored}' found for '#{dir_colored}' -- importing instead of cloning from network")
+      unless GitProcessor.clone_from_bundle(bundle: repo.bundle, dest: dir)
+        Logging.record_error("Failed to import bundle '#{bundle_colored}' into '#{dir_colored}'")
+        return false
+      end
+    else
+      # Clone or update the repository using GitProcessor module method
+      unless GitProcessor.clone_repo_into(remote_url, dir)
+        # Clone failure is fatal for this repo -- cannot proceed without a cloned repository
+        Logging.record_error("Failed to clone '#{remote_url.cyan}' into '#{dir_colored}'")
+        return false
+      end
     end
 
     # After cloning, verify the origin URL using GitProcessor
@@ -413,9 +537,17 @@ module ResurrectRepositories
           return false
         end
       else
-        # Verification failure is fatal for this repo -- cannot confirm clone succeeded
-        Logging.record_error("Could not verify origin remote URL after cloning '#{dir_colored}'")
-        return false
+        # Pre-existing repo with no 'origin' remote (e.g. just restored from the bundle
+        # import above, which deliberately strips the bogus 'origin' left by
+        # 'git clone <bundle-file>') -- not fatal; add it from config instead of
+        # failing, mirroring the 'other_remotes' handling just below.
+        Logging.info("No 'origin' remote found for pre-existing repo '#{dir_colored}' -- adding it from config: '#{remote_url.cyan}'")
+        stdout, stderr, status = git.add_remote(ORIGIN_NAME, remote_url)
+        return false unless CommandUtils.check_status(stdout, stderr, status) do |st, output_msg|
+          Logging.record_error("Failed to add missing 'origin' remote '#{remote_url.cyan}' for repo '#{dir_colored}' (status: #{st.exitstatus})#{output_msg}")
+        end
+
+        existing_remotes[ORIGIN_NAME] = remote_url
       end
     end
 
@@ -555,19 +687,23 @@ if __FILE__ == $PROGRAM_NAME
   include Logging
 
   options = {}
-  parser = CliParser.parse('[-g <folder>] [-r <config-file>] [-c <config-file>]') do |opts|
-    opts.separator 'Generates, resurrects, or verifies a set of known git repositories from a YAML config file.'
+  parser = CliParser.parse('[-g <folder>] [-r <config-file>] [-c <config-file>] [-b <config-file>]') do |opts|
+    opts.separator 'Generates, resurrects, verifies, or exports git bundles for a set of known git repositories from a YAML config file.'
     opts.separator ''
     opts.separator 'Options:'.purple
     opts.on('-g', '--generate FOLDER', 'Generate configuration from FOLDER onto stdout (usually on current laptop)',
             "  Note: this option will not handle 'post_clone' commands in the generated yaml structure") do |dir|
       options[:generate] = dir
     end
-    opts.on('-r', '--resurrect CONFIG_FILE', "Resurrect 'known' codebases from CONFIG_FILE (usually on fresh laptop)") do |file|
+    opts.on('-r', '--resurrect CONFIG_FILE', "Resurrect 'known' codebases from CONFIG_FILE (usually on fresh laptop)",
+            "  Repos with a 'bundle' key are imported from that file instead of cloned, if the target folder doesn't exist yet") do |file|
       options[:resurrect] = file
     end
     opts.on('-c', '--check CONFIG_FILE', "Verify 'known' codebases from CONFIG_FILE (most likely will also need to specify REF_FOLDER)") do |file|
       options[:check] = file
+    end
+    opts.on('-b', '--bundle-export CONFIG_FILE', "Export a git bundle for each repo in CONFIG_FILE that has a 'bundle' key (usually on current laptop)") do |file|
+      options[:bundle_export] = file
     end
     opts.separator ''
     opts.separator 'Environment variables:'.purple
@@ -575,7 +711,7 @@ if __FILE__ == $PROGRAM_NAME
     opts.separator "  #{'REF_FOLDER'.yellow}  can be used to apply a filter when verifying against a specific yaml file"
   end
 
-  parser.abort_with_usage('Exactly one of -g, -r, or -c must be specified.') if nil_or_empty?(options) || options.size > 1
+  parser.abort_with_usage('Exactly one of -g, -r, -c, or -b must be specified.') if nil_or_empty?(options) || options.size > 1
 
   # Standard dual-mode CLI wrapper pattern (Flay similarity with recreate-repository.rb is intentional).
   # See ruby-scripting.md section "Dual-Mode Ruby Scripts".
@@ -583,7 +719,8 @@ if __FILE__ == $PROGRAM_NAME
     success = ResurrectRepositories.run(
       generate: options[:generate],
       resurrect: options[:resurrect],
-      check: options[:check]
+      check: options[:check],
+      bundle_export: options[:bundle_export]
     )
     exit(success ? 0 : 1)
   end

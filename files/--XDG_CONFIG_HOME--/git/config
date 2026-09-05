@@ -412,17 +412,13 @@
     esac; \
   }; f"
 
-  # Shows a colorful commit graph for the current branch.
-  # Usage: git lg
-  lg = log --color --graph --pretty=format:'%C(yellow)%h%Creset -%C(bold blue)%d%Creset %s %C(green) %an, %cr%Creset' --abbrev-commit
-
   # Shows a colorful commit graph for all branches.
-  # Usage: git lga
-  lga = log --color --graph --all --pretty=format:'%C(yellow)%h%Creset -%C(bold blue)%d%Creset %s %C(green) %an, %cr%Creset' --abbrev-commit
+  # Usage: git lg
+  lg = log --color --graph --abbrev-commit --all
 
-  # Shows a compact decorated one-line graph log.
+  # Shows a colorful, one-line commit graph log for all branches.
   # Usage: git ll
-  ll = log --decorate --graph --oneline --abbrev-commit
+  ll = lg --oneline
 
   # Shows new commits on a branch since the last pull (useful after 'git pull').
   # Defaults to the current branch if no argument is given.

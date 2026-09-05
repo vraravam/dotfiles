@@ -119,6 +119,23 @@ resurrect-repositories.rb -g -d ~/work > "${PERSONAL_CONFIGS_DIR}/repositories-w
 2. Set `active: true` only for repos you want resurrected on a fresh machine
 3. Add `post_clone` commands if specific repos need them (e.g., `npm install`)
 
+**Optional: bundle export for huge/slow repos.** If a repo is very large (deep history, gigabytes of objects), you can bypass a slow/unreliable network clone on the new machine by adding a `bundle` key to its entry in the YAML (see [Extras.md § Bundle support](Extras.md#bundle-support)):
+
+```yaml
+- folder: "${PROJECTS_BASE_DIR}/oss/<repo-name>"
+  remote: git@github.com:you/<repo-name>
+  bundle: "${HOME}/Downloads/<repo-name>.bundle"
+  active: true
+```
+
+Then export it (from this old machine's healthy clone):
+
+```zsh
+resurrect-repositories.rb -b "${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
+```
+
+Transfer the resulting `.bundle` file to the new machine yourself (AirDrop, USB drive, etc.) to the same path referenced in `bundle` above — it is not committed to the dotfiles repo (only the YAML's `bundle` key/path is). Timing doesn't matter: if it isn't there yet when [Phase 3.2](#32-run-bootstrap-command)'s resurrect step runs, that repo just falls back to a normal network clone.
+
 ### 1.4 Commit and Push
 
 Store your captured state in a git repository at `${HOME}`. These files contain personal preferences and repo locations — never commit to a public repository.
@@ -326,6 +343,8 @@ See [README § What the Script Does](README.md#what-the-script-does) for a compl
 8. Sets up cron jobs (falls back: existing → tracked → user action)
 9. Resurrects tracked git repositories (from Phase 1.3 catalogs)
 10. Prompts for password to set default shell to Homebrew zsh
+
+**Optional shortcut for huge/slow repos:** if you added a `bundle` key for a repo in [Phase 1.3](#13-generate-repository-catalog), transfer the `.bundle` file to this machine (e.g. via AirDrop) to the same path referenced in the YAML. Step 9 above picks it up automatically -- no separate command needed, and no timing to get right: it imports from the bundle if present, otherwise falls back to a normal clone.
 
 ### 3.3 Post-Setup Manual Steps
 

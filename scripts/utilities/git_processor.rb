@@ -2,10 +2,12 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
+require 'fileutils'
 require 'open3'
 require 'ostruct'
 require 'pathname'
 require 'shellwords'
+require 'tmpdir'
 
 require_relative 'core'
 require_relative 'env_vars'
@@ -131,6 +133,56 @@ class GitProcessor
     # The shell function handles all the logic: temp folders, traps, error handling,
     # HEAD fix, reftable migration, submodule updates, etc.
     CommandUtils.run_interactive('zsh', '-c', cmd)
+  end
+
+  # Clones a git bundle file into a temp folder, then moves the .git dir into
+  # the target location and populates the working tree there. Mirrors
+  # clone_repo_into's temp-then-move technique (works around git's refusal to
+  # clone into a non-empty directory) but sources from a local bundle file
+  # instead of a remote URL. Implemented natively in Ruby -- unlike
+  # clone_repo_into, this is not a bootstrap-time operation, so no shell
+  # delegation is needed.
+  #
+  # Caller is responsible for backing up/removing any pre-existing .git at
+  # dest before calling this (see RepoBundle module).
+  #
+  # @param bundle [String, Pathname] Path to the bundle file to clone from.
+  # @param dest [String, Pathname] Target directory for the clone.
+  # @return [Boolean] true on success, false on failure.
+  def self.clone_from_bundle(bundle:, dest:)
+    bundle = Pathname.new(bundle).expand_path
+    dest = Pathname.new(dest) unless dest.is_a?(Pathname)
+    bundle_colored = bundle.cyan
+
+    Dir.mktmpdir do |tmp_folder|
+      Logging.info "Cloning bundle '#{bundle_colored}' into a temp folder (this may take a while for large bundles)..."
+      unless CommandUtils.run_interactive('git', 'clone', '--no-checkout', bundle.to_s, tmp_folder)
+        Logging.record_error("Failed to clone bundle '#{bundle_colored}'")
+        return false
+      end
+
+      tmp_git = Pathname.new(tmp_folder).join('.git')
+      unless tmp_git.directory?
+        Logging.record_error("Clone of bundle '#{bundle_colored}' succeeded but no '.git' directory was found in the temp folder")
+        return false
+      end
+
+      dest_git = dest.join('.git')
+      dest.mkpath
+      dest_git.rmtree if dest_git.exist?
+      FileUtils.mv(tmp_git.to_s, dest_git.to_s)
+
+      git = new(dir: dest)
+      return false unless git.populate_working_tree_from_head
+
+      # 'git clone <bundle-file>' sets 'origin' to the literal bundle path,
+      # which is not a real remote to fetch/push against going forward.
+      # Remove it so a later step (e.g. resurrect-repositories.rb) can detect
+      # the missing remote and reconfigure the real one from repositories-oss.yml.
+      git.remove_remote('origin') if git.remote_url(name: 'origin') == bundle.to_s
+
+      true
+    end
   end
 
   # ---------------------------------------------------------------------------
@@ -379,6 +431,19 @@ class GitProcessor
     return _mock_status_response(false) unless repo?
 
     _execute('remote', 'set-url', name, url)
+  end
+
+  # Removes a named remote from the repo. No-op (returns true) if the remote
+  # doesn't exist -- e.g. clone_from_bundle uses this to strip the bogus
+  # 'origin' that 'git clone <bundle-file>' sets to the literal bundle path.
+  #
+  # @param name [String] Remote name to remove (e.g. 'origin').
+  # @return [Boolean] true on success or if the remote was already absent, false on failure.
+  def remove_remote(name)
+    return true if nil_or_empty?(remote_url(name: name))
+
+    _stdout, _stderr, status = _execute('remote', 'remove', name)
+    status.success?
   end
 
   # Fetches from all remotes and all tags via the 'fo' git alias -- not a bare
@@ -725,6 +790,55 @@ class GitProcessor
         nil
       end
     end
+  end
+
+  # Creates a git bundle file capturing all refs reachable in this repo
+  # (branches, remote-tracking branches, and tags). Streams git's own
+  # progress output for large repos.
+  #
+  # @param file [String, Pathname] Destination path for the bundle file.
+  # @return [Boolean] true on success, false on failure.
+  def bundle_create(file:)
+    if @dry_run
+      Logging.info "Would run: #{"git -C #{@dir} bundle create #{file} --all".cyan}"
+      return true
+    end
+
+    return false unless repo?
+
+    Pathname.new(file).dirname.mkpath
+    CommandUtils.run_interactive(*_git_command, 'bundle', 'create', file.to_s, '--all')
+  end
+
+  # Populates the working tree from HEAD without clobbering existing files.
+  # Used after directly replacing .git (e.g. bundle restore, clone_repo_into's
+  # temp-then-move technique) where a normal 'git checkout' step is skipped.
+  # checkout-index refuses to overwrite existing files -- safer than 'checkout
+  # --force' when dest may already contain unrelated content.
+  #
+  # @return [Boolean] true on success, false on failure.
+  def populate_working_tree_from_head
+    _stdout, _stderr, status = _execute('read-tree', 'HEAD')
+    return false unless status.success?
+
+    # checkout-index intentionally does not overwrite existing files -- it
+    # returns a non-zero exit status when files are skipped for that reason
+    # ("already exists, no checkout"), which is expected here, not a real
+    # failure. Mirrors the shell clone_repo_into's
+    # 'checkout-index -a 2>/dev/null || true': run best-effort, never treat
+    # this as fatal.
+    _execute('checkout-index', '-a')
+
+    # .git/HEAD retains a 'ref: refs/heads/.invalid' placeholder after a raw
+    # .git swap (mv bypasses git's normal post-clone finalisation for
+    # reftable repos). git itself resolves this internally (status/read-tree/
+    # checkout-index all work fine regardless), but tools that read .git/HEAD
+    # directly (e.g. shell prompts) do not. Mirrors the shell clone_repo_into's
+    # equivalent fixup.
+    real_ref, _stderr, status = _execute('symbolic-ref', 'HEAD')
+    @dir.join('.git', 'HEAD').write("ref: #{real_ref.strip}\n") if status.success? && !nil_or_empty?(real_ref)
+
+    true
   end
 
   # ---------------------------------------------------------------------------
