@@ -1757,7 +1757,7 @@ migrate_git_repo_to_reftable() {
 # --single-branch for fast initial clone. All repos (new and existing) are converted
 # to full clones asynchronously via background 'git unshallow' job after the main
 # operation completes. Always updates submodules afterwards.
-# Usage: clone_repo_into <repo-url> <target-folder> [branch]
+# Usage: clone_repo_into <repo-url> <target-folder> [branch] [bundle-file]
 clone_repo_into() {
   local start_time
   _epoch_seconds start_time  # zsh: $EPOCHSECONDS (no fork); bash: 'date +%s' fork
@@ -1771,47 +1771,67 @@ clone_repo_into() {
     # Set trap to clean up temp folder on exit (normal or error)
     trap "rm -rf '${tmp_folder}'" EXIT INT TERM
 
-    local -a clone_args=('--depth=1' '--filter=blob:none' '--single-branch')
     local target_branch="${3:-}"
-    # If a target branch is specified, clone that branch directly to avoid the
-    # "branch not found" error when switching after a shallow clone (which only
-    # fetches the default branch). Without --branch, git switch would fail.
-    if is_non_zero_string "${target_branch}"; then
-      clone_args+=('--branch' "${target_branch}")
+    local bundle_file="${4:-}"
+    local using_bundle=false
+    if is_non_zero_string "${bundle_file}" && is_file "${bundle_file}"; then
+      using_bundle=true
     fi
-    debug "Using shallow blobless single-branch clone (${clone_args[*]}) for fast initial clone"
 
-    # Capture stderr to display on failure
-    local stderr_file
-    stderr_file="$(mktemp)"
-    trap "rm -rf '${tmp_folder}' '${stderr_file}'" EXIT INT TERM
-
-    # -n (--no-checkout): Skip checkout in tmp (only .git needed; we restore in target).
-    # SSH: Uses core.sshCommand from ~/.gitconfig (pre-configured) or inherits GIT_SSH_COMMAND
-    # from parent environment (FIRST_INSTALL - exported by fresh-install-of-osx.sh, propagates
-    # through shell-> Ruby-> shell chain). No inline override needed.
-    # Wrapped with 'git with-retry': flaky networks (VPN/MTU black-holes) can cause this
-    # clone to stall indefinitely rather than fail fast. Implemented as a git alias (not a
-    # shell function) so the retry/timeout/process-tree-kill logic lives in one place and
-    # is reusable by any other git alias (e.g. 'unshallow') without sourcing ~/.shellrc.
-    # Passes tmp_folder as the progress-path so with-retry only kills on genuine inactivity
-    # (no growth in the folder being cloned into) rather than a fixed wall-clock timeout --
-    # a large repo that is transferring slowly but steadily is not killed prematurely.
-    local clone_timeout_secs=25
-    local clone_max_attempts=5
-    git with-retry "${clone_timeout_secs}" "${clone_max_attempts}" "${stderr_file}" "${tmp_folder}" \
-      git -C "${tmp_folder}" clone -q -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" .
-    local clone_status=$?
-
-    if [[ ${clone_status} -ne 0 ]]; then
-      local error_msg="Failed to clone '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
-      local stderr_content
-      stderr_content="$(cat "${stderr_file}" 2>/dev/null)"
-      if is_non_zero_string "${stderr_content}"; then
-        error_msg="${error_msg}"$'\n'"Clone command STDERR:"$'\n'"${stderr_content}"
+    if [[ "${using_bundle}" == true ]]; then
+      # Import from a local git bundle file instead of the network. The bundle already
+      # contains full history for every ref (branches, remote-tracking refs, tags), so
+      # none of the network-clone optimizations below apply: no shallow/blob-filter/
+      # single-branch args (nothing to save -- it's a local file read), no 'with-retry'
+      # wrapping (no network flakiness to guard against for a local file).
+      info "Importing bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")' (this may take a while for large bundles)..."
+      if ! git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${bundle_file}" .; then
+        warn "Failed to import bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")'"
+        return 1
       fi
-      warn "${error_msg}"
-      return 1
+    else
+      local -a clone_args=('--depth=1' '--filter=blob:none' '--single-branch')
+      # If a target branch is specified, clone that branch directly to avoid the
+      # "branch not found" error when switching after a shallow clone (which only
+      # fetches the default branch). Without --branch, git switch would fail.
+      if is_non_zero_string "${target_branch}"; then
+        clone_args+=('--branch' "${target_branch}")
+      fi
+      debug "Using shallow blobless single-branch clone (${clone_args[*]}) for fast initial clone"
+
+      # Capture stderr to display on failure
+      local stderr_file
+      stderr_file="$(mktemp)"
+      trap "rm -rf '${tmp_folder}' '${stderr_file}'" EXIT INT TERM
+
+      # -n (--no-checkout): Skip checkout in tmp (only .git needed; we restore in target).
+      # SSH: Uses core.sshCommand from ~/.gitconfig (pre-configured) or inherits GIT_SSH_COMMAND
+      # from parent environment (FIRST_INSTALL - exported by fresh-install-of-osx.sh, propagates
+      # through shell-> Ruby-> shell chain). No inline override needed.
+      # Wrapped with 'git with-retry': flaky networks (VPN/MTU black-holes) can cause this
+      # clone to stall indefinitely rather than fail fast. Implemented as a git alias (not a
+      # shell function) so the retry/timeout/process-tree-kill logic lives in one place and
+      # is reusable by any other git alias (e.g. 'unshallow') without sourcing ~/.shellrc.
+      # Passes tmp_folder as the progress-path so with-retry only kills on genuine inactivity
+      # (no growth in the folder being cloned into) rather than a fixed wall-clock timeout --
+      # a large repo that is transferring slowly but steadily is not killed prematurely.
+      local clone_timeout_secs=25
+      local clone_max_attempts=5
+      git with-retry "${clone_timeout_secs}" "${clone_max_attempts}" "${stderr_file}" "${tmp_folder}" \
+        git -C "${tmp_folder}" clone -q -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" .
+      local clone_status=$?
+
+      if [[ ${clone_status} -ne 0 ]]; then
+        local error_msg="Failed to clone '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
+        local stderr_content
+        stderr_content="$(cat "${stderr_file}" 2>/dev/null)"
+        if is_non_zero_string "${stderr_content}"; then
+          error_msg="${error_msg}"$'\n'"Clone command STDERR:"$'\n'"${stderr_content}"
+        fi
+        warn "${error_msg}"
+        return 1
+      fi
+      rm -f "${stderr_file}"
     fi
 
     # Remove existing .git directory if present (cleanup from failed previous clone attempt).
@@ -1828,7 +1848,7 @@ clone_repo_into() {
     fi
 
     mv "${tmp_folder}/.git" "${target_folder}"
-    rm -rf "${tmp_folder}" "${stderr_file}"
+    rm -rf "${tmp_folder}"
     trap - EXIT INT TERM  # Clear trap after successful move
 
     # Populate index from HEAD, then checkout files.
@@ -1852,14 +1872,27 @@ clone_repo_into() {
       echo "ref: ${real_ref}" >"${target_folder}/.git/HEAD"
     fi
 
-    success "Successfully cloned '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
+    if [[ "${using_bundle}" == true ]]; then
+      # 'git clone <bundle-file>' sets 'origin' to the literal bundle path, which is not
+      # a real remote to fetch/push against going forward. Strip it -- the caller (e.g.
+      # resurrect-repositories.rb) detects the missing 'origin' and reconfigures the real
+      # one from its own config, same as it already does for any repo missing 'origin'.
+      local bundle_origin
+      bundle_origin="$(git -C "${target_folder}" remote get-url origin 2>/dev/null)"
+      if [[ "${bundle_origin}" == "${bundle_file}" ]]; then
+        git -C "${target_folder}" remote remove origin
+      fi
+      success "Successfully imported bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")'"
+    else
+      success "Successfully cloned '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
 
-    if is_non_zero_string "${target_branch}"; then
-      local current_branch
-      current_branch="$(git -C "${target_folder}" branch --show-current)"
-      if [[ "${current_branch}" != "${target_branch}" ]]; then
-        error "Branch mismatch: expected '$(cyan "${target_branch}")' but got '$(cyan "${current_branch}")' - something is wrong. Please correct before retrying!"
-        return 1
+      if is_non_zero_string "${target_branch}"; then
+        local current_branch
+        current_branch="$(git -C "${target_folder}" branch --show-current)"
+        if [[ "${current_branch}" != "${target_branch}" ]]; then
+          error "Branch mismatch: expected '$(cyan "${target_branch}")' but got '$(cyan "${current_branch}")' - something is wrong. Please correct before retrying!"
+          return 1
+        fi
       fi
     fi
   else

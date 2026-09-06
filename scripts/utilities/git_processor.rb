@@ -101,6 +101,17 @@ class GitProcessor
   # asynchronously via background 'git unshallow' job after the main operation completes.
   # Always updates submodules afterwards.
   #
+  # If a local git bundle file is provided (and the target is not yet a git repo), imports
+  # from the bundle instead of cloning 'url' over the network -- much faster/more reliable
+  # for huge repos. Bundle import shares the same temp-then-move, HEAD-fixup, reftable
+  # migration, maintenance, and submodule-update logic as a network clone (see the shell
+  # function itself); the only difference is the clone source and skipping the
+  # shallow/blob-filter/single-branch/with-retry logic that only makes sense for a network
+  # clone (a local bundle already has full history, and there's no network flakiness to
+  # retry against). Bundle import deliberately leaves 'origin' missing after stripping the
+  # bogus value 'git clone <bundle-file>' sets it to -- callers (e.g.
+  # resurrect-repositories.rb) detect the missing 'origin' and reconfigure it from config.
+  #
   # **DELEGATES TO SHELL VERSION**: This Ruby method is a thin wrapper around the
   # shell function clone_repo_into() in .shellrc. The shell version is required
   # for bootstrap (runs before dotfiles repo is cloned), so it cannot be removed.
@@ -116,16 +127,25 @@ class GitProcessor
   # @param url [String] Git repository URL to clone.
   # @param dest [String, Pathname] Target directory for the clone.
   # @param branch [String, nil] Optional branch to clone (defaults to remote's HEAD).
+  # @param bundle [String, Pathname, nil] Optional path to a local git bundle file --
+  #   used instead of 'url' when the target isn't yet a git repo and this file exists.
   # @return [Boolean] true on success, false on failure.
-  def self.clone_repo_into(url, dest, branch: nil)
+  def self.clone_repo_into(url, dest, branch: nil, bundle: nil)
     dest = Pathname.new(dest) unless dest.is_a?(Pathname)
 
     # Build the shell command
-    # clone_repo_into accepts: url (arg 1), dest (arg 2), branch (optional arg 3)
+    # clone_repo_into accepts: url (arg 1), dest (arg 2), branch (optional arg 3),
+    # bundle-file (optional arg 4). 'branch' must always be emitted (even as an empty
+    # placeholder) once 'bundle' is also passed, to keep positional alignment.
     cmd = "source #{EnvVars::HOME.join('.shellrc')} && clone_repo_into"
     cmd += " #{Shellwords.escape(url)}"
     cmd += " #{Shellwords.escape(dest.to_s)}"
-    cmd += " #{Shellwords.escape(branch)}" if branch && !nil_or_empty?(branch)
+    if bundle && !nil_or_empty?(bundle)
+      cmd += " #{Shellwords.escape(branch.to_s)}"
+      cmd += " #{Shellwords.escape(bundle.to_s)}"
+    elsif branch && !nil_or_empty?(branch)
+      cmd += " #{Shellwords.escape(branch)}"
+    end
 
     # Execute via zsh with shell function
     # The shell function handles all the logic: temp folders, traps, error handling,
@@ -725,6 +745,24 @@ class GitProcessor
         nil
       end
     end
+  end
+
+  # Creates a git bundle file capturing all refs reachable in this repo
+  # (branches, remote-tracking branches, and tags). Streams git's own
+  # progress output for large repos.
+  #
+  # @param file [String, Pathname] Destination path for the bundle file.
+  # @return [Boolean] true on success, false on failure.
+  def bundle_create(file:)
+    if @dry_run
+      Logging.info "Would run: #{"git -C #{@dir} bundle create #{file} --all".cyan}"
+      return true
+    end
+
+    return false unless repo?
+
+    Pathname.new(file).dirname.mkpath
+    CommandUtils.run_interactive(*_git_command, 'bundle', 'create', file.to_s, '--all')
   end
 
   # ---------------------------------------------------------------------------

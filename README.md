@@ -38,7 +38,7 @@ All of the folder structures and the setup/backup operations are governed by the
 
 Want to use this dotfiles system for your own setup? See the **[Adoption Guide](Adoption.md)** for complete step-by-step instructions covering:
 
-- **Preparing your existing machine** — capturing preferences, repo catalogs, and Brewfile
+- **Preparing your existing machine** — capturing preferences, repo catalogs, and Brewfile (optionally exporting huge/slow repos as portable bundles for a faster restore)
 - **Forking and customizing** — required username changes, optional path adjustments, Keybase setup
 - **First-time setup** — running the bootstrap command on a fresh machine
 - **Ongoing maintenance** — keeping backups current with regular snapshots

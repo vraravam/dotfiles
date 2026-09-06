@@ -4,6 +4,33 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.42
+
+#### Add git bundle export/import support to resurrect-repositories.rb
+
+New "nuclear option" backup/restore mechanism for repos where a normal clone from the remote is unreliable (e.g. intermittently corrupting large clones), integrated directly into the existing YAML-driven resurrect workflow via a new `bundle` key -- no separate script or manual timing to worry about. Bundle import shares the exact same clone-plumbing and post-clone pipeline as a network clone (temp-then-move technique, reftable migration, maintenance, submodule updates) via the shell `clone_repo_into` function, with zero duplication between the two clone sources.
+
+* *[scripts/resurrect-repositories.rb]* Added a `bundle` (optional) key to the YAML repo-entry schema -- a path to a local git bundle file, expanded the same way as `folder` (supports `${VAR}` env-var substitution).
+* *[scripts/resurrect-repositories.rb]* Added a new `-b`/`--bundle-export CONFIG_FILE` mode: exports a bundle for every entry that has a `bundle` key, using the repo at `folder` as the source.
+* *[scripts/resurrect-repositories.rb]* `-r` (resurrect) mode: `_resurrect_each` makes a single `GitProcessor.clone_repo_into(remote_url, dir, bundle: repo.bundle)` call -- the shell function internally decides the source: if `folder` is not yet a git repo *and* the configured `bundle` file exists on disk, it imports from the bundle instead of cloning `remote` over the network -- much faster/more reliable for huge repos. If `folder` is already a git repo, the bundle is bypassed entirely (normal `remote`-based path used), so this never triggers a surprise reimport on routine re-runs.
+* *[scripts/resurrect-repositories.rb]* Fixed `_resurrect_each` to handle a pre-existing repo with a missing `origin` remote gracefully -- previously this was treated as a fatal "could not verify origin remote URL after cloning" error even though the repo folder existed and was otherwise usable. Now adds the remote from config instead of failing, mirroring the existing `other_remotes` handling just below it. This is exactly the state a bundle import leaves a repo in (see below), so both happen automatically in the same `-r` run with no separate step needed.
+* *[files/--HOME--/.shellrc]* `clone_repo_into` takes a new optional 4th argument, a local bundle file path: `clone_repo_into <repo-url> <target-folder> [branch] [bundle-file]`. When the target isn't yet a git repo and the bundle file exists, it's used instead of `<repo-url>` -- skipping the shallow/blob-filter/single-branch clone args and `with-retry` wrapping (neither applies to a local file with no network flakiness), but sharing everything after the initial clone: the temp-then-move technique, working-tree population, `.git/HEAD` `.invalid` fixup, reftable migration, `unshallow`+`maintain`, and submodule update. Also strips the bogus `origin` that `git clone <bundle-file>` sets to the literal bundle path -- reconfigured immediately afterward by the `resurrect-repositories.rb` fix above.
+* *[scripts/utilities/git_processor.rb]* `GitProcessor.clone_repo_into` gained a `bundle:` keyword arg, passed through as the shell function's 4th positional arg (with an empty `branch` placeholder inserted when needed to preserve positional alignment). Added `#bundle_create(file:)` for exporting.
+* *[scripts/utilities/git_processor.rb]* Two bugs found and fixed via real-world testing with a 6GB bundle (not caught by static analysis or synthetic tests), both inside `clone_repo_into`'s shared post-clone logic:
+  - `checkout-index -a` intentionally returns a non-zero exit status when it skips existing files ("already exists, no checkout") -- handled via `checkout-index -a 2>/dev/null || true`, confirmed correct for the bundle path too.
+  - `.git/HEAD` retained a `ref: refs/heads/.invalid` placeholder after the raw `.git` swap (the `mv` bypasses git's normal post-clone finalisation for reftable repos) -- git resolves this internally (`status`/`read-tree`/`checkout-index` all work fine regardless), but tools that read `.git/HEAD` directly (e.g. shell prompts) do not. `clone_repo_into` writes the real `symbolic-ref HEAD` value back to the file; confirmed this fixup applies correctly to the bundle path too.
+* *[Extras.md]* Documented the `bundle` YAML key and the `-b` export mode under `resurrect-repositories.rb`'s existing section.
+* *[Adoption.md]* Documented the `bundle` key as an optional shortcut for huge/slow repos in the old-machine-to-new-machine adoption flow: add `bundle` + export via `-b` + manual transfer (AirDrop, etc.) in Phase 1.3; the existing resurrect step (Phase 3.2 step 9) automatically picks it up on the new machine -- no separate command, no timing window, no failure mode (falls back to a normal clone if the file isn't there yet).
+* *[README.md]* Added a brief mention of the optional bundle-export shortcut to the "How to Adopt This System" phase summary, for readers who haven't yet clicked through to Adoption.md.
+
+Verified end-to-end with a real 6GB bundle: `-b` export, `-r` import (repo didn't exist yet -> bundle path taken automatically via `clone_repo_into`, which also ran reftable migration/maintenance/submodule update inline), `origin` stripped then re-added, `upstream` added from `other_remotes`, and `git fo` successfully fetching from both `origin` and `upstream` afterward -- all via a single `resurrect-repositories.rb -r` invocation. Also verified the export/import round-trip is faithful: re-exporting an imported repo (via `-b`) produces a bundle with an identical ref list (204 refs, confirmed via `git bundle list-heads` diff) to the original -- the two bundle files are not byte-identical (git's pack compression is not guaranteed reproducible across separate `bundle create` invocations), but this is expected and not a functional issue. Also verified the network-clone path (bootstrap-critical, used by `fresh-install-of-osx.sh` for the dotfiles/home/profiles repos) is unaffected by the bundle-support changes to `clone_repo_into` -- confirmed via a direct call against a real public repo.
+
+#### Adopting these changes
+
+* Restart terminal (or run `unfunction is_shellrc_sourced; load_file_if_exists ~/.shellrc`) to pick up the `clone_repo_into` changes in existing sessions.
+
+---
+
 ### 3.2.41
 
 #### Fix PATH ordering so Homebrew appears before system binaries

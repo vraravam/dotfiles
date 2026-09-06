@@ -185,6 +185,7 @@ The config file for this script is a yaml file that is passed into this script a
   other_remotes:
     upstream1: <upstream remote url1>
     upstream2: <upstream remote url2>
+  bundle: "${HOME}/Downloads/git_scripts.bundle"
   active: true
   post_clone:
     - ln -sf "${PERSONAL_CONFIGS_DIR}/XXX.gradle.properties" ./gradle.properties
@@ -192,11 +193,35 @@ The config file for this script is a yaml file that is passed into this script a
     - echo "java 21" > ./.tool-versions
 ```
 
-* `folder` (mandatory) specifies the target folder where the repo should reside on local machine. If the folder name starts with `/`, then its assumed that the path starts from the root folder; if not, then its assumed to be relative to where the script is being run from. The ruby script also supports glob expansion of `~` to `${HOME}` if `~` is used. It can also handle shell env vars if they are in the format `${<env-key>}`
+* `folder` (mandatory) specifies the target folder where the repo should reside on local machine. If the folder name starts with `/`, then its assumed that the path starts from the root folder; if not, then its assumed to be relative to where the script is being run from. Supports `${<env-key>}` expansion -- see [Environment variable support](#environment-variable-support) below. Note: a literal `~` is NOT expanded; use `${HOME}` instead.
 * `remote` (mandatory) specifies the remote url of the repository
 * `other_remotes` (optional) specifies a hash of the other remotes keyed by the name with the value of the remote url
+* `bundle` (optional) specifies the path to a local git bundle file for this repo -- see [Bundle support](#bundle-support) below. Also supports `${<env-key>}` expansion, same as `folder`.
 * `active` (optional; default: false) specifies whether to process this folder/repo or not on your local machine
 * `post_clone` (optional; default: empty array) specifies other `bash` commands (in sequence) to be run once the resurrection is done - for eg, symlink a '.envrc' file if one exists
+
+### Environment variable support
+
+* `folder` and `bundle` values in the YAML support `${<env-key>}` placeholders (eg `${PROJECTS_BASE_DIR}/oss/foo`), expanded via `ENV.fetch` when the config is read. If the referenced env var is not set, the literal placeholder is kept and a warning is logged -- it does not fail the run. A bare `~` is NOT expanded this way; use `${HOME}` instead. `other_remotes` values are used as-is (remote URLs don't need this).
+* `post_clone` commands are run through a shell (not through this placeholder mechanism), so normal shell `$VAR`/`${VAR}` expansion applies there at execution time -- an unset var expands to an empty string per standard shell semantics, rather than being kept as a literal placeholder.
+* `-g` (generate mode) does the reverse: absolute paths discovered on disk are rewritten back into `${<env-key>}` placeholder form before being printed, so the generated YAML stays portable across machines. The substitution checks `PROJECTS_BASE_DIR`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, then `HOME`, in that order (most specific first), and only the first matching prefix is replaced.
+* `FILTER` (regex) and `REF_FOLDER` (path) environment variables can also be set to scope which repos are processed or verified against -- see `resurrect-repositories.rb -h` for details.
+
+### Bundle support
+
+A repo entry can optionally specify a `bundle` path -- a portable git bundle file capturing the full history reachable from all refs (branches, remote-tracking branches, tags). This is a "nuclear option" backup/restore mechanism for repos where a normal clone from the remote is unreliable (e.g. intermittently corrupting large clones):
+
+* **Export** (`-b`): for every repo entry with a `bundle` key, exports the repo at `folder` to the `bundle` path. Run this on a machine that still has a healthy clone, before it's needed:
+
+  ```zsh
+  resurrect-repositories.rb -b <config-file>
+  ```
+
+* **Import** (`-r`, automatic): if `folder` is not yet a git repo *and* the configured `bundle` file exists on disk, `-r` imports from the bundle instead of cloning from `remote` over the network -- much faster and more reliable for huge repos. If `folder` is already a git repo, the bundle is bypassed entirely and the normal `remote`-based path is used, so this never triggers a surprise reimport on routine re-runs.
+
+`git clone <bundle-file>` (used internally by the import path) sets `origin` to the literal bundle file path, which is not a real remote to fetch or push against. The import step deliberately strips this bogus `origin` -- the very next step in the same `-r` run detects the missing `origin` and reconfigures it (and any `other_remotes`) from `remote`/`other_remotes` in the same config entry, so no separate step is needed.
+
+See [Adoption Guide § 1.3](Adoption.md#13-generate-repository-catalog) and [§ 3.2](Adoption.md#32-run-bootstrap-command) for the full old-machine-to-new-machine workflow using this feature.
 
 ## run-all.rb
 
