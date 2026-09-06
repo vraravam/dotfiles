@@ -219,19 +219,20 @@ source "${HOME}/.shellrc"
 
 ## Plugin Option Variables
 
-Plugin option variables (e.g. `ZSH_AUTOSUGGEST_STRATEGY`) **must be set before
+Plugin option variables (e.g. `DEJA_HIGHLIGHT_STYLE`) **must be set before
 the antidote bundle is sourced**. Plugins read these variables at load time; setting
 them after `load_file_if_exists "${ZDOTDIR}/.zsh_plugins.zsh"` has no effect:
 
 ```zsh
 # Good -- set before bundle
-export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+export DEJA_HIGHLIGHT_STYLE='fg=8'
+export DEJA_USE_ASYNC=1
 unset ZSH ZSH_CUSTOM   # clear stale OMZ values before antidote loads OMZ libs
 load_file_if_exists "${ZDOTDIR}/.zsh_plugins.zsh"
 
 # BAD -- too late, plugin already loaded
 load_file_if_exists "${ZDOTDIR}/.zsh_plugins.zsh"
-export ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+export DEJA_HIGHLIGHT_STYLE='fg=8'
 ```
 
 ## `compinit` Caching
