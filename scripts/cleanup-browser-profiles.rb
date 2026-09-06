@@ -43,8 +43,13 @@ module CleanupBrowserProfiles
       'zen' => profiles_dir.join('ZenProfile')
     }
 
+    # Read once -- these patterns are the same for every browser profile, so reading them
+    # inside the per-profile loop would re-read the same two files from disk on every iteration.
+    file_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-files.txt'))
+    dir_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-dirs.txt'))
+
     browser_profiles.each do |browser_name, profile_dir|
-      _vacuum_browser_profile_dir(browser_name, profile_dir, dry_run: dry_run)
+      _vacuum_browser_profile_dir(browser_name, profile_dir, file_patterns: file_patterns, dir_patterns: dir_patterns, dry_run: dry_run)
     end
 
     true
@@ -217,12 +222,12 @@ module CleanupBrowserProfiles
   #
   # @param browser_name   [String] Process name used for the pgrep check.
   # @param profile_dir [Pathname, String] Root of the browser profile directory.
+  # @param file_patterns [Array<String>] File glob patterns to delete (read once by caller).
+  # @param dir_patterns  [Array<String>] Directory glob patterns to delete (read once by caller).
   # @param dry_run        [Boolean] When true, reports actions without performing them.
-  def _vacuum_browser_profile_dir(browser_name, profile_dir, dry_run:)
+  def _vacuum_browser_profile_dir(browser_name, profile_dir, file_patterns:, dir_patterns:, dry_run:)
     profile_dir = Pathname.new(profile_dir) unless profile_dir.is_a?(Pathname)
     profile_dir_colored = profile_dir.cyan
-    file_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-files.txt'))
-    dir_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-dirs.txt'))
 
     return if _should_skip_profile?(browser_name, profile_dir)
 

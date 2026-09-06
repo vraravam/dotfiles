@@ -218,6 +218,12 @@ module Logging
     # Console output (with colors/indentation)
     puts "#{_subordinate_indent(level)}#{message}"
 
+    # Skip the log-level regex detection + ANSI-stripping work below when file logging
+    # is disabled (the common case -- LOG_FILE is opt-in). This is a cheap ENV lookup;
+    # _write_to_log_file would discard the expensive work via its own early return, but
+    # only after that work has already been done on every single log call.
+    return if nil_or_empty?(ENV.fetch('LOG_FILE', nil))
+
     # File output (stripped of ANSI, plain text or JSON based on LOG_FORMAT)
     # Extract log level from message prefix if present, otherwise default to :info
     log_level = case message

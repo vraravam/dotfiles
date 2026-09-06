@@ -63,7 +63,9 @@ module Colorizable
   def replace_home_path_with_tilde
     str = is_a?(String) ? self : to_s
     home_dir = ENV.fetch('HOME', '')
-    str.gsub(home_dir, '~')
+    # sub (not gsub) -- a path contains HOME at most once (at the start); this runs on
+    # nearly every logged path in the codebase, so avoiding the full-string gsub scan matters.
+    str.sub(home_dir, '~')
   end
 
   # rubocop:disable Style/SingleLineMethods

@@ -71,7 +71,9 @@ module InstallDotfiles
 
       # git doesn't handle symlinks well for its core config, handle separately
       relative_path_str = source_pn.relative_path_from(EnvVars::DOTFILES_DIR.join('files')).to_s
-      transformed_relative_path_str = relative_path_str.gsub(CUSTOM_GIT_PREFIX, DOT_GIT_REPLACEMENT_TARGET)
+      # sub (not gsub) -- CUSTOM_GIT_PREFIX occurs at most once per filename (custom.gitignore,
+      # custom.gitattributes); runs once per file in the entire files/ tree walk (hot path).
+      transformed_relative_path_str = relative_path_str.sub(CUSTOM_GIT_PREFIX, DOT_GIT_REPLACEMENT_TARGET)
 
       interpolated_target_str = _interpolate_path(transformed_relative_path_str, source_pn.to_s)
       next unless interpolated_target_str # Skip if env var interpolation failed
