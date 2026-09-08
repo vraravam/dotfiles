@@ -1807,7 +1807,7 @@ clone_repo_into() {
       trap "rm -rf '${tmp_folder}' '${stderr_file}'" EXIT INT TERM
 
       # -n (--no-checkout): Skip checkout in tmp (only .git needed; we restore in target).
-      # SSH: Uses core.sshCommand from ~/.gitconfig (pre-configured) or inherits GIT_SSH_COMMAND
+      # SSH: Uses core.sshCommand from ${XDG_CONFIG_HOME}/git/config (pre-configured) or inherits GIT_SSH_COMMAND
       # from parent environment (FIRST_INSTALL - exported by fresh-install-of-osx.sh, propagates
       # through shell-> Ruby-> shell chain). No inline override needed.
       # Wrapped with 'git with-retry': flaky networks (VPN/MTU black-holes) can cause this
@@ -1819,9 +1819,25 @@ clone_repo_into() {
       # a large repo that is transferring slowly but steadily is not killed prematurely.
       local clone_timeout_secs=25
       local clone_max_attempts=5
-      git with-retry "${clone_timeout_secs}" "${clone_max_attempts}" "${stderr_file}" "${tmp_folder}" \
-        git -C "${tmp_folder}" clone -q -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" .
-      local clone_status=$?
+      local clone_status
+      if git config --get alias.with-retry &>/dev/null; then
+        git with-retry "${clone_timeout_secs}" "${clone_max_attempts}" "${stderr_file}" "${tmp_folder}" \
+          git -C "${tmp_folder}" clone -q -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" .
+        clone_status=$?
+      else
+        # Bootstrap edge case: the 'with-retry' alias lives in ${XDG_CONFIG_HOME}/git/config,
+        # which is part of the dotfiles repo -- not yet symlinked into place on a vanilla OS
+        # when this function is used to clone the dotfiles repo itself (the very first
+        # clone_repo_into call in fresh-install-of-osx.sh). Falling back silently here would
+        # be wrong: 'git with-retry ...' with an undefined alias fails at the alias-resolution
+        # step itself ("git: 'with-retry' is not a git command"), so the wrapped clone would
+        # never run at all -- not merely lose retry protection. Fall back to a plain clone
+        # (no retry/hang protection) only for this one bootstrap window; every subsequent
+        # call automatically regains with-retry once install-dotfiles.rb has run.
+        debug "'with-retry' alias not yet available (expected before the dotfiles repo is cloned) -- using plain clone without retry protection"
+        git -C "${tmp_folder}" clone -q -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" . 2>"${stderr_file}"
+        clone_status=$?
+      fi
 
       if [[ ${clone_status} -ne 0 ]]; then
         local error_msg="Failed to clone '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
@@ -1903,46 +1919,57 @@ clone_repo_into() {
     debug "Repo already exists at '$(yellow "${target_folder}")' -- will unshallow and fetch in background"
   fi
 
-  # Migrate to reftable format BEFORE background unshallow to avoid race conditions.
-  # Migrating refs while unshallow is fetching history could cause lock contention or
-  # corrupted refs. Migration must complete before any background ref writes begin.
-  # Idempotent -- safe to run multiple times (no-op if already reftable). On vanilla
-  # macOS with system git < 2.45, this is a silent no-op. fresh-install-of-osx.sh
-  # calls this again after Homebrew's git is on PATH to migrate repos that were
-  # initially cloned with system git.
-  migrate_git_repo_to_reftable "${target_folder}"
+  # migrate_git_repo_to_reftable/unshallow/maintain/siu all depend on git aliases from
+  # ${XDG_CONFIG_HOME}/git/config -- not yet symlinked into place on a vanilla OS when this
+  # function clones the dotfiles repo itself (the very first clone_repo_into call in
+  # fresh-install-of-osx.sh, which runs before install-dotfiles.rb). Checking one alias
+  # ('maintain') is a reliable proxy for all four, since they all live in the same config
+  # file -- skip this whole block in that case; every subsequent call (this repo once
+  # install-dotfiles.rb has run, or any other repo) runs it normally.
+  if git config --get alias.maintain &>/dev/null; then
+    # Migrate to reftable format BEFORE background unshallow to avoid race conditions.
+    # Migrating refs while unshallow is fetching history could cause lock contention or
+    # corrupted refs. Migration must complete before any background ref writes begin.
+    # Idempotent -- safe to run multiple times (no-op if already reftable). On vanilla
+    # macOS with system git < 2.45, this is a silent no-op. fresh-install-of-osx.sh
+    # calls this again after Homebrew's git is on PATH to migrate repos that were
+    # initially cloned with system git.
+    migrate_git_repo_to_reftable "${target_folder}"
 
-  # Unshallow and run repository maintenance for both new clones and existing repos.
-  # Converts shallow repos to full clones. If the repo is already a full clone, 'git
-  # unshallow' is a no-op. 'unshallow' wraps its own fetch/backfill steps in 'git
-  # with-retry' internally (see git/config) so a stalled fetch (flaky network) cannot
-  # hang this step forever -- every other caller of 'git unshallow' (e.g. antidote.rb,
-  # 'pullsub') gets the same hang protection automatically. 'maintain' (mtime restore +
-  # prune/gc/commit-graph) is run sequentially AFTER unshallow completes -- running it
-  # concurrently would race both processes against the same .git directory: 'maintain'
-  # unconditionally removes index.lock and commit-graph-chain.lock, which could steal a
-  # lock 'unshallow' legitimately holds mid-write.
-  #
-  # On FIRST_INSTALL and non-FIRST_INSTALL callers alike, this runs SYNCHRONOUSLY.
-  # Backgrounding this during FIRST_INSTALL bootstrap was considered for wall-clock
-  # savings (bootstrap also installs Homebrew/brew bundle in parallel), but rejected:
-  # fresh-install-of-osx.sh re-runs 'migrate_git_repo_to_reftable "${DOTFILES_DIR}"'
-  # later in its sequence (once Homebrew's newer git is on PATH), which does a
-  # destructive 'rm -rf .git/refs/*' on the SAME repo this function may have just
-  # spawned a background fetch/gc for -- with no synchronization between the two, a
-  # sufficiently large history/backfill could still be running when that later step
-  # fires, reintroducing exactly the concurrent-git-operation race this whole retry/
-  # maintenance chain is designed to avoid. The one-time wall-clock cost during vanilla
-  # OS bootstrap is an acceptable trade for eliminating that race entirely.
-  # If all attempts fail, the next clone_repo_into call will retry.
-  git -C "${target_folder}" unshallow
-  git -C "${target_folder}" maintain
-  debug "Completed unshallow + maintain for '$(yellow "${target_folder}")'"
+    # Unshallow and run repository maintenance for both new clones and existing repos.
+    # Converts shallow repos to full clones. If the repo is already a full clone, 'git
+    # unshallow' is a no-op. 'unshallow' wraps its own fetch/backfill steps in 'git
+    # with-retry' internally (see git/config) so a stalled fetch (flaky network) cannot
+    # hang this step forever -- every other caller of 'git unshallow' (e.g. antidote.rb,
+    # 'pullsub') gets the same hang protection automatically. 'maintain' (mtime restore +
+    # prune/gc/commit-graph) is run sequentially AFTER unshallow completes -- running it
+    # concurrently would race both processes against the same .git directory: 'maintain'
+    # unconditionally removes index.lock and commit-graph-chain.lock, which could steal a
+    # lock 'unshallow' legitimately holds mid-write.
+    #
+    # On FIRST_INSTALL and non-FIRST_INSTALL callers alike, this runs SYNCHRONOUSLY.
+    # Backgrounding this during FIRST_INSTALL bootstrap was considered for wall-clock
+    # savings (bootstrap also installs Homebrew/brew bundle in parallel), but rejected:
+    # fresh-install-of-osx.sh re-runs 'migrate_git_repo_to_reftable "${DOTFILES_DIR}"'
+    # later in its sequence (once Homebrew's newer git is on PATH), which does a
+    # destructive 'rm -rf .git/refs/*' on the SAME repo this function may have just
+    # spawned a background fetch/gc for -- with no synchronization between the two, a
+    # sufficiently large history/backfill could still be running when that later step
+    # fires, reintroducing exactly the concurrent-git-operation race this whole retry/
+    # maintenance chain is designed to avoid. The one-time wall-clock cost during vanilla
+    # OS bootstrap is an acceptable trade for eliminating that race entirely.
+    # If all attempts fail, the next clone_repo_into call will retry.
+    git -C "${target_folder}" unshallow
+    git -C "${target_folder}" maintain
+    debug "Completed unshallow + maintain for '$(yellow "${target_folder}")'"
 
-  # Always update submodules after clone or pull -- new commits may introduce submodule changes.
-  # Uses the 'siu' git alias (not a bare 'submodule update') for 'with-retry' hang protection --
-  # a stalled fetch inside any submodule would otherwise hang this function indefinitely.
-  git -C "${target_folder}" siu
+    # Always update submodules after clone or pull -- new commits may introduce submodule changes.
+    # Uses the 'siu' git alias (not a bare 'submodule update') for 'with-retry' hang protection --
+    # a stalled fetch inside any submodule would otherwise hang this function indefinitely.
+    git -C "${target_folder}" siu
+  else
+    debug "Git aliases (migrate-reftable/unshallow/maintain/siu) not yet available (expected before the dotfiles repo is cloned) -- skipping post-clone maintenance for this one bootstrap call"
+  fi
   local end_time
   _epoch_seconds end_time
   local duration=$((end_time - start_time))

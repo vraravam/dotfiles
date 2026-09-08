@@ -4,6 +4,20 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.44
+
+#### Fix vanilla-OS bootstrap: clone_repo_into depended on git aliases before they exist
+
+`clone_repo_into`'s very first bootstrap-time call (cloning the dotfiles repo itself, before `install-dotfiles.rb` has symlinked `${XDG_CONFIG_HOME}/git/config` into place) unconditionally used the `with-retry`, `migrate-reftable`, `unshallow`, `maintain`, and `siu` git aliases -- all defined in that same not-yet-present config file. On a genuinely vanilla OS this broke bootstrap entirely: `git with-retry ...` fails at alias resolution itself ("not a git command"), so the wrapped `git clone` never ran at all. The other two bootstrap-time callers (Keybase home/profiles repo clones) are unaffected -- they run after `install-dotfiles.rb`, once the config exists.
+
+* *[files/--HOME--/.shellrc]* `clone_repo_into`'s network-clone path now checks `git config --get alias.with-retry` first: falls back to a plain, unwrapped clone (no retry/hang protection) only when the alias is unavailable, instead of silently never cloning at all.
+* *[files/--HOME--/.shellrc]* The post-clone `migrate_git_repo_to_reftable`/`unshallow`/`maintain`/`siu` block is now guarded behind a single `git config --get alias.maintain` check (a reliable proxy for all four, since they share the same config file) -- skipped entirely when unavailable, rather than aborting the whole function/script under `set -e`. Every subsequent `clone_repo_into` call (this repo once `install-dotfiles.rb` has run, or any other repo) runs the full path normally.
+* *[files/--HOME--/.shellrc, scripts/fresh-install-of-osx.sh, Adoption.md, .ai/domains/fresh-install.md, .ai/domains/git-config.md]* Corrected stale `~/.gitconfig`/`${HOME}/.gitconfig` comments and prose to reference the actual location, `${XDG_CONFIG_HOME}/git/config` (this repo has never used `~/.gitconfig`).
+
+Verified via a simulated vanilla-OS environment (stripped `HOME`/`XDG_CONFIG_HOME`, no reachable git config): confirmed `with-retry` fails at alias resolution as described, confirmed the fallback clone now succeeds where it previously wouldn't have run at all, and confirmed the post-clone alias block is skipped cleanly instead of aborting under `set -euo pipefail`.
+
+---
+
 ### 3.2.43
 
 #### Document and apply additional Ruby/shell performance optimization patterns

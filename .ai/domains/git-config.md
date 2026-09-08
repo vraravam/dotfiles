@@ -9,7 +9,7 @@ applyTo: "**/.gitconfig,**/custom.gitattributes,**/add-upstream-git-config.rb"
 ## Scope
 
 **This file applies to**: Git configuration files and scripts that interact with git repositories, including:
-- `~/.gitconfig` - User-level git configuration (aliases, settings, hooks)
+- `~/.config/git/config` - User-level git configuration (aliases, settings, hooks)
 - `files/--HOME--/custom.gitattributes` - Custom git attributes
 - `files/--XDG_CONFIG_HOME--/git/hooks/*` - Global git hooks (pre-push, pre-commit, etc.)
 - `scripts/add-upstream-git-config.rb` - Repository upstream configuration
@@ -475,7 +475,7 @@ Used in: `upreb`
 
 ---
 
-## `~/.gitconfig` Aliases
+## `~/.config/git/config` Aliases
 
 ### Preferred Pattern: `!f() { ... }; f`
 
@@ -660,7 +660,7 @@ must be excluded -- tags have no reflogs in any repo (git only maintains reflogs
 
 ## `[delta]` -- Diff Rendering
 
-`delta` is configured under `[delta]` in `~/.gitconfig`. Key rules:
+`delta` is configured under `[delta]` in `~/.config/git/config`. Key rules:
 
 - **`minus-style` / `plus-style`**: use `"syntax <bg-color>"` (not `"red"` /
   `"green"`). Foreground-only colors lose syntax highlighting on whole-line

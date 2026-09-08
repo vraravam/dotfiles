@@ -360,12 +360,12 @@ cp templates/gitconfig-inc.template ~/.config/git/includes/personal.inc
 cp templates/gitconfig-inc.template ~/.config/git/includes/work.inc
 
 # Edit each file with appropriate name, email, signing key
-# Then wire into ~/.gitconfig using includeIf
+# Then wire into ~/.config/git/config using includeIf
 ```
 
 **Note:** Personal git config includes are consolidated in `~/.config/git/includes/` following XDG organization principles.
 
-Example `~/.gitconfig` entry:
+Example `~/.config/git/config` entry:
 
 ```ini
 [includeIf "gitdir:~/dev/personal/"]

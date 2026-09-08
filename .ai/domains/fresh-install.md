@@ -68,7 +68,7 @@ else
 fi
 
 # Skip if already configured (check sentinel file / flag)
-if is_file "${HOME}/.gitconfig"; then
+if is_file "${XDG_CONFIG_HOME}/git/config"; then
   info "Git config already present -- skipping."
 else
   # ... configure git ...
@@ -217,7 +217,7 @@ Re-enable after the sourcing. Add comment explaining why:
 
 See `copilot-instructions.md` -- Keybase / SSH section for full rationale.
 Key rule: set at top of `main` when `FIRST_INSTALL` is true; unset immediately
-after `install-dotfiles.rb` runs (which symlinks `~/.gitconfig` into place).
+after `install-dotfiles.rb` runs (which symlinks `${XDG_CONFIG_HOME}/git/config` into place).
 
 ## Crontab During Fresh Install
 
