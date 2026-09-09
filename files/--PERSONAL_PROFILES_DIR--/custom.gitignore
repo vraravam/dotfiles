@@ -133,9 +133,9 @@ Thumbs.db
 #   recovery.jsonlz4  — live crash-safe session snapshot (more current than sessionstore.jsonlz4)
 #   previous.jsonlz4  — prior session, useful fallback on restore
 
-# ── ignore git repos present in the browser's chrome directory ──
+# ── ignore git repos present in the browser's profile's chrome directory ──
 # (overridden below for ZenProfile which has user customisations)
-/*Profile/Profiles/DefaultProfile/chrome/
+/*Profile/Profiles/*Profile/chrome/
 
 
 # ══════════════════════════════════════════════════════════════════════════════

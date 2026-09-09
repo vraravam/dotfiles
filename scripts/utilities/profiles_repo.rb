@@ -78,13 +78,13 @@ module ProfilesRepo
   end
 
   # Finds all chrome folders in browser profiles under PERSONAL_PROFILES_DIR.
-  # Chrome folders are located at *Profile/Profiles/DefaultProfile/chrome.
+  # Chrome folders are located at *Profile/Profiles/*Profile/chrome.
   # Returns only directories, not files.
   #
   # @return [Array<Pathname>] Array of chrome folder paths as Pathname objects
   def find_chrome_folders
     chrome_folders = []
-    chrome_pattern = _profiles_dir.join('*Profile', 'Profiles', 'DefaultProfile', 'chrome')
+    chrome_pattern = _profiles_dir.join('*Profile', 'Profiles', '*Profile', 'chrome')
     PathUtils.glob_pathnames(chrome_pattern) do |path_pn|
       chrome_folders << path_pn if path_pn.directory? && GitProcessor.repo?(path_pn)
     end
@@ -176,7 +176,7 @@ module ProfilesRepo
   end
 
   # Finds and updates all browser profile chrome folders that are git repositories.
-  # Chrome folders are expected at: PERSONAL_PROFILES_DIR/*Profile/Profiles/DefaultProfile/chrome
+  # Chrome folders are expected at: PERSONAL_PROFILES_DIR/*Profile/Profiles/*Profile/chrome
   # Each chrome folder is updated via `git pull -r` if it's a valid git repo.
   #
   # @return [void]

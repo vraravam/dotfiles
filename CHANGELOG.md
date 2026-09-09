@@ -4,6 +4,19 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.45
+
+#### Genericize browser profile chrome handling
+
+* *[files/--PERSONAL_PROFILES_DIR--/.envrc, files/--PERSONAL_PROFILES_DIR--/custom.gitignore, scripts/utilities/profiles_repo.rb]* Generalized the chrome-folder glob pattern from `*Profile/Profiles/DefaultProfile/chrome` to `*Profile/Profiles/*Profile/chrome`, so adopters who haven't followed the `DefaultProfile` naming convention still get their chrome folders discovered, upstream-configured, and gitignored. Applied consistently to the `.envrc` chrome-folder-upstream setup (including the disabled natsumi-browser example), the `.gitignore` pattern, and `ProfilesRepo.find_chrome_folders`.
+
+#### Adopting these changes
+
+* Run `install-dotfiles.rb` which should update the `${PERSONAL_PROFILES_DIR}/.gitignore`.
+* Run `allow_all_direnv_configs` so that the `${PERSONAL_PROFILES_DIR}/.envrc` changes are picked up and executed.
+
+---
+
 ### 3.2.44
 
 #### Fix vanilla-OS bootstrap: clone_repo_into depended on git aliases before they exist
