@@ -2,6 +2,7 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
+require 'json'
 require 'open3'
 
 require_relative 'command_utils'
@@ -81,9 +82,10 @@ module Keybase
     Logging.debug 'Logging into keybase'
 
     # Use Open3 to avoid SIGPIPE from grep -q under pipefail.
-    # keybase status --json returns a JSON blob; parse for logged_in:true.
+    # keybase status --json returns a JSON blob; parse it to check Username + LoggedIn.
     status_json = CommandUtils.query('keybase', 'status', '--json')
-    if status_json.include?('"logged_in":true')
+    status = JSON.parse(status_json)
+    if status['Username'] == keybase_username && status['LoggedIn'] == true
       Logging.debug "Skipping keybase login -- '#{keybase_username.purple}' is already logged in"
       return true
     end

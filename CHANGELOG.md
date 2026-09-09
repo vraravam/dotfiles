@@ -4,6 +4,15 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.46
+
+#### Fix keybase login-status check and switch opencode to custom tap
+
+* *[scripts/utilities/keybase.rb]* `ensure_logged_in`'s already-logged-in check was comparing against a JSON key/value shape that never matched the CLI's actual output (wrong key casing, missing quotes around the value), so it always fell through to a redundant `keybase login`. Replaced the substring match with `JSON.parse(status_json)` and compares `status['Username']`/`status['LoggedIn']` directly -- verified against live `keybase status --json` output.
+* *[files/--HOME--/Brewfile]* Replaced `brew 'opencode'` with `brew 'anomalyco/tap/opencode', trusted: true`.
+
+---
+
 ### 3.2.45
 
 #### Genericize browser profile chrome handling
