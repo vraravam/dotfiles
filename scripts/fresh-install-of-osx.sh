@@ -464,8 +464,10 @@ _clone_home_repo() {
       fi
     elif clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME:-}")" "${HOME}"; then
       # Vanilla OS: clone succeeded
-      # Reset ssh keys' permissions so that git doesn't complain when using them
+      # Reset ssh/gnupg permissions so git/gpg don't complain -- git checkout does not
+      # preserve the strict permission modes either needs, if they're tracked in the home repo.
       set_ssh_folder_permissions
+      set_gnupg_folder_permissions
 
       # Fix /etc/hosts file to block facebook
       if is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts"; then sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts; fi
@@ -608,6 +610,7 @@ main() {
   _ensure_filevault_is_on
   _install_xcode_command_line_tools
   set_ssh_folder_permissions
+  set_gnupg_folder_permissions
   _ensure_directories_exist
   _clone_dot_files_repo
 

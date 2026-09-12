@@ -984,10 +984,17 @@ Do NOT use this pattern for:
 
 ### Example: `bupc` function
 
-The `bupc` function (in `.aliases`) upgrades Homebrew packages and calls
-`post-brew-install.rb`. It follows this pattern so that:
-- `bupc` is recognized as the outermost script
-- `post-brew-install.rb` detects it is nested and suppresses its own output
+The `bupc` function (in `.aliases`) upgrades Homebrew packages via several `brew`
+commands (bundle cleanup, cleanup, autoremove, bundle install, upgrade). It follows
+this pattern so that:
+- `bupc` is recognized as the outermost script (via its own
+  `_DOTFILES_SCRIPT_DEPTH` increment)
+- Log output from anything triggered underneath -- e.g. the `antidote` formula's
+  Brewfile `postinstall:` hook, which fires during `brew bundle install`/
+  `brew upgrade` and calls into `Antidote.update_and_regenerate_bundle` -- inherits
+  and correctly indents one level deeper, even though that method has no script
+  infrastructure of its own (it is a plain utility method, not a top-level entry
+  point; see script-depth-tracking.md)
 - The final summary shows the total time for the entire `bupc` operation
 
 ## Intentional Omission of `set -euo pipefail`

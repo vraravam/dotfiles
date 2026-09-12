@@ -1,5 +1,5 @@
 ---
-applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/post-brew-install.rb,**/osx-defaults.sh,**/setup-login-item.rb,**/capture-prefs.rb,**/resurrect-repositories.rb"
+applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/osx-defaults.sh,**/setup-login-item.rb,**/capture-prefs.rb,**/resurrect-repositories.rb"
 ---
 
 # Fresh Install Instructions
@@ -14,7 +14,6 @@ scripts invoked during initial setup or backup/restore operations.
 **This file applies to**: Bootstrap, installation, and system setup scripts, including:
 - `scripts/fresh-install-of-osx.sh` - Main bootstrap script (vanilla OS and pre-configured modes)
 - `scripts/install-dotfiles.rb` - Symlink/copy manager for `files/` directory
-- `scripts/post-brew-install.rb` - Post-Homebrew installation configuration
 - `scripts/osx-defaults.sh` - macOS system preferences
 - `scripts/setup-login-item.rb` - Login item configuration
 - `scripts/capture-prefs.rb` - Preferences export/import with timestamp validation
@@ -137,8 +136,9 @@ On a vanilla OS, the order of availability is:
 3. Homebrew installed
 4. dotfiles repo cloned → `.shellrc`/`.aliases` symlinked
 5. `install-dotfiles.rb` creates symlinks
-6. `brew bundle install` installs tools
-7. `post-brew-install.rb` runs (antidote, mise versions, etc.)
+6. `brew bundle install` installs tools (each formula/cask handles its own post-install
+   needs via Brewfile `postinstall:` hooks -- e.g. antidote's hook regenerates the plugin
+   bundle; see "Antidote in Fresh Install" below)
 
 Functions needed **before step 4** must live in `.shellrc`, not `.aliases`.
 `.shellrc` is curl-downloaded and must stay lean -- only put functions in it
@@ -191,9 +191,17 @@ Extract into a single conditional.
 
 ## Antidote in Fresh Install
 
-`Antidote.update_and_regenerate_bundle` is called from `post-brew-install.rb`.
-It does NOT need to be called separately in `fresh-install` for either mode --
-`post-brew-install.rb` handles both cases.
+`Antidote.update_and_regenerate_bundle` is invoked two ways, neither of which is
+`fresh-install-of-osx.sh` itself:
+- The `antidote` formula's `postinstall:` hook in the Brewfile (via the
+  `update_antidote_and_regenerate_plugin_bundle` shell wrapper in `.aliases`) --
+  fires whenever `brew bundle install` installs or upgrades antidote, which
+  covers both a vanilla-OS first install and a pre-configured machine's re-run.
+- `software-updates-cron.rb`'s periodic schedule, for day-to-day plugin updates
+  outside of a fresh install.
+
+It does NOT need to be called separately in `fresh-install-of-osx.sh` -- the
+Brewfile hook already covers both first-install and pre-configured-machine modes.
 
 When sourcing `antidote.zsh` inside fresh-install, use `load_file_if_exists` since
 antidote may not be installed yet on a vanilla OS.
@@ -215,7 +223,6 @@ Re-enable after the sourcing. Add comment explaining why:
 
 ## `GIT_SSH_COMMAND`
 
-See `copilot-instructions.md` -- Keybase / SSH section for full rationale.
 Key rule: set at top of `main` when `FIRST_INSTALL` is true; unset immediately
 after `install-dotfiles.rb` runs (which symlinks `${XDG_CONFIG_HOME}/git/config` into place).
 

@@ -1718,8 +1718,7 @@ append_to_fpath_if_dir_exists() {
 
 # --------------------------------------------------------------------------
 # 1g. Bootstrap operations
-# Called by fresh-install-of-osx.sh and post-brew-install.sh.
-# set_ssh_folder_permissions is also called from ~/.envrc directly.
+# Called by fresh-install-of-osx.sh (see that script for exact call sites).
 # --------------------------------------------------------------------------
 
 # Asks for the administrator password upfront and keeps it alive until the calling script
@@ -2012,6 +2011,37 @@ set_ssh_folder_permissions() {
     fi
   else
     warn "'$(cyan "${HOME}/.ssh")' exists but is empty. No file permissions to set."
+  fi
+}
+
+# Sets secure permissions on ${HOME}/.gnupg (700 on the directory and all
+# subdirectories, e.g. private-keys-v1.d; 600 on regular files). gpg treats a
+# world/group-readable homedir as unsafe and prints a warning on every invocation
+# until fixed -- this also matters because private key material under
+# private-keys-v1.d/*.key can otherwise end up world-readable (e.g. inherited from
+# a permissive umask when some other tool first created the homedir).
+# Socket files (gpg-agent's S.* sockets) are intentionally left untouched --
+# 'find -type f' only matches regular files, and chmod-ing a live socket is
+# unnecessary (gpg-agent already creates them with owner-only permissions).
+# Mirrors set_ssh_folder_permissions immediately above -- keep both in sync if
+# this logic changes.
+set_gnupg_folder_permissions() {
+  info "$(yellow 'Setting gnupg homedir file permissions')"
+  ensure_dir_exists "${HOME}/.gnupg"
+  # Set directory permissions first (top-level homedir and all subdirectories)
+  if ! chmod 700 "${HOME}/.gnupg" || ! find "${HOME}/.gnupg" -type d -exec chmod 700 {} \;; then
+    warn "Failed to set directory permissions on '$(cyan "${HOME}/.gnupg")'"
+    return
+  fi
+
+  if ! is_directory_empty "${HOME}/.gnupg"; then
+    if find "${HOME}/.gnupg" -type f -exec chmod 600 {} \;; then
+      success "Ensured correct permissions for '$(cyan "${HOME}/.gnupg")' and files within it."
+    else
+      warn "Failed to set file permissions in '$(cyan "${HOME}/.gnupg")'"
+    fi
+  else
+    warn "'$(cyan "${HOME}/.gnupg")' exists but is empty. No file permissions to set."
   fi
 }
 

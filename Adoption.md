@@ -335,16 +335,17 @@ See [README § What the Script Does](README.md#what-the-script-does) for a compl
 2. Installs Homebrew (or updates if already present)
 3. Clones dotfiles repo to `${DOTFILES_DIR}` (typically `~/.config/dotfiles`)
 4. Runs `install-dotfiles.rb` (symlinks config files)
-5. Installs base Brewfile packages (full install continues in background)
-6. Runs `post-brew-install.rb` (antidote, mise versions, etc.)
-7. **Two-phase preference setup:**
+5. Installs base Brewfile packages (full install continues in background) -- each
+   formula/cask handles its own post-install needs via Brewfile `postinstall:` hooks
+   (e.g. antidote's hook regenerates the plugin bundle)
+6. **Two-phase preference setup:**
    - Phase 1: `osx-defaults.sh -s` (seeds baseline defaults)
    - Phase 2: `capture-prefs.rb -i` (imports your UI-configured overrides)
-8. Sets up cron jobs (falls back: existing → tracked → user action)
-9. Resurrects tracked git repositories (from Phase 1.3 catalogs)
-10. Prompts for password to set default shell to Homebrew zsh
+7. Sets up cron jobs (falls back: existing → tracked → user action)
+8. Resurrects tracked git repositories (from Phase 1.3 catalogs)
+9. Prompts for password to set default shell to Homebrew zsh
 
-**Optional shortcut for huge/slow repos:** if you added a `bundle` key for a repo in [Phase 1.3](#13-generate-repository-catalog), transfer the `.bundle` file to this machine (e.g. via AirDrop) to the same path referenced in the YAML. Step 9 above picks it up automatically -- no separate command needed, and no timing to get right: it imports from the bundle if present, otherwise falls back to a normal clone.
+**Optional shortcut for huge/slow repos:** if you added a `bundle` key for a repo in [Phase 1.3](#13-generate-repository-catalog), transfer the `.bundle` file to this machine (e.g. via AirDrop) to the same path referenced in the YAML. Step 8 above picks it up automatically -- no separate command needed, and no timing to get right: it imports from the bundle if present, otherwise falls back to a normal clone.
 
 ### 3.3 Post-Setup Manual Steps
 

@@ -186,7 +186,7 @@ class GitProcessor
   def config_value(key)
     @_config_values ||= {}
     @_config_values[key] ||= begin
-      out, = _execute('config', '--get', key)
+      out, = _execute('config', '--get', key, read_only: true)
       nil_or_empty?(out) ? nil : out.strip
     end
   end
@@ -247,7 +247,7 @@ class GitProcessor
   # @return [String, nil]
   def current_branch
     @current_branch ||= begin
-      out, = _execute('branch', '--show-current')
+      out, = _execute('branch', '--show-current', read_only: true)
       nil_or_empty?(out) ? nil : out.strip
     end
   end
@@ -259,7 +259,7 @@ class GitProcessor
   # @return [Boolean] true if shallow clone, false if full clone
   def shallow?
     @shallow ||= begin
-      out, = _execute('rev-parse', '--is-shallow-repository')
+      out, = _execute('rev-parse', '--is-shallow-repository', read_only: true)
       nil_or_empty?(out) ? false : out.strip == 'true'
     end
   end
@@ -272,7 +272,7 @@ class GitProcessor
   # @return [String] 'files' or 'reftable'
   def ref_format
     @ref_format ||= begin
-      out, = _execute('rev-parse', '--show-ref-format')
+      out, = _execute('rev-parse', '--show-ref-format', read_only: true)
       format = nil_or_empty?(out) ? 'files' : out.strip
       nil_or_empty?(format) ? 'files' : format
     end
@@ -288,7 +288,7 @@ class GitProcessor
   def each_remote
     return unless block_given?
 
-    stdout, _stderr, status = _execute('config', '--get-regexp', '^remote\\..*\\.url')
+    stdout, _stderr, status = _execute('config', '--get-regexp', '^remote\\..*\\.url', read_only: true)
     return unless status.success?
 
     stdout.each_line do |line|
@@ -305,7 +305,19 @@ class GitProcessor
   # @param name [String] Tag name to check.
   # @return [Boolean] true if tag exists, false otherwise.
   def tag_exists?(name)
-    _stdout, _stderr, status = _execute('rev-parse', '-q', '--verify', "refs/tags/#{name}")
+    _stdout, _stderr, status = _execute('rev-parse', '-q', '--verify', "refs/tags/#{name}", read_only: true)
+    status.success?
+  end
+
+  # Checks whether two refs share a common ancestor (i.e. a rebase/merge between
+  # them is even meaningful). False when the two histories are entirely unrelated
+  # (e.g. after one side's history was rewritten/force-squashed with no shared base).
+  #
+  # @param ref1 [String] First ref (e.g. a branch name).
+  # @param ref2 [String] Second ref (e.g. 'origin/main', a remote-tracking ref).
+  # @return [Boolean] true if a common ancestor exists, false if histories are unrelated.
+  def common_ancestor?(ref1, ref2)
+    _stdout, _stderr, status = _execute('merge-base', ref1, ref2, read_only: true)
     status.success?
   end
 
@@ -315,7 +327,7 @@ class GitProcessor
   # @param switches [Array<String>] Additional arguments to pass to git status.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def status(*switches)
-    _execute('status', *switches)
+    _execute('status', *switches, read_only: true)
   end
 
   # Lists tracked files matching the given pathspec patterns.
@@ -341,7 +353,7 @@ class GitProcessor
   # @param ref [String] Any git ref (e.g., 'HEAD', 'master', 'origin/main')
   # @return [Array<String>] Sorted list of file paths, or empty array on failure
   def ls_tree(ref)
-    stdout, _stderr, status = _execute('ls-tree', '-r', '--name-only', ref)
+    stdout, _stderr, status = _execute('ls-tree', '-r', '--name-only', ref, read_only: true)
     status.success? ? stdout.split("\n").sort : []
   end
 
@@ -356,7 +368,7 @@ class GitProcessor
   #
   # @return [Integer] Total commit count (0 for brand new repos, >0 for repos with history).
   def commit_count
-    stdout, = _execute('rev-list', '--all', '--count')
+    stdout, = _execute('rev-list', '--all', '--count', read_only: true)
     nil_or_empty?(stdout) ? 0 : stdout.strip.to_i
   end
 
@@ -401,6 +413,16 @@ class GitProcessor
     _execute('remote', 'set-url', name, url)
   end
 
+  # Removes an existing remote.
+  #
+  # @param name [String] The remote name (e.g., 'origin').
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def remove_remote(name)
+    return _mock_status_response(false) unless repo?
+
+    _execute('remote', 'remove', name)
+  end
+
   # Fetches from all remotes and all tags via the 'fo' git alias -- not a bare
   # 'git fetch --all', so this gets 'with-retry' hang protection (inactivity-based,
   # not a fixed timeout) and promisor-first remote ordering (avoids 'did not receive
@@ -413,6 +435,43 @@ class GitProcessor
     return _mock_status_response(false) unless repo?
 
     run_alias('fo')
+  end
+
+  # Fetches from a single named remote -- unlike fetch_all, does not go through the
+  # 'fo' alias (no with-retry/promisor-ordering, no fetching of all tags). Used for
+  # one-off fetches against a remote that is not part of the routine multi-remote
+  # workflow.
+  #
+  # @param remote [String] Remote name to fetch from.
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def fetch(remote)
+    return _mock_status_response(false) unless repo?
+
+    _execute('fetch', remote)
+  end
+
+  # Rebases the current branch onto upstream.
+  #
+  # @param upstream [String] Ref to rebase onto (e.g. 'origin/main', a remote-tracking ref).
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def rebase(upstream)
+    return _mock_status_response(false) unless repo?
+
+    _execute('rebase', upstream)
+  end
+
+  # Hard-resets the current branch to ref, discarding local commits and working-tree
+  # changes. Deliberately destructive -- only for callers that have already decided
+  # preserving local history is not meaningful (e.g. when the current branch and ref
+  # share no common ancestor -- see common_ancestor? -- so there is nothing sensible
+  # to rebase onto anyway).
+  #
+  # @param ref [String] Ref to reset to (e.g. a remote-tracking ref).
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def reset_hard(ref)
+    return _mock_status_response(false) unless repo?
+
+    _execute('reset', '--hard', ref)
   end
 
   # Initializes a new git repository in the directory.
@@ -725,9 +784,11 @@ class GitProcessor
   #
   # @param alias_name [String] The alias name (e.g., 'amq').
   # @param args [Array<String>] Additional arguments to pass to the alias.
+  # @param read_only [Boolean] Passed through to _execute -- true for query aliases
+  #   (e.g. 'is-clean') that must run for real even under dry-run.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def run_alias(alias_name, *args)
-    _execute(alias_name, *args)
+  def run_alias(alias_name, *args, read_only: false)
+    _execute(alias_name, *args, read_only: read_only)
   end
 
   # Deletes .git/index.lock if it exists. This is a recovery operation for
@@ -874,13 +935,20 @@ class GitProcessor
   # - Captures: all other commands
   #
   # @param args [Array<String>] Git subcommand and arguments (e.g., 'status', '--short').
+  # @param read_only [Boolean] When true, always actually runs the command even in dry-run
+  #   mode -- for pure query commands (status, config --get, rev-list --count, etc.) that
+  #   have no side effects. Dry-run is meant to suppress WRITES, not reads: a query method
+  #   like current_branch/config_value/ls_tree must return real data even during a dry run,
+  #   or callers that build log messages from that data crash on the mocked empty-string/nil
+  #   response. Defaults to false, preserving the existing "log and skip" behavior for
+  #   mutations.
   # @yield Optional block executed after command completes (useful for cleanup/logging).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  #   In dry-run mode, returns empty strings and a mock successful status.
-  def _execute(*args)
+  #   In dry-run mode (unless read_only), returns empty strings and a mock successful status.
+  def _execute(*args, read_only: false)
     cmd = _git_command + args
 
-    if @dry_run
+    if @dry_run && !read_only
       Logging.info "Would run: #{cmd.join(' ').cyan}"
       yield if block_given?
       # Return mock success response with same format as captured output
@@ -945,7 +1013,7 @@ class GitProcessor
 
     # Compare the lists
     if local_files == remote_files
-      Logging.success "✅ File lists match (#{local_files.size.to_s.purple} files) - safe to delete remote"
+      Logging.success "✅ File lists match (#{local_files.size.to_s.purple} files) - safe to force-push"
       return true
     end
 

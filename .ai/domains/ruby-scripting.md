@@ -299,9 +299,10 @@ end
 #### From shell (still works)
 
 ```zsh
-# Call as standalone CLI tool
-ruby scripts/add-upstream-git-config.rb -d ~/repo -u upstream-owner
-ruby scripts/install-dotfiles.rb --dry-run
+# Call as standalone CLI tool (bare invocation -- shebang + executable bit +
+# ${DOTFILES_DIR}/scripts already in PATH via .zshrc)
+add-upstream-git-config.rb -d ~/repo -u upstream-owner
+install-dotfiles.rb --dry-run
 ```
 
 ### When NOT to Use This Pattern

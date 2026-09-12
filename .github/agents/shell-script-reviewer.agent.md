@@ -190,7 +190,7 @@ Apply these additional checks:
 
 ## Handling Fresh Install Scripts
 
-When reviewing `fresh-install-of-osx.sh`, `install-dotfiles.rb`, `post-brew-install.rb`:
+When reviewing `fresh-install-of-osx.sh`, `install-dotfiles.rb`:
 
 **CRITICAL**: These scripts must work on both vanilla OS (nothing installed) and pre-configured machines.
 

@@ -67,12 +67,12 @@ The [fresh-install-of-osx.sh](scripts/fresh-install-of-osx.sh) script runs in an
 2. Installs **Homebrew** (or updates if already present)
 3. Clones your **dotfiles fork** to `~/.config/dotfiles`
 4. Runs **install-dotfiles.rb** to symlink config files
-5. Installs packages from your **Brewfile**
-6. Runs **post-brew-install.rb** (antidote setup, mise language versions)
-7. Seeds macOS preferences via **osx-defaults.sh -s** (baseline settings)
-8. Imports your custom preferences via **capture-prefs.rb -i** (UI-configured overrides)
-9. Sets up **cron jobs** for automated maintenance
-10. Resurrects tracked git repositories from catalogs
+5. Installs packages from your **Brewfile** -- each formula/cask handles its own
+   post-install needs via Brewfile `postinstall:` hooks (e.g. antidote setup)
+6. Seeds macOS preferences via **osx-defaults.sh -s** (baseline settings)
+7. Imports your custom preferences via **capture-prefs.rb -i** (UI-configured overrides)
+8. Sets up **cron jobs** for automated maintenance
+9. Resurrects tracked git repositories from catalogs
 
 ### Two-Phase Preference Restoration
 

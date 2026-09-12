@@ -4,6 +4,25 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.47
+
+#### Backport general fixes discovered while working on the `keybase-migration` branch
+
+* *[scripts/utilities/git_processor.rb]* Added a `read_only:` parameter to `_execute`/`run_alias` -- dry-run mode was incorrectly mocking pure query commands (`config_value`, `current_branch`, `shallow?`, `ref_format`, `each_remote`, `tag_exists?`, `status`, `ls_tree`, `commit_count`), silently returning empty/nil instead of real data even though no mutation was involved. Added `remove_remote`, `fetch`, `rebase`, `common_ancestor?`, and `reset_hard` as new reusable query/mutation methods. Fixed a stale "safe to delete remote" message in `_verify_file_lists_match` to "safe to force-push" (the message is generic and applies to any repo, not just ones with special remote-recreation behavior).
+* *[files/--HOME--/Brewfile]* Restored the `antidote` formula's `postinstall:` hook (`update_antidote_and_regenerate_plugin_bundle`) -- accidentally dropped in an unrelated earlier commit (moving `.aliases` from `$HOME` to `$ZDOTDIR`), which silently disabled automatic antidote plugin updates on `brew install`/`brew upgrade`. Also added a `postinstall:` hook for `zsh-patina` (`zsh-patina restart`) so the daemon picks up binary upgrades immediately instead of only reacting to config-file changes.
+* *[files/--HOME--/.shellrc]* Added `set_gnupg_folder_permissions` (mirrors `set_ssh_folder_permissions`): sets `700`/`600` permissions on `${HOME}/.gnupg` and its contents, since gpg treats a world/group-readable homedir as unsafe and private key material under `private-keys-v1.d/*.key` can otherwise end up world-readable.
+* *[scripts/fresh-install-of-osx.sh]* Calls `set_gnupg_folder_permissions` alongside `set_ssh_folder_permissions` at both existing call sites (early in `main()`, and after a successful home-repo clone).
+* *[.ai/domains/fresh-install.md, .ai/domains/shell-scripting.md, .ai/instructions.md, .github/agents/ruby-script-reviewer.agent.md, .github/agents/shell-script-reviewer.agent.md, Adoption.md, Extras.md, README.md]* Removed stale references to `scripts/post-brew-install.rb`, deleted in an earlier, unrelated commit ("Move all post-install logic to Brewfile postinstall hooks") but never fully scrubbed from the docs. Rewrote the "Antidote in Fresh Install" section and the `bupc` example in `shell-scripting.md` to describe the actual current mechanism (Brewfile `postinstall:` hook + `software-updates-cron.rb`, not a separate script). Renumbered the fresh-install step lists in `Adoption.md`/`README.md` accordingly, and dropped a false "mise language versions" claim (no such step exists anywhere in the codebase).
+* *[Extras.md]* Fixed a broken `recreate-repo.rb` table-of-contents anchor (should be `recreate-repository.rb`) and removed a dangling `setup-git-remote-gcrypt.rb` TOC entry pointing at a section/file that never existed -- both pre-existing bugs unrelated to this change.
+* *[.ai/domains/fresh-install.md]* Removed a stale "See copilot-instructions.md -- Keybase / SSH section" cross-reference; no such section exists in that file.
+* *[.ai/domains/ruby-scripting.md, docs/ruby-static-analysis.md]* Fixed script-invocation examples to use bare invocation (`add-upstream-git-config.rb`, not `ruby scripts/add-upstream-git-config.rb`) -- `${DOTFILES_DIR}/scripts` is already in `PATH` on any bootstrapped machine. Added a comment to the CI example in `ruby-static-analysis.md` explaining why that context still needs the explicit `ruby` invocation.
+
+#### Adopting these changes
+
+* Restart Terminal/iTerm (or run `unfunction is_shellrc_sourced; load_file_if_exists ~/.shellrc`) to pick up the new `set_gnupg_folder_permissions` function.
+
+---
+
 ### 3.2.46
 
 #### Fix keybase login-status check and switch opencode to custom tap

@@ -10,11 +10,9 @@ Reference documentation for the utility scripts bundled in this repo. Each secti
 - [fresh-install-of-osx.sh](#fresh-install-of-osxsh)
 - [install-dotfiles.rb](#install-dotfilesrb)
 - [osx-defaults.sh](#osx-defaultssh)
-- [post-brew-install.rb](#post-brew-installrb)
-- [recreate-repo.rb](#recreate-reporb)
+- [recreate-repository.rb](#recreate-repositoryrb)
 - [resurrect-repositories.rb](#resurrect-repositoriesrb)
 - [run-all.rb](#run-allrb)
-- [setup-git-remote-gcrypt.rb](#setup-git-remote-gcryptrb)
 - [setup-login-item.rb](#setup-login-itemrb)
 - [software-updates-cron.rb](#software-updates-cronrb)
 
@@ -120,10 +118,6 @@ Never reverse the order — running `capture-prefs.rb -i` before `osx-defaults.s
 | Ephemeral state (window positions, sync cursors, UUIDs) | `capture-prefs-excluded-keys.txt` or `-denied-list.txt` — nowhere else |
 
 See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-osx-defaultssh-and-capture-prefsrb-two-phase-preference-architecture) for the full architectural rationale and ordering constraint.
-
-## post-brew-install.rb
-
-This script runs post-bundle cleanup and plugin setup that cannot live in the Brewfile itself. It removes conflicting zsh completion files, trusts known taps, and updates antidote plugins. It is called automatically by `fresh-install-of-osx.sh` after `brew bundle` completes. It can also be run manually at any time — it is idempotent.
 
 ## recreate-repository.rb
 

@@ -30,13 +30,13 @@ gem install rubocop reek flay flog
 ### Run All Tools at Once
 ```zsh
 # All scripts
-ruby scripts/ruby-lint.rb
+ruby-lint.rb
 
 # Specific directory
-ruby scripts/ruby-lint.rb scripts/utilities/
+ruby-lint.rb scripts/utilities/
 
 # Specific file
-ruby scripts/ruby-lint.rb scripts/my-script.rb
+ruby-lint.rb scripts/my-script.rb
 ```
 
 ### Run Individual Tools
@@ -102,7 +102,9 @@ git commit -m "test"
 
 To run in CI (if added later):
 ```zsh
-# In CI script
+# In CI script -- explicit 'ruby' invocation, not bare 'ruby-lint.rb': CI runners check
+# out the repo directly without sourcing .zshrc/.shellrc, so ${DOTFILES_DIR}/scripts is
+# never added to PATH the way it is on an interactive/bootstrapped machine.
 gem install rubocop reek flay flog
 ruby scripts/ruby-lint.rb || exit 1
 ```

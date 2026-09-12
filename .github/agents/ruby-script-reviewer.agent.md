@@ -251,7 +251,7 @@ end
 
 ## Handling Fresh Install Scripts
 
-When reviewing `fresh-install-of-osx.sh` callers (`install-dotfiles.rb`, `post-brew-install.rb`, etc.):
+When reviewing `fresh-install-of-osx.sh` callers (`install-dotfiles.rb`, etc.):
 
 **CRITICAL**: These must work on both vanilla OS and pre-configured machines.
 
