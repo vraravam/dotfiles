@@ -9,10 +9,13 @@ Reference documentation for the utility scripts bundled in this repo. Each secti
 - [cleanup-browser-profiles.rb](#cleanup-browser-profilesrb)
 - [fresh-install-of-osx.sh](#fresh-install-of-osxsh)
 - [install-dotfiles.rb](#install-dotfilesrb)
+- [migrate-repo-to-encrypted-backup.rb](#migrate-repo-to-encrypted-backuprb)
+- [migrate-repos-to-encrypted-backup.rb](#migrate-repos-to-encrypted-backuprb)
 - [osx-defaults.sh](#osx-defaultssh)
 - [recreate-repository.rb](#recreate-repositoryrb)
 - [resurrect-repositories.rb](#resurrect-repositoriesrb)
 - [run-all.rb](#run-allrb)
+- [setup-encrypted-backup.rb](#setup-encrypted-backuprb)
 - [setup-login-item.rb](#setup-login-itemrb)
 - [software-updates-cron.rb](#software-updates-cronrb)
 
@@ -84,6 +87,24 @@ Run `${DOTFILES_DIR}/scripts/install-dotfiles.rb` to symlink all dotfiles from t
 
 See [Technical Deep Dive § 9](TechnicalDeepDive.md#9-install-dotfilesrb-mechanics) for conflict resolution rules, mtime tie-breaking, and `FIRST_INSTALL` behaviour.
 
+## migrate-repo-to-encrypted-backup.rb
+
+ONE-TIME migration tool: migrates a single git repository to the encrypted-backup mechanism (`gpg` + `git bundle`, see [`KEYBASE_MIGRATION.md`](KEYBASE_MIGRATION.md)). Run once per repository when first adopting the mechanism — there is nothing left to "migrate" for that repo afterward; day-to-day pushes go through `EncryptedBackup.export_and_push` instead, wired up via the `push-<basename>.sh` override scripts.
+
+It does not touch the live repo's remotes at all — the live repo keeps whatever remote it already has (or none), and the encrypted backup is a side-channel export to a separate plain GitHub repo. Re-running is always safe (it just re-bundles, re-encrypts, and re-pushes), but there is nothing more to gain from running it again once a repo has been migrated.
+
+```zsh
+migrate-repo-to-encrypted-backup.rb --repo ~/path/to/repo --encrypted-repo-name home
+```
+
+## migrate-repos-to-encrypted-backup.rb
+
+ONE-TIME convenience wrapper around `migrate-repo-to-encrypted-backup.rb`: migrates both the `home` and `browser-profiles` repos in a single run. Run this once, when first moving to the encrypted-backup mechanism.
+
+```zsh
+migrate-repos-to-encrypted-backup.rb
+```
+
 ## osx-defaults.sh
 
 Codifies a **partial baseline** of macOS system and application preferences as a repeatable script. It kills affected apps upfront (graceful SIGTERM), applies all `defaults write` calls, then restarts them via an EXIT trap — so the settings take effect immediately without a logout.
@@ -127,7 +148,7 @@ The script has two modes:
 
 **Non-force mode** (default): Compresses and pushes existing commits without destroying history.
 
-**Force mode** (`-f`): Squashes all history into a single commit and recreates the remote repository.
+**Force mode** (`-f`): Squashes all history into a single commit and force-pushes it to the existing remote (no remote delete/recreate -- see below).
 
 ### Force mode workflow
 
@@ -136,10 +157,9 @@ When run with `-f`, the script follows this safety-first sequence:
 1. **Capture remote state** — Gets file list from `origin/<branch>` before any destructive operations
 2. **Recreate local repo** — Destroys `.git` and creates a fresh repository
 3. **Commit all files** — Stages and commits everything into a single initial commit
-4. **Verify file lists match** — Compares new local vs captured remote file lists
-5. **If match**: Delete remote repo (Keybase only), then push
-6. **If mismatch**: Abort without deleting remote (preserves remote as backup)
-7. **Build commit graph** — Optimizes git operations (log, status, merge-base)
+4. **Verify file lists match** — Compares new local vs captured remote file lists (paths only -- `git ls-tree --name-only`, never content/blob hashes); aborts without pushing if they don't match (preserves the remote as backup). This is meaningful for a multi-file repo (catches `.gitignore` misconfiguration causing files to unexpectedly appear/disappear), but weak for a repo like the encrypted-backup wrapper repo (see [KEYBASE_MIGRATION.md](KEYBASE_MIGRATION.md)), whose working tree only ever contains a handful of numbered `backup.gpg.NNN` chunk files (split to stay under GitHub's 100MB per-file limit) -- there, path-only comparison can catch a chunk going missing/a stray extra file appearing, or the chunk count changing, but it provides no protection against force-pushing stale or corrupted chunks whose paths and count are unchanged but content is wrong. For that reason, force mode against a directory under `${XDG_CACHE_HOME}/encrypted-backups/` automatically runs an additional reassemble + decrypt + `git bundle verify` check first (`EncryptedBackup.verify_current_blob_decryptable?`) and refuses to squash if it fails -- no special flag needed, this is auto-detected from the directory path.
+5. **Compress and force-push** — No remote delete/recreate step: force-pushing squashed history directly is sufficient (GitHub, unlike Keybase's old git server, accepts a force-push of arbitrarily-diverged history with no special-casing needed)
+6. **Build commit graph** — Optimizes git operations (log, status, merge-base)
 
 The early capture (step 1) avoids prompting for `git remote add` or `git fetch` since remote tracking refs are lost when `.git` is destroyed.
 
@@ -157,8 +177,8 @@ recreate-repository.rb -n -f -d <repo-folder>    # Dry-run
 
 ### Safety features
 
-- **Pre-comparison**: File lists compared before remote deletion
-- **Remote preservation**: If files don't match, remote stays intact (can be re-cloned)
+- **Pre-comparison**: File lists compared before force-pushing squashed history
+- **Remote preservation**: If files don't match, the push is aborted and remote stays intact (can be re-cloned)
 - **Dry-run mode**: Preview operations with `-n` flag
 - **Early validation**: Checks remote ref exists before destroying local `.git`
 
@@ -243,6 +263,16 @@ You can control the search scope and filtering using environment variables:
 ```
 
 **Note**: Any shell command can be run — not just git commands. Each command executes in the context of the git repository root, giving you access to the repo's files and structure.
+
+## setup-encrypted-backup.rb
+
+Verifies the encrypted-backup mechanism (`gpg` + `git bundle`, see [`KEYBASE_MIGRATION.md`](KEYBASE_MIGRATION.md)) is ready to use: `gnupg` installed, and a passphrase configured in the macOS Keychain. It's idempotent — safe to run every time, and does nothing visible if already configured. It's called automatically on every `fresh-install-of-osx.sh` run, but can also be run manually at any time.
+
+```zsh
+setup-encrypted-backup.rb
+```
+
+If a passphrase isn't yet configured and a real TTY is available, it prompts interactively via `security add-generic-password`'s own masked, double-entry prompt (the passphrase never touches Ruby memory or argv). In a non-interactive context (e.g. piped through `tee` during the bootstrap one-liner), it logs setup instructions instead of prompting.
 
 ## setup-login-item.rb
 

@@ -24,7 +24,7 @@ require_relative 'core'
 #
 #   # Non-path constants (String or nil)
 #   puts EnvVars::USER                              # String (always set)
-#   puts EnvVars::KEYBASE_USERNAME                  # String or nil
+#   puts EnvVars::GH_USERNAME                       # String (always set)
 #
 #   # Runtime flag methods (evaluated dynamically)
 #   if EnvVars.debug?                               # Boolean
@@ -80,6 +80,14 @@ module EnvVars
   # Current user's default shell.
   # Mirrors: $SHELL (always set by the shell)
   SHELL = ENV.fetch('SHELL', '/bin/zsh').freeze
+
+  # Encrypted git repo names (used with the encrypted-backup mechanism, see
+  # scripts/utilities/encrypted_backup.rb).
+  # Mirrors: export ENCRYPTED_HOME_REPO_NAME='home'
+  ENCRYPTED_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('ENCRYPTED_HOME_REPO_NAME', 'home'))
+
+  # Mirrors: export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
+  ENCRYPTED_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('ENCRYPTED_PROFILES_REPO_NAME', 'browser-profiles'))
 
   # ---------------------------------------------------------------------------
   # Path variables (Pathname objects)
@@ -186,19 +194,8 @@ module EnvVars
   UPSTREAM_GH_USERNAME = ENV.fetch('UPSTREAM_GH_USERNAME', 'vraravam').freeze
 
   # Dotfiles repository branch name.
-  # Mirrors: export DOTFILES_BRANCH (default: master)
-  DOTFILES_BRANCH = ENV.fetch('DOTFILES_BRANCH', 'master').freeze
-
-  # Keybase username.
-  # Mirrors: export KEYBASE_USERNAME (set in .shellrc or manually)
-  # Returns nil when not set or empty (if user does not want Keybase functionality), otherwise returns stripped string.
-  KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', 'avijayr'))
-
-  # Keybase repository names for encrypted backups.
-  # Mirrors: export KEYBASE_*_REPO_NAME (set in .shellrc or manually)
-  # Returns nil when not set or empty (if user does not want Keybase functionality), otherwise returns stripped string.
-  KEYBASE_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_HOME_REPO_NAME', 'home'))
-  KEYBASE_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_PROFILES_REPO_NAME', 'profiles'))
+  # Mirrors: export DOTFILES_BRANCH (default: keybase-migration)
+  DOTFILES_BRANCH = ENV.fetch('DOTFILES_BRANCH', 'keybase-migration').freeze
 
   # ---------------------------------------------------------------------------
   # Runtime flags and temporary operation variables (evaluated dynamically)

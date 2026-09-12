@@ -375,8 +375,6 @@ _install_homebrew() {
     trap '_cleanup_and_exit "${LINENO}"' ERR
   fi
 
-  # TODO: Commented out to avoid the second touchId popup. Need to investigate how to solve this.
-  # is_arm && sudo rm -rf /usr/local/bin/keybase /usr/local/bin/git-remote-keybase || true
   step_end
 }
 
@@ -424,73 +422,58 @@ _set_default_shell() {
   step_end
 }
 
-# Ensures keybase is installed and the current user is logged in.
-# Thin wrapper that delegates to Ruby Keybase.ensure_logged_in.
-# Returns non-zero on failure so callers can check the exit code.
-#
-# IMPORTANT: This is called after load_zsh_configs, which re-sources .shellrc
-# after unfunctioning the guard. By that point, DOTFILES_DIR exists (cloned by
-# _clone_dot_files_repo), so .shellrc sets RUBYLIB correctly, making 'require'
-# work without ${LOAD_PATH}.unshift.
-_ensure_keybase_logged_in() {
-  if ! command_exists keybase; then
-    error "'keybase' command not found in the PATH. Aborting!!!"
-    return 1
-  fi
-  call_ruby_utility "require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
-}
-
-# Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
-# Usage: _build_keybase_repo_url <repo-name>
-_build_keybase_repo_url() {
-  echo "keybase://private/${KEYBASE_USERNAME:-}/${1:-}"
-}
-
-# Clone the Keybase home repo (private configs)
+# Clone the home repo (private configs) from the encrypted backup (gpg + git bundle,
+# see scripts/utilities/encrypted_backup.rb -- replaces the old keybase/gcrypt approach).
 _clone_home_repo() {
   _current_section='Clone home repo'; _current_section_manual=1
   step_start
-  _step_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_HOME_REPO_NAME:-}")' repo"
-  if is_non_zero_string "${KEYBASE_HOME_REPO_NAME:-}"; then
-    if is_git_repo "${HOME}"; then
-      # Pre-configured machine: pull latest changes to get fresh backup files.
-      # Uses 'pull-safe' (not a bare 'pull --rebase') for 'with-retry' hang protection and
-      # a clean-working-tree guard, consistent with every other repo-sync path in this script.
-      info "Home repo already exists -- pulling latest changes"
-      if git -C "${HOME}" pull-safe; then
-        success "Successfully updated home repo"
-      else
-        _record_warning "Failed to pull home repo -- continuing with existing backup files"
-      fi
-    elif clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME:-}")" "${HOME}"; then
-      # Vanilla OS: clone succeeded
-      # Reset ssh/gnupg permissions so git/gpg don't complain -- git checkout does not
-      # preserve the strict permission modes either needs, if they're tracked in the home repo.
+  _step_header "$(yellow 'Cloning') '$(cyan "${ENCRYPTED_HOME_REPO_NAME:-home}")' repo"
+  if is_git_repo "${HOME}"; then
+    # Pre-configured machine: pull latest changes to get fresh backup files
+    info "Home repo already exists -- pulling latest changes"
+    if git -C "${HOME}" pull-safe; then
+      success "Successfully updated home repo"
+    else
+      _record_warning "Failed to pull home repo -- continuing with existing backup files"
+    fi
+  elif is_non_zero_string "${ENCRYPTED_HOME_REPO_NAME:-}"; then
+    user_action "You will be prompted for nothing here -- the passphrase is read from the macOS Keychain."
+    user_action "If this fails, run: security add-generic-password -A -a \"\${USER}\" -s 'dotfiles-encrypted-backup' -w"
+
+    if call_ruby_utility "require 'encrypted_backup'; require 'env_vars'; exit(EncryptedBackup.clone_and_decrypt(encrypted_repo_name: EnvVars::ENCRYPTED_HOME_REPO_NAME, target_dir: EnvVars::HOME) ? 0 : 1)"; then
+      # Reset ssh/gnupg permissions so git/gpg don't complain -- both '.ssh' and '.gnupg'
+      # (including GPG private keys under .gnupg/private-keys-v1.d) are tracked in the home
+      # repo, and git checkout does not preserve the strict permission modes either needs.
       set_ssh_folder_permissions
       set_gnupg_folder_permissions
 
       # Fix /etc/hosts file to block facebook
       if is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts"; then sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts; fi
+
+      success "Successfully cloned home repo"
     else
       _record_error 'Failed to clone home repo'
     fi
   else
-    info "Skipping cloning of home repo since the '$(purple 'KEYBASE_HOME_REPO_NAME')' env var hasn't been set"
+    info "Skipping cloning of home repo since '$(yellow 'ENCRYPTED_HOME_REPO_NAME')' env var hasn't been set"
   fi
   step_end
 }
 
-# Clone the Keybase profiles repo (browser profiles)
+# Clone the browser-profiles repo from the encrypted backup (gpg + git bundle).
 _clone_profiles_repo() {
   _current_section='Clone profiles repo'; _current_section_manual=1
   step_start
-  _step_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_PROFILES_REPO_NAME:-}")' repo"
-  if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME:-}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
-    if ! clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME:-}")" "${PERSONAL_PROFILES_DIR}"; then
-      _record_error 'Failed to clone profiles repo'
+  _step_header "$(yellow 'Cloning') '$(cyan "${ENCRYPTED_PROFILES_REPO_NAME:-browser-profiles}")' repo"
+
+  if is_non_zero_string "${ENCRYPTED_PROFILES_REPO_NAME:-}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
+    if call_ruby_utility "require 'encrypted_backup'; require 'env_vars'; exit(EncryptedBackup.clone_and_decrypt(encrypted_repo_name: EnvVars::ENCRYPTED_PROFILES_REPO_NAME, target_dir: EnvVars::PERSONAL_PROFILES_DIR) ? 0 : 1)"; then
+      success "Successfully cloned browser-profiles repo"
+    else
+      _record_error 'Failed to clone browser-profiles repo'
     fi
   else
-    info "Skipping cloning of profiles repo since either the '$(purple 'KEYBASE_PROFILES_REPO_NAME')' or the '$(purple 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
+    info "Skipping cloning of profiles repo since '$(yellow 'ENCRYPTED_PROFILES_REPO_NAME')' or '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
   fi
   step_end
 }
@@ -688,18 +671,33 @@ main() {
   migrate_git_repo_to_reftable "${DOTFILES_DIR}"
   step_end
 
-  if is_non_zero_string "${KEYBASE_USERNAME:-}"; then
-    # Login into Keybase
-    step_start
-    _ensure_keybase_logged_in || return 1
-    step_end
-
-    _clone_home_repo
-
-    _clone_profiles_repo
+  # Verify encrypted-backup mechanism is ready (gpg installed, Keychain passphrase set --
+  # see scripts/utilities/encrypted_backup.rb). Replaces the old Keybase/gcrypt setup.
+  # gnupg homedir permissions were already fixed earlier in main() (mirroring
+  # set_ssh_folder_permissions) -- no need to repeat that here.
+  _current_section='Setup encrypted backup'
+  step_start
+  section_header "$(yellow 'Setup encrypted backup')"
+  if command_exists 'setup-encrypted-backup.rb'; then
+    if setup-encrypted-backup.rb; then
+      success 'Encrypted backup is ready to use'
+    else
+      _record_warning 'Encrypted backup is not configured -- see instructions above'
+    fi
   else
-    info "Skipping cloning of any keybase repo since '$(yellow 'KEYBASE_USERNAME')' has not been set"
+    debug "setup-encrypted-backup.rb not found in PATH -- skipping encrypted backup setup"
   fi
+  step_end
+
+  # Clone encrypted-backup repos (home and browser-profiles)
+  _current_section='Clone encrypted repos'
+  step_start
+  section_header "$(yellow 'Cloning encrypted-backup repos')"
+
+  _clone_home_repo
+  _clone_profiles_repo
+
+  step_end
 
   if is_file "${HOME}/.ssh/known_hosts.old"; then rm -f "${HOME}/.ssh/known_hosts.old"; fi
 

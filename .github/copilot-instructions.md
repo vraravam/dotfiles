@@ -79,9 +79,9 @@ Every task that modifies shell/Ruby code MUST include syntax validation before t
 
 - Never log, expose in responses, or store credentials, tokens, or PII in plain text
 - Never commit secrets, API keys, or tokens to git
-- Use Keybase for sensitive file storage
+- Use the encrypted-backup mechanism (`gpg` + `git bundle`, see `TechnicalDeepDive.md` § 14) for sensitive file storage
 - SSH keys managed via keychain, not plaintext
-- Use environment variables or Keybase for secrets
+- Use environment variables or the macOS Keychain for secrets
 
 ---
 

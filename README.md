@@ -39,7 +39,7 @@ All of the folder structures and the setup/backup operations are governed by the
 Want to use this dotfiles system for your own setup? See the **[Adoption Guide](Adoption.md)** for complete step-by-step instructions covering:
 
 - **Preparing your existing machine** — capturing preferences, repo catalogs, and Brewfile (optionally exporting huge/slow repos as portable bundles for a faster restore)
-- **Forking and customizing** — required username changes, optional path adjustments, Keybase setup
+- **Forking and customizing** — required username changes, optional path adjustments, encrypted-backup setup
 - **First-time setup** — running the bootstrap command on a fresh machine
 - **Ongoing maintenance** — keeping backups current with regular snapshots
 - **Staying up-to-date** — syncing with upstream improvements while preserving your customizations
@@ -91,7 +91,7 @@ All scripts are optimized for **fast shell loading** — startup time is typical
 
 The backup strategy is split into 2 stages - both of which are run by the [same script](scripts/fresh-install-of-osx.sh). See [Adoption.md](Adoption.md) for the complete adoption workflow covering basic setup (Phase 1-3) and advanced features (Phase 4-5).
 
-The "advanced" setup captures application preferences (both system and custom apps) and backs them up into an _encrypted remote repository_. This requires [Keybase](https://keybase.io/) for the encrypted private storage. **Keybase is entirely optional** — if you skip it, everything else (dotfiles, Homebrew packages, zsh config, mise language versions, cron jobs) still works. Simply comment out the `KEYBASE_*` environment variables in `files/--HOME--/.shellrc` and the script will skip the Keybase-dependent steps silently.
+The "advanced" setup captures application preferences (both system and custom apps) and backs them up into an _encrypted remote repository_. This uses `gpg` + `git bundle` (see [TechnicalDeepDive.md § 14](TechnicalDeepDive.md#14-migrating-from-keybase-to-an-encrypted-backup-gpg--git-bundle)) with a passphrase stored in the macOS Keychain. **This is entirely optional** — if you skip it, everything else (dotfiles, Homebrew packages, zsh config, mise language versions, cron jobs) still works. Simply don't add the Keychain passphrase (`security add-generic-password -A -a "$USER" -s 'dotfiles-encrypted-backup' -w`) and the script will skip the encrypted-backup steps with a warning. This replaced an earlier Keybase-based approach — see [KEYBASE_MIGRATION.md § Is This as Secure as Keybase?](KEYBASE_MIGRATION.md#is-this-as-secure-as-keybase) for an honest security comparison before relying on it for sensitive data.
 
 If you want to automate the repetitive running of these scripts/commands, you can use the system-level cronjobs to set this up, the details of which can be found in the [Extras](Extras.md#software-updates-cronrb) file, by which you can reduce more manual efforts.
 
@@ -104,8 +104,8 @@ After running `fresh-install-of-osx.sh`, see [Adoption.md § Phase 3.3](Adoption
 **Quick summary** of files you'll typically customize in your fork (see [Adoption.md § Phase 2](Adoption.md#phase-2-fork-and-customize) for detailed instructions):
 
 - `Adoption.md` — Update bootstrap command in Phase 3.2 to reference YOUR_USERNAME instead of vraravam
-- `files/--HOME--/.shellrc` — Change `GH_USERNAME`, `UPSTREAM_GH_USERNAME`, `KEYBASE_USERNAME`, and path env vars (`PROJECTS_BASE_DIR`, `PERSONAL_CONFIGS_DIR`, `PERSONAL_BIN_DIR`, `PERSONAL_PROFILES_DIR`)
-- `scripts/utilities/env_vars.rb` — Update Ruby fallback defaults for `GH_USERNAME`, `UPSTREAM_GH_USERNAME`, `KEYBASE_USERNAME`
+- `files/--HOME--/.shellrc` — Change `GH_USERNAME`, `UPSTREAM_GH_USERNAME`, `ENCRYPTED_HOME_REPO_NAME`, `ENCRYPTED_PROFILES_REPO_NAME`, and path env vars (`PROJECTS_BASE_DIR`, `PERSONAL_CONFIGS_DIR`, `PERSONAL_BIN_DIR`, `PERSONAL_PROFILES_DIR`)
+- `scripts/utilities/env_vars.rb` — Update Ruby fallback defaults for `GH_USERNAME`, `UPSTREAM_GH_USERNAME`
 - `files/--HOME--/Brewfile` — Remove unwanted packages or merge with your exported Brewfile
 - `scripts/data/capture-prefs-allowed-list.txt` — Add/remove preference domains to match your installed apps
 - `scripts/data/capture-prefs-denied-list.txt` — Add newly discovered unsafe domains (do not remove existing entries)

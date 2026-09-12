@@ -263,11 +263,6 @@ create_crontab ${PERSONAL_CONFIGS_DIR}/crontab.txt
 This creates the default schedule (software-updates-cron hourly). Edit as needed,
 commit to home repo, and run `recron` to install.
 
-## Keybase Functions
-
-See `copilot-instructions.md` -- Keybase / SSH section. Summary: both functions
-live in `.aliases`, not `.shellrc`. Do not move them to `.shellrc`.
-
 ## `install_mise_versions` Duration
 
 The start time passed to `print_script_summary` must use epoch seconds

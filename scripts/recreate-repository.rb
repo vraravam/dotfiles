@@ -5,20 +5,40 @@
 # file location: ${DOTFILES_DIR}/scripts/recreate-repository.rb
 #
 # Recreates a git repository by optionally squashing all history into a single
-# commit, then deleting and re-creating the remote Keybase repository and force-
-# pushing. Useful for removing dangling/orphaned commits so fresh cloning
-# is fast.
+# commit, then force-pushing to the remote. Useful for removing dangling/orphaned
+# commits so fresh cloning is fast. Also shrinks the payload of the next encrypted
+# backup export (see scripts/utilities/encrypted_backup.rb): 'git bundle create --all'
+# always contains the entire reachable history, so a smaller local history directly
+# means a smaller bundle to encrypt and push next time.
+#
+# IMPORTANT: force mode does NOT delete and recreate the remote repository (that was
+# a Keybase-specific workaround, removed along with Keybase support -- GitHub accepts
+# a force-push of arbitrarily-diverged/squashed history directly, no special-casing
+# needed). Force mode only squashes ALL local history into a single commit, then
+# force-pushes that one commit to the existing remote. The remote repo itself is
+# never deleted, recreated, or otherwise touched beyond the force-push.
+#
+# SAFETY CHECK FOR ENCRYPTED-BACKUP WRAPPER REPOS: this script's built-in "verify file
+# lists match" safety check (see GitProcessor#verify_and_recreate_local_repo) is nearly
+# vacuous for a one-file repo -- it only catches the file going missing entirely or a
+# stray extra file appearing, not a stale/corrupted blob with the right path but wrong
+# content. When -d points at a directory under ${XDG_CACHE_HOME}/encrypted-backups/ (an
+# encrypted-backup wrapper repo -- see scripts/utilities/encrypted_backup.rb), force mode
+# automatically runs EncryptedBackup.verify_current_blob_decryptable? first (decrypts the
+# current blob and runs 'git bundle verify' on it) and refuses to squash if that fails --
+# this is automatic and requires no special flag, specifically so the ordinary
+# 'recreate-repository.rb -f -d <dir>' muscle memory stays safe without needing a
+# different command for wrapper repos.
 #
 # Usage:
 #   Standalone: recreate-repository.rb [-f] -d <repo-dir>
 #   Module:     RecreateRepository.run(dir: path, force: false, dry_run: false)
 
 require_relative 'utilities/cron'
+require_relative 'utilities/encrypted_backup'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
-require_relative 'utilities/keybase'
 require_relative 'utilities/logging'
-require_relative 'utilities/macos'
 
 # Module contains the business logic.
 # Returns true/false instead of calling exit().
@@ -44,6 +64,16 @@ module RecreateRepository
     dir_colored = dir.cyan
     Logging.error "'#{dir_colored}' is not a git repo. Please specify the root of a git repo." unless GitProcessor.repo?(dir)
 
+    if force
+      encrypted_repo_name = _encrypted_backup_repo_name(dir_pn)
+      if encrypted_repo_name && !EncryptedBackup.verify_current_blob_decryptable?(encrypted_repo_name: encrypted_repo_name)
+        Logging.record_error "'#{dir_colored}' is an encrypted-backup wrapper repo for '#{encrypted_repo_name}', " \
+                             'and its current blob failed the decrypt/integrity check -- refusing to squash ' \
+                             '(would risk losing the last known-good backup)'
+        return false
+      end
+    end
+
     Logging.section_header "#{'Processing dir:'.yellow} '#{dir_colored}'"
     GitProcessor.new(dir: dir_pn, dry_run: dry_run) do |git|
       # Verify and log required git metadata
@@ -51,21 +81,14 @@ module RecreateRepository
 
       # Suspend cron to prevent mid-operation conflicts with destructive git operations.
       Cron.with_cron_suspended(dry_run: dry_run) do
-        is_keybase_repo = Keybase.keybase_url?(git.remote_url)
-
-        # Before destroying git history, ensure Keybase is reachable so we do not end
-        # up with a deleted local .git and no way to push.
-        return false if is_keybase_repo && !Keybase.ensure_logged_in(dry_run: dry_run)
-
         if force
-          # Recreate with verification (captures remote files, recreates, stages, commits, verifies)
+          # Squashes ALL local history into a single commit (captures remote file list
+          # first, recreates local .git, stages, commits, then verifies the new single
+          # commit's file list matches the remote's before proceeding -- see
+          # GitProcessor#verify_and_recreate_local_repo). No remote delete/recreate here;
+          # the squashed commit is force-pushed to the existing remote below, same as
+          # any other force-push.
           return false unless git.verify_and_recreate_local_repo
-
-          # File lists match - safe to delete remote and push
-          # Keybase repo recreation only happens when force-squashing commits, because
-          # that's when we've destroyed local history. Without force, we're just
-          # compressing and pushing existing commits - no remote recreation needed.
-          return false if is_keybase_repo && !Keybase.recreate_repo(git.remote_repo_name, dry_run: dry_run)
         else
           # Stage and commit all files in local repo
           git.stage_all
@@ -73,7 +96,8 @@ module RecreateRepository
         end
 
         git.compress
-        # Push to remote (force push after recreation, normal push otherwise)
+        # Push the (squashed, if force) history to the existing remote. Force-pushing
+        # squashed history directly is sufficient -- no remote delete/recreate step.
         git.push(remote: 'origin', branch: git.current_branch, force: force)
 
         # Build commit graph for optimized git operations (log, status, merge-base)
@@ -83,6 +107,26 @@ module RecreateRepository
 
     true
   end
+
+  # Detects whether dir_pn is an encrypted-backup wrapper repo (a child of
+  # ${XDG_CACHE_HOME}/encrypted-backups/, see EncryptedBackup.wrapper_repo_dir) and, if so,
+  # returns its encrypted_repo_name. Derives the expected path via
+  # EncryptedBackup.wrapper_repo_dir itself (rather than reconstructing the
+  # 'encrypted-backups' path segment here) so the two stay in sync automatically if that
+  # convention ever changes. Exact-match only -- a nested subdirectory of a wrapper repo is
+  # not itself a wrapper repo. Does not require dir_pn to currently exist or be a valid repo,
+  # callers already validate that separately.
+  #
+  # @param dir_pn [Pathname]
+  # @return [String, nil] the encrypted_repo_name, or nil if dir_pn isn't a wrapper repo
+  # :reek:UtilityFunction -- Stateless helper (correct design)
+  def _encrypted_backup_repo_name(dir_pn)
+    expanded = dir_pn.expand_path
+    candidate_name = expanded.basename.to_s
+    expanded == EncryptedBackup.wrapper_repo_dir(candidate_name) ? candidate_name : nil
+  end
+
+  private_class_method :_encrypted_backup_repo_name
 end
 
 # ---------------------------------------------------------------------------
@@ -97,6 +141,10 @@ if __FILE__ == $PROGRAM_NAME
   options = { force: false, dry_run: false }
   parser = CliParser.parse('<options>') do |opts|
     opts.separator 'Recreates a git repo, optionally squashing all history, and force-pushes to the remote.'
+    opts.separator ''
+    opts.separator 'Force mode against an encrypted-backup wrapper repo (${XDG_CACHE_HOME}/encrypted-backups/*)'
+    opts.separator 'automatically verifies the current blob decrypts and is a valid git bundle first, and'
+    opts.separator 'refuses to squash if it does not -- no special flag needed for this.'
     opts.separator ''
     opts.separator 'Options:'.purple
     opts.on('-f', '--force', 'Squash all commits into one (profiles repo is always forced)') do

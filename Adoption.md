@@ -192,9 +192,6 @@ export DOTFILES_BRANCH='master'
 
 # DO NOT CHANGE: Must stay as 'vraravam' (parent repo owner)
 export UPSTREAM_GH_USERNAME='vraravam'
-
-# OPTIONAL: Change to your Keybase username, or comment out if not using
-export KEYBASE_USERNAME='YOUR_KEYBASE_USERNAME'
 ```
 
 #### C. Update Ruby Fallback Defaults
@@ -210,9 +207,6 @@ DOTFILES_BRANCH = ENV.fetch('DOTFILES_BRANCH', 'master').freeze
 
 # DO NOT CHANGE: Must stay as 'vraravam'
 UPSTREAM_GH_USERNAME = ENV.fetch('UPSTREAM_GH_USERNAME', 'vraravam').freeze
-
-# OPTIONAL: Change fallback to your Keybase username
-KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', 'YOUR_KEYBASE_USERNAME'))
 ```
 
 ### 2.3 Optional Customizations
@@ -253,25 +247,39 @@ Review **[files/--HOME--/Brewfile](files/--HOME--/Brewfile)** and remove unwante
 **If starting fresh (no existing machine):**
 - Review the entire Brewfile and remove any packages you don't want
 
-#### C. Keybase (Optional)
+#### C. Encrypted Backup (Optional)
 
-If **NOT using Keybase**:
+The encrypted-backup mechanism (`gpg` + `git bundle`, see [TechnicalDeepDive.md § 14](TechnicalDeepDive.md#14-migrating-from-keybase-to-an-encrypted-backup-gpg--git-bundle)) backs up `~` and `${PERSONAL_PROFILES_DIR}` to encrypted blobs in plain public GitHub repos. **Before relying on this for sensitive data**, read [KEYBASE_MIGRATION.md § Is This as Secure as Keybase?](KEYBASE_MIGRATION.md#is-this-as-secure-as-keybase) -- it's a genuine, honest comparison, not a "yes, don't worry" reassurance. In short: strong given a high-entropy passphrase, but not a like-for-like replacement (weaker metadata privacy, no per-device key revocation).
 
-1. In **files/--HOME--/.shellrc** — comment out all `KEYBASE_*` lines:
+**If using it:**
+
+1. Adjust the repo names if desired in **files/--HOME--/.shellrc** (defaults shown):
    ```zsh
-   # export KEYBASE_USERNAME='...'
-   # export KEYBASE_HOME_REPO_NAME='...'
-   # export KEYBASE_PROFILES_REPO_NAME='...'
+   export ENCRYPTED_HOME_REPO_NAME='home'
+   export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
    ```
-
-2. In **scripts/utilities/env_vars.rb** — change fallbacks to empty strings:
-   ```ruby
-   KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', ''))
-   KEYBASE_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_HOME_REPO_NAME', ''))
-   KEYBASE_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_PROFILES_REPO_NAME', ''))
+2. Create the two plain, public, empty GitHub repos (one time):
+   ```bash
+   gh repo create "${GH_USERNAME}/${ENCRYPTED_HOME_REPO_NAME}" --public
+   gh repo create "${GH_USERNAME}/${ENCRYPTED_PROFILES_REPO_NAME}" --public
    ```
+3. Ensure the Keychain passphrase is set (one-time-per-machine -- see below):
+   ```bash
+   setup-encrypted-backup.rb
+   ```
+   This is idempotent and safe to run anytime. If the passphrase is missing and this is
+   running interactively, it prompts you for one via `security add-generic-password`'s own
+   masked, double-entry confirmation prompt -- generate a strong value and save it in your
+   password manager when prompted (never commit it anywhere). The passphrase never touches
+   this script or Ruby process memory/argv -- `security` handles the prompt and storage
+   directly. If running non-interactively (cron, a piped `curl | zsh` bootstrap, etc.),
+   there's no way to prompt -- run this yourself first, interactively, in a real terminal:
+   ```bash
+   security add-generic-password -A -a "$USER" -s 'dotfiles-encrypted-backup' -w
+   ```
+   **This does not sync via iCloud Keychain, even if iCloud Keychain is enabled and you're signed in.** `security add-generic-password` has no flag for the `kSecAttrSynchronizable` attribute that iCloud Keychain sync depends on (confirmed via `security add-generic-password -h` -- only account/service/password/access-control options are exposed), so this item is local-only by design. **You must re-run this exact command (or re-run `setup-encrypted-backup.rb` interactively) on every new machine** -- there is no way to carry it over automatically.
 
-The script will skip Keybase-dependent steps silently when these are empty.
+**If NOT using it:** do nothing extra. `fresh-install-of-osx.sh` checks for the Keychain passphrase, and the clone/backup steps log an error and continue (non-fatal to the rest of fresh-install) if it's absent -- no env vars need to be commented out.
 
 ### 2.4 Commit Customizations
 

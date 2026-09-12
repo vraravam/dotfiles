@@ -217,7 +217,7 @@ Both Ruby and shell strip ANSI escape codes before:
 
 ## External Tool Output
 
-External tools (`git`, `mise`, `sqlite3`, `keybase`, etc.) may print at column 0 (no indentation) depending on how they're invoked.
+External tools (`git`, `mise`, `sqlite3`, `gpg`, etc.) may print at column 0 (no indentation) depending on how they're invoked.
 
 **Streaming output** (via `system()`):
 - Used for operations that benefit from real-time progress (git push/pull/fetch)

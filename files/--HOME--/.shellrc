@@ -90,8 +90,10 @@ fi
 # The github username where the setup scripts are downloaded from
 export GH_USERNAME='vraravam'
 
-# Keybase username (comment out if you don't use Keybase)
-export KEYBASE_USERNAME='avijayr'
+# Encrypted git repo names (plain public GitHub repos holding the gpg-encrypted git-bundle
+# blob, see scripts/utilities/encrypted_backup.rb -- replaces the old Keybase/gcrypt setup).
+export ENCRYPTED_HOME_REPO_NAME='home'
+export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
 # --------------------------------------------------------------------------------
 
 # ---------- Env vars for basic/common setup (can be optionally changed) ---------
@@ -99,7 +101,7 @@ export KEYBASE_USERNAME='avijayr'
 export DOTFILES_DIR="${XDG_CONFIG_HOME}/dotfiles"
 
 # Branch name of the dotfiles repo that's to be used for testing PR changes before merging
-export DOTFILES_BRANCH='master'
+export DOTFILES_BRANCH='keybase-migration'
 
 # All development codebases are cloned into a subfolder of this folder
 export PROJECTS_BASE_DIR="${HOME}/dev"
@@ -113,12 +115,6 @@ export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev/configs"
 # All browser profiles are captured in this folder (might contain sensitive info like browsing history and so is considered private)
 # Use ${USER} (zsh/PAM builtin) instead of $(whoami) to avoid forking a subprocess on every shell start.
 export PERSONAL_PROFILES_DIR="${HOME}/personal/${USER}/browser-profiles"
-
-# Keybase home repo name (comment out if you don't use Keybase)
-export KEYBASE_HOME_REPO_NAME='home'
-
-# Keybase profiles repo name (comment out if you don't use Keybase)
-export KEYBASE_PROFILES_REPO_NAME='profiles'
 # --------------------------------------------------------------------------------
 
 # ------------- Env vars for upstream setup (SHOULD NOT be changed) --------------
@@ -1758,6 +1754,13 @@ migrate_git_repo_to_reftable() {
 # --single-branch for fast initial clone. All repos (new and existing) are converted
 # to full clones asynchronously via background 'git unshallow' job after the main
 # operation completes. Always updates submodules afterwards.
+#
+# No encryption/decryption logic lives here, deliberately -- see the "Why this logic
+# lives here and NOT inside clone_repo_into" note in scripts/utilities/encrypted_backup.rb
+# for the reasoning (single responsibility, shell-vs-Ruby layer boundary, and keeping this
+# function's bundle-import support generic/reusable for both the encrypted-backup and
+# resurrect-repositories.rb use cases).
+#
 # Usage: clone_repo_into <repo-url> <target-folder> [branch] [bundle-file]
 clone_repo_into() {
   local start_time

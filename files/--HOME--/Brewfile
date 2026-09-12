@@ -25,16 +25,13 @@ setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.rb
 
 # These casks must come first -- required for manual login during a vanilla OS installation.
 cask 'font-meslo-lg-nerd-font'
-cask 'keybase',
-  postinstall: "\"#{setup_login_items_script}\" -a 'Keybase' && " \
-               "ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/keybase' \"${HOMEBREW_PREFIX}/bin/keybase\" && " \
-               "ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase' \"${HOMEBREW_PREFIX}/bin/git-remote-keybase\""
 
 # formulae pulled in from homebrew to replace system equivalents to fix any security issues since the OS was released
 # This list is enhanced from https://macgnu.codewithshin.com/?id=gnu-programs-existing-in-macos-which-are-outdated
 brew 'bash'
 brew 'curl'
 brew 'git'
+brew 'gnupg'  # Encrypted backup (Keybase replacement) -- gpg symmetric encryption + git bundle, see scripts/utilities/encrypted_backup.rb
 brew 'grep'
 brew 'jemalloc'  # used for faster ruby
 brew 'less'
@@ -156,7 +153,7 @@ brew 'anomalyco/tap/opencode', trusted: true
 # ----------------------------------------------------------------------------------------------------------
 # Miscellaneous formulae and casks grouped separately to keep the main lists clean.
 
-# --- encrypted backup in case keybase is shut down in the future
+# --- standalone encrypted local backup tool (unrelated to the encrypted-backup mechanism)
 # cask 'Picocrypt/picocrypt/picocrypt', trusted: true if is_arm
 
 # ---- zen-browser development

@@ -21,7 +21,7 @@ If you are setting up a new machine for the first time, start with [Adoption.md]
 11. [`capture-prefs.rb` Architecture](#11-capture-prefsrb-architecture)
 12. [`osx-defaults.sh` and `capture-prefs.rb` — Two-Phase Preference Architecture](#12-osx-defaultssh-and-capture-prefsrb--two-phase-preference-architecture)
 13. [Why `fresh-install-of-osx.sh` and `osx-defaults.sh` Remain Shell Scripts](#13-why-fresh-install-of-osxsh-and-osx-defaultssh-remain-shell-scripts)
-14. [Why Keybase Was Not Replaced with Public Encrypted GitHub Repos](#14-why-keybase-was-not-replaced-with-public-encrypted-github-repos)
+14. [Migrating from Keybase to an Encrypted Backup (gpg + git bundle)](#14-migrating-from-keybase-to-an-encrypted-backup-gpg--git-bundle)
 
 ---
 
@@ -79,7 +79,7 @@ To add a new dotfile, drop it under the appropriate `files/--VAR--/` directory. 
 | `${PERSONAL_BIN_DIR}` | `~/personal/dev/bin` | Private scripts and per-project overrides |
 | `${PERSONAL_CONFIGS_DIR}` | `~/personal/dev/configs` | Private config files (repo catalog YAML, exported prefs, etc.) |
 
-`${PERSONAL_BIN_DIR}` and `${PERSONAL_CONFIGS_DIR}` live outside the dotfiles repo. They are never present on a vanilla OS before the dotfiles repo is cloned, so any function that only these scripts need belongs in `${ZDOTDIR}/.aliases` — not `.shellrc`. They are kept separate intentionally: they hold private data (credentials, personal scripts, site-specific configs) that must never appear in a public repository. The only personal identifiers that belong in this repo are `GH_USERNAME` (a public GitHub username, inherently non-sensitive) and references to Keybase (which handles its own encryption for private data).
+`${PERSONAL_BIN_DIR}` and `${PERSONAL_CONFIGS_DIR}` live outside the dotfiles repo. They are never present on a vanilla OS before the dotfiles repo is cloned, so any function that only these scripts need belongs in `${ZDOTDIR}/.aliases` — not `.shellrc`. They are kept separate intentionally: they hold private data (credentials, personal scripts, site-specific configs) that must never appear in a public repository. The only personal identifiers that belong in this repo are `GH_USERNAME` (a public GitHub username, inherently non-sensitive) and the encrypted-backup repo names (see section 14) — the repos themselves are public, but their contents are encrypted.
 
 ---
 
@@ -636,58 +636,57 @@ These branches are preserved in git history for future reference but will not be
 
 ---
 
-## 14. Why Keybase Was Not Replaced with Public Encrypted GitHub Repos
+## 14. Migrating from Keybase to an Encrypted Backup (gpg + git bundle)
 
-The `keybase-migration` branch (explored 2026) attempted to replace Keybase with **public GitHub repos encrypted by git-remote-gcrypt**. The approach:
+Keybase support has been fully removed from this repo (`scripts/utilities/keybase.rb` and every call site are gone). It's replaced by a self-built mechanism: `git bundle` + `gpg --symmetric`, implemented in `scripts/utilities/encrypted_backup.rb`.
 
-1. Home repo (`~/`) and browser-profiles repo become **public** GitHub repos (visibility is safe because contents are encrypted)
-2. Use `gcrypt::` remote URLs (e.g., `gcrypt::https://github.com/user/home.git`)
-3. Rely on symmetric encryption (password-based, no GPG keys needed)
-4. Clone via HTTPS (no SSH keys required on vanilla OS)
+**How it works:**
 
-**Why this was rejected:**
+1. `home` (`~/`) and `browser-profiles` keep being ordinary, unencrypted local git repos -- full native history, `git log`/`git blame`/etc. all just work, exactly as before.
+2. To back up: `git bundle create --all` produces a single-file, complete representation of the repo's history, which is then encrypted with `gpg --batch --passphrase-fd 0 --symmetric` using a passphrase read from the **macOS Keychain** (never stored inside either repo).
+3. The resulting encrypted blob (`backup.gpg`) is split into <100MB chunks (`backup.gpg.000`, `backup.gpg.001`, ...) -- GitHub hard-rejects any single pushed file over 100MB, and a full-history bundle of a real home directory routinely exceeds that -- and all chunks are committed and pushed to a plain, ordinary **public** GitHub repo (`ENCRYPTED_HOME_REPO_NAME`/`ENCRYPTED_PROFILES_REPO_NAME`, e.g. `home`/`browser-profiles`) -- no special git-remote-helper, just a normal `git push`.
+4. To restore: clone that public repo over plain HTTPS (public repos need zero GitHub authentication), reassemble the `backup.gpg.*` chunks and decrypt with the Keychain passphrase, then `git clone <decrypted-bundle>` to fully reconstitute the original repo with complete history intact.
+5. Day-to-day transparency: the shell `push` function's existing per-repo override mechanism (`${PERSONAL_BIN_DIR}/push-<basename>.sh`, see `git-config.md`) already dispatches automatically based on the current directory. `push-<home-basename>.sh` (basename of `$HOME`, typically `$USER`) and `push-browser-profiles.sh` both run the normal push (if any) and then refresh the encrypted backup -- so `push` feels the same as it always did, and the cron schedule that already invokes `push-browser-profiles.sh` keeps the encrypted backup current automatically too.
 
-1. **Chicken-and-egg authentication problem**: On a vanilla OS, the home repo contains SSH keys needed to authenticate git operations. But to clone the home repo without SSH keys, you need HTTPS authentication (GitHub PAT or password). This creates a circular dependency:
-   - Can't clone home repo without credentials
-   - Can't get credentials without home repo
-   - User must manually type GitHub PAT into bootstrap (bad UX, security risk if terminal history is logged)
+**Why this design, out of four evaluated:**
 
-2. **Metadata exposure trade-off**: While file contents are encrypted, GitHub still sees:
-   - Repo existence (someone has an encrypted backup)
-   - Branch names (usually just `main`, low risk but still visible)
-   - Commit count and pack sizes (metadata leakage)
+| | git-remote-gcrypt | Picocrypt | git-crypt | **gpg + git bundle (chosen)** |
+|---|---|---|---|---|
+| Genuinely password-based (no external key-file to back up) | No -- needs a GPG keypair | Yes | No -- needs an exported key file | **Yes** |
+| Actively maintained | Yes | No (archived) | Yes | **Yes (git + GnuPG themselves)** |
+| Scriptable / non-interactive | Yes | No (no documented flag) | Yes | **Yes** -- `--batch --passphrase-fd` |
+| Hides file names / tree structure | Yes | Yes | No -- author says wrong tool for whole-repo use | **Yes** |
+| Preserves full git history on restore | Yes | Only if `.git` is also archived | Yes | **Yes** -- it's a real bundle |
 
-   Keybase keeps **all** metadata private (repo existence, structure, everything). For a dotfiles repo, this difference matters: branch names might reveal workflow details, commit frequency reveals activity patterns.
+`git-remote-gcrypt` was the original candidate (see the detailed rejection history below) but was ultimately dropped: its `gcrypt.participants = simple` mode is not password-based at all -- it encrypts to your own default GPG keypair (`--default-recipient-self`), which means the GPG *private key* itself (not a memorized password) has to be backed up externally before a vanilla-OS restore is possible. That reintroduces exactly the chicken-and-egg problem this whole migration was meant to solve, just moved from "SSH key" to "GPG private key." Picocrypt (genuinely password-based) was rejected as unmaintained/non-scriptable; git-crypt (actively maintained, scriptable) was rejected because it leaks file names and its own author recommends git-remote-gcrypt instead for whole-repo encryption. `gpg --symmetric` against a `git bundle` is the only option with a clean sheet across every requirement, using tools (`git`, `gnupg`) already depended on rather than adding a new one.
 
-3. **Password prompt friction**: Every `git push`/`pull` prompts for the encryption password unless you configure git credential helpers. Keybase authenticates once per boot via the GUI app and caches credentials automatically. The git-remote-gcrypt approach adds friction to routine git operations.
+**One-time setup required before first use (not automatable, and deliberately so -- the passphrase must come from a human, never be generated/stored automatically):**
+```
+security add-generic-password -A -a "$USER" -s 'dotfiles-encrypted-backup' -w
+# (paste a strong passphrase from your password manager)
+```
+`scripts/setup-encrypted-backup.rb` checks for this and prints the exact command if missing. `-A` allows any process to read the entry without a GUI prompt, required for non-interactive cron/fresh-install use.
 
-4. **No clear advantage over Keybase**:
-   - Both require trusting a third party (Keybase vs GitHub)
-   - Both require installation via Homebrew (`keybase` cask vs `git-remote-gcrypt` + `gnupg`)
-   - Keybase GUI provides better UX for encryption setup (no manual password entry in terminal)
-   - Keybase handles the SSH key bootstrap problem (KBFS mounts encrypted filesystem, SSH keys accessible before git clone)
+**Implementation:**
+- `scripts/utilities/encrypted_backup.rb` -- core module (`export_and_push`, `clone_and_decrypt`, `verify_current_blob_decryptable?`, Keychain passphrase lookup/prompt)
+- `scripts/setup-encrypted-backup.rb` -- idempotent readiness check (gnupg + Keychain passphrase); prompts interactively via `security`'s own masked/confirm prompt when the passphrase is missing and a real TTY is available, otherwise just logs setup instructions -- the underlying Keychain entry it creates is one-time-per-machine (does not sync via iCloud Keychain)
+- `scripts/migrate-repo-to-encrypted-backup.rb` / `scripts/migrate-repos-to-encrypted-backup.rb` -- **one-time** migration tooling for existing machines (run once per repo, when first moving off Keybase)
+- `scripts/fresh-install-of-osx.sh`'s `_clone_home_repo`/`_clone_profiles_repo` -- vanilla-OS bootstrap path
+- `${PERSONAL_BIN_DIR}/push-<home-basename>.sh` / `push-browser-profiles.sh` -- transparent day-to-day refresh via the existing `push` override mechanism (routine, runs every push)
 
-5. **Public repo visibility concern**: Even though contents are encrypted, having a public `github.com/user/home` repo advertises "this person backs up their home directory here." While not a critical security issue, it's unnecessary exposure. Keybase repos are private by default and invisible to non-collaborators.
+See `KEYBASE_MIGRATION.md` for the step-by-step migration guide, including a section honestly comparing this mechanism's security against Keybase's (short version: comparable content confidentiality given a high-entropy passphrase, but weaker metadata privacy and no per-device key revocation -- not a like-for-like replacement).
 
-**Decision**: Keybase remains the encrypted backup mechanism. The git-remote-gcrypt approach solves the "no GUI dependency" goal but introduces worse UX problems (authentication friction, metadata exposure, bootstrap complexity). The current Keybase integration is battle-tested and handles the vanilla OS bootstrap cleanly via the two-phase sequence:
+### Rejection history: git-remote-gcrypt and the earlier "public repo" idea
 
-1. `fresh-install-of-osx.sh` ensures Keybase.app is installed and user is logged in
-2. Keybase KBFS mounts `keybase://private/<user>/home` as a filesystem
-3. `clone_repo_into` clones from `keybase://` URL (no SSH keys needed, Keybase handles auth)
-4. After clone, SSH keys from home repo are available for subsequent git operations
+An early evaluation of "replace Keybase with public encrypted GitHub repos" (any implementation, not specifically gcrypt) was rejected for:
 
-### Archived Branch Reference
+1. **Chicken-and-egg authentication problem**: assumed the home repo would need a GitHub PAT or SSH key to clone, but the home repo itself contains the SSH keys -- circular dependency. *(Resolved for git-remote-gcrypt specifically: a public repo needs zero GitHub auth over HTTPS. Turned out to resurface anyway, just for the GPG keypair instead of SSH keys -- see above.)*
+2. **Metadata exposure trade-off**: GitHub still sees repo existence, branch names, commit count, and pack sizes even though file contents are encrypted. *(Not resolved by any of the four candidates -- accepted cost of dropping Keybase, which hid this metadata entirely.)*
+3. **Password prompt friction**: every `git push`/`pull` prompts for the encryption password unless cached. *(Eliminated for the chosen mechanism -- the passphrase is read directly from the macOS Keychain via `security find-generic-password` and piped to `gpg --batch --passphrase-fd 0`, so routine pushes are fully non-interactive with no gpg-agent caching involved. This concern only applied to git-remote-gcrypt, where the encrypted repo is the live remote itself, decrypted on every git operation.)*
+4. **No clear advantage over Keybase**: both require trusting a third party and a Homebrew install. *(Accepted -- Keybase itself is not guaranteed to remain available/installed indefinitely as a third-party service, which is the actual motivation for migrating at all.)*
+5. **Public repo visibility concern**: a public `github.com/user/home` repo advertises "this person backs up their home directory here." *(Accepted cost, same as #2.)*
 
-The `keybase-migration` branch (commit `b9ea5c9`) is preserved in git history for future reference but will not be merged. It includes:
-
-- Complete git-remote-gcrypt implementation (3 new Ruby scripts: `setup-git-remote-gcrypt.rb`, `migrate-keybase-to-gcrypt.rb`, `migrate-keybase-repos.rb`)
-- Updated Brewfile (removes Keybase, adds `git-remote-gcrypt` + `gnupg`)
-- Comprehensive migration documentation in `KEYBASE_MIGRATION.md`
-- All code is functional and tested
-
-If requirements change in the future (e.g., Keybase shuts down, or GitHub adds first-class encrypted repo support), this branch provides a complete starting point. The migration documentation remains accurate and can be adapted if needed.
-
-**Key lesson**: Some problems have constraints that make elegant solutions impractical. The "right" architecture respects those constraints rather than fighting them.
+**Key lesson**: Some problems have constraints that make elegant solutions impractical. Chasing "the encrypted repo IS the live remote, transparently" (what git-remote-gcrypt and Keybase both provide) kept reintroducing a secret-backup chicken-and-egg problem in different forms. Decoupling the live repo (plaintext, local, no special remote) from the backup (a completely separate encrypted-blob push, chunked only to satisfy GitHub's 100MB file-size limit) sidesteps the whole class of problem instead of trying to make the coupled version work.
 
 ---
 
