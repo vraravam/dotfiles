@@ -358,14 +358,6 @@ def _install_homebrew(curl_opts)
   end
 end
 
-# Builds the keybase:// URL for the given repo name, owned by whoever is currently
-# logged into Keybase. Derived dynamically via Keybase.username (which reads
-# 'keybase status') -- no username is stored anywhere; whoever completes the
-# interactive login (see main's Keybase step) owns the account.
-def _build_keybase_repo_url(repo_name)
-  "keybase://private/#{Keybase.username}/#{repo_name}"
-end
-
 # Determines which remote name an encrypted-backup clone should claim for itself. If
 # Keybase is also configured (just failed/unavailable this run), it should still end up
 # as 'origin' -- see _configure_backup_remote below -- so encrypted-backup claims
@@ -436,7 +428,7 @@ def _clone_home_repo
 
       unless nil_or_empty?(keybase_repo_name)
         if PathUtils.command_exists?('keybase') && Keybase.ensure_logged_in &&
-           GitProcessor.clone_repo_into(_build_keybase_repo_url(keybase_repo_name), home)
+           GitProcessor.clone_repo_into(Keybase.build_repo_url(keybase_repo_name), home)
           cloned_via = 'keybase'
           success 'Successfully cloned home repo from Keybase'
         else
@@ -476,7 +468,7 @@ def _clone_home_repo
     # Ensure remotes for both enabled mechanisms are present, whether the repo was just
     # cloned above or already existed -- idempotent, safe to call every run.
     if GitProcessor.repo?(home)
-      _configure_backup_remote(home, _build_keybase_repo_url(keybase_repo_name)) unless nil_or_empty?(keybase_repo_name)
+      _configure_backup_remote(home, Keybase.build_repo_url(keybase_repo_name)) unless nil_or_empty?(keybase_repo_name)
       _configure_backup_remote(home, "gpg-encrypt::#{encrypted_repo_url}") unless nil_or_empty?(encrypted_repo_url)
     end
   end
@@ -506,7 +498,7 @@ def _clone_profiles_repo
 
       unless nil_or_empty?(keybase_repo_name)
         if PathUtils.command_exists?('keybase') && Keybase.ensure_logged_in &&
-           GitProcessor.clone_repo_into(_build_keybase_repo_url(keybase_repo_name), profiles_dir)
+           GitProcessor.clone_repo_into(Keybase.build_repo_url(keybase_repo_name), profiles_dir)
           cloned_via = 'keybase'
           success 'Successfully cloned browser-profiles repo from Keybase'
         else
@@ -539,7 +531,7 @@ def _clone_profiles_repo
     next unless GitProcessor.repo?(profiles_dir)
 
     git = GitProcessor.new(dir: profiles_dir)
-    _configure_backup_remote(profiles_dir, _build_keybase_repo_url(keybase_repo_name)) unless nil_or_empty?(keybase_repo_name)
+    _configure_backup_remote(profiles_dir, Keybase.build_repo_url(keybase_repo_name)) unless nil_or_empty?(keybase_repo_name)
     _configure_backup_remote(profiles_dir, "gpg-encrypt::#{encrypted_repo_url}") unless nil_or_empty?(encrypted_repo_url)
 
     # This repo is periodically force-squashed by recreate-repository.rb, so 'pull'
@@ -839,14 +831,14 @@ Cron.with_cron_suspended do
 
   # Restore macOS preferences.
   Logging.with_step('Restore preferences', 'Restore preferences') do
-    osx_defaults = EnvVars::DOTFILES_DIR.join('scripts', 'osx-defaults.sh')
+    osx_defaults = EnvVars::DOTFILES_DIR.join('scripts', 'osx-defaults.rb')
     if osx_defaults.file?
-      # osx-defaults.sh is still a shell script (not yet converted to Ruby) -- invoke it
-      # directly via its own shebang, not through the Ruby interpreter.
+      # Invoke directly via its own shebang rather than through the Ruby interpreter --
+      # works the same whether the target is a shell script or (as here) a Ruby script.
       system(osx_defaults.to_s, '-s')
       success 'Successfully baselined preferences'
     else
-      record_error "osx-defaults.sh not found at '#{osx_defaults}' -- baseline preferences manually"
+      record_error "osx-defaults.rb not found at '#{osx_defaults}' -- baseline preferences manually"
     end
 
     capture_prefs = EnvVars::DOTFILES_DIR.join('scripts', 'capture-prefs.rb')
