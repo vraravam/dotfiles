@@ -332,14 +332,6 @@ def _install_homebrew(curl_opts)
   end
 end
 
-# Builds the keybase:// URL for the given repo name, owned by whoever is currently
-# logged into Keybase. Derived dynamically via Keybase.username (which reads
-# 'keybase status') -- no username is stored anywhere; whoever completes the
-# interactive login (see main's Keybase step) owns the account.
-def _build_keybase_repo_url(repo_name)
-  "keybase://private/#{Keybase.username}/#{repo_name}"
-end
-
 # Clones the Keybase home repo (private configs).
 def _clone_home_repo
   home_repo_name = ENV.fetch('KEYBASE_HOME_REPO_NAME', '')
@@ -364,7 +356,7 @@ def _clone_home_repo
       else
         record_warning 'Failed to pull home repo -- continuing with existing backup files'
       end
-    elsif GitProcessor.clone_repo_into(_build_keybase_repo_url(home_repo_name), EnvVars::HOME)
+    elsif GitProcessor.clone_repo_into(Keybase.build_repo_url(home_repo_name), EnvVars::HOME)
       # Vanilla OS: clone succeeded
       PathUtils.set_ssh_folder_permissions
       PathUtils.set_gnupg_folder_permissions
@@ -388,7 +380,7 @@ def _clone_profiles_repo
       next
     end
 
-    url = _build_keybase_repo_url(profiles_repo_name)
+    url = Keybase.build_repo_url(profiles_repo_name)
     record_error 'Failed to clone profiles repo' unless GitProcessor.clone_repo_into(url, EnvVars::PERSONAL_PROFILES_DIR)
   end
 end
@@ -647,14 +639,14 @@ Cron.with_cron_suspended do
 
   # Restore macOS preferences.
   Logging.with_step('Restore preferences', 'Restore preferences') do
-    osx_defaults = EnvVars::DOTFILES_DIR.join('scripts', 'osx-defaults.sh')
+    osx_defaults = EnvVars::DOTFILES_DIR.join('scripts', 'osx-defaults.rb')
     if osx_defaults.file?
-      # osx-defaults.sh is still a shell script (not yet converted to Ruby) -- invoke it
-      # directly via its own shebang, not through the Ruby interpreter.
+      # Invoke directly via its own shebang rather than through the Ruby interpreter --
+      # works the same whether the target is a shell script or (as here) a Ruby script.
       system(osx_defaults.to_s, '-s')
       success 'Successfully baselined preferences'
     else
-      record_error "osx-defaults.sh not found at '#{osx_defaults}' -- baseline preferences manually"
+      record_error "osx-defaults.rb not found at '#{osx_defaults}' -- baseline preferences manually"
     end
 
     capture_prefs = EnvVars::DOTFILES_DIR.join('scripts', 'capture-prefs.rb')
