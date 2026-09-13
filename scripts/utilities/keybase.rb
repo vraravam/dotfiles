@@ -49,7 +49,8 @@ module Keybase
     status && status['LoggedIn'] ? status['Username'] : nil
   end
 
-  # Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
+  # Builds the keybase:// URL for the given repo name, owned by whoever is
+  # currently logged into Keybase (see #username above).
   #
   # @param repo_name [String]
   # @return [String] keybase://private/username/repo_name
