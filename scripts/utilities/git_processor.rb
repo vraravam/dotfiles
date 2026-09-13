@@ -262,6 +262,25 @@ class GitProcessor
     end
   end
 
+  # Ensures the current branch tracks remote_name, setting it directly via
+  # 'git config' rather than 'git branch --set-upstream-to' (which requires the
+  # remote-tracking ref to already exist locally, i.e. a prior fetch -- not true
+  # immediately after a bundle-based import + 'add_remote'). No-op if a remote is
+  # already configured for the current branch, or if there is no current branch
+  # (detached HEAD). Ruby equivalent of configure_branch_tracking_for_origin in
+  # .shellrc -- see that function's doc for the full rationale.
+  #
+  # @param remote_name [String] Remote name to configure as upstream (default: 'origin').
+  # @return [void]
+  def ensure_branch_tracking(remote_name: 'origin')
+    branch = current_branch
+    return if nil_or_empty?(branch)
+    return unless nil_or_empty?(config_value("branch.#{branch}.remote"))
+
+    config_set("branch.#{branch}.remote", remote_name)
+    config_set("branch.#{branch}.merge", "refs/heads/#{branch}")
+  end
+
   # Returns true if the repository is a shallow clone (limited history depth).
   # Shallow clones are created with --depth flag and can be converted to full
   # clones via 'git unshallow' (which includes fetch operation).

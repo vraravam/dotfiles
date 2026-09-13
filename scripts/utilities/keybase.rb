@@ -6,6 +6,7 @@ require 'json'
 
 require_relative 'command_utils'
 require_relative 'core'
+require_relative 'env_vars'
 require_relative 'logging'
 require_relative 'path_utils'
 
@@ -48,6 +49,14 @@ module Keybase
     status && status['LoggedIn'] ? status['Username'] : nil
   end
 
+  # Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
+  #
+  # @param repo_name [String]
+  # @return [String] keybase://private/username/repo_name
+  def build_repo_url(repo_name)
+    "keybase://private/#{username}/#{repo_name}"
+  end
+
   # Returns true if the URL is a Keybase git repo URL (keybase://...).
   #
   # @param url [String]
@@ -88,6 +97,8 @@ module Keybase
       Logging.debug "Already logged into keybase as '#{status['Username'].purple}'"
       return true
     end
+
+    _ensure_service_running unless status
 
     CommandUtils.run_interactive('keybase', 'login') do
       Logging.record_error 'Could not log into keybase -- retry after logging in manually'
@@ -151,6 +162,53 @@ module Keybase
   end
 
   private
+
+  # Keybase.app's kbnm (native messaging) installer writes into each installed browser's
+  # Application Support directory on first launch (e.g. .../Google/Chrome) to register its
+  # browser-extension messaging host. Google's own auto-update tooling (Keystone/
+  # GoogleSoftwareUpdate) is known to sometimes leave '~/Library/Application Support/Google'
+  # owned by a different user (observed on a vanilla-OS run) -- if so, kbnm's mkdir fails
+  # with "operation not permitted" and Keybase.app pops up a blocking error dialog, which
+  # can stall this non-interactive bootstrap since there is nobody around to dismiss it.
+  # Fix ownership defensively before launching, using the exact fix the dialog itself
+  # suggests. sudo is assumed already primed (keep_sudo_alive runs earlier in main()).
+  #
+  # @return [void]
+  def _fix_google_support_ownership
+    google_support_dir = EnvVars::HOME.join('Library', 'Application Support', 'Google')
+    return unless google_support_dir.directory?
+
+    owner = CommandUtils.query('stat', '-f', '%Su', google_support_dir.to_s)
+    return if owner == EnvVars::USER
+
+    Logging.info "Fixing ownership of '#{google_support_dir.to_s.cyan}' (was owned by a different user)"
+    CommandUtils.run_silent('sudo', 'chown', '-R', "#{EnvVars::USER}:staff", google_support_dir.to_s)
+  end
+
+  private_class_method :_fix_google_support_ownership
+
+  # The keybase CLI talks to a background service (keybased) that is normally started
+  # when Keybase.app first launches -- e.g. via the login item registered by the
+  # Brewfile's postinstall hook, which only takes effect on the *next* login. On a
+  # single-session vanilla-OS run the user never logs out/in, so the service is never
+  # started, and 'keybase login' fails with "dial unix .../keybased.sock: no such file
+  # or directory". Launch the app hidden (no Dock/focus steal) and wait briefly for the
+  # service to come up before attempting login.
+  #
+  # @return [void]
+  def _ensure_service_running
+    _fix_google_support_ownership
+
+    Logging.info 'Starting Keybase service'
+    CommandUtils.run_silent('open', '-g', '-a', 'Keybase')
+    15.times do
+      break if _status
+
+      sleep 1
+    end
+  end
+
+  private_class_method :_ensure_service_running
 
   # Parses 'keybase status --json'. Not memoized -- must reflect login state
   # freshly after ensure_logged_in performs an interactive login.
