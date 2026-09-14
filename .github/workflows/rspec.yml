@@ -1,0 +1,52 @@
+name: RSpec
+
+# Runs the Ruby unit test suite (spec/) for every push (any branch) and every
+# PR. Same trigger scope as .github/workflows/lint.yml (any branch, any
+# commit, doc-only changes skipped) -- see that file for the paths-ignore
+# rationale and the required-status-check caveat.
+#
+# Runs on macos-latest and uses the system Ruby (/usr/bin/ruby, 2.6) so the
+# suite runs under the same interpreter version the scripts under test are
+# required to support (see .rubocop.yml TargetRubyVersion / Adoption.md).
+#
+# Also uploads the SimpleCov-generated coverage/.resultset.json (see
+# spec/spec_helper.rb) to Codecov for the coverage badge in README.md. The
+# upload step is best-effort (fail_ci_if_error: false) so a Codecov outage or
+# a fork without CODECOV_TOKEN configured never blocks the actual test result.
+
+on:
+  push:
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'docs/**'
+      - '.ai/**'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'docs/**'
+      - '.ai/**'
+
+jobs:
+  rspec:
+    name: rspec (spec/)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install gems (pinned in Gemfile.lock for Ruby 2.6 compatibility)
+        shell: zsh {0}
+        run: /usr/bin/bundle install --path vendor/bundle
+
+      - name: rspec
+        shell: zsh {0}
+        run: /usr/bin/bundle exec rspec
+
+      - name: Upload coverage to Codecov
+        if: always()
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/.resultset.json
+          fail_ci_if_error: false

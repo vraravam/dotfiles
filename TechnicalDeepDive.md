@@ -10,7 +10,7 @@ If you are setting up a new machine for the first time, start with [Adoption.md]
 
 1. [Design Principles](#1-design-principles)
 2. [Repository Layout](#2-repository-layout)
-3. [Shell Architecture: `.shellrc` vs `${ZDOTDIR}/.aliases`](#3-shell-architecture-shellrc-vs-aliases)
+3. [Shell Architecture: `.shellrc` vs `${ZDOTDIR}/.aliases`](#3-shell-architecture-shellrc-vs-zdotdiraliases)
 4. [Logging System](#4-logging-system)
 5. [Exit Code Safety: `if` vs `&&`](#5-exit-code-safety-if-vs-)
 6. [Deferred Error and Warning Collection](#6-deferred-error-and-warning-collection)
@@ -391,9 +391,9 @@ Running `ZSH_PROFILE=true zsh -i -c exit` reveals where time is actually spent d
 
 6. **Rust components**: Using `zsh-patina` (Rust-based syntax highlighting daemon) instead of traditional zsh syntax highlighters. This provides 62% faster input lag (1.4ms vs 3.6ms) compared to alternatives.
 
-7. **Optimization complete**: Current startup time of **~30ms** (Apple Silicon M1+) or **~40-50ms** (Intel 2019+) is excellent for a fully-featured shell with syntax highlighting, autosuggestions, completions, and 15+ plugins. Further optimization would require removing functionality or switching shells entirely (Fish/Nushell).
+7. **Optimization complete**: Current startup time of **~30ms** (Apple Silicon, verified via 20-run `time zsh -i -c exit` average on an M3 Pro) or an estimated **under 100ms** (Intel 2019+, untested) is excellent for a fully-featured shell with syntax highlighting, autosuggestions, completions, and 15+ plugins. Further optimization would require removing functionality or switching shells entirely (Fish/Nushell).
 
-**Conclusion**: The system is fully optimized. All low-hanging fruit has been addressed (deferrals, minimal libraries, bytecode compilation, caching). The remaining 30-50ms is dominated by unavoidable operations (sourcing files, interpreter initialization, essential plugin loading).
+**Conclusion**: The system is fully optimized. All low-hanging fruit has been addressed (deferrals, minimal libraries, bytecode compilation, caching). The remaining ~30ms is dominated by unavoidable operations (sourcing files, interpreter initialization, essential plugin loading).
 
 ---
 
@@ -405,7 +405,7 @@ Scripts invoked from cron run in a minimal, non-interactive environment. Several
 
 `load_zsh_configs` sources `.zshrc`, which sources `.zlogin`. `.zlogin` triggers background ZWC compilation jobs. Launching these from a cron job with no terminal attached is disruptive and wasteful.
 
-**Rule:** call `load_zsh_configs` from a cron script only if the script uses variables or functions defined in `.zshrc` (e.g. `PROJECTS_BASE_DIR`, mise shims). Most cron scripts only need vars from `.shellrc`/`${ZDOTDIR}/.aliases` — these are available after `load_file_if_exists "${HOME}/.aliases"` without calling `load_zsh_configs`.
+**Rule:** call `load_zsh_configs` from a cron script only if the script uses variables or functions defined in `.zshrc` (e.g. `PROJECTS_BASE_DIR`, mise shims). Most cron scripts only need vars from `.shellrc`/`${ZDOTDIR}/.aliases` — these are available after `load_file_if_exists "${ZDOTDIR}/.aliases"` without calling `load_zsh_configs`.
 
 ### `sudo` — always guard with `has_sudo_credentials`
 

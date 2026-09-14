@@ -103,6 +103,30 @@ _setup_jio_dns() {
   fi
 }
 
+# Resolve GH_USERNAME without requiring it to be permanently stored anywhere.
+# On the very first (vanilla OS) run there is nothing cloned yet to derive it
+# from, so an explicitly exported GH_USERNAME (from the bootstrap one-liner) is
+# required. On every subsequent run (pre-configured machine, re-running this
+# script to pick up updates), DOTFILES_DIR already exists locally, so this
+# derives the value from its 'origin' remote instead -- meaning adopters never
+# need to remember to export GH_USERNAME again after the first successful run.
+# Raw form: runs before .shellrc is sourced, so is_non_zero_string/is_git_repo
+# are unavailable.
+_resolve_gh_username() {
+  if [[ -n "${GH_USERNAME:-}" ]]; then
+    return
+  fi
+  if [[ -n "${DOTFILES_DIR:-}" && -d "${DOTFILES_DIR}/.git" ]]; then
+    GH_USERNAME="$(git -C "${DOTFILES_DIR}" remote get-url origin 2>/dev/null | /usr/bin/sed -E 's#.*[:/]([^/]+)/dotfiles(\.git)?/?$#\1#')"
+  fi
+  if [[ -z "${GH_USERNAME:-}" ]]; then
+    echo "ERROR: GH_USERNAME is not set and could not be derived from '${DOTFILES_DIR:-<unset>}'." >&2
+    echo "       Export it before running: export GH_USERNAME='your-github-username'" >&2
+    exit 1
+  fi
+  export GH_USERNAME
+}
+
 # Download and source .shellrc from GitHub (before dotfiles are cloned)
 _download_and_source_shellrc() {
   echo "==> Ensuring '~/.shellrc' is current"
@@ -277,11 +301,13 @@ _clone_dot_files_repo() {
     info "Skipping cloning the dotfiles repo since '$(cyan "${DOTFILES_DIR}")' already exists and is a git repo"
   fi
 
-  # Setup the DOTFILES_DIR repo's upstream if GH_USERNAME differs from UPSTREAM_GH_USERNAME.
-  # This runs regardless of whether the repo was just cloned or already existed.
-  if [[ "${GH_USERNAME}" != "${UPSTREAM_GH_USERNAME}" ]]; then
-    COLUMNS="${COLUMNS}" add-upstream-git-config.rb -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || _record_warning 'Failed to add upstream git config for dotfiles repo'
-  fi
+  # Setup the DOTFILES_DIR repo's upstream remote (points at the repo this fork was
+  # derived from). This runs regardless of whether the repo was just cloned or
+  # already existed. add-upstream-git-config.rb is idempotent and no-ops cleanly
+  # both when 'upstream' already exists and when origin's own owner already
+  # matches UPSTREAM_GH_USERNAME (e.g. running this on the upstream owner's own
+  # machine) -- so no GH_USERNAME comparison is needed here.
+  COLUMNS="${COLUMNS}" add-upstream-git-config.rb -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || _record_warning 'Failed to add upstream git config for dotfiles repo'
   step_end
 }
 
@@ -353,6 +379,19 @@ _install_homebrew() {
     success 'Successfully installed cmd-line and gui apps using homebrew'
   else
     _record_warning 'Homebrew bundle install encountered errors; continuing...'
+  fi
+
+  # Homebrew cask 'postinstall:' hooks only run when 'brew bundle install' actually
+  # (re)installs the cask -- if 'brew bundle check' above already reported success (e.g.
+  # Keybase.app was already present from an earlier partial run of this idempotent
+  # script), postinstall never fires, silently leaving the 'keybase' CLI symlink missing
+  # even though the app itself is installed and usable. The Brewfile's own postinstall
+  # for this cask already creates these symlinks too -- this is a redundant safety net
+  # for exactly that postinstall-skipped case. Both are safe to run every time since
+  # 'ln -sf' is idempotent.
+  if is_directory '/Applications/Keybase.app'; then
+    ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/keybase' "${HOMEBREW_PREFIX}/bin/keybase"
+    ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase' "${HOMEBREW_PREFIX}/bin/git-remote-keybase"
   fi
 
   if is_first_install; then
@@ -437,21 +476,62 @@ _ensure_keybase_logged_in() {
     error "'keybase' command not found in the PATH. Aborting!!!"
     return 1
   fi
+
+  # Keybase.app's kbnm (native messaging) installer writes into each installed browser's
+  # Application Support directory on first launch (e.g. .../Google/Chrome) to register its
+  # browser-extension messaging host. Google's own auto-update tooling (Keystone/
+  # GoogleSoftwareUpdate) is known to sometimes leave '~/Library/Application Support/Google'
+  # owned by a different user (observed on a vanilla-OS run) -- if so, kbnm's mkdir fails
+  # with "operation not permitted" and Keybase.app pops up a blocking error dialog, which
+  # can stall this non-interactive bootstrap since there is nobody around to dismiss it.
+  # Fix ownership defensively before launching, using the exact fix the dialog itself
+  # suggests. sudo is already primed (keep_sudo_alive runs earlier in main()).
+  local google_support_dir="${HOME}/Library/Application Support/Google"
+  if is_directory "${google_support_dir}" && [[ "$(stat -f '%Su' "${google_support_dir}")" != "${USER}" ]]; then
+    info "Fixing ownership of '$(cyan "${google_support_dir}")' (was owned by a different user)"
+    sudo chown -R "${USER}:staff" "${google_support_dir}"
+  fi
+
+  # The keybase CLI talks to a background service (keybased) that is normally started
+  # when Keybase.app first launches -- e.g. via the login item registered by the
+  # Brewfile's postinstall hook, which only takes effect on the *next* login. On a
+  # single-session vanilla-OS run the user never logs out/in, so the service is never
+  # started, and 'keybase login' fails with "dial unix .../keybased.sock: no such file
+  # or directory". Launch the app hidden (no Dock/focus steal) and wait briefly for the
+  # service to come up before attempting login.
+  if ! keybase status &>/dev/null; then
+    info 'Starting Keybase service'
+    open -g -a Keybase
+    local i
+    for ((i = 0; i < 15; i++)); do
+      if keybase status &>/dev/null; then
+        break
+      fi
+      sleep 1
+    done
+  fi
+
   call_ruby_utility "require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
 }
 
-# Builds the keybase:// URL for the given repo name owned by KEYBASE_USERNAME.
+# Builds the keybase:// URL for the given repo name, owned by whoever is
+# currently logged into Keybase. Derived dynamically via Keybase.username
+# (which reads 'keybase status') -- no username is stored anywhere; whoever
+# completes the interactive login in _ensure_keybase_logged_in owns the account.
 # Usage: _build_keybase_repo_url <repo-name>
 _build_keybase_repo_url() {
-  echo "keybase://private/${KEYBASE_USERNAME:-}/${1:-}"
+  local username
+  username="$(call_ruby_utility "require 'keybase'; puts Keybase.username")"
+  echo "keybase://private/${username}/${1:-}"
 }
 
 # Clone the Keybase home repo (private configs)
 _clone_home_repo() {
   _current_section='Clone home repo'; _current_section_manual=1
   step_start
-  _step_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_HOME_REPO_NAME:-}")' repo"
-  if is_non_zero_string "${KEYBASE_HOME_REPO_NAME:-}"; then
+  local home_repo_name="${KEYBASE_HOME_REPO_NAME:-home}"
+  _step_header "$(yellow 'Cloning') '$(cyan "${home_repo_name}")' repo"
+  if is_non_zero_string "${home_repo_name}"; then
     if is_git_repo "${HOME}"; then
       # Pre-configured machine: pull latest changes to get fresh backup files.
       # Uses 'pull-safe' (not a bare 'pull --rebase') for 'with-retry' hang protection and
@@ -462,7 +542,7 @@ _clone_home_repo() {
       else
         _record_warning "Failed to pull home repo -- continuing with existing backup files"
       fi
-    elif clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_HOME_REPO_NAME:-}")" "${HOME}"; then
+    elif clone_repo_into "$(_build_keybase_repo_url "${home_repo_name}")" "${HOME}"; then
       # Vanilla OS: clone succeeded
       # Reset ssh/gnupg permissions so git/gpg don't complain -- git checkout does not
       # preserve the strict permission modes either needs, if they're tracked in the home repo.
@@ -475,7 +555,7 @@ _clone_home_repo() {
       _record_error 'Failed to clone home repo'
     fi
   else
-    info "Skipping cloning of home repo since the '$(purple 'KEYBASE_HOME_REPO_NAME')' env var hasn't been set"
+    info "Skipping cloning of home repo since '$(purple 'KEYBASE_HOME_REPO_NAME')' was explicitly set to empty"
   fi
   step_end
 }
@@ -484,13 +564,14 @@ _clone_home_repo() {
 _clone_profiles_repo() {
   _current_section='Clone profiles repo'; _current_section_manual=1
   step_start
-  _step_header "$(yellow 'Cloning') '$(cyan "${KEYBASE_PROFILES_REPO_NAME:-}")' repo"
-  if is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME:-}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
-    if ! clone_repo_into "$(_build_keybase_repo_url "${KEYBASE_PROFILES_REPO_NAME:-}")" "${PERSONAL_PROFILES_DIR}"; then
+  local profiles_repo_name="${KEYBASE_PROFILES_REPO_NAME:-profiles}"
+  _step_header "$(yellow 'Cloning') '$(cyan "${profiles_repo_name}")' repo"
+  if is_non_zero_string "${profiles_repo_name}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
+    if ! clone_repo_into "$(_build_keybase_repo_url "${profiles_repo_name}")" "${PERSONAL_PROFILES_DIR}"; then
       _record_error 'Failed to clone profiles repo'
     fi
   else
-    info "Skipping cloning of profiles repo since either the '$(purple 'KEYBASE_PROFILES_REPO_NAME')' or the '$(purple 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
+    info "Skipping cloning of profiles repo since either '$(purple 'KEYBASE_PROFILES_REPO_NAME')' was explicitly set to empty or '$(purple 'PERSONAL_PROFILES_DIR')' hasn't been set"
   fi
   step_end
 }
@@ -604,6 +685,7 @@ main() {
   # sudo spectl --master-disable
 
   _setup_jio_dns
+  _resolve_gh_username
   _download_and_source_shellrc
   keep_sudo_alive
   _approve_fingerprint_sudo
@@ -644,6 +726,26 @@ main() {
   append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
   COLUMNS="${COLUMNS}" install-dotfiles.rb
 
+  # Force-check and recompile-if-needed the core startup files right now, as
+  # their own explicit step -- deliberately not deferred to load_zsh_configs a
+  # few lines below (which would also recompile .zshenv/.zshrc/.zlogin/.aliases
+  # as a side effect of sourcing them). Later steps in this script (e.g.
+  # resurrect_tracked_repos) can run for tens of minutes; establishing correct
+  # bytecode this early -- immediately after install-dotfiles.rb (re-)creates
+  # these symlinks -- means it does not depend on reaching (or the timing of)
+  # any later step. recompile_zsh_script no-ops when the .zwc is already
+  # current, so this costs a handful of stat calls when nothing changed.
+  # This does NOT remove the need for the unconditional delete_caches call at
+  # the end of this script: that call exists because a stale .zwc left over
+  # from an earlier partial fresh-install attempt can have a mtime that
+  # defeats this same is_file_older_than check entirely (see the comment on
+  # the delete_caches step below).
+  recompile_zsh_script "${ZDOTDIR}/.zshenv"
+  recompile_zsh_script "${ZDOTDIR}/.zshrc"
+  recompile_zsh_script "${ZDOTDIR}/.zlogin"
+  recompile_zsh_script "${HOME}/.shellrc"
+  recompile_zsh_script "${ZDOTDIR}/.aliases"
+
   # On FIRST_INSTALL: install-dotfiles.rb moves the curl-downloaded ~/.shellrc into the repo,
   # overwriting the committed version. Even though we validated they matched before install-dotfiles.rb,
   # we need to restore the committed version so the symlink points to the correct content.
@@ -653,6 +755,13 @@ main() {
       git -C "${DOTFILES_DIR}" checkout -- 'files/--HOME--/.shellrc'
       # Force re-source the restored version by unfunctioning the guard immediately before sourcing
       if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
+      # Recompile again: this checkout can change .shellrc's content/mtime after
+      # the bulk recompile above already ran, making that earlier pass stale
+      # relative to this specific restore. Plain 'source' (unlike
+      # load_file_if_exists) does not check .zwc staleness itself, so without
+      # this the re-source below could silently load bytecode compiled before
+      # this checkout, defeating the restore above entirely.
+      recompile_zsh_script "${HOME}/.shellrc"
       DEBUG=true source "${HOME}/.shellrc"
     fi
   fi
@@ -688,17 +797,35 @@ main() {
   migrate_git_repo_to_reftable "${DOTFILES_DIR}"
   step_end
 
-  if is_non_zero_string "${KEYBASE_USERNAME:-}"; then
-    # Login into Keybase
+  if command_exists keybase; then
     step_start
-    _ensure_keybase_logged_in || return 1
+    _step_header "$(yellow 'Keybase') (optional, for encrypted preference backups)"
+    if call_ruby_utility "require 'keybase'; exit(Keybase.username ? 0 : 1)"; then
+      # Already logged in (from a previous run, or 'keybase login' run manually)
+      # -- sync silently every time, never re-ask. This is what makes re-running
+      # this idempotent script pleasant: once set up, it just stays set up.
+      _clone_home_repo
+      _clone_profiles_repo
+    elif is_first_install; then
+      # Not logged in yet -- attempt login only on the true first-time vanilla-OS
+      # bootstrap, non-interactively (no y/N gate). Re-runs on an already-configured
+      # machine must NOT re-litigate this every time (see the 'else' branch below) --
+      # that would turn a script designed to be safely re-run into one that blocks
+      # on a login attempt every single run.
+      if _ensure_keybase_logged_in; then
+        _clone_home_repo
+        _clone_profiles_repo
+      else
+        _record_warning 'Keybase login failed -- continuing without Keybase-based backups'
+      fi
+    else
+      # Pre-configured machine, not logged in, not FIRST_INSTALL: skip silently
+      # rather than prompting on every maintenance re-run.
+      info "Skipping Keybase setup -- not logged in. Run 'keybase login' manually, then re-run this script, to enable it."
+    fi
     step_end
-
-    _clone_home_repo
-
-    _clone_profiles_repo
   else
-    info "Skipping cloning of any keybase repo since '$(yellow 'KEYBASE_USERNAME')' has not been set"
+    info "Skipping Keybase setup since '$(yellow 'keybase')' is not installed"
   fi
 
   if is_file "${HOME}/.ssh/known_hosts.old"; then rm -f "${HOME}/.ssh/known_hosts.old"; fi
@@ -777,6 +904,25 @@ main() {
   # Default tooling for dotnet projects
   # dotnet tool install -g dotnet-sonarscanner
   # dotnet tool install -g dotnet-format
+
+  # Force-refresh all zsh bytecode (*.zwc) and cache files. install-dotfiles.rb
+  # symlinks .zshrc/.shellrc/.aliases repeatedly across re-runs, and a stale .zwc
+  # left over from an earlier partial fresh-install attempt (or a manually
+  # opened terminal during debugging) can have a mtime that defeats
+  # recompile_zsh_script's -nt staleness check, causing new terminals to load
+  # bytecode compiled from stale source indefinitely (e.g. missing PATH entries
+  # added by a later commit). delete_caches wipes every *.zwc* unconditionally
+  # rather than trusting mtime comparisons, then rebuilds from current source.
+  # Run this as the last content-affecting step so nothing later in the script
+  # writes a cache file after the wipe.
+  step_start
+  _step_header "$(yellow 'Refresh zsh bytecode caches')"
+  if command_exists delete_caches; then
+    delete_caches
+  else
+    _record_warning "Skipping zsh bytecode cache refresh since '$(purple 'delete_caches')' couldn't be found; new terminals may load stale .zwc files until 'delete_caches' is run manually"
+  fi
+  step_end
 
   # Set default shell to Homebrew zsh - done at the end to avoid blocking the
   # automated flow with password prompts. On vanilla OS without cached sudo

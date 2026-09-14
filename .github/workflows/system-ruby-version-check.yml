@@ -1,0 +1,36 @@
+name: System Ruby Version Check
+
+# macOS ships a system Ruby (/usr/bin/ruby) that this repo pins explicitly via
+# the 'ruby' directive in Gemfile (see Gemfile for the full rationale -- it's a
+# hard ceiling so Bundler/Dependabot can never resolve a gem requiring a newer
+# Ruby than the repo actually supports).
+#
+# Apple could change that bundled version at any time (a macOS point release,
+# an Xcode Command Line Tools update, or GitHub changing what ships on the
+# 'macos-latest' Actions runner image). 'bundle install' already fails loudly
+# on every push/PR if the pin and the actual system Ruby ever drift apart (see
+# lint.yml / rspec.yml) -- but that notification only fires when someone
+# actually pushes. This workflow runs on a schedule specifically to catch
+# drift during quiet periods with no commits, and files a tracking issue
+# instead of silently doing nothing.
+
+on:
+  schedule:
+    # Every Monday at 09:00 UTC.
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Compare system Ruby to Gemfile pin
+    runs-on: macos-latest
+    permissions:
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for system Ruby / Gemfile pin drift
+        shell: zsh {0}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/check-system-ruby-version.sh

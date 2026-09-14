@@ -1,0 +1,68 @@
+name: Dependabot Security Audit
+
+# Runs bundler-audit against Dependabot's proposed Gemfile.lock and requests a
+# GitHub Copilot code review on every pull request Dependabot opens for the
+# 'bundler' ecosystem (see .github/dependabot.yml).
+#
+# bundler-audit (checks the updated lockfile against the Ruby Advisory
+# Database for known CVEs) is the actual security gate -- a failure here
+# fails this job, which blocks merge if this workflow is a required status
+# check. The Copilot review request is a supplement, not a replacement: it
+# covers things bundler-audit can't (unexpected transitive dependencies,
+# license changes, suspicious diffs), guided by
+# .github/instructions/dependabot-security-review.instructions.md, which
+# applies the same checklist categories as
+# .github/agents/security-reviewer.agent.md to Gemfile/Gemfile.lock changes
+# specifically.
+#
+# Uses 'pull_request' (not 'pull_request_target') -- Dependabot's PRs are
+# same-repo branches, not fork PRs, so the default permissions model already
+# supports the 'pull-requests: write' scope needed for 'gh pr edit'/'gh pr
+# comment' below. See:
+# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/automating-dependabot-with-github-actions
+
+on: pull_request
+
+permissions:
+  pull-requests: write
+
+jobs:
+  audit:
+    name: bundler-audit + request Copilot review
+    runs-on: macos-latest
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install gems (pinned in Gemfile.lock for Ruby 2.6 compatibility)
+        shell: zsh {0}
+        run: /usr/bin/bundle install --path vendor/bundle
+
+      - name: bundler-audit (Ruby Advisory Database check)
+        id: audit
+        shell: zsh {0}
+        run: /usr/bin/bundle exec bundler-audit check --update
+
+      - name: Comment audit result on the PR
+        if: always()
+        shell: zsh {0}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if [[ "${{ steps.audit.outcome }}" == 'success' ]]; then
+            gh pr comment "${PR_URL}" --body 'bundler-audit: no known vulnerabilities found in the updated Gemfile.lock.'
+          else
+            gh pr comment "${PR_URL}" --body "bundler-audit found one or more known vulnerabilities in the updated Gemfile.lock -- see the failed 'bundler-audit' step in this PR's checks for details. Do not merge until resolved."
+          fi
+
+      - name: Request Copilot code review
+        if: always()
+        shell: zsh {0}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if ! gh pr edit "${PR_URL}" --add-reviewer @copilot; then
+            echo "::warning::Could not request a Copilot code review (Copilot code review may not be enabled for this repository/account)."
+          fi

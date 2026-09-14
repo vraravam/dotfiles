@@ -291,61 +291,22 @@ if (($+commands[zsh-patina])); then
     load_file_if_exists "${patina_activate_cache}"
   }
 
-  # Auto-restart daemon if config/theme files are newer than daemon start time.
-  # DEFERRED to first idle ZLE event to avoid blocking shell startup.
-  # Named function required (not anonymous ()) -- zsh-defer needs a function name.
+  # Restart the daemon once per new shell startup. DEFERRED to first idle ZLE
+  # event to avoid blocking shell startup. Named function required (not
+  # anonymous ()) -- zsh-defer needs a function name.
+  #
+  # 'zsh-patina restart' is idempotent (it starts fresh if not already running,
+  # otherwise restarts) -- see its --help output. This also picks up any
+  # config.toml/theme edits, which the daemon caches at startup and never
+  # re-reads on its own. software-updates-cron.rb runs the same command hourly
+  # as a fallback for daemon deaths (OS sleep/wake, crash) that happen while no
+  # NEW shell is opened to trigger this check.
   _check_patina_restart() {
-    # The daemon caches config at startup and doesn't watch for changes, so edits
-    # to config.toml or theme files require a restart to take effect.
-    # This check runs once per shell startup (deferred), verifies daemon is running,
-    # and restarts if config files are newer than daemon start time.
-    local config="${XDG_CONFIG_HOME}/zsh-patina/config.toml"
-    local theme="${XDG_CONFIG_HOME}/zsh-patina/themes/fsh-default.toml"
+    # Skip if not yet configured (first-time setup, not yet installed).
+    if [[ ! -f "${XDG_CONFIG_HOME}/zsh-patina/config.toml" ]]; then return; fi
 
-    # Early return if config file doesn't exist (first-time setup, not yet installed)
-    if [[ ! -f "${config}" ]]; then return; fi
-
-    # Check if daemon is running (expensive: ~20ms, but only once per shell startup)
-    local daemon_pid
-    daemon_pid=$(pgrep -f "zsh-patina" 2>/dev/null | head -1)
-    if [[ -z "${daemon_pid}" ]]; then
-      # Daemon not running - restart to ensure it starts fresh
-      # Common after OS reboot, system sleep, or manual 'zsh-patina stop'
-      # Use 'restart' instead of 'start' to handle edge cases where a stale
-      # process might exist (restart is idempotent: stops if running, then starts)
-      (zsh-patina restart >/dev/null 2>&1 &)
-      unfunction _check_patina_restart
-      return
-    fi
-
-    # Daemon is running - check if it needs restart due to config changes
-    local daemon_start
-    daemon_start=$(ps -o lstart= -p "${daemon_pid}" 2>/dev/null)
-    if [[ -z "${daemon_start}" ]]; then
-      unfunction _check_patina_restart
-      return
-    fi
-
-    local daemon_epoch
-    daemon_epoch=$(date -j -f "%a %b %d %H:%M:%S %Y" "${daemon_start}" +%s 2>/dev/null)
-    if [[ -z "${daemon_epoch}" ]]; then
-      unfunction _check_patina_restart
-      return
-    fi
-
-    # Get config file mtimes
-    zmodload -F zsh/stat b:zstat 2>/dev/null
-    local config_mtime theme_mtime
-    zstat -F "%s" +mtime -A config_mtime "${config}" 2>/dev/null
-    zstat -F "%s" +mtime -A theme_mtime "${theme}" 2>/dev/null
-
-    # Restart if daemon is older than either config file (config newer than daemon).
-    # Background to prevent blocking (allows multiple shells to start simultaneously)
-    if is_epoch_older_than "${daemon_epoch}" "${config_mtime}" || \
-       is_epoch_older_than "${daemon_epoch}" "${theme_mtime}"; then
-      (zsh-patina restart >/dev/null 2>&1 &)
-    fi
-
+    # Backgrounded so shell startup (and this deferred idle callback) never blocks on it.
+    (zsh-patina restart >/dev/null 2>&1 &)
     unfunction _check_patina_restart
   }
 

@@ -1,8 +1,14 @@
 # Adoption Guide
 
-This guide walks through the complete process of adopting this dotfiles system for your own use, from initial setup to ongoing maintenance.
+This guide walks through adopting this dotfiles system for your own use: preparing
+your machine, forking, and running the bootstrap command. This is the **basic**
+path -- it's all you need to get a fully working setup.
 
 > **⚡ Quick Start:** Already forked and customized? Jump to [§ 3.2 Bootstrap Command](#32-run-bootstrap-command) to copy-paste the installation command.
+
+> **Already up and running?** See **[Advanced.md](Advanced.md)** for ongoing
+> maintenance (keeping backups current, per-repo git customizations) and staying
+> in sync with upstream improvements.
 
 ## 📋 Table of Contents
 
@@ -10,20 +16,19 @@ This guide walks through the complete process of adopting this dotfiles system f
 - [Phase 1: Prepare Your Existing Machine](#phase-1-prepare-your-existing-machine)
 - [Phase 2: Fork and Customize](#phase-2-fork-and-customize)
 - [Phase 3: First-Time Setup](#phase-3-first-time-setup)
-- [Phase 4: Ongoing Maintenance](#phase-4-ongoing-maintenance)
-- [Phase 5: Keeping Up-to-Date](#phase-5-keeping-up-to-date)
 
 ---
 
 ## Overview
 
-The adoption process has five phases:
+The basic adoption process has three phases:
 
 1. **Prepare existing machine** — capture current state (apps, prefs, repos)
 2. **Fork and customize** — adapt scripts to your setup
 3. **First-time setup** — run on new/wiped machine
-4. **Ongoing maintenance** — keep backups current
-5. **Keeping up-to-date** — sync with upstream improvements
+
+Once you're up and running, see **[Advanced.md](Advanced.md)** for ongoing
+maintenance and keeping your fork in sync with upstream.
 
 ### Two Adoption Scenarios
 
@@ -51,8 +56,9 @@ curl -fsSL https://github.com/vraravam/dotfiles/archive/refs/heads/master.zip -o
 unzip -q dotfiles.zip
 cd dotfiles-master
 
-# Set required environment variable for all scripts
+# Set required environment variables for all scripts
 export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev/configs"
+export PROJECTS_BASE_DIR="${HOME}/dev"
 mkdir -p "${PERSONAL_CONFIGS_DIR}"
 ```
 
@@ -96,22 +102,22 @@ ls -la "${PERSONAL_CONFIGS_DIR}/defaults/"
 Generate YAML catalogs of all git repos you want to restore:
 
 ```zsh
-# Generate catalog for all repos under ~/dev (or your PROJECTS_BASE_DIR)
-# Replace ~/dev with your actual projects root if it differs
+# Generate catalog for all repos under ${PROJECTS_BASE_DIR} (default: ~/dev)
 cd /tmp/dotfiles-master
-./scripts/resurrect-repositories.rb -g -d ~/dev > "${PERSONAL_CONFIGS_DIR}/repositories-personal.yml"
+./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}" > "${PERSONAL_CONFIGS_DIR}/repositories-personal.yml"
 
 # Optional: Generate additional catalogs for other project directories
-# resurrect-repositories.rb -g -d ~/oss > "${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
-# resurrect-repositories.rb -g -d ~/work > "${PERSONAL_CONFIGS_DIR}/repositories-work.yml"
+# ./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/oss" > "${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
+# ./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/work" > "${PERSONAL_CONFIGS_DIR}/repositories-work.yml"
 ```
 
 **If you have repos in multiple root folders**, run once per folder with distinct filenames:
 
 ```zsh
-resurrect-repositories.rb -g -d ~/dev > "${PERSONAL_CONFIGS_DIR}/repositories-personal.yml"
-resurrect-repositories.rb -g -d ~/oss > "${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
-resurrect-repositories.rb -g -d ~/work > "${PERSONAL_CONFIGS_DIR}/repositories-work.yml"
+cd /tmp/dotfiles-master
+./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}" > "${PERSONAL_CONFIGS_DIR}/repositories-personal.yml"
+./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/oss" > "${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
+./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/work" > "${PERSONAL_CONFIGS_DIR}/repositories-work.yml"
 ```
 
 **After generation:**
@@ -161,59 +167,34 @@ rm -rf /tmp/dotfiles-master /tmp/dotfiles.zip
 
 1. Go to https://github.com/vraravam/dotfiles
 2. Click "Fork" button
-3. **Do NOT clone yet** — customizations must be done via GitHub web UI first
 
-### 2.2 Required Customizations
+That's it for forking. See § 2.2 for the one thing you'll need to provide
+when you run Phase 3.2, and § 2.3 for genuinely optional file customizations.
 
-**Edit via GitHub web UI** (not locally):
+### 2.2 What You Actually Need to Provide
 
-#### A. Update Bootstrap Command
+There is no GitHub web UI edit, no file to change, and no squash-commit dance
+required before you can run Phase 3.2. There is exactly one thing you supply,
+and you supply it **in the command itself** when you run it (see
+[Phase 3.2](#32-run-bootstrap-command)), the same way you'd pass a parameter
+to any other installer:
 
-In **[Adoption.md](Adoption.md)** (this file) — find Phase 3.2 and change the `curl` command:
+- **`GH_USERNAME`** -- your own GitHub username, in place of `vraravam` in the
+  `export GH_USERNAME='vraravam' ...` line. This is unavoidable: the command
+  has to know which fork to clone before anything exists locally to derive it
+  from. On a **new/vanilla machine there is nothing cloned yet, so you provide
+  it there too** -- same as the very first time, every time you set up a
+  different machine. The one thing you never need to do is provide it again
+  on a machine that's already set up: re-running it there derives the value
+  automatically from that machine's own local clone's `origin` remote.
+- **Keybase** (encrypted preference backups) -- entirely interactive, and
+  genuinely requires nothing from you in advance. You'll be asked during the
+  fresh-install run itself whether to set it up (see § 2.3 Keybase below).
 
-```zsh
-# BEFORE (points to vraravam):
-export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' ...
-
-# AFTER (points to YOUR_USERNAME):
-export GH_USERNAME='YOUR_USERNAME' DOTFILES_BRANCH='master' ...
-```
-
-#### B. Update Shell Defaults
-
-In **[files/--HOME--/.shellrc](files/--HOME--/.shellrc)** — change these lines:
-
-```zsh
-# REQUIRED: Change to your GitHub username
-export GH_USERNAME='YOUR_USERNAME'
-
-# OPTIONAL: Leave as 'master' unless testing a branch
-export DOTFILES_BRANCH='master'
-
-# DO NOT CHANGE: Must stay as 'vraravam' (parent repo owner)
-export UPSTREAM_GH_USERNAME='vraravam'
-
-# OPTIONAL: Change to your Keybase username, or comment out if not using
-export KEYBASE_USERNAME='YOUR_KEYBASE_USERNAME'
-```
-
-#### C. Update Ruby Fallback Defaults
-
-In **[scripts/utilities/env_vars.rb](scripts/utilities/env_vars.rb)** — change these lines:
-
-```ruby
-# REQUIRED: Change fallback to your GitHub username
-GH_USERNAME = ENV.fetch('GH_USERNAME', 'YOUR_USERNAME').freeze
-
-# OPTIONAL: Leave as 'master'
-DOTFILES_BRANCH = ENV.fetch('DOTFILES_BRANCH', 'master').freeze
-
-# DO NOT CHANGE: Must stay as 'vraravam'
-UPSTREAM_GH_USERNAME = ENV.fetch('UPSTREAM_GH_USERNAME', 'vraravam').freeze
-
-# OPTIONAL: Change fallback to your Keybase username
-KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', 'YOUR_KEYBASE_USERNAME'))
-```
+If you'd rather not retype your username every time you copy-paste the
+command, commit the substitution into your own fork's copy of this file once
+(see [Phase 3.2](#32-run-bootstrap-command)) -- but that's a convenience, not
+a requirement.
 
 ### 2.3 Optional Customizations
 
@@ -255,27 +236,51 @@ Review **[files/--HOME--/Brewfile](files/--HOME--/Brewfile)** and remove unwante
 
 #### C. Keybase (Optional)
 
-If **NOT using Keybase**:
+Keybase (for encrypted preference backups) needs **no pre-run editing at all**.
+`fresh-install-of-osx.sh` installs it unconditionally like any other package,
+then handles the rest interactively:
 
-1. In **files/--HOME--/.shellrc** — comment out all `KEYBASE_*` lines:
-   ```zsh
-   # export KEYBASE_USERNAME='...'
-   # export KEYBASE_HOME_REPO_NAME='...'
-   # export KEYBASE_PROFILES_REPO_NAME='...'
-   ```
+- **On the first vanilla-OS run** (`FIRST_INSTALL=true`), if `keybase` is
+  installed and you're not already logged in, it asks:
+  `Set up Keybase for encrypted preference backups? [y/N]`.
+  Answer `y` and log in when prompted (native `keybase login` flow) to enable
+  it; answer `n` (or just press enter) to skip.
+- **On every later re-run**, it never asks again: if you're already logged in
+  it syncs silently, and if you're still not logged in it skips silently
+  (with a hint that running `keybase login` manually and re-running this
+  script will pick it up).
 
-2. In **scripts/utilities/env_vars.rb** — change fallbacks to empty strings:
-   ```ruby
-   KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', ''))
-   KEYBASE_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_HOME_REPO_NAME', ''))
-   KEYBASE_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_PROFILES_REPO_NAME', ''))
-   ```
+Whoever completes the login owns the account -- the username is derived from
+`keybase status` wherever it's needed, so there's no `KEYBASE_USERNAME` (or
+any other Keybase var) to set anywhere, ever.
 
-The script will skip Keybase-dependent steps silently when these are empty.
+#### D. CI Badges (Optional)
 
-### 2.4 Commit Customizations
+The badges at the top of **[README.md](README.md)** (Lint, RSpec, codecov,
+Bundler Audit) hardcode `vraravam/dotfiles` in their URLs -- they show the
+CI status of the **original** repo until you update them to point at your
+own fork:
 
-After making all web UI edits:
+- **Lint / RSpec / Bundler Audit**: replace `vraravam` with your GitHub
+  username in each `https://github.com/vraravam/dotfiles/actions/workflows/...`
+  URL. These work immediately -- no account/token setup needed, since they
+  just link to your fork's own GitHub Actions runs.
+- **codecov**: also replace `vraravam` with your username in the
+  `https://codecov.io/gh/vraravam/dotfiles/...` URLs, then sign in to
+  [codecov.io](https://codecov.io) with your GitHub account, add your fork,
+  and add the resulting token as a repository secret named `CODECOV_TOKEN`
+  (Settings → Secrets and variables → Actions). Until you do this, the
+  coverage upload step in `rspec.yml` fails silently (`fail_ci_if_error:
+  false`) and the badge shows "unknown" -- the test run itself is unaffected.
+
+If you don't care about the badges reflecting your own fork's status, skip
+this entirely -- nothing else in the setup depends on it.
+
+### 2.4 Commit Customizations (If You Made Any)
+
+If you made any of the **optional** edits in § 2.3 above, commit them via the
+GitHub web UI (or locally, then push) before proceeding to Phase 3.
+If you didn't change anything, skip straight to [Phase 3](#phase-3-first-time-setup).
 
 1. **Option A (Recommended): Squash into single commit**
    - GitHub web UI: Create pull request from your fork's master to itself
@@ -306,16 +311,22 @@ After making all web UI edits:
 
 ### 3.1 Pre-Flight Checklist
 
-**Before running the bootstrap command** (for the first time on a new machine), these steps are *recommended* so that the process doesn't error out midway.
+**Before running the bootstrap command** (for the first time on a new machine), do these on your target machine (fresh or wiped). Two of them are **hard requirements** -- the script will error out or abort without them -- the rest are conditional or soft recommendations.
 
-On your target machine (fresh or wiped):
+**Required (the script will fail without these):**
 
-1. **If you use `mas` to install apps from the App Store**, login into the `App Store` application before running the script — `mas` cannot authenticate mid-run.
-2. Open the `System Preferences` application.
-   * Search for 'Full Disk Access' and add 'Terminal' — without this the script cannot read certain protected directories and will error out mid-run.
-   * Search for 'File Vault' and turn it on — the script checks for FileVault and exits early if it is off, to avoid setting up a machine with an unencrypted disk.
+1. Open the `System Preferences` application.
+   * Search for 'Full Disk Access' and add 'Terminal' — **required**: without this the script cannot read certain protected directories and **will error out mid-run**.
+   * Search for 'File Vault' and turn it on — **required**: the script explicitly **checks for FileVault and exits early** if it is off, to avoid setting up a machine with an unencrypted disk.
+
+**Conditional (only if it applies to you):**
+
+2. **If you use `mas` to install apps from the App Store**, login into the `App Store` application before running the script — `mas` cannot authenticate mid-run.
+
+**Recommended (won't block the script, but some steps work better with it):**
+
 3. Open the `System Preferences` application.
-   * Search for 'Privacy & Security > Accessibility', and enable/approve for the Terminal app (and later for iTerm once its installed) — some macOS automation commands require Accessibility permission to control UI elements.
+   * Search for 'Privacy & Security > Accessibility', and enable/approve for the Terminal app (and later for iTerm once its installed) — some macOS automation commands require Accessibility permission to control UI elements. If skipped, the script continues; you'll be reminded to review this manually in Phase 3.2's post-setup summary.
 
 > Curious how the script works internally? See the [Technical Deep Dive](TechnicalDeepDive.md).
 
@@ -325,11 +336,14 @@ On your target machine (fresh or wiped):
 export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true' COLUMNS="${COLUMNS}"; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/Downloads/fresh-install-of-osx.log"; unset FIRST_INSTALL
 ```
 
-Note: Change `vraravam` to your github username in the above command snippet. You can commit this change into your fork so that, for your own machine, you don't need to edit before copy-pasting every time.
+Note: This command is ready to copy-paste-run as-is on `vraravam`'s own machines.
+If you forked this repo, replace `vraravam` with your own GitHub username and
+commit that change into your fork, so it's likewise ready to copy-paste-run
+for you every time, without editing first.
 
 **What it does:**
 
-See [README § What the Script Does](README.md#what-the-script-does) for a complete overview. In summary:
+In summary:
 
 1. Downloads and sources `.shellrc` (provides logging and utilities)
 2. Installs Homebrew (or updates if already present)
@@ -357,16 +371,16 @@ Use **[templates/gitconfig-inc.template](templates/gitconfig-inc.template)** to 
 
 ```zsh
 # Example: personal and work contexts
-cp templates/gitconfig-inc.template ~/.config/git/includes/personal.inc
-cp templates/gitconfig-inc.template ~/.config/git/includes/work.inc
+cp "${DOTFILES_DIR}/templates/gitconfig-inc.template" "${XDG_CONFIG_HOME}/git/includes/personal.inc"
+cp "${DOTFILES_DIR}/templates/gitconfig-inc.template" "${XDG_CONFIG_HOME}/git/includes/work.inc"
 
 # Edit each file with appropriate name, email, signing key
-# Then wire into ~/.config/git/config using includeIf
+# Then wire into ${XDG_CONFIG_HOME}/git/config using includeIf
 ```
 
-**Note:** Personal git config includes are consolidated in `~/.config/git/includes/` following XDG organization principles.
+**Note:** Personal git config includes are consolidated in `${XDG_CONFIG_HOME}/git/includes/` following XDG organization principles.
 
-Example `~/.config/git/config` entry:
+Example `${XDG_CONFIG_HOME}/git/config` entry:
 
 ```ini
 [includeIf "gitdir:~/dev/personal/"]
@@ -385,7 +399,7 @@ See [git conditional includes documentation](https://git-scm.com/docs/git-config
 Use **[templates/ssh-config.template](templates/ssh-config.template)** to create `~/.ssh/config`:
 
 ```zsh
-cp templates/ssh-config.template ~/.ssh/config
+cp "${DOTFILES_DIR}/templates/ssh-config.template" ~/.ssh/config
 # Edit with your key paths and host aliases
 ```
 
@@ -406,7 +420,7 @@ cp templates/ssh-config.template ~/.ssh/config
 **Why now?** Your fork is now cloned to `${DOTFILES_DIR}` (~/.config/dotfiles), making it easy to squash locally.
 
 ```zsh
-cd ~/.config/dotfiles
+cd "${DOTFILES_DIR}"
 
 # Check current history
 git log --oneline -20
@@ -433,408 +447,14 @@ Quit and restart Terminal/iTerm to load all new configs.
 
 ---
 
-## Phase 4: Ongoing Maintenance
+## Ongoing Maintenance and Staying Up-to-Date
 
-The backup strategy is **not a one-off activity**. Regular snapshots keep your setup recoverable.
+Once you're up and running, see **[Advanced.md](Advanced.md)** for:
 
-### 4.1 Export Preferences
-
-**When to run:**
-- After installing/configuring a new app
-- After changing system preferences
-- Before major OS upgrade
-- Monthly (can be automated via cron)
-
-```zsh
-# Export preferences (stages in git, does not commit)
-capture-prefs.rb -e
-
-# Review changes
-cd "${HOME}"  # or your private configs repo
-git status
-git diff
-
-# Commit and push
-git add .
-git commit -m "Preferences backup: $(date +'%Y-%m-%d %H:%M:%S')"
-git push
-```
-
-### 4.2 Update Repository Catalogs
-
-**When to run:**
-- After cloning new repos
-- After deleting repos
-- Before wiping machine
-
-```zsh
-# Regenerate catalog
-resurrect-repositories.rb -g -d ~/dev > "${PERSONAL_CONFIGS_DIR}/repositories-personal.yml"
-
-# Review changes
-cd "${PERSONAL_CONFIGS_DIR}"
-git diff repositories-personal.yml
-
-# Commit and push
-git add repositories-personal.yml
-git commit -m "Update repo catalog: $(date +'%Y-%m-%d %H:%M:%S')"
-git push
-```
-
-### 4.3 Update Brewfile
-
-**When to run:**
-- After manually installing packages via `brew install`
-- After removing packages
-
-```zsh
-# Review current Brewfile
-cat ~/Brewfile
-
-# Add/remove entries manually (preserves comments and formatting)
-# DO NOT use 'brew bundle dump' again — it loses custom formatting
-
-# Commit changes
-cd "${DOTFILES_DIR}"
-git add files/--HOME--/Brewfile
-git commit -m "Brewfile: add <package>"
-git push
-```
-
-### 4.4 Automated Maintenance via Cron
-
-See [Extras.md — software-updates-cron.rb](Extras.md#software-updates-cronrb) for automated:
-- Homebrew updates
-- mise version updates
-- Git repo updates
-- Preference exports
-- Repository catalog regeneration
-
-### 4.5 Per-Repository Customizations
-
-Add repository-specific behavior without modifying the core dotfiles. Two patterns are available depending on whether you're customizing built-in git commands or custom aliases.
-
-#### 4.5.1 Built-In Git Commands (push, pull, commit, etc.)
-
-**For BEFORE-only validation:** Use **git hooks** in `~/.config/git/hooks/`
-**For lifecycle management (before + after):** Use **wrapper functions**
-
-##### Pre-Validation Hooks
-
-Create per-repository validation scripts in `${PERSONAL_BIN_DIR}` (default: `~/personal/dev/bin`).
-
-**Pattern:** `pre-<command>-<repo-basename>.sh`
-
-**Example: Pre-push validation**
-
-```zsh
-cat > ${PERSONAL_BIN_DIR}/pre-push-my-repo.sh << 'EOF'
-#!/usr/bin/env zsh
-set -euo pipefail
-source "${HOME}/.shellrc"
-
-# Validation only - no cleanup needed after push
-if ! run_tests; then
-  error "Tests failed - blocking push"
-  exit 1
-fi
-EOF
-
-chmod +x ${PERSONAL_BIN_DIR}/pre-push-my-repo.sh
-```
-
-**How it works:**
-1. Global hook in `~/.config/git/hooks/pre-push` checks for per-repo script
-2. If `${PERSONAL_BIN_DIR}/pre-push-<basename>.sh` exists and is executable, runs it
-3. Non-zero exit blocks the git operation
-
-**Available hooks:** `pre-push`, `pre-commit`, `post-commit`, `post-merge`, `pre-merge-commit` (see `man githooks`)
-
-**IMPORTANT: Git has NO `post-push` hook!** This is intentional design, not a bug.
-
-##### Wrapper Functions for Lifecycle Management
-
-**Problem:** Git has no `post-push` hook, and EXIT traps in `pre-push` fire before git starts pushing.
-
-**Solution:** Wrapper scripts that control the entire operation lifecycle.
-
-**Example: Suspend cron during browser-profiles push**
-
-```zsh
-cat > ${PERSONAL_BIN_DIR}/push-browser-profiles.sh << 'EOF'
-#!/usr/bin/env zsh
-set -euo pipefail
-
-_SCRIPT_NAME="${0:t}"
-source "${ZDOTDIR}/.aliases"
-
-# Load autoload script to get _push function
-require_env_var XDG_CONFIG_HOME
-load_file_if_exists "${XDG_CONFIG_HOME}/zsh/push"
-
-main() {
-  local _current_section='(init)'
-  local -a _step_warnings=()
-  local -a _step_errors=()
-  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
-  trap '_decrement_script_depth' EXIT
-
-  local script_start_time="${EPOCHSECONDS}"
-  print_script_start
-
-  # Suspend cron, run push, restore cron automatically
-  with_cron_suspended _push "$@"
-
-  print_script_summary "${script_start_time}"
-}
-
-main "$@"
-EOF
-
-chmod +x ${PERSONAL_BIN_DIR}/push-browser-profiles.sh
-```
-
-**Usage:**
-```bash
-cd ~/personal/vijay/browser-profiles
-./push-browser-profiles.sh  # or add to PATH and call directly
-```
-
-**How `with_cron_suspended` works:**
-1. Suspends cron (backs up current crontab)
-2. Runs the wrapped function (`_push`)
-3. Calls `recron` to restore crontab from tracked file
-4. Cleans up backup file
-5. Handles errors via EXIT trap - cron is always restored
-
-**When to use wrapper functions vs hooks:**
-- **Wrapper:** Need cleanup AFTER operation completes (push/pull with cron suspension)
-- **Hook:** Need validation BEFORE operation starts (pre-push tests, pre-commit linting)
-
-#### 4.5.2 Custom Git Aliases (upreb, cc, etc.)
-
-Use **override scripts** in `${PERSONAL_BIN_DIR}` for custom aliases. These must source the corresponding autoload script to get the default implementation.
-
-**Pattern:** `<alias>-<repo-basename>.sh`
-
-**Example: Delete stale tag before upreb in zen-browser-desktop**
-
-```zsh
-cat > ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh << 'EOF'
-#!/usr/bin/env zsh
-set -euo pipefail
-
-_SCRIPT_NAME="${0:t}"
-source "${ZDOTDIR}/.aliases"
-
-# Load autoload script to get _upreb function
-require_env_var XDG_CONFIG_HOME
-load_file_if_exists "${XDG_CONFIG_HOME}/zsh/upreb"
-
-main() {
-  local _current_section='(init)'
-  local -a _step_warnings=()
-  local -a _step_errors=()
-  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
-  trap '_decrement_script_depth' EXIT
-
-  local script_start_time="${EPOCHSECONDS}"
-  print_script_start
-
-  # Custom pre-logic: delete stale tag
-  if git rev-parse -q --verify refs/tags/twilight &>/dev/null; then
-    git delete-tag twilight
-  fi
-
-  # Call common implementation
-  _upreb
-
-  print_script_summary "${script_start_time}"
-}
-
-main "$@"
-EOF
-
-chmod +x ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh
-```
-
-**How it works:**
-1. Git alias checks for override script: `${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh`
-2. If exists and executable, sources it instead of running default implementation
-3. Override script loads autoload function (`_upreb`) and adds custom logic around it
-
-**Common use cases:**
-- `upreb-<repo>.sh` - Custom fetch/rebase/push workflow
-- `push-<repo>.sh` - Pre-push validation or cleanup
-- `pull-<repo>.sh` - Post-pull actions (submodule update, build trigger)
-- `cc-<repo>.sh` - Custom cache cleanup steps
-
-**Template structure:**
-1. Source `${ZDOTDIR}/.aliases` to get utility functions
-2. Load corresponding autoload script (`load_file_if_exists "${XDG_CONFIG_HOME}/zsh/<alias>"`)
-3. Implement `main()` with script infrastructure (depth tracking, timing, summaries)
-4. Add custom pre-logic before calling `_<alias>` default implementation
-5. Add custom post-logic after calling `_<alias>`
-
-**Available for customization:**
-- `upreb` - Update via fetch + rebase
-- `push` - Push with custom pre/post logic
-- `pull` - Pull with custom post-processing
-- `cc` - Cache cleanup with repo-specific steps
-
-**Testing:**
-```zsh
-# Direct invocation
-cd ~/dev/oss/zen-browser-desktop
-git upreb
-
-# Via run-all.rb (multi-repo)
-all upreb  # Each repo uses its override if it exists
-```
-
----
-
-## Phase 5: Keeping Up-to-Date
-
-Sync with upstream improvements while preserving your customizations.
-
-### 5.1 Recommended Branch Strategy
-
-**Keep all customizations as a single commit on top of upstream.** This makes rebasing trivial.
-
-**Note:** This applies to ongoing maintenance. If you completed Phase 2.4 or Phase 3.3D, you already have a single commit. This section is for when you've made additional changes over time.
-
-```zsh
-cd "${DOTFILES_DIR}"
-
-# View your customization commit
-git log --oneline upstream/master..HEAD
-# Should show: 1 commit (or more if you've made changes since initial adoption)
-
-# If you have multiple commits, squash them:
-git rebase -i upstream/master
-# Mark all but first as 'squash' or 'fixup'
-```
-
-### 5.2 Sync with Upstream
-
-```zsh
-cd "${DOTFILES_DIR}"
-
-# Fetch latest changes
-git fetch --all
-
-# Rebase your customizations on top
-git upreb  # alias for: git rebase upstream/master && git push --force-with-lease
-```
-
-**If there are conflicts:**
-
-```zsh
-# Review conflicts (typically in .shellrc, Brewfile, env_vars.rb)
-git status
-
-# Edit conflicted files
-# Stage resolved files
-git add <file>
-
-# Continue rebase
-git rebase --continue
-
-# Force push (your fork is rebased)
-git push --force-with-lease
-```
-
-### 5.3 Alternative: Cherry-Pick Your Changes
-
-If you have many commits to catch up to and prefer a clean slate:
-
-```zsh
-cd "${DOTFILES_DIR}"
-
-# Save your customization commit hash
-latest_head="$(git rev-parse HEAD)"
-
-# Hard reset to upstream
-git reset --hard upstream/master
-
-# Apply your customization commit
-git cherry-pick "${latest_head}"
-
-# Resolve conflicts if any
-git status
-# Edit conflicted files, then:
-git add <file>
-git cherry-pick --continue
-
-# Force push
-git push --force-with-lease
-```
-
-### 5.4 Review Diffs
-
-Before pushing, verify your customizations are preserved:
-
-```zsh
-# Diff against your fork's remote (shows upstream changes you're adopting)
-git diff @{u}
-
-# Diff against upstream (shows only your customizations)
-git diff upstream/master
-```
-
-**The second diff should show ONLY:**
-- Your usernames in Adoption.md (bootstrap command), .shellrc, env_vars.rb
-- Your custom Brewfile entries
-- Your path adjustments
-
-### 5.5 Post-Update Steps
-
-After syncing with upstream:
-
-1. **Run install-dotfiles.rb** to propagate symlink changes:
-   ```zsh
-   install-dotfiles.rb
-   ```
-
-2. **Check CHANGELOG.md** for version-specific instructions:
-   ```zsh
-   # Look for post-update steps for new versions
-   less "${DOTFILES_DIR}/CHANGELOG.md"
-   ```
-
-3. **Restart Terminal** to reload configs:
-   ```zsh
-   # Quit Terminal/iTerm, then reopen
-   ```
-
-4. **Verify everything works**:
-   ```zsh
-   # Check shell functions load
-   type is_shellrc_sourced
-
-   # Check aliases load
-   alias ll
-
-   # Check git aliases work
-   git st
-
-   # Check mise versions load
-   mise current
-   ```
-
-### 5.6 Testing Branch Changes
-
-To test upstream changes on a branch before merging to your master:
-
-```zsh
-# In your fork (via GitHub web UI or locally):
-# Change DOTFILES_BRANCH='master' to DOTFILES_BRANCH='test-branch'
-# in Adoption.md (bootstrap command) and files/--HOME--/.shellrc
-
-# Run bootstrap command with your test branch:
-export GH_USERNAME='YOUR_USERNAME' DOTFILES_BRANCH='test-branch' ...
-```
+- Exporting preferences and updating repository catalogs over time
+- Maintaining the Brewfile and automating tasks via cron
+- Per-repository git customizations (hooks, wrapper functions, alias overrides)
+- Syncing your fork with upstream improvements
 
 ---
 
@@ -873,9 +493,15 @@ The script is **idempotent** — re-run the same command. It will skip completed
 
 ### Missing GH_USERNAME
 
-**Symptom:** Bootstrap fails with "GitHub username not set"
+**Symptom:** Bootstrap fails with `GH_USERNAME is not set and could not be derived from ...`
 
-**Fix:** Edit `files/--HOME--/.shellrc` and `scripts/utilities/env_vars.rb` before running fresh-install (see [Phase 2.2](#22-required-customizations))
+**Fix:** This happens whenever `${DOTFILES_DIR}` doesn't exist locally yet --
+the very first run on any given machine, vanilla or not. Export it in the
+bootstrap command itself: `export GH_USERNAME='your-username' ...` (see
+[Phase 3.2](#32-run-bootstrap-command)). Once that machine has cloned the repo,
+every later run on **that same machine** derives `GH_USERNAME` automatically
+from its local clone's git remote -- but a different/new machine starts from
+scratch again and needs it exported, same as this one did.
 
 ### Wrong DOTFILES_DIR
 
@@ -895,6 +521,7 @@ The script is **idempotent** — re-run the same command. It will skip completed
 
 ## 📚 Additional Resources
 
+- **[Advanced.md](Advanced.md)** — Ongoing maintenance and staying up-to-date with upstream
 - **[README.md](README.md)** — Project overview and features
 - **[Extras.md](Extras.md)** — Detailed documentation for each utility script
 - **[TechnicalDeepDive.md](TechnicalDeepDive.md)** — Internal architecture and design decisions

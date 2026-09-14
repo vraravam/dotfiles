@@ -25,6 +25,12 @@ setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.rb
 
 # These casks must come first -- required for manual login during a vanilla OS installation.
 cask 'font-meslo-lg-nerd-font'
+# postinstall only runs when this cask is actually (re)installed, not when 'brew bundle
+# check' already reports it satisfied (e.g. Keybase.app present from an earlier partial
+# run) -- which would silently leave the CLI symlinks missing from PATH even though this
+# postinstall never ran. fresh-install-of-osx.sh also creates/repairs these same symlinks
+# unconditionally and idempotently after every 'brew bundle install' as a safety net (see
+# _install_homebrew) -- both are safe to run redundantly since 'ln -sf' is idempotent.
 cask 'keybase',
   postinstall: "\"#{setup_login_items_script}\" -a 'Keybase' && " \
                "ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/keybase' \"${HOMEBREW_PREFIX}/bin/keybase\" && " \

@@ -85,14 +85,18 @@ fi
 # Note: Change these as per your settings. Removing or commenting out a variable
 # will leave it unset in all shells started after the next login, which will cause
 # any alias, script, or operation that depends on it to be silently skipped.
-
-# ------------ Customizable env vars (MUST BE CHANGED to your values) ------------
-# The github username where the setup scripts are downloaded from
-export GH_USERNAME='vraravam'
-
-# Keybase username (comment out if you don't use Keybase)
-export KEYBASE_USERNAME='avijayr'
-# --------------------------------------------------------------------------------
+#
+# Note: There is no GH_USERNAME or KEYBASE_USERNAME declared below. Neither
+# needs to be pre-configured in a fork:
+# - GH_USERNAME is only needed transiently by the bootstrap one-liner (see
+#   Adoption.md Phase 3.2) to know which fork to clone. Re-runs of
+#   fresh-install-of-osx.sh on an already-cloned machine derive it automatically
+#   from '${DOTFILES_DIR}'s git remote.
+# - KEYBASE_USERNAME (Keybase is optional, for encrypted preference backups) is
+#   decided interactively during fresh-install-of-osx.sh (login prompt), and the
+#   active username is derived from 'keybase status' wherever it's needed (see
+#   Keybase.username in scripts/utilities/keybase.rb) -- whoever logs in owns
+#   the account, so there's nothing to keep in sync here.
 
 # ---------- Env vars for basic/common setup (can be optionally changed) ---------
 # This repo is cloned into this location
@@ -113,12 +117,6 @@ export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev/configs"
 # All browser profiles are captured in this folder (might contain sensitive info like browsing history and so is considered private)
 # Use ${USER} (zsh/PAM builtin) instead of $(whoami) to avoid forking a subprocess on every shell start.
 export PERSONAL_PROFILES_DIR="${HOME}/personal/${USER}/browser-profiles"
-
-# Keybase home repo name (comment out if you don't use Keybase)
-export KEYBASE_HOME_REPO_NAME='home'
-
-# Keybase profiles repo name (comment out if you don't use Keybase)
-export KEYBASE_PROFILES_REPO_NAME='profiles'
 # --------------------------------------------------------------------------------
 
 # ------------- Env vars for upstream setup (SHOULD NOT be changed) --------------
@@ -1791,14 +1789,25 @@ clone_repo_into() {
         return 1
       fi
     else
-      local -a clone_args=('--depth=1' '--filter=blob:none' '--single-branch')
+      local -a clone_args=()
+      if [[ "${1:-}" == keybase://* ]]; then
+        # Keybase's git-remote-keybase helper is a custom remote (not a standard smart-
+        # HTTP/SSH transport) and does not reliably support the protocol-v2 capabilities
+        # that --depth/--filter=blob:none/--single-branch depend on -- observed failing
+        # outright (exit 128) once the keybase daemon/KBFS mount becomes ready. Use a
+        # plain full clone instead; these are small personal config repos, so there is no
+        # real cost to skipping the shallow/partial-clone optimization here.
+        :
+      else
+        clone_args=('--depth=1' '--filter=blob:none' '--single-branch')
+      fi
       # If a target branch is specified, clone that branch directly to avoid the
       # "branch not found" error when switching after a shallow clone (which only
       # fetches the default branch). Without --branch, git switch would fail.
       if is_non_zero_string "${target_branch}"; then
         clone_args+=('--branch' "${target_branch}")
       fi
-      debug "Using shallow blobless single-branch clone (${clone_args[*]}) for fast initial clone"
+      debug "Using clone args: ${clone_args[*]:-(none -- plain full clone)}"
 
       # Capture stderr to display on failure
       local stderr_file
@@ -1818,10 +1827,81 @@ clone_repo_into() {
       # a large repo that is transferring slowly but steadily is not killed prematurely.
       local clone_timeout_secs=25
       local clone_max_attempts=5
+      local clone_progress_path="${tmp_folder}"
+      local clone_unwrapped=false
+      if [[ "${1:-}" == keybase://* ]]; then
+        # git-remote-keybase does not incrementally write pack data into the destination
+        # directory the way a normal smart-HTTP/SSH clone does, so 'du -sk'-based
+        # inactivity tracking never observes growth -- with-retry's timeout would fire on
+        # every single attempt regardless of whether the clone is actually progressing.
+        # Fall back to a longer fixed wall-clock timeout instead (progress_path '-').
+        clone_timeout_secs=60
+        clone_progress_path='-'
+
+        if is_first_install; then
+          # On a freshly-provisioned device, a keybase:// clone can genuinely take far
+          # longer than any reasonable timeout to complete (KBFS sync, key negotiation,
+          # large object transfer over Keybase's own encrypted transport) -- with-retry's
+          # inactivity-kill mechanism cannot tell "still working, just slow" apart from
+          # "genuinely stuck" for this transport (observed: stalls with zero visible
+          # progress past 60s, then gets killed, even though the clone may have still been
+          # progressing internally). Skip the retry/timeout wrapper entirely here and run a
+          # single, completely unwrapped attempt -- no artificial kill, no retry count --
+          # letting it succeed or fail on its own. Re-run this script later if it fails.
+          clone_unwrapped=true
+          info 'First install: running an unwrapped keybase:// clone (no retry/timeout wrapper) -- re-run this script later if this fails'
+        fi
+
+        # KBFS can still be syncing team/device keys shortly after keybase login,
+        # especially on a freshly-provisioned device -- attempting a git clone before it's
+        # ready can fail with "git-remote-keybase error: (1) Server: block does not exist"
+        # even though the daemon itself is already up and logged in. Poll for basic KBFS
+        # readiness (the containing folder becoming listable) before attempting the clone
+        # at all -- this only confirms the generic FUSE mount is up, not that the
+        # git-specific backend for this repo is actually ready, so it does not reliably
+        # prevent the failure above, but it is a cheap, harmless best-effort pre-check.
+        # Derived entirely from the URL argument (no hardcoded username/repo name) so this
+        # applies identically to home, profiles, or any other keybase:// repo:
+        # "keybase://private/user/repo" -> "/keybase/private/user".
+        local kbfs_check_path="${1#keybase://}"
+        kbfs_check_path="/keybase/${kbfs_check_path%/*}"
+        info "Waiting for KBFS to be ready at '$(cyan "${kbfs_check_path}")'"
+        local kbfs_stderr_file
+        kbfs_stderr_file="$(mktemp)"
+        if git config --get alias.with-retry &>/dev/null; then
+          # Reuses the same hang-protected retry mechanism as the clone itself below --
+          # 'keybase fs ls' can itself hang while KBFS is still coming up, not just fail fast.
+          git with-retry 10 6 "${kbfs_stderr_file}" '-' keybase fs ls "${kbfs_check_path}" &>/dev/null || warn "KBFS did not become ready within 60s -- attempting clone anyway"
+        else
+          keybase fs ls "${kbfs_check_path}" &>/dev/null || warn "KBFS does not appear ready -- attempting clone anyway"
+        fi
+        rm -f "${kbfs_stderr_file}"
+      fi
       local clone_status
-      if git config --get alias.with-retry &>/dev/null; then
-        git with-retry "${clone_timeout_secs}" "${clone_max_attempts}" "${stderr_file}" "${tmp_folder}" \
-          git -C "${tmp_folder}" clone -q -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" .
+      if [[ "${clone_unwrapped}" == true ]]; then
+        # No with-retry wrapper at all here -- see the FIRST_INSTALL comment above. Still
+        # wipes/recreates tmp_folder first for consistency with the with-retry-wrapped path
+        # (a stray leftover '.git' here would otherwise fail with "destination path '.'
+        # already exists and is not an empty directory").
+        rm -rf "${tmp_folder:?}"
+        mkdir -p "${tmp_folder}"
+        git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" . 2>"${stderr_file}"
+        clone_status=$?
+      elif git config --get alias.with-retry &>/dev/null; then
+        # Wrapped in 'zsh -c' so the temp folder is wiped and recreated fresh before every
+        # attempt -- 'with-retry' itself just re-runs the same command on failure/stall
+        # without cleaning up. If attempt 1 gets killed (or fails) mid-clone, it can leave a
+        # partial '.git' behind; without this wipe, every subsequent attempt fails
+        # immediately with "destination path '.' already exists and is not an empty
+        # directory", masking the original (possibly transient) failure.
+        #
+        # No '-q': git's progress reporting goes to stderr, which 'with-retry' already
+        # captures to stderr_file and only ever surfaces on failure (see below) -- dropping
+        # '-q' costs nothing on success but gives real diagnostic detail (e.g. exactly which
+        # negotiation/transfer phase stalled) instead of just the remote helper's own
+        # one-line status message.
+        git with-retry "${clone_timeout_secs}" "${clone_max_attempts}" "${stderr_file}" "${clone_progress_path}" \
+          zsh -c 'rm -rf "${1:?}"; mkdir -p "${1}"; exec git -C "${1}" clone -n -c init.defaultRefFormat=reftable "${@:2}"' -- "${tmp_folder}" "${clone_args[@]}" "${1:-}" .
         clone_status=$?
       else
         # Bootstrap edge case: the 'with-retry' alias lives in ${XDG_CONFIG_HOME}/git/config,
@@ -1834,7 +1914,7 @@ clone_repo_into() {
         # (no retry/hang protection) only for this one bootstrap window; every subsequent
         # call automatically regains with-retry once install-dotfiles.rb has run.
         debug "'with-retry' alias not yet available (expected before the dotfiles repo is cloned) -- using plain clone without retry protection"
-        git -C "${tmp_folder}" clone -q -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" . 2>"${stderr_file}"
+        git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" . 2>"${stderr_file}"
         clone_status=$?
       fi
 

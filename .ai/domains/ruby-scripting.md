@@ -281,16 +281,24 @@ end
 
 #### From fresh-install-of-osx.sh (parent script)
 
+`fresh-install-of-osx.sh` invokes `add-upstream-git-config.rb` as a CLI subprocess
+(not a direct module call) because it runs before Ruby scripts have any guarantee
+of being on `PATH`/`RUBYLIB` during the earliest bootstrap steps. `UPSTREAM_GH_USERNAME`
+is a shell-only env var (see `files/--HOME--/.shellrc`) passed as a `-u` flag --
+there is no corresponding `EnvVars::UPSTREAM_GH_USERNAME` Ruby constant:
+
+```zsh
+COLUMNS="${COLUMNS}" add-upstream-git-config.rb -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || _record_warning '...'
+```
+
+For scripts that *do* call each other as Ruby modules directly (the common case --
+see the dual-mode pattern above), the calling convention looks like:
+
 ```ruby
 # Top of file
-require_relative 'add-upstream-git-config'
 require_relative 'install-dotfiles'
 
 # Inside main()
-unless AddUpstreamGitConfig.run(dir: EnvVars::DOTFILES_DIR, upstream_owner: EnvVars::UPSTREAM_GH_USERNAME)
-  record_warning 'Failed to add upstream git config'
-end
-
 unless InstallDotfiles.run
   record_error 'install-dotfiles encountered errors'
 end
@@ -515,83 +523,6 @@ grep -rn "method_name(" scripts/ --include="*.rb"
 ```bash
 # Syntax check after conversion
 find scripts -name "*.rb" -exec /usr/bin/ruby -c {} \;
-```
-
-## Script Template (Legacy Single-Mode)
-
-**Note**: The dual-mode pattern above is now MANDATORY for all scripts. This legacy template is kept for reference only.
-
-**`${PERSONAL_BIN_DIR}` scripts** -- use `require_relative` (idiomatic Ruby):
-
-```ruby
-#!/usr/bin/env ruby
-# frozen_string_literal: true
-# encoding: utf-8
-
-require 'pathname'                                     # stdlib
-require_relative '../../../.config/dotfiles/scripts/utilities/logging'
-require_relative '../../../.config/dotfiles/scripts/utilities/cli_parser'
-
-include Logging
-
-# ---------------------------------------------------------------------------
-# Constants
-
-# ---------------------------------------------------------------------------
-# Main
-
-options = {}
-parser = CliParser.parse('<folder>') do |opts|
-  opts.separator 'One-line description of what this script does.'
-  opts.separator ''
-  opts.separator 'Arguments:'.purple
-  opts.separator "  #{'<folder>'.yellow}  Target folder"
-  opts.separator ''
-  opts.separator 'Options:'.purple
-  opts.on('-f', '--flag', 'Enable flag') { options[:flag] = true }
-  opts.separator ''
-  opts.separator "  eg: #{File.basename(__FILE__).cyan} /path/to/folder"
-end
-
-folder = ARGV.first
-if nil_or_empty?(folder)
-  parser.abort_with_usage('Missing required argument: <folder>')
-end
-
-Logging.section_header('Script Name')
-# increment_script_depth increments _DOTFILES_SCRIPT_DEPTH and registers an
-# at_exit hook to decrement it on exit (clean or error). Mirrors the shell
-# export + trap pattern. Must be called before print_script_start.
-Logging.increment_script_depth
-# print_script_start returns the Unix epoch of the logged timestamp so both the
-# displayed time and the in-memory start time are identical -- no two-call pattern.
-# This deviates from the shell version, which cannot return a value.
-script_start_time = Logging.print_script_start
-
-# ... main logic ...
-
-# Passing start_time to print_script_summary causes it to call print_script_duration
-# internally -- no separate call needed. This deviates from the shell version where
-# print_script_summary cannot access the start time (shell functions cannot return
-# values to be threaded through). Omit the argument only on early-exit paths inside
-# methods that cannot access the top-level start-time local.
-Logging.print_script_summary(script_start_time)
-```
-
-**`${DOTFILES_DIR}/scripts/` scripts** -- use `require_relative` (idiomatic Ruby):
-
-```ruby
-#!/usr/bin/env ruby
-# frozen_string_literal: true
-# encoding: utf-8
-
-require 'pathname'                           # stdlib
-require_relative 'utilities/logging'         # internal
-require_relative 'utilities/cli_parser'      # internal
-
-include Logging
-
-# ... rest follows the same structure as above ...
 ```
 
 ## Logging
@@ -2194,7 +2125,7 @@ end
 
 **Section separators**: Use `# ---------------------------------------------------------------------------` with descriptive labels for all sections in utility files (even short ones) to clearly demarcate organization.
 
-**Files reorganized** (June 2026): `git_processor.rb`, `git_workspace.rb`, `keybase.rb`, `macos.rb`, `profiles_repo.rb`, `plist.rb`, `path_utils.rb`, `command_utils.rb` - all follow this pattern.
+**Files following this pattern**: `git_processor.rb`, `git_workspace.rb`, `keybase.rb`, `macos.rb`, `profiles_repo.rb`, `plist.rb`, `path_utils.rb`, `command_utils.rb`.
 
 **GitProcessor as reference**: See `scripts/utilities/git_processor.rb` for a complete example:
 - Class methods: lines 59-94

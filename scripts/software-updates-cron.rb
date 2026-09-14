@@ -153,7 +153,7 @@ module SoftwareUpdatesCron
   private_class_method :_upreb_oss_repos
 
   def _run_all_updates
-    @total_steps = 20
+    @total_steps = 21
     @current_step = 0
 
     # Brew update: use bundle check before full bundle to avoid reinstalling
@@ -190,6 +190,11 @@ module SoftwareUpdatesCron
     _perform_update('tldr database', 'tldr') { CommandUtils.run_silent('tldr', '--update', err: :err) }
     _perform_update('git-ignore database', 'git-ignore-io') { CommandUtils.run_interactive('git', 'ignore-io', '--update-list') }
     _perform_update('claude-code', 'claude') { CommandUtils.run_interactive('claude', 'update') }
+    # 'zsh-patina restart' is idempotent (starts fresh if not running, otherwise
+    # restarts) -- see files/--ZDOTDIR--/.zshrc for the shell-startup check that
+    # covers the common case; this cron step is the fallback for daemon deaths
+    # (OS sleep/wake, crash) that happen while no NEW shell is opened to notice.
+    _perform_update('zsh-patina', 'zsh-patina') { CommandUtils.run_silent('zsh-patina', 'restart') }
 
     _step('antidote plugin update', "#{'Updating'.yellow} #{'antidote plugins'.purple} and regenerating plugin bundle") do
       Antidote.update_and_regenerate_bundle

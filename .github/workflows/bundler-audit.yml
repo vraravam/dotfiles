@@ -1,0 +1,38 @@
+name: Bundler Audit
+
+# Continuously checks Gemfile.lock against the Ruby Advisory Database for
+# known CVEs on master, independent of .github/workflows/dependabot-audit.yml
+# (which only runs on pull_request from dependabot[bot] and therefore never
+# produces a status for master -- see that file). This workflow exists
+# specifically to back the vulnerability badge in README.md with a real,
+# continuously-updated signal.
+#
+# Runs whenever Gemfile/Gemfile.lock change (the only inputs bundler-audit
+# actually checks) and on a weekly schedule to catch newly-disclosed CVEs
+# against an unchanged lockfile -- same rationale as
+# .github/workflows/system-ruby-version-check.yml's schedule.
+
+on:
+  push:
+    paths:
+      - 'Gemfile'
+      - 'Gemfile.lock'
+  schedule:
+    # Every Monday at 09:00 UTC.
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: bundler-audit (Gemfile.lock)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install gems (pinned in Gemfile.lock for Ruby 2.6 compatibility)
+        shell: zsh {0}
+        run: /usr/bin/bundle install --path vendor/bundle
+
+      - name: bundler-audit (Ruby Advisory Database check)
+        shell: zsh {0}
+        run: /usr/bin/bundle exec bundler-audit check --update

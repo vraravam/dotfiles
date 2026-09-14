@@ -72,7 +72,7 @@ The script has two modes, distinguished by the `FIRST_INSTALL` environment varia
 - Preferences restoration accepts stale backups on `FIRST_INSTALL` (baseline already applied)
 - All automated tasks complete before any user interaction required
 
-See [Adoption.md § Phase 3](Adoption.md#phase-3-first-time-setup) for the bootstrap command. See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-osx-defaultssh-and-capture-prefsrb-two-phase-preference-architecture) for the ordering rationale.
+See [Adoption.md § Phase 3](Adoption.md#phase-3-first-time-setup) for the bootstrap command. See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-osx-defaultssh-and-capture-prefsrb--two-phase-preference-architecture) for the ordering rationale.
 
 ## install-dotfiles.rb
 
@@ -117,7 +117,7 @@ Never reverse the order — running `capture-prefs.rb -i` before `osx-defaults.s
 | Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` (not `osx-defaults.sh`) |
 | Ephemeral state (window positions, sync cursors, UUIDs) | `capture-prefs-excluded-keys.txt` or `-denied-list.txt` — nowhere else |
 
-See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-osx-defaultssh-and-capture-prefsrb-two-phase-preference-architecture) for the full architectural rationale and ordering constraint.
+See [Technical Deep Dive § 12](TechnicalDeepDive.md#12-osx-defaultssh-and-capture-prefsrb--two-phase-preference-architecture) for the full architectural rationale and ordering constraint.
 
 ## recreate-repository.rb
 
@@ -174,12 +174,12 @@ This script can also be used to generate the basic version of the below yaml (on
 The config file for this script is a yaml file that is passed into this script as a parameter and the structure of this configuration file is:
 
 ```yaml
-- folder: "${PROJECTS_BASE_DIR}/oss/git_scripts"
-  remote: https://github.com/vraravam/git_scripts
+- folder: "${PROJECTS_BASE_DIR}/oss/example-repo"
+  remote: https://github.com/YOUR_USERNAME/example-repo
   other_remotes:
     upstream1: <upstream remote url1>
     upstream2: <upstream remote url2>
-  bundle: "${HOME}/Downloads/git_scripts.bundle"
+  bundle: "${HOME}/Downloads/example-repo.bundle"
   active: true
   post_clone:
     - ln -sf "${PERSONAL_CONFIGS_DIR}/XXX.gradle.properties" ./gradle.properties
@@ -237,8 +237,8 @@ Examples:
 You can control the search scope and filtering using environment variables:
 
 ```zsh
-  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 FILTER="oss|zsh|antidote" run-all.rb git status
-  FOLDER=~/dev MINDEPTH=2 MAXDEPTH=5 run-all.rb git fetch
+  FOLDER="${PROJECTS_BASE_DIR}" MINDEPTH=2 MAXDEPTH=5 FILTER="oss|zsh|antidote" run-all.rb git status
+  FOLDER="${PROJECTS_BASE_DIR}" MINDEPTH=2 MAXDEPTH=5 run-all.rb git fetch
   FILTER="dotfiles" run-all.rb git pull
 ```
 
@@ -315,7 +315,7 @@ To see all output from the last run (debugging):
 To check for errors/warnings over time:
 
   ```zsh
-  tail -50 ~/software-updates-cron.log
+  tail -50 ~/Downloads/software-updates-cron.log
   ```
 
 See [Technical Deep Dive § 8](TechnicalDeepDive.md#8-cron-safety-mechanisms) for how cron safety, `sudo` guards, and TTY detection work internally.
@@ -365,60 +365,24 @@ See [Technical Deep Dive § 10](TechnicalDeepDive.md#10-per-project-script-overr
 
 ### Git hook customizations
 
-All repositories automatically use global git hooks (configured via `core.hooksPath = ~/.config/git/hooks` in `.gitconfig`). These hooks support per-repository customizations via simple scripts in `${PERSONAL_BIN_DIR}`.
+All repositories automatically use global git hooks (configured via `core.hooksPath = ${XDG_CONFIG_HOME}/git/hooks` in `.gitconfig`). These hooks support per-repository customizations via simple scripts in `${PERSONAL_BIN_DIR}`.
 
-**Pattern**: Create executable scripts in `${PERSONAL_BIN_DIR}` named `{pre|post}-<command>-<repo-basename>.sh` for repository-specific behavior (follows git's standard hook naming convention).
+**IMPORTANT**: Git has no `post-push` hook (this is intentional upstream git
+design, not a bug/omission here). Only `pre-<command>` hooks (e.g. `pre-push`,
+`pre-commit`) are real git hooks that fire automatically. For any AFTER-the-fact
+cleanup or lifecycle management (e.g. suspending cron during a push and
+restoring it afterward), use a **wrapper script** instead, not a hook -- see
+[Advanced.md § 4.5 Per-Repository Customizations](Advanced.md#45-per-repository-customizations)
+for the complete pattern with worked examples of both approaches:
 
-**Example**: Suspend cron during push operations in the `browser-profiles` repository:
-
-```zsh
-# ${PERSONAL_BIN_DIR}/pre-push-browser-profiles.sh
-#!/usr/bin/env zsh
-set -euo pipefail
-source "${HOME}/.shellrc"
-
-# IMPORTANT: If push reports "Everything up-to-date", post-push won't run.
-# Manually run: resume_cron
-
-suspend_cron
-
-# ${PERSONAL_BIN_DIR}/post-push-browser-profiles.sh
-#!/usr/bin/env zsh
-set -euo pipefail
-source "${HOME}/.shellrc"
-
-# IMPORTANT: This does NOT run when push reports "Everything up-to-date".
-# If cron remains suspended, manually run: resume_cron
-
-resume_cron
-```
-
-**After creating the files, make them executable**:
-
-```bash
-chmod +x ${PERSONAL_BIN_DIR}/pre-push-browser-profiles.sh
-chmod +x ${PERSONAL_BIN_DIR}/post-push-browser-profiles.sh
-```
-
-**IMPORTANT**: Git's `post-push` hook **does not run** when a push reports "Everything up-to-date" (nothing to push). For cleanup/restoration operations like resuming cron, you must **manually run the cleanup command** (`resume_cron`) when this happens. EXIT traps in pre-push hooks do NOT work because the trap fires when the hook script exits (before git starts the push operation).
-
-**Supported hooks**:
-- `pre-push-<repo-basename>.sh` - Runs before every `git push`
-- `post-push-<repo-basename>.sh` - Runs after successful `git push` (only if changes were actually pushed)
-
-**How it works**:
-1. Global hooks in `~/.config/git/hooks/` are active for ALL repositories
-2. Hooks check `${PERSONAL_BIN_DIR}` for repo-specific scripts (using repo folder name)
-3. If customization script exists and is executable, it runs automatically
-4. No installation needed - just create the script and make it executable
-
-**Benefits**:
-- ✅ Automatic activation (no per-repo hook installation)
-- ✅ Chains with repo-specific hooks (Husky, lint-staged, etc.)
-- ✅ Simple standalone scripts (source `.shellrc` for utilities)
-- ✅ Works for all git commands (push, pull, commit, merge, etc.)
+- **`pre-<command>-<repo-basename>.sh`** -- a real git hook, runs before the
+  git operation, can block it with a non-zero exit.
+- **Wrapper scripts** (e.g. `push-<repo-basename>.sh`) -- your own script that
+  runs the whole operation (before + the actual git command + after), used
+  whenever you need something to happen *after* a successful push/pull.
 
 See `.ai/domains/git-config.md` for complete documentation on git hook architecture.
+
 
 ## delete_caches
 
@@ -428,4 +392,4 @@ Removes all compiled zsh bytecode (`.zwc` files) and other generated cache files
 delete_caches
 ```
 
-Back to the [readme](README.md#documentation)
+Back to the [readme](README.md#-documentation)

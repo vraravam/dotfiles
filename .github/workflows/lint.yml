@@ -1,0 +1,78 @@
+name: Lint
+
+# Baseline correctness checks for every push (any branch) and every PR: shell
+# syntax (zsh -n) and Ruby syntax + style (ruby -c, rubocop). Runs on
+# macos-latest so 'zsh -n' matches the actual target runtime and 'ruby -c'
+# uses the same system Ruby 2.6 that ships on a vanilla macOS (see
+# .rubocop.yml TargetRubyVersion / Adoption.md).
+# Formatting (shfmt, rufo) is intentionally NOT enforced here -- several
+# existing files are excluded from shfmt via .shfmtignore (zsh-only syntax it
+# cannot parse), so a blocking formatting gate would not be meaningful yet.
+#
+# paths-ignore skips doc-only commits (README/Adoption/Advanced/Extras/etc,
+# CHANGELOG, .ai/ instructions) -- nothing here affects script correctness, so
+# there's nothing meaningful for these checks to do. Note: if branch protection
+# ever makes this workflow a required status check, a PR that ONLY touches
+# ignored paths will never get a run to satisfy that check -- see
+# https://docs.github.com/actions/using-workflows/workflow-syntax-for-github-actions#onpushpull_requestpaths-ignore
+
+on:
+  push:
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'docs/**'
+      - '.ai/**'
+  pull_request:
+    paths-ignore:
+      - '**/*.md'
+      - 'LICENSE'
+      - 'docs/**'
+      - '.ai/**'
+
+jobs:
+  shell:
+    name: Shell syntax (zsh -n)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: zsh -n on every .sh/.zsh file
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          check_failed=0
+          while IFS= read -r -d '' file; do
+            if ! zsh -n "${file}"; then
+              echo "::error file=${file}::zsh -n failed"
+              check_failed=1
+            fi
+          done < <(find . -type f \( -name '*.sh' -o -name '*.zsh' \) -not -path './.git/*' -print0)
+          exit "${check_failed}"
+
+  ruby:
+    name: Ruby syntax (ruby -c) and style (rubocop)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: ruby -c on every .rb file (system Ruby -- matches vanilla macOS target)
+        shell: zsh {0}
+        run: |
+          set -euo pipefail
+          check_failed=0
+          while IFS= read -r -d '' file; do
+            if ! /usr/bin/ruby -c "${file}" >/dev/null; then
+              echo "::error file=${file}::ruby -c failed"
+              check_failed=1
+            fi
+          done < <(find . -type f -name '*.rb' -not -path './.git/*' -print0)
+          exit "${check_failed}"
+
+      - name: Install rubocop (pinned in Gemfile.lock for Ruby 2.6 compatibility)
+        shell: zsh {0}
+        run: /usr/bin/bundle install --path vendor/bundle
+
+      - name: rubocop
+        shell: zsh {0}
+        run: /usr/bin/bundle exec rubocop --no-color

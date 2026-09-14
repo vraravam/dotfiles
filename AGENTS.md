@@ -223,7 +223,7 @@ Functions needed during **bootstrap** (before Ruby installed, before dotfiles cl
 **Ruby delegates to shell** for bootstrap functions:
 ```ruby
 # GitProcessor delegates to shell clone_repo_into
-system('zsh', '-c', "source ~/.shellrc && clone_repo_into '#{url}' '#{target}'")
+system('zsh', '-c', "source #{EnvVars::HOME.join('.shellrc')} && clone_repo_into '#{url}' '#{target}'")
 ```
 
 See: `shell-scripting.md` § `.shellrc` vs `.aliases` Split, `context.md` § clone_repo_into Delegation Pattern
@@ -353,15 +353,15 @@ ruby -e "require_relative 'script'; MyModule.run"  # Module mode
 **Fresh install** (idempotency test):
 ```zsh
 # First run (vanilla OS simulation)
-FIRST_INSTALL=1 ./scripts/fresh-install-of-osx.sh
+FIRST_INSTALL=1 "${DOTFILES_DIR}/scripts/fresh-install-of-osx.sh"
 
 # Second run (pre-configured mode)
-./scripts/fresh-install-of-osx.sh
+"${DOTFILES_DIR}/scripts/fresh-install-of-osx.sh"
 ```
 
 ## Performance Optimization Notes
 
-**Current startup**: 78-87ms average (Apple Silicon M1+)
+**Current startup**: ~30ms average (Apple Silicon, verified via 20-run `time zsh -i -c exit`; re-verify before citing -- see `.ai/context.md` § Bottleneck Analysis for the June 2026 snapshot this superseded)
 
 **Bottlenecks** (from `zprof`):
 - 81% (21ms): Antidote plugin bundle loading — already optimized

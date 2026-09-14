@@ -59,6 +59,8 @@ These agents are specialized reviewers that understand the dotfiles repository's
 
 **Output**: Risk-rated findings (CRITICAL/HIGH/MEDIUM/LOW) with exploit scenarios, remediation steps, and overall risk assessment.
 
+**Automated trigger (the one exception to "manual invocation only")**: `.github/workflows/dependabot-audit.yml` runs automatically on every Dependabot pull request (see `.github/dependabot.yml`). It runs `bundler-audit` against the updated `Gemfile.lock` as a hard gate, then requests an actual GitHub Copilot code review (`gh pr edit --add-reviewer @copilot`) -- not this file pasted into chat. That automated review is narrowed to dependency-bump-relevant checks by `.github/instructions/dependabot-security-review.instructions.md` (a path-specific instructions file Copilot reads natively for any PR touching `Gemfile`/`Gemfile.lock`), rather than this agent's full script-focused checklist, most of which (command injection, sudo, TOCTOU) doesn't apply to a lockfile diff.
+
 ---
 
 ## Usage
@@ -173,7 +175,7 @@ If any of these files are truncated during agent execution, the agent will STOP 
 **CRITICAL**: Always verify agent suggestions against repository rules before applying.
 
 Agents are tools, not authorities. They:
-- May not understand historical optimization decisions (see `.ai/context.md`)
+- May not understand documented design decisions (see `.ai/context.md`)
 - May suggest patterns that conflict with repository conventions
 - May not understand bootstrap constraints (fresh-install sequence)
 - May be overly conservative or aggressive depending on tuning
@@ -265,6 +267,6 @@ For detailed coding standards these agents check against:
 - `.ai/domains/shell-scripting.md` - Complete shell scripting rules
 - `.ai/domains/ruby-scripting.md` - Complete Ruby scripting rules
 - `.ai/domains/logging-conventions.md` - Logging standards
-- `.ai/context.md` - Historical optimization decisions
+- `.ai/context.md` - Navigation aid and operational reference
 
 For agent usage questions or to suggest new agents, open an issue describing the review need.

@@ -4,15 +4,15 @@ Thank you for considering contributing to this project! This document provides g
 
 ## 📋 Table of Contents
 
-- [Code of Conduct](#code-of-conduct)
-- [Getting Started](#getting-started)
-- [Development Workflow](#development-workflow)
-- [Code Style Guidelines](#code-style-guidelines)
-- [Testing](#testing)
-- [Commit Messages](#commit-messages)
-- [Pull Request Process](#pull-request-process)
-- [Documentation](#documentation)
-- [Questions and Support](#questions-and-support)
+- [Code of Conduct](#-code-of-conduct)
+- [Getting Started](#-getting-started)
+- [Development Workflow](#-development-workflow)
+- [Code Style Guidelines](#-code-style-guidelines)
+- [Testing](#-testing)
+- [Commit Messages](#-commit-messages)
+- [Pull Request Process](#-pull-request-process)
+- [Documentation](#-documentation)
+- [Questions and Support](#-questions-and-support)
 
 ## 📜 Code of Conduct
 

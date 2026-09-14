@@ -1,0 +1,24 @@
+version: 2
+updates:
+  # Keeps Gemfile/Gemfile.lock current for the dev-tooling gems used by CI
+  # (rubocop, rspec, bundler-audit -- see Gemfile). The 'ruby' pin in Gemfile
+  # is a hard ceiling: Dependabot can never propose a gem version that
+  # requires a newer Ruby than 2.6.10, so it will silently skip (not fail) any
+  # release gated behind that requirement (e.g. a future rubocop/rspec major
+  # version that adds a 'prism' dependency).
+  - package-ecosystem: "bundler"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # A new gem release is not proposed until it has been out for this many
+    # days. This is actually Dependabot's own default even when 'cooldown' is
+    # omitted entirely -- it's declared explicitly here so the policy is
+    # visible in this file rather than relying on undocumented default
+    # behavior that could change.
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps"

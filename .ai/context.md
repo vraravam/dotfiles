@@ -1,7 +1,7 @@
 # Dotfiles Domain Context
 
 ## Overview
-This file provides domain-specific context for the dotfiles repository, personal bin scripts, and configs. It complements the formal rules in [`domains/`](./domains/) with historical insights, optimization patterns, and practical debugging guidance.
+This file provides domain-specific navigation and operational reference for the dotfiles repository, personal bin scripts, and configs. It complements the formal rules in [`domains/`](./domains/) with debugging guidance and quick-reference material. It is not a changelog or session journal -- see `CHANGELOG.md` for version history.
 
 ## Instruction Files (The Source of Truth)
 All detailed rules, patterns, and conventions are in `.ai/domains/`:
@@ -53,234 +53,20 @@ Higher priority always wins. Document tradeoffs in comments when they conflict.
 └── .ai/                        # AI assistant instructions
 ```
 
-## Session-Specific Insights
+## Forward-Looking Notes
 
-### Recent Fixes (June 2026)
+Guidance for specific future work, kept here (not as history) because it's
+directly actionable when that work is picked up:
 
-#### ERR Trap + `&&` Chain Interaction (June 2026)
-**Problem**: Fresh-install failing on vanilla macOS during `.zshrc` sourcing with "Installation failed at line X" errors.
+- **If `fresh-install-of-osx.sh` is ever ported to Ruby**: reimplement
+  `clone_repo_into` fresh rather than porting the existing Ruby
+  `git_processor.rb` implementation (it has drifted since the shell version was
+  last enhanced). Use the current `.shellrc` version as the reference --
+  it's the canonical implementation (see `shell-scripting.md` § `.shellrc` vs
+  `.aliases` for why bootstrap-time functions must stay in `.shellrc`).
 
-**Root cause**: Under `set -E`, ERR traps inherit to all functions. Standalone `A && B` expressions where A returns false (a normal outcome like "file doesn't exist" or "DEBUG not set") propagate exit code 1 to the enclosing scope, triggering the trap even though no error occurred.
+## Known Issues
 
-**Solution**: Converted all standalone `&&` chains to explicit `if` blocks throughout `.shellrc`, `.aliases`, `.zshenv`, `.zshrc`, `.zlogin`:
-- Logging functions: `success`, `info`, `warn`, `user_action`, `debug`
-- Validation helpers: `join_array`, `is_file_older_than`, `is_non_empty_file`, `is_directory_empty`
-- File operations: `load_file_if_exists` now uses `|| warn` to catch source failures
-- Git operations: `clone_repo_into`, `set_ssh_folder_permissions`
-- Re-source guards and DEBUG echo statements
-
-**Impact**: Fresh-install now completes successfully on first run without false-positive errors.
-
-**Key insight**: `if A; then B; fi` never propagates the predicate's exit code outside the conditional, so the trap never fires. Safe exception: `A && B || C` where C returns 0 (overall expression resolves to 0).
-
-#### capture-prefs.rb Timestamp Check Abort (June 2026)
-**Problem**: Fresh-install aborting silently after `osx-defaults.sh` with misleading "line 204" error. Script never reached "Recreate zsh completions" section or later steps (recron, resurrect_tracked_repos, mise/direnv setup).
-
-**Root cause**: `capture-prefs.rb -i` checks if backup preferences predate `osx-defaults.sh` changes and aborts with `exit(1)` (treated as fatal error). On `FIRST_INSTALL`, any backup is better than none since fresh-install already ran `osx-defaults.sh -s` to baseline current prefs first.
-
-**Debugging challenges**:
-- ERR trap `$LINENO` reported wrong line number (204 = array declaration in `_ensure_directories_exist`, but actual failure was in `capture-prefs.rb` call at line 653)
-- Success message "Successfully restored preferences" never printed (line 654), but warning from capture-prefs DID appear
-- Three "Automatic checking for updates is turned on" messages from multiple `resume_softwareupdate_schedule` calls (osx-defaults EXIT trap, capture-prefs at_exit hook, and a third mysterious call before error)
-
-**Solution**: Skip timestamp check on `FIRST_INSTALL` - added `&& !EnvVars.first_install?` condition to the abort logic in `capture-prefs.rb`. On pre-configured machines, `fresh-install-of-osx.sh` automatically refreshes the backup: runs `capture-prefs.rb -e` to export current preferences (stages files), then commits using `git sci` (amends if ahead of remote, creates new if not) to update the git commit timestamp. Import then succeeds because backup timestamp is now newer than `osx-defaults.sh`.
-
-**Impact**: Fresh-install now completes preferences restoration on both vanilla OS (stale backups accepted) and pre-configured machines (backup automatically refreshed and committed before import).
-
-**Key insights**:
-- Ruby `at_exit` hooks that call `exit(1)` or raise exceptions cause parent shell to receive non-zero exit code, triggering ERR trap
-- ERR trap `$LINENO` in string form (`trap 'handler "${LINENO}"' ERR`) captures the line where trap was SET, not where it FIRED, when used incorrectly
-- Multiple `at_exit` hooks execute in LIFO order; all must complete successfully or the process exits non-zero
-- `_abort_with_error` in Ruby scripts should be reserved for truly unrecoverable errors, not validation warnings that could be downgraded on FIRST_INSTALL
-- Timestamp validation compares **git commit timestamps**, not file timestamps - must commit after export to update timestamp
-- `git sci` automatically amends existing commit if ahead of remote (no commit spam on repeated runs)
-
-#### cron.rb Exception Propagation (June 2026)
-**Problem**: `restore_cron` raising exceptions when `crontab` command failed, causing fresh-install to abort via ERR trap.
-
-**Root cause**: Ruby `raise` statements propagate to shell as non-zero exit codes when called via `call_ruby_utility` from shell functions. The shell ERR trap catches this and aborts the entire fresh-install process.
-
-**Solution**: Changed `restore_cron` to return `true`/`false` and log errors via `Logging.record_error` instead of raising. Updated callers (`resume_cron`, `recron`) to check return value before printing success message.
-
-**Impact**: Crontab installation failures are now recoverable - errors are logged and tracked in the summary but don't abort fresh-install. User can run `recron` manually later.
-
-**Key insight**: Ruby scripts called from shell (via `call_ruby_utility` or subprocess) must return non-zero exit codes only for fatal errors. Recoverable failures should log warnings/errors and return false/success code, not raise exceptions.
-
-#### UTF-8 File Reading (June 2026)
-**Problem**: Cron jobs failing with "ArgumentError: invalid byte sequence in US-ASCII" when reading config files containing UTF-8 characters (em dashes, curly quotes). Affected files: `capture-prefs-excluded-keys.txt`, `capture-prefs-denied-list.txt`, SSH config, cleanup patterns.
-
-**Root cause**: Ruby's `File.readlines`, `Pathname#readlines`, `File.foreach`, and `Pathname#each_line` use system default encoding. In cron jobs (minimal environment), this defaults to US-ASCII, not UTF-8. When reading UTF-8 content, Ruby raises encoding error.
-
-**Solution**: Created two utility methods in Core module with explicit UTF-8 encoding:
-- `Core.read_lines_utf8(filepath)` - Read all lines into array
-- `Core.each_line_utf8(filepath) { |line| }` - Iterate lines with block
-
-Updated 7 files across dotfiles and personal bin:
-- `scripts/utilities/plist.rb` - Excluded keys loading
-- `scripts/utilities/cron.rb` - Crontab validation
-- `scripts/utilities/git_workspace.rb` - Repo aliases counting
-- `scripts/install-dotfiles.rb` - SSH config detection
-- `scripts/cleanup-browser-profiles.rb` - Pattern file reading
-- `${PERSONAL_BIN_DIR}/java-gradle-guard-rails.rb` - Gradle properties processing
-- `${PERSONAL_BIN_DIR}/java-gradle-library-versions.rb` - Version detection
-
-**Impact**: All file reading operations now work correctly in cron jobs, background processes, and SSH sessions regardless of environment encoding.
-
-**Key insights**:
-- String#each_line (in-memory strings) does NOT need replacement - strings are already UTF-8 in memory
-- Files in `scripts/utilities/logging.rb`, `command_utils.rb`, `git_processor.rb` correctly use String#each_line
-- Core module is appropriate location (zero dependencies, OS-agnostic, single source of truth)
-- Both methods accept String or Pathname arguments
-
-**Documentation**: Complete rules, examples, and scan guidance added to `.ai/domains/ruby-scripting.md` § UTF-8 File Reading.
-
-#### clone_repo_into Delegation Pattern (June 2026)
-**Problem**: Duplicate implementations - 79 lines in .shellrc, 98 lines in git_processor.rb.
-
-**Solution**: Ruby delegates to shell version via `system('zsh', '-c', 'source ~/.shellrc && clone_repo_into ...')`.
-
-**Why delegation, not consolidation**:
-- **Bootstrap constraint**: fresh-install-of-osx.sh clones dotfiles repo BEFORE Ruby utilities exist
-- **Vanilla OS**: Only /bin/zsh and curl available initially
-- **Timing**: Function must be in .shellrc for curl-download during bootstrap
-- **Single source of truth**: Shell version is canonical, Ruby is thin wrapper
-
-**Shell enhancements applied** (lines 1252-1354 in .shellrc):
-1. **Progressive trap cleanup**: `trap "rm -rf '${tmp_folder}' '${stderr_file}'" EXIT INT TERM`
-   - Updates trap as resources are allocated
-   - Clears trap after successful completion
-   - Shell equivalent of Ruby's `ensure` block
-2. **STDERR capture**: `git clone ... 2>"${stderr_file}"` then display on failure
-   - Better debugging experience for network/auth failures
-   - Only shows stderr when clone fails
-3. **Existing .git removal**: `rm -rf "${target_folder}/.git"` before move
-   - Prevents corrupt state from interrupted clones
-   - Safety feature from Ruby version
-4. **Duration tracking**: Uses `${EPOCHSECONDS}` (no subprocess fork)
-   - Debug-only output, no overhead in normal operation
-
-**Future port guidance**: When fresh-install is ported to Ruby, reimplement clone_repo_into fresh (don't copy stale Ruby implementation from git_processor.rb). Use current .shellrc version as reference.
-
-**Pattern applies to**: Any function needed during bootstrap before dotfiles repo exists must stay in .shellrc, Ruby should delegate not duplicate.
-
-### Recent Optimizations (June 2026)
-Performance improvements reviewed:
-- **Analysis**: Profiled startup to identify bottlenecks
-- **Result**: Startup now 78-87ms average (variance due to system load)
-- **Key insight**: Utility functions preferred over raw tests for consistency/maintainability
-- **Trade-off**: ~0.1ms overhead acceptable for better error handling and DRY principle
-
-See [`domains/shell-scripting.md`](./domains/shell-scripting.md) § Prefer Utility Functions Over Raw Shell Tests for complete patterns.
-
-### Current Bottleneck Analysis
-From `zprof` output:
-- **81%** of startup: Antidote plugin bundle loading (21.65ms)
-  - Already optimized with deferrals
-  - Further gains require removing plugins
-- **9%**: Syntax highlighting initialization (2.59ms)
-- **5%**: Starship prompt (1.35ms) - cached, unavoidable
-- **4%**: Mise activation (1.18ms) - cached, unavoidable
-
-**Average total startup**: 78-87ms (variance due to system load)
-
-### Historical Optimization Milestones
-
-#### August 2026: Startup Optimization - zsh-patina Deferral
-**Achievement**: Shell startup reduced from **70ms to 40ms** (43% improvement)
-
-**Problem**: zsh-patina daemon restart check consumed 30ms (58% of startup time) on every shell start.
-
-**Root cause**:
-- `stat -f %m` command substitutions forked subprocesses for mtime checks
-- Cache validation logic ran synchronously in hot path before first prompt
-- Expensive operations (pgrep, ps, date) executed even when cache was valid
-
-**Solution**: Three-part optimization
-1. **Defer entire restart check**: Moved to `zsh-defer` (runs after first prompt, before first keypress)
-2. **Zero-fork mtime checks**: Replace `$(stat -f %m)` with `zsh/stat` module (`zstat +mtime`)
-3. **Update cache on daemon-not-found**: Prevent repeated checks for 5 minutes even when daemon offline
-
-**Impact**:
-- **Before**: 70ms startup (30ms patina check in hot path)
-- **After**: 40ms startup (30ms check deferred, runs after prompt renders)
-- **User experience**: No visible impact - deferred work completes before first keypress
-
-**Key insight**: Background maintenance checks (daemon restarts, update checks) are perfect deferral candidates - they don't affect prompt rendering and can run after shell becomes interactive.
-
-**Documentation**: Added complete deferral patterns to `zsh-startup.md` § Deferring Expensive Operations with zsh-defer.
-
-#### May 2026: Major Startup Overhaul (commit 72891ae)
-**Achievement**: Shell startup reduced from ~200ms to **7ms** (97% improvement)
-
-Key changes:
-1. **Plugin manager swap**: oh-my-zsh → antidote (78b8cb4)
-   - Static bundle generation (no runtime plugin resolution)
-   - Result: 200ms → 9ms
-
-2. **Caching strategy** (72891ae):
-   - `brew shellenv`: Run once per brew upgrade, not every shell
-   - Git version detection: Cache based on git binary mtime (~14ms saved)
-   - Starship init: Cache based on starship binary mtime (~5-10ms saved)
-   - Mise activate: Cache based on mise binary mtime (~5-10ms saved)
-
-3. **NOUNSET handling**:
-   - Plugins with bare `$3` crash under `set -u`
-   - Solution: `set +u` before bundle, `set -u` after
-
-4. **Architecture cache** (3.1.22 - Nov 2025):
-   - Eliminated `uname -m` fork on every startup
-   - Manual invalidation via `delete_caches` after OS upgrades
-   - Result: 8.80ms → 0.06ms (147x speedup for this block)
-
-5. **Compinit optimization**:
-   - `-C` flag skips security audit when dump exists
-   - `skip_global_compinit=1` prevents `/etc/zshrc` duplication
-
-#### Performance Patterns That Work
-From 3+ years of optimization:
-
-**❌ Avoid**:
-- Function calls in deeply nested loops (consider extracting)
-- Subshell forks `$(...)` during startup
-- Running external binaries multiple times per shell
-- OMZ-style plugin loading (too dynamic)
-
-**✅ Prefer**:
-- Utility functions: `is_file`, `is_directory`, `is_executable` over raw test operators
-- Zsh parameter expansion: `${PWD:t}` instead of `$(basename "$(pwd)")`
-- Memoization: Cache repeated checks/computations
-- Static bundles: Pre-generate, source once
-- Mtime-based invalidation: Cache until dependency changes
-
-See [`domains/shell-scripting.md`](./domains/shell-scripting.md) § Prefer Utility Functions Over Raw Shell Tests for complete rules.
-
-#### Shell→Ruby Migration Benefits (3.1.21-3.1.25)
-Converted 5 shell scripts to Ruby (2025-2026):
-- `software-updates-cron.sh` → `.rb`
-- `capture-prefs.sh` → `.rb`
-- Several autoload functions
-
-Benefits realized:
-- **Memoization**: 3 shell invocations → 1 per operation (~30ms/cron)
-- **No subprocess overhead**: Direct module calls
-- **Better error handling**: Native exceptions vs exit codes
-- **Type safety**: Pathname objects, not string concatenation
-- **Single language**: All plist/git/profile ops in Ruby
-
-Trade-off: Still use shell for startup paths (zsh internals)
-
-#### Antidote .zwc Crash (3.1.19 - Oct 2025) [FIXED in 2.1.1 - July 2026]
-**Problem**: `antidote.zsh.zwc` bytecode broke every shell startup
-**Cause**: antidote 2.1.0 used `[[ ":${ZSH_EVAL_CONTEXT}:" == *:file:* ]]` to detect sourcing
-  - `.zwc` sets context to `filecode`, not `file`
-  - Pattern mismatch → CLI mode → `exit 1` → crash
-**Temporary solution (3.1.19-3.1.26)**: Never compile `antidote.zsh` to `.zwc`
-**Fix (antidote 2.1.1+)**: Pattern changed to `*:file(|code):*` which matches both contexts
-  - Now safe to compile `antidote.zsh` to `.zwc`
-  - `find_in_folder_and_recompile "${ANTIDOTE_HOME}"` handles it automatically
-  - GitHub issue #270: https://github.com/mattmc3/antidote/issues/270
-
-### Known Issues
 1. Aliases sometimes fail to load after certain `.zshrc` changes
    - **Cause**: Syntax errors break initialization before `zsh-defer` runs
    - **Debug**: `zsh -n file.zsh` and check for nested expansion errors
@@ -323,137 +109,25 @@ For complete edit workflows (syntax checks, formatting, whitespace verification,
 - Profile startup: `ZSH_PROFILE=true zsh -i -c exit` then `zprof`
 - Benchmark startup: 20 iterations of `time zsh -i -c exit`
 
-## Coding Patterns from Past Sessions
+## Coding Patterns Quick Index
 
-### Shell Scripting Hard-Won Lessons
+The rules below live in full detail in the domain files -- this is just a
+lookup aid, not a substitute for reading them:
 
-1. **`&&` under `set -e` is dangerous**
-   - `A && B` where A returning false is *expected* triggers ERR trap
-   - **Fix**: Use explicit `if A; then B; fi`
-   - **Exception**: `A && B || C` safe when C returns 0
-
-2. **Arithmetic post-increment crashes**
-   - `(( count++ ))` with count=0 → exit 1 → `set -e` abort
-   - **Fix**: `(( count += 1 )) || true`
-
-3. **For-loop variables leak**
-   - Loop vars are NOT auto-local in zsh
-   - **Fix**: `local item; for item in ...`
-
-4. **Parameter expansion operators matter**
-   - `${VAR:-fallback}`: unset OR empty → fallback
-   - `${VAR-fallback}`: unset only → fallback
-   - **Rule**: Use `:-` for user flags, `-` for shell vars
-
-5. **Local + assignment masks exit codes**
-   - `local result="$(cmd)"` always returns 0 (from `local`)
-   - **Fix**: Split into two lines
-
-6. **NULL_GLOB needs proper scoping**
-   - Never use bare `setopt NULL_GLOB` (leaks)
-   - **Fix**: `() { setopt localoptions NULL_GLOB; ... }` in pure zsh
-   - **Fix**: Named function + `unfunction` in bash-parseable files
-
-7. **Quoted paths everywhere**
-   - Always `"${var}"`, never `$var` (except `$?` etc.)
-   - **Exception**: After assignments like `file=${1:-.}`
-
-8. **ERR trap LINENO capture**
-   - `trap handler ERR` → `$LINENO` is handler's line
-   - **Fix**: `trap 'handler "${LINENO}"' ERR` (string form)
-
-9. **Progressive trap cleanup**
-   - Set trap early, update as resources allocated, clear on success
-   - **Pattern**: `trap "rm -rf '${tmp_folder}'" EXIT INT TERM`
-   - Update: `trap "rm -rf '${tmp_folder}' '${stderr_file}'" EXIT INT TERM`
-   - Clear: `trap - EXIT INT TERM` (after success, before function returns)
-   - Handles normal exit, errors, and interrupts (Ctrl+C)
-   - Shell equivalent of Ruby's `ensure` block
-
-10. **STDERR capture for better debugging**
-    - Pattern: `stderr_file="$(mktemp)"; cmd 2>"${stderr_file}"; status=$?`
-    - Display stderr only on failure: `if [[ $status -ne 0 ]]; then cat "${stderr_file}"; fi`
-    - Always use `2>/dev/null` when reading stderr file (in case it disappeared)
-    - Add trap to clean up stderr file: `trap "rm -rf '${tmp}' '${stderr}'" EXIT`
-
-### Ruby Scripting Patterns
-
-1. **EnvVars module is source of truth**
-   - All `ENV.fetch('LITERAL')` → centralize in `EnvVars`
-   - **Pathname constants** for paths (expensive to construct)
-   - **Methods** for dynamic values (re-evaluated each call)
-
-2. **Memoization eliminates repeated work**
-   - Command existence checks: `@_cmd_exists ||= command_exists?`
-   - Boolean queries: `@_exporting ||= @op == 'export'`
-   - **Don't memoize**: Dynamic state, single-use, cheap ops
-
-3. **Pathname all the way**
-   - Keep Pathname throughout code
-   - Convert `.to_s` only at system call boundaries
-   - Use `Pathname#join()`, not `File.join`
-
-4. **Private method discipline**
-   - Prefix with `_`, add `private :_method_name`
-   - Signals internal-only API
-   - **All** helper methods in scripts must be private
-
-5. **Single exit point**
-   - Never `exit()` mid-loop in processing scripts
-   - Track failures, exit once at end
-   - **Exception**: Help/usage, precondition validation
-
-6. **GitProcessor patterns**
-   - **Block form**: 2+ git operations in same scope
-   - **Instance form**: Single operation, need return value
-   - Always rescue `RuntimeError` for `relative_path`
-
-7. **Shell delegation pattern**
-   - Ruby utilities use `extend self`
-   - Shell functions call via `call_ruby_utility "Module.method"`
-   - Single implementation, multiple entry points
-   - `call_ruby_utility` handles RUBYLIB setup, COLUMNS preservation, Ruby availability check
-
-8. **Environment variable inheritance across shell→Ruby→shell boundaries**
-   - Shell `export VAR=value` → Ruby subprocess inherits via ENV
-   - Ruby `system('zsh', '-c', cmd)` → child shell inherits Ruby's ENV
-   - **Verification requirement**: When relying on inheritance for correctness (not just convenience), add comment documenting the inheritance chain
-   - **Example**: `GIT_SSH_COMMAND` exported in fresh-install → Ruby `git_processor.rb` → shell `clone_repo_into()` inherits without inline override
-   - **Pattern**: Document inheritance when it's load-bearing (e.g., bootstrap SSH config before `.gitconfig` exists)
-
-9. **Logging auto-indents**
-   - All methods use `log_indent` (depth * 2 spaces)
-   - **Never** manually prepend spaces
-   - External tool output intentionally unindented
-
-### Cross-Language Conventions
-
-1. **Unified color standard**
-   - See [`domains/logging-conventions.md`](./domains/logging-conventions.md) for complete rules
-   - Paths: cyan + quotes
-   - Components/tools: yellow
-   - Commands: cyan + quotes
-   - Booleans: orange
-   - Success counts: green, error counts: red, neutral: purple
-
-2. **Deferred error collection**
-   - Both shell and Ruby: `record_warning`, `record_error`
-   - Prefix: `[script_name][section]`
-   - Print summary at end via `print_script_summary`
-
-3. **Script depth tracking**
-   - Increment on entry, decrement on exit
-   - Gates start/summary output (outermost only)
-   - Auto-indents all logging output
-
-4. **No hardcoded paths**
-   - Shell: Use `${DOTFILES_DIR}` not `~/.config/dotfiles`
-   - Ruby: Use `EnvVars::DOTFILES_DIR` not `Pathname.new(ENV['HOME']).join(...)`
-
-5. **ASCII-only in code/comments**
-   - See [`domains/character-encoding.md`](./domains/character-encoding.md) for complete rules
-   - No em dashes, curly quotes, Unicode punctuation
-   - **Exception**: User-facing output where typography matters
+- Shell: `&&`/`set -e` interaction, arithmetic increment safety, for-loop
+  locality, parameter expansion (`:-` vs `-`), quoting, NULL_GLOB scoping,
+  ERR trap `$LINENO` capture, progressive trap cleanup, stderr capture --
+  see [`domains/shell-scripting.md`](./domains/shell-scripting.md)
+- Ruby: `EnvVars` as source of truth, memoization, `Pathname` usage, private
+  method discipline, single exit point, `GitProcessor` block vs instance form,
+  shell delegation pattern, env var inheritance across shell/Ruby boundaries --
+  see [`domains/ruby-scripting.md`](./domains/ruby-scripting.md)
+- Cross-language: unified color standard, deferred error collection, script
+  depth tracking, no hardcoded paths, ASCII-only in code/comments -- see
+  [`domains/logging-conventions.md`](./domains/logging-conventions.md),
+  [`domains/script-depth-tracking.md`](./domains/script-depth-tracking.md),
+  [`domains/path-constants.md`](./domains/path-constants.md),
+  [`domains/character-encoding.md`](./domains/character-encoding.md)
 
 ## Where to Find Information
 
@@ -466,7 +140,6 @@ For complete edit workflows (syntax checks, formatting, whitespace verification,
 | Edit workflow | domains/edit-checklist.md |
 | EnvVars module usage | domains/path-constants.md § Ruby |
 | Fresh install rules | domains/fresh-install.md |
-| Function call overhead | This file § Session-Specific Insights |
 | Git alias patterns | domains/git-config.md |
 | Glob qualifiers for performance | domains/shell-scripting.md § Glob Patterns |
 | Logging conventions | domains/logging-conventions.md |
@@ -489,9 +162,12 @@ When optimizing startup (see zsh-startup.md for full details):
    - Use glob qualifiers `(N/)` for directory filtering (free at expansion time)
    - Keep utility functions for non-glob checks (consistency over micro-optimization)
    - Cache expensive commands
-4. **Verify**: Profile again, benchmark with 20+ iterations
-5. **Document**: Add optimization notes to this file
+4. **Verify**: Profile again, benchmark with 20+ iterations (`time zsh -i -c exit`)
+5. **Document**: Add the resulting pattern/rule to the relevant `domains/` file
+   (not here) if it's a new, generalizable technique
 
 ---
 
-**Remember**: This skill is a navigation guide and session journal. Detailed rules live in the instruction files. Don't duplicate them here.
+**Remember**: This file is a navigation guide and operational reference.
+Detailed rules live in the instruction files -- don't duplicate them here, and
+don't use this file as a changelog (see `CHANGELOG.md` for that).

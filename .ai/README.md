@@ -7,7 +7,7 @@ This repository uses a **tool-agnostic** instruction system in the `.ai/` folder
 All AI coding assistants (GitHub Copilot, Cursor, Windsurf, Claude Code, etc.) should read:
 1. **[`instructions.md`](./instructions.md)** - Main entry point with general rules
 2. **[`domains/`](./domains/)** - Domain-specific rules
-3. **[`context.md`](./context.md)** - Historical insights, optimization patterns, debugging guidance
+3. **[`context.md`](./context.md)** - Navigation aid, performance workflow, debugging guidance
 
 ## Structure
 
@@ -20,10 +20,9 @@ All AI coding assistants (GitHub Copilot, Cursor, Windsurf, Claude Code, etc.) s
 │                                # - Decision-making philosophy
 │
 ├── context.md                   # Domain context
-│                                # - Historical optimizations
-│                                # - Performance patterns
-│                                # - Coding lessons learned
-│                                # - Debugging commands
+│                                # - Repository structure and navigation
+│                                # - Performance optimization workflow
+│                                # - Known issues and debugging commands
 │
 └── domains/                     # Domain-specific rules
     ├── character-encoding.md    # Cross-language ASCII-only requirements
@@ -96,7 +95,7 @@ When working on this repository:
 
 1. **Read all files in `.ai/` first** (especially `instructions.md`)
 2. **Check which domain applies** to the file you're editing
-3. **Follow the rules exactly** - they're refined over 3+ years
+3. **Follow the rules exactly** - they encode specific, tested reasoning
 4. **Verify your changes** - Each domain has verification steps
 5. **Don't duplicate rules** - Reference `.ai/` files, don't copy them
 
@@ -105,7 +104,6 @@ When working on this repository:
 See the [main README](../README.md) for:
 - How to adopt/customize these rules
 - Decision-making philosophy (startup speed → maintainability → POSIX → zsh)
-- Historical optimization milestones
 - Common debugging commands
 
 ## Questions?

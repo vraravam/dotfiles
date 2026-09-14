@@ -12,7 +12,9 @@
 2. [Reverse Comparison Technique](#reverse-comparison-technique)
 3. [Feature Parity Verification](#feature-parity-verification)
 4. [Duplication Removal](#duplication-removal)
-5. [Lessons Learned](#lessons-learned)
+5. [Forward Rebase: Catching Up a Branch Chain from Its Parent](#forward-rebase-catching-up-a-branch-chain-from-its-parent)
+6. [Backporting: Bringing Branch Improvements Back to Master](#backporting-bringing-branch-improvements-back-to-master)
+7. [Lessons Learned](#lessons-learned)
 
 **See also:** [FEATURE-PARITY-CHECKLIST.md](FEATURE-PARITY-CHECKLIST.md) - Comprehensive post-rebase verification checklist
 
@@ -68,6 +70,12 @@ git rebase -i main              # Mark all but first as 'squash' or 'fixup'
 - Before initial rebase (consolidate work-in-progress commits)
 - After rebase if verification/documentation commits were added
 - Before final merge to main
+
+**Commit message content:** The message should describe the branch's actual
+content/feature -- it does not need to mention that a rebase or squash
+occurred. Rebasing onto an updated main and squashing back down to one commit
+is routine git history maintenance, not something worth documenting in the
+message itself.
 
 ---
 
@@ -589,6 +597,132 @@ rg "TODO|FIXME|XXX" --type-add 'code:*.{sh,rb,py,js}' --type=code
 
 ---
 
+## Forward Rebase: Catching Up a Branch Chain from Its Parent
+
+**Purpose:** Bring a branch up to date with its **parent branch** (not
+necessarily `master`) when this repo is using a chain of branches for a large
+incremental conversion -- e.g., one branch per file being converted from
+shell to Ruby, each branch built directly on top of the previous one in the
+chain, and only the final branch eventually merges to `master`.
+
+**Terminology used below:**
+- **Target branch** -- the branch you're bringing up to date (e.g., `osx-defaults-ruby`)
+- **Parent branch** -- the branch it's built on top of (e.g., `fresh-install-ruby`) -- may or may not be `master`
+
+### Process
+
+1. **Reload parent branch context**
+   ```bash
+   git -C "${DOTFILES_DIR}" log --oneline <parent-branch> | head -10
+   ```
+   Review the last ~10 commits on the parent branch before starting, so you
+   know what's new.
+
+2. **Rebase and resolve conflicts**
+   ```bash
+   git -C "${DOTFILES_DIR}" checkout <target-branch>
+   git -C "${DOTFILES_DIR}" rebase <parent-branch>
+   # resolve conflicts as they arise
+   ```
+
+3. **Look for simplification opportunities, not just conflict resolution**
+   Even if the rebase reports no conflicts (or the branch appears already
+   rebased), separately review the last ~20 commits on the parent branch
+   cumulatively for:
+   - New utility methods/classes the target branch's conversion could reuse
+     instead of duplicating functionality
+   - Simplifications now possible in the target branch because of what the
+     parent branch added since it last caught up
+
+4. **Verify functional equivalence of the conversion itself**
+   For the specific file(s) being converted in the target branch, confirm the
+   conversion (e.g., shell -> Ruby) is functionally correct: nothing was added
+   that wasn't in the original, and nothing was silently dropped. Use
+   [Feature Parity Verification](#feature-parity-verification) and the
+   [Reverse Comparison Technique](#reverse-comparison-technique) above.
+
+5. **Verify compliance and static analysis**
+   New/changed code must conform to `.ai/domains/`. Run the project's
+   syntax/lint checks (`ruby -c`, `rubocop`, `zsh -n`, `shfmt` as applicable --
+   see `.ai/domains/edit-checklist.md`) and fix anything the rebase introduced
+   or exposed.
+
+6. **Strip file-extension-conversion noise from documentation/comments**
+   Undo any documentation or comment changes that exist *only* to describe the
+   `.sh` -> `.rb` (or equivalent) extension/format change itself. Keep all
+   *other* documentation updates (genuine functional/behavioral changes).
+   **Why:** this keeps the diff focused on functional changes plus the docs
+   that describe that functionality -- not noise about which file extension
+   something currently lives under, which is a transient WIP-branch detail
+   until the whole chain merges.
+
+7. **Leave CHANGELOG.md untouched**
+   Don't edit `CHANGELOG.md` on a WIP conversion branch -- it should reflect
+   real commit history once things land on `master`, not the in-progress
+   state of a conversion chain.
+
+8. **Do not stage or commit**
+   Make the changes but do not `git add`/`git commit`/amend anything -- the
+   user reviews, stages, and amends the branch's single WIP commit manually
+   (see `.ai/instructions.md` § Git State Management Rules).
+
+9. **Flag the pending rename for the user's commit message**
+   Since staging/committing is the user's job, surface this as a note in your
+   summary rather than doing it yourself: the WIP commit message should
+   mention that the `.sh` -> `.rb` file extension change still needs to happen
+   before this chain merges into `master`.
+
+---
+
+## Backporting: Bringing Branch Improvements Back to Master
+
+**Purpose:** While a large incremental conversion (e.g., shell -> Ruby, file
+by file) is still in progress across a chain of WIP branches, periodically
+pull *generally useful* improvements out of those branches and land them on
+`master` directly -- without merging the incomplete conversion work itself.
+
+**Why this matters:** WIP branches accumulate real improvements (comment
+fixes, small code changes, formatting, minor refactors) alongside their core
+conversion work. `master` shouldn't have to wait for an entire conversion
+chain to finish before benefiting from those side improvements.
+
+### Process
+
+1. **Enumerate non-default branches**
+   ```bash
+   git -C "${DOTFILES_DIR}" branch --format='%(refname:short)' | grep -v '^master$'
+   ```
+
+2. **For each branch, get a cumulative diff against master**
+   ```bash
+   git -C "${DOTFILES_DIR}" diff master..<branch> -- <path>
+   ```
+
+3. **Classify each change: backport-eligible or not**
+   - **Exclude**: the core conversion of the branch's target file itself (e.g.,
+     the actual shell -> Ruby rewrite) -- that's WIP and isn't ready for
+     `master` until its own branch is ready to merge.
+   - **Include**: anything else that stands on its own and improves
+     maintainability if landed on `master` now -- comment fixes, small code
+     changes, formatting, generalizable utility improvements, documentation
+     corrections.
+   - **Never include**: code that would be unused/dead on `master` (i.e., only
+     makes sense in the context of the branch's not-yet-merged conversion).
+
+4. **Apply the backport-eligible changes**
+   Make the edits directly (don't just list them) so they're ready for review.
+
+5. **Do not stage or commit**
+   Same rule as forward rebase: the user manually reviews, stages, and amends
+   a single commit on top of `master`. The source WIP branch's own commit is
+   not touched -- only the working-tree changes destined for `master` matter here.
+
+6. **Every branch is fair game, regardless of WIP status**
+   Don't skip a branch just because it's incomplete/experimental -- its
+   backport-eligible subset of changes can still land on `master` now.
+
+---
+
 ## Lessons Learned
 
 ### What Worked Well
@@ -753,10 +887,9 @@ Created comprehensive comparison documents:
 ## Related Documentation
 
 - **Feature Parity Checklist**: `.ai/FEATURE-PARITY-CHECKLIST.md` - Post-rebase verification checklist (use after every rebase)
-- **Context**: `.ai/context.md` - Historical insights and patterns
+- **Context**: `.ai/context.md` - Navigation aid and operational reference
 
 ---
 
-**Last Updated:** June 16, 2026
-**Source:** Lessons learned from Ruby migration project
+**Last Updated:** September 13, 2026
 **Status:** Living document (update as new patterns emerge)

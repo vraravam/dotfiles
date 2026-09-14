@@ -33,26 +33,26 @@ gem install rubocop reek flay flog
 ruby-lint.rb
 
 # Specific directory
-ruby-lint.rb scripts/utilities/
+ruby-lint.rb "${DOTFILES_DIR}/scripts/utilities/"
 
 # Specific file
-ruby-lint.rb scripts/my-script.rb
+ruby-lint.rb "${DOTFILES_DIR}/scripts/my-script.rb"
 ```
 
 ### Run Individual Tools
 ```zsh
 # RuboCop - style and lint
-rubocop scripts/
-rubocop -a scripts/  # Auto-fix safe issues
+rubocop "${DOTFILES_DIR}/scripts/"
+rubocop -a "${DOTFILES_DIR}/scripts/"  # Auto-fix safe issues
 
 # Reek - code smells
-reek scripts/
+reek "${DOTFILES_DIR}/scripts/"
 
 # Flay - duplication
-flay scripts/
+flay "${DOTFILES_DIR}/scripts/"
 
 # Flog - complexity
-flog scripts/
+flog "${DOTFILES_DIR}/scripts/"
 ```
 
 ## Pre-Commit Hook
@@ -73,10 +73,10 @@ git commit -m "test"
 
 ## Configuration Files
 
-- `~/.config/rubocop/config.yml` - RuboCop rules (targets Ruby 2.6+)
-- `~/.config/reek/config.yml` - Reek code smell detectors
-- `~/.config/mise/default-gems` - Gems installed with every Ruby version
-- `~/.config/git/hooks/pre-commit` - Pre-commit validation hook
+- `${XDG_CONFIG_HOME}/rubocop/config.yml` - RuboCop rules (targets Ruby 2.6+)
+- `${XDG_CONFIG_HOME}/reek/config.yml` - Reek code smell detectors
+- `${XDG_CONFIG_HOME}/mise/default-gems` - Gems installed with every Ruby version
+- `${XDG_CONFIG_HOME}/git/hooks/pre-commit` - Pre-commit validation hook
 
 ## Interpreting Results
 

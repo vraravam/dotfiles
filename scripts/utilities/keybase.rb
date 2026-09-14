@@ -3,11 +3,9 @@
 # frozen_string_literal: true
 
 require 'json'
-require 'open3'
 
 require_relative 'command_utils'
 require_relative 'core'
-require_relative 'env_vars'
 require_relative 'logging'
 require_relative 'path_utils'
 
@@ -23,10 +21,6 @@ module Keybase
   # because 'include Logging' + 'extend self' doesn't make included methods
   # available as module methods.
 
-  # Returns the configured Keybase username from ENV.
-  #
-  # @return [String, nil] KEYBASE_USERNAME or nil if not set
-
   # ---------------------------------------------------------------------------
   # Class methods
   # ---------------------------------------------------------------------------
@@ -39,11 +33,19 @@ module Keybase
   # because 'include Logging' + 'extend self' doesn't make included methods
   # available as module methods.
 
-  # Returns the configured Keybase username from ENV.
+  # Returns the username of the currently logged-in Keybase user, derived
+  # directly from 'keybase status' -- Keybase's own persistent login state is
+  # the single source of truth, so nothing needs to be pre-configured in this
+  # repo to know "whose account is this" (mirrors how GH_USERNAME is derived
+  # from the cloned repo's git remote rather than stored statically).
   #
-  # @return [String, nil] KEYBASE_USERNAME or nil if not set
+  # @return [String, nil] the logged-in username, or nil if keybase isn't
+  #   installed or nobody is logged in
   def username
-    EnvVars::KEYBASE_USERNAME
+    return nil unless PathUtils.command_exists?('keybase')
+
+    status = _status
+    status && status['LoggedIn'] ? status['Username'] : nil
   end
 
   # Returns true if the URL is a Keybase git repo URL (keybase://...).
@@ -59,7 +61,9 @@ module Keybase
   # Mutation methods (modify state)
   # ---------------------------------------------------------------------------
 
-  # Ensures keybase is installed and the current user is logged in.
+  # Ensures keybase is installed and someone is logged in, prompting an
+  # interactive login if not. Whoever completes the login becomes the active
+  # account -- no target username is required in advance.
   # Returns false on failure so callers can decide whether to abort or continue.
   # Called by fresh-install-of-osx.sh (_ensure_keybase_logged_in) and recreate-repository.rb.
   #
@@ -72,21 +76,16 @@ module Keybase
       return false
     end
 
-    keybase_username = EnvVars::KEYBASE_USERNAME
-
     if dry_run
-      Logging.info "Would ensure keybase login for '#{keybase_username.purple}'"
+      Logging.info 'Would ensure keybase login'
       return true
     end
 
-    Logging.debug 'Logging into keybase'
+    Logging.debug 'Checking keybase login status'
 
-    # Use Open3 to avoid SIGPIPE from grep -q under pipefail.
-    # keybase status --json returns a JSON blob; parse it to check Username + LoggedIn.
-    status_json = CommandUtils.query('keybase', 'status', '--json')
-    status = JSON.parse(status_json)
-    if status['Username'] == keybase_username && status['LoggedIn'] == true
-      Logging.debug "Skipping keybase login -- '#{keybase_username.purple}' is already logged in"
+    status = _status
+    if status && status['LoggedIn']
+      Logging.debug "Already logged into keybase as '#{status['Username'].purple}'"
       return true
     end
 
@@ -150,4 +149,18 @@ module Keybase
     end
     true
   end
+
+  private
+
+  # Parses 'keybase status --json'. Not memoized -- must reflect login state
+  # freshly after ensure_logged_in performs an interactive login.
+  #
+  # @return [Hash, nil] parsed status, or nil if the command failed/returned invalid JSON
+  def _status
+    JSON.parse(CommandUtils.query('keybase', 'status', '--json'))
+  rescue JSON::ParserError
+    nil
+  end
+
+  private_class_method :_status
 end

@@ -298,6 +298,14 @@ After completing any rebase (whether manual conflict resolution or automated):
 
 **See also:** [FEATURE-PARITY-CHECKLIST.md](.ai/FEATURE-PARITY-CHECKLIST.md) for comprehensive post-rebase verification workflow. This checklist verifies *content* correctness (no lost functionality, no duplication); it is separate from the mechanical `git diff HEAD@{1} HEAD` amend-verification check above, which only confirms a `git commit --amend` folded in exactly the intended staged changes.
 
+**For this repo's branch-chain conversion workflows specifically**, see
+[REBASE-AND-REFACTORING-METHODOLOGY.md](.ai/REBASE-AND-REFACTORING-METHODOLOGY.md):
+- § Forward Rebase: Catching Up a Branch Chain from Its Parent -- when a branch
+  needs to catch up with its parent branch (not necessarily `master`)
+- § Backporting: Bringing Branch Improvements Back to Master -- when
+  general-purpose improvements on a WIP branch should land on `master` now,
+  without merging that branch's incomplete conversion work
+
 #### Pre-Commit Verification — Functional Completeness Check
 
 **Before creating or amending any commit, verify functional completeness of the changed code.**

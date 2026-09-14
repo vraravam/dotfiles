@@ -24,7 +24,6 @@ require_relative 'core'
 #
 #   # Non-path constants (String or nil)
 #   puts EnvVars::USER                              # String (always set)
-#   puts EnvVars::KEYBASE_USERNAME                  # String or nil
 #
 #   # Runtime flag methods (evaluated dynamically)
 #   if EnvVars.debug?                               # Boolean
@@ -177,28 +176,9 @@ module EnvVars
   # Non-path variables (String objects)
   # ---------------------------------------------------------------------------
 
-  # GitHub username for dotfiles repository.
-  # Mirrors: export GH_USERNAME (set in .shellrc or manually)
-  GH_USERNAME = ENV.fetch('GH_USERNAME', 'vraravam').freeze
-
-  # Upstream GitHub username (for forks).
-  # Mirrors: export UPSTREAM_GH_USERNAME (set in .shellrc or manually)
-  UPSTREAM_GH_USERNAME = ENV.fetch('UPSTREAM_GH_USERNAME', 'vraravam').freeze
-
   # Dotfiles repository branch name.
   # Mirrors: export DOTFILES_BRANCH (default: master)
   DOTFILES_BRANCH = ENV.fetch('DOTFILES_BRANCH', 'master').freeze
-
-  # Keybase username.
-  # Mirrors: export KEYBASE_USERNAME (set in .shellrc or manually)
-  # Returns nil when not set or empty (if user does not want Keybase functionality), otherwise returns stripped string.
-  KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', 'avijayr'))
-
-  # Keybase repository names for encrypted backups.
-  # Mirrors: export KEYBASE_*_REPO_NAME (set in .shellrc or manually)
-  # Returns nil when not set or empty (if user does not want Keybase functionality), otherwise returns stripped string.
-  KEYBASE_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_HOME_REPO_NAME', 'home'))
-  KEYBASE_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_PROFILES_REPO_NAME', 'profiles'))
 
   # ---------------------------------------------------------------------------
   # Runtime flags and temporary operation variables (evaluated dynamically)
