@@ -33,21 +33,28 @@ add_newline = false
 command_timeout = 1000
 
 # ── Left prompt ───────────────────────────────────────────────────────────────
-# Segment order: iterm2_mark -> os -> directory -> git_branch -> git_size -> git_status -> git_sync_status -> git_state -> iterm2_end -> character
+# Segment order: iterm2_mark -> os -> directory -> git_branch -> git_size -> git_status -> git_state -> iterm2_end -> character
 # Arrow separators transition: white -> blue -> green -> (yellow if dirty) -> terminal default
 #
 # Design:
 # - git_branch: Always green (visual anchor)
 # - git_size: Shows repo size on green background
-# - git_status: Yellow with symbols (only when dirty/ahead/behind)
-# - git_sync_status: Green arrow (only when clean AND synced)
+# - git_status: Yellow symbols when dirty/ahead/behind; a plain green arrow when the
+#   branch has an upstream and is not ahead/behind (see [git_status]'s 'up_to_date'
+#   field below -- this used to be a separate custom.git_sync_status segment that
+#   forked 'git status' + awk; it's now computed natively by git_status itself via
+#   gitoxide, with zero subprocess forks, at the cost of a minor semantic change:
+#   the arrow can now appear alongside dirty symbols too, see comment on [git_status])
 #
 # Visual behavior:
 # - Clean & synced: green branch -> size -> green arrow -> terminal bg
+# - Dirty & synced: green branch -> size -> yellow symbols (!?+*) -> yellow arrow -> green arrow
 # - Clean but ahead/behind: green branch -> size -> yellow symbols (⇡/⇣) -> yellow arrow
-# - Dirty: green branch -> size -> yellow symbols (!?+*) -> yellow arrow
+# - Dirty & ahead/behind: green branch -> size -> yellow symbols -> yellow arrow -> yellow ahead/behind -> yellow arrow
 #
-# Performance: Built-in Rust modules + 2 custom segments (~40-70ms total)
+# Performance: Built-in Rust modules (zero forks, gitoxide-based) + 1 custom segment
+# for repo size (~25-30ms, see [custom.git_size] below). Modules render in parallel
+# (starship's async scheduler), so this does not add to total prompt latency serially.
 #
 # iTerm2 shell integration: mark A (prompt start) + mark B (prompt end) output by starship.
 # Newline output in precmd hook (runs before starship).
@@ -59,7 +66,6 @@ ${custom.iterm2_start}\
 $git_branch\
 ${custom.git_size}\
 $git_status\
-${custom.git_sync_status}\
 $git_state\
 ${custom.iterm2_end}\
 $character"""
@@ -126,13 +132,18 @@ home_symbol = "~"
 # ── Git branch & status ───────────────────────────────────────────────────────
 # Design philosophy (following GitHub issue #7556 comment):
 # - git_branch: Always green background (consistent visual anchor)
-# - git_status: Yellow background with symbols (only appears when dirty/ahead/behind)
-# - Built-in Rust modules: 10-100x faster than custom shell segments
+# - git_status: Yellow background with symbols when dirty/ahead/behind; a plain green
+#   arrow (no background) when there's an upstream with no ahead/behind -- see the
+#   detailed trade-off comment on [git_status] below.
+# - Built-in Rust modules: 10-100x faster than custom shell segments, zero subprocess
+#   forks (gitoxide-based, not the 'git' executable -- see 'use_git_executable' in
+#   starship's git_status docs, which defaults to false)
 # - No custom when conditions: Zero subprocess overhead
 #
 # Visual behavior:
-# - Clean repo: green branch -> green arrow -> terminal bg
-# - Dirty repo: green branch -> green->yellow arrow -> yellow status symbols -> yellow arrow -> terminal bg
+# - Clean repo, synced: green branch -> green arrow -> terminal bg
+# - Dirty repo, synced: green branch -> green->yellow arrow -> yellow status symbols -> yellow arrow -> green arrow
+# - Clean repo, ahead/behind: green branch -> green->yellow arrow -> yellow ahead/behind -> yellow arrow
 #
 # See: https://github.com/starship/starship/issues/7556#issuecomment-5397167112
 
@@ -148,9 +159,21 @@ truncation_symbol = "…"
 
 [git_status]
 disabled = false
-# Only shown when there are changes/ahead/behind (conditional via wrapping in (...) )
-# Provides yellow visual indicator when repo is dirty
-format = "([\uE0B0](fg:green bg:yellow)[ $all_status$ahead_behind ](bg:yellow fg:black)[\uE0B0](fg:yellow))"
+# $all_status (dirty file changes) and $ahead_behind (ahead/behind/diverged/synced vs
+# upstream) are split into two independently-conditional pieces rather than one shared
+# bracket -- this lets $ahead_behind's 'up_to_date' branch render unconditionally
+# (a plain green arrow, no yellow) while $all_status stays conditional on actual dirty
+# state. Trade-off vs the old design (a separate custom.git_sync_status segment that
+# forked 'git status --porcelain=v2' + awk): this whole indicator is now 100% native
+# (gitoxide, zero forks) instead of ~3 forks per prompt render, but the green arrow is
+# no longer mutually exclusive with dirty symbols -- it now shows whenever there's an
+# upstream with no ahead/behind, REGARDLESS of whether the tree is dirty (e.g. a
+# modified-but-unpushed-nothing state renders '!1' followed by a green arrow). In the
+# rare case of BOTH dirty AND ahead/behind at once, this renders as two separate yellow
+# pills (e.g. '!1' then '⇡1') instead of one merged pill ('!1⇡1') -- each half keeps its
+# own entry/exit powerline arrows since the format string can't know at render time
+# whether the other half will also be visible.
+format = "([\uE0B0](fg:green bg:yellow)[ $all_status ](bg:yellow fg:black)[\uE0B0](fg:yellow))$ahead_behind"
 style = "bg:yellow fg:black"
 # Status symbols with counts
 modified = "!${count}"
@@ -159,49 +182,38 @@ untracked = "?${count}"
 stashed = "*${count}"
 deleted = "✘${count}"
 renamed = "»${count}"
-# Ahead/behind symbols
-ahead = "⇡${count}"
-behind = "⇣${count}"
-diverged = "⇣${ahead_count}⇡${behind_count}"
 conflicted = "=${count}"
+# Ahead/behind symbols -- each carries its own full yellow pill (entry arrow, content,
+# exit arrow) since it's no longer sharing a bracket with $all_status (see comment above).
+ahead = "[\uE0B0](fg:green bg:yellow)[ ⇡${count} ](bg:yellow fg:black)[\uE0B0](fg:yellow)"
+behind = "[\uE0B0](fg:green bg:yellow)[ ⇣${count} ](bg:yellow fg:black)[\uE0B0](fg:yellow)"
+diverged = "[\uE0B0](fg:green bg:yellow)[ ⇣${ahead_count}⇡${behind_count} ](bg:yellow fg:black)[\uE0B0](fg:yellow)"
+# Plain green arrow (no background) when there's an upstream and no ahead/behind --
+# matches the old custom.git_sync_status segment's exact look ('[\uE0B0](fg:green)').
+# Empty (default) when there's no upstream configured at all, matching prior behavior.
+up_to_date = "[\uE0B0](fg:green)"
 
 # ── Custom: Git repository size ──────────────────────────────────────────────
 # Shows pack size in human-readable format (e.g., "1.37 MiB").
-# Runs git count-objects -vH (~10-20ms, 2-3x faster than du -sh).
+# Calls 'git count-objects -vH' + awk directly instead of 'git size' (~30ms vs
+# ~10ms measured via 'starship timings'). Going through the alias forks an extra
+# process to resolve/execute the '!f() {...}; f' shell function on top of the
+# count-objects + awk forks the alias itself needs -- calling count-objects
+# directly here skips that redundant fork entirely. The 'git size' alias itself
+# remains available for interactive/manual use (see git-config.md, "git size"
+# section) and for scripts (path_utils.rb) where the extra fork is negligible.
 #
 # Visual integration:
 # - Placed after git_branch on green background
-# - No trailing arrow (git_sync_status or git_status provides the transition)
+# - No trailing arrow (git_status provides the transition: either its own yellow
+#   entry arrow when dirty, or up_to_date's plain green arrow when clean and synced)
 [custom.git_size]
-command = "GIT_SIZE_QUIET=1 git size"
+command = "git count-objects -vH | awk '/size-pack:/ {print $2, $3}'"
 require_repo = true
 when = "true"
 shell = ["sh", "--noprofile", "--norc"]
 format = "[$output ](bg:green fg:black)"
 ignore_timeout = true
-
-# ── Custom: Sync status indicator ────────────────────────────────────────────
-# Shows green arrow when repo is BOTH clean (no changes) AND synced (no ahead/behind).
-# Provides quick visual confirmation of "ready to push" state.
-#
-# Logic via git sync-status alias:
-# - Checks git status --porcelain=v2 --branch (single git call)
-# - Returns 0 only when: has upstream + no ahead/behind + no working tree changes
-# - Returns 1 when: dirty OR ahead OR behind OR no upstream
-#
-# Visual behavior:
-# - Clean & synced: green arrow appears (smooth transition to terminal bg)
-# - Dirty OR ahead/behind: git_status appears instead (yellow with symbols)
-#
-# Performance: ~30-50ms (optimized from ~100-180ms via single git status call)
-[custom.git_sync_status]
-command = "echo ''"  # No output needed, just the format
-require_repo = true
-when = "git sync-status"
-shell = ["sh", "--noprofile", "--norc"]
-format = "[\uE0B0](fg:green)"
-ignore_timeout = true
-
 
 # ── Custom: iTerm2 shell integration marks A and B ──────────────────────────
 # Mark A (prompt start) and mark B (prompt end) for iTerm2 shell integration.

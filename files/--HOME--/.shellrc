@@ -632,17 +632,14 @@ fi
 # --------------------------------------------------------------------------
 
 # Outputs iTerm2 shell integration mark A (prompt start).
-# Called by starship custom.iterm2_mark segment.
+# Called manually once in .zshrc to inject a mark into the initial prompt that's
+# already on screen before the first precmd cycle runs (see .zshrc's iTerm2 shell
+# integration section). Starship's custom.iterm2_start segment inlines this same
+# printf directly instead of calling this function, to avoid the overhead of
+# sourcing .shellrc inside its 'sh --noprofile --norc' subprocess on every render.
 # Returns: escape sequence \033]133;A\007
 iterm2_mark_prompt_start() {
   printf '\033]133;A\007'
-}
-
-# Outputs iTerm2 shell integration mark B (prompt end).
-# Called by starship custom.iterm2_end segment.
-# Returns: escape sequence \033]133;B\007
-iterm2_mark_prompt_end() {
-  printf '\033]133;B\007'
 }
 
 # Outputs iTerm2 shell integration mark C (command start).
@@ -1579,6 +1576,29 @@ load_file_if_exists() {
     # but continues.
     source "${1:-}" || warn "Failed to source file: '$(cyan "${1:-}")' - continuing anyway"
   fi
+}
+
+# Regenerates $1 (a cache file) by capturing $2's stdout whenever $3 (a binary path
+# used as the staleness reference) is newer than the cache, then always sources the
+# cache. $2 must be a callable function name (not a raw command string) so it can
+# perform pipes/multi-command generation internally (e.g. filtering a tool's init
+# output) -- see callers in .zshrc for examples. Writes atomically via a '.tmp'
+# suffix + mv so an interrupted regeneration (e.g. Ctrl-C mid-generation) never
+# leaves a partially-written cache behind.
+# Extracted from 4 nearly-identical inline blocks in .zshrc (brew shellenv,
+# zsh-patina activate, mise activate, starship init) that all followed this same
+# is_file_older_than -> regenerate -> recompile_zsh_script -> load_file_if_exists
+# sequence, differing only in the command run and its post-processing.
+# Usage: cache_and_source_command_output <cache-file> <generator-function> <mtime-source-binary>
+# Example: cache_and_source_command_output "${cache}" _generate_foo_cache "${commands[foo]}"
+cache_and_source_command_output() {
+  local cache_file="${1}" generator="${2}" mtime_source="${3}"
+  if is_file_older_than "${cache_file}" "${mtime_source}"; then
+    "${generator}" >|"${cache_file}.tmp"
+    mv "${cache_file}.tmp" "${cache_file}"
+    recompile_zsh_script "${cache_file}"
+  fi
+  load_file_if_exists "${cache_file}"
 }
 
 # Returns true if $1 names a known command, function, alias, or shell builtin.

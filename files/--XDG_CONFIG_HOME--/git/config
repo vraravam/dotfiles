@@ -61,17 +61,27 @@
     git -C \"${1:-.}\" --no-optional-locks status --porcelain 2>/dev/null; \
   }; f"
 
-  # Returns 0 if repo is clean AND synced with upstream (optimized for starship prompt).
+  # Returns 0 if repo is clean AND synced with upstream.
   # Single git status call using porcelain v2 format (~30-50ms vs ~100-180ms with 3 calls).
-  # Checks: has upstream, no uncommitted changes, zero ahead/behind count.
+  # Checks: has upstream, no tracked working tree changes ('1'/'2' entries only --
+  # untracked '?' files do not count as dirty), zero ahead/behind count (exact string
+  # match on '# branch.ab +0 -0' -- avoids summing +ahead/-behind with awk, which could
+  # false-positive as "synced" when ahead and behind counts happened to cancel out, e.g.
+  # 2 ahead + 2 behind summing to 0).
   # Usage: git sync-status [<dir>]
+  # Note: starship no longer calls this alias -- [git_status]'s 'up_to_date' field in
+  # starship.toml now expresses the same "has upstream + no ahead/behind" check
+  # natively (via gitoxide, zero forks), though with a different mutual-exclusivity
+  # semantic (see starship.toml's [git_status] comment for the trade-off). This alias
+  # remains for interactive/manual use and does not check working-tree dirtiness the
+  # same way starship's version does (this one still requires a clean tree; see the
+  # '/^[12]/' check below).
   sync-status = "!f() { \
     s=$(git -C \"${1:-.}\" status --porcelain=v2 --branch 2>/dev/null); \
     [ -z \"$s\" ] && exit 1; \
     echo \"$s\" | /usr/bin/grep -q '^# branch.upstream' || exit 1; \
-    ab=$(echo \"$s\" | /usr/bin/awk '/^# branch.ab/ {print $3 + $4}'); \
     echo \"$s\" | /usr/bin/grep -qE '^[12]' && exit 1; \
-    [ \"${ab:-1}\" -eq 0 ]; \
+    echo \"$s\" | /usr/bin/grep -q '^# branch.ab +0 -0'; \
   }; f"
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -336,13 +346,16 @@
   # Note: Pack size is typically 70-90% of total .git directory size. Metadata overhead
   # (refs, logs, indexes, config) is excluded but relatively constant across repos.
   # Usage: git size [<dir>]
-  # Set GIT_SIZE_QUIET=1 to suppress the label (for use in prompts/scripts).
+  # Set GIT_SIZE_QUIET=1 to suppress the label (for use in prompts/scripts). The quiet
+  # path skips 'rev-parse --show-toplevel' entirely -- it is only needed for the label
+  # in the non-quiet branch, so computing it unconditionally wasted a git fork on every
+  # quiet call (the common case: starship prompt renders and path_utils.rb queries).
   size = "!f() { \
-    root=$(git -C \"${1:-.}\" rev-parse --show-toplevel); \
-    size=$(git -C \"${1:-.}\" count-objects -vH | awk '/size-pack:/ {print $2, $3}'); \
     if [ -n \"${GIT_SIZE_QUIET:-}\" ]; then \
-      printf '%s\n' \"${size}\"; \
+      git -C \"${1:-.}\" count-objects -vH | awk '/size-pack:/ {print $2, $3}'; \
     else \
+      root=$(git -C \"${1:-.}\" rev-parse --show-toplevel); \
+      size=$(git -C \"${1:-.}\" count-objects -vH | awk '/size-pack:/ {print $2, $3}'); \
       printf '==> Size of repository at %s: %s\n' \"${root}\" \"${size}\"; \
     fi; \
   }; f"

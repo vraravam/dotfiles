@@ -4,6 +4,23 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.49
+
+#### Reduce subprocess forks in starship's git prompt segments and zsh startup; fix a latent ahead/behind detection bug
+
+* *[files/--XDG_CONFIG_HOME--/starship.toml]* `custom.git_size` now calls `git count-objects -vH | awk ...` directly instead of going through the `git size` alias, skipping the extra fork needed to dispatch/execute the alias's own shell function body (~47ms -> ~25-30ms per `starship timings`). Replaced the `custom.git_sync_status` segment (which forked `git status --porcelain=v2` + `awk`, ~51ms) with `[git_status]`'s native `up_to_date` field -- the same "has upstream, no ahead/behind" check computed by gitoxide with zero subprocess forks. Trade-off: the green "synced" arrow is no longer mutually exclusive with dirty symbols (it now shows whenever there's an upstream with no ahead/behind, even if the tree is dirty), and the rare dirty+ahead/behind combination now renders as two separate yellow pills instead of one merged pill. Note: empirical benchmarking (30-sample interleaved comparison) showed these two custom segments already contributed ~0ms to total prompt latency before this change, since starship renders modules in parallel -- this change reduces total forked processes per render and removes duplicated logic, but does not change measured wall-clock prompt speed.
+* *[files/--XDG_CONFIG_HOME--/git/config]* `size` alias: the `GIT_SIZE_QUIET=1` path (used by starship and `path_utils.rb`) no longer computes `rev-parse --show-toplevel`, which was only needed for the non-quiet label -- removes one wasted git fork from every quiet call. `sync-status` alias: replaced the `awk`-based ahead/behind sum (`$3 + $4`) with an exact string match on `# branch.ab +0 -0`, fixing a latent bug where equal ahead/behind counts (e.g. 2 ahead + 2 behind) could numerically cancel to zero and falsely report "synced". Both aliases remain available for interactive/manual use; `sync-status` is no longer called by starship (see above).
+* *[files/--HOME--/.shellrc]* Removed the dead `iterm2_mark_prompt_end` function (verified zero callers across the working tree and all 6 remote branches) -- starship's `custom.iterm2_end` segment has inlined its own `printf` since a prior optimization and never actually called it. Fixed the stale comment on `iterm2_mark_prompt_start` (still has one real caller, in `.zshrc`'s initial-prompt mark injection) which incorrectly claimed it was "called by starship". Added `cache_and_source_command_output`, a shared helper (mtime-keyed regenerate -> `recompile_zsh_script` -> `load_file_if_exists`, with atomic `.tmp` + `mv` writes) extracted from 4 nearly-identical inline blocks in `.zshrc`.
+* *[files/--ZDOTDIR--/.zshrc]* Refactored the `brew shellenv`, `zsh-patina activate`, and `mise activate` caches to use the new `cache_and_source_command_output` helper (pure extraction, no behavior change -- verified via direct function invocation, forced-staleness regeneration, and a from-scratch `~/.cache` deletion to confirm vanilla-OS behavior). `starship init` is deliberately **not** refactored: it carries a previously-debugged hazard where wrapping its final `source` call in any function risks losing `setopt promptsubst` and silently breaking the prompt -- not worth re-risking for uniformity. Added the same caching to `mole completion zsh`, previously an uncached `eval "$(mole completion zsh)"` fork on every shell start (now keyed on the `mole` binary's mtime, same as the other three).
+* *[.ai/instructions.md]* Updated the CHANGELOG "Adopting these changes" reload snippets to include `DEBUG=true` for both the `.shellrc` and `.aliases` reload commands, for verbose confirmation of what reloaded.
+
+#### Adopting these changes
+
+* Restart Terminal/iTerm to reload `.shellrc`/`.zshrc`'s function definitions (removed `iterm2_mark_prompt_end`, added `cache_and_source_command_output` and refactored 4 caching sites), or run `unfunction is_shellrc_sourced; DEBUG=true load_file_if_exists ~/.shellrc` in existing sessions.
+* No action needed for the `starship.toml`/`git/config` changes -- both are symlinked (not copied), so edits are read fresh on every prompt render / git invocation, and no `install-dotfiles.rb` run is required since no files were added, deleted, or renamed.
+
+---
+
 ### 3.2.48
 
 :white_check_mark: Tested on a vanilla macOS machine

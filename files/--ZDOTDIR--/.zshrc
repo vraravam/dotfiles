@@ -141,30 +141,21 @@ autoload -Uz zrecompile
 () {
   local brew_bin="${HOMEBREW_PREFIX}/bin/brew"
   local brew_shellenv_cache="${XDG_CACHE_HOME}/brew-shellenv-cache.zsh"
-  # Regenerate cache only if brew is installed AND cache is stale/missing.
-  # is_executable checks the absolute path directly (not PATH lookup).
-  # is_file_older_than returns true when target is missing OR source is newer than target.
-  # This ensures cache is force-created when brew exists but cache is missing.
-  if is_executable "${brew_bin}" && is_file_older_than "${brew_shellenv_cache}" "${brew_bin}"; then
-    # Write brew shellenv output directly to cache (no eval needed during regeneration).
-    # brew shellenv already outputs proper exports; we just append fpath update.
-    "${brew_bin}" shellenv 2>/dev/null >|"${brew_shellenv_cache}.tmp"
+  # is_executable checks the absolute path directly (not PATH lookup). Only attempt
+  # caching when brew is actually installed -- the else branch below is the vanilla-OS
+  # fallback for when it isn't (before fresh-install-of-osx.sh has run).
+  if is_executable "${brew_bin}"; then
     # fpath assignment is sufficient -- zsh keeps fpath and FPATH in sync automatically.
     # Exporting FPATH leaks it into child processes and launchd user-session environment;
     # typeset +x at the bottom of this file strips the export flag after all sources.
-    echo "fpath=('${HOMEBREW_PREFIX}/share/zsh/site-functions' \"\${fpath[@]}\");" \
-      >>"${brew_shellenv_cache}.tmp"
-    mv "${brew_shellenv_cache}.tmp" "${brew_shellenv_cache}"
-    recompile_zsh_script "${brew_shellenv_cache}"
-  fi
-  # Source cache if it exists, otherwise manually add Homebrew to PATH.
-  # The else branch only runs when brew is NOT installed (vanilla OS before fresh-install).
-  # When brew IS installed, the cache is always created above (is_file_older_than returns
-  # true for missing files), so the cache will always exist and this sources it.
-  if is_file "${brew_shellenv_cache}"; then
-    load_file_if_exists "${brew_shellenv_cache}"
+    _generate_brew_shellenv_cache() {
+      "${brew_bin}" shellenv 2>/dev/null
+      echo "fpath=('${HOMEBREW_PREFIX}/share/zsh/site-functions' \"\${fpath[@]}\");"
+    }
+    cache_and_source_command_output "${brew_shellenv_cache}" _generate_brew_shellenv_cache "${brew_bin}"
+    unfunction _generate_brew_shellenv_cache
   else
-    # No cache and no brew - manually set up minimal Homebrew environment
+    # No brew - manually set up minimal Homebrew environment.
     # This handles the case where .zshrc runs before Homebrew is installed.
     # Ensures PATH has Homebrew directories even when they don't exist yet on disk.
     export PATH="${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
@@ -284,11 +275,9 @@ if (($+commands[zsh-patina])); then
   () {
     local patina_bin="${commands[zsh-patina]}"
     local patina_activate_cache="${XDG_CACHE_HOME}/zsh-patina-activate-cache.zsh"
-    if is_file_older_than "${patina_activate_cache}" "${patina_bin}"; then
-      zsh-patina activate >|"${patina_activate_cache}"
-      recompile_zsh_script "${patina_activate_cache}"
-    fi
-    load_file_if_exists "${patina_activate_cache}"
+    _generate_patina_activate_cache() { zsh-patina activate; }
+    cache_and_source_command_output "${patina_activate_cache}" _generate_patina_activate_cache "${patina_bin}"
+    unfunction _generate_patina_activate_cache
   }
 
   # Restart the daemon once per new shell startup. DEFERRED to first idle ZLE
@@ -332,24 +321,20 @@ _deferred_mise_activation() {
     () {
       local mise_bin="${commands[mise]}"
       local mise_activate_cache="${XDG_CACHE_HOME}/mise-activate-cache.zsh"
-      # Cache `mise activate zsh` output to avoid forking mise binary on every shell start.
-      # Cache is keyed on mise binary mtime and regenerated only when mise is upgraded.
-      if is_file_older_than "${mise_activate_cache}" "${mise_bin}"; then
-        # Generate the activation cache, but replace the bare '_mise_hook' call at the end
-        # (which forks the mise binary once at startup to seed the environment) with a
-        # deferred version via zsh-defer. zsh-defer fires after the first idle ZLE event --
-        # before any command can be typed -- so tools are active before the first keypress
-        # while saving ~25ms from time-to-first-prompt. Falls back to a synchronous call
-        # when zsh-defer is not available (e.g. a vanilla OS before antidote is installed).
-        # grep -v filters only the bare '_mise_hook' line; the function definition
-        # (_mise_hook() { ... }) and indented references are multi-line/indented and do not match.
-        {
-          mise activate zsh 2>/dev/null | /usr/bin/grep -v '^_mise_hook$'
-          printf '%s\n' 'if (( $+functions[zsh-defer] )); then zsh-defer _mise_hook; else _mise_hook; fi'
-        } >|"${mise_activate_cache}"
-        recompile_zsh_script "${mise_activate_cache}"
-      fi
-      load_file_if_exists "${mise_activate_cache}"
+      # Generate the activation cache, but replace the bare '_mise_hook' call at the end
+      # (which forks the mise binary once at startup to seed the environment) with a
+      # deferred version via zsh-defer. zsh-defer fires after the first idle ZLE event --
+      # before any command can be typed -- so tools are active before the first keypress
+      # while saving ~25ms from time-to-first-prompt. Falls back to a synchronous call
+      # when zsh-defer is not available (e.g. a vanilla OS before antidote is installed).
+      # grep -v filters only the bare '_mise_hook' line; the function definition
+      # (_mise_hook() { ... }) and indented references are multi-line/indented and do not match.
+      _generate_mise_activate_cache() {
+        mise activate zsh 2>/dev/null | /usr/bin/grep -v '^_mise_hook$'
+        printf '%s\n' 'if (( $+functions[zsh-defer] )); then zsh-defer _mise_hook; else _mise_hook; fi'
+      }
+      cache_and_source_command_output "${mise_activate_cache}" _generate_mise_activate_cache "${mise_bin}"
+      unfunction _generate_mise_activate_cache
     }
   fi
   unfunction _deferred_mise_activation
@@ -367,6 +352,13 @@ fi
 # subprocess on every shell start (~10-15ms saving).  The cache is keyed on the
 # starship binary mtime and regenerated only when starship itself is updated
 # (e.g. after `brew upgrade`).
+#
+# NOT refactored to use cache_and_source_command_output (see that helper in
+# .shellrc, used by the brew/zsh-patina/mise caches above) -- this site is
+# deliberately excluded because of the function-wrapping hazard documented
+# immediately below: any function call boundary around the final 'source' risks
+# losing 'setopt promptsubst', and this exact failure mode was already hit and
+# fixed once (see NOTE). Not worth re-risking for the sake of uniformity.
 #
 # NOTE: Deferring the source of the cache (via zsh-defer or a precmd hook) was
 # attempted but left PROMPT as a literal unexpanded string after the first
@@ -669,10 +661,17 @@ if is_directory "${XDG_CONFIG_HOME}/zsh"; then
   fi
 fi
 
-# Mole shell completion - deferred to avoid startup slowdown
-if command_exists mole; then
+# Mole shell completion - deferred to avoid startup slowdown. Also cached (same
+# pattern as brew/zsh-patina/mise above) to avoid forking the mole binary on every
+# shell start; the cache is keyed on the mole binary mtime and regenerated only
+# when mole is upgraded.
+if (($+commands[mole])); then
   _deferred_mole_completion() {
-    eval "$(mole completion zsh)"
+    local mole_bin="${commands[mole]}"
+    local mole_completion_cache="${XDG_CACHE_HOME}/mole-completion-cache.zsh"
+    _generate_mole_completion_cache() { mole completion zsh; }
+    cache_and_source_command_output "${mole_completion_cache}" _generate_mole_completion_cache "${mole_bin}"
+    unfunction _generate_mole_completion_cache
     unfunction _deferred_mole_completion
   }
 
