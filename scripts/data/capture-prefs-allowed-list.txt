@@ -351,7 +351,6 @@ eu.exelban.Stats
 icloudmailagent
 io.github.keycastr
 io.rancherdesktop.app
-keybase.Electron
 menu.nomad.DEPNotify
 net.sourceforge.Monolingual
 NSGlobalDomain

@@ -187,9 +187,9 @@ to any other installer:
   different machine. The one thing you never need to do is provide it again
   on a machine that's already set up: re-running it there derives the value
   automatically from that machine's own local clone's `origin` remote.
-- **Keybase** (encrypted preference backups) -- entirely interactive, and
-  genuinely requires nothing from you in advance. You'll be asked during the
-  fresh-install run itself whether to set it up (see § 2.3 Keybase below).
+- **Encrypted backups** (`gpg` + `git bundle`) -- optional, and not required in
+  advance either; if you want it, see [§ 2.3.C](#c-encrypted-backup-optional)
+  below for the one-time GitHub repo creation and Keychain passphrase setup.
 
 If you'd rather not retype your username every time you copy-paste the
 command, commit the substitution into your own fork's copy of this file once
@@ -234,25 +234,38 @@ Review **[files/--HOME--/Brewfile](files/--HOME--/Brewfile)** and remove unwante
 **If starting fresh (no existing machine):**
 - Review the entire Brewfile and remove any packages you don't want
 
-#### C. Keybase (Optional)
+#### C. Encrypted Backup (Optional)
 
-Keybase (for encrypted preference backups) needs **no pre-run editing at all**.
-`fresh-install-of-osx.sh` installs it unconditionally like any other package,
-then handles the rest interactively:
+The encrypted-backup mechanism (`gpg` + `git bundle`, see [TechnicalDeepDive.md § 14](TechnicalDeepDive.md#14-adding-an-encrypted-backup-gpg--git-bundle-alongside-keybase)) backs up `~` and `${PERSONAL_PROFILES_DIR}` to encrypted blobs in plain public GitHub repos, **alongside Keybase, not instead of it** -- if a repo still has a live `keybase://` `origin`, it keeps being pushed to normally on every push, in addition to this. **Before relying on this for sensitive data**, read [KEYBASE_MIGRATION.md § Is This as Secure as Keybase?](KEYBASE_MIGRATION.md#is-this-as-secure-as-keybase) -- it's a genuine, honest comparison, not a "yes, don't worry" reassurance. In short: strong given a high-entropy passphrase, but not a like-for-like replacement (weaker metadata privacy, no per-device key revocation).
 
-- **On the first vanilla-OS run** (`FIRST_INSTALL=true`), if `keybase` is
-  installed and you're not already logged in, it asks:
-  `Set up Keybase for encrypted preference backups? [y/N]`.
-  Answer `y` and log in when prompted (native `keybase login` flow) to enable
-  it; answer `n` (or just press enter) to skip.
-- **On every later re-run**, it never asks again: if you're already logged in
-  it syncs silently, and if you're still not logged in it skips silently
-  (with a hint that running `keybase login` manually and re-running this
-  script will pick it up).
+**If using it:**
 
-Whoever completes the login owns the account -- the username is derived from
-`keybase status` wherever it's needed, so there's no `KEYBASE_USERNAME` (or
-any other Keybase var) to set anywhere, ever.
+1. Adjust the repo names if desired in **files/--HOME--/.shellrc** (defaults shown):
+   ```zsh
+   export ENCRYPTED_HOME_REPO_NAME='home'
+   export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
+   ```
+2. Create the two plain, public, empty GitHub repos (one time):
+   ```bash
+   gh repo create "${GH_USERNAME}/${ENCRYPTED_HOME_REPO_NAME}" --public
+   gh repo create "${GH_USERNAME}/${ENCRYPTED_PROFILES_REPO_NAME}" --public
+   ```
+3. Ensure the Keychain passphrase is set (one-time-per-machine -- see below):
+   ```bash
+   setup-encrypted-backup.rb
+   ```
+   This is idempotent and safe to run anytime. If the passphrase is missing and this is
+   running interactively, it prompts you for one via `security add-generic-password`'s own
+   masked, double-entry confirmation prompt -- generate a strong value and save it in your
+   password manager when prompted (never commit it anywhere). The passphrase never touches
+   this script or Ruby process memory/argv -- `security` handles the prompt and storage
+   directly. **The [§ 3.2 bootstrap command](#32-run-bootstrap-command) pipes `curl` straight
+   into `zsh` and has no terminal to prompt you with**, so if you're using this feature, set
+   the passphrase yourself beforehand -- see the note right before that command.
+
+   **This does not sync via iCloud Keychain, even if iCloud Keychain is enabled and you're signed in.** `security add-generic-password` has no flag for the `kSecAttrSynchronizable` attribute that iCloud Keychain sync depends on (confirmed via `security add-generic-password -h` -- only account/service/password/access-control options are exposed), so this item is local-only by design. **You must repeat the one-time Keychain setup (or re-run `setup-encrypted-backup.rb` interactively) on every new machine** -- there is no way to carry it over automatically.
+
+**If NOT using it:** do nothing extra. `fresh-install-of-osx.sh` checks for the Keychain passphrase, and the clone/backup steps log an error and continue (non-fatal to the rest of fresh-install) if it's absent -- no env vars need to be commented out.
 
 #### D. CI Badges (Optional)
 
@@ -332,8 +345,19 @@ If you didn't change anything, skip straight to [Phase 3](#phase-3-first-time-se
 
 ### 3.2 Run Bootstrap Command
 
+**If you're using the optional encrypted-backup feature ([§ 2.3 C](#c-encrypted-backup-optional)):**
+set the Keychain passphrase now, in this terminal, before running the command below. The
+bootstrap command pipes `curl` straight into `zsh`, so it has no terminal to prompt you with
+once it's running -- this is the only chance to do it interactively ahead of time:
+```bash
+security add-generic-password -A -a "$USER" -s 'dotfiles-encrypted-backup' -w
+```
+(paste a strong passphrase from your password manager when prompted; skip this if you're not
+using the encrypted-backup feature -- `fresh-install-of-osx.sh` logs a non-fatal error and
+continues without it either way).
+
 ```zsh
-export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true' COLUMNS="${COLUMNS}"; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/Downloads/fresh-install-of-osx.log"; unset FIRST_INSTALL
+export GH_USERNAME='vraravam' DOTFILES_BRANCH='keybase-migration' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true' COLUMNS="${COLUMNS}"; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/Downloads/fresh-install-of-osx.log"; unset FIRST_INSTALL
 ```
 
 Note: This command is ready to copy-paste-run as-is on `vraravam`'s own machines.

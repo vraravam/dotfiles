@@ -381,19 +381,6 @@ _install_homebrew() {
     _record_warning 'Homebrew bundle install encountered errors; continuing...'
   fi
 
-  # Homebrew cask 'postinstall:' hooks only run when 'brew bundle install' actually
-  # (re)installs the cask -- if 'brew bundle check' above already reported success (e.g.
-  # Keybase.app was already present from an earlier partial run of this idempotent
-  # script), postinstall never fires, silently leaving the 'keybase' CLI symlink missing
-  # even though the app itself is installed and usable. The Brewfile's own postinstall
-  # for this cask already creates these symlinks too -- this is a redundant safety net
-  # for exactly that postinstall-skipped case. Both are safe to run every time since
-  # 'ln -sf' is idempotent.
-  if is_directory '/Applications/Keybase.app'; then
-    ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/keybase' "${HOMEBREW_PREFIX}/bin/keybase"
-    ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase' "${HOMEBREW_PREFIX}/bin/git-remote-keybase"
-  fi
-
   if is_first_install; then
     # The base section is done; fork the full Brewfile install in the background so
     # optional/heavy packages install without blocking the rest of this run.
@@ -414,8 +401,6 @@ _install_homebrew() {
     trap '_cleanup_and_exit "${LINENO}"' ERR
   fi
 
-  # TODO: Commented out to avoid the second touchId popup. Need to investigate how to solve this.
-  # is_arm && sudo rm -rf /usr/local/bin/keybase /usr/local/bin/git-remote-keybase || true
   step_end
 }
 
@@ -463,115 +448,60 @@ _set_default_shell() {
   step_end
 }
 
-# Ensures keybase is installed and the current user is logged in.
-# Thin wrapper that delegates to Ruby Keybase.ensure_logged_in.
-# Returns non-zero on failure so callers can check the exit code.
-#
-# IMPORTANT: This is called after load_zsh_configs, which re-sources .shellrc
-# after unfunctioning the guard. By that point, DOTFILES_DIR exists (cloned by
-# _clone_dot_files_repo), so .shellrc sets RUBYLIB correctly, making 'require'
-# work without ${LOAD_PATH}.unshift.
-_ensure_keybase_logged_in() {
-  if ! command_exists keybase; then
-    error "'keybase' command not found in the PATH. Aborting!!!"
-    return 1
-  fi
-
-  # Keybase.app's kbnm (native messaging) installer writes into each installed browser's
-  # Application Support directory on first launch (e.g. .../Google/Chrome) to register its
-  # browser-extension messaging host. Google's own auto-update tooling (Keystone/
-  # GoogleSoftwareUpdate) is known to sometimes leave '~/Library/Application Support/Google'
-  # owned by a different user (observed on a vanilla-OS run) -- if so, kbnm's mkdir fails
-  # with "operation not permitted" and Keybase.app pops up a blocking error dialog, which
-  # can stall this non-interactive bootstrap since there is nobody around to dismiss it.
-  # Fix ownership defensively before launching, using the exact fix the dialog itself
-  # suggests. sudo is already primed (keep_sudo_alive runs earlier in main()).
-  local google_support_dir="${HOME}/Library/Application Support/Google"
-  if is_directory "${google_support_dir}" && [[ "$(stat -f '%Su' "${google_support_dir}")" != "${USER}" ]]; then
-    info "Fixing ownership of '$(cyan "${google_support_dir}")' (was owned by a different user)"
-    sudo chown -R "${USER}:staff" "${google_support_dir}"
-  fi
-
-  # The keybase CLI talks to a background service (keybased) that is normally started
-  # when Keybase.app first launches -- e.g. via the login item registered by the
-  # Brewfile's postinstall hook, which only takes effect on the *next* login. On a
-  # single-session vanilla-OS run the user never logs out/in, so the service is never
-  # started, and 'keybase login' fails with "dial unix .../keybased.sock: no such file
-  # or directory". Launch the app hidden (no Dock/focus steal) and wait briefly for the
-  # service to come up before attempting login.
-  if ! keybase status &>/dev/null; then
-    info 'Starting Keybase service'
-    open -g -a Keybase
-    local i
-    for ((i = 0; i < 15; i++)); do
-      if keybase status &>/dev/null; then
-        break
-      fi
-      sleep 1
-    done
-  fi
-
-  call_ruby_utility "require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
-}
-
-# Builds the keybase:// URL for the given repo name, owned by whoever is
-# currently logged into Keybase. Derived dynamically via Keybase.username
-# (which reads 'keybase status') -- no username is stored anywhere; whoever
-# completes the interactive login in _ensure_keybase_logged_in owns the account.
-# Usage: _build_keybase_repo_url <repo-name>
-_build_keybase_repo_url() {
-  local username
-  username="$(call_ruby_utility "require 'keybase'; puts Keybase.username")"
-  echo "keybase://private/${username}/${1:-}"
-}
-
-# Clone the Keybase home repo (private configs)
+# Clone the home repo (private configs) from the encrypted backup (gpg + git bundle,
+# see scripts/utilities/encrypted_backup.rb -- replaces the old keybase/gcrypt approach).
 _clone_home_repo() {
   _current_section='Clone home repo'; _current_section_manual=1
   step_start
-  local home_repo_name="${KEYBASE_HOME_REPO_NAME:-home}"
+  local home_repo_name="${ENCRYPTED_HOME_REPO_NAME:-home}"
   _step_header "$(yellow 'Cloning') '$(cyan "${home_repo_name}")' repo"
-  if is_non_zero_string "${home_repo_name}"; then
-    if is_git_repo "${HOME}"; then
-      # Pre-configured machine: pull latest changes to get fresh backup files.
-      # Uses 'pull-safe' (not a bare 'pull --rebase') for 'with-retry' hang protection and
-      # a clean-working-tree guard, consistent with every other repo-sync path in this script.
-      info "Home repo already exists -- pulling latest changes"
-      if git -C "${HOME}" pull-safe; then
-        success "Successfully updated home repo"
-      else
-        _record_warning "Failed to pull home repo -- continuing with existing backup files"
-      fi
-    elif clone_repo_into "$(_build_keybase_repo_url "${home_repo_name}")" "${HOME}"; then
-      # Vanilla OS: clone succeeded
-      # Reset ssh/gnupg permissions so git/gpg don't complain -- git checkout does not
-      # preserve the strict permission modes either needs, if they're tracked in the home repo.
+  if is_git_repo "${HOME}"; then
+    # Pre-configured machine: pull latest changes to get fresh backup files.
+    # Uses 'pull-safe' (not a bare 'pull --rebase') for 'with-retry' hang protection and
+    # a clean-working-tree guard, consistent with every other repo-sync path in this script.
+    info "Home repo already exists -- pulling latest changes"
+    if git -C "${HOME}" pull-safe; then
+      success "Successfully updated home repo"
+    else
+      _record_warning "Failed to pull home repo -- continuing with existing backup files"
+    fi
+  elif is_non_zero_string "${home_repo_name}"; then
+    # The Keychain-passphrase reminder for this step is printed much earlier, right
+    # after '.shellrc' is downloaded/sourced in main() -- see the comment there for why.
+    if call_ruby_utility "require 'encrypted_backup'; require 'env_vars'; exit(EncryptedBackup.clone_and_decrypt(encrypted_repo_name: EnvVars::ENCRYPTED_HOME_REPO_NAME, target_dir: EnvVars::HOME) ? 0 : 1)"; then
+      # Reset ssh/gnupg permissions so git/gpg don't complain -- both '.ssh' and '.gnupg'
+      # (including GPG private keys under .gnupg/private-keys-v1.d) are tracked in the home
+      # repo, and git checkout does not preserve the strict permission modes either needs.
       set_ssh_folder_permissions
       set_gnupg_folder_permissions
 
       # Fix /etc/hosts file to block facebook
       if is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts"; then sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts; fi
+
+      success "Successfully cloned home repo"
     else
       _record_error 'Failed to clone home repo'
     fi
   else
-    info "Skipping cloning of home repo since '$(purple 'KEYBASE_HOME_REPO_NAME')' was explicitly set to empty"
+    info "Skipping cloning of home repo since '$(yellow 'ENCRYPTED_HOME_REPO_NAME')' env var hasn't been set"
   fi
   step_end
 }
 
-# Clone the Keybase profiles repo (browser profiles)
+# Clone the browser-profiles repo from the encrypted backup (gpg + git bundle).
 _clone_profiles_repo() {
   _current_section='Clone profiles repo'; _current_section_manual=1
   step_start
-  local profiles_repo_name="${KEYBASE_PROFILES_REPO_NAME:-profiles}"
+  local profiles_repo_name="${ENCRYPTED_PROFILES_REPO_NAME:-browser-profiles}"
   _step_header "$(yellow 'Cloning') '$(cyan "${profiles_repo_name}")' repo"
   if is_non_zero_string "${profiles_repo_name}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
-    if ! clone_repo_into "$(_build_keybase_repo_url "${profiles_repo_name}")" "${PERSONAL_PROFILES_DIR}"; then
-      _record_error 'Failed to clone profiles repo'
+    if call_ruby_utility "require 'encrypted_backup'; require 'env_vars'; exit(EncryptedBackup.clone_and_decrypt(encrypted_repo_name: EnvVars::ENCRYPTED_PROFILES_REPO_NAME, target_dir: EnvVars::PERSONAL_PROFILES_DIR) ? 0 : 1)"; then
+      success "Successfully cloned browser-profiles repo"
+    else
+      _record_error 'Failed to clone browser-profiles repo'
     fi
   else
-    info "Skipping cloning of profiles repo since either '$(purple 'KEYBASE_PROFILES_REPO_NAME')' was explicitly set to empty or '$(purple 'PERSONAL_PROFILES_DIR')' hasn't been set"
+    info "Skipping cloning of profiles repo since '$(yellow 'ENCRYPTED_PROFILES_REPO_NAME')' or '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
   fi
   step_end
 }
@@ -687,6 +617,16 @@ main() {
   _setup_jio_dns
   _resolve_gh_username
   _download_and_source_shellrc
+
+  # Printed as early as possible (right after '.shellrc' is sourced, so 'user_action'
+  # is available) rather than at the much-later 'Cloning repos' step -- this manual
+  # escape hatch is only needed if the interactive Keychain prompt inside
+  # EncryptedBackup.prompt_and_store_passphrase fails or can't run (e.g. no TTY), and by
+  # the time that step is reached (step 9 of 14, after xcode tools/homebrew/etc.) it is
+  # too late for the user to act on this in parallel with the rest of the install.
+  user_action "The 'home'/'browser-profiles' repo clone steps later in this script read their encrypted-backup passphrase from the macOS Keychain -- you won't normally be prompted."
+  user_action "If that fails, run this in another terminal now (no need to wait): security add-generic-password -A -a \"\${USER}\" -s 'dotfiles-encrypted-backup' -w"
+
   keep_sudo_alive
   _approve_fingerprint_sudo
   _ensure_filevault_is_on
@@ -797,36 +737,33 @@ main() {
   migrate_git_repo_to_reftable "${DOTFILES_DIR}"
   step_end
 
-  if command_exists keybase; then
-    step_start
-    _step_header "$(yellow 'Keybase') (optional, for encrypted preference backups)"
-    if call_ruby_utility "require 'keybase'; exit(Keybase.username ? 0 : 1)"; then
-      # Already logged in (from a previous run, or 'keybase login' run manually)
-      # -- sync silently every time, never re-ask. This is what makes re-running
-      # this idempotent script pleasant: once set up, it just stays set up.
-      _clone_home_repo
-      _clone_profiles_repo
-    elif is_first_install; then
-      # Not logged in yet -- attempt login only on the true first-time vanilla-OS
-      # bootstrap, non-interactively (no y/N gate). Re-runs on an already-configured
-      # machine must NOT re-litigate this every time (see the 'else' branch below) --
-      # that would turn a script designed to be safely re-run into one that blocks
-      # on a login attempt every single run.
-      if _ensure_keybase_logged_in; then
-        _clone_home_repo
-        _clone_profiles_repo
-      else
-        _record_warning 'Keybase login failed -- continuing without Keybase-based backups'
-      fi
+  # Verify encrypted-backup mechanism is ready (gpg installed, Keychain passphrase set --
+  # see scripts/utilities/encrypted_backup.rb). Replaces the old Keybase/gcrypt setup.
+  # gnupg homedir permissions were already fixed earlier in main() (mirroring
+  # set_ssh_folder_permissions) -- no need to repeat that here.
+  _current_section='Setup encrypted backup'
+  step_start
+  section_header "$(yellow 'Setup encrypted backup')"
+  if command_exists 'setup-encrypted-backup.rb'; then
+    if setup-encrypted-backup.rb; then
+      success 'Encrypted backup is ready to use'
     else
-      # Pre-configured machine, not logged in, not FIRST_INSTALL: skip silently
-      # rather than prompting on every maintenance re-run.
-      info "Skipping Keybase setup -- not logged in. Run 'keybase login' manually, then re-run this script, to enable it."
+      _record_warning 'Encrypted backup is not configured -- see instructions above'
     fi
-    step_end
   else
-    info "Skipping Keybase setup since '$(yellow 'keybase')' is not installed"
+    debug "setup-encrypted-backup.rb not found in PATH -- skipping encrypted backup setup"
   fi
+  step_end
+
+  # Clone encrypted-backup repos (home and browser-profiles)
+  _current_section='Clone encrypted repos'
+  step_start
+  section_header "$(yellow 'Cloning encrypted-backup repos')"
+
+  _clone_home_repo
+  _clone_profiles_repo
+
+  step_end
 
   if is_file "${HOME}/.ssh/known_hosts.old"; then rm -f "${HOME}/.ssh/known_hosts.old"; fi
 

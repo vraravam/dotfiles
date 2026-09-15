@@ -86,24 +86,24 @@ fi
 # will leave it unset in all shells started after the next login, which will cause
 # any alias, script, or operation that depends on it to be silently skipped.
 #
-# Note: There is no GH_USERNAME or KEYBASE_USERNAME declared below. Neither
-# needs to be pre-configured in a fork:
-# - GH_USERNAME is only needed transiently by the bootstrap one-liner (see
-#   Adoption.md Phase 3.2) to know which fork to clone. Re-runs of
-#   fresh-install-of-osx.sh on an already-cloned machine derive it automatically
-#   from '${DOTFILES_DIR}'s git remote.
-# - KEYBASE_USERNAME (Keybase is optional, for encrypted preference backups) is
-#   decided interactively during fresh-install-of-osx.sh (login prompt), and the
-#   active username is derived from 'keybase status' wherever it's needed (see
-#   Keybase.username in scripts/utilities/keybase.rb) -- whoever logs in owns
-#   the account, so there's nothing to keep in sync here.
+# Note: There is no GH_USERNAME declared below. It's only needed transiently by
+# the bootstrap one-liner (see Adoption.md Phase 3.2) to know which fork to
+# clone -- re-runs of fresh-install-of-osx.sh on an already-cloned machine
+# derive it automatically from '${DOTFILES_DIR}'s git remote.
+
+# ------------ Customizable env vars (MUST BE CHANGED to your values) ------------
+# Encrypted git repo names (plain public GitHub repos holding the gpg-encrypted git-bundle
+# blob, see scripts/utilities/encrypted_backup.rb -- replaces the old Keybase/gcrypt setup).
+export ENCRYPTED_HOME_REPO_NAME='home'
+export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
+# --------------------------------------------------------------------------------
 
 # ---------- Env vars for basic/common setup (can be optionally changed) ---------
 # This repo is cloned into this location
 export DOTFILES_DIR="${XDG_CONFIG_HOME}/dotfiles"
 
 # Branch name of the dotfiles repo that's to be used for testing PR changes before merging
-export DOTFILES_BRANCH='master'
+export DOTFILES_BRANCH='keybase-migration'
 
 # All development codebases are cloned into a subfolder of this folder
 export PROJECTS_BASE_DIR="${HOME}/dev"
@@ -1776,6 +1776,13 @@ migrate_git_repo_to_reftable() {
 # --single-branch for fast initial clone. All repos (new and existing) are converted
 # to full clones asynchronously via background 'git unshallow' job after the main
 # operation completes. Always updates submodules afterwards.
+#
+# No encryption/decryption logic lives here, deliberately -- see the "Why this logic
+# lives here and NOT inside clone_repo_into" note in scripts/utilities/encrypted_backup.rb
+# for the reasoning (single responsibility, shell-vs-Ruby layer boundary, and keeping this
+# function's bundle-import support generic/reusable for both the encrypted-backup and
+# resurrect-repositories.rb use cases).
+#
 # Usage: clone_repo_into <repo-url> <target-folder> [branch] [bundle-file]
 clone_repo_into() {
   local start_time

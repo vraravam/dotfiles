@@ -55,7 +55,7 @@ This follows standard Ruby community conventions:
 |------|---------|----------|-----------|
 | **Executable scripts** | kebab-case | `install-dotfiles.rb`, `recreate-repo.rb`, `capture-prefs.rb` | Matches Unix CLI tool convention; easier to type on command line |
 | **Utility modules** | snake_case | `git_processor.rb`, `cli_parser.rb`, `env_vars.rb` | Matches Ruby `require_relative` convention (`require 'git_processor'` → `git_processor.rb`) |
-| **Single-word modules** | no separator | `logging.rb`, `cron.rb`, `keybase.rb` | No separator needed for single words |
+| **Single-word modules** | no separator | `logging.rb`, `cron.rb`, `macos.rb` | No separator needed for single words |
 
 **Why this convention:**
 - `require_relative 'git_processor'` naturally maps to `git_processor.rb`
@@ -2125,7 +2125,7 @@ end
 
 **Section separators**: Use `# ---------------------------------------------------------------------------` with descriptive labels for all sections in utility files (even short ones) to clearly demarcate organization.
 
-**Files following this pattern**: `git_processor.rb`, `git_workspace.rb`, `keybase.rb`, `macos.rb`, `profiles_repo.rb`, `plist.rb`, `path_utils.rb`, `command_utils.rb`.
+**Files following this pattern**: `git_processor.rb`, `git_workspace.rb`, `macos.rb`, `profiles_repo.rb`, `plist.rb`, `path_utils.rb`, `command_utils.rb`.
 
 **GitProcessor as reference**: See `scripts/utilities/git_processor.rb` for a complete example:
 - Class methods: lines 59-94
@@ -2290,7 +2290,7 @@ end
 - Qualified calls work everywhere: module methods, class methods, instance methods
 
 **This rule applies to ALL files in `scripts/utilities/`** including:
-- Modules with `extend self` (cron.rb, keybase.rb, antidote.rb, collection_processor.rb, etc.)
+- Modules with `extend self` (cron.rb, encrypted_backup.rb, antidote.rb, collection_processor.rb, etc.)
 - Classes (cli_parser.rb's Parser class, etc.)
 - Any other code structures
 

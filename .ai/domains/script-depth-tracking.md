@@ -204,7 +204,7 @@ join_array failed_items  # Items at depth 2 (4 spaces)
 
 ## External Tool Output
 
-External tools (`git`, `mise`, `sqlite3`, `keybase`, etc.) invoked via `system()` or `Open3.capture3()` print at column 0. This is intentional -- wrapping their output would add complexity for minimal UX benefit. Tool output remains visually distinct from our structured logging.
+External tools (`git`, `mise`, `sqlite3`, `gpg`, etc.) invoked via `system()` or `Open3.capture3()` print at column 0. This is intentional -- wrapping their output would add complexity for minimal UX benefit. Tool output remains visually distinct from our structured logging.
 
 **Examples of unindented tool output**:
 - Shell: `system('git', '-C', repo, 'status')`

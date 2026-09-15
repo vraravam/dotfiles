@@ -112,6 +112,12 @@ class GitProcessor
   # bogus value 'git clone <bundle-file>' sets it to -- callers (e.g.
   # resurrect-repositories.rb) detect the missing 'origin' and reconfigure it from config.
   #
+  # This bundle-import path is intentionally generic and has no concept of encryption --
+  # EncryptedBackup.clone_and_decrypt (scripts/utilities/encrypted_backup.rb) reuses it as a
+  # building block by decrypting a blob into a plain bundle file first, then passing that
+  # here exactly like any other bundle (see that file's header comment for why the
+  # gpg/Keychain-specific logic lives there and not in this method or the shell function).
+  #
   # **DELEGATES TO SHELL VERSION**: This Ruby method is a thin wrapper around the
   # shell function clone_repo_into() in .shellrc. The shell version is required
   # for bootstrap (runs before dotfiles repo is cloned), so it cannot be removed.
@@ -310,8 +316,9 @@ class GitProcessor
   end
 
   # Checks whether two refs share a common ancestor (i.e. a rebase/merge between
-  # them is even meaningful). False when the two histories are entirely unrelated
-  # (e.g. after one side's history was rewritten/force-squashed with no shared base).
+  # them is even meaningful). False after e.g. a force-squash on one side rewrote
+  # history with no shared base -- see EncryptedBackup.fetch_and_rebase, which uses
+  # this to decide between rebasing and falling back to a hard reset.
   #
   # @param ref1 [String] First ref (e.g. a branch name).
   # @param ref2 [String] Second ref (e.g. 'origin/main', a remote-tracking ref).
@@ -440,7 +447,7 @@ class GitProcessor
   # Fetches from a single named remote -- unlike fetch_all, does not go through the
   # 'fo' alias (no with-retry/promisor-ordering, no fetching of all tags). Used for
   # one-off fetches against a remote that is not part of the routine multi-remote
-  # workflow.
+  # workflow (e.g. EncryptedBackup.fetch_and_rebase's temporary bundle-file remote).
   #
   # @param remote [String] Remote name to fetch from.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
@@ -462,9 +469,9 @@ class GitProcessor
 
   # Hard-resets the current branch to ref, discarding local commits and working-tree
   # changes. Deliberately destructive -- only for callers that have already decided
-  # preserving local history is not meaningful (e.g. when the current branch and ref
-  # share no common ancestor -- see common_ancestor? -- so there is nothing sensible
-  # to rebase onto anyway).
+  # preserving local history is not meaningful (e.g. EncryptedBackup.fetch_and_rebase's
+  # fallback for a squash-prone repo whose local and remote histories have diverged
+  # with no common ancestor, so there is nothing sensible to rebase onto anyway).
   #
   # @param ref [String] Ref to reset to (e.g. a remote-tracking ref).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
@@ -939,9 +946,9 @@ class GitProcessor
   #   mode -- for pure query commands (status, config --get, rev-list --count, etc.) that
   #   have no side effects. Dry-run is meant to suppress WRITES, not reads: a query method
   #   like current_branch/config_value/ls_tree must return real data even during a dry run,
-  #   or callers that build log messages from that data crash on the mocked empty-string/nil
-  #   response. Defaults to false, preserving the existing "log and skip" behavior for
-  #   mutations.
+  #   or callers that build log messages from that data (e.g.
+  #   GitProcessor#verify_pre_recreation) crash on the mocked empty-string/nil response.
+  #   Defaults to false, preserving the existing "log and skip" behavior for mutations.
   # @yield Optional block executed after command completes (useful for cleanup/logging).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   #   In dry-run mode (unless read_only), returns empty strings and a mock successful status.

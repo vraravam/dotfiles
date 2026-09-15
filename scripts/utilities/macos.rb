@@ -43,7 +43,6 @@ module MacOS
     # 'DockDoor',   # login item via Brewfile setup_login_items_script (SMAppService)
     'KeyCastr',   # login item via Brewfile setup_login_items_script (SMAppService)
     'KeyClu',     # launchAtLogin = true (com.0804Team.KeyClu)
-    'Keybase',    # login item via Brewfile setup_login_items_script (SMAppService)
     'Mechvibes',  # login item via Brewfile setup_login_items_script (SMAppService)
     'ProtonVPN',  # login item via Brewfile setup_login_items_script (SMAppService)
     'Shortcat',   # login item via Brewfile setup_login_items_script (SMAppService)

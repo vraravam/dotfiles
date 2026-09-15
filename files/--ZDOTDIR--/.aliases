@@ -919,24 +919,7 @@ with_cron_suspended() {
 }
 
 # --------------------------------------------------------------------------
-# 3k. Keybase helpers
-# --------------------------------------------------------------------------
-
-# Runs 'keybase git gc --force' on the named repo. Whether this actually
-# reclaims space on the remote is unverified -- use as a best-effort compaction step.
-# Usage: kbgc <repo-name>
-if command_exists keybase; then
-  kbgc() {
-    if [[ $# -ne 1 ]]; then
-      error "$(red 'Usage:') ${0} $(yellow '<repo name>')\n For eg: '\$KEYBASE_HOME_REPO_NAME' or '\$KEYBASE_PROFILES_REPO_NAME'"
-      return
-    fi
-    keybase git gc --force "${1:-}"
-  }
-fi
-
-# --------------------------------------------------------------------------
-# 3l. System maintenance
+# 3k. System maintenance
 # --------------------------------------------------------------------------
 
 # delete all personal data before re-imaging the laptop
@@ -959,7 +942,7 @@ implode() {
 }
 
 # --------------------------------------------------------------------------
-# 3m. Project-specific helpers
+# 3l. Project-specific helpers
 # --------------------------------------------------------------------------
 
 # Convenience wrappers that invoke the per-project script in PERSONAL_BIN_DIR
@@ -1000,7 +983,7 @@ build_me() {
 # alias spsd='iex -S mix phx.server'
 
 # --------------------------------------------------------------------------
-# 3n. macOS prefs helpers
+# 3m. macOS prefs helpers
 # --------------------------------------------------------------------------
 
 # Invokes a method on the MacOS Ruby module (scripts/utilities/macos.rb).

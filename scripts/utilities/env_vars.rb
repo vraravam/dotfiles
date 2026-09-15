@@ -80,6 +80,14 @@ module EnvVars
   # Mirrors: $SHELL (always set by the shell)
   SHELL = ENV.fetch('SHELL', '/bin/zsh').freeze
 
+  # Encrypted git repo names (used with the encrypted-backup mechanism, see
+  # scripts/utilities/encrypted_backup.rb).
+  # Mirrors: export ENCRYPTED_HOME_REPO_NAME='home'
+  ENCRYPTED_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('ENCRYPTED_HOME_REPO_NAME', 'home'))
+
+  # Mirrors: export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
+  ENCRYPTED_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('ENCRYPTED_PROFILES_REPO_NAME', 'browser-profiles'))
+
   # ---------------------------------------------------------------------------
   # Path variables (Pathname objects)
   # ---------------------------------------------------------------------------
@@ -177,8 +185,10 @@ module EnvVars
   # ---------------------------------------------------------------------------
 
   # Dotfiles repository branch name.
-  # Mirrors: export DOTFILES_BRANCH (default: master)
-  DOTFILES_BRANCH = ENV.fetch('DOTFILES_BRANCH', 'master').freeze
+  # Mirrors: export DOTFILES_BRANCH (default: keybase-migration)
+  # TODO before merging to master: revert default back to 'master' -- currently
+  # set for vanilla-OS testing on this branch.
+  DOTFILES_BRANCH = ENV.fetch('DOTFILES_BRANCH', 'keybase-migration').freeze
 
   # ---------------------------------------------------------------------------
   # Runtime flags and temporary operation variables (evaluated dynamically)

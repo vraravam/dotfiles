@@ -1667,18 +1667,6 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   fi
 
   # ---------------------------------------------------------------------------
-  # Keybase
-  # ---------------------------------------------------------------------------
-  # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
-  # Keybase has no defaults key for login-item status.
-  if ask 'Keybase settings' 'Y'; then
-    defaults write keybase.Electron AppleTextDirection -bool true
-    defaults write keybase.Electron NSForceRightToLeftWritingDirection -bool false
-    defaults write keybase.Electron NSFullScreenMenuItemEverywhere -bool false
-    defaults write keybase.Electron NSTreatUnknownArgumentsAsOpen -bool false
-  fi
-
-  # ---------------------------------------------------------------------------
   # MechVibes
   # ---------------------------------------------------------------------------
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
