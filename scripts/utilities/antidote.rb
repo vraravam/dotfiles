@@ -65,7 +65,11 @@ module Antidote
           next unless git.repo? && git.shallow? # Skip non-git directories and non-shallow repos
 
           git.config_set('fetch.fsckObjects', 'false')
-          git.run_alias('unshallow') # Configures all remotes, fetches complete history
+          # stream: true -- 'unshallow' is a custom alias wrapping 'fo'/with-retry, not a
+          # literal 'fetch'; without this, _execute's auto-detection can't see through the
+          # alias name and would silently buffer all live fetch/backfill progress output
+          # until the entire (potentially long-running) operation completes.
+          git.run_alias('unshallow', stream: true) # Configures all remotes, fetches complete history
         end
       end
     end

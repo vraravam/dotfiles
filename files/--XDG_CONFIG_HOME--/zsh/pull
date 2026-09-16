@@ -14,14 +14,38 @@ _pull() {
   section_header "$(yellow 'Pulling') '$(cyan "${folder}")'"
   if ! is_git_repo "${folder}"; then
     warn "Skipping pulling of the repo since '$(cyan "${folder}")' doesn't exist or is not a git repo"
-  else
-    # Skip git alias override detection to prevent double-execution when called
-    # from wrapper scripts (dispatch_or_fallback already found the override).
-    # Wrapped in 'git with-retry' (not a bare 'git pull') for hang protection -- 'git pull'
-    # is a builtin and always wins over the same-named git alias (confirmed empirically;
-    # see the WARNING comment on the 'pull' alias in git/config), so this is the one place
-    # that actually needs to add retry protection for the bare 'pull' command.
-    _GIT_OVERRIDE_SKIP=1 git with-retry 60 3 /dev/null "${folder}/.git/objects" git -C "${folder}" pull "${switches[@]}" || true
+    return 0
+  fi
+
+  # Skip git alias override detection to prevent double-execution when called
+  # from wrapper scripts (dispatch_or_fallback already found the override).
+  # Wrapped in 'git with-retry' (not a bare 'git pull') for hang protection -- 'git pull'
+  # is a builtin and always wins over the same-named git alias (confirmed empirically;
+  # see the WARNING comment on the 'pull' alias in git/config), so this is the one place
+  # that actually needs to add retry protection for the bare 'pull' command.
+  if _GIT_OVERRIDE_SKIP=1 git with-retry 60 3 /dev/null "${folder}/.git/objects" git -C "${folder}" pull "${switches[@]}"; then
+    return 0
+  fi
+
+  # 'with-retry' can't fix a pull failing because the local and remote histories have
+  # diverged with no common ancestor (e.g. after recreate-repository.rb force-squashes
+  # a repo -- see KeybaseMigration.md) -- that's a content problem, not a network one,
+  # and retrying the same 'git pull' would just fail identically every time. Repos that
+  # expect this (browser-profiles) opt in with:
+  #   git config --local pull.allowResetOnDivergedHistory true
+  # Everywhere else (the default), a failed pull is reported and left alone -- matches
+  # the previous behavior of this function, which silently swallowed any pull failure.
+  if [[ "$(git -C "${folder}" config --type=bool --default false pull.allowResetOnDivergedHistory)" != 'true' ]]; then
+    return 0
+  fi
+
+  info "Pull failed -- '$(cyan "${folder}")' has 'pull.allowResetOnDivergedHistory' set; checking for diverged history"
+  # Escape any single quotes in folder before embedding it in the Ruby string literal
+  # below -- folder is an arbitrary shell path, not a fixed value, so it isn't safe to
+  # interpolate unescaped the way an EnvVars:: constant reference elsewhere would be.
+  local folder_escaped="${folder//\'/\\\'}"
+  if ! call_ruby_utility "require 'git_processor'; exit(GitProcessor.new(dir: '${folder_escaped}').pull_or_reset(allow_reset_on_diverged_history: true) ? 0 : 1)"; then
+    _record_warning "Failed to reconcile '$(cyan "${folder}")' -- see errors above"
   fi
 }
 

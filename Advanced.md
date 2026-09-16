@@ -28,17 +28,16 @@ The backup strategy is **not a one-off activity**. Regular snapshots keep your s
 
 ```zsh
 # Export preferences (stages in git, does not commit)
-capture-prefs.rb -e
+capture-prefs.rb -e;
 
-# Review changes
-cd "${HOME}"  # or your private configs repo
-git status
-git diff
+# Review changes (or your private configs repo instead of ${HOME})
+git -C "${HOME}" status;
+git -C "${HOME}" diff;
 
 # Commit and push
-git add .
-git commit -m "Preferences backup: $(date +'%Y-%m-%d %H:%M:%S')"
-git push
+git -C "${HOME}" add .;
+git -C "${HOME}" commit -m "Preferences backup: $(date +'%Y-%m-%d %H:%M:%S')";
+git -C "${HOME}" push;
 ```
 
 ### 4.2 Update Repository Catalogs
@@ -50,16 +49,15 @@ git push
 
 ```zsh
 # Regenerate catalog
-resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}" > "${PERSONAL_CONFIGS_DIR}/repositories-personal.yml"
+resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}" > "${PERSONAL_CONFIGS_DIR}/repositories-personal.yml";
 
 # Review changes
-cd "${PERSONAL_CONFIGS_DIR}"
-git diff repositories-personal.yml
+git -C "${PERSONAL_CONFIGS_DIR}" diff repositories-personal.yml;
 
 # Commit and push
-git add repositories-personal.yml
-git commit -m "Update repo catalog: $(date +'%Y-%m-%d %H:%M:%S')"
-git push
+git -C "${PERSONAL_CONFIGS_DIR}" add repositories-personal.yml;
+git -C "${PERSONAL_CONFIGS_DIR}" commit -m "Update repo catalog: $(date +'%Y-%m-%d %H:%M:%S')";
+git -C "${PERSONAL_CONFIGS_DIR}" push;
 ```
 
 ### 4.3 Update Brewfile
@@ -70,16 +68,15 @@ git push
 
 ```zsh
 # Review current Brewfile
-cat "${HOMEBREW_BUNDLE_FILE}"
+cat "${HOMEBREW_BUNDLE_FILE}";
 
 # Add/remove entries manually (preserves comments and formatting)
 # DO NOT use 'brew bundle dump' again — it loses custom formatting
 
 # Commit changes
-cd "${DOTFILES_DIR}"
-git add files/--HOME--/Brewfile
-git commit -m "Brewfile: add <package>"
-git push
+git -C "${DOTFILES_DIR}" add files/--HOME--/Brewfile;
+git -C "${DOTFILES_DIR}" commit -m "Brewfile: add <package>";
+git -C "${DOTFILES_DIR}" push;
 ```
 
 ### 4.4 Automated Maintenance via Cron
@@ -121,7 +118,7 @@ if ! run_tests; then
 fi
 EOF
 
-chmod +x ${PERSONAL_BIN_DIR}/pre-push-my-repo.sh
+chmod +x ${PERSONAL_BIN_DIR}/pre-push-my-repo.sh;
 ```
 
 **How it works:**
@@ -172,13 +169,12 @@ main() {
 main "$@"
 EOF
 
-chmod +x ${PERSONAL_BIN_DIR}/push-browser-profiles.sh
+chmod +x ${PERSONAL_BIN_DIR}/push-browser-profiles.sh;
 ```
 
 **Usage:**
 ```bash
-cd "${PERSONAL_PROFILES_DIR}"
-./push-browser-profiles.sh  # or add to PATH and call directly
+push-browser-profiles.sh "${PERSONAL_PROFILES_DIR}";  # or add to PATH and call directly
 ```
 
 **How `with_cron_suspended` works:**
@@ -236,7 +232,7 @@ main() {
 main "$@"
 EOF
 
-chmod +x ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh
+chmod +x ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh;
 ```
 
 **How it works:**
@@ -266,11 +262,10 @@ chmod +x ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh
 **Testing:**
 ```zsh
 # Direct invocation
-cd "${PROJECTS_BASE_DIR}/oss/zen-browser-desktop"
-git upreb
+git -C "${PROJECTS_BASE_DIR}/oss/zen-browser-desktop" upreb;
 
 # Via run-all.rb (multi-repo)
-all upreb  # Each repo uses its override if it exists
+all upreb;  # Each repo uses its override if it exists
 ```
 
 ---
@@ -286,44 +281,40 @@ Sync with upstream improvements while preserving your customizations.
 **Note:** This applies to ongoing maintenance. If you completed Phase 2.4 or Phase 3.3D, you already have a single commit. This section is for when you've made additional changes over time.
 
 ```zsh
-cd "${DOTFILES_DIR}"
-
 # View your customization commit
-git log --oneline upstream/master..HEAD
+git -C "${DOTFILES_DIR}" log --oneline upstream/master..HEAD;
 # Should show: 1 commit (or more if you've made changes since initial adoption)
 
 # If you have multiple commits, squash them:
-git rebase -i upstream/master
+git -C "${DOTFILES_DIR}" rebase -i upstream/master;
 # Mark all but first as 'squash' or 'fixup'
 ```
 
 ### 5.2 Sync with Upstream
 
 ```zsh
-cd "${DOTFILES_DIR}"
-
 # Fetch latest changes
-git fetch --all
+git -C "${DOTFILES_DIR}" fetch --all;
 
 # Rebase your customizations on top
-git upreb  # alias for: git rebase upstream/master && git push --force-with-lease
+git -C "${DOTFILES_DIR}" upreb;  # alias for: git rebase upstream/master && git push --force-with-lease
 ```
 
 **If there are conflicts:**
 
 ```zsh
 # Review conflicts (typically in .shellrc, Brewfile, env_vars.rb)
-git status
+git -C "${DOTFILES_DIR}" status;
 
 # Edit conflicted files
 # Stage resolved files
-git add <file>
+git -C "${DOTFILES_DIR}" add <file>;
 
 # Continue rebase
-git rebase --continue
+git -C "${DOTFILES_DIR}" rebase --continue;
 
 # Force push (your fork is rebased)
-git push --force-with-lease
+git -C "${DOTFILES_DIR}" push --force-with-lease;
 ```
 
 ### 5.3 Alternative: Cherry-Pick Your Changes
@@ -331,25 +322,23 @@ git push --force-with-lease
 If you have many commits to catch up to and prefer a clean slate:
 
 ```zsh
-cd "${DOTFILES_DIR}"
-
 # Save your customization commit hash
-latest_head="$(git rev-parse HEAD)"
+latest_head="$(git -C "${DOTFILES_DIR}" rev-parse HEAD)";
 
 # Hard reset to upstream
-git reset --hard upstream/master
+git -C "${DOTFILES_DIR}" reset --hard upstream/master;
 
 # Apply your customization commit
-git cherry-pick "${latest_head}"
+git -C "${DOTFILES_DIR}" cherry-pick "${latest_head}";
 
 # Resolve conflicts if any
-git status
+git -C "${DOTFILES_DIR}" status;
 # Edit conflicted files, then:
-git add <file>
-git cherry-pick --continue
+git -C "${DOTFILES_DIR}" add <file>;
+git -C "${DOTFILES_DIR}" cherry-pick --continue;
 
 # Force push
-git push --force-with-lease
+git -C "${DOTFILES_DIR}" push --force-with-lease;
 ```
 
 ### 5.4 Review Diffs
@@ -358,10 +347,10 @@ Before pushing, verify your customizations are preserved:
 
 ```zsh
 # Diff against your fork's remote (shows upstream changes you're adopting)
-git diff @{u}
+git -C "${DOTFILES_DIR}" diff @{u};
 
 # Diff against upstream (shows only your customizations)
-git diff upstream/master
+git -C "${DOTFILES_DIR}" diff upstream/master;
 ```
 
 **The second diff should show ONLY:**
@@ -375,13 +364,13 @@ After syncing with upstream:
 
 1. **Run install-dotfiles.rb** to propagate symlink changes:
    ```zsh
-   install-dotfiles.rb
+   install-dotfiles.rb;
    ```
 
 2. **Check CHANGELOG.md** for version-specific instructions:
    ```zsh
    # Look for post-update steps for new versions
-   less "${DOTFILES_DIR}/CHANGELOG.md"
+   less "${DOTFILES_DIR}/CHANGELOG.md";
    ```
 
 3. **Restart Terminal** to reload configs:
@@ -392,30 +381,33 @@ After syncing with upstream:
 4. **Verify everything works**:
    ```zsh
    # Check shell functions load
-   type is_shellrc_sourced
+   type is_shellrc_sourced;
 
    # Check aliases load
-   alias ll
+   alias ll;
 
    # Check git aliases work
-   git st
+   git st;
 
    # Check mise versions load
-   mise current
+   mise current;
    ```
 
 ### 5.6 Testing Branch Changes
 
-To test upstream changes on a branch before merging to your master:
+To test upstream changes on a branch before merging to your master, just export
+`DOTFILES_BRANCH` alongside `GH_USERNAME` in the bootstrap command itself -- no file
+edits needed (mirrors how `GH_USERNAME` doesn't need pre-configuring either; see
+`.shellrc`'s explanatory note near the top):
 
 ```zsh
-# In your fork (via GitHub web UI or locally):
-# Change DOTFILES_BRANCH='master' to DOTFILES_BRANCH='test-branch'
-# in Adoption.md (bootstrap command) and ${DOTFILES_DIR}/files/--HOME--/.shellrc
-
-# Run bootstrap command with your test branch:
 export GH_USERNAME='YOUR_USERNAME' DOTFILES_BRANCH='test-branch' ...
 ```
+
+**Re-running on an already-cloned machine**: `fresh-install-of-osx.sh` derives
+`DOTFILES_BRANCH` automatically from `${DOTFILES_DIR}`'s currently checked-out branch
+if not explicitly exported -- so once you `git checkout test-branch` locally in
+`${DOTFILES_DIR}`, subsequent re-runs pick it up without needing to export anything.
 
 ---
 

@@ -173,18 +173,18 @@ grep "^/" custom.gitignore | sort
 ```bash
 # Find gitignore entries without corresponding source files (example for HOME)
 while IFS= read -r pattern; do
-  [[ "$pattern" =~ ^/ ]] || continue
+  [[ "${pattern}" =~ ^/ ]] || continue
   source_file="files/--HOME--${pattern}"
   source_file_custom="${source_file/\/.git/\/custom.git}"
-  [[ -f "$source_file" ]] || [[ -f "$source_file_custom" ]] || echo "Orphaned: $pattern"
+  [[ -f "${source_file}" ]] || [[ -f "${source_file_custom}" ]] || echo "Orphaned: ${pattern}"
 done < files/--HOME--/custom.gitignore
 
 # For browser profiles repo
 while IFS= read -r pattern; do
-  [[ "$pattern" =~ ^/ ]] || continue
+  [[ "${pattern}" =~ ^/ ]] || continue
   source_file="files/--PERSONAL_PROFILES_DIR--${pattern}"
   source_file_custom="${source_file/\/.git/\/custom.git}"
-  [[ -f "$source_file" ]] || [[ -f "$source_file_custom" ]] || echo "Orphaned: $pattern"
+  [[ -f "${source_file}" ]] || [[ -f "${source_file_custom}" ]] || echo "Orphaned: ${pattern}"
 done < files/--PERSONAL_PROFILES_DIR--/custom.gitignore
 ```
 

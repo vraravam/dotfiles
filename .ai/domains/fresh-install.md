@@ -271,8 +271,8 @@ live in `.aliases`, not `.shellrc`. Do not move them to `.shellrc`.
 ## `install_mise_versions` Duration
 
 The start time passed to `print_script_summary` must use epoch seconds
-(`$EPOCHSECONDS` or `date +%s`) -- not a formatted wall-clock string.
-`print_script_summary` subtracts the start epoch from `$EPOCHSECONDS` at
+(`${EPOCHSECONDS}` or `date +%s`) -- not a formatted wall-clock string.
+`print_script_summary` subtracts the start epoch from `${EPOCHSECONDS}` at
 call time to compute the duration; a pre-formatted string breaks that arithmetic.
 
 ## Brewfile Truncation on `FIRST_INSTALL`

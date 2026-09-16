@@ -34,7 +34,7 @@ The script is **idempotent** — every step checks whether its work is already d
 Setup is split into two guides:
 
 1. **[Adoption.md](Adoption.md)** (basic, start here) — fork the repo, set your GitHub username, and run the bootstrap command. This alone gets you a fully working machine: Homebrew, shell config, and macOS preferences.
-2. **[Advanced.md](Advanced.md)** — once you're up and running: keeping backups current, encrypted preference backups via [Keybase](https://keybase.io/) (optional), per-repository git customizations, and staying in sync with upstream.
+2. **[Advanced.md](Advanced.md)** — once you're up and running: keeping backups current, encrypted preference backups via [Keybase](https://keybase.io/) and/or `gpg` + `git bundle` (both optional, can be used together), per-repository git customizations, and staying in sync with upstream.
 
 > **⚡ Already forked and customized?** Jump straight to the [bootstrap command](Adoption.md#32-run-bootstrap-command) to copy-paste and run.
 
@@ -43,7 +43,7 @@ Setup is split into two guides:
 # 🧰 Documentation
 
 - **[Adoption.md](Adoption.md)** — Basic setup: preparing your machine, forking, and the bootstrap command
-- **[Advanced.md](Advanced.md)** — Ongoing maintenance, Keybase-based encrypted backups, per-repo customizations, and staying up-to-date with upstream
+- **[Advanced.md](Advanced.md)** — Ongoing maintenance, encrypted preference backups (Keybase and/or `gpg` + `git bundle`), per-repo customizations, and staying up-to-date with upstream
 - **[Extras.md](Extras.md)** — Reference documentation for every utility script
 - **[TechnicalDeepDive.md](TechnicalDeepDive.md)** — Internal architecture, design decisions, and implementation details
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — Guidelines for contributing code, documentation, and reporting issues

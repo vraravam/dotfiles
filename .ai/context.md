@@ -66,8 +66,8 @@ directly actionable when that work is picked up:
   `.aliases` for why bootstrap-time functions must stay in `.shellrc`).
 
 - **When rebasing all WIP branches onto an updated `master`**: process them in
-  this order: `deja`, `stout-migration`, `keybase-migration`,
-  `fresh-install-ruby`, `osx-defaults-ruby`. The last two must stay adjacent
+  this order: `deja`, `stout-migration`, `fresh-install-ruby`,
+  `osx-defaults-ruby`. The last two must stay adjacent
   and in that relative order regardless -- `osx-defaults-ruby` is chained on
   top of `fresh-install-ruby` (not `master` directly), so `fresh-install-ruby`
   must be rebased first and `osx-defaults-ruby` rebased onto the *updated*
@@ -128,7 +128,7 @@ lookup aid, not a substitute for reading them:
 
 - Shell: `&&`/`set -e` interaction, arithmetic increment safety, for-loop
   locality, parameter expansion (`:-` vs `-`), quoting, NULL_GLOB scoping,
-  ERR trap `$LINENO` capture, progressive trap cleanup, stderr capture --
+  ERR trap `${LINENO}` capture, progressive trap cleanup, stderr capture --
   see [`domains/shell-scripting.md`](./domains/shell-scripting.md)
 - Ruby: `EnvVars` as source of truth, memoization, `Pathname` usage, private
   method discipline, single exit point, `GitProcessor` block vs instance form,

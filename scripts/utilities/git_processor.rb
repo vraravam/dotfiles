@@ -112,6 +112,12 @@ class GitProcessor
   # bogus value 'git clone <bundle-file>' sets it to -- callers (e.g.
   # resurrect-repositories.rb) detect the missing 'origin' and reconfigure it from config.
   #
+  # This bundle-import path is intentionally generic and has no concept of encryption --
+  # EncryptedBackup.clone_and_decrypt (scripts/utilities/encrypted_backup.rb) reuses it as a
+  # building block by decrypting a blob into a plain bundle file first, then passing that
+  # here exactly like any other bundle (see that file's header comment for why the
+  # gpg/Keychain-specific logic lives there and not in this method or the shell function).
+  #
   # **DELEGATES TO SHELL VERSION**: This Ruby method is a thin wrapper around the
   # shell function clone_repo_into() in .shellrc. The shell version is required
   # for bootstrap (runs before dotfiles repo is cloned), so it cannot be removed.
@@ -129,8 +135,14 @@ class GitProcessor
   # @param branch [String, nil] Optional branch to clone (defaults to remote's HEAD).
   # @param bundle [String, Pathname, nil] Optional path to a local git bundle file --
   #   used instead of 'url' when the target isn't yet a git repo and this file exists.
+  # @param skip_maintenance [Boolean] When true, tells the shell function to skip its
+  #   post-clone migrate_git_repo_to_reftable/unshallow/maintain/siu chain (via the
+  #   SKIP_POST_CLONE_MAINTENANCE env var) -- see clone_repo_into's own comment in
+  #   .shellrc for the full rationale (ephemeral/disposable repos that gain nothing from
+  #   it, and where the chain's own duration can trip an *outer* with-retry's stall
+  #   detection wrapping this whole call).
   # @return [Boolean] true on success, false on failure.
-  def self.clone_repo_into(url, dest, branch: nil, bundle: nil)
+  def self.clone_repo_into(url, dest, branch: nil, bundle: nil, skip_maintenance: false)
     dest = Pathname.new(dest) unless dest.is_a?(Pathname)
 
     # Build the shell command
@@ -150,7 +162,8 @@ class GitProcessor
     # Execute via zsh with shell function
     # The shell function handles all the logic: temp folders, traps, error handling,
     # HEAD fix, reftable migration, submodule updates, etc.
-    CommandUtils.run_interactive('zsh', '-c', cmd)
+    env = skip_maintenance ? { 'SKIP_POST_CLONE_MAINTENANCE' => 'true' } : {}
+    CommandUtils.run_interactive(env, 'zsh', '-c', cmd)
   end
 
   # ---------------------------------------------------------------------------
@@ -310,8 +323,9 @@ class GitProcessor
   end
 
   # Checks whether two refs share a common ancestor (i.e. a rebase/merge between
-  # them is even meaningful). False when the two histories are entirely unrelated
-  # (e.g. after one side's history was rewritten/force-squashed with no shared base).
+  # them is even meaningful). False after e.g. a force-squash on one side rewrote
+  # history with no shared base -- see pull_or_reset, which uses this to decide
+  # between rebasing and falling back to a hard reset.
   #
   # @param ref1 [String] First ref (e.g. a branch name).
   # @param ref2 [String] Second ref (e.g. 'origin/main', a remote-tracking ref).
@@ -429,18 +443,22 @@ class GitProcessor
   # expected object' failures on secondary remotes of a partial/blobless clone) for
   # free, same as every other fetch path in this codebase. No 'quiet' option --
   # 'fo' always prints its own progress/diagnostic output to stderr regardless.
+  # stream: true -- 'fo' is a custom alias, not a literal 'fetch', so _execute's own
+  # command-name auto-detection cannot see that it wraps one; without this override
+  # 'with-retry's live retry-attempt/progress output would be silently buffered and
+  # only surface (if at all) after the entire operation completes.
   #
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def fetch_all
     return _mock_status_response(false) unless repo?
 
-    run_alias('fo')
+    run_alias('fo', stream: true)
   end
 
   # Fetches from a single named remote -- unlike fetch_all, does not go through the
   # 'fo' alias (no with-retry/promisor-ordering, no fetching of all tags). Used for
-  # one-off fetches against a remote that is not part of the routine multi-remote
-  # workflow.
+  # one-off fetches against a specific remote outside the routine multi-remote workflow
+  # (e.g. pull_or_reset).
   #
   # @param remote [String] Remote name to fetch from.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
@@ -462,9 +480,9 @@ class GitProcessor
 
   # Hard-resets the current branch to ref, discarding local commits and working-tree
   # changes. Deliberately destructive -- only for callers that have already decided
-  # preserving local history is not meaningful (e.g. when the current branch and ref
-  # share no common ancestor -- see common_ancestor? -- so there is nothing sensible
-  # to rebase onto anyway).
+  # preserving local history is not meaningful (e.g. pull_or_reset's fallback for a
+  # squash-prone repo whose local and remote histories have diverged with no common
+  # ancestor, so there is nothing sensible to rebase onto anyway).
   #
   # @param ref [String] Ref to reset to (e.g. a remote-tracking ref).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
@@ -472,6 +490,73 @@ class GitProcessor
     return _mock_status_response(false) unless repo?
 
     _execute('reset', '--hard', ref)
+  end
+
+  # Fetches remote and rebases the current branch onto <remote>/<branch> -- or
+  # hard-resets, if allow_reset_on_diverged_history is true and the two histories share
+  # no common ancestor (e.g. after a force-squash, see recreate-repository.rb). A
+  # generic "pull that tolerates a rewritten remote history" primitive -- not specific
+  # to any particular remote transport. Keybase, the gpg+git-bundle encrypted backup
+  # (see scripts/utilities/encrypted_backup.rb), or a plain GitHub remote all work
+  # identically here, since this only depends on git's own ref/object model, not on how
+  # the remote's objects got there.
+  #
+  # @param remote [String] Name of the remote to fetch from.
+  # @param allow_reset_on_diverged_history [Boolean] When true, falls back to a hard
+  #   reset instead of a rebase if the local branch and the remote branch share no
+  #   common ancestor. Defaults to false: for a repo that is never squashed, diverged
+  #   history is unexpected and should fail loudly rather than silently discard local
+  #   commits.
+  # @return [Boolean] true on success, false on failure
+  def pull_or_reset(remote: 'origin', allow_reset_on_diverged_history: false)
+    _stdout, _stderr, clean_status = run_alias('is-clean', read_only: true)
+    unless clean_status.success?
+      Logging.record_error "'#{@dir.cyan}' has uncommitted changes -- commit or stash before pulling"
+      return false
+    end
+
+    branch = current_branch
+    if nil_or_empty?(branch)
+      Logging.record_error "Could not determine current branch in '#{@dir.cyan}'"
+      return false
+    end
+
+    _stdout, stderr, fetch_status = fetch(remote)
+    unless fetch_status.success?
+      Logging.record_error "Failed to fetch '#{remote}': #{stderr}"
+      return false
+    end
+
+    remote_ref = "#{remote}/#{branch}"
+
+    unless common_ancestor?(branch, remote_ref)
+      unless allow_reset_on_diverged_history
+        Logging.record_error "'#{branch}' and '#{remote_ref}' have no common ancestor (unexpected -- " \
+                             'was history rewritten on one side?) -- refusing to rebase blindly'
+        return false
+      end
+
+      Logging.warn "'#{branch}' and '#{remote_ref}' have no common ancestor (expected after a " \
+                   "force-squash) -- resetting '#{branch}' to '#{remote_ref}' instead of rebasing"
+      _stdout, stderr, reset_status = reset_hard(remote_ref)
+      unless reset_status.success?
+        Logging.record_error "Failed to reset '#{branch}' to '#{remote_ref}': #{stderr}"
+        return false
+      end
+
+      Logging.success "Reset '#{branch}' to '#{remote_ref}' for '#{@dir.cyan}'"
+      return true
+    end
+
+    _stdout, stderr, rebase_status = rebase(remote_ref)
+    unless rebase_status.success?
+      Logging.record_error "Failed to rebase '#{branch}' onto '#{remote_ref}' -- resolve manually " \
+                           "(git rebase --abort to cancel): #{stderr}"
+      return false
+    end
+
+    Logging.success "Rebased '#{branch}' onto '#{remote_ref}' for '#{@dir.cyan}'"
+    true
   end
 
   # Initializes a new git repository in the directory.
@@ -623,12 +708,15 @@ class GitProcessor
   # changes). Always rebases onto '@{u}' -- this codebase has no caller that wants a
   # merge-pull (verified: the only caller, ProfilesRepo.update_chrome_folders, already
   # passed rebase: true), so no rebase/quiet options are exposed.
+  # stream: true -- see fetch_all's matching comment: 'pull-safe' is a custom alias, not
+  # a literal 'pull', so _execute's auto-detection would otherwise silently buffer all
+  # of 'fo'/'with-retry's live progress output until the whole rebase completes.
   #
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def pull
     return _mock_status_response(false) unless repo?
 
-    run_alias('pull-safe')
+    run_alias('pull-safe', stream: true)
   end
 
   # Removes a file from the index (staging area) without deleting it from the working directory.
@@ -786,9 +874,13 @@ class GitProcessor
   # @param args [Array<String>] Additional arguments to pass to the alias.
   # @param read_only [Boolean] Passed through to _execute -- true for query aliases
   #   (e.g. 'is-clean') that must run for real even under dry-run.
+  # @param stream [Boolean, nil] Passed through to _execute -- pass true for any alias
+  #   that internally wraps push/pull/fetch/with-retry (e.g. 'fo', 'pull-safe',
+  #   'unshallow'), since _execute's own auto-detection cannot see through an alias name
+  #   to what it does internally. See _execute's doc for the full rationale.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def run_alias(alias_name, *args, read_only: false)
-    _execute(alias_name, *args, read_only: read_only)
+  def run_alias(alias_name, *args, read_only: false, stream: nil)
+    _execute(alias_name, *args, read_only: read_only, stream: stream)
   end
 
   # Deletes .git/index.lock if it exists. This is a recovery operation for
@@ -933,19 +1025,31 @@ class GitProcessor
   # Decides whether to stream output or capture it based on the command:
   # - Streams (system): push, pull, fetch (unless -q/--quiet flag present)
   # - Captures: all other commands
+  # 'stream:' overrides this auto-detection -- see its own doc below for why this is
+  # needed for alias-based calls (run_alias('fo'), run_alias('pull-safe'), etc.).
   #
   # @param args [Array<String>] Git subcommand and arguments (e.g., 'status', '--short').
   # @param read_only [Boolean] When true, always actually runs the command even in dry-run
   #   mode -- for pure query commands (status, config --get, rev-list --count, etc.) that
   #   have no side effects. Dry-run is meant to suppress WRITES, not reads: a query method
   #   like current_branch/config_value/ls_tree must return real data even during a dry run,
-  #   or callers that build log messages from that data crash on the mocked empty-string/nil
-  #   response. Defaults to false, preserving the existing "log and skip" behavior for
-  #   mutations.
+  #   or callers that build log messages from that data (e.g.
+  #   GitProcessor#verify_pre_recreation) crash on the mocked empty-string/nil response.
+  #   Defaults to false, preserving the existing "log and skip" behavior for mutations.
+  # @param stream [Boolean, nil] Explicit override for the stream-vs-capture decision.
+  #   nil (default) falls back to _should_stream_output?'s auto-detection based on the
+  #   literal command name. Pass true/false to bypass auto-detection entirely -- required
+  #   for any call whose first arg is a *custom alias name* (e.g. 'fo', 'pull-safe',
+  #   'unshallow') rather than a literal git subcommand: _should_stream_output? only
+  #   recognizes literal 'push'/'pull'/'fetch' in args, so an alias that internally wraps
+  #   one of those (and 'with-retry', which prints its own retry-attempt progress to
+  #   stderr) would otherwise silently fall through to the captured/buffered branch,
+  #   hiding all live progress until the entire -- potentially multi-minute, multi-retry
+  #   -- operation completes.
   # @yield Optional block executed after command completes (useful for cleanup/logging).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   #   In dry-run mode (unless read_only), returns empty strings and a mock successful status.
-  def _execute(*args, read_only: false)
+  def _execute(*args, read_only: false, stream: nil)
     cmd = _git_command + args
 
     if @dry_run && !read_only
@@ -955,8 +1059,10 @@ class GitProcessor
       return _mock_status_response(true)
     end
 
-    # Determine if we should stream output (for push/pull/fetch without quiet flag)
-    if _should_stream_output?(args)
+    # Determine if we should stream output (for push/pull/fetch without quiet flag),
+    # unless the caller already knows better and passed an explicit override.
+    should_stream = stream.nil? ? _should_stream_output?(args) : stream
+    if should_stream
       # Stream output directly to terminal
       success = CommandUtils.run_interactive(*cmd)
       yield if block_given? && success
@@ -1055,7 +1161,11 @@ class GitProcessor
 
   # Recreates the local git repository by removing .git and reinitializing.
   # Preserves working tree files, only destroys git history.
-  # Automatically restores origin remote, user.name, and user.email from current repo state.
+  # Automatically restores ALL configured remotes (not just 'origin' -- a repo may have
+  # more than one, e.g. 'origin' == keybase://, 'origin2' == the gpg+git-bundle
+  # encrypted backup, see KeybaseMigration.md; restoring only 'origin' would silently
+  # and permanently discard every other remote on every force-squash), plus user.name
+  # and user.email, from current repo state.
   #
   # WARNING: This method does NOT verify against remote. For force-squash operations
   # where you're destroying history, use verify_and_recreate_local_repo instead
@@ -1067,14 +1177,15 @@ class GitProcessor
   # - You have verified file lists match through other means
   #
   # @param ref_format [String] The ref-format to use (defaults to 'reftable').
-  # @param remote_name [String] Remote name to restore (defaults to 'origin').
   # @return [Boolean] true on success, false on failure.
-  def _recreate(ref_format: 'reftable', remote_name: 'origin')
+  def _recreate(ref_format: 'reftable')
     git_path = @dir.join('.git')
 
-    # Capture current state before destroying .git
+    # Capture current state before destroying .git -- every configured remote (see
+    # doc above for why this must not be limited to just 'origin').
     branch_name = current_branch
-    remote_url = remote_url(name: remote_name)
+    remotes = {}
+    each_remote { |name, url| remotes[name] = url }
     user_name = config_value('user.name')
     user_email = config_value('user.email')
 
@@ -1091,8 +1202,8 @@ class GitProcessor
     _stdout, _stderr, status = init(ref_format: ref_format, initial_branch: branch_name)
     return false unless status.success?
 
-    # Restore remote and config from captured state
-    add_remote(remote_name, remote_url) unless nil_or_empty?(remote_url)
+    # Restore every captured remote and config from captured state
+    remotes.each { |name, url| add_remote(name, url) unless nil_or_empty?(url) }
     config_set('user.name', user_name) unless nil_or_empty?(user_name)
     config_set('user.email', user_email) unless nil_or_empty?(user_email)
 

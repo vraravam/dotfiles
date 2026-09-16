@@ -13,6 +13,7 @@ Reference documentation for the utility scripts bundled in this repo. Each secti
 - [recreate-repository.rb](#recreate-repositoryrb)
 - [resurrect-repositories.rb](#resurrect-repositoriesrb)
 - [run-all.rb](#run-allrb)
+- [setup-encrypted-backup.rb](#setup-encrypted-backuprb)
 - [setup-login-item.rb](#setup-login-itemrb)
 - [software-updates-cron.rb](#software-updates-cronrb)
 
@@ -23,7 +24,7 @@ Reference documentation for the utility scripts bundled in this repo. Each secti
 When you fork a repo, you need an `upstream` remote pointing to the original so you can fetch and rebase against it. This script adds that remote automatically, deriving the upstream URL from the existing `origin` URL by substituting the owner username — so you do not have to look up or copy-paste the URL manually. The new remote is always named `upstream`.
 
   ```zsh
-  add-upstream-git-config.rb -d <target-folder> -u <upstream-repo-owner>
+  add-upstream-git-config.rb -d <target-folder> -u <upstream-repo-owner>;
   ```
 
 ## capture-prefs.rb
@@ -127,38 +128,38 @@ The script has two modes:
 
 **Non-force mode** (default): Compresses and pushes existing commits without destroying history.
 
-**Force mode** (`-f`): Squashes all history into a single commit and recreates the remote repository.
+**Force mode** (`-f`): Squashes all history into a single commit and force-pushes it to **every** configured remote (a repo may have more than one -- e.g. `origin` for Keybase and `origin2` for the encrypted backup, see [KeybaseMigration.md](KeybaseMigration.md)).
 
 ### Force mode workflow
 
 When run with `-f`, the script follows this safety-first sequence:
 
-1. **Capture remote state** — Gets file list from `origin/<branch>` before any destructive operations
-2. **Recreate local repo** — Destroys `.git` and creates a fresh repository
-3. **Commit all files** — Stages and commits everything into a single initial commit
-4. **Verify file lists match** — Compares new local vs captured remote file lists
-5. **If match**: Delete remote repo (Keybase only), then push
-6. **If mismatch**: Abort without deleting remote (preserves remote as backup)
+1. **Ensure Keybase remotes are reachable** — If any configured remote is a `keybase://` URL, `Keybase.ensure_logged_in` is checked *before* any destructive local operation, so a login failure is caught before local history is squashed away with nowhere to push it.
+2. **Capture remote state** — Gets file list from `origin/<branch>` before any destructive operations
+3. **Recreate local repo** — Destroys `.git` and creates a fresh repository
+4. **Commit all files** — Stages and commits everything into a single initial commit
+5. **Verify file lists match** — Compares new local vs captured remote file lists (paths only -- `git ls-tree --name-only`, never content/blob hashes); aborts without pushing if they don't match (preserves the remote as backup). This is meaningful for a multi-file repo (catches `.gitignore` misconfiguration causing files to unexpectedly appear/disappear), but weak for a repo like the encrypted-backup wrapper repo (see [KeybaseMigration.md](KeybaseMigration.md)), whose working tree only ever contains a handful of numbered `backup.gpg.NNN` chunk files (split to stay under GitHub's 100MB per-file limit) -- there, path-only comparison can catch a chunk going missing/a stray extra file appearing, or the chunk count changing, but it provides no protection against force-pushing stale or corrupted chunks whose paths and count are unchanged but content is wrong. For that reason, force mode against a directory under `${XDG_CACHE_HOME}/encrypted-backups/` automatically runs an additional reassemble + decrypt + `git bundle verify` check first (`EncryptedBackup.verify_current_blob_decryptable?`) and refuses to squash if it fails -- no special flag needed, this is auto-detected from the directory path.
+6. **Compress and force-push to every remote** — For each configured remote: a `keybase://` remote is deleted and explicitly recreated first (`Keybase.recreate_repo`) since Keybase's own history/pruning model means a plain force-push there doesn't fully discard old history the way it does on a real git host; every other remote (encrypted-backup, plain GitHub, etc.) is just force-pushed directly.
 7. **Build commit graph** — Optimizes git operations (log, status, merge-base)
 
-The early capture (step 1) avoids prompting for `git remote add` or `git fetch` since remote tracking refs are lost when `.git` is destroyed.
+The early capture (step 2) avoids prompting for `git remote add` or `git fetch` since remote tracking refs are lost when `.git` is destroyed.
 
 Both force and non-force modes end with the same operations: push to remote (force or normal), then build commit graph.
 
 ### Usage
 
 ```zsh
-recreate-repository.rb -d <repo-folder>          # Compress only
-recreate-repository.rb -f -d <repo-folder>       # Force squash
-recreate-repository.rb -n -f -d <repo-folder>    # Dry-run
+recreate-repository.rb -d <repo-folder>;          # Compress only
+recreate-repository.rb -f -d <repo-folder>;       # Force squash
+recreate-repository.rb -n -f -d <repo-folder>;    # Dry-run
 ```
 
 **Profiles repo**: Always force-squashed automatically (no `-f` needed).
 
 ### Safety features
 
-- **Pre-comparison**: File lists compared before remote deletion
-- **Remote preservation**: If files don't match, remote stays intact (can be re-cloned)
+- **Pre-comparison**: File lists compared before force-pushing squashed history
+- **Remote preservation**: If files don't match, the push is aborted and remote stays intact (can be re-cloned)
 - **Dry-run mode**: Preview operations with `-n` flag
 - **Early validation**: Checks remote ref exists before destroying local `.git`
 
@@ -208,7 +209,7 @@ A repo entry can optionally specify a `bundle` path -- a portable git bundle fil
 * **Export** (`-b`): for every repo entry with a `bundle` key, exports the repo at `folder` to the `bundle` path. Run this on a machine that still has a healthy clone, before it's needed:
 
   ```zsh
-  resurrect-repositories.rb -b <config-file>
+  resurrect-repositories.rb -b <config-file>;
   ```
 
 * **Import** (`-r`, automatic): if `folder` is not yet a git repo *and* the configured `bundle` file exists on disk, `-r` imports from the bundle instead of cloning from `remote` over the network -- much faster and more reliable for huge repos. If `folder` is already a git repo, the bundle is bypassed entirely and the normal `remote`-based path is used, so this never triggers a surprise reimport on routine re-runs.
@@ -226,30 +227,40 @@ This script finds all git repositories within the specified `FOLDER` (defaults t
 Examples:
 
 ```zsh
-  run-all.rb git status                                      # get git status of all repos
-  run-all.rb git clean -fxd                                  # clean all repos
-  run-all.rb git remote prune origin                         # prune remotes in all repos
-  run-all.rb git add -p                                      # stage files interactively in each repo
-  run-all.rb ls -la                                          # list files in each repo root
-  run-all.rb find . -name "*.rb" -type f                     # find Ruby files in each repo
+  run-all.rb git status;                                      # get git status of all repos
+  run-all.rb git clean -fxd;                                  # clean all repos
+  run-all.rb git remote prune origin;                         # prune remotes in all repos
+  run-all.rb git add -p;                                      # stage files interactively in each repo
+  run-all.rb ls -la;                                          # list files in each repo root
+  run-all.rb find . -name "*.rb" -type f;                     # find Ruby files in each repo
 ```
 
 You can control the search scope and filtering using environment variables:
 
 ```zsh
-  FOLDER="${PROJECTS_BASE_DIR}" MINDEPTH=2 MAXDEPTH=5 FILTER="oss|zsh|antidote" run-all.rb git status
-  FOLDER="${PROJECTS_BASE_DIR}" MINDEPTH=2 MAXDEPTH=5 run-all.rb git fetch
-  FILTER="dotfiles" run-all.rb git pull
+  FOLDER="${PROJECTS_BASE_DIR}" MINDEPTH=2 MAXDEPTH=5 FILTER="oss|zsh|antidote" run-all.rb git status;
+  FOLDER="${PROJECTS_BASE_DIR}" MINDEPTH=2 MAXDEPTH=5 run-all.rb git fetch;
+  FILTER="dotfiles" run-all.rb git pull;
 ```
 
 **Note**: Any shell command can be run — not just git commands. Each command executes in the context of the git repository root, giving you access to the repo's files and structure.
+
+## setup-encrypted-backup.rb
+
+Verifies the encrypted-backup mechanism (`gpg` + `git bundle`, see [`KeybaseMigration.md`](KeybaseMigration.md)) is ready to use: `gnupg` installed, and a passphrase configured in the macOS Keychain. It's idempotent — safe to run every time, and does nothing visible if already configured. It's called automatically on every `fresh-install-of-osx.sh` run, but can also be run manually at any time.
+
+```zsh
+setup-encrypted-backup.rb;
+```
+
+If a passphrase isn't yet configured and a real TTY is available, it prompts interactively via `security add-generic-password`'s own masked, double-entry prompt (the passphrase never touches Ruby memory or argv). In a non-interactive context (e.g. piped through `tee` during the bootstrap one-liner), it logs setup instructions instead of prompting.
 
 ## setup-login-item.rb
 
 Some apps must be registered as macOS login items programmatically after installation — the System Settings UI is not scriptable in a repeatable way. This script handles that registration so `fresh-install-of-osx.sh` can set up login items unattended. It is also safe to run manually at any time.
 
   ```zsh
-  setup-login-item.rb -a <app-name>
+  setup-login-item.rb -a <app-name>;
   ```
 
 On macOS 14–25, uses SMAppService for proper login item registration. On macOS 13 and 26+, falls back to the legacy System Events AppleScript. Add `-b` flag for background/hidden mode (macOS 13 legacy only).
@@ -261,7 +272,7 @@ There are so many tools installed, and some of them require their local caches/d
 To set up or update your crontab, run:
 
   ```zsh
-  recron
+  recron;
   ```
 
 **Crontab fallback logic:** `recron` preserves existing cron jobs and uses a fallback strategy:
@@ -274,7 +285,7 @@ This ensures existing schedules are preserved while supporting vanilla OS instal
 
 **Manual template generation:** If you need a starting template:
   ```zsh
-  create_crontab ${PERSONAL_CONFIGS_DIR}/crontab.txt
+  create_crontab ${PERSONAL_CONFIGS_DIR}/crontab.txt;
   ```
 This creates the default schedule (software-updates-cron hourly). Edit as needed, commit to home repo, and run `recron` to install.
 
@@ -303,19 +314,19 @@ The crontab is configured with `MAILTO=""` to disable mail generation (notificat
 To check current run status:
 
   ```zsh
-  tail -2 ~/Downloads/software-updates-run-log
+  tail -2 ~/Downloads/software-updates-run-log;
   ```
 
 To see all output from the last run (debugging):
 
   ```zsh
-  cat ~/Downloads/software-updates-cron-last-run.log
+  cat ~/Downloads/software-updates-cron-last-run.log;
   ```
 
 To check for errors/warnings over time:
 
   ```zsh
-  tail -50 ~/Downloads/software-updates-cron.log
+  tail -50 ~/Downloads/software-updates-cron.log;
   ```
 
 See [Technical Deep Dive § 8](TechnicalDeepDive.md#8-cron-safety-mechanisms) for how cron safety, `sudo` guards, and TTY detection work internally.
@@ -389,7 +400,7 @@ See `.ai/domains/git-config.md` for complete documentation on git hook architect
 Removes all compiled zsh bytecode (`.zwc` files) and other generated cache files (Homebrew shellenv cache, starship cache, mise activation cache, git version cache). Run this when zsh startup behaves unexpectedly or after making significant changes to startup files — zsh will regenerate everything on the next shell open.
 
 ```zsh
-delete_caches
+delete_caches;
 ```
 
 Back to the [readme](README.md#-documentation)

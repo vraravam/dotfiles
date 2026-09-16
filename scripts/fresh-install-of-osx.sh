@@ -21,7 +21,7 @@ _SCRIPT_NAME="${0:t}"
 
 # Error trap cleanup and exit.
 # $1 = LINENO of the failing command, captured by the caller via the trap string
-# ('trap "_cleanup_and_exit ${LINENO}" ERR') so that $LINENO expands in the
+# ('trap "_cleanup_and_exit ${LINENO}" ERR') so that ${LINENO} expands in the
 # failing command's scope rather than inside this function.
 #
 # NOTE: This function duplicates logic from .shellrc (print_script_summary, error,
@@ -125,6 +125,30 @@ _resolve_gh_username() {
     exit 1
   fi
   export GH_USERNAME
+}
+
+# Resolves which branch of the dotfiles repo to bootstrap from/check out. Unlike
+# GH_USERNAME (no safe default -- every fork's username differs, so an unresolvable
+# value is a hard error), DOTFILES_BRANCH has a universally-correct default ('master')
+# for everyone who hasn't deliberately switched to a different branch for testing, so
+# this never errors out -- it only derives-or-falls-back.
+#
+# Only ever read before '${DOTFILES_DIR}' exists as a git repo (constructing the
+# '.shellrc' download URL, and the initial 'git clone' of the dotfiles repo itself --
+# see _download_and_source_shellrc/_clone_dot_files_repo); on any later re-run, the
+# already-cloned repo is used directly and this value is never consulted again. Safe
+# to derive from the local repo's own current branch on such a re-run (e.g. after
+# manually checking out a test branch there -- see Advanced.md § 5.6), rather than
+# requiring it to be kept in sync in '.shellrc' as well.
+_resolve_dotfiles_branch() {
+  if [[ -n "${DOTFILES_BRANCH:-}" ]]; then
+    return
+  fi
+  if [[ -n "${DOTFILES_DIR:-}" && -d "${DOTFILES_DIR}/.git" ]]; then
+    DOTFILES_BRANCH="$(git -C "${DOTFILES_DIR}" branch --show-current)"
+  fi
+  DOTFILES_BRANCH="${DOTFILES_BRANCH:-master}"
+  export DOTFILES_BRANCH
 }
 
 # Download and source .shellrc from GitHub (before dotfiles are cloned)
@@ -388,7 +412,8 @@ _install_homebrew() {
   # even though the app itself is installed and usable. The Brewfile's own postinstall
   # for this cask already creates these symlinks too -- this is a redundant safety net
   # for exactly that postinstall-skipped case. Both are safe to run every time since
-  # 'ln -sf' is idempotent.
+  # 'ln -sf' is idempotent. No KEYBASE_*_REPO_NAME gate needed here -- if the cask was
+  # never installed (Keybase disabled), the directory check below simply never matches.
   if is_directory '/Applications/Keybase.app'; then
     ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/keybase' "${HOMEBREW_PREFIX}/bin/keybase"
     ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase' "${HOMEBREW_PREFIX}/bin/git-remote-keybase"
@@ -525,54 +550,204 @@ _build_keybase_repo_url() {
   echo "keybase://private/${username}/${1:-}"
 }
 
-# Clone the Keybase home repo (private configs)
+# Configures remote_url as a git remote on target_folder -- 'origin' if no other
+# remote exists yet, 'origin2' if 'origin' is already something else (e.g. the other
+# backup mechanism, or a remote configured in a previous run). Idempotent: no-ops if
+# remote_url is already configured as either 'origin' or 'origin2'. Shared by both
+# backup mechanisms (Keybase and the gpg+git-bundle encrypted backup) so they can
+# coexist on the same repo, each pushed/pulled explicitly and independently -- see
+# KeybaseMigration.md. Never fans a URL into an existing remote's push URLs -- each
+# mechanism always gets its own separately-named remote.
+_configure_backup_remote() {
+  local target_folder="${1:?}"
+  local remote_url="${2:?}"
+
+  # Already configured as either remote -- nothing more to do.
+  if git -C "${target_folder}" remote get-url origin 2>/dev/null | /usr/bin/grep -qxF "${remote_url}"; then
+    return 0
+  fi
+  if git -C "${target_folder}" remote get-url origin2 2>/dev/null | /usr/bin/grep -qxF "${remote_url}"; then
+    return 0
+  fi
+
+  if ! git -C "${target_folder}" remote get-url origin &>/dev/null; then
+    git -C "${target_folder}" remote add origin "${remote_url}"
+    success "Added 'origin' -> '$(cyan "${remote_url}")' for '$(cyan "${target_folder}")'"
+  elif ! git -C "${target_folder}" remote get-url origin2 &>/dev/null; then
+    git -C "${target_folder}" remote add origin2 "${remote_url}"
+    success "Added 'origin2' -> '$(cyan "${remote_url}")' for '$(cyan "${target_folder}")' (separate from 'origin' -- push/pull each explicitly)"
+  else
+    _record_warning "Both 'origin' and 'origin2' are already configured on '$(cyan "${target_folder}")' with different URLs -- not adding '$(cyan "${remote_url}")'. Add it manually under a different remote name if you want it too."
+  fi
+}
+
+# Clones the home repo (private configs) from whichever backup mechanism(s) are
+# enabled (KEYBASE_HOME_REPO_NAME and/or ENCRYPTED_HOME_REPO_NAME -- see
+# KeybaseMigration.md for how they coexist). Keybase is tried first (original
+# mechanism, historical precedence); the gpg+git-bundle encrypted backup (see
+# scripts/utilities/encrypted_backup.rb) is the fallback, or the only option if
+# Keybase isn't enabled/available. Whichever succeeds performs the actual clone; if
+# the other mechanism is also enabled, it is configured as an additional remote
+# (via _configure_backup_remote) rather than cloned from again.
 _clone_home_repo() {
   _current_section='Clone home repo'; _current_section_manual=1
   step_start
-  local home_repo_name="${KEYBASE_HOME_REPO_NAME:-home}"
-  _step_header "$(yellow 'Cloning') '$(cyan "${home_repo_name}")' repo"
-  if is_non_zero_string "${home_repo_name}"; then
-    if is_git_repo "${HOME}"; then
-      # Pre-configured machine: pull latest changes to get fresh backup files.
-      # Uses 'pull-safe' (not a bare 'pull --rebase') for 'with-retry' hang protection and
-      # a clean-working-tree guard, consistent with every other repo-sync path in this script.
-      info "Home repo already exists -- pulling latest changes"
-      if git -C "${HOME}" pull-safe; then
-        success "Successfully updated home repo"
+
+  local keybase_repo_name="${KEYBASE_HOME_REPO_NAME:-}"
+  local encrypted_repo_name="${ENCRYPTED_HOME_REPO_NAME:-}"
+
+  if is_git_repo "${HOME}"; then
+    # Pre-configured machine: pull latest changes to get fresh backup files.
+    # Uses 'pull-safe' (not a bare 'pull --rebase') for 'with-retry' hang protection and
+    # a clean-working-tree guard, consistent with every other repo-sync path in this script.
+    _step_header 'Updating home repo'
+    info "Home repo already exists -- pulling latest changes"
+    configure_branch_tracking_for_origin "${HOME}"
+    if git -C "${HOME}" pull-safe; then
+      success "Successfully updated home repo"
+    else
+      _record_warning "Failed to pull home repo -- continuing with existing backup files"
+    fi
+  else
+    _step_header 'Cloning home repo'
+    local cloned_via=''
+
+    if is_non_zero_string "${keybase_repo_name}"; then
+      if command_exists keybase && _ensure_keybase_logged_in && clone_repo_into "$(_build_keybase_repo_url "${keybase_repo_name}")" "${HOME}"; then
+        cloned_via='keybase'
+        success "Successfully cloned home repo from Keybase"
       else
-        _record_warning "Failed to pull home repo -- continuing with existing backup files"
+        _record_warning 'Failed to clone home repo from Keybase -- will try encrypted-backup next if enabled'
       fi
-    elif clone_repo_into "$(_build_keybase_repo_url "${home_repo_name}")" "${HOME}"; then
-      # Vanilla OS: clone succeeded
-      # Reset ssh/gnupg permissions so git/gpg don't complain -- git checkout does not
-      # preserve the strict permission modes either needs, if they're tracked in the home repo.
+    fi
+
+    if is_zero_string "${cloned_via}" && is_non_zero_string "${encrypted_repo_name}"; then
+      # The Keychain-passphrase reminder for this step is printed much earlier, right
+      # after '.shellrc' is downloaded/sourced in main() -- see the comment there for why.
+      if call_ruby_utility "require 'encrypted_backup'; require 'env_vars'; exit(EncryptedBackup.clone_and_decrypt(encrypted_repo_name: EnvVars::ENCRYPTED_HOME_REPO_NAME, target_dir: EnvVars::HOME) ? 0 : 1)"; then
+        cloned_via='encrypted-backup'
+        # A bundle-based import ('git clone <bundle-file>') never creates an 'origin'
+        # remote at all (confirmed empirically: 'git remote get-url origin' errors
+        # "No such remote" immediately after) -- 'remote add' here, not 'remote set-url'
+        # (which requires the remote to already exist and would fail silently otherwise,
+        # since this line's own exit code isn't checked). If Keybase is ALSO configured
+        # (just failed/unavailable this run), it should still end up as 'origin' -- see
+        # the '_configure_backup_remote' calls below -- so claim 'origin2' directly here
+        # instead of 'origin', leaving 'origin' free for Keybase to claim.
+        local remote_name='origin'
+        if is_non_zero_string "${keybase_repo_name}"; then remote_name='origin2'; fi
+        git -C "${HOME}" remote add "${remote_name}" "encrypted-backup::${encrypted_repo_name}"
+        success "Successfully cloned home repo from encrypted backup"
+      else
+        _record_error 'Failed to clone home repo from encrypted backup'
+      fi
+    fi
+
+    if is_non_zero_string "${cloned_via}"; then
+      # Reset ssh/gnupg permissions so git/gpg don't complain -- both '.ssh' and '.gnupg'
+      # (including GPG private keys under .gnupg/private-keys-v1.d) are tracked in the home
+      # repo, and git checkout does not preserve the strict permission modes either needs.
       set_ssh_folder_permissions
       set_gnupg_folder_permissions
 
       # Fix /etc/hosts file to block facebook
       if is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts"; then sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts; fi
+    elif is_non_zero_string "${keybase_repo_name}" || is_non_zero_string "${encrypted_repo_name}"; then
+      _record_error 'Failed to clone home repo from any enabled backup mechanism'
     else
-      _record_error 'Failed to clone home repo'
+      info "Skipping cloning of home repo since neither '$(yellow 'KEYBASE_HOME_REPO_NAME')' nor '$(yellow 'ENCRYPTED_HOME_REPO_NAME')' env var has been set"
     fi
-  else
-    info "Skipping cloning of home repo since '$(purple 'KEYBASE_HOME_REPO_NAME')' was explicitly set to empty"
   fi
+
+  # Ensure remotes for both enabled mechanisms are present, whether the repo was just
+  # cloned above or already existed -- idempotent, safe to call every run.
+  if is_git_repo "${HOME}"; then
+    if is_non_zero_string "${keybase_repo_name}"; then
+      _configure_backup_remote "${HOME}" "$(_build_keybase_repo_url "${keybase_repo_name}")"
+    fi
+    if is_non_zero_string "${encrypted_repo_name}"; then
+      _configure_backup_remote "${HOME}" "encrypted-backup::${encrypted_repo_name}"
+    fi
+  fi
+
   step_end
 }
 
-# Clone the Keybase profiles repo (browser profiles)
+# Clones the browser-profiles repo (personal browser profile data) from whichever
+# backup mechanism(s) are enabled -- same Keybase-first, encrypted-backup-fallback
+# precedence as _clone_home_repo above.
 _clone_profiles_repo() {
   _current_section='Clone profiles repo'; _current_section_manual=1
   step_start
-  local profiles_repo_name="${KEYBASE_PROFILES_REPO_NAME:-profiles}"
-  _step_header "$(yellow 'Cloning') '$(cyan "${profiles_repo_name}")' repo"
-  if is_non_zero_string "${profiles_repo_name}" && is_non_zero_string "${PERSONAL_PROFILES_DIR}"; then
-    if ! clone_repo_into "$(_build_keybase_repo_url "${profiles_repo_name}")" "${PERSONAL_PROFILES_DIR}"; then
-      _record_error 'Failed to clone profiles repo'
-    fi
+
+  local keybase_repo_name="${KEYBASE_PROFILES_REPO_NAME:-}"
+  local encrypted_repo_name="${ENCRYPTED_PROFILES_REPO_NAME:-}"
+
+  if is_zero_string "${PERSONAL_PROFILES_DIR}"; then
+    info "Skipping cloning of profiles repo since '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
+  elif is_git_repo "${PERSONAL_PROFILES_DIR}"; then
+    configure_branch_tracking_for_origin "${PERSONAL_PROFILES_DIR}"
+    # This repo is periodically force-squashed by recreate-repository.rb, so it is not
+    # routinely pulled here the way the home repo is above -- see the
+    # pull.allowResetOnDivergedHistory config flag set below, which lets the 'pull'
+    # autoload function handle that safely if/when the user pulls it manually.
+    _step_header 'Profiles repo already exists -- skipping clone'
   else
-    info "Skipping cloning of profiles repo since either '$(purple 'KEYBASE_PROFILES_REPO_NAME')' was explicitly set to empty or '$(purple 'PERSONAL_PROFILES_DIR')' hasn't been set"
+    _step_header 'Cloning profiles repo'
+    local cloned_via=''
+
+    if is_non_zero_string "${keybase_repo_name}"; then
+      if command_exists keybase && _ensure_keybase_logged_in && clone_repo_into "$(_build_keybase_repo_url "${keybase_repo_name}")" "${PERSONAL_PROFILES_DIR}"; then
+        cloned_via='keybase'
+        success "Successfully cloned browser-profiles repo from Keybase"
+      else
+        _record_warning 'Failed to clone browser-profiles repo from Keybase -- will try encrypted-backup next if enabled'
+      fi
+    fi
+
+    if is_zero_string "${cloned_via}" && is_non_zero_string "${encrypted_repo_name}"; then
+      if call_ruby_utility "require 'encrypted_backup'; require 'env_vars'; exit(EncryptedBackup.clone_and_decrypt(encrypted_repo_name: EnvVars::ENCRYPTED_PROFILES_REPO_NAME, target_dir: EnvVars::PERSONAL_PROFILES_DIR) ? 0 : 1)"; then
+        cloned_via='encrypted-backup'
+        # See _clone_home_repo's matching comment -- a bundle-based import never
+        # creates an 'origin' remote at all, so 'remote add' (not 'remote set-url').
+        # If Keybase is ALSO configured, claim 'origin2' directly so Keybase can still
+        # claim 'origin' via the '_configure_backup_remote' calls below.
+        local remote_name='origin'
+        if is_non_zero_string "${keybase_repo_name}"; then remote_name='origin2'; fi
+        git -C "${PERSONAL_PROFILES_DIR}" remote add "${remote_name}" "encrypted-backup::${encrypted_repo_name}"
+        success "Successfully cloned browser-profiles repo from encrypted backup"
+      else
+        _record_error 'Failed to clone browser-profiles repo from encrypted backup'
+      fi
+    fi
+
+    if is_zero_string "${cloned_via}"; then
+      if is_non_zero_string "${keybase_repo_name}" || is_non_zero_string "${encrypted_repo_name}"; then
+        _record_error 'Failed to clone browser-profiles repo from any enabled backup mechanism'
+      else
+        info "Skipping cloning of profiles repo since neither '$(yellow 'KEYBASE_PROFILES_REPO_NAME')' nor '$(yellow 'ENCRYPTED_PROFILES_REPO_NAME')' env var has been set"
+      fi
+    fi
   fi
+
+  if is_git_repo "${PERSONAL_PROFILES_DIR}"; then
+    if is_non_zero_string "${keybase_repo_name}"; then
+      _configure_backup_remote "${PERSONAL_PROFILES_DIR}" "$(_build_keybase_repo_url "${keybase_repo_name}")"
+    fi
+    if is_non_zero_string "${encrypted_repo_name}"; then
+      _configure_backup_remote "${PERSONAL_PROFILES_DIR}" "encrypted-backup::${encrypted_repo_name}"
+    fi
+
+    # This repo is periodically force-squashed by recreate-repository.rb, so 'pull'
+    # (files/--XDG_CONFIG_HOME--/zsh/pull) needs to hard-reset instead of rebase when
+    # local and remote history have diverged with no common ancestor -- see
+    # KeybaseMigration.md. Opt-in via this per-repo config flag (idempotent, safe to
+    # set on every run) rather than a dedicated pull-browser-profiles.sh override
+    # script, which this replaced. Applies regardless of which backup mechanism(s) are
+    # configured -- the squashing itself is what causes the divergence, not the remote.
+    git -C "${PERSONAL_PROFILES_DIR}" config --local pull.allowResetOnDivergedHistory true
+  fi
+
   step_end
 }
 
@@ -686,7 +861,22 @@ main() {
 
   _setup_jio_dns
   _resolve_gh_username
+  _resolve_dotfiles_branch
   _download_and_source_shellrc
+
+  # Printed as early as possible (right after '.shellrc' is sourced, so 'user_action'
+  # is available and ENCRYPTED_*_REPO_NAME env vars are populated) rather than at the
+  # much-later 'Cloning repos' step -- this manual escape hatch is only needed if the
+  # interactive Keychain prompt inside EncryptedBackup.prompt_and_store_passphrase
+  # fails or can't run (e.g. no TTY), and by the time that step is reached (after
+  # xcode tools/homebrew/etc.) it is too late for the user to act on this in parallel
+  # with the rest of the install. Gated on the encrypted-backup env vars actually
+  # being set -- no point reminding someone who has disabled this mechanism entirely.
+  if is_non_zero_string "${ENCRYPTED_HOME_REPO_NAME:-}" || is_non_zero_string "${ENCRYPTED_PROFILES_REPO_NAME:-}"; then
+    user_action "The 'home'/'browser-profiles' repo clone steps later in this script read their encrypted-backup passphrase from the macOS Keychain -- you won't normally be prompted."
+    user_action "If that fails, run this in another terminal now (no need to wait): security add-generic-password -A -a \"\${USER}\" -s 'gpg-encrypted-backup' -w"
+  fi
+
   keep_sudo_alive
   _approve_fingerprint_sudo
   _ensure_filevault_is_on
@@ -797,36 +987,70 @@ main() {
   migrate_git_repo_to_reftable "${DOTFILES_DIR}"
   step_end
 
-  if command_exists keybase; then
-    step_start
-    _step_header "$(yellow 'Keybase') (optional, for encrypted preference backups)"
-    if call_ruby_utility "require 'keybase'; exit(Keybase.username ? 0 : 1)"; then
-      # Already logged in (from a previous run, or 'keybase login' run manually)
-      # -- sync silently every time, never re-ask. This is what makes re-running
-      # this idempotent script pleasant: once set up, it just stays set up.
-      _clone_home_repo
-      _clone_profiles_repo
-    elif is_first_install; then
-      # Not logged in yet -- attempt login only on the true first-time vanilla-OS
-      # bootstrap, non-interactively (no y/N gate). Re-runs on an already-configured
-      # machine must NOT re-litigate this every time (see the 'else' branch below) --
-      # that would turn a script designed to be safely re-run into one that blocks
-      # on a login attempt every single run.
-      if _ensure_keybase_logged_in; then
-        _clone_home_repo
-        _clone_profiles_repo
-      else
-        _record_warning 'Keybase login failed -- continuing without Keybase-based backups'
-      fi
-    else
-      # Pre-configured machine, not logged in, not FIRST_INSTALL: skip silently
-      # rather than prompting on every maintenance re-run.
-      info "Skipping Keybase setup -- not logged in. Run 'keybase login' manually, then re-run this script, to enable it."
-    fi
-    step_end
-  else
+  # Log into Keybase if KEYBASE_HOME_REPO_NAME/KEYBASE_PROFILES_REPO_NAME (see
+  # scripts/utilities/keybase.rb) enable it. Coexists with the encrypted-backup setup
+  # below -- see KeybaseMigration.md. This is a readiness/login step only; the actual
+  # clone attempt (which also calls _ensure_keybase_logged_in defensively) happens in
+  # _clone_home_repo/_clone_profiles_repo below.
+  _current_section='Setup Keybase'
+  step_start
+  section_header "$(yellow 'Setup Keybase')"
+  if is_zero_string "${KEYBASE_HOME_REPO_NAME:-}" && is_zero_string "${KEYBASE_PROFILES_REPO_NAME:-}"; then
+    debug "Neither 'KEYBASE_HOME_REPO_NAME' nor 'KEYBASE_PROFILES_REPO_NAME' env var is set -- skipping Keybase setup"
+  elif ! command_exists keybase; then
     info "Skipping Keybase setup since '$(yellow 'keybase')' is not installed"
+  elif call_ruby_utility "require 'keybase'; exit(Keybase.username ? 0 : 1)"; then
+    # Already logged in (from a previous run, or 'keybase login' run manually) --
+    # sync silently every time, never re-ask. This is what makes re-running this
+    # idempotent script pleasant: once set up, it just stays set up.
+    success 'Already logged into Keybase'
+  elif is_first_install; then
+    # Not logged in yet -- attempt login only on the true first-time vanilla-OS
+    # bootstrap, non-interactively (no y/N gate). Re-runs on an already-configured
+    # machine must NOT re-litigate this every time (see the 'else' branch below) --
+    # that would turn a script designed to be safely re-run into one that blocks
+    # on a login attempt every single run.
+    if _ensure_keybase_logged_in; then
+      success 'Successfully logged into Keybase'
+    else
+      _record_warning 'Keybase login failed -- continuing without Keybase-based backups'
+    fi
+  else
+    # Pre-configured machine, not logged in, not FIRST_INSTALL: skip silently
+    # rather than prompting on every maintenance re-run.
+    info "Skipping Keybase login -- not logged in. Run 'keybase login' manually, then re-run this script, to enable it."
   fi
+  step_end
+
+  # Verify encrypted-backup mechanism is ready (gpg installed, Keychain passphrase set --
+  # see scripts/utilities/encrypted_backup.rb). Coexists with Keybase above -- see
+  # KeybaseMigration.md. gnupg homedir permissions were already fixed earlier in
+  # main() (mirroring set_ssh_folder_permissions) -- no need to repeat that here.
+  _current_section='Setup encrypted backup'
+  step_start
+  section_header "$(yellow 'Setup encrypted backup')"
+  if is_zero_string "${ENCRYPTED_HOME_REPO_NAME:-}" && is_zero_string "${ENCRYPTED_PROFILES_REPO_NAME:-}"; then
+    debug "Neither 'ENCRYPTED_HOME_REPO_NAME' nor 'ENCRYPTED_PROFILES_REPO_NAME' env var is set -- skipping encrypted-backup setup"
+  elif command_exists 'setup-encrypted-backup.rb'; then
+    if setup-encrypted-backup.rb; then
+      success 'Encrypted backup is ready to use'
+    else
+      _record_warning 'Encrypted backup is not configured -- see instructions above'
+    fi
+  else
+    debug "setup-encrypted-backup.rb not found in PATH -- skipping encrypted backup setup"
+  fi
+  step_end
+
+  # Clone repos from whichever backup mechanism(s) are enabled (home and browser-profiles)
+  _current_section='Clone repos'
+  step_start
+  section_header "$(yellow 'Cloning repos')"
+
+  _clone_home_repo
+  _clone_profiles_repo
+
+  step_end
 
   if is_file "${HOME}/.ssh/known_hosts.old"; then rm -f "${HOME}/.ssh/known_hosts.old"; fi
 

@@ -384,6 +384,20 @@ node_modules/
 /.dropbox*/
 /.dvdcss/
 
+# GnuPG -- ignore everything by default, then explicitly un-ignore only the files/dirs
+# that are genuine backup-worthy content (private keys, revocation certs, public
+# keyring, trust databases, user config). Safer than blocklisting known-junk files one
+# at a time (PRNG seed, lock files, CRL cache, tool-managed keyrings like
+# asdf-nodejs.gpg) -- anything NEW gnupg or a plugin ever creates is ignored by default
+# instead of silently getting tracked until someone notices and adds it to a blocklist.
+/.gnupg/*
+!/.gnupg/gpg.conf
+!/.gnupg/pubring.kbx
+!/.gnupg/tofu.db
+!/.gnupg/trustdb.gpg
+!/.gnupg/private-keys-v1.d/
+!/.gnupg/openpgp-revocs.d/
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # FILES SYMLINKED FROM THE DOTFILES REPO — tracked there, not here

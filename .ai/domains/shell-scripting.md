@@ -827,8 +827,8 @@ git log --all --since="6 months ago" -S"function_name()" --oneline
 
 # 4. Search across all branches (not just current)
 for branch in $(git branch -a | grep -v HEAD); do
-  echo "=== $branch ==="
-  git grep "function_name" $branch -- '*.sh' '*.zsh' '*.rb' || true
+  echo "=== ${branch} ==="
+  git grep "function_name" "${branch}" -- '*.sh' '*.zsh' '*.rb' || true
 done
 
 # 5. Syntax check all files after deletion
@@ -1416,7 +1416,7 @@ load_file_if_exists "${cache}"
 # Resolves symlinks before comparison to ensure edits/upgrades to symlink targets
 # are detected (e.g., Homebrew binaries, dotfiles symlinked from the repo).
 # Uses the shell's built-in -nt (newer-than) test which compares modification times.
-# Common pattern: if is_file_older_than "$cache" "$source"; then regenerate_cache; fi
+# Common pattern: if is_file_older_than "${cache}" "${source}"; then regenerate_cache; fi
 #
 # Arguments:
 #   $1 - target file path (typically a cache file)
@@ -1607,8 +1607,8 @@ across both shells when touching code in this class.**
 | Construct | Bash behavior | Fix used in `.shellrc` |
 |---|---|---|
 | `${var:A}` (zsh absolute-path resolution) | Bash parses `:A` as substring-offset arithmetic; an undefined identifier like `A` evaluates to `0` in arithmetic context, so `${var:A}` == `${var:0}` == the original string, completely unresolved -- no symlink following, no absolute-path conversion, no error | `_resolve_absolute_path <varname> <path>` helper: zsh branch uses `${path:A}` directly (zero-fork); bash branch is a `readlink`-loop + `cd ... && pwd -P` (no dependency on GNU `readlink -f`/`realpath`, neither of which macOS ships by default) |
-| `path+=...` / `fpath+=...` (zsh's `$PATH`/`$FPATH`-tied special arrays) | Bash has no such tying -- `path`/`fpath` are just ordinary, unrelated variables there. `path+="/foo"` silently creates/appends to a scalar named `path`, never touching `$PATH` at all | `append_to_path_if_dir_exists`: bash branch manipulates `$PATH` directly with an idempotent `case` dedup check. `append_to_fpath_if_dir_exists` is a documented **intentional no-op** under bash -- bash has no `$FPATH`/function-autoloading concept at all, so there is nothing meaningful to fall back to |
-| `$EPOCHSECONDS` / `strftime` (zsh's `zsh/datetime` module) | Both are simply undefined under bash -- `${EPOCHSECONDS}` expands to an empty string (no error), and bare `strftime` is "command not found" (but only surfaces if stderr isn't redirected) | `_epoch_seconds <varname>` (zsh: `$EPOCHSECONDS`, zero-fork; bash: forks `date +%s`) and `_strftime <varname> <format> <epoch>` (zsh: `strftime -s`; bash: BSD `date -j -f '%s'`, since this codebase is macOS-only) |
+| `path+=...` / `fpath+=...` (zsh's `${PATH}`/`${FPATH}`-tied special arrays) | Bash has no such tying -- `path`/`fpath` are just ordinary, unrelated variables there. `path+="/foo"` silently creates/appends to a scalar named `path`, never touching `${PATH}` at all | `append_to_path_if_dir_exists`: bash branch manipulates `${PATH}` directly with an idempotent `case` dedup check. `append_to_fpath_if_dir_exists` is a documented **intentional no-op** under bash -- bash has no `${FPATH}`/function-autoloading concept at all, so there is nothing meaningful to fall back to |
+| `${EPOCHSECONDS}` / `strftime` (zsh's `zsh/datetime` module) | Both are simply undefined under bash -- `${EPOCHSECONDS}` expands to an empty string (no error), and bare `strftime` is "command not found" (but only surfaces if stderr isn't redirected) | `_epoch_seconds <varname>` (zsh: `${EPOCHSECONDS}`, zero-fork; bash: forks `date +%s`) and `_strftime <varname> <format> <epoch>` (zsh: `strftime -s`; bash: BSD `date -j -f '%s'`, since this codebase is macOS-only) |
 
 ### Class 2: Parses under bash, fails only at runtime (safe to guard with `is_zsh`)
 
@@ -1722,19 +1722,19 @@ triggers a macOS notification visible to the user even without a terminal:
 trap 'error "Script failed. Check the log for details."' ERR
 ```
 
-### ERR Trap -- `$LINENO` String Form vs Function Form
+### ERR Trap -- `${LINENO}` String Form vs Function Form
 
-When the ERR trap body calls a **function** (`trap my_handler ERR`), `$LINENO`
+When the ERR trap body calls a **function** (`trap my_handler ERR`), `${LINENO}`
 inside `my_handler` is the line *within the handler*, not the failing command's
-line. To capture the failing line, use a **string trap** and pass `$LINENO` as
+line. To capture the failing line, use a **string trap** and pass `${LINENO}` as
 an argument before the function call -- the string is evaluated in the failing
 command's scope:
 
 ```zsh
-# BAD -- $LINENO inside _cleanup_and_exit is the handler's own line, not the failing line
+# BAD -- ${LINENO} inside _cleanup_and_exit is the handler's own line, not the failing line
 trap _cleanup_and_exit ERR
 
-# Good -- $LINENO expands in the failing command's scope before _cleanup_and_exit is called
+# Good -- ${LINENO} expands in the failing command's scope before _cleanup_and_exit is called
 trap '_cleanup_and_exit "${LINENO}"' ERR
 
 # _cleanup_and_exit then accepts it as $1:
@@ -1749,13 +1749,13 @@ _cleanup_and_exit() {
 ```
 
 This rule applies whether `set -E` is active or not. With `set -E`, the trap
-fires in the scope of the failing helper function -- `$LINENO` in the string
+fires in the scope of the failing helper function -- `${LINENO}` in the string
 trap correctly reports that helper's line.
 
 **Debugging misleading line numbers:** ERR trap line numbers can be misleading when:
 1. **Subprocess failures**: A Ruby/Python script called from shell exits non-zero, triggering
    the trap at the script invocation line, not the actual failure inside the subprocess
-2. **Function call failures**: A function deep in the call stack fails, but `$LINENO` reports
+2. **Function call failures**: A function deep in the call stack fails, but `${LINENO}` reports
    the line where the outermost function was called
 3. **At-exit hook failures**: Ruby `at_exit` hooks that raise or call `exit(1)` cause the
    parent shell to receive non-zero exit code after the script body completes successfully
@@ -2033,7 +2033,7 @@ CALLER_SCRIPT="${0:t}" exec "${0:a:h}/db-dump-common.sh" --project foo "$@"
 ```
 
 - `${0:a:h}` -- absolute path of this script's directory; finds the common
-  script portably even if `$PATH` does not include the directory.
+  script portably even if `${PATH}` does not include the directory.
 - `CALLER_SCRIPT="${0:t}"` -- passes the wrapper's own filename into the common
   script's environment so `usage()` displays the correct name.
 - `exec` -- replaces the wrapper process entirely; no fork, no return path.
@@ -2148,11 +2148,11 @@ Based on code review patterns and debugging sessions, here are the most common m
    }
    ```
 
-9. **ERR trap with function handler loses `$LINENO`** → Use string form
+9. **ERR trap with function handler loses `${LINENO}`** → Use string form
    ```zsh
-   # BAD - $LINENO is handler's line, not failing line
+   # BAD - ${LINENO} is handler's line, not failing line
    trap _cleanup_and_exit ERR
-   # Good - capture $LINENO in string before function call
+   # Good - capture ${LINENO} in string before function call
    trap '_cleanup_and_exit "${LINENO}"' ERR
    ```
 

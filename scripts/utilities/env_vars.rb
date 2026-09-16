@@ -73,12 +73,32 @@ module EnvVars
   # ---------------------------------------------------------------------------
 
   # Current user's login name.
-  # Mirrors: $USER (always set by the shell)
+  # Mirrors: ${USER} (always set by the shell)
   USER = ENV.fetch('USER', ENV.fetch('USERNAME', '')).freeze
 
   # Current user's default shell.
-  # Mirrors: $SHELL (always set by the shell)
+  # Mirrors: ${SHELL} (always set by the shell)
   SHELL = ENV.fetch('SHELL', '/bin/zsh').freeze
+
+  # Keybase repository names (used with the Keybase backup mechanism, see
+  # scripts/utilities/keybase.rb). nil (unset/empty in .shellrc) means Keybase support is
+  # not enabled for that repo -- comment out the export in .shellrc to disable it entirely.
+  # Mirrors: export KEYBASE_HOME_REPO_NAME='home'
+  KEYBASE_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_HOME_REPO_NAME', nil))
+
+  # Mirrors: export KEYBASE_PROFILES_REPO_NAME='profiles'
+  KEYBASE_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_PROFILES_REPO_NAME', nil))
+
+  # Encrypted git repo names (used with the encrypted-backup mechanism, see
+  # scripts/utilities/encrypted_backup.rb). nil (unset/empty in .shellrc) means this
+  # mechanism is not enabled for that repo -- comment out the export in .shellrc to
+  # disable it entirely. Coexists with Keybase above -- both can be enabled at once
+  # (see KeybaseMigration.md).
+  # Mirrors: export ENCRYPTED_HOME_REPO_NAME='home'
+  ENCRYPTED_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('ENCRYPTED_HOME_REPO_NAME', nil))
+
+  # Mirrors: export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
+  ENCRYPTED_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('ENCRYPTED_PROFILES_REPO_NAME', nil))
 
   # ---------------------------------------------------------------------------
   # Path variables (Pathname objects)
@@ -135,7 +155,7 @@ module EnvVars
   ).expand_path.freeze
 
   # Temporary directory for transient files.
-  # Mirrors: $TMPDIR (set by macOS, falls back to /tmp on other systems)
+  # Mirrors: ${TMPDIR} (set by macOS, falls back to /tmp on other systems)
   # Used for cron backups, cache invalidation markers, etc.
   TMPDIR = Pathname.new(ENV.fetch('TMPDIR', '/tmp')).expand_path.freeze
 
@@ -176,9 +196,10 @@ module EnvVars
   # Non-path variables (String objects)
   # ---------------------------------------------------------------------------
 
-  # Dotfiles repository branch name.
-  # Mirrors: export DOTFILES_BRANCH (default: master)
-  DOTFILES_BRANCH = ENV.fetch('DOTFILES_BRANCH', 'master').freeze
+  # Note: There is no DOTFILES_BRANCH constant here (mirrors the absence of GH_USERNAME).
+  # Both are shell-only, bootstrap-transient values used solely by
+  # fresh-install-of-osx.sh's own _resolve_gh_username/_resolve_dotfiles_branch --
+  # nothing in Ruby ever needs either one.
 
   # ---------------------------------------------------------------------------
   # Runtime flags and temporary operation variables (evaluated dynamically)

@@ -1086,8 +1086,8 @@ git log --all --since="6 months ago" -S"def method_name" --oneline
 
 # 4. Search across all branches (not just current)
 for branch in $(git branch -a | grep -v HEAD); do
-  echo "=== $branch ==="
-  git grep "method_name" $branch -- '*.rb' '*.sh' || true
+  echo "=== ${branch} ==="
+  git grep "method_name" "${branch}" -- '*.rb' '*.sh' || true
 done
 
 # 5. Syntax check all files after deletion
@@ -1678,7 +1678,7 @@ system(RbConfig.ruby, capture_prefs_script.to_s, '-e')
 
 **Why `RbConfig.ruby` matters:**
 - `/usr/bin/ruby` is system Ruby 2.6 (macOS default)
-- Homebrew Ruby (if installed) may be in `$PATH` and used by shebangs
+- Homebrew Ruby (if installed) may be in `${PATH}` and used by shebangs
 - `RbConfig.ruby` returns the path to the **currently running** interpreter
 - Child script uses same version/environment as parent (consistent behavior)
 
@@ -2290,7 +2290,7 @@ end
 - Qualified calls work everywhere: module methods, class methods, instance methods
 
 **This rule applies to ALL files in `scripts/utilities/`** including:
-- Modules with `extend self` (cron.rb, keybase.rb, antidote.rb, collection_processor.rb, etc.)
+- Modules with `extend self` (cron.rb, keybase.rb, encrypted_backup.rb, antidote.rb, collection_processor.rb, etc.)
 - Classes (cli_parser.rb's Parser class, etc.)
 - Any other code structures
 
@@ -2558,7 +2558,7 @@ After replacing file reading calls, verify syntax:
 
 Test in cron-like environment (minimal locale):
 ```bash
-env -i HOME=$HOME USER=$USER /usr/bin/ruby path/to/script.rb
+env -i HOME="${HOME}" USER="${USER}" /usr/bin/ruby path/to/script.rb
 ```
 
 ## Memoization

@@ -154,7 +154,7 @@
     [ -n \"${expire}\" ] || expire=1.week.ago; \
     git -C \"${dir}\" size; \
     git -C \"${dir}\" for-each-ref --format='delete %(refname)' refs/prefetch/ | git -C \"${dir}\" update-ref --stdin 2>/dev/null || true; \
-    git -C \"${dir}\" remote prune origin; \
+    git -C \"${dir}\" remote | while IFS= read -r r; do git -C \"${dir}\" remote prune \"${r}\"; done; \
     git -C \"${dir}\" worktree prune; \
     git -C \"${dir}\" pack-refs --all; \
     git -C \"${dir}\" repack -a -d -F --depth=250 --window=250; \
@@ -622,10 +622,16 @@
     if [ \"${progress_path}\" = '-' ]; then progress_path=''; fi; \
     hard_cap_secs=$((timeout_secs * 10)); \
     shift 4; \
+    quiet=0; \
+    for arg in \"$@\"; do case \"${arg}\" in -q|--quiet) quiet=1 ;; esac; done; \
     attempt=1; \
     while [ \"${attempt}\" -le \"${max_attempts}\" ]; do \
       printf 'Attempt %s/%s (timeout %ss): %s\n' \"${attempt}\" \"${max_attempts}\" \"${timeout_secs}\" \"$*\" >&2; \
-      \"$@\" >/dev/null 2>\"${stderr_file}\" & \
+      if [ \"${quiet}\" -eq 1 ]; then \
+        \"$@\" >/dev/null 2>\"${stderr_file}\" & \
+      else \
+        \"$@\" & \
+      fi; \
       pid=$!; \
       waited=0; \
       elapsed=0; \
@@ -705,17 +711,15 @@
       git -C \"${dir}\" remote set-branches \"${remote}\" '*'; \
     done && \
     promisor_remote=''; \
+    rest_remotes=''; \
     for remote in $(git -C \"${dir}\" remote); do \
       if [ -z \"${promisor_remote}\" ] && [ \"$(git -C \"${dir}\" config --get \"remote.${remote}.promisor\" 2>/dev/null)\" = 'true' ]; then \
         promisor_remote=\"${remote}\"; \
+      else \
+        rest_remotes=\"${rest_remotes} ${remote}\"; \
       fi; \
     done; \
-    remotes_ordered=\"${promisor_remote}\"; \
-    for remote in $(git -C \"${dir}\" remote); do \
-      if [ \"${remote}\" != \"${promisor_remote}\" ]; then \
-        remotes_ordered=\"${remotes_ordered} ${remote}\"; \
-      fi; \
-    done; \
+    remotes_ordered=\"${promisor_remote}${rest_remotes}\"; \
     for remote in ${remotes_ordered}; do \
       printf 'Fetching %s\n' \"${remote}\"; \
       fetch_cmd='fetch'; \

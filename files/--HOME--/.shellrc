@@ -86,24 +86,43 @@ fi
 # will leave it unset in all shells started after the next login, which will cause
 # any alias, script, or operation that depends on it to be silently skipped.
 #
-# Note: There is no GH_USERNAME or KEYBASE_USERNAME declared below. Neither
-# needs to be pre-configured in a fork:
+# Note: There is no GH_USERNAME, DOTFILES_BRANCH, or KEYBASE_USERNAME declared
+# below. None of these need to be pre-configured in a fork:
 # - GH_USERNAME is only needed transiently by the bootstrap one-liner (see
 #   Adoption.md Phase 3.2) to know which fork to clone. Re-runs of
 #   fresh-install-of-osx.sh on an already-cloned machine derive it automatically
 #   from '${DOTFILES_DIR}'s git remote.
-# - KEYBASE_USERNAME (Keybase is optional, for encrypted preference backups) is
+# - DOTFILES_BRANCH (which branch to bootstrap from -- see Advanced.md § 5.6 for
+#   testing a non-master branch) is only needed transiently by the same bootstrap
+#   one-liner, for the same reason -- re-runs derive it automatically from
+#   '${DOTFILES_DIR}'s currently checked-out branch, defaulting to 'master' if
+#   that can't be determined (e.g. the repo doesn't exist yet).
+# - KEYBASE_USERNAME (Keybase is optional, for encrypted preference backups, and can
+#   coexist with the encrypted-backup mechanism below -- see KeybaseMigration.md) is
 #   decided interactively during fresh-install-of-osx.sh (login prompt), and the
 #   active username is derived from 'keybase status' wherever it's needed (see
 #   Keybase.username in scripts/utilities/keybase.rb) -- whoever logs in owns
 #   the account, so there's nothing to keep in sync here.
 
+# ------------ Customizable env vars (MUST BE CHANGED to your values) ------------
+# Both backup mechanisms below can be enabled at once (see KeybaseMigration.md) --
+# comment out (or leave unset) either group's exports to disable that mechanism
+# entirely for that repo. Username is never stored for Keybase -- Keybase.username
+# derives it live from 'keybase status', since whoever is logged in owns the account.
+
+# Keybase repo names (comment out to disable Keybase entirely).
+export KEYBASE_HOME_REPO_NAME='home'
+export KEYBASE_PROFILES_REPO_NAME='profiles'
+
+# Encrypted git repo names (plain public GitHub repos holding the gpg-encrypted git-bundle
+# blob, see scripts/utilities/encrypted_backup.rb). Comment out to disable this mechanism.
+export ENCRYPTED_HOME_REPO_NAME='home'
+export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
+# --------------------------------------------------------------------------------
+
 # ---------- Env vars for basic/common setup (can be optionally changed) ---------
 # This repo is cloned into this location
 export DOTFILES_DIR="${XDG_CONFIG_HOME}/dotfiles"
-
-# Branch name of the dotfiles repo that's to be used for testing PR changes before merging
-export DOTFILES_BRANCH='master'
 
 # All development codebases are cloned into a subfolder of this folder
 export PROJECTS_BASE_DIR="${HOME}/dev"
@@ -1776,6 +1795,30 @@ migrate_git_repo_to_reftable() {
 # --single-branch for fast initial clone. All repos (new and existing) are converted
 # to full clones asynchronously via background 'git unshallow' job after the main
 # operation completes. Always updates submodules afterwards.
+#
+# Ensures the current branch tracks 'origin', setting it directly via 'git config'
+# (not 'git branch --set-upstream-to', which requires a prior fetch). No-op if
+# already configured. Usage: configure_branch_tracking_for_origin <target-folder>
+configure_branch_tracking_for_origin() {
+  local target_folder="${1:?}"
+  local branch
+  branch="$(git -C "${target_folder}" branch --show-current)"
+  if is_zero_string "${branch}"; then
+    return 0
+  fi
+  if git -C "${target_folder}" config --get "branch.${branch}.remote" &>/dev/null; then
+    return 0
+  fi
+  git -C "${target_folder}" config "branch.${branch}.remote" origin
+  git -C "${target_folder}" config "branch.${branch}.merge" "refs/heads/${branch}"
+}
+
+# No encryption/decryption logic lives here, deliberately -- see the "Why this logic
+# lives here and NOT inside clone_repo_into" note in scripts/utilities/encrypted_backup.rb
+# for the reasoning (single responsibility, shell-vs-Ruby layer boundary, and keeping this
+# function's bundle-import support generic/reusable for both the encrypted-backup and
+# resurrect-repositories.rb use cases).
+#
 # Usage: clone_repo_into <repo-url> <target-folder> [branch] [bundle-file]
 clone_repo_into() {
   local start_time
@@ -1999,6 +2042,10 @@ clone_repo_into() {
       if [[ "${bundle_origin}" == "${bundle_file}" ]]; then
         git -C "${target_folder}" remote remove origin
       fi
+      # Callers always re-add a real 'origin' afterward (see comment above) -- tracking
+      # only references the remote NAME, not its URL, so this is safe to set up now.
+      # Without it, a bare 'git pull' fails with "no tracking information".
+      configure_branch_tracking_for_origin "${target_folder}"
       success "Successfully imported bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")'"
     else
       success "Successfully cloned '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
@@ -2025,7 +2072,23 @@ clone_repo_into() {
   # ('maintain') is a reliable proxy for all four, since they all live in the same config
   # file -- skip this whole block in that case; every subsequent call (this repo once
   # install-dotfiles.rb has run, or any other repo) runs it normally.
-  if git config --get alias.maintain &>/dev/null; then
+  #
+  # SKIP_POST_CLONE_MAINTENANCE opts out of this entire block regardless of alias
+  # availability -- for ephemeral/disposable repos that gain nothing from it (e.g. the
+  # encrypted-backup wrapper repo at ${XDG_CACHE_HOME}/encrypted-backups/<name>, which
+  # holds nothing but a handful of small chunk files replaced wholesale on every push --
+  # see EncryptedBackup._ensure_wrapper_repo). This is not just a wasted-cost optimization:
+  # 'unshallow' internally calls 'fo' (with-retry-wrapped fetch), and the full
+  # migrate+unshallow+maintain+siu chain can take longer than an *outer* with-retry call
+  # wrapping this whole clone_repo_into invocation is willing to wait for -- observed in
+  # practice as a false-positive stall-kill (SIGKILL) of the outer 'git-remote-encrypted-
+  # backup' helper process well after the actual clone had already succeeded, because the
+  # outer with-retry's progress-path (the real target repo's OWN '.git/objects', e.g.
+  # browser-profiles', not the wrapper repo's) sees zero growth during this entire
+  # wrapper-repo-only maintenance phase.
+  if is_non_zero_string "${SKIP_POST_CLONE_MAINTENANCE:-}"; then
+    debug "SKIP_POST_CLONE_MAINTENANCE set -- skipping post-clone maintenance for '$(yellow "${target_folder}")'"
+  elif git config --get alias.maintain &>/dev/null; then
     # Migrate to reftable format BEFORE background unshallow to avoid race conditions.
     # Migrating refs while unshallow is fetching history could cause lock contention or
     # corrupted refs. Migration must complete before any background ref writes begin.

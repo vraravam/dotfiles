@@ -4,6 +4,45 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 3.2.51
+
+:white_check_mark: Tested on a vanilla macOS machine
+
+#### Expose the gpg+git-bundle encrypted backup as a real git remote via a custom helper; resurrect Keybase so both mechanisms can coexist, gated by env var presence
+
+* *[scripts/git-remote-encrypted-backup]* New custom git remote helper (`man gitremote-helpers`) implementing `capabilities`/`list`/`list for-push`/`fetch`/`push`/`option`, so plain `git push`/`git pull`/`git fetch` work directly against a `encrypted-backup::<repo-name>` URL -- no wrapper script, no manual bundle/encrypt/decrypt steps. Handles `option verbosity <n>`/`option progress {true|false}` (any other option correctly replies `unsupported` per spec) and threads the result through as a `quiet:` flag to `EncryptedBackup.bundle_and_push`/`fetch_and_list_bundle_refs`, so `git push -q`/`--quiet` suppresses `git bundle create`/`unbundle`'s progress meter and the default (verbosity 1) forces it on explicitly rather than relying on tty auto-detection (which was empirically producing no output at all in this remote-helper's plumbing). Redirects its own stdout to stderr for the duration of every `EncryptedBackup` call (a real `IO#reopen` fd-level redirect, covering subprocess output too) so nothing but the intended wire-protocol bytes ever reaches git on the actual stdout stream.
+* *[scripts/utilities/encrypted_backup.rb]* `bundle_and_push`/`fetch_and_list_bundle_refs` are now the routine push/pull path (called by the remote helper above), replacing the old `export_and_push`/`fetch_and_rebase` methods (removed, along with their private rebase helpers) and the `push-<basename>.sh`/`pull-<basename>.sh` wrapper scripts (deleted -- `push-vijay.sh`, `push-browser-profiles.sh`, `pull-vijay.sh`, `pull-browser-profiles.sh`). `git bundle create`/`unbundle` now stream live (`CommandUtils.run_interactive` instead of `Open3.capture3`) instead of buffering silently for the multi-minute duration a large repo (500MB+) can take -- `git bundle list-heads` stays captured since its output must be parsed. Fixed a real argument-order bug found while testing this: `--quiet`/`--progress` must precede `<file>` in `git bundle create`/`unbundle`'s own argument syntax -- placing it after (alongside `--all`) makes git misparse it as a rev-list argument and fail with "unrecognized argument".
+* *[scripts/utilities/encrypted_backup.rb]* `CHUNK_SIZE_BYTES` reduced from 90MB to 45MB, found via real-world usage: chunks between 50MB-100MB still push successfully (under GitHub's hard 100MB per-file limit), but GitHub's pre-receive hook prints a "GH001: Large files detected... this is larger than GitHub's recommended maximum file size of 50.00 MB" warning on every such push -- non-fatal, but reads exactly like a failure. 45MB keeps every chunk comfortably under the 50MB soft threshold too, eliminating the warning entirely.
+* *[scripts/utilities/git_processor.rb]* Added `pull_or_reset(remote:, allow_reset_on_diverged_history:)` -- a generic (not encryption-specific) fetch-then-rebase-or-reset primitive: rebases when there's a common ancestor, hard-resets when history has diverged with none (e.g. after a force-squash), and correctly still reports genuine rebase conflicts as failures rather than blindly resetting over them.
+* *[files/--XDG_CONFIG_HOME--/zsh/pull]* `_pull()` now tries a normal `with-retry`-protected `git pull` first (unchanged); only on failure does it check the repo's own `pull.allowResetOnDivergedHistory` git config flag, and only if `true` falls back to `GitProcessor#pull_or_reset(allow_reset_on_diverged_history: true)`. Replaces the deleted `pull-browser-profiles.sh` wrapper for that one repo's routine squash-then-diverge situation.
+* *[scripts/utilities/keybase.rb, spec/utilities/keybase_spec.rb]* Restored (Keybase login/repo-create/delete/recreate helpers, and their test suite) -- Keybase is not being deprecated after all; it now coexists with the encrypted backup above as a second, fully independent backup mechanism. `Keybase.username` still derives identity live from `keybase status`, so there is nothing to pre-configure beyond the two repo-name env vars below.
+* *[scripts/utilities/env_vars.rb, files/--HOME--/.shellrc]* Both mechanisms are now opt-in per repo, gated purely on env var presence: `KEYBASE_HOME_REPO_NAME`/`KEYBASE_PROFILES_REPO_NAME` and `ENCRYPTED_HOME_REPO_NAME`/`ENCRYPTED_PROFILES_REPO_NAME` all default to `nil` in `EnvVars` (no fallback string) -- commenting out (or unsetting) either pair in `.shellrc` disables that mechanism entirely for that repo. Both pairs are exported (uncommented, active) by default in `.shellrc`, and can be enabled simultaneously so a repo backs up to both.
+* *[files/--HOME--/Brewfile]* The `keybase` cask (with its `postinstall:` login-item + CLI-symlink setup) is now conditional on `KEYBASE_HOME_REPO_NAME`/`KEYBASE_PROFILES_REPO_NAME` being set (`keybase_enabled` local, reads `ENV` directly since `brew bundle` inherits the invoking shell's exported environment) instead of always being installed.
+* *[scripts/fresh-install-of-osx.sh]* `_ensure_keybase_logged_in`/`_build_keybase_repo_url` restored, and the Keybase cask's CLI-symlink safety net back in `_install_homebrew`. `_configure_encrypted_backup_remote` generalized into `_configure_backup_remote(target_folder, remote_url)` -- a single `origin`-or-`origin2` helper shared by both mechanisms, so either (or both) can be configured on the same repo without fanning into an existing remote's push URLs. `_clone_home_repo`/`_clone_profiles_repo` rewritten to try Keybase first, then the encrypted backup as a fallback (or the only option if Keybase isn't enabled) -- whichever succeeds performs the actual clone, and the other mechanism (if also enabled) is added as an additional remote rather than cloned from again. Fixed a real bug caught by an end-to-end scratch test of this rewrite: a bundle-based encrypted-backup clone leaves **no `origin` remote at all** (confirmed empirically -- `git remote get-url origin` errors "No such remote" immediately after the import; an earlier draft of this fix incorrectly assumed a "bogus path" value and used `remote set-url`, which fails when the remote doesn't exist yet and would have silently left `origin` unconfigured, since that line's exit code wasn't checked) -- now uses `remote add` instead, verified working. Added a parallel "Setup Keybase" step (login, gated on the `KEYBASE_*_REPO_NAME` vars) alongside the existing "Setup encrypted backup" step (now also gated on its own vars instead of always running). Moved the Keychain-passphrase setup reminder from deep inside `_clone_home_repo` to right after `.shellrc` is downloaded in `main()` (only printed when the encrypted-backup vars are set), so users have the full run time to act on it in parallel instead of hitting it cold partway through.
+* *[scripts/recreate-repository.rb]* Force-squash-and-push now loops over every configured remote (via `GitProcessor#each_remote`) and force-pushes each individually, instead of only ever pushing to `origin`. A `keybase://` remote is special-cased using the restored `Keybase` module: `Keybase.ensure_logged_in` is checked for every keybase:// remote *before* any destructive local operation (so a login failure is caught before history is squashed away with nowhere to push it), then `Keybase.recreate_repo` explicitly deletes and recreates the repo (rather than relying on push-time auto-creation) before the force-push. Every other remote is just force-pushed directly.
+* *[scripts/fresh-install-of-osx.sh, files/--HOME--/.shellrc, scripts/utilities/env_vars.rb]* `DOTFILES_BRANCH` no longer needs to be pre-configured in a fork, mirroring `GH_USERNAME`'s existing pattern -- and confirmed to work identically regardless of which backup mechanism(s) are enabled, since it's entirely about `${DOTFILES_DIR}` (the dotfiles repo itself), unrelated to `${HOME}`/`browser-profiles`. Added `_resolve_dotfiles_branch()`: uses the explicitly-exported value if set (the bootstrap one-liner), otherwise derives it from `${DOTFILES_DIR}`'s currently checked-out branch if the repo already exists locally, otherwise falls back to `'master'` (unlike `GH_USERNAME`, which has no safe default and errors out if unresolvable -- `master` is universally correct for anyone who hasn't deliberately switched branches). Removed the now-dead `export DOTFILES_BRANCH='master'` from `.shellrc` and the unused `EnvVars::DOTFILES_BRANCH` constant (confirmed zero Ruby callers, matching `GH_USERNAME`'s equivalent absence from `env_vars.rb`). `Advanced.md` § 5.6 updated to drop the now-obsolete "edit `.shellrc`" step for testing a branch.
+* *[scripts/utilities/cron.rb]* Fixed a real, pre-existing bug in `with_cron_suspended` found while reviewing the change above (which added another `return false unless ...` inside the suspended block, the same pattern that already existed in this file for the single-remote Keybase check): the method's own doc comment claimed cron was "restored via an ensure clause", but the actual implementation used a bare `begin/rescue StandardError`, which does **not** catch a non-local `return` from inside the yielded block (confirmed empirically -- `return` unwinds the stack without raising, so it never reaches `rescue`) -- meaning any early `return false` inside `recreate-repository.rb`'s force-mode block (both the pre-existing Keybase check and the new multi-remote one) left cron suspended indefinitely, with no path to ever resume it. Rewritten to use a real `ensure` clause (extracting the success-path cleanup into a separate private method specifically so no `return` statement ends up textually inside the `ensure` block itself, which would silently swallow an in-flight exception -- a classic Ruby gotcha). Verified all four cases empirically against the real module (normal completion, non-local return, exception, dry-run).
+* *[scripts/utilities/core.rb]* Added `tty_available?` (checks `/dev/tty` directly), distinct from the existing `running_in_tty?` (checks `$stdout.tty?`). Used by `EncryptedBackup.prompt_and_store_passphrase` so the interactive Keychain-passphrase prompt still fires correctly when stdout is piped through `tee` (the documented `curl | zsh 2>&1 | tee ...` bootstrap one-liner) -- `/dev/tty` refers to the real controlling terminal regardless of stdout/stderr redirection. Proactively setting the passphrase beforehand (Adoption.md § 3.2) remains the recommended approach; this is a fallback for anyone who forgets that step.
+* *[scripts/utilities/macos.rb, scripts/data/capture-prefs-allowed-list.txt, scripts/osx-defaults.sh, files/--ZDOTDIR--/.aliases]* Restored the remaining Keybase references removed earlier on this branch: the `Keybase` login-item entry, the `keybase.Electron` preferences-capture allow-list entry, the `Keybase` `osx-defaults.sh` preferences block, and the `kbgc` (`keybase git gc`) alias helper.
+* *[scripts/migrate-repo-to-encrypted-backup.rb]* Deleted -- adding the encrypted backup to a repo is now just `git remote add` + `git push` (see `_configure_backup_remote` above and `KeybaseMigration.md`), no dedicated migration script needed.
+* *[files/--HOME--/custom.gitignore]* Redesigned the `.gnupg/` section from a blocklist (only the PRNG seed was ever added this way) to a whitelist: `/.gnupg/*` ignores everything by default, with explicit `!` un-ignores for only the genuine backup-worthy content (`gpg.conf`, `pubring.kbx`, `tofu.db`, `trustdb.gpg`, `private-keys-v1.d/`, `openpgp-revocs.d/`). Matches the same ignore-all-then-whitelist pattern already used for `.local/state/` elsewhere in this file. Safer against anything new gnupg or a plugin ever creates (lock files, the CRL cache, tool-managed keyrings like `asdf-nodejs.gpg`) -- it's ignored by default instead of silently getting tracked until someone notices.
+* *[KeybaseMigration.md]* Renamed from `KEYBASE_MIGRATION.md` to match this repo's own PascalCase convention for custom guide docs (`Adoption.md`, `Advanced.md`, `Extras.md`, `TechnicalDeepDive.md`) -- `README.md`/`CHANGELOG.md`/`CONTRIBUTING.md`/`AGENTS.md` are the only root docs that stay ALL-CAPS, since those are GitHub/tooling-recognized special filenames. New guide covering the whole mechanism: overview and security comparison against Keybase, one-time-per-machine setup, adding the backup to a repo, day-to-day usage (including the `origin`/`origin2` separation and its practical implications), vanilla-OS fresh install, troubleshooting, and Q&A.
+* *[Adoption.md, TechnicalDeepDive.md, Extras.md, README.md, .github/copilot-instructions.md, .ai/domains/fresh-install.md, .ai/domains/logging-conventions.md, .ai/domains/ruby-scripting.md, .ai/domains/script-depth-tracking.md]* Updated every reference that previously described Keybase as removed/deprecated (from earlier work on this branch, before the resurrection above) -- restored mentions of `scripts/utilities/keybase.rb`, the `kbgc` alias, and `keybase`/`gpg` as sibling example tools, and rewrote the doc sections describing the old "encrypted-backup replaces Keybase" narrative to describe the actual "both are opt-in and can coexist" design. Removed the now-deleted `migrate-repo-to-encrypted-backup.rb`'s `Extras.md` entry and fixed `recreate-repository.rb`'s force-mode description to match its actual multi-remote/`Keybase.recreate_repo` behavior.
+* *[Adoption.md]* Fixed a genuine sequencing bug found while reviewing the above: § 2.3.C told readers to run `setup-encrypted-backup.rb` to set the Keychain passphrase, but that script ships inside the dotfiles repo, which hasn't been cloned yet at that point in the guide (§ 2.3 happens entirely before Phase 3's bootstrap clone) -- replaced with the raw `security add-generic-password` command that actually works there, matching what § 3.2 already correctly showed. Added a manual `https://github.com/new` fallback for the `gh repo create` step (no `gh` CLI exists yet on a genuinely vanilla machine either). Also added the previously-missing "old machine" half of the setup: § 1.4 (Phase 1, existing-machine export) now shows the actual `git init`/`git remote add`/`git push` commands needed to create the Keybase and/or encrypted-backup remote(s) *before* Phase 3 can restore from them on the new machine -- previously it only showed a bare `git push` with no remote ever configured. Every step in both sections is now explicitly labeled by which machine (old/existing vs new/target) it runs on.
+
+#### Adopting these changes
+
+* Review `.shellrc`'s new `KEYBASE_HOME_REPO_NAME`/`KEYBASE_PROFILES_REPO_NAME`/`ENCRYPTED_HOME_REPO_NAME`/`ENCRYPTED_PROFILES_REPO_NAME` exports -- comment out whichever mechanism(s) you don't want; both are active by default.
+* To add the encrypted backup to an existing repo, see `KeybaseMigration.md`'s "Adding Encrypted Backup to a Repo" section (just `git remote add` + `git push`, no script to run).
+* One-time-per-machine: run `setup-encrypted-backup.rb` (or `security add-generic-password -A -a "${USER}" -s 'gpg-encrypted-backup' -w` directly) to store the backup passphrase in the Keychain -- see `KeybaseMigration.md` for the full explanation of why this doesn't sync via iCloud Keychain and must be repeated per machine.
+* Restart Terminal/iTerm to reload the `pull`/`kbgc` autoload functions and pick up `.shellrc`'s new env vars.
+* If you'd customized `DOTFILES_BRANCH` in your own `.shellrc` (e.g. for testing a branch), that export is now a no-op there -- see `Advanced.md` § 5.6 for the new way to do this (export it in the bootstrap command, or just `git checkout <branch>` locally in `${DOTFILES_DIR}`).
+* Run `brew bundle install` if you want the `keybase` cask (re)installed/removed to match your `KEYBASE_*_REPO_NAME` settings.
+* Run `ruby scripts/install-dotfiles.rb` to propagate the `custom.gitignore` whitelist redesign into `~/.gitignore`.
+* If your own `${HOME}` repo already tracks now-ignored `.gnupg/` junk from before this whitelist redesign (e.g. `asdf-nodejs.gpg`, `crls.d/DIR.txt`), untrack it manually: `git -C ~ rm --cached .gnupg/asdf-nodejs.gpg .gnupg/crls.d/DIR.txt` (check `git -C ~ ls-files .gnupg/` first to confirm what, if anything, still needs it in your own repo).
+
+---
+
 ### 3.2.49
 
 #### Reduce subprocess forks in starship's git prompt segments and zsh startup; fix a latent ahead/behind detection bug
@@ -57,10 +96,10 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ### 3.2.47
 
-#### Backport general fixes discovered while working on the `keybase-migration` branch
+#### Backport general fixes discovered while working on the encrypted-backup feature
 
 * *[scripts/utilities/git_processor.rb]* Added a `read_only:` parameter to `_execute`/`run_alias` -- dry-run mode was incorrectly mocking pure query commands (`config_value`, `current_branch`, `shallow?`, `ref_format`, `each_remote`, `tag_exists?`, `status`, `ls_tree`, `commit_count`), silently returning empty/nil instead of real data even though no mutation was involved. Added `remove_remote`, `fetch`, `rebase`, `common_ancestor?`, and `reset_hard` as new reusable query/mutation methods. Fixed a stale "safe to delete remote" message in `_verify_file_lists_match` to "safe to force-push" (the message is generic and applies to any repo, not just ones with special remote-recreation behavior).
-* *[files/--HOME--/Brewfile]* Restored the `antidote` formula's `postinstall:` hook (`update_antidote_and_regenerate_plugin_bundle`) -- accidentally dropped in an unrelated earlier commit (moving `.aliases` from `$HOME` to `$ZDOTDIR`), which silently disabled automatic antidote plugin updates on `brew install`/`brew upgrade`. Also added a `postinstall:` hook for `zsh-patina` (`zsh-patina restart`) so the daemon picks up binary upgrades immediately instead of only reacting to config-file changes.
+* *[files/--HOME--/Brewfile]* Restored the `antidote` formula's `postinstall:` hook (`update_antidote_and_regenerate_plugin_bundle`) -- accidentally dropped in an unrelated earlier commit (moving `.aliases` from `${HOME}` to `${ZDOTDIR}`), which silently disabled automatic antidote plugin updates on `brew install`/`brew upgrade`. Also added a `postinstall:` hook for `zsh-patina` (`zsh-patina restart`) so the daemon picks up binary upgrades immediately instead of only reacting to config-file changes.
 * *[files/--HOME--/.shellrc]* Added `set_gnupg_folder_permissions` (mirrors `set_ssh_folder_permissions`): sets `700`/`600` permissions on `${HOME}/.gnupg` and its contents, since gpg treats a world/group-readable homedir as unsafe and private key material under `private-keys-v1.d/*.key` can otherwise end up world-readable.
 * *[scripts/fresh-install-of-osx.sh]* Calls `set_gnupg_folder_permissions` alongside `set_ssh_folder_permissions` at both existing call sites (early in `main()`, and after a successful home-repo clone).
 * *[.ai/domains/fresh-install.md, .ai/domains/shell-scripting.md, .ai/instructions.md, .github/agents/ruby-script-reviewer.agent.md, .github/agents/shell-script-reviewer.agent.md, Adoption.md, Extras.md, README.md]* Removed stale references to `scripts/post-brew-install.rb`, deleted in an earlier, unrelated commit ("Move all post-install logic to Brewfile postinstall hooks") but never fully scrubbed from the docs. Rewrote the "Antidote in Fresh Install" section and the `bupc` example in `shell-scripting.md` to describe the actual current mechanism (Brewfile `postinstall:` hook + `software-updates-cron.rb`, not a separate script). Renumbered the fresh-install step lists in `Adoption.md`/`README.md` accordingly, and dropped a false "mise language versions" claim (no such step exists anywhere in the codebase).
@@ -181,9 +220,9 @@ Prompted by the `load_file_if_exists` work above, did a systematic audit of ever
 * *[files/--HOME--/.shellrc]* `section_header`: `${+_SECTION_STYLES[...]}` (zsh "is-set" flag) parses under bash but fails at runtime with `bad substitution`. Guarded the whole associative-array-based styling behind `is_zsh`; bash now falls back to a plain unstyled header.
 * *[files/--HOME--/.shellrc]* `is_empty_array`/`is_non_empty_array`/`join_array`: `${(P)1}`/`${(@P)...}` (zsh indirect-parameter expansion for pass-array-by-name) parses under bash but fails at runtime. Added an `eval`-based indirect-reference fallback portable to bash 3.2 (macOS's default `/bin/bash`, no namerefs, no associative arrays).
 * *[files/--HOME--/.shellrc]* Added `_array_last`/`_array_pop_last` helpers (portable stack peek/pop) to replace `arr[-1]` (negative indexing needs bash 4.3+) and `${(@)arr[1,-2]}` (zsh-only slice syntax) in `step_end`.
-* *[files/--HOME--/.shellrc]* Added `_epoch_seconds`/`_strftime` helpers (zsh: `$EPOCHSECONDS`/`strftime`, zero-fork; bash: `date +%s`/BSD `date -j -f '%s'`, forking) to replace direct `$EPOCHSECONDS`/`strftime` references in `current_timestamp`, `current_timestamp_for_filename`, `print_script_duration`, `step_timing_init`, `step_start`, `step_end`, and `clone_repo_into`. Both are simply undefined under bash -- `${EPOCHSECONDS}` silently expands to an empty string (no error), which was previously producing `0s` durations in every timing output under bash instead of the correct elapsed time.
+* *[files/--HOME--/.shellrc]* Added `_epoch_seconds`/`_strftime` helpers (zsh: `${EPOCHSECONDS}`/`strftime`, zero-fork; bash: `date +%s`/BSD `date -j -f '%s'`, forking) to replace direct `${EPOCHSECONDS}`/`strftime` references in `current_timestamp`, `current_timestamp_for_filename`, `print_script_duration`, `step_timing_init`, `step_start`, `step_end`, and `clone_repo_into`. Both are simply undefined under bash -- `${EPOCHSECONDS}` silently expands to an empty string (no error), which was previously producing `0s` durations in every timing output under bash instead of the correct elapsed time.
 * *[files/--HOME--/.shellrc]* Added `_resolve_absolute_path` helper to replace `${var:A}` in `is_file_older_than` and `recompile_zsh_script` -- the most dangerous bug found: bash does not error on `${var:A}`, it silently interprets `:A` as substring-offset arithmetic (undefined identifier defaults to `0`), so `${var:A}` == `${var:0}` == the original string, completely unresolved. The bash fallback is a `readlink`-loop + `cd ... && pwd -P`, with no dependency on GNU `readlink -f`/`realpath` (neither of which macOS ships by default).
-* *[files/--HOME--/.shellrc]* `append_to_path_if_dir_exists`: zsh's `path+=...` (tied to `$PATH`) silently created an unrelated ordinary scalar variable under bash, never touching `$PATH` at all. Bash now manipulates `$PATH` directly with an idempotent dedup check. `append_to_fpath_if_dir_exists` is now a documented **intentional no-op** under bash -- bash has no `$FPATH`/function-autoloading concept at all, so there is nothing meaningful to fall back to.
+* *[files/--HOME--/.shellrc]* `append_to_path_if_dir_exists`: zsh's `path+=...` (tied to `${PATH}`) silently created an unrelated ordinary scalar variable under bash, never touching `${PATH}` at all. Bash now manipulates `${PATH}` directly with an idempotent dedup check. `append_to_fpath_if_dir_exists` is now a documented **intentional no-op** under bash -- bash has no `${FPATH}`/function-autoloading concept at all, so there is nothing meaningful to fall back to.
 * *[files/--HOME--/.shellrc]* Added a "BASH COMPATIBILITY" note to the file's top-level header comment summarizing the three failure classes (silently-wrong / parses-but-fails-at-runtime / breaks-the-parser) for future editors.
 * *[.ai/domains/shell-scripting.md]* Corrected the existing "`is_zsh` guards are for parse-time zsh-only syntax only" section, which had factually inaccurate examples: `${(j.:.)array}` and `(( $+functions[...] ))` are NOT parse-time failures (confirmed via `bash -n`, both parse fine) -- they are runtime-only issues that a plain `is_zsh` guard correctly handles. Replaced with the genuine parse-time-breaking example found in this audit (`-v "arr[key]"`).
 * *[.ai/domains/shell-scripting.md]* Added the new "Bash Compatibility Gotchas Discovered in `.shellrc`" section: three-class catalog (silently-wrong-no-error / parses-but-runtime-only / breaks-bash's-parser) with confirmed repro commands and the fix used for each, plus a general auditing principle (`bash -n` first for Class 3, then actually *execute* and diff output against zsh for Class 1, since a clean parse and a clean run with no visible errors do not mean the output is correct).
@@ -1039,8 +1078,8 @@ No action required - encoding directives are backward compatible and have no run
 * *[templates/gitconfig-inc.template]* Updated all references: `${HOME}/.gitconfig-<context>.inc` → `${XDG_CONFIG_HOME}/git/includes/<context>.inc`, `~/.gitconfig` → `~/.config/git/config`, `~/.gitconfig-oss.inc` → `~/.config/git/includes/oss.inc`.
 
 **Benefits:**
-* **6 fewer visible dotfiles/symlinks in $HOME**: `.python_history`, `.gitconfig`, `.gitconfig-delta.inc`, `.gitconfig-pandoc.inc`, `.gitconfig-plist.inc`, `.gitconfig-sqlite3.inc` moved to XDG locations
-* **8 fewer conditional symlinks in $HOME**: `.gitconfig-{delta,pandoc,plist,sqlite3}-enabled.inc` now in `~/.config/git/`
+* **6 fewer visible dotfiles/symlinks in ${HOME}**: `.python_history`, `.gitconfig`, `.gitconfig-delta.inc`, `.gitconfig-pandoc.inc`, `.gitconfig-plist.inc`, `.gitconfig-sqlite3.inc` moved to XDG locations
+* **8 fewer conditional symlinks in ${HOME}**: `.gitconfig-{delta,pandoc,plist,sqlite3}-enabled.inc` now in `~/.config/git/`
 * **Complete XDG compliance**: All git configuration in `${XDG_CONFIG_HOME}/git/` following XDG Base Directory specification
 * **Better organization**:
   - Main config: `~/.config/git/config`
@@ -1247,28 +1286,28 @@ git sci "Move git config includes to XDG_CONFIG_HOME"
 
 :white_check_mark: Tested on a vanilla macOS machine
 
-#### Move configuration files to $XDG_CONFIG_HOME for better organization and to declutter $HOME
+#### Move configuration files to ${XDG_CONFIG_HOME} for better organization and to declutter ${HOME}
 
 
 **File relocations:**
-* *[files/--HOME--/.zshenv]* Created new file in $HOME that sets `ZDOTDIR="${XDG_CONFIG_HOME}/zsh"`. This file must stay in $HOME (zsh design requirement - zsh always reads .zshenv from $HOME first, before looking at ZDOTDIR).
+* *[files/--HOME--/.zshenv]* Created new file in ${HOME} that sets `ZDOTDIR="${XDG_CONFIG_HOME}/zsh"`. This file must stay in ${HOME} (zsh design requirement - zsh always reads .zshenv from ${HOME} first, before looking at ZDOTDIR).
 * *[files/--ZDOTDIR--/.zshenv]* Deleted (moved to files/--HOME--/.zshenv)
-* *[files/--ZDOTDIR--/.zshrc, .zlogin]* Remain in files/--ZDOTDIR--, which now resolves to `~/.config/zsh/` instead of `~/.zshrc`, `~/.zlogin` in $HOME
+* *[files/--ZDOTDIR--/.zshrc, .zlogin]* Remain in files/--ZDOTDIR--, which now resolves to `~/.config/zsh/` instead of `~/.zshrc`, `~/.zlogin` in ${HOME}
 * *[files/--ZDOTDIR--/.aliases]* Moved from files/--HOME--/.aliases. Shell utility functions now live in ZDOTDIR alongside zsh config files.
 * *[files/--XDG_CONFIG_HOME--/zsh/plugins.txt]* Moved from files/--ZDOTDIR--/.zsh_plugins.txt. Renamed (unhidden), decoupled from ZDOTDIR.
 * *[~/.config/zsh/plugins.zsh]* Generated file moved from `~/.zsh_plugins.zsh` (antidote generates this from plugins.txt)
-* *[~/.local/state/zsh/history]* New location for zsh history (was `~/.zsh_history`). History is mutable state per XDG Base Directory spec, belongs in $XDG_STATE_HOME.
+* *[~/.local/state/zsh/history]* New location for zsh history (was `~/.zsh_history`). History is mutable state per XDG Base Directory spec, belongs in ${XDG_STATE_HOME}.
 * *[~/.local/state/postgresql/history-*]* New location for PostgreSQL psql per-database history files (was `~/.psql_history-*`). Configured via `HISTFILE` setting in psqlrc.
-* *[~/.local/state/sqlite/history]* New location for SQLite history (was `~/.sqlite_history`). Configured via `$SQLITE_HISTORY` environment variable set in .shellrc.
-* *[files/--XDG_CONFIG_HOME--/vim/vimrc]* Moved from files/--HOME--/.vimrc. Vim 9.0+ supports `$XDG_CONFIG_HOME/vim/vimrc` natively (3rd priority after `~/.vimrc` and `~/.vim/vimrc`).
+* *[~/.local/state/sqlite/history]* New location for SQLite history (was `~/.sqlite_history`). Configured via `${SQLITE_HISTORY}` environment variable set in .shellrc.
+* *[files/--XDG_CONFIG_HOME--/vim/vimrc]* Moved from files/--HOME--/.vimrc. Vim 9.0+ supports `${XDG_CONFIG_HOME}/vim/vimrc` natively (3rd priority after `~/.vimrc` and `~/.vim/vimrc`).
 * *[files/--XDG_CONFIG_HOME--/vim/autoload/plug.vim]* Moved from files/--HOME--/.vim/autoload/plug.vim. Follows vimrc to maintain relative plugin structure.
 * *[~/.local/state/vim/undo/]* New location for vim persistent undo files (was `/tmp`). Configured in vimrc with automatic directory creation.
-* *[files/--XDG_CONFIG_HOME--/shellcheck/shellcheckrc]* Moved from files/--HOME--/.shellcheckrc. Shellcheck supports XDG natively (searches `$XDG_CONFIG_HOME/shellcheck/shellcheckrc` as 2nd priority after `./.shellcheckrc` and before `~/.shellcheckrc`).
-* *[files/--XDG_CONFIG_HOME--/ripgrep/config]* Moved from files/--HOME--/.ripgreprc. Ripgrep supports XDG natively (searches `$XDG_CONFIG_HOME/ripgrep/config` as 1st priority).
-* *[files/--XDG_CONFIG_HOME--/readline/inputrc]* Moved from files/--HOME--/.inputrc. Readline supports XDG via `$INPUTRC` environment variable.
+* *[files/--XDG_CONFIG_HOME--/shellcheck/shellcheckrc]* Moved from files/--HOME--/.shellcheckrc. Shellcheck supports XDG natively (searches `${XDG_CONFIG_HOME}/shellcheck/shellcheckrc` as 2nd priority after `./.shellcheckrc` and before `~/.shellcheckrc`).
+* *[files/--XDG_CONFIG_HOME--/ripgrep/config]* Moved from files/--HOME--/.ripgreprc. Ripgrep supports XDG natively (searches `${XDG_CONFIG_HOME}/ripgrep/config` as 1st priority).
+* *[files/--XDG_CONFIG_HOME--/readline/inputrc]* Moved from files/--HOME--/.inputrc. Readline supports XDG via `${INPUTRC}` environment variable.
 * *[files/--XDG_CONFIG_HOME--/pry/pryrc]* Moved from files/--HOME--/.pryrc. Pry (Ruby debugger) has supported XDG since 2014, works with Ruby 2.6+.
-* *[files/--XDG_CONFIG_HOME--/pg/psqlrc]* Moved from files/--HOME--/.psqlrc. PostgreSQL psql supports XDG via `$PSQLRC` environment variable. Updated `HISTFILE` setting to use `~/.local/state/postgresql/history-` prefix (was `~/.psql_history-`).
-* *[files/--XDG_CONFIG_HOME--/curlrc]* Moved from files/--HOME--/.curlrc. Curl 7.73.0+ (2020) supports XDG natively (searches `$XDG_CONFIG_HOME/curlrc` as 2nd priority after `~/.curlrc`).
+* *[files/--XDG_CONFIG_HOME--/pg/psqlrc]* Moved from files/--HOME--/.psqlrc. PostgreSQL psql supports XDG via `${PSQLRC}` environment variable. Updated `HISTFILE` setting to use `~/.local/state/postgresql/history-` prefix (was `~/.psql_history-`).
+* *[files/--XDG_CONFIG_HOME--/curlrc]* Moved from files/--HOME--/.curlrc. Curl 7.73.0+ (2020) supports XDG natively (searches `${XDG_CONFIG_HOME}/curlrc` as 2nd priority after `~/.curlrc`).
 * *[files/--HOME--/.notify-osd]* Deleted (Ubuntu-only notification config file, not needed on macOS).
 
 **Code changes:**
@@ -1280,7 +1319,7 @@ git sci "Move git config includes to XDG_CONFIG_HOME"
 * *[scripts/fresh-install-of-osx.sh]* Updated ZDOTDIR initialization to `${XDG_CONFIG_HOME}/zsh`. Optimized `_ensure_directories_exist()` to only create XDG base directories (`XDG_CACHE_HOME`, `XDG_CONFIG_HOME`) - removed creation of subdirectories that are automatically created by tools (ANTIDOTE_HOME via git clone, DOTFILES_DIR via clone_repo_into), install-dotfiles.rb (pg, pry, readline, ripgrep, postgresql, vim/undo, zsh subdirs), or never used before install-dotfiles (PERSONAL_BIN_DIR, PROJECTS_BASE_DIR, XDG_DATA_HOME, XDG_STATE_HOME). Moved brew bundle full install log to `~/Downloads/brew-bundle-full-install.log`. Moved fresh-install log to `~/Downloads/fresh-install-of-osx.log`.
 * *[scripts/utilities/cron.rb]* Moved cron log files to `~/Downloads/`: `software-updates-cron-last-run.log`, `software-updates-run-log`, `software-updates-cron.log`. Uses `EnvVars::DOWNLOADS` constant.
 * *[scripts/software-updates-cron.rb]* Moved run log to `~/Downloads/software-updates-run-log`. Uses `EnvVars::DOWNLOADS` constant.
-* *[files/--XDG_CONFIG_HOME--/vim/vimrc]* Added XDG Base Directory support: configures `undodir` to use `$XDG_STATE_HOME/vim/undo` with automatic directory creation. Removed hardcoded `/tmp` undodir (was non-persistent across reboots).
+* *[files/--XDG_CONFIG_HOME--/vim/vimrc]* Added XDG Base Directory support: configures `undodir` to use `${XDG_STATE_HOME}/vim/undo` with automatic directory creation. Removed hardcoded `/tmp` undodir (was non-persistent across reboots).
 * *[files/--XDG_CONFIG_HOME--/iex/iex.exs]* Migrated from `~/.iex.exs` to XDG location. Elixir IEx supports `XDG_CONFIG_HOME/iex/iex.exs` natively.
 * *[files/--XDG_CONFIG_HOME--/kdiff3/kdiff3rc]* Migrated from `~/.kdiff3rc` to XDG location. KDiff3 supports `XDG_CONFIG_HOME/kdiff3/kdiff3rc` natively.
 * *[files/--HOME--/custom.gitignore]* Updated: removed root-level entries for all moved dotfiles. Added XDG entries: `/.config/curlrc`, `/.config/iex/iex.exs`, `/.config/kdiff3/kdiff3rc`, `/.config/pg/psqlrc`, `/.config/pry/pryrc`, `/.config/readline/inputrc`, `/.config/ripgrep/config`, `/.config/shellcheck/shellcheckrc`, `/.config/vim/`, `/.config/zsh/`. Replaced wildcard `/.config/zsh/*` with explicit list of symlinked files and pattern for generated files (`*.zwc`, `plugins.zsh`). Changed `/.local/` → `/.local/*` and added un-ignore patterns for tracking history in XDG location: `!/.local/state/`, `/.local/state/*`, `!/.local/state/postgresql/`, `!/.local/state/sqlite/`. Zsh history (`.local/state/zsh/history`) remains ignored. Added `/.sqlite_history` to ignored files (old location).
@@ -1288,19 +1327,19 @@ git sci "Move git config includes to XDG_CONFIG_HOME"
 * *[.ai/domains/edit-checklist.md]* Added Step 7: Delete stale `.zwc` bytecode files after editing zsh scripts. Prevents loading old compiled code when source has changed.
 
 **Benefits:**
-* **16 fewer visible dotfiles in $HOME**: `.aliases`, `.zshrc`, `.zlogin`, `.zsh_plugins.txt`, `.zsh_plugins.zsh`, `.zsh_history`, `.vimrc`, `.vim/`, `.shellcheckrc`, `.ripgreprc`, `.inputrc`, `.pryrc`, `.psqlrc`, `.curlrc`, `.iex.exs`, `.kdiff3rc` moved to subdirectories
-* **31 fewer psql history files in $HOME**: All `.psql_history-*` files moved to `~/.local/state/postgresql/`
-* **5 fewer log files in $HOME**: Fresh-install log, brew log, and cron logs moved to `~/Downloads/`
+* **16 fewer visible dotfiles in ${HOME}**: `.aliases`, `.zshrc`, `.zlogin`, `.zsh_plugins.txt`, `.zsh_plugins.zsh`, `.zsh_history`, `.vimrc`, `.vim/`, `.shellcheckrc`, `.ripgreprc`, `.inputrc`, `.pryrc`, `.psqlrc`, `.curlrc`, `.iex.exs`, `.kdiff3rc` moved to subdirectories
+* **31 fewer psql history files in ${HOME}**: All `.psql_history-*` files moved to `~/.local/state/postgresql/`
+* **5 fewer log files in ${HOME}**: Fresh-install log, brew log, and cron logs moved to `~/Downloads/`
 * **Better organization**: All tool configs grouped in `~/.config/` subdirectories, state files (history, undo) in `~/.local/state/`, transient logs in `~/Downloads/`
-* **XDG compliance**: Config in $XDG_CONFIG_HOME, state in $XDG_STATE_HOME per XDG Base Directory spec
-* **Location independence**: Plugin files decoupled from ZDOTDIR - even if ZDOTDIR reverts to $HOME, plugins stay in `~/.config/zsh/`
+* **XDG compliance**: Config in ${XDG_CONFIG_HOME}, state in ${XDG_STATE_HOME} per XDG Base Directory spec
+* **Location independence**: Plugin files decoupled from ZDOTDIR - even if ZDOTDIR reverts to ${HOME}, plugins stay in `~/.config/zsh/`
 * **Unhidden plugin files**: `plugins.txt` easier to find and edit than `.zsh_plugins.txt`
 * **Vim undo persistence**: Undo files now survive reboots (was `/tmp`, cleared on restart) with proper security (0700 permissions)
 * **Log file visibility**: Logs in `~/Downloads/` easier to find than hidden files in `~/`
 * **Ruby 2.6 compatibility**: Pry XDG support verified to work with system Ruby 2.6 (macOS default)
 * **Cross-platform**: Uses `Pathname#join` for path construction
 
-**Not migrated (intentionally left in $HOME):**
+**Not migrated (intentionally left in ${HOME}):**
 * `.irbrc` - Requires Ruby 3.1+ for XDG support (system Ruby is 2.6)
 * `.gemrc` - Requires Ruby 3.0+ for XDG support (system Ruby is 2.6)
 * `.sqliterc` - No XDG support, hardcoded to `~/.sqliterc`
@@ -1330,7 +1369,7 @@ This creates/updates symlinks:
 - `~/.config/vim/vimrc` → dotfiles/files/--XDG_CONFIG_HOME--/vim/vimrc (moved from ~/.vimrc)
 - `~/.config/vim/autoload/plug.vim` → dotfiles/files/--XDG_CONFIG_HOME--/vim/autoload/plug.vim (moved from ~/.vim/autoload/)
 
-**Step 2: Remove broken symlinks from $HOME**
+**Step 2: Remove broken symlinks from ${HOME}**
 ```bash
 # Remove old symlinks that now point to non-existent files in dotfiles repo
 rm -f ~/.aliases ~/.curlrc ~/.inputrc ~/.pryrc ~/.psqlrc ~/.ripgreprc ~/.iex.exs ~/.kdiff3rc
@@ -1348,7 +1387,7 @@ cp ~/.zsh_history ~/.local/state/zsh/history
 # Migrate PostgreSQL psql history files
 mkdir -p ~/.local/state/postgresql
 for file in ~/.psql_history-*; do
-  [ -f "$file" ] && mv "$file" ~/.local/state/postgresql/history-${file##*/.psql_history-}
+  [ -f "${file}" ] && mv "${file}" ~/.local/state/postgresql/history-${file##*/.psql_history-}
 done
 
 # Migrate SQLite history (if it exists)
@@ -1381,11 +1420,11 @@ pry -e "exit" 2>/dev/null  # Should load from ~/.config/pry/pryrc (if pry instal
 curl --version  # Should load from ~/.config/curlrc
 
 # Verify environment variables
-echo $ZDOTDIR  # Expected: ~/.config/zsh
-echo $HISTFILE  # Expected: ~/.local/state/zsh/history
-echo $INPUTRC  # Expected: ~/.config/readline/inputrc
-echo $PSQLRC  # Expected: ~/.config/pg/psqlrc
-echo $SQLITE_HISTORY  # Expected: ~/.local/state/sqlite/history
+echo ${ZDOTDIR}  # Expected: ~/.config/zsh
+echo ${HISTFILE}  # Expected: ~/.local/state/zsh/history
+echo ${INPUTRC}  # Expected: ~/.config/readline/inputrc
+echo ${PSQLRC}  # Expected: ~/.config/pg/psqlrc
+echo ${SQLITE_HISTORY}  # Expected: ~/.local/state/sqlite/history
 ```
 
 Antidote bundle will automatically regenerate in new location (`~/.config/zsh/plugins.zsh`) on first shell startup.
@@ -1419,11 +1458,11 @@ rm ~/brew-bundle-full-install.log 2>/dev/null          # Now in ~/Downloads/
 
 **Technical notes:**
 
-*Why .zshenv stays in $HOME:* Zsh always reads `.zshenv` from `$HOME` first, before looking at any other configuration. This is by design and cannot be changed. `.zshenv` sets `ZDOTDIR` to tell zsh where to find the other files.
+*Why .zshenv stays in ${HOME}:* Zsh always reads `.zshenv` from `${HOME}` first, before looking at any other configuration. This is by design and cannot be changed. `.zshenv` sets `ZDOTDIR` to tell zsh where to find the other files.
 
-*Why plugins are in XDG_CONFIG_HOME, not ZDOTDIR:* Plugin files are intentionally decoupled from ZDOTDIR. If ZDOTDIR is reverted to $HOME, plugins stay in `~/.config/zsh/`. This achieves the goal of keeping $HOME uncluttered regardless of ZDOTDIR setting.
+*Why plugins are in XDG_CONFIG_HOME, not ZDOTDIR:* Plugin files are intentionally decoupled from ZDOTDIR. If ZDOTDIR is reverted to ${HOME}, plugins stay in `~/.config/zsh/`. This achieves the goal of keeping ${HOME} uncluttered regardless of ZDOTDIR setting.
 
-*Why history is in XDG_STATE_HOME:* Per XDG Base Directory spec: Config → $XDG_CONFIG_HOME (.zshrc, settings), Data → $XDG_DATA_HOME (application resources), Cache → $XDG_CACHE_HOME (ephemeral, can be deleted), State → $XDG_STATE_HOME (persistent mutable data like history, logs). History is mutable state that persists between sessions.
+*Why history is in XDG_STATE_HOME:* Per XDG Base Directory spec: Config → ${XDG_CONFIG_HOME} (.zshrc, settings), Data → ${XDG_DATA_HOME} (application resources), Cache → ${XDG_CACHE_HOME} (ephemeral, can be deleted), State → ${XDG_STATE_HOME} (persistent mutable data like history, logs). History is mutable state that persists between sessions.
 
 ---
 
@@ -1531,7 +1570,7 @@ cc-browser-profiles.sh       # "Starting..." (from wrapper), then git output (no
 
 * *[scripts/utilities/logging.rb]* Added structured logging with file output and log level filtering. Set `LOG_FILE=/path/to/file` to write logs to file with automatic rotation (keeps last 5 files, max 10MB each). Set `LOG_FORMAT=json` for JSON-formatted logs or `LOG_FORMAT=text` for human-readable logs. Set `LOG_LEVEL=debug|info|success|warn|error|user_action` to filter messages by severity (default: info). Console output unchanged (human-readable with colors). Required modules: `json`, `fileutils`.
 
-* *[scripts/utilities/cron.rb]* Added crontab validation to `restore_cron()` via `_valid_crontab?` helper. Validates syntax before installation: checks file is readable/non-empty, validates line format (comments, env vars, cron entries with 6+ fields). Prevents installing malformed crontab files. Added `_cleanup_old_backups` helper to `suspend_cron()` - keeps only the 5 most recent backup files in `$TMPDIR`, sorted by mtime, deletes oldest.
+* *[scripts/utilities/cron.rb]* Added crontab validation to `restore_cron()` via `_valid_crontab?` helper. Validates syntax before installation: checks file is readable/non-empty, validates line format (comments, env vars, cron entries with 6+ fields). Prevents installing malformed crontab files. Added `_cleanup_old_backups` helper to `suspend_cron()` - keeps only the 5 most recent backup files in `${TMPDIR}`, sorted by mtime, deletes oldest.
 
 * *[scripts/utilities/macos.rb]* Enhanced `kill_login_item_apps()` with process verification and graceful termination. Uses `_process_running?` helper (via `pgrep -x`) to check if process exists before kill. Sends SIGTERM, waits 2 seconds, verifies termination, falls back to SIGKILL (-9) if needed. Logs warnings for failed terminations. Added notification rate limiting to `notify()` - deduplicates notifications within 60-second window, tracks history in `@_notification_history`, auto-cleans entries older than 5 minutes. Prevents spam from repeated errors.
 
@@ -1553,7 +1592,7 @@ LOG_FILE=~/logs/script.log LOG_FORMAT=text ruby script.rb  # Human-readable logs
 - File output writes to `LOG_FILE` if set, with format determined by `LOG_FORMAT` env var
 - Log rotation prevents unbounded growth (10MB limit per file, 5 files max)
 - Cron operations validate syntax before modifying system crontab
-- Cron backups no longer accumulate indefinitely in `$TMPDIR`
+- Cron backups no longer accumulate indefinitely in `${TMPDIR}`
 - Process termination is safer (verifies process exists, retries with SIGKILL if needed)
 - Notification spam prevented via 60-second deduplication window
 
@@ -2347,7 +2386,7 @@ All other issues already compliant: `.shellrc` logging guards use explicit if st
 
 #### Shell and git configuration fixes
 
-* *[files/--HOME--/.gitconfig]* Fixed `git relative-path` alias to use `$GIT_PREFIX` instead of `git rev-parse --show-prefix` (which always returns empty in alias context). Returns `.` for repo root, `./path` for subdirectories. Validates paths are within repo boundary with descriptive error messages. Works correctly with `git -C <dir>` invocation pattern.
+* *[files/--HOME--/.gitconfig]* Fixed `git relative-path` alias to use `${GIT_PREFIX}` instead of `git rev-parse --show-prefix` (which always returns empty in alias context). Returns `.` for repo root, `./path` for subdirectories. Validates paths are within repo boundary with descriptive error messages. Works correctly with `git -C <dir>` invocation pattern.
 
 * *[files/--HOME--/.aliases, files/--HOME--/.shellrc, .opencode/skills/dotfiles-domain/SKILL.md]* Renamed `_create_crontab` → `create_crontab` (removed `_` prefix since it's a public helper called by recron, not a private script helper). Updated all references in comments and documentation.
 
@@ -2778,7 +2817,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Extended EnvVars module with additional constants
 
-* *[scripts/utilities/env_vars.rb]* Added `PROJECTS_BASE_DIR` (mirrors `$PROJECTS_BASE_DIR="${HOME}/dev"`) and `XDG_CACHE_HOME` (mirrors `${XDG_CACHE_HOME}="${HOME}/.cache"`) as Pathname constants. All constants now use sensible fallbacks and are frozen. Updated ruby-scripting.instructions.md "Available Constants" section to include both new constants.
+* *[scripts/utilities/env_vars.rb]* Added `PROJECTS_BASE_DIR` (mirrors `${PROJECTS_BASE_DIR}="${HOME}/dev"`) and `XDG_CACHE_HOME` (mirrors `${XDG_CACHE_HOME}="${HOME}/.cache"`) as Pathname constants. All constants now use sensible fallbacks and are frozen. Updated ruby-scripting.instructions.md "Available Constants" section to include both new constants.
 * *[scripts/utilities/repos.rb]* Replaced all `ENV.fetch('HOME', '')`, `ENV.fetch('DOTFILES_DIR', ...)`, `ENV.fetch('PROJECTS_BASE_DIR', ...)` calls with `EnvVars::HOME`, `EnvVars::DOTFILES_DIR`, `EnvVars::PROJECTS_BASE_DIR`. Kept `ENV.fetch('DEBUG', nil)` for non-path boolean flag. EnvVars is now single source of truth for all directory paths in repos.rb.
 
 #### Replaced ENV hash access with ENV.fetch
@@ -2961,7 +3000,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 #### Unified `custom.git_state` detection to `git rev-parse --verify`
 
-* *[starship.toml]* Replaced `[ -d "$root/rebase-merge" ] || [ -d "$root/rebase-apply" ]` and `[ -f "$root/BISECT_LOG" ]` with `git rev-parse --verify REBASE_HEAD` and `git rev-parse --verify BISECT_HEAD` respectively; removed the now-unused `root=$(git rev-parse --git-dir …)` line. All five operation states now use a single unified detection strategy that works with both the classic `.git/` files backend and the reftable backend (git 2.45+), where pseudorefs are stored in the reftable and plain file/directory checks silently fail.
+* *[starship.toml]* Replaced `[ -d "${root}/rebase-merge" ] || [ -d "${root}/rebase-apply" ]` and `[ -f "${root}/BISECT_LOG" ]` with `git rev-parse --verify REBASE_HEAD` and `git rev-parse --verify BISECT_HEAD` respectively; removed the now-unused `root=$(git rev-parse --git-dir …)` line. All five operation states now use a single unified detection strategy that works with both the classic `.git/` files backend and the reftable backend (git 2.45+), where pseudorefs are stored in the reftable and plain file/directory checks silently fail.
 * *[copilot-instructions.md]* Updated the [`§ Starship Prompt Rules`](.github/copilot-instructions.md#starship-prompt-rules) bullet to drop the "two strategies" framing and document the unified `git rev-parse --verify` approach for all five states (`REBASE_HEAD`, `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `BISECT_HEAD`).
 
 #### Standardised `osx-defaults.sh` section formatting
@@ -3046,9 +3085,9 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 
 * Since `_set_default_shell` only runs inside `fresh-install-of-osx.sh`, pre-configured machines will not automatically get the default shell changed to Homebrew's zsh. Run `fresh-install-of-osx.sh` to pick up this change — it is fully idempotent and safe to run on an already-configured machine. It will add `/opt/homebrew/bin/zsh` to `/etc/shells` and call `chsh` only if the default shell is not already set correctly.
 
-* After `chsh` takes effect (quit and reopen the terminal), verify with `echo $SHELL` — it should print `/opt/homebrew/bin/zsh`.
+* After `chsh` takes effect (quit and reopen the terminal), verify with `echo ${SHELL}` — it should print `/opt/homebrew/bin/zsh`.
 
-* **Terminal.app** requires no manual change — it always opens a login shell using `$SHELL`, so it picks up the new default automatically once `chsh` is done.
+* **Terminal.app** requires no manual change — it always opens a login shell using `${SHELL}`, so it picks up the new default automatically once `chsh` is done.
 
 * **iTerm2** — open **Preferences → Profiles → General → Command** and set it to **Login shell** (not "Custom Shell"). This is also applied automatically by `osx-defaults.sh -s`, but pre-configured machines that skip that step must set it manually.
 
@@ -3071,12 +3110,12 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[shell-scripting.instructions.md]* Rewrote the [§ Glob Patterns — NULL_GLOB](.github/instructions/shell-scripting.instructions.md#glob-patterns--null_glob) section to explain the `()` vs named helper decision based on whether bash may source the file. Added two new top-level sections: [§ Do not mandate named helpers everywhere](.github/instructions/shell-scripting.instructions.md#do-not-mandate-named-helpers-everywhere) (named functions in zsh are not scoped — `()` avoids namespace pollution in pure zsh files; named helpers require `unfunction` immediately after use) and [§ `is_zsh` guards are for parse-time zsh-only syntax only](.github/instructions/shell-scripting.instructions.md#is_zsh-guards-are-for-parse-time-zsh-only-syntax-only) (`setopt`/`autoload` are runtime-only issues; guards are only needed for syntax bash cannot tokenise).
 * *[copilot-instructions.md]* Added matching summary bullets for the two new rules, referencing the full treatment in `shell-scripting.instructions.md`.
 
-#### Fix ERR trap `$LINENO` in `fresh-install-of-osx.sh`
+#### Fix ERR trap `${LINENO}` in `fresh-install-of-osx.sh`
 
-* *[fresh-install-of-osx.sh]* Changed both `trap _cleanup_and_exit ERR` calls to the string form `trap '_cleanup_and_exit "${LINENO}"' ERR`. With the function-name form, `$LINENO` inside the handler reports its own line (wrong); the string form evaluates `$LINENO` in the failing command's scope before calling the function, so the reported line is always accurate — including for failures in helper functions when `set -E` propagates the trap.
+* *[fresh-install-of-osx.sh]* Changed both `trap _cleanup_and_exit ERR` calls to the string form `trap '_cleanup_and_exit "${LINENO}"' ERR`. With the function-name form, `${LINENO}` inside the handler reports its own line (wrong); the string form evaluates `${LINENO}` in the failing command's scope before calling the function, so the reported line is always accurate — including for failures in helper functions when `set -E` propagates the trap.
 * *[fresh-install-of-osx.sh]* Updated `_cleanup_and_exit` to accept `$1` as the failing line number and include it in the error message when non-empty.
-* *[shell-scripting.instructions.md]* Added new [§ ERR Trap — `$LINENO` String Form vs Function Form](.github/instructions/shell-scripting.instructions.md#err-trap---lineno-string-form-vs-function-form) section under Cron Scripts with BAD/Good examples and a note that the rule applies with or without `set -E`.
-* *[copilot-instructions.md]* Added a matching summary bullet referencing [§ ERR Trap — `$LINENO` String Form vs Function Form](.github/instructions/shell-scripting.instructions.md#err-trap---lineno-string-form-vs-function-form).
+* *[shell-scripting.instructions.md]* Added new [§ ERR Trap — `${LINENO}` String Form vs Function Form](.github/instructions/shell-scripting.instructions.md#err-trap---lineno-string-form-vs-function-form) section under Cron Scripts with BAD/Good examples and a note that the rule applies with or without `set -E`.
+* *[copilot-instructions.md]* Added a matching summary bullet referencing [§ ERR Trap — `${LINENO}` String Form vs Function Form](.github/instructions/shell-scripting.instructions.md#err-trap---lineno-string-form-vs-function-form).
 
 #### Add missing `unfunction` for named inner functions
 
@@ -3465,12 +3504,12 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[files/--HOME--/.shellrc]* `success`, `info`, `warn`, `debug`: replaced `is_non_zero_string ... || echo` with `if ! is_non_zero_string ...; then echo; fi` — the bare `||` pattern caused `is_non_zero_string` returning 1 (outside direnv) to fire the ERR trap in any caller running under `set -e`.
 * *[files/--XDG_CONFIG_HOME--/zsh/st, update_all_repos, status_all_repos, pull, push, upreb, count, cc]* Added `|| true` to the `compdef` registration guard in all autoload scripts. `(($+functions[compdef]))` exits 1 when `compdef` is not yet defined (non-interactive shells, cron, pre-`compinit`), firing the ERR trap in any script that sources these files.
 * *[files/--HOME--/.shellrc]* `_dotfiles_notify`: use `[[ -x '/usr/bin/osascript' ]]` instead of `command_exists` — more precise (won't match a function/alias named `osascript`) and correct for a fixed system binary path.
-* *[files/--ZDOTDIR--/.zshrc, files/--HOME--/.aliases, scripts/wait-editor]* Fixed `crontab -e` (and tools like `visudo`, `fc`) not blocking for GUI editors. `EDITOR` is always `'wait-editor'` — a thin wrapper that re-execs `$GIT_EDITOR` via POSIX word-splitting so `--wait` flags are passed correctly. `GIT_EDITOR` holds the full editor invocation (e.g. `'zed --wait'`, or `'vi'` for SSH). The SSH/local if-else in `.zshrc` collapsed into a single loop with a per-context preferred-editors list. `VISUAL` is not set — legacy concept, every modern tool falls back to `EDITOR`. Removed now-redundant `${EDITOR%% *}` stripping in `${ZDOTDIR}/.aliases`.
+* *[files/--ZDOTDIR--/.zshrc, files/--HOME--/.aliases, scripts/wait-editor]* Fixed `crontab -e` (and tools like `visudo`, `fc`) not blocking for GUI editors. `EDITOR` is always `'wait-editor'` — a thin wrapper that re-execs `${GIT_EDITOR}` via POSIX word-splitting so `--wait` flags are passed correctly. `GIT_EDITOR` holds the full editor invocation (e.g. `'zed --wait'`, or `'vi'` for SSH). The SSH/local if-else in `.zshrc` collapsed into a single loop with a per-context preferred-editors list. `VISUAL` is not set — legacy concept, every modern tool falls back to `EDITOR`. Removed now-redundant `${EDITOR%% *}` stripping in `${ZDOTDIR}/.aliases`.
 * *[files/--ZDOTDIR--/.zshrc]* Added `ZSH_AUTOSUGGEST_USE_ASYNC=1`, `ZSH_AUTOSUGGEST_MANUAL_REBIND=1`, `ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20` before the antidote bundle load. Async mode fetches suggestions in a background process so ZLE never blocks on history lookups. Manual rebind skips the full ZLE widget re-wrap that autosuggestions performs on every `precmd` (~10–20ms per prompt). Buffer max size skips suggestion lookups for long command lines.
 * *[files/--ZDOTDIR--/.zshrc]* Changed `ZSH_AUTOSUGGEST_STRATEGY` from `(history completion)` to `(history)` and added `ZSH_AUTOSUGGEST_HISTORY_IGNORE="?(#c100,)"`. The `completion` strategy spawns a `zpty` on every suggestion request (~10–30ms overhead); history alone covers the vast majority of useful suggestions. The ignore pattern skips history entries >100 chars, reducing regex matching cost on large history files.
 * *[files/--HOME--/.gitconfig]* `git cc` and `git rfc`: removed `refs/tags` from `git for-each-ref` enumeration passed to `git reflog expire`. Tags have no reflogs (especially in shallow clones such as antidote cache repos), causing "reflog could not be found" errors for every tag. Only `refs/heads` and `refs/remotes` are valid reflog targets.
 * *[files/--ZDOTDIR--/.zshrc]* Fixed silent bug: `list-suffixeszstyle` on one line (missing newline typo) meant both `list-suffixes` and `expand prefix suffix` completion styles were never set. Split into two separate `zstyle` calls.
-* *[files/--ZDOTDIR--/.zshrc]* Removed three `compctl` (old pre-compsys zsh 2.x) calls and the `man_glob()` helper they depended on. `compctl -k hosts` referenced an undefined `$hosts` array; all three calls conflicted silently with compsys `_ssh`/`_man` completers from `zsh-completions`.
+* *[files/--ZDOTDIR--/.zshrc]* Removed three `compctl` (old pre-compsys zsh 2.x) calls and the `man_glob()` helper they depended on. `compctl -k hosts` referenced an undefined `${hosts}` array; all three calls conflicted silently with compsys `_ssh`/`_man` completers from `zsh-completions`.
 * *[files/--ZDOTDIR--/.zsh_plugins.txt, files/--ZDOTDIR--/.zsh_plugins.zsh]* Deferred 6 additional plugins via `kind:defer` to reduce synchronous startup work: `lib/termsupport.zsh` (terminal title/CWD hooks — cosmetic), `plugins/eza` (aliases only), `plugins/git` (heaviest plugin at 431 lines, aliases only), `plugins/iterm2` (shell integration hooks — cosmetic), `plugins/sudo` (ESC-ESC key binding), `plugins/zbell` (long-command bell hooks). Cannot defer: `lib/functions.zsh`, `lib/completion.zsh`, `lib/correction.zsh`, `lib/key-bindings.zsh`, `lib/misc.zsh`, `zsh-completions`, `plugins/direnv`.
 * *[files/--ZDOTDIR--/.zshrc]* Added `ensure_dir_exists "${XDG_CACHE_HOME}"` before the first cache write. When `delete_caches` removes `~/.cache`, all subsequent `>|` cache-write redirections failed silently — the `brew shellenv` cache was never written, so `fpath` never received `${HOMEBREW_PREFIX}/share/zsh/site-functions`, breaking brew completions and antidote plugins on the next shell start.
 * *[files/--ZDOTDIR--/.zlogin]* Moved `find_in_folder_and_recompile "${XDG_CACHE_HOME}"` into the disowned background block. The mtime sentinel never actually prevented the `find` scan: `.zshrc` always writes cache files before `.zlogin` runs, so the sentinel's `-nt` check always failed and `find` ran synchronously on every login shell.
@@ -3503,10 +3542,10 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.zshrc]* Replaced **Oh My Zsh** with **antidote** as the plugin manager. A pre-generated static bundle (`${ZDOTDIR}/.zsh_plugins.zsh`) is checked into the home repo and sourced directly — antidote itself does not need to be installed for the shell to start. The antidote formula (installed via `brew`) and sourced at shell startup is only required for `antidote update` / `antidote bundle` to refresh plugin sources.
 * *[.zshrc]* Removed all Oh My Zsh bootstrap variables (`ZSH`, `ZSH_CUSTOM`, `ZSH_THEME`, `ZSH_DISABLE_COMPFIX`, `zstyle ':omz:update' ...`, `plugins=(...)`) and the `source "${ZSH}/oh-my-zsh.sh"` call. `compinit -C` is now called explicitly (no longer delegated to OMZ). Stale alias/comment block referencing OMZ examples removed.
 * *[.zshrc]* `mise activate zsh` is now cached — output written to `${XDG_CACHE_HOME}/mise-activate-cache.zsh` keyed on the mise binary mtime, regenerated only when mise itself is updated. The OMZ `mise` plugin was removed because it referenced `${ZSH_CACHE_DIR}` (undefined without OMZ), which caused a "no such file or directory: /completions/_mise" error on every shell start.
-* *[.zshrc]* Added `typeset +x FPATH fpath cdpath CDPATH` after the dedup pass — `FPATH` and `CDPATH` must never be exported. Both are zsh-internal variables (autoload search path and `cd` search path respectively). Exporting them causes their contents to leak into the macOS launchd user-session environment, where they persist across iTerm2 restarts and are inherited by every new shell before any rc file runs. Symptoms: `zsh -f -c 'echo $FPATH'` showed stale `~/.oh-my-zsh/...` paths even after `~/.oh-my-zsh` was deleted. All other `*path` vars on that line (`PATH`, `MANPATH`, `INFOPATH`, `CPPFLAGS`, `LDFLAGS`, `PKG_CONFIG_PATH`) are intentionally exported — child processes need them.
+* *[.zshrc]* Added `typeset +x FPATH fpath cdpath CDPATH` after the dedup pass — `FPATH` and `CDPATH` must never be exported. Both are zsh-internal variables (autoload search path and `cd` search path respectively). Exporting them causes their contents to leak into the macOS launchd user-session environment, where they persist across iTerm2 restarts and are inherited by every new shell before any rc file runs. Symptoms: `zsh -f -c 'echo ${FPATH}'` showed stale `~/.oh-my-zsh/...` paths even after `~/.oh-my-zsh` was deleted. All other `*path` vars on that line (`PATH`, `MANPATH`, `INFOPATH`, `CPPFLAGS`, `LDFLAGS`, `PKG_CONFIG_PATH`) are intentionally exported — child processes need them.
 * *[.zshrc]* `compinit` refactored to use `-C` (skip `compaudit` scan) when the dump file already exists, saving ~11ms per startup. Wrapped in an anonymous function so `autoload -Uz compinit` does not pollute the global function table. `ZSH_COMPDUMP` moved to `${XDG_CACHE_HOME}/zcompdump` to keep `${HOME}` clean.
 * *[.zshrc]* Starship prompt initialisation cached to `${XDG_CACHE_HOME}/starship-init-cache.zsh`, keyed on the starship binary mtime — avoids forking `starship init zsh` on every shell start. `${commands[starship]}` used instead of `$(command -v starship)` (O(1) zsh hash lookup, no fork). Note: sourcing via a `precmd` hook was attempted but causes `setopt promptsubst` (emitted by starship's init) to be scoped to the hook function, leaving `PROMPT` as an unexpanded literal after the first command — the cache is therefore sourced directly at startup.
-* *[.zshrc]* `autoload -Uz colors && colors` removed — none of the active plugins use `$fg`/`$bg`/`$color` from the zsh `colors` function; own color variables are defined as `$'\e[...'` literals in `.shellrc`.
+* *[.zshrc]* `autoload -Uz colors && colors` removed — none of the active plugins use `${fg}`/`${bg}`/`${color}` from the zsh `colors` function; own color variables are defined as `$'\e[...'` literals in `.shellrc`.
 * *[.zshrc]* `$(extract_first_word "${editor}")` in the preferred-editor detection loop replaced with `${editor%% *}` (inline parameter expansion, no subshell).
 * *[.zshrc]* Fixed bug in autoload loop: `autoload -Uz "${func_file}"` → `autoload -Uz "${func_file:t}"`. Without `:t` (basename), `autoload` registers the function under its full path (e.g. `/path/to/myfunc`) which can never be invoked by short name.
 * *[.zlogin]* `recompile_zsh_scripts` now removes `.zwc.old` before and after calling `zrecompile -pq` — `zrecompile` moves the existing `.zwc` to `.zwc.old` before writing the new one; if `zcompile` fails mid-write the backup is left behind indefinitely. Cleanup is unconditional so stale backups never accumulate.
@@ -3605,7 +3644,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 * *[.curlrc, .envrc, .gitconfig, .iex.exs, .profile, .zlogin, .zshrc]* General cleanup and minor improvements across dotfiles.
 * *[zsh scripts]* Refactored `cc`, `count`, `pull`, `push`, `st`, `status_all_repos`, `update_all_repos`, and `upreb` scripts.
 * *[.eclintignore, .editorconfig]* Added editor config and eclint ignore files for consistent code style enforcement.
-* *[add-upstream-git-config.sh, .shellrc] Potential fix for `direnv allow` hanging when run in the `$PERSONAL_PROFILES_DIR` folder by ensuring that the git config is properly set up for that folder.
+* *[add-upstream-git-config.sh, .shellrc] Potential fix for `direnv allow` hanging when run in the `${PERSONAL_PROFILES_DIR}` folder by ensuring that the git config is properly set up for that folder.
 * *[.gitconfig]* Added new alias `default-branch` to get the default branch of a git repository.
 
 #### Adopting these changes
@@ -3630,7 +3669,7 @@ All elements (separator, header, warnings, list items) maintain consistent visua
 ### 3.0.13
 
 * *[Brewfile]* Added `Dockdoor`, `flux-markdown`, `dbeaver` and `codeql` to the Brewfile and captured their preferences for backup.
-* *[.aliases]* The dynamically generated aliases for the git repositories found under the `$PROJECTS_BASE_DIR` will now enable more fine-grained control. To find out what all aliases have been setup on your machine, you can run `alias | \grep rug`.
+* *[.aliases]* The dynamically generated aliases for the git repositories found under the `${PROJECTS_BASE_DIR}` will now enable more fine-grained control. To find out what all aliases have been setup on your machine, you can run `alias | \grep rug`.
 
 #### Adopting these changes
 
@@ -4571,7 +4610,7 @@ These changes are *optional*, but if you don't follow them, then the aliases/scr
 * In Raycast, use the `Export Settings & Data` option to export your current settings.
 * After successfully exporting the settings, quit Raycast and ensure that Raycast is completely shut down.
 * Rebase the dotfiles repo, fix any conflicts and run the `install-dotfiles.rb` script.
-* Manually reconcile the diffs / dirty state of `files/--PERSONAL_PROFILES_DIR--/custom.gitignore` with `$PERSONAL_PROFILES_DIR/.gitignore` on your local machine
+* Manually reconcile the diffs / dirty state of `files/--PERSONAL_PROFILES_DIR--/custom.gitignore` with `${PERSONAL_PROFILES_DIR}/.gitignore` on your local machine
 * Run the following commands in the terminal
 
   ```zsh

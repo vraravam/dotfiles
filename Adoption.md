@@ -51,15 +51,13 @@ Download the repository as a zip file to get all scripts:
 
 ```zsh
 # Download and extract repository
-cd /tmp
-curl -fsSL https://github.com/vraravam/dotfiles/archive/refs/heads/master.zip -o dotfiles.zip
-unzip -q dotfiles.zip
-cd dotfiles-master
+curl -fsSL https://github.com/vraravam/dotfiles/archive/refs/heads/master.zip -o /tmp/dotfiles.zip;
+unzip -q /tmp/dotfiles.zip -d /tmp;
 
 # Set required environment variables for all scripts
-export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev/configs"
-export PROJECTS_BASE_DIR="${HOME}/dev"
-mkdir -p "${PERSONAL_CONFIGS_DIR}"
+export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev/configs";
+export PROJECTS_BASE_DIR="${HOME}/dev";
+mkdir -p "${PERSONAL_CONFIGS_DIR}";
 ```
 
 Now you have all scripts available in `/tmp/dotfiles-master/scripts/`.
@@ -71,7 +69,7 @@ Now you have all scripts available in `/tmp/dotfiles-master/scripts/`.
 If you already use Homebrew, dump your installed packages to avoid starting from scratch:
 
 ```zsh
-brew bundle dump --force --file="${HOME}/Brewfile"
+brew bundle dump --force --file="${HOME}/Brewfile";
 ```
 
 **Important:** This is a **one-time** command. If you regenerate later, any custom comments/formatting will be lost. After the first dump, maintain the Brewfile manually.
@@ -81,12 +79,11 @@ brew bundle dump --force --file="${HOME}/Brewfile"
 Run `capture-prefs.rb` to export preferences:
 
 ```zsh
-cd /tmp/dotfiles-master
-./scripts/capture-prefs.rb -e
+/tmp/dotfiles-master/scripts/capture-prefs.rb -e;
 
 # Files are exported to ${PERSONAL_CONFIGS_DIR}/defaults/
 # Verify they're there:
-ls -la "${PERSONAL_CONFIGS_DIR}/defaults/"
+ls -la "${PERSONAL_CONFIGS_DIR}/defaults/";
 ```
 
 **What gets exported:**
@@ -103,21 +100,19 @@ Generate YAML catalogs of all git repos you want to restore:
 
 ```zsh
 # Generate catalog for all repos under ${PROJECTS_BASE_DIR} (default: ~/dev)
-cd /tmp/dotfiles-master
-./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}" > "${PERSONAL_CONFIGS_DIR}/repositories-personal.yml"
+/tmp/dotfiles-master/scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}" > "${PERSONAL_CONFIGS_DIR}/repositories-personal.yml";
 
 # Optional: Generate additional catalogs for other project directories
-# ./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/oss" > "${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
-# ./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/work" > "${PERSONAL_CONFIGS_DIR}/repositories-work.yml"
+# /tmp/dotfiles-master/scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/oss" > "${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
+# /tmp/dotfiles-master/scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/work" > "${PERSONAL_CONFIGS_DIR}/repositories-work.yml"
 ```
 
 **If you have repos in multiple root folders**, run once per folder with distinct filenames:
 
 ```zsh
-cd /tmp/dotfiles-master
-./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}" > "${PERSONAL_CONFIGS_DIR}/repositories-personal.yml"
-./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/oss" > "${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
-./scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/work" > "${PERSONAL_CONFIGS_DIR}/repositories-work.yml"
+/tmp/dotfiles-master/scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}" > "${PERSONAL_CONFIGS_DIR}/repositories-personal.yml";
+/tmp/dotfiles-master/scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/oss" > "${PERSONAL_CONFIGS_DIR}/repositories-oss.yml";
+/tmp/dotfiles-master/scripts/resurrect-repositories.rb -g -d "${PROJECTS_BASE_DIR}/work" > "${PERSONAL_CONFIGS_DIR}/repositories-work.yml";
 ```
 
 **After generation:**
@@ -137,7 +132,7 @@ cd /tmp/dotfiles-master
 Then export it (from this old machine's healthy clone):
 
 ```zsh
-resurrect-repositories.rb -b "${PERSONAL_CONFIGS_DIR}/repositories-oss.yml"
+resurrect-repositories.rb -b "${PERSONAL_CONFIGS_DIR}/repositories-oss.yml";
 ```
 
 Transfer the resulting `.bundle` file to the new machine yourself (AirDrop, USB drive, etc.) to the same path referenced in `bundle` above — it is not committed to the dotfiles repo (only the YAML's `bundle` key/path is). Timing doesn't matter: if it isn't there yet when [Phase 3.2](#32-run-bootstrap-command)'s resurrect step runs, that repo just falls back to a normal network clone.
@@ -146,17 +141,50 @@ Transfer the resulting `.bundle` file to the new machine yourself (AirDrop, USB 
 
 Store your captured state in a git repository at `${HOME}`. These files contain personal preferences and repo locations — never commit to a public repository.
 
+**This is the "old machine" side of the backup mechanisms described in [§ 2.3.C](#c-backup-mechanisms-keybase-encrypted-backup-optional) below** (read that section first if you haven't decided which mechanism(s) to use yet — Keybase, the encrypted backup, both, or neither). The commands to configure the backup remote(s) have to run here, on this existing machine, since this push is what actually *creates* the backup that Phase 3 will later restore from on the new machine — `fresh-install-of-osx.sh` only ever restores from an existing backup, it never creates one from nothing.
+
 ```zsh
-cd "${HOME}"
-git add Brewfile personal/dev/configs/
-git commit -m "Backup: $(date +'%Y-%m-%d %H:%M:%S')"
-git push
+# Skip this if ${HOME} is already a git repo (e.g. you've used this backup
+# mechanism before on this machine). '-b master' matches this repo's own
+# convention regardless of your global 'init.defaultBranch' setting.
+git -C "${HOME}" init -b master;
 ```
+
+**If using Keybase** (auto-creates the repo on first push, no separate create step needed):
+```zsh
+git -C "${HOME}" remote add origin "keybase://private/$(keybase whoami)/home";
+```
+
+**If using the encrypted backup** (the GitHub repo must already exist — see § 2.3.C step 2 above):
+```zsh
+# As 'origin' if you're not also using Keybase, 'origin2' if you are (run both
+# 'remote add' lines below in that case):
+git -C "${HOME}" remote add origin encrypted-backup::home;
+# git -C "${HOME}" remote add origin2 encrypted-backup::home   # only if Keybase is also configured above
+```
+
+Then, regardless of which mechanism(s) you configured above:
+
+```zsh
+git -C "${HOME}" add Brewfile personal/dev/configs/;
+git -C "${HOME}" commit -m "Backup: $(date +'%Y-%m-%d %H:%M:%S')";
+git -C "${HOME}" push origin master;
+# git -C "${HOME}" push origin2 master   # only if you configured a second remote above
+```
+
+**Using neither mechanism?** Skip the `git remote add`/`git push` lines above entirely
+— just `git init`, `git add`, `git commit` locally, and carry the repo over to the new
+machine yourself (external drive, AirDrop, etc.) instead of Phase 3 restoring it
+automatically.
+
+**`${PERSONAL_PROFILES_DIR}` (browser profiles) works the same way**, with `browser-profiles`/`profiles`
+in place of `home` in the commands above — repeat this section for that directory too if
+you want it backed up.
 
 **Cleanup:**
 ```zsh
 # Remove downloaded scripts
-rm -rf /tmp/dotfiles-master /tmp/dotfiles.zip
+rm -rf /tmp/dotfiles-master /tmp/dotfiles.zip;
 ```
 
 ---
@@ -187,9 +215,10 @@ to any other installer:
   different machine. The one thing you never need to do is provide it again
   on a machine that's already set up: re-running it there derives the value
   automatically from that machine's own local clone's `origin` remote.
-- **Keybase** (encrypted preference backups) -- entirely interactive, and
-  genuinely requires nothing from you in advance. You'll be asked during the
-  fresh-install run itself whether to set it up (see § 2.3 Keybase below).
+- **Encrypted backups** (Keybase and/or `gpg` + `git bundle`) -- both optional,
+  and not required in advance either; if you want either, see
+  [§ 2.3.C](#c-backup-mechanisms-keybase-encrypted-backup-optional) below for
+  the one-time setup of whichever you choose (or both).
 
 If you'd rather not retype your username every time you copy-paste the
 command, commit the substitution into your own fork's copy of this file once
@@ -234,25 +263,98 @@ Review **[files/--HOME--/Brewfile](files/--HOME--/Brewfile)** and remove unwante
 **If starting fresh (no existing machine):**
 - Review the entire Brewfile and remove any packages you don't want
 
-#### C. Keybase (Optional)
+#### C. Backup Mechanisms: Keybase, Encrypted Backup (Optional)
 
-Keybase (for encrypted preference backups) needs **no pre-run editing at all**.
-`fresh-install-of-osx.sh` installs it unconditionally like any other package,
-then handles the rest interactively:
+`~` and `${PERSONAL_PROFILES_DIR}` can each be backed up via two fully independent,
+optional mechanisms -- **Keybase** and/or the gpg+git-bundle **encrypted backup** (see
+[TechnicalDeepDive.md § 14](TechnicalDeepDive.md#14-adding-an-encrypted-backup-gpg--git-bundle-alongside-keybase)
+and [KeybaseMigration.md](KeybaseMigration.md)). Both can be enabled at once (each
+repo then gets two remotes, `origin` and `origin2`, pushed/pulled independently), just
+one, or neither. Each is controlled purely by whether its repo-name env vars are set in
+**files/--HOME--/.shellrc** -- comment out (or leave unset) a pair to disable that
+mechanism entirely:
 
-- **On the first vanilla-OS run** (`FIRST_INSTALL=true`), if `keybase` is
-  installed and you're not already logged in, it asks:
-  `Set up Keybase for encrypted preference backups? [y/N]`.
-  Answer `y` and log in when prompted (native `keybase login` flow) to enable
-  it; answer `n` (or just press enter) to skip.
-- **On every later re-run**, it never asks again: if you're already logged in
-  it syncs silently, and if you're still not logged in it skips silently
-  (with a hint that running `keybase login` manually and re-running this
-  script will pick it up).
+**If you're migrating from an existing machine (Phase 1):** decide which mechanism(s)
+you want *before* doing [§ 1.4 Commit and Push](#14-commit-and-push) above -- that step
+is where the backup actually gets created (remote configured + pushed, on the *old*
+machine), using the exact same env var choice you make here. Everything below this
+point (repo-name adjustment, GitHub repo creation, Keychain passphrase) applies
+regardless of which scenario you're in; only note which machine each step runs on.
+
+**If starting fresh (no existing machine):** nothing to back up yet -- Phase 3 will
+restore into an empty `${HOME}`/`${PERSONAL_PROFILES_DIR}` from whichever mechanism(s)
+you enable here, the first time someone else's (i.e. your own, from a future machine)
+backup exists to restore from. Set these up whenever you're ready to start using them.
+
+```zsh
+# Keybase (comment out to disable)
+export KEYBASE_HOME_REPO_NAME='home'
+export KEYBASE_PROFILES_REPO_NAME='profiles'
+
+# Encrypted backup (comment out to disable)
+export ENCRYPTED_HOME_REPO_NAME='home'
+export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
+```
+
+**Keybase** needs **no pre-run editing beyond the repo names above**. On the **new**
+machine, `fresh-install-of-osx.sh` installs the cask (only if the env vars above are
+set) and handles login interactively:
+
+- **On the first vanilla-OS run** (`FIRST_INSTALL=true`), if the Keybase env vars are
+  set and you're not already logged in, it attempts a non-interactive `keybase login`
+  (native login flow -- you'll be prompted by Keybase itself, not this script).
+- **On every later re-run**, it never re-attempts: if you're already logged in it
+  syncs silently, and if you're still not logged in it skips silently (with a hint
+  that running `keybase login` manually and re-running this script will pick it up).
 
 Whoever completes the login owns the account -- the username is derived from
-`keybase status` wherever it's needed, so there's no `KEYBASE_USERNAME` (or
-any other Keybase var) to set anywhere, ever.
+`keybase status` wherever it's needed, so there's no `KEYBASE_USERNAME` (or any other
+Keybase identity var) to set anywhere, ever.
+
+**Before relying on the encrypted backup for sensitive data**, read
+[KeybaseMigration.md § Is This as Secure as Keybase?](KeybaseMigration.md#is-this-as-secure-as-keybase)
+-- it's a genuine, honest comparison, not a "yes, don't worry" reassurance. In short:
+strong given a high-entropy passphrase, but not a like-for-like replacement (weaker
+metadata privacy, no per-device key revocation).
+
+**If using the encrypted backup:**
+
+1. Adjust the repo names if desired (defaults shown above).
+2. Create the two plain, public, empty GitHub repos (one time). This just needs `gh`
+   (or a browser) and GitHub auth -- it does **not** need to be run on the target
+   machine, and does not depend on anything from Phase 3 below:
+   ```bash
+   gh repo create "${GH_USERNAME}/${ENCRYPTED_HOME_REPO_NAME}" --public
+   gh repo create "${GH_USERNAME}/${ENCRYPTED_PROFILES_REPO_NAME}" --public
+   ```
+   No `gh` handy yet (e.g. a genuinely fresh machine with nothing installed)? Create
+   them manually at https://github.com/new instead -- public, no README/gitignore/license.
+3. Ensure the Keychain passphrase is set on the **target** machine (one-time-per-machine,
+   see below) -- **on a genuinely vanilla machine, `setup-encrypted-backup.rb` does not
+   exist yet at this point** (it ships inside the dotfiles repo, which Phase 3's
+   bootstrap command hasn't cloned yet). Use the raw command instead, run directly in
+   the terminal you'll launch the [§ 3.2 bootstrap command](#32-run-bootstrap-command)
+   from:
+   ```bash
+   security add-generic-password -A -a "${USER}" -s 'gpg-encrypted-backup' -w
+   ```
+   (paste a strong, randomly-generated passphrase from your password manager when
+   prompted). **The bootstrap command pipes `curl` straight into `zsh` and has no
+   terminal to prompt you with**, so this has to happen *before* running it -- see the
+   note right before that command for the full explanation of why.
+
+   Once the dotfiles repo is cloned (after Phase 3, or on any later/already-set-up
+   machine), `setup-encrypted-backup.rb` becomes available as a convenience wrapper
+   around the same command -- it's idempotent and safe to run anytime to verify or
+   (re-)set the passphrase, and prompts interactively via the same masked, double-entry
+   `security` confirmation if it's ever missing.
+
+   **This does not sync via iCloud Keychain, even if iCloud Keychain is enabled and you're signed in.** `security add-generic-password` has no flag for the `kSecAttrSynchronizable` attribute that iCloud Keychain sync depends on (confirmed via `security add-generic-password -h` -- only account/service/password/access-control options are exposed), so this item is local-only by design. **You must repeat the one-time Keychain setup (or re-run `setup-encrypted-backup.rb` interactively) on every new machine** -- there is no way to carry it over automatically.
+
+**If using neither:** comment out both env var pairs above. `fresh-install-of-osx.sh`
+skips the Keybase login step and the encrypted-backup readiness check entirely when
+their respective vars are unset, and the clone steps log an info message and continue
+(non-fatal to the rest of fresh-install).
 
 #### D. CI Badges (Optional)
 
@@ -332,14 +434,22 @@ If you didn't change anything, skip straight to [Phase 3](#phase-3-first-time-se
 
 ### 3.2 Run Bootstrap Command
 
+Copy-paste this single command to kick off the entire setup:
+
 ```zsh
-export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true' COLUMNS="${COLUMNS}"; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/Downloads/fresh-install-of-osx.log"; unset FIRST_INSTALL
+export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true' COLUMNS="${COLUMNS}"; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/Downloads/fresh-install-of-osx.log"; unset FIRST_INSTALL;
 ```
 
 Note: This command is ready to copy-paste-run as-is on `vraravam`'s own machines.
 If you forked this repo, replace `vraravam` with your own GitHub username and
 commit that change into your fork, so it's likewise ready to copy-paste-run
 for you every time, without editing first.
+
+**If you're using the optional encrypted-backup feature ([§ 2.3 C](#c-backup-mechanisms-keybase-encrypted-backup-optional)):**
+the command above prompts you for the Keychain passphrase automatically the first time it's
+needed -- even though `curl` is piped into `zsh`, the prompt talks directly to your terminal's
+`/dev/tty`, so you'll see it normally. It's non-fatal if that somehow fails (e.g. no controlling
+terminal available); the script logs a fallback command and continues without it either way.
 
 **What it does:**
 
@@ -371,8 +481,8 @@ Use **[templates/gitconfig-inc.template](templates/gitconfig-inc.template)** to 
 
 ```zsh
 # Example: personal and work contexts
-cp "${DOTFILES_DIR}/templates/gitconfig-inc.template" "${XDG_CONFIG_HOME}/git/includes/personal.inc"
-cp "${DOTFILES_DIR}/templates/gitconfig-inc.template" "${XDG_CONFIG_HOME}/git/includes/work.inc"
+cp "${DOTFILES_DIR}/templates/gitconfig-inc.template" "${XDG_CONFIG_HOME}/git/includes/personal.inc";
+cp "${DOTFILES_DIR}/templates/gitconfig-inc.template" "${XDG_CONFIG_HOME}/git/includes/work.inc";
 
 # Edit each file with appropriate name, email, signing key
 # Then wire into ${XDG_CONFIG_HOME}/git/config using includeIf
@@ -399,7 +509,7 @@ See [git conditional includes documentation](https://git-scm.com/docs/git-config
 Use **[templates/ssh-config.template](templates/ssh-config.template)** to create `~/.ssh/config`:
 
 ```zsh
-cp "${DOTFILES_DIR}/templates/ssh-config.template" ~/.ssh/config
+cp "${DOTFILES_DIR}/templates/ssh-config.template" ~/.ssh/config;
 # Edit with your key paths and host aliases
 ```
 
@@ -420,18 +530,16 @@ cp "${DOTFILES_DIR}/templates/ssh-config.template" ~/.ssh/config
 **Why now?** Your fork is now cloned to `${DOTFILES_DIR}` (~/.config/dotfiles), making it easy to squash locally.
 
 ```zsh
-cd "${DOTFILES_DIR}"
-
 # Check current history
-git log --oneline -20
+git -C "${DOTFILES_DIR}" log --oneline -20;
 
 # Count how many customization commits you made (e.g., 5)
 # Squash them into one commit:
-git reset --soft HEAD~5  # Adjust number to match your commits
-git commit -m "Initial customization for YOUR_USERNAME"
+git -C "${DOTFILES_DIR}" reset --soft HEAD~5;  # Adjust number to match your commits
+git -C "${DOTFILES_DIR}" commit -m "Initial customization for YOUR_USERNAME";
 
 # Force push to your fork (this rewrites history)
-git push --force-with-lease origin master
+git -C "${DOTFILES_DIR}" push --force-with-lease origin master;
 ```
 
 **Benefits:**

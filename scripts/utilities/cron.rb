@@ -187,7 +187,7 @@ module Cron
       # Use expanded paths (cron doesn't expand ${VAR} in command lines reliably)
       # Run every hour at minute 0
       # Temp log captures ALL output; main log only gets appended on errors/warnings
-      f.puts "0 *   *   *   *   tmplog=#{downloads}/software-updates-cron-last-run.log; ruby #{dotfiles_dir}/scripts/software-updates-cron.rb 2>&1 | tee \"${tmplog}\"; exitcode=$?; [ $exitcode -ne 0 ] && cat \"${tmplog}\" >> #{downloads}/software-updates-cron.log; exit $exitcode"
+      f.puts "0 *   *   *   *   tmplog=#{downloads}/software-updates-cron-last-run.log; ruby #{dotfiles_dir}/scripts/software-updates-cron.rb 2>&1 | tee \"${tmplog}\"; exitcode=$?; [ \"${exitcode}\" -ne 0 ] && cat \"${tmplog}\" >> #{downloads}/software-updates-cron.log; exit \"${exitcode}\""
     end
   end
 
@@ -242,8 +242,13 @@ module Cron
 
   # Wraps a block in the cron bracket: suspend cron, yield, call recron to
   # restore it, then clear the backup so any at_exit hook is a no-op.
-  # Mirrors with_cron_suspended in .aliases. Restores cron via an ensure
-  # clause so it always runs even if the block raises.
+  # Mirrors with_cron_suspended in .aliases. Restores cron via an ensure clause so it
+  # always runs, regardless of how the block exits: a normal return, an exception, OR a
+  # non-local 'return' from inside the block (e.g. 'return false unless x' in a caller
+  # like recreate-repository.rb) -- confirmed empirically that a bare 'begin/rescue
+  # StandardError' (this method's previous implementation) does NOT catch a non-local
+  # return; only 'ensure' is guaranteed to run in that case, since a 'return' is Ruby
+  # control flow, not a raised exception, and never touches the 'rescue' clause at all.
   #
   # @param dry_run [Boolean] When true, logs what would happen without suspending cron.
   # @example
@@ -258,20 +263,22 @@ module Cron
     end
 
     suspend_cron
+    completed_normally = false
     begin
       yield
-      recron
-      backup = EnvVars.cron_backup_file
-      if backup.exist?
-        unless PathUtils.safe_for_write?(backup)
-          Logging.warn "Refusing to delete cron backup file in root directory: '#{backup.cyan}'"
-          return
-        end
-        backup.delete
+      completed_normally = true
+    ensure
+      # Deliberately no 'return' anywhere in this ensure clause (including inside the
+      # methods it calls being inlined here) -- doing so would silently swallow an
+      # in-flight exception instead of letting it propagate after cleanup, a classic
+      # Ruby gotcha. _finish_cron_suspension_successfully is a separate method precisely
+      # so its own internal 'return unless backup.exist?' can't accidentally end up
+      # textually inside this ensure block.
+      if completed_normally
+        _finish_cron_suspension_successfully
+      else
+        resume_cron
       end
-    rescue StandardError
-      resume_cron
-      raise
     end
   end
 
@@ -280,6 +287,22 @@ module Cron
   # ---------------------------------------------------------------------------
 
   private
+
+  # Success path for with_cron_suspended: reinstalls the (possibly-updated) crontab and
+  # cleans up the backup file. Split out from with_cron_suspended itself so its early
+  # 'return unless backup.exist?' can never end up textually inside that method's
+  # 'ensure' clause (see the safety note there).
+  def _finish_cron_suspension_successfully
+    recron
+    backup = EnvVars.cron_backup_file
+    return unless backup.exist?
+
+    if PathUtils.safe_for_write?(backup)
+      backup.delete
+    else
+      Logging.warn "Refusing to delete cron backup file in root directory: '#{backup.cyan}'"
+    end
+  end
 
   # Validates crontab syntax using crontab's built-in validation.
   # Attempts to install to system crontab without actually committing.
