@@ -7,14 +7,14 @@
 # Recreates a git repository by optionally squashing all history into a single
 # commit, then force-pushing to every configured remote. Useful for removing
 # dangling/orphaned commits so fresh cloning is fast. Also shrinks the payload of the
-# next encrypted backup export (see scripts/utilities/encrypted_backup.rb):
+# next encrypted backup export (the external 'git-remote-gpg-encrypt' tool's
 # 'git bundle create --all' always contains the entire reachable history, so a smaller
-# local history directly means a smaller bundle to encrypt and push next time.
+# local history directly means a smaller bundle to encrypt and push next time).
 #
 # MULTIPLE REMOTES: a repo may now have more than one remote (e.g. 'origin' ==
-# keybase://, 'origin2' == the gpg+git-bundle encrypted backup -- see
-# KeybaseMigration.md). Force mode force-pushes the squashed history to ALL of them
-# (see _push_to_all_remotes), not just 'origin'.
+# keybase://, 'origin2' == a 'gpg-encrypt::' remote for the external
+# 'git-remote-gpg-encrypt' tool -- see KeybaseMigration.md). Force mode force-pushes
+# the squashed history to ALL of them (see _push_to_all_remotes), not just 'origin'.
 #
 # KEYBASE IS SPECIAL-CASED: a squashed force-push alone does not fully discard a
 # keybase:// repo's prior history server-side the way a plain force-push does on a
@@ -23,21 +23,9 @@
 # deletes and explicitly recreates the repo instead of relying on force-push alone.
 # Keybase.ensure_logged_in is checked BEFORE any destructive local operation, for every
 # keybase:// remote found, so a login failure is caught before local history is
-# squashed away with nowhere to push it. Every OTHER remote (encrypted-backup, or a
-# plain GitHub remote) is just force-pushed directly -- no delete/recreate needed or
-# possible there.
-#
-# SAFETY CHECK FOR ENCRYPTED-BACKUP WRAPPER REPOS: this script's built-in "verify file
-# lists match" safety check (see GitProcessor#verify_and_recreate_local_repo) is nearly
-# vacuous for a one-file repo -- it only catches the file going missing entirely or a
-# stray extra file appearing, not a stale/corrupted blob with the right path but wrong
-# content. When -d points at a directory under ${XDG_CACHE_HOME}/encrypted-backups/ (an
-# encrypted-backup wrapper repo -- see scripts/utilities/encrypted_backup.rb), force mode
-# automatically runs EncryptedBackup.verify_current_blob_decryptable? first (decrypts the
-# current blob and runs 'git bundle verify' on it) and refuses to squash if that fails --
-# this is automatic and requires no special flag, specifically so the ordinary
-# 'recreate-repository.rb -f -d <dir>' muscle memory stays safe without needing a
-# different command for wrapper repos.
+# squashed away with nowhere to push it. Every other remote (a 'gpg-encrypt::' remote,
+# or a plain GitHub remote) is just force-pushed directly -- no delete/recreate needed
+# or possible there.
 #
 # Usage:
 #   Standalone: recreate-repository.rb [-f] -d <repo-dir>
@@ -45,7 +33,6 @@
 
 require_relative 'utilities/core'
 require_relative 'utilities/cron'
-require_relative 'utilities/encrypted_backup'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
 require_relative 'utilities/keybase'
@@ -75,16 +62,6 @@ module RecreateRepository
 
     dir_colored = dir.cyan
     Logging.error "'#{dir_colored}' is not a git repo. Please specify the root of a git repo." unless GitProcessor.repo?(dir)
-
-    if force
-      encrypted_repo_name = _encrypted_backup_repo_name(dir_pn)
-      if encrypted_repo_name && !EncryptedBackup.verify_current_blob_decryptable?(encrypted_repo_name: encrypted_repo_name)
-        Logging.record_error "'#{dir_colored}' is an encrypted-backup wrapper repo for '#{encrypted_repo_name}', " \
-                             'and its current blob failed the decrypt/integrity check -- refusing to squash ' \
-                             '(would risk losing the last known-good backup)'
-        return false
-      end
-    end
 
     Logging.section_header "#{'Processing dir:'.yellow} '#{dir_colored}'"
     GitProcessor.new(dir: dir_pn, dry_run: dry_run) do |git|
@@ -150,8 +127,8 @@ module RecreateRepository
   # way it does on a real git host -- Keybase's own git-remote-helper still retains old
   # blobs reachable through its history/pruning model, and Keybase does not reliably
   # auto-recreate a repo on push the way a delete+create does explicitly. Every other
-  # remote (encrypted-backup, or a plain GitHub remote) is just force-pushed directly
-  # -- no delete/recreate needed or possible there.
+  # remote (a 'gpg-encrypt::' remote, or a plain GitHub remote) is just force-pushed
+  # directly -- no delete/recreate needed or possible there.
   #
   # @param git [GitProcessor]
   # @param branch [String]
@@ -183,25 +160,7 @@ module RecreateRepository
     all_succeeded
   end
 
-  # Detects whether dir_pn is an encrypted-backup wrapper repo (a child of
-  # ${XDG_CACHE_HOME}/encrypted-backups/, see EncryptedBackup.wrapper_repo_dir) and, if so,
-  # returns its encrypted_repo_name. Derives the expected path via
-  # EncryptedBackup.wrapper_repo_dir itself (rather than reconstructing the
-  # 'encrypted-backups' path segment here) so the two stay in sync automatically if that
-  # convention ever changes. Exact-match only -- a nested subdirectory of a wrapper repo is
-  # not itself a wrapper repo. Does not require dir_pn to currently exist or be a valid repo,
-  # callers already validate that separately.
-  #
-  # @param dir_pn [Pathname]
-  # @return [String, nil] the encrypted_repo_name, or nil if dir_pn isn't a wrapper repo
-  # :reek:UtilityFunction -- Stateless helper (correct design)
-  def _encrypted_backup_repo_name(dir_pn)
-    expanded = dir_pn.expand_path
-    candidate_name = expanded.basename.to_s
-    expanded == EncryptedBackup.wrapper_repo_dir(candidate_name) ? candidate_name : nil
-  end
-
-  private_class_method :_ensure_keybase_remotes_reachable, :_push_to_all_remotes, :_encrypted_backup_repo_name
+  private_class_method :_ensure_keybase_remotes_reachable, :_push_to_all_remotes
 end
 
 # ---------------------------------------------------------------------------
@@ -219,10 +178,6 @@ if __FILE__ == $PROGRAM_NAME
     opts.separator ''
     opts.separator 'A keybase:// remote is deleted and recreated (via Keybase.recreate_repo); every other'
     opts.separator 'remote is just force-pushed directly.'
-    opts.separator ''
-    opts.separator 'Force mode against an encrypted-backup wrapper repo (${XDG_CACHE_HOME}/encrypted-backups/*)'
-    opts.separator 'automatically verifies the current blob decrypts and is a valid git bundle first, and'
-    opts.separator 'refuses to squash if it does not -- no special flag needed for this.'
     opts.separator ''
     opts.separator 'Options:'.purple
     opts.on('-f', '--force', 'Squash all commits into one (profiles repo is always forced)') do

@@ -59,7 +59,6 @@ end
 brew 'bash'
 brew 'curl'
 brew 'git'
-brew 'gnupg'  # Encrypted backup (gpg + git bundle, coexists with Keybase) -- see scripts/utilities/encrypted_backup.rb
 brew 'grep'
 brew 'jemalloc'  # used for faster ruby
 brew 'less'
@@ -70,6 +69,8 @@ brew 'sqlite3'
 brew 'vim'
 brew 'wget'
 brew 'zsh'
+
+brew 'vraravam/tap/git-remote-gpg-encrypt', trusted: true  # encrypted backup (gpg + git bundle, coexists with Keybase)
 
 # formulae pulled in for base configs (if these are absent, you will get errors and things won't work)
 brew 'antidote',

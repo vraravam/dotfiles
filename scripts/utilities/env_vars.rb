@@ -89,16 +89,18 @@ module EnvVars
   # Mirrors: export KEYBASE_PROFILES_REPO_NAME='profiles'
   KEYBASE_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_PROFILES_REPO_NAME', nil))
 
-  # Encrypted git repo names (used with the encrypted-backup mechanism, see
-  # scripts/utilities/encrypted_backup.rb). nil (unset/empty in .shellrc) means this
-  # mechanism is not enabled for that repo -- comment out the export in .shellrc to
-  # disable it entirely. Coexists with Keybase above -- both can be enabled at once
-  # (see KeybaseMigration.md).
-  # Mirrors: export ENCRYPTED_HOME_REPO_NAME='home'
-  ENCRYPTED_HOME_REPO_NAME = _normalize_optional_string(ENV.fetch('ENCRYPTED_HOME_REPO_NAME', nil))
+  # Encrypted git repo URLs (used with the external 'git-remote-gpg-encrypt' tool,
+  # installed via the 'vraravam/tap' Homebrew tap -- see files/--HOME--/Brewfile). nil
+  # (unset/empty in .shellrc) means this mechanism is not enabled for that repo --
+  # comment out the export in .shellrc to disable it entirely. Coexists with Keybase
+  # above -- both can be enabled at once (see KeybaseMigration.md). Unlike
+  # KEYBASE_*_REPO_NAME above, this holds a full URL, not a bare repo name -- that tool
+  # has no concept of a "default owner" to derive a full URL from a bare name.
+  # Mirrors: export ENCRYPTED_HOME_REPO_URL='https://github.com/vraravam/home.git'
+  ENCRYPTED_HOME_REPO_URL = _normalize_optional_string(ENV.fetch('ENCRYPTED_HOME_REPO_URL', nil))
 
-  # Mirrors: export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
-  ENCRYPTED_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('ENCRYPTED_PROFILES_REPO_NAME', nil))
+  # Mirrors: export ENCRYPTED_PROFILES_REPO_URL='https://github.com/vraravam/browser-profiles.git'
+  ENCRYPTED_PROFILES_REPO_URL = _normalize_optional_string(ENV.fetch('ENCRYPTED_PROFILES_REPO_URL', nil))
 
   # ---------------------------------------------------------------------------
   # Path variables (Pathname objects)

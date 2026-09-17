@@ -641,62 +641,51 @@ These branches are preserved in git history for future reference but will not be
 This repo's own Keybase identity/setup code (`scripts/utilities/keybase.rb`) is fully
 intact -- Keybase is not being replaced, deprecated, or phased out. What's new is a
 second, independent backup mechanism running alongside it: `git bundle` +
-`gpg --symmetric`, implemented in `scripts/utilities/encrypted_backup.rb` and exposed
-as a real git remote via a custom remote helper (`scripts/git-remote-encrypted-backup`).
-Both mechanisms are opt-in per repo, controlled purely by whether their repo-name env
-vars are set in `.shellrc` (`KEYBASE_HOME_REPO_NAME`/`KEYBASE_PROFILES_REPO_NAME` and
-`ENCRYPTED_HOME_REPO_NAME`/`ENCRYPTED_PROFILES_REPO_NAME`) -- either, both, or neither
+`gpg --symmetric`, provided by the external
+[`git-remote-gpg-encrypt`](https://github.com/vraravam/git-remote-gpg-encrypt) tool
+(installed via the [`vraravam/tap`](https://github.com/vraravam/homebrew-tap) Homebrew
+tap) and exposed as a real git remote via that tool's own custom remote helper. Both
+mechanisms are opt-in per repo, controlled purely by whether their env vars are set in
+`.shellrc` (`KEYBASE_HOME_REPO_NAME`/`KEYBASE_PROFILES_REPO_NAME` and
+`ENCRYPTED_HOME_REPO_URL`/`ENCRYPTED_PROFILES_REPO_URL`) -- either, both, or neither
 can be enabled. When both are enabled for the same repo, it gets two independent
 remotes (`origin` for whichever was configured first, `origin2` for the other),
 pushed/pulled explicitly and separately -- see `KeybaseMigration.md` for the full
 day-to-day mechanics of that.
 
-**How it works:**
+**This repo previously implemented the gpg+git-bundle mechanism itself**
+(`scripts/utilities/encrypted_backup.rb`, `scripts/git-remote-encrypted-backup`,
+`scripts/setup-encrypted-backup.rb`) -- all three were deleted once the same logic was
+extracted into the standalone `git-remote-gpg-encrypt` tool, so it could be reused
+outside this dotfiles repo without depending on any of its Ruby infrastructure
+(`Logging`/`EnvVars`/`GitProcessor`/`CliParser`). The full design rationale -- why
+`git-remote-gcrypt`, `git-remote-sealed`, `git-crypt`, `transcrypt`, and `age` were each
+evaluated and rejected in favor of plain `gpg --symmetric` against a `git bundle` -- now
+lives entirely in that external repo's own `README.md`/`docs/DESIGN.md`, not duplicated
+here. See `AGENTS.md` § Known related repos for how this repo and that one relate going
+forward (Ruby-rule changes here may need back-porting there; that repo's own tap
+formula needs updating whenever it cuts a new release).
+
+**How it works day-to-day (dotfiles-specific integration):**
 
 1. `home` (`~/`) and `browser-profiles` keep being ordinary, unencrypted local git repos -- full native history, `git log`/`git blame`/etc. all just work, exactly as before.
-2. The encrypted backup is a real git remote (`encrypted-backup::<repo-name>`, dispatched by git to `scripts/git-remote-encrypted-backup` per `man gitremote-helpers`): a plain `git push` to it runs `git bundle create --all` to produce a single-file, complete representation of the repo's history, then encrypts it with `gpg --batch --passphrase-fd 0 --symmetric` using a passphrase read from the **macOS Keychain** (never stored inside either repo).
-3. The resulting encrypted blob (`backup.gpg`) is split into 45MB chunks (`backup.gpg.000`, `backup.gpg.001`, ...) -- GitHub hard-rejects any single pushed file over 100MB, and a full-history bundle of a real home directory routinely exceeds that. 45MB also stays under GitHub's separate 50MB *recommended* threshold (files between 50-100MB still push successfully, but trigger a non-fatal "GH001: Large files detected" warning on every push -- confirmed in real usage). All chunks are then committed and pushed to a plain, ordinary **public** GitHub repo (`ENCRYPTED_HOME_REPO_NAME`/`ENCRYPTED_PROFILES_REPO_NAME`, e.g. `home`/`browser-profiles`) via an ordinary internal `git push` to that wrapper repo, invoked by the remote helper.
-4. A plain `git pull`/`git fetch` against the same remote triggers the reverse: the remote helper fetches the wrapper repo, reassembles the chunks, decrypts with the Keychain passphrase, and imports the resulting bundle's objects directly into the local repo's object database (`git bundle unbundle`) -- git itself then handles the merge/rebase, exactly like any other remote.
-5. Day-to-day transparency: because it's a real git remote (not a wrapper script), `git push`/`git pull`/`git fetch` -- and the `push`/`pull` shell functions -- work against it exactly like any other remote, once configured. `fresh-install-of-osx.sh` configures it (and/or Keybase) automatically after cloning.
-
-**Why this design, out of four evaluated:**
-
-| | git-remote-gcrypt | Picocrypt | git-crypt | **gpg + git bundle (chosen)** |
-|---|---|---|---|---|
-| Genuinely password-based (no external key-file to back up) | No -- needs a GPG keypair | Yes | No -- needs an exported key file | **Yes** |
-| Actively maintained | Yes | No (archived) | Yes | **Yes (git + GnuPG themselves)** |
-| Scriptable / non-interactive | Yes | No (no documented flag) | Yes | **Yes** -- `--batch --passphrase-fd` |
-| Hides file names / tree structure | Yes | Yes | No -- author says wrong tool for whole-repo use | **Yes** |
-| Preserves full git history on restore | Yes | Only if `.git` is also archived | Yes | **Yes** -- it's a real bundle |
-
-`git-remote-gcrypt` was the original candidate (see the detailed rejection history below) but was ultimately dropped: its `gcrypt.participants = simple` mode is not password-based at all -- it encrypts to your own default GPG keypair (`--default-recipient-self`), which means the GPG *private key* itself (not a memorized password) has to be backed up externally before a vanilla-OS restore is possible. That reintroduces exactly the chicken-and-egg problem this whole migration was meant to solve, just moved from "SSH key" to "GPG private key." Picocrypt (genuinely password-based) was rejected as unmaintained/non-scriptable; git-crypt (actively maintained, scriptable) was rejected because it leaks file names and its own author recommends git-remote-gcrypt instead for whole-repo encryption. `gpg --symmetric` against a `git bundle` is the only option with a clean sheet across every requirement, using tools (`git`, `gnupg`) already depended on rather than adding a new one.
+2. The encrypted backup is a real git remote (`gpg-encrypt::<full-url>`, dispatched by git to the external tool's `git-remote-gpg-encrypt` executable per `man gitremote-helpers`): a plain `git push` to it bundles, encrypts, chunks, and pushes transparently.
+3. A plain `git pull`/`git fetch` against the same remote triggers the reverse: fetch, decrypt, unbundle -- git itself then handles the merge/rebase, exactly like any other remote.
+4. Day-to-day transparency: because it's a real git remote (not a wrapper script), `git push`/`git pull`/`git fetch` -- and the `push`/`pull` shell functions -- work against it exactly like any other remote, once configured. `fresh-install-of-osx.sh` configures it (and/or Keybase) automatically after cloning.
 
 **One-time setup required before first use (not automatable, and deliberately so -- the passphrase must come from a human, never be generated/stored automatically):**
 ```
-security add-generic-password -A -a "${USER}" -s 'gpg-encrypted-backup' -w;
+security add-generic-password -A -a "${USER}" -s 'git-remote-gpg-encrypt' -w;
 # (paste a strong passphrase from your password manager)
 ```
-`scripts/setup-encrypted-backup.rb` checks for this and prints the exact command if missing. `-A` allows any process to read the entry without a GUI prompt, required for non-interactive cron/fresh-install use.
+`git gpg-encrypt-setup` (from the external tool) checks for this and prints the exact command if missing. `-A` allows any process to read the entry without a GUI prompt, required for non-interactive cron/fresh-install use.
 
-**Implementation:**
-- `scripts/git-remote-encrypted-backup` -- the custom git remote helper itself; implements `capabilities`/`list`/`fetch`/`push`/`option` per `man gitremote-helpers`. This is what makes plain `git push`/`git pull`/`git fetch` work directly -- no wrapper script.
-- `scripts/utilities/encrypted_backup.rb` -- core module (`bundle_and_push`/`fetch_and_list_bundle_refs`, called by the remote helper above; `clone_and_decrypt`, used by fresh-install's initial bootstrap clone; `verify_current_blob_decryptable?`; Keychain passphrase lookup/prompt)
-- `scripts/setup-encrypted-backup.rb` -- idempotent readiness check (gnupg + Keychain passphrase); prompts interactively via `security`'s own masked/confirm prompt when the passphrase is missing and a real TTY is available, otherwise just logs setup instructions -- the underlying Keychain entry it creates is one-time-per-machine (does not sync via iCloud Keychain)
-- `scripts/fresh-install-of-osx.sh`'s `_clone_home_repo`/`_clone_profiles_repo` -- vanilla-OS bootstrap path, tries Keybase first (if enabled), falls back to the encrypted backup
+**Dotfiles-side integration points:**
+- `files/--HOME--/Brewfile` -- `brew 'vraravam/tap/git-remote-gpg-encrypt', trusted: true` (fully-qualified formula reference auto-taps `vraravam/tap`; pulls in `gnupg` + `git` transitively)
+- `files/--HOME--/.shellrc` -- `ENCRYPTED_HOME_REPO_URL`/`ENCRYPTED_PROFILES_REPO_URL` env vars (full URLs, not bare names -- see `KeybaseMigration.md` for why)
+- `scripts/fresh-install-of-osx.sh`'s `_clone_home_repo`/`_clone_profiles_repo` -- vanilla-OS bootstrap path, tries Keybase first (if enabled), falls back to `git gpg-encrypt-restore`
 
 See `KeybaseMigration.md` for the step-by-step setup guide, including a section honestly comparing this mechanism's security against Keybase's (short version: comparable content confidentiality given a high-entropy passphrase, but weaker metadata privacy and no per-device key revocation -- not a like-for-like replacement).
-
-### Rejection history: git-remote-gcrypt and the earlier "public repo" idea
-
-An early evaluation of "replace Keybase with public encrypted GitHub repos" (any implementation, not specifically gcrypt) was rejected for:
-
-1. **Chicken-and-egg authentication problem**: assumed the home repo would need a GitHub PAT or SSH key to clone, but the home repo itself contains the SSH keys -- circular dependency. *(Resolved for git-remote-gcrypt specifically: a public repo needs zero GitHub auth over HTTPS. Turned out to resurface anyway, just for the GPG keypair instead of SSH keys -- see above.)*
-2. **Metadata exposure trade-off**: GitHub still sees repo existence, branch names, commit count, and pack sizes even though file contents are encrypted. *(Not resolved by any of the four candidates -- accepted cost of dropping Keybase, which hid this metadata entirely.)*
-3. **Password prompt friction**: every `git push`/`pull` prompts for the encryption password unless cached. *(Eliminated for the chosen mechanism -- the passphrase is read directly from the macOS Keychain via `security find-generic-password` and piped to `gpg --batch --passphrase-fd 0`, so routine pushes are fully non-interactive with no gpg-agent caching involved. This concern only applied to git-remote-gcrypt, where the encrypted repo is the live remote itself, decrypted on every git operation.)*
-4. **No clear advantage over Keybase**: both require trusting a third party and a Homebrew install. *(Accepted -- Keybase itself is not guaranteed to remain available/installed indefinitely as a third-party service, which is the actual motivation for migrating at all.)*
-5. **Public repo visibility concern**: a public `github.com/user/home` repo advertises "this person backs up their home directory here." *(Accepted cost, same as #2.)*
-
-**Key lesson**: Some problems have constraints that make elegant solutions impractical. Chasing "the encrypted repo IS the live remote, transparently" (what git-remote-gcrypt and Keybase both provide) kept reintroducing a secret-backup chicken-and-egg problem in different forms. Decoupling the live repo (plaintext, local, no special remote) from the backup (a completely separate encrypted-blob push, chunked only to satisfy GitHub's 100MB file-size limit) sidesteps the whole class of problem instead of trying to make the coupled version work.
 
 ---
 

@@ -155,12 +155,12 @@ git -C "${HOME}" init -b master;
 git -C "${HOME}" remote add origin "keybase://private/$(keybase whoami)/home";
 ```
 
-**If using the encrypted backup** (the GitHub repo must already exist — see § 2.3.C step 2 above):
+**If using the encrypted backup** (the git repo must already exist — see § 2.3.C step 2 above):
 ```zsh
 # As 'origin' if you're not also using Keybase, 'origin2' if you are (run both
 # 'remote add' lines below in that case):
-git -C "${HOME}" remote add origin encrypted-backup::home;
-# git -C "${HOME}" remote add origin2 encrypted-backup::home   # only if Keybase is also configured above
+git -C "${HOME}" remote add origin gpg-encrypt::https://github.com/${GH_USERNAME}/home.git;
+# git -C "${HOME}" remote add origin2 gpg-encrypt::https://github.com/${GH_USERNAME}/home.git   # only if Keybase is also configured above
 ```
 
 Then, regardless of which mechanism(s) you configured above:
@@ -270,7 +270,7 @@ optional mechanisms -- **Keybase** and/or the gpg+git-bundle **encrypted backup*
 [TechnicalDeepDive.md § 14](TechnicalDeepDive.md#14-adding-an-encrypted-backup-gpg--git-bundle-alongside-keybase)
 and [KeybaseMigration.md](KeybaseMigration.md)). Both can be enabled at once (each
 repo then gets two remotes, `origin` and `origin2`, pushed/pulled independently), just
-one, or neither. Each is controlled purely by whether its repo-name env vars are set in
+one, or neither. Each is controlled purely by whether its env vars are set in
 **files/--HOME--/.shellrc** -- comment out (or leave unset) a pair to disable that
 mechanism entirely:
 
@@ -278,7 +278,7 @@ mechanism entirely:
 you want *before* doing [§ 1.4 Commit and Push](#14-commit-and-push) above -- that step
 is where the backup actually gets created (remote configured + pushed, on the *old*
 machine), using the exact same env var choice you make here. Everything below this
-point (repo-name adjustment, GitHub repo creation, Keychain passphrase) applies
+point (repo URL adjustment, git repo creation, Keychain passphrase) applies
 regardless of which scenario you're in; only note which machine each step runs on.
 
 **If starting fresh (no existing machine):** nothing to back up yet -- Phase 3 will
@@ -287,13 +287,15 @@ you enable here, the first time someone else's (i.e. your own, from a future mac
 backup exists to restore from. Set these up whenever you're ready to start using them.
 
 ```zsh
-# Keybase (comment out to disable)
+# Keybase (comment out to disable) -- bare repo names, auto-created on first push
 export KEYBASE_HOME_REPO_NAME='home'
 export KEYBASE_PROFILES_REPO_NAME='profiles'
 
-# Encrypted backup (comment out to disable)
-export ENCRYPTED_HOME_REPO_NAME='home'
-export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
+# Encrypted backup (comment out to disable) -- full URLs (any git host), not bare
+# names: the external 'git-remote-gpg-encrypt' tool has no concept of a "default
+# owner" to derive a URL from a name, by design.
+export ENCRYPTED_HOME_REPO_URL='https://github.com/${GH_USERNAME}/home.git'
+export ENCRYPTED_PROFILES_REPO_URL='https://github.com/${GH_USERNAME}/browser-profiles.git'
 ```
 
 **Keybase** needs **no pre-run editing beyond the repo names above**. On the **new**
@@ -319,37 +321,37 @@ metadata privacy, no per-device key revocation).
 
 **If using the encrypted backup:**
 
-1. Adjust the repo names if desired (defaults shown above).
-2. Create the two plain, public, empty GitHub repos (one time). This just needs `gh`
-   (or a browser) and GitHub auth -- it does **not** need to be run on the target
-   machine, and does not depend on anything from Phase 3 below:
+1. Adjust the repo URLs if desired (defaults shown above use GitHub; any git host works).
+2. Create the two plain, public, empty git repos (one time). This just needs `gh`
+   (or a browser) and auth for whichever host you chose -- it does **not** need to be
+   run on the target machine, and does not depend on anything from Phase 3 below:
    ```bash
-   gh repo create "${GH_USERNAME}/${ENCRYPTED_HOME_REPO_NAME}" --public
-   gh repo create "${GH_USERNAME}/${ENCRYPTED_PROFILES_REPO_NAME}" --public
+   gh repo create "${GH_USERNAME}/home" --public
+   gh repo create "${GH_USERNAME}/browser-profiles" --public
    ```
    No `gh` handy yet (e.g. a genuinely fresh machine with nothing installed)? Create
    them manually at https://github.com/new instead -- public, no README/gitignore/license.
 3. Ensure the Keychain passphrase is set on the **target** machine (one-time-per-machine,
-   see below) -- **on a genuinely vanilla machine, `setup-encrypted-backup.rb` does not
-   exist yet at this point** (it ships inside the dotfiles repo, which Phase 3's
-   bootstrap command hasn't cloned yet). Use the raw command instead, run directly in
-   the terminal you'll launch the [§ 3.2 bootstrap command](#32-run-bootstrap-command)
+   see below) -- **on a genuinely vanilla machine, `git gpg-encrypt-setup` does not
+   exist yet at this point** (it's installed via the `vraravam/tap` Homebrew tap, which
+   Phase 3's bootstrap command hasn't run yet). Use the raw command instead, run directly
+   in the terminal you'll launch the [§ 3.2 bootstrap command](#32-run-bootstrap-command)
    from:
    ```bash
-   security add-generic-password -A -a "${USER}" -s 'gpg-encrypted-backup' -w
+   security add-generic-password -A -a "${USER}" -s 'git-remote-gpg-encrypt' -w
    ```
    (paste a strong, randomly-generated passphrase from your password manager when
    prompted). **The bootstrap command pipes `curl` straight into `zsh` and has no
    terminal to prompt you with**, so this has to happen *before* running it -- see the
    note right before that command for the full explanation of why.
 
-   Once the dotfiles repo is cloned (after Phase 3, or on any later/already-set-up
-   machine), `setup-encrypted-backup.rb` becomes available as a convenience wrapper
+   Once `brew bundle install` has run (during Phase 3, or on any later/already-set-up
+   machine), `git gpg-encrypt-setup` becomes available as a convenience wrapper
    around the same command -- it's idempotent and safe to run anytime to verify or
    (re-)set the passphrase, and prompts interactively via the same masked, double-entry
    `security` confirmation if it's ever missing.
 
-   **This does not sync via iCloud Keychain, even if iCloud Keychain is enabled and you're signed in.** `security add-generic-password` has no flag for the `kSecAttrSynchronizable` attribute that iCloud Keychain sync depends on (confirmed via `security add-generic-password -h` -- only account/service/password/access-control options are exposed), so this item is local-only by design. **You must repeat the one-time Keychain setup (or re-run `setup-encrypted-backup.rb` interactively) on every new machine** -- there is no way to carry it over automatically.
+   **This does not sync via iCloud Keychain, even if iCloud Keychain is enabled and you're signed in.** `security add-generic-password` has no flag for the `kSecAttrSynchronizable` attribute that iCloud Keychain sync depends on (confirmed via `security add-generic-password -h` -- only account/service/password/access-control options are exposed), so this item is local-only by design. **You must repeat the one-time Keychain setup (or re-run `git gpg-encrypt-setup` interactively) on every new machine** -- there is no way to carry it over automatically.
 
 **If using neither:** comment out both env var pairs above. `fresh-install-of-osx.sh`
 skips the Keybase login step and the encrypted-backup readiness check entirely when

@@ -113,10 +113,10 @@ class GitProcessor
   # resurrect-repositories.rb) detect the missing 'origin' and reconfigure it from config.
   #
   # This bundle-import path is intentionally generic and has no concept of encryption --
-  # EncryptedBackup.clone_and_decrypt (scripts/utilities/encrypted_backup.rb) reuses it as a
-  # building block by decrypting a blob into a plain bundle file first, then passing that
-  # here exactly like any other bundle (see that file's header comment for why the
-  # gpg/Keychain-specific logic lives there and not in this method or the shell function).
+  # resurrect-repositories.rb is its only consumer today. The external
+  # 'git-remote-gpg-encrypt' tool (installed via the 'vraravam/tap' Homebrew tap) has its
+  # own standalone restore path (`git gpg-encrypt-restore`) and does not call into this
+  # method at all.
   #
   # **DELEGATES TO SHELL VERSION**: This Ruby method is a thin wrapper around the
   # shell function clone_repo_into() in .shellrc. The shell version is required
@@ -496,8 +496,8 @@ class GitProcessor
   # hard-resets, if allow_reset_on_diverged_history is true and the two histories share
   # no common ancestor (e.g. after a force-squash, see recreate-repository.rb). A
   # generic "pull that tolerates a rewritten remote history" primitive -- not specific
-  # to any particular remote transport. Keybase, the gpg+git-bundle encrypted backup
-  # (see scripts/utilities/encrypted_backup.rb), or a plain GitHub remote all work
+  # to any particular remote transport. Keybase, a 'gpg-encrypt::' remote (see the
+  # external 'git-remote-gpg-encrypt' tool), or a plain GitHub remote all work
   # identically here, since this only depends on git's own ref/object model, not on how
   # the remote's objects got there.
   #
