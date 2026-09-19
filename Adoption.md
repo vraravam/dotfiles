@@ -439,7 +439,7 @@ If you didn't change anything, skip straight to [Phase 3](#phase-3-first-time-se
 Copy-paste this single command to kick off the entire setup:
 
 ```zsh
-export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true' COLUMNS="${COLUMNS}"; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/Downloads/fresh-install-of-osx.log"; unset FIRST_INSTALL;
+export GH_USERNAME='vraravam' DOTFILES_BRANCH='test-gpg' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true' COLUMNS="${COLUMNS}"; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/Downloads/fresh-install-of-osx.log"; unset FIRST_INSTALL;
 ```
 
 Note: This command is ready to copy-paste-run as-is on `vraravam`'s own machines.
