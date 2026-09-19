@@ -45,6 +45,9 @@ module EnvVars
   # Used for env vars where empty and unset are semantically identical (the
   # feature is disabled or absent). Prevents returning empty strings that would
   # pass truthiness checks but fail nil_or_empty? checks.
+  #
+  # @param value [String, nil] Raw environment variable value
+  # @return [String, nil] Stripped string, or nil if value is unset/empty/whitespace-only
   def self._normalize_optional_string(value)
     value&.then { |s| nil_or_empty?(s) ? nil : s.strip }
   end
@@ -212,6 +215,8 @@ module EnvVars
   # Filter pattern for repo operations (run-all.rb, resurrect-repositories.rb).
   # Mirrors: export FILTER (set temporarily for filtering operations)
   # Returns nil when not set or empty (after stripping whitespace), otherwise returns stripped string.
+  #
+  # @return [String, nil] Stripped filter pattern, or nil when unset/empty
   def self.filter
     _normalize_optional_string(ENV.fetch('FILTER', nil))
   end
@@ -219,6 +224,8 @@ module EnvVars
   # Reference dir for repo verification (resurrect-repositories.rb).
   # Mirrors: export REF_FOLDER (set temporarily for verification operations)
   # Returns nil when not set or empty (after stripping whitespace), otherwise returns expanded absolute Pathname.
+  #
+  # @return [Pathname, nil] Expanded reference folder path, or nil when unset/empty
   def self.ref_folder
     _normalize_optional_string(ENV.fetch('REF_FOLDER', nil))&.then { |s| Pathname.new(s).expand_path }
   end
@@ -226,12 +233,16 @@ module EnvVars
   # Base dir for repo operations (run-all.rb).
   # Mirrors: export FOLDER (set temporarily for run-all operations, defaults to current directory)
   # Returns nil when not set or empty (after stripping whitespace), otherwise returns expanded absolute Pathname.
+  #
+  # @return [Pathname, nil] Expanded base folder path, or nil when unset/empty
   def self.folder
     _normalize_optional_string(ENV.fetch('FOLDER', nil))&.then { |s| Pathname.new(s).expand_path }
   end
 
   # Search depth limits for repo operations (run-all.rb).
   # Mirrors: export MINDEPTH / MAXDEPTH (set temporarily for run-all operations)
+  #
+  # @return [Integer] Minimum recursion depth (default: 1)
   def self.mindepth
     ENV.fetch('MINDEPTH', '1').to_i
   end
@@ -247,12 +258,16 @@ module EnvVars
 
   # First install mode (vanilla OS, no dotfiles yet).
   # Mirrors: export FIRST_INSTALL=1 (set in fresh-install bootstrap)
+  #
+  # @return [Boolean] true if FIRST_INSTALL is set to a non-empty value
   def self.first_install?
     !nil_or_empty?(ENV.fetch('FIRST_INSTALL', ''))
   end
 
   # Debug mode (verbose logging).
   # Mirrors: export DEBUG=1 (set manually for debugging)
+  #
+  # @return [Boolean] true if DEBUG is set to a non-empty value
   def self.debug?
     !nil_or_empty?(ENV.fetch('DEBUG', ''))
   end
@@ -263,6 +278,8 @@ module EnvVars
   # NOTE: This is the single source of truth for FORCE_COLOR in Ruby code. The only
   # exception is core.rb which uses ENV.fetch('FORCE_COLOR') directly to avoid
   # circular dependency (env_vars.rb requires core.rb, so core.rb cannot use EnvVars).
+  #
+  # @return [Boolean] true if FORCE_COLOR is set to a non-empty (stripped) value
   def self.force_color?
     !nil_or_empty?(ENV.fetch('FORCE_COLOR', '').strip)
   end
@@ -270,6 +287,8 @@ module EnvVars
   # Current script depth (incremented by increment_script_depth).
   # Mirrors: _DOTFILES_SCRIPT_DEPTH (managed by logging.rb and shell scripts)
   # Returns 0 when unset (not yet incremented by any script).
+  #
+  # @return [Integer] Current script nesting depth (default: 0)
   def self.script_depth
     ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
   end
@@ -277,6 +296,8 @@ module EnvVars
   # Terminal column width from COLUMNS env var.
   # Mirrors: ${COLUMNS} (set by shell, may be 0 in non-TTY contexts)
   # Returns 80 when unset or 0 (fallback matches _FALLBACK_TERMINAL_WIDTH in .shellrc)
+  #
+  # @return [Integer] Terminal column width (default: 80)
   def self.columns
     ENV.fetch('COLUMNS', '80').to_i
   end
@@ -285,6 +306,8 @@ module EnvVars
   # Mirrors: _DOTFILES_CRON_BACKUP_FILE (set by suspend_cron in .shellrc)
   # Falls back to TMPDIR/crontab_backup when not set.
   # Returns Pathname so callers can use Pathname methods directly.
+  #
+  # @return [Pathname] Cron backup file path
   def self.cron_backup_file
     Pathname.new(
       ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do
@@ -300,18 +323,24 @@ module EnvVars
   # strict_env (unlike DIRENV_DIR). Used by info/success/warn/user_action/debug.
   # error() always prints regardless of context -- critical failures must be visible.
   # Mirrors: _should_suppress_log() in .shellrc
+  #
+  # @return [Boolean] true if logging output should be suppressed
   def self.suppress_log?
     !nil_or_empty?(ENV.fetch('DIRENV_IN_ENVRC', ''))
   end
 
   # Returns true if CACHE_BUST_HEADERS env var is set (used for curl downloads).
   # When true, curl requests should add cache-busting headers.
+  #
+  # @return [Boolean] true if CACHE_BUST_HEADERS is set to a non-empty (stripped) value
   def self.cache_bust_headers?
     !nil_or_empty?(ENV.fetch('CACHE_BUST_HEADERS', '').strip)
   end
 
   # Returns current PATH environment variable.
   # Used by PathUtils.prepend_to_path to check/modify PATH.
+  #
+  # @return [String] Current PATH value (empty string if unset)
   def self.path
     ENV.fetch('PATH', '')
   end

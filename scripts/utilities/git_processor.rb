@@ -60,14 +60,6 @@ class GitProcessor
     attr_accessor :repo_cache
   end
 
-  # Class method for checking if any path is a git repo.
-  # Mirrors is_git_repo in .shellrc.
-  # Result is cached at the class level since repo status doesn't change during
-  # script execution.
-  #
-  # @param path [String, Pathname] Path to check.
-  # @return [Boolean]
-
   # ---------------------------------------------------------------------------
   # Class methods
   # ---------------------------------------------------------------------------
@@ -193,6 +185,7 @@ class GitProcessor
 
   # Returns the value of a git config key, or nil if absent.
   # Mirrors get_git_config_value in .shellrc.
+  # Memoized per key -- config values don't change during instance lifetime.
   #
   # @param key [String] Git config key, e.g. 'remote.origin.url'.
   # @return [String, nil]
@@ -205,6 +198,7 @@ class GitProcessor
   end
 
   # Returns the URL for the specified remote, or nil.
+  # Memoized per remote name -- remote URLs don't change during instance lifetime.
   #
   # @param name [String] Remote name (defaults to 'origin').
   # @return [String, nil]
@@ -216,6 +210,8 @@ class GitProcessor
   # Extracts the repository name from a remote URL.
   # Strips trailing slash and returns the last path segment.
   # Works with any URL format (SSH, HTTPS, git+ssh, keybase, etc.) via simple string manipulation.
+  # Memoized per remote name -- remote URLs (and thus derived repo names) don't
+  # change during instance lifetime.
   #
   # Examples:
   #   keybase://private/user/dotfiles/ -> dotfiles
@@ -237,7 +233,7 @@ class GitProcessor
   # Delegates to GitUrlParser for URL parsing and reconstruction.
   #
   # @param upstream_owner [String] The upstream repository owner username.
-  # @return [Array<String, String>, Array<nil, nil>] [upstream_url, cloned_owner] or [nil, nil] on error.
+  # @return [Array<(String, String)>, Array<(nil, nil)>] [upstream_url, cloned_owner] or [nil, nil] on error.
   #   Errors are logged via Logging.record_error.
   def construct_upstream_url(upstream_owner:)
     origin_url = remote_url
@@ -256,6 +252,7 @@ class GitProcessor
   end
 
   # Returns the current branch name, or nil if HEAD is detached or the repo is empty.
+  # Memoized -- the current branch doesn't change during instance lifetime.
   #
   # @return [String, nil]
   def current_branch
@@ -268,6 +265,7 @@ class GitProcessor
   # Returns true if the repository is a shallow clone (limited history depth).
   # Shallow clones are created with --depth flag and can be converted to full
   # clones via 'git unshallow' (which includes fetch operation).
+  # Memoized -- shallow status doesn't change during instance lifetime.
   #
   # @return [Boolean] true if shallow clone, false if full clone
   def shallow?
@@ -281,6 +279,7 @@ class GitProcessor
   # Legacy repos use 'files' format (.git/refs/* hierarchy), modern repos use
   # 'reftable' (single packed file). Git 2.45+ defaults to reftable for new
   # repos when init.defaultRefFormat=reftable is set.
+  # Memoized -- the ref format doesn't change during instance lifetime.
   #
   # @return [String] 'files' or 'reftable'
   def ref_format
@@ -562,6 +561,8 @@ class GitProcessor
   # Initializes a new git repository in the directory.
   #
   # @param ref_format [String] The ref-format to use (defaults to 'reftable').
+  # @param initial_branch [String, nil] Optional initial branch name to pass via
+  #   --initial-branch. When nil (default), git uses its own default branch name.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def init(ref_format: 'reftable', initial_branch: nil)
     args = ['init', "--ref-format=#{ref_format}"]
@@ -573,7 +574,7 @@ class GitProcessor
   # Logs the values and raises an error if any are missing.
   #
   # @param force [Boolean] Whether this is a force recreation (for logging)
-  # @return [Hash] Hash with keys: :git_url, :user_name, :user_email, :branch
+  # @return [void]
   # @raise [RuntimeError] If any required metadata is missing
   def verify_pre_recreation(force:)
     git_url = remote_url
@@ -673,12 +674,13 @@ class GitProcessor
   def stage_all
     if @dry_run
       Logging.info 'Would stage all files after removing stale lock file if it exists'
-    else
-      return _mock_status_response(false) unless repo?
-
-      delete_index_lock
-      _execute('add', '-A', '.')
+      return _mock_status_response(true)
     end
+
+    return _mock_status_response(false) unless repo?
+
+    delete_index_lock
+    _execute('add', '-A', '.')
   end
 
   # Stages a specific file or directory (equivalent to `git add <path>`).
@@ -749,6 +751,7 @@ class GitProcessor
   #
   # @param message [String] Commit message.
   # @param quiet [Boolean] Whether to suppress git output (defaults to false).
+  # @param no_verify [Boolean] Whether to skip pre-commit/commit-msg hooks (defaults to false).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def commit(message, quiet: false, no_verify: false)
     return _mock_status_response(false) unless repo?

@@ -57,6 +57,9 @@ module CleanupBrowserProfiles
 
   # Reads non-blank, non-comment lines from +file+ into an Array.
   # Mirrors _read_pattern_file from the shell version.
+  #
+  # @param file [Pathname] Path to the pattern file
+  # @return [Array<String>] Non-blank, non-comment lines, stripped
   # :reek:UtilityFunction -- Stateless file reader (correct design)
   def _read_pattern_file(file)
     return [] unless file.file?
@@ -71,6 +74,9 @@ module CleanupBrowserProfiles
 
   # Returns true if the named browser process is currently running.
   # Mirrors pgrep check from shell version.
+  #
+  # @param browser_name [String] Process name to check via pgrep
+  # @return [Boolean] true if a matching process is running
   # :reek:UtilityFunction -- Stateless process check (correct design)
   def _browser_running?(browser_name)
     CommandUtils.run_silent('pgrep', '-i', '-f', '-q', browser_name)
@@ -122,6 +128,10 @@ module CleanupBrowserProfiles
   private_class_method :_format_size
 
   # Returns true if the profile should be skipped (browser running or dir missing).
+  #
+  # @param browser_name [String] Process name used for the pgrep check.
+  # @param profile_dir [Pathname] Root of the browser profile directory.
+  # @return [Boolean] true if the profile should be skipped
   # :reek:FeatureEnvy -- Operates on method parameters (intentional helper extraction)
   def _should_skip_profile?(browser_name, profile_dir)
     if _browser_running?(browser_name)
@@ -140,6 +150,10 @@ module CleanupBrowserProfiles
   private_class_method :_should_skip_profile?
 
   # Vacuums all SQLite databases in the profile dir larger than 10MB.
+  #
+  # @param profile_dir [Pathname] Root of the browser profile directory.
+  # @param dry_run [Boolean] When true, reports what would be vacuumed without doing it.
+  # @return [void]
   # :reek:FeatureEnvy -- Operates on method parameters and local variables (intentional helper extraction)
   def _vacuum_sqlite_databases(profile_dir, dry_run)
     return unless PathUtils.command_exists?('sqlite3')
@@ -176,6 +190,12 @@ module CleanupBrowserProfiles
   private_class_method :_vacuum_sqlite_databases
 
   # Finds and deletes files and directories matching cleanup patterns.
+  #
+  # @param profile_dir [Pathname] Root of the browser profile directory.
+  # @param file_patterns [Array<String>] File glob patterns to delete.
+  # @param dir_patterns [Array<String>] Directory glob patterns to delete.
+  # @param dry_run [Boolean] When true, reports what would be deleted without doing it.
+  # @return [void]
   # :reek:FeatureEnvy -- Operates on method parameters and local variables (intentional helper extraction)
   def _delete_items(profile_dir, file_patterns, dir_patterns, dry_run)
     # Find all items to delete
@@ -225,6 +245,7 @@ module CleanupBrowserProfiles
   # @param file_patterns [Array<String>] File glob patterns to delete (read once by caller).
   # @param dir_patterns  [Array<String>] Directory glob patterns to delete (read once by caller).
   # @param dry_run        [Boolean] When true, reports actions without performing them.
+  # @return [void]
   def _vacuum_browser_profile_dir(browser_name, profile_dir, file_patterns:, dir_patterns:, dry_run:)
     profile_dir = Pathname.new(profile_dir) unless profile_dir.is_a?(Pathname)
     profile_dir_colored = profile_dir.cyan

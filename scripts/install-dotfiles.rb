@@ -280,6 +280,7 @@ module InstallDotfiles
   #
   # @param tool_name [String] Name of the tool (e.g., 'delta', 'pandoc')
   # @param command_name [String] Command to check in PATH (defaults to tool_name)
+  # @return [void]
   def self._ensure_gitconfig_tool_symlink(tool_name, command_name: nil)
     command_name ||= tool_name
     git_config_dir = EnvVars::XDG_CONFIG_HOME.join('git')

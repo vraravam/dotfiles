@@ -4,6 +4,19 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.2
+
+#### Make the `git-remote-gpg-encrypt` formula install conditional on the encrypted-backup env vars, like Keybase already is
+
+* *[files/--HOME--/Brewfile]* Added `encrypted_backup_enabled` (mirrors the existing `keybase_enabled` pattern -- reads `.shellrc` directly rather than `ENV`, since `brew bundle` does not inherit arbitrary shell exports). `brew 'vraravam/tap/git-remote-gpg-encrypt', trusted: true` now only runs when `ENCRYPTED_HOME_REPO_URL` or `ENCRYPTED_PROFILES_REPO_URL` is exported in `.shellrc` -- previously it installed unconditionally regardless of whether the mechanism was actually enabled for this machine.
+* *[KeybaseMigration.md]* Removed the "Key differences from the old embedded version" old-vs-new comparison table -- this is a living reference doc describing current behavior, not a changelog, and duplicating historical env-var/command names there (already properly documented with version context in this file's `4.0.1` entry) risked confusing a future reader with no memory of the now-deleted embedded implementation. Replaced with a one-line pointer to that `4.0.1` entry.
+
+#### Adopting these changes
+
+* Run `brew bundle install` to pick up the now-conditional formula install -- a no-op if you already have `ENCRYPTED_HOME_REPO_URL`/`ENCRYPTED_PROFILES_REPO_URL` set (the common case), but machines with neither set will no longer install `git-remote-gpg-encrypt` automatically.
+
+---
+
 ### 4.0.1
 
 #### Replace the embedded gpg+git-bundle encrypted backup with the extracted, standalone `git-remote-gpg-encrypt` tool

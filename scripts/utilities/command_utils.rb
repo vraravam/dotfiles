@@ -14,21 +14,6 @@ module CommandUtils
   include Core  # For instance methods (in blocks)
   extend Core   # For module methods
 
-  # Executes a command via Open3.capture3 and yields failure details on error.
-  #
-  # Captures stdout and stderr, checks the exit status, and on failure yields
-  # the status object and a formatted output message string containing stdout
-  # and stderr sections (with stderr colored red).
-  #
-  # @param command [Array<String>] Command and arguments to execute
-  # @yield [status, output_message] Block receives status and formatted output on failure
-  # @return [Boolean] true if command succeeded, false otherwise
-  #
-  # @example
-  #   success = CommandUtils.capture_output('mise', '-C', dir, 'trust') do |status, output_msg|
-  #     Logging.warn("mise trust failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
-  #   end
-
   # ---------------------------------------------------------------------------
   # Class methods
   # ---------------------------------------------------------------------------

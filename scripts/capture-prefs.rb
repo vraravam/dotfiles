@@ -185,6 +185,7 @@ module CapturePrefs
   #
   # @param filepath [Pathname] Path to the denied list file
   # @return [Set<String>] Set of denied domain names
+  # @raise [RuntimeError] If the denied list file doesn't exist
   def _load_denied_list(filepath)
     _ensure_file_exists(filepath, 'Denied list')
     Plist.load_denied_list(filepath)
@@ -197,6 +198,7 @@ module CapturePrefs
   #
   # @param filepath [Pathname] Path to the excluded keys file
   # @return [Hash<String, String>] Domain -> newline-separated pattern string
+  # @raise [RuntimeError] If the excluded keys file doesn't exist
   def _load_excluded_keys(filepath)
     _ensure_file_exists(filepath, 'Excluded keys')
     Plist.load_excluded_keys(filepath)
@@ -223,6 +225,7 @@ module CapturePrefs
   # @param filepath [Pathname] Path to the domains list file
   # @param denied [Set<String>] Set of denied domain names to filter out
   # @return [Set<String>] Set of allowed domain names
+  # @raise [RuntimeError] If the domains list file doesn't exist
   # :reek:UtilityFunction -- Stateless delegation wrapper (correct design)
   def _load_domains_list(filepath, denied)
     Logging.error("Domains list file not found: '#{filepath.cyan}'") unless filepath.file?
@@ -233,6 +236,8 @@ module CapturePrefs
 
   # Returns true if the current operation is 'export' (memoized).
   # Caches the result to avoid repeated string comparisons.
+  #
+  # @return [Boolean] true if @operation is 'export'
   def _exporting?
     @_exporting ||= @operation == 'export'
   end
@@ -241,6 +246,8 @@ module CapturePrefs
 
   # Returns true if the current operation is 'import' (memoized).
   # Caches the result to avoid repeated string comparisons.
+  #
+  # @return [Boolean] true if @operation is 'import'
   def _importing?
     @_importing ||= @operation == 'import'
   end
@@ -251,6 +258,8 @@ module CapturePrefs
   # that needs to be quit and restarted to pick up the just-imported preferences.
   # Only user-specified apps are considered. Login-item apps are excluded because
   # kill/restart_login_item_apps already handles them.
+  #
+  # @return [void]
   def _notify_apps_needing_restart
     running = APPS_NEEDING_RESTART.select do |proc_name, display_name|
       # Skip login-item apps (auto-killed and restarted) and apps not currently running

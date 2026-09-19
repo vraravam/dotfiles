@@ -14,6 +14,13 @@
 # Enumerable#filter_map was added in Ruby 2.7.
 unless Enumerable.method_defined?(:filter_map)
   module Enumerable
+    # Maps each item through the block, keeping only the non-nil results --
+    # a single-pass alternative to `map(&block).compact` (avoids the
+    # intermediate array `compact` would otherwise allocate).
+    #
+    # @yieldparam item each element of the enumerable
+    # @return [Array, Enumerator] the filtered/mapped results, or an
+    #   Enumerator if no block is given
     def filter_map(&block)
       return to_enum(:filter_map) unless block
 

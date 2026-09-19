@@ -110,8 +110,8 @@ module RecreateRepository
   # to every configured remote instead of just 'origin' now that a repo may have more
   # than one (see file header comment).
   #
-  # @param git [GitProcessor]
-  # @param dry_run [Boolean]
+  # @param git [GitProcessor] Repo to check remotes on
+  # @param dry_run [Boolean] Show what would be done without making changes
   # @return [Boolean] false if any keybase:// remote's login check fails
   def _ensure_keybase_remotes_reachable(git, dry_run:)
     git.each_remote do |_remote_name, url|
@@ -130,10 +130,10 @@ module RecreateRepository
   # remote (a 'gpg-encrypt::' remote, or a plain GitHub remote) is just force-pushed
   # directly -- no delete/recreate needed or possible there.
   #
-  # @param git [GitProcessor]
-  # @param branch [String]
-  # @param force [Boolean]
-  # @param dry_run [Boolean]
+  # @param git [GitProcessor] Repo whose configured remotes will be pushed to
+  # @param branch [String] Branch name to push
+  # @param force [Boolean] Force-push (and recreate keybase:// remotes first)
+  # @param dry_run [Boolean] Show what would be done without making changes
   # @return [Boolean] true if every remote's push succeeded
   def _push_to_all_remotes(git, branch:, force:, dry_run:)
     all_succeeded = true

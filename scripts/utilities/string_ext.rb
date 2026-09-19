@@ -14,7 +14,7 @@ class String
   # Returns true for empty lines (after stripping) or comment lines (starting with '#').
   # Common pattern when parsing text files with comments.
   #
-  # @return [true, false]
+  # @return [Boolean]
   def comment_or_empty?
     stripped = strip
     nil_or_empty?(stripped) || stripped.start_with?('#')

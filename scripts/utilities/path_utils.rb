@@ -29,18 +29,6 @@ module PathUtils
   # Cache for command existence checks (reduces which forks from N per check -> 1 per command)
   @command_cache = {}
 
-  # Checks if a command exists in the system PATH.
-  # Mirrors command_exists() from .shellrc.
-  # Results are cached to avoid repeated which forks for the same command.
-  #
-  # @param command [String] The command name to check
-  # @return [Boolean] true if the command exists in PATH, false otherwise
-  #
-  # @example
-  #   PathUtils.command_exists?('ruby')  # => true (checks via which)
-  #   PathUtils.command_exists?('ruby')  # => true (cached, no fork)
-  #   PathUtils.command_exists?('nosuchcommand')  # => false
-
   # ---------------------------------------------------------------------------
   # Class methods
   # ---------------------------------------------------------------------------

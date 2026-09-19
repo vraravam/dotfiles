@@ -18,10 +18,14 @@ UTILITIES_DIR = File.expand_path('../scripts/utilities', __dir__)
 $LOAD_PATH.unshift(UTILITIES_DIR) unless $LOAD_PATH.include?(UTILITIES_DIR)
 
 # Shared helper for specs that exercise ENV-dependent code (Core, EnvVars).
-# Temporarily sets the given variables for the duration of the block, then
-# restores their previous values -- including deleting keys that were unset
-# before the block ran. A nil value in `vars` deletes that key for the block.
 module EnvHelpers
+  # Temporarily sets the given variables for the duration of the block, then
+  # restores their previous values -- including deleting keys that were unset
+  # before the block ran. A nil value in `vars` deletes that key for the block.
+  #
+  # @param vars [Hash] mapping of ENV var names to values; a nil value deletes
+  #   that key for the duration of the block
+  # @return [Object] the block's return value
   def with_env(vars)
     previous = {}
     vars.each_key { |key| previous[key] = ENV[key] }

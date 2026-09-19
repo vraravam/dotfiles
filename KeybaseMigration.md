@@ -41,17 +41,8 @@ have been deleted. The same functionality now comes from the external
 installed via `files/--HOME--/Brewfile`'s
 `brew 'vraravam/tap/git-remote-gpg-encrypt', trusted: true` (a fully-qualified formula
 reference, which auto-taps `vraravam/tap` -- no separate `tap` line needed; pulls in
-`gnupg` and `git` transitively -- no separate `brew 'gnupg'` line needed anymore). Key differences from
-the old embedded version:
-
-| | Old (embedded in this repo) | New (external tool) |
-|---|---|---|
-| Remote URL | `encrypted-backup::<repo-name>` (bare name; GitHub owner derived from this repo's own `origin`) | `gpg-encrypt::<full-url>` (any git host, no owner derivation) |
-| Env vars | `ENCRYPTED_HOME_REPO_NAME`/`ENCRYPTED_PROFILES_REPO_NAME` | `ENCRYPTED_HOME_REPO_URL`/`ENCRYPTED_PROFILES_REPO_URL` |
-| Setup command | `setup-encrypted-backup.rb` | `git gpg-encrypt-setup` |
-| Restore command | `EncryptedBackup.clone_and_decrypt` (Ruby) | `git gpg-encrypt-restore <url> <target-dir>` |
-| Verify command | `EncryptedBackup.verify_current_blob_decryptable?` (Ruby) | `git gpg-encrypt-verify <url>` |
-| Keychain service | `gpg-encrypted-backup` | `git-remote-gpg-encrypt` (default; overridable via `GIT_GPG_ENCRYPT_KEYCHAIN_SERVICE`) |
+`gnupg` and `git` transitively -- no separate `brew 'gnupg'` line needed anymore). See
+`CHANGELOG.md`'s `4.0.1` entry for the full list of what changed in that migration.
 
 ### How It Works
 
