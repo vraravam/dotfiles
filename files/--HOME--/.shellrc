@@ -111,8 +111,8 @@ fi
 # derives it live from 'keybase status', since whoever is logged in owns the account.
 
 # Keybase repo names (comment out to disable Keybase entirely).
-export KEYBASE_HOME_REPO_NAME='home'
-export KEYBASE_PROFILES_REPO_NAME='profiles'
+# export KEYBASE_HOME_REPO_NAME='home'
+# export KEYBASE_PROFILES_REPO_NAME='profiles'
 
 # Encrypted git repo URLs (plain public git repos holding the gpg-encrypted git-bundle
 # blob; installed via the 'git-remote-gpg-encrypt' Homebrew tap -- see
