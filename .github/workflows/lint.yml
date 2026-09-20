@@ -35,7 +35,7 @@ jobs:
     name: Shell syntax (zsh -n)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: zsh -n on every .sh/.zsh file
         shell: zsh {0}
@@ -54,7 +54,7 @@ jobs:
     name: Ruby syntax (ruby -c) and style (rubocop)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: ruby -c on every .rb file (system Ruby -- matches vanilla macOS target)
         shell: zsh {0}

@@ -37,7 +37,7 @@ jobs:
     name: rspec (spec/)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install gems (pinned in Gemfile.lock for Ruby 2.6 compatibility)
         shell: zsh {0}
