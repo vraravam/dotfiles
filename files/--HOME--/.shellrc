@@ -114,10 +114,14 @@ fi
 export KEYBASE_HOME_REPO_NAME='home'
 export KEYBASE_PROFILES_REPO_NAME='profiles'
 
-# Encrypted git repo names (plain public GitHub repos holding the gpg-encrypted git-bundle
-# blob, see scripts/utilities/encrypted_backup.rb). Comment out to disable this mechanism.
-export ENCRYPTED_HOME_REPO_NAME='home'
-export ENCRYPTED_PROFILES_REPO_NAME='browser-profiles'
+# Encrypted git repo URLs (plain public git repos holding the gpg-encrypted git-bundle
+# blob; installed via the 'git-remote-gpg-encrypt' Homebrew tap -- see
+# https://github.com/vraravam/git-remote-gpg-encrypt). Comment out to disable this
+# mechanism. Takes a full URL (any git host), unlike KEYBASE_*_REPO_NAME above -- that
+# tool has no concept of a "default owner" to derive from a repo name, by design (see
+# its docs/DESIGN.md § Remote naming is entirely outside this tool's purview).
+export ENCRYPTED_HOME_REPO_URL='https://github.com/vraravam/home.git'
+export ENCRYPTED_PROFILES_REPO_URL='https://github.com/vraravam/browser-profiles.git'
 # --------------------------------------------------------------------------------
 
 # ---------- Env vars for basic/common setup (can be optionally changed) ---------
@@ -1813,17 +1817,50 @@ configure_branch_tracking_for_origin() {
   git -C "${target_folder}" config "branch.${branch}.merge" "refs/heads/${branch}"
 }
 
-# No encryption/decryption logic lives here, deliberately -- see the "Why this logic
-# lives here and NOT inside clone_repo_into" note in scripts/utilities/encrypted_backup.rb
-# for the reasoning (single responsibility, shell-vs-Ruby layer boundary, and keeping this
-# function's bundle-import support generic/reusable for both the encrypted-backup and
-# resurrect-repositories.rb use cases).
+# No encryption/decryption logic lives here for the network-clone/bundle-import path --
+# that path only knows how to clone a plaintext git repo (or import a plaintext bundle)
+# into a possibly-non-empty target directory, and is reused as-is by Keybase's bootstrap
+# clone and by resurrect-repositories.rb's unrelated plain-bundle-import feature. A
+# 'gpg-encrypt::<clone-url>' first argument is a third, mutually-exclusive alternative
+# (mirroring the 'keybase://' special-case further down) that delegates entirely to the
+# external 'git-remote-gpg-encrypt' tool's own standalone restore path (`git
+# gpg-encrypt-restore`, installed via the 'vraravam/tap' Homebrew tap -- see
+# files/--HOME--/Brewfile) instead of a plain 'git clone'.
 #
-# Usage: clone_repo_into <repo-url> <target-folder> [branch] [bundle-file]
+# The optional branch/bundle-file arguments (see Usage below) apply uniformly no matter
+# which of the three alternatives (network clone, keybase://, gpg-encrypt::) ends up
+# populating target_folder: a local bundle_file, if given and it exists, always wins
+# over ANY network transport (gpg-encrypt:: included, same as keybase:// already did);
+# target_branch is enforced (checked out via 'git switch', erroring out if not found)
+# after ANY of the three completes, not just a plain network clone.
+#
+# <clone-url> (first argument) must be a fully-qualified clone URL: any scheme 'git
+# clone' itself accepts (https://, http://, ssh://, git://, git+ssh://, file://),
+# scp-style SSH (user@host:path, e.g. 'git@github.com:vraravam/dotfiles.git' -- see
+# GitProcessor::GitUrlParser, which documents this as the most common format
+# 'git remote get-url origin' returns, and which resurrect-repositories.rb feeds
+# straight back into this function), 'keybase://...', or 'gpg-encrypt::<url>'.
+#
+# Usage: clone_repo_into <clone-url> <target-folder> [branch] [bundle-file]
 clone_repo_into() {
   local start_time
   _epoch_seconds start_time  # zsh: $EPOCHSECONDS (no fork); bash: 'date +%s' fork
+  local clone_url="${1:-}"
   local target_folder="${2:-}"
+
+  if is_zero_string "${clone_url}"; then
+    error "clone_repo_into: missing required <clone-url> (first argument)"
+    return 1
+  fi
+  case "${clone_url}" in
+    https://* | http://* | ssh://* | git://* | git+ssh://* | file://* | keybase://* | gpg-encrypt::*) ;;
+    *@*:*) ;; # scp-style SSH, e.g. 'git@github.com:owner/repo.git' -- see the comment above
+    *)
+      error "clone_repo_into: '${clone_url}' has no recognizable clone-url scheme -- expected https://, http://, ssh://, git://, git+ssh://, file://, keybase://, gpg-encrypt::, or scp-style user@host:path"
+      return 1
+      ;;
+  esac
+
   ensure_dir_exists "${target_folder}"
   if ! is_git_repo "${target_folder}"; then
     # Since git does not allow cloning into a non-empty folder (like the home folder), clone into a temp folder, then copy the .git folder into the real target location, and do a checkout
@@ -1840,6 +1877,14 @@ clone_repo_into() {
       using_bundle=true
     fi
 
+    # 'gpg-encrypt::' is handled as a third, mutually-exclusive alternative alongside
+    # bundle-import and network-clone below -- like keybase:// alongside a plain URL, it
+    # is just a different way to populate the SAME target_folder; branch/bundle handling
+    # is unified further down, after all three alternatives converge. A local
+    # bundle_file, if given and it exists, still wins over ANY network transport
+    # (gpg-encrypt:: included) -- exactly as it already did for keybase://.
+    local restored_via_gpg_encrypt=false
+    local encrypted_repo_url=''
     if [[ "${using_bundle}" == true ]]; then
       # Import from a local git bundle file instead of the network. The bundle already
       # contains full history for every ref (branches, remote-tracking refs, tags), so
@@ -1851,9 +1896,32 @@ clone_repo_into() {
         warn "Failed to import bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")'"
         return 1
       fi
+    elif [[ "${clone_url}" == gpg-encrypt::* ]]; then
+      # 'git gpg-encrypt-restore' (from the external 'git-remote-gpg-encrypt' tool) is a
+      # self-contained clone+decrypt+checkout command, not a standard git transport -- it
+      # writes directly into target_folder (safely handling a non-empty directory like
+      # $HOME itself), so none of the tmp_folder-then-move machinery further down applies
+      # to it; it is skipped wherever it's specific to that pipeline (search for
+      # 'restored_via_gpg_encrypt' below).
+      restored_via_gpg_encrypt=true
+      # Strip the 'gpg-encrypt::' pseudo-scheme prefix (mirrors the URL format used for
+      # the real remote-helper when pushing/pulling day-to-day -- see
+      # git-remote-gpg-encrypt's README) to recover the underlying https/ssh URL that
+      # 'git gpg-encrypt-restore' itself expects. Invoked directly (not via
+      # 'git gpg-encrypt-restore') -- functionally identical (git's own subcommand
+      # dispatch just execs 'git-<verb>' off PATH anyway) except that git intercepts
+      # '-h'/'--help' for any 'git <verb>' invocation and tries to open a man page
+      # instead of forwarding it to the subcommand -- direct invocation avoids that
+      # entirely and matches the 'command_exists git-gpg-encrypt-restore' check callers
+      # use before ever reaching this branch.
+      encrypted_repo_url="${clone_url#gpg-encrypt::}"
+      if ! git-gpg-encrypt-restore "${encrypted_repo_url}" "${target_folder}"; then
+        warn "Failed to restore encrypted backup '$(cyan "${encrypted_repo_url}")' into '$(cyan "${target_folder}")'"
+        return 1
+      fi
     else
       local -a clone_args=()
-      if [[ "${1:-}" == keybase://* ]]; then
+      if [[ "${clone_url}" == keybase://* ]]; then
         # Keybase's git-remote-keybase helper is a custom remote (not a standard smart-
         # HTTP/SSH transport) and does not reliably support the protocol-v2 capabilities
         # that --depth/--filter=blob:none/--single-branch depend on -- observed failing
@@ -1892,7 +1960,7 @@ clone_repo_into() {
       local clone_max_attempts=5
       local clone_progress_path="${tmp_folder}"
       local clone_unwrapped=false
-      if [[ "${1:-}" == keybase://* ]]; then
+      if [[ "${clone_url}" == keybase://* ]]; then
         # git-remote-keybase does not incrementally write pack data into the destination
         # directory the way a normal smart-HTTP/SSH clone does, so 'du -sk'-based
         # inactivity tracking never observes growth -- with-retry's timeout would fire on
@@ -1926,7 +1994,7 @@ clone_repo_into() {
         # Derived entirely from the URL argument (no hardcoded username/repo name) so this
         # applies identically to home, profiles, or any other keybase:// repo:
         # "keybase://private/user/repo" -> "/keybase/private/user".
-        local kbfs_check_path="${1#keybase://}"
+        local kbfs_check_path="${clone_url#keybase://}"
         kbfs_check_path="/keybase/${kbfs_check_path%/*}"
         info "Waiting for KBFS to be ready at '$(cyan "${kbfs_check_path}")'"
         local kbfs_stderr_file
@@ -1948,7 +2016,7 @@ clone_repo_into() {
         # already exists and is not an empty directory").
         rm -rf "${tmp_folder:?}"
         mkdir -p "${tmp_folder}"
-        git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" . 2>"${stderr_file}"
+        git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${clone_url}" . 2>"${stderr_file}"
         clone_status=$?
       elif git config --get alias.with-retry &>/dev/null; then
         # Wrapped in 'zsh -c' so the temp folder is wiped and recreated fresh before every
@@ -1964,7 +2032,7 @@ clone_repo_into() {
         # negotiation/transfer phase stalled) instead of just the remote helper's own
         # one-line status message.
         git with-retry "${clone_timeout_secs}" "${clone_max_attempts}" "${stderr_file}" "${clone_progress_path}" \
-          zsh -c 'rm -rf "${1:?}"; mkdir -p "${1}"; exec git -C "${1}" clone -n -c init.defaultRefFormat=reftable "${@:2}"' -- "${tmp_folder}" "${clone_args[@]}" "${1:-}" .
+          zsh -c 'rm -rf "${1:?}"; mkdir -p "${1}"; exec git -C "${1}" clone -n -c init.defaultRefFormat=reftable "${@:2}"' -- "${tmp_folder}" "${clone_args[@]}" "${clone_url}" .
         clone_status=$?
       else
         # Bootstrap edge case: the 'with-retry' alias lives in ${XDG_CONFIG_HOME}/git/config,
@@ -1977,12 +2045,12 @@ clone_repo_into() {
         # (no retry/hang protection) only for this one bootstrap window; every subsequent
         # call automatically regains with-retry once install-dotfiles.rb has run.
         debug "'with-retry' alias not yet available (expected before the dotfiles repo is cloned) -- using plain clone without retry protection"
-        git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${1:-}" . 2>"${stderr_file}"
+        git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${clone_url}" . 2>"${stderr_file}"
         clone_status=$?
       fi
 
       if [[ ${clone_status} -ne 0 ]]; then
-        local error_msg="Failed to clone '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
+        local error_msg="Failed to clone '$(cyan "${clone_url}")' into '$(cyan "${target_folder}")'"
         local stderr_content
         stderr_content="$(cat "${stderr_file}" 2>/dev/null)"
         if is_non_zero_string "${stderr_content}"; then
@@ -1994,74 +2062,110 @@ clone_repo_into() {
       rm -f "${stderr_file}"
     fi
 
-    # Remove existing .git directory if present (cleanup from failed previous clone attempt).
-    # We're in the "not a git repo" branch (outer if), but .git directory might exist as
-    # leftover debris. Check directory existence directly, not is_git_repo (which would
-    # return false since we're already in the ! is_git_repo branch).
-    if is_directory "${target_folder}/.git"; then
-      # Prevent operations on paths in root directory
-      # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
-      if is_root_dir "${target_folder%/*}"; then
-        error "Refusing to remove .git directory from path in root: '$(cyan "${target_folder}")'"
-      fi
-      rm -rf "${target_folder}/.git"
-    fi
-
-    mv "${tmp_folder}/.git" "${target_folder}"
-    rm -rf "${tmp_folder}"
-    trap - EXIT INT TERM  # Clear trap after successful move
-
-    # Populate index from HEAD, then checkout files.
-    # For home directory clones: use 'git checkout --force' to overwrite existing files
-    # (e.g., ~/.ssh/config might exist as an empty stub on vanilla macOS). For other repos:
-    # use 'checkout-index -a' which refuses to overwrite (safer for repos in dev directories).
-    git -C "${target_folder}" read-tree HEAD
-    if [[ "${target_folder}" == "${HOME}" ]]; then
-      # Force overwrite existing files when cloning home repo
-      git -C "${target_folder}" checkout --force HEAD 2>/dev/null || true
+    if [[ "${restored_via_gpg_encrypt}" == true ]]; then
+      # 'git gpg-encrypt-restore' already performed its own equivalent of the
+      # tmp-folder-then-move-then-checkout dance below (it writes straight into
+      # target_folder, safely handling a non-empty directory on its own) -- tmp_folder
+      # was never populated for this path, so just clean it up.
+      rm -rf "${tmp_folder}"
+      trap - EXIT INT TERM  # Clear trap now that tmp_folder is already gone
     else
-      # Don't overwrite existing files for non-home repos
-      git -C "${target_folder}" checkout-index -a 2>/dev/null || true
+      # Remove existing .git directory if present (cleanup from failed previous clone attempt).
+      # We're in the "not a git repo" branch (outer if), but .git directory might exist as
+      # leftover debris. Check directory existence directly, not is_git_repo (which would
+      # return false since we're already in the ! is_git_repo branch).
+      if is_directory "${target_folder}/.git"; then
+        # Prevent operations on paths in root directory
+        # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
+        if is_root_dir "${target_folder%/*}"; then
+          error "Refusing to remove .git directory from path in root: '$(cyan "${target_folder}")'"
+        fi
+        rm -rf "${target_folder}/.git"
+      fi
+
+      mv "${tmp_folder}/.git" "${target_folder}"
+      rm -rf "${tmp_folder}"
+      trap - EXIT INT TERM  # Clear trap after successful move
+
+      # Populate index from HEAD, then checkout files.
+      # For home directory clones: use 'git checkout --force' to overwrite existing files
+      # (e.g., ~/.ssh/config might exist as an empty stub on vanilla macOS). For other repos:
+      # use 'checkout-index -a' which refuses to overwrite (safer for repos in dev directories).
+      git -C "${target_folder}" read-tree HEAD
+      if [[ "${target_folder}" == "${HOME}" ]]; then
+        # Force overwrite existing files when cloning home repo
+        git -C "${target_folder}" checkout --force HEAD 2>/dev/null || true
+      else
+        # Don't overwrite existing files for non-home repos
+        git -C "${target_folder}" checkout-index -a 2>/dev/null || true
+      fi
+
+      # Correct HEAD file after reftable clone-via-mv (.git/HEAD retains a '.invalid' placeholder since
+      # the move bypasses git's normal post-clone finalisation; shell prompts read .git/HEAD directly)
+      local real_ref
+      real_ref="$(git -C "${target_folder}" symbolic-ref HEAD 2>/dev/null)"
+      if is_non_zero_string "${real_ref}"; then
+        echo "ref: ${real_ref}" >"${target_folder}/.git/HEAD"
+      fi
     fi
 
-    # Correct HEAD file after reftable clone-via-mv (.git/HEAD retains a '.invalid' placeholder since
-    # the move bypasses git's normal post-clone finalisation; shell prompts read .git/HEAD directly)
-    local real_ref
-    real_ref="$(git -C "${target_folder}" symbolic-ref HEAD 2>/dev/null)"
-    if is_non_zero_string "${real_ref}"; then
-      echo "ref: ${real_ref}" >"${target_folder}/.git/HEAD"
-    fi
-
+    # ---- Origin cleanup, uniform across bundle-import and gpg-encrypt-restore -- both
+    # internally do the equivalent of 'git clone <bundle-file> ...' against a scratch/
+    # temp bundle under the hood, leaving 'origin' pointing at a since-deleted path
+    # rather than a real remote. Neither applies to a normal network clone (including
+    # keybase://), which already has a real 'origin' pointing at clone_url itself.
     if [[ "${using_bundle}" == true ]]; then
-      # 'git clone <bundle-file>' sets 'origin' to the literal bundle path, which is not
-      # a real remote to fetch/push against going forward. Strip it -- the caller (e.g.
-      # resurrect-repositories.rb) detects the missing 'origin' and reconfigures the real
-      # one from its own config, same as it already does for any repo missing 'origin'.
+      # 'git clone <bundle-file>' sets 'origin' to the literal bundle path -- strip it
+      # only if it still matches (defensive: a caller-supplied bundle_file could in
+      # theory coincide with a legitimately-configured real remote URL).
       local bundle_origin
       bundle_origin="$(git -C "${target_folder}" remote get-url origin 2>/dev/null)"
       if [[ "${bundle_origin}" == "${bundle_file}" ]]; then
         git -C "${target_folder}" remote remove origin
       fi
-      # Callers always re-add a real 'origin' afterward (see comment above) -- tracking
+      # Callers always re-add a real 'origin' afterward (e.g. resurrect-repositories.rb
+      # detects the missing 'origin' and reconfigures it from its own config) -- tracking
       # only references the remote NAME, not its URL, so this is safe to set up now.
       # Without it, a bare 'git pull' fails with "no tracking information".
       configure_branch_tracking_for_origin "${target_folder}"
-      success "Successfully imported bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")'"
-    else
-      success "Successfully cloned '$(cyan "${1:-}")' into '$(cyan "${target_folder}")'"
+    elif [[ "${restored_via_gpg_encrypt}" == true ]]; then
+      # Unlike the bundle_file case above, we don't have the scratch bundle path to
+      # compare against here (the restore tool manages its own tmpdir internally and
+      # never reports it back to us) -- strip 'origin' unconditionally instead. Callers
+      # are expected to (re-)configure the real remote(s) afterward, same as they
+      # already do for the bundle-import and keybase:// cases (e.g.
+      # '_configure_backup_remote' in fresh-install-of-osx.sh).
+      git -C "${target_folder}" remote remove origin 2>/dev/null || true
+      configure_branch_tracking_for_origin "${target_folder}"
+    fi
 
-      if is_non_zero_string "${target_branch}"; then
-        local current_branch
-        current_branch="$(git -C "${target_folder}" branch --show-current)"
-        if [[ "${current_branch}" != "${target_branch}" ]]; then
-          error "Branch mismatch: expected '$(cyan "${target_branch}")' but got '$(cyan "${current_branch}")' - something is wrong. Please correct before retrying!"
+    # ---- Branch enforcement, uniform across all three alternatives (network clone,
+    # bundle-import, gpg-encrypt-restore) -- a network clone already lands on
+    # target_branch via '--branch' at clone time above, so this is normally a no-op
+    # there; bundle-import and gpg-encrypt-restore both check out whatever the source's
+    # default branch was (full history, every ref), so this is what actually switches
+    # those two onto the requested branch.
+    if is_non_zero_string "${target_branch}"; then
+      local current_branch
+      current_branch="$(git -C "${target_folder}" branch --show-current)"
+      if [[ "${current_branch}" != "${target_branch}" ]]; then
+        if ! git -C "${target_folder}" switch "${target_branch}" 2>/dev/null; then
+          error "Branch mismatch: expected '$(cyan "${target_branch}")' but got '$(cyan "${current_branch}")', and switching to it failed too - something is wrong. Please correct before retrying!"
           return 1
         fi
       fi
     fi
+
+    if [[ "${restored_via_gpg_encrypt}" == true ]]; then
+      success "Successfully restored encrypted backup '$(cyan "${encrypted_repo_url}")' into '$(cyan "${target_folder}")'"
+    elif [[ "${using_bundle}" == true ]]; then
+      success "Successfully imported bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")'"
+    else
+      success "Successfully cloned '$(cyan "${clone_url}")' into '$(cyan "${target_folder}")'"
+    fi
   else
-    # is_git_repo = (is_non_zero_string && is_directory .git) -- logical complement of the if above,
-    # so this else is exhaustive and the condition check is redundant.
+    # Reached whenever "${target_folder}" is already a git repo (regardless of which
+    # clone-url scheme was passed in).
     debug "Repo already exists at '$(yellow "${target_folder}")' -- will unshallow and fetch in background"
   fi
 
@@ -2074,18 +2178,18 @@ clone_repo_into() {
   # install-dotfiles.rb has run, or any other repo) runs it normally.
   #
   # SKIP_POST_CLONE_MAINTENANCE opts out of this entire block regardless of alias
-  # availability -- for ephemeral/disposable repos that gain nothing from it (e.g. the
-  # encrypted-backup wrapper repo at ${XDG_CACHE_HOME}/encrypted-backups/<name>, which
-  # holds nothing but a handful of small chunk files replaced wholesale on every push --
-  # see EncryptedBackup._ensure_wrapper_repo). This is not just a wasted-cost optimization:
-  # 'unshallow' internally calls 'fo' (with-retry-wrapped fetch), and the full
-  # migrate+unshallow+maintain+siu chain can take longer than an *outer* with-retry call
-  # wrapping this whole clone_repo_into invocation is willing to wait for -- observed in
-  # practice as a false-positive stall-kill (SIGKILL) of the outer 'git-remote-encrypted-
-  # backup' helper process well after the actual clone had already succeeded, because the
-  # outer with-retry's progress-path (the real target repo's OWN '.git/objects', e.g.
-  # browser-profiles', not the wrapper repo's) sees zero growth during this entire
-  # wrapper-repo-only maintenance phase.
+  # availability -- for ephemeral/disposable repos that gain nothing from it (e.g. a
+  # throwaway mirror clone holding nothing but small, wholesale-replaced files). This is
+  # not just a wasted-cost optimization: 'unshallow' internally calls 'fo'
+  # (with-retry-wrapped fetch), and the full migrate+unshallow+maintain+siu chain can
+  # take longer than an *outer* with-retry call wrapping this whole clone_repo_into
+  # invocation is willing to wait for -- observed in practice as a false-positive
+  # stall-kill (SIGKILL) of an outer caller process well after the actual clone had
+  # already succeeded, because the outer with-retry's progress-path (the real target
+  # repo's OWN '.git/objects', not the throwaway mirror's) sees zero growth during this
+  # entire mirror-only maintenance phase. No current caller passes
+  # 'skip_maintenance: true' (see GitProcessor.clone_repo_into) -- kept available for any
+  # future ephemeral-clone use case with the same shape.
   if is_non_zero_string "${SKIP_POST_CLONE_MAINTENANCE:-}"; then
     debug "SKIP_POST_CLONE_MAINTENANCE set -- skipping post-clone maintenance for '$(yellow "${target_folder}")'"
   elif git config --get alias.maintain &>/dev/null; then

@@ -38,7 +38,7 @@ module CollectionProcessor
   # Generic directory discovery utility that can be used for any pattern-based
   # search (.git directories, node_modules, etc.).
   #
-  # @param folders [Array<String, Pathname>, String, Pathname] Root directory/directories to search
+  # @param dirs [Array<String, Pathname>, String, Pathname] Root directory/directories to search
   # @param name_pattern [String] The directory name to search for (e.g., '.git', 'node_modules')
   # @param mindepth [Integer] Minimum search depth (default: 1)
   # @param maxdepth [Integer] Maximum search depth (default: 6)
@@ -56,7 +56,7 @@ module CollectionProcessor
   #
   # @example Find all .git directories
   #   git_dirs = CollectionProcessor.find_directories_matching(
-  #     folders: '/Users/me/projects',
+  #     dirs: '/Users/me/projects',
   #     name_pattern: '.git'
   #   )
   #

@@ -27,13 +27,6 @@ module Plist
   # Defaults export / import
   # ---------------------------------------------------------------------------
 
-  # Exports a defaults domain to +file+ as an XML plist.
-  # Returns true on success, false if `defaults export` fails.
-  #
-  # @param domain [String] Defaults domain, e.g. 'com.apple.finder'.
-  # @param file [String, Pathname] Destination file path.
-  # @return [Boolean]
-
   # ---------------------------------------------------------------------------
   # Class methods
   # ---------------------------------------------------------------------------
@@ -214,6 +207,11 @@ module Plist
 
   # Enumerates the non-blank, non-comment lines from +filepath+.
   # Lines starting with '#' (optionally preceded by whitespace) are skipped.
+  #
+  # @param filepath [String, Pathname] Path to the file to enumerate.
+  # @yield [line] Each stripped, non-comment, non-blank line.
+  # @yieldparam line [String]
+  # @return [void]
   # :reek:FeatureEnvy -- Validates file and iterates over lines with filtering
   def _each_data_line(filepath)
     filepath = Pathname.new(filepath) unless filepath.is_a?(Pathname)

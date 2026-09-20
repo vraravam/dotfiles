@@ -22,14 +22,6 @@ module ProfilesRepo
   # because 'include Logging' + 'extend self' doesn't make included methods
   # available as module methods.
 
-  # Prunes session backup files older than the specified number of days.
-  # Only tracked files matching the zen-sessions-backup pattern are considered.
-  # Uses `git rm --cached` to unpin old backups from the index without deleting
-  # the working tree files.
-  #
-  # @param days [Integer] Age threshold in days (default: 7)
-  # @return [void]
-
   # ---------------------------------------------------------------------------
   # Class methods
   # ---------------------------------------------------------------------------

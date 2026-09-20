@@ -79,6 +79,13 @@ module Logging
   # behaviour is omitted here since it is inappropriate for library code.
   # ---------------------------------------------------------------------------
 
+  # Prints a success message (an operation completed successfully).
+  # Suppressed in direnv subshells to reduce noise. Use 'error' for messages
+  # that must always be visible regardless of context.
+  # Filtered by LOG_LEVEL environment variable.
+  #
+  # @param message [String] The message to log
+  # @return [void]
   def success(message)
     _emit_log(:success, message, "✅ #{'**SUCCESS**'.green}")
   end
@@ -366,6 +373,8 @@ module Logging
   # Sets the current logical section name, used as context in record_warning /
   # record_error entries. Mirrors the _current_section local in shell scripts.
   # Automatically strips ANSI codes to ensure clean error messages.
+  #
+  # @param name [String] The section name to set as current context
   def current_section=(name)
     @current_section = _strip_ansi(name.to_s)
     @current_section_manual = true # Mark as manually set
@@ -395,12 +404,16 @@ module Logging
 
   # Appends a non-critical issue to the warnings collection and emits an inline
   # warn so the issue is visible in the log at the point it occurs.
+  #
+  # @param message [String] The warning message to record
   def record_warning(message)
     _record_message(step_warnings, message)
   end
 
   # Appends a significant non-fatal failure to the errors collection and emits
   # an inline warn so the failure is visible in the log at the point it occurs.
+  #
+  # @param message [String] The error message to record
   def record_error(message)
     _record_message(step_errors, message)
   end
@@ -434,15 +447,19 @@ module Logging
     print_script_duration(start_time) if start_time
   end
 
-  # Returns a frozen copy of collected warnings. Public so callers (e.g.
+  # Returns the live collection of collected warnings. Public so callers (e.g.
   # software-updates-cron.rb notification block) can read them without
   # reaching into private state via instance_variable_get.
+  #
+  # @return [Array<String>] Collected warning messages
   def step_warnings
     @step_warnings ||= []
   end
 
-  # Returns a frozen copy of collected errors. Public for the same reason
+  # Returns the live collection of collected errors. Public for the same reason
   # as step_warnings above.
+  #
+  # @return [Array<String>] Collected error messages
   def step_errors
     @step_errors ||= []
   end
@@ -472,6 +489,9 @@ module Logging
   # Formats +seconds+ as "Hh:MMm:SSs". Public so callers that build their own
   # notification or summary strings can format a duration without reaching into
   # private state via send().
+  #
+  # @param seconds [Integer] Duration in seconds to format
+  # @return [String] Formatted duration string (e.g. "00h:05m:30s")
   # :reek:FeatureEnvy -- Stateless formatter operating on argument
   def format_duration(seconds)
     # rubocop:disable Style/FormatStringToken
@@ -587,6 +607,8 @@ module Logging
   # Used by print_script_start, print_script_summary, and print_results_summary
   # to suppress output from nested scripts so only the outermost script prints
   # banners and summaries.
+  #
+  # @return [Boolean] true if this is the outermost script, false otherwise
   # :reek:UtilityFunction -- Stateless query of global state
   def outermost_script?
     EnvVars.script_depth == 1
@@ -637,6 +659,8 @@ module Logging
   # standalone entry points (e.g., GitWorkspace.install_mise_versions) where
   # $PROGRAM_NAME would be '-e' or unhelpful. Must be public so module methods
   # can call it before increment_script_depth.
+  #
+  # @param name [String] The script name to use in log output
   def script_name=(name)
     @script_name = name
   end
@@ -684,6 +708,8 @@ module Logging
   # The name of the currently running script, mirroring _SCRIPT_NAME in shell.
   # Can be overridden by setting @script_name (used by module methods that act
   # as entry points, where $PROGRAM_NAME would be '-e' or unhelpful).
+  #
+  # @return [String] The current script name
   def script_name
     @script_name || File.basename($PROGRAM_NAME)
   end
@@ -691,6 +717,8 @@ module Logging
   # Returns the depth-based indent string (2 spaces per depth level).
   # Used by all logging functions to auto-indent output based on script nesting.
   # Memoized to avoid repeated string multiplication for the same depth.
+  #
+  # @return [String] The indentation string for the current script depth
   def _log_indent
     @indent_cache ||= {}
     depth = EnvVars.script_depth
@@ -720,9 +748,6 @@ module Logging
   def _repeat_char(char, length)
     char * length
   end
-
-  # Prints +char+ repeated +length+ times for section header padding.
-  #
 
   # Pushes the current epoch seconds onto the step timing stack. Called by
   # with_step at the start of a step. Mirrors step_start in .shellrc.
@@ -757,6 +782,8 @@ module Logging
   # Per-includer stacks stored as instance variables so that each object (or
   # the top-level main object when `include`d at script level) has its own
   # independent stacks, matching the zsh array semantics.
+  #
+  # @return [Array<Integer>] Stack of step start times (Unix epoch seconds)
   def script_start_times
     @script_start_times ||= []
   end
@@ -764,6 +791,8 @@ module Logging
   # Returns the current terminal column width, falling back to COLUMNS env var or 80.
   # Reads from: 1) $stdout.winsize (ioctl), 2) EnvVars.columns (COLUMNS env var), 3) hardcoded 80
   # Matches shell behavior: ${COLUMNS:-${_FALLBACK_TERMINAL_WIDTH}}
+  #
+  # @return [Integer] Terminal column width
   def terminal_width
     return @terminal_width if @terminal_width
 

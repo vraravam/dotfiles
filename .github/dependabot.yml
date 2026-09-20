@@ -22,3 +22,20 @@ updates:
       - "dependencies"
     commit-message:
       prefix: "deps"
+
+  # Keeps the 'uses:' action versions pinned across every workflow in
+  # .github/workflows/ current (actions/checkout, codecov/codecov-action,
+  # etc.) -- without this, those versions only ever get bumped manually,
+  # which is how rspec.yml's codecov-action drifted a major version behind
+  # the same workflow's counterpart in the sibling git-remote-gpg-encrypt repo.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+    commit-message:
+      prefix: "deps"

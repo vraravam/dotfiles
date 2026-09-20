@@ -548,6 +548,24 @@ Both `~/.ssh/config` and `templates/ssh-config.template` must have this comment 
 - If any modifications touch the zsh boot‑up files (`.zshenv`, `.zshrc`, `.zlogin`, `.aliases`, `.shellrc`, etc.) or other scripts that are sourced during a terminal start‑up, add a note that the user should quit and restart the Terminal/iTerm application to reload the configuration.
 - If the staged changes involve fresh‑install logic (e.g., modifications to `fresh-install-of-osx.sh` or related scripts), advise running the fresh‑install script in an idempotent manner, e.g. `./fresh-install-of-osx.sh` (it will guard against already‑configured machines).
 
+### Amending a Commit -- Eliminate Intermediate-State Cruft
+
+**MANDATORY: When amending (or squashing) a commit that already has an existing CHANGELOG.md section and/or commit message, both must be rewritten to describe only the final, squashed state -- never left as a chronological narrative of intermediate edits.**
+
+This applies whenever a commit is amended with new changes, or multiple commits are squashed together (e.g. `git reset --soft <base>` followed by a single new commit). Do not simply append new bullets/paragraphs describing the newest edit on top of what was already there -- both artifacts must be re-derived from the final squashed diff.
+
+**Workflow:**
+
+1. After finalizing the squash/amend's staged content (working tree and index in their final state), get the full diff for the amended commit's overall range: `git diff <original-base> <final-staged-tree>` (or per-file: `git diff <original-base> -- <file>`).
+2. Cross-check **every existing CHANGELOG bullet** (and every paragraph of the existing commit message) against that final diff, file by file:
+   - If a bullet describes something that does not appear at all in the final diff (e.g. a feature added in one intermediate commit and fully reverted/replaced in a later one within the same squash) -- it is pure intermediate-state cruft. **Delete the bullet entirely.**
+   - If a bullet's specific claim (e.g. "does not call into X at all", "now calls Y directly") was true of an intermediate commit but has since been further changed by a later edit in the same squash -- **rewrite the bullet to describe only the final, accurate behavior.** Never leave a claim that contradicts the actual staged/committed diff.
+   - If two bullets (originally written for two separate, now-squashed commits) both describe the same file/behavior, and the second supersedes/extends the first -- **merge them into one bullet** describing the final state, rather than presenting it as "first we did X, then we changed it to Y."
+3. Apply the same cross-check to the **commit message** -- it must read as a single, coherent description of the final change, not a stitched-together history of "first this happened, then this fix, then this other fix." Remove or rewrite any paragraph that only made sense as a description of an intermediate, now-superseded state.
+4. Verify the rewritten CHANGELOG section and commit message pass a final read-through: every claim should be independently verifiable against `git diff <original-base> <final-state>` for the specific file/behavior it describes.
+
+**Why this matters:** once commits are squashed, the intermediate commits never existed from the reader's perspective -- a CHANGELOG or commit message that still narrates them (e.g. "removed the X we added earlier in this same entry", or "now calls Y directly" when the final code doesn't) is actively misleading, not just imprecise. This is distinct from the § Rebase Rules content-correctness checklist above -- that verifies no functionality was lost during a rebase; this specifically targets stale narrative/documentation left over from the squash mechanics.
+
 ### Changelog Entry Structure
 
 When creating or editing CHANGELOG.md sections, follow these rules:

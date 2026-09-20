@@ -21,6 +21,33 @@ Key instruction files (apply to code in `${DOTFILES_DIR}`, `${PERSONAL_BIN_DIR}`
 - If you update UTF-8 file reading in a Ruby script, search for all instances of `File.readlines` / `.each_line` across all three locations
 - Use grep/glob to find all matching files before starting edits: `grep -r "pattern" ${DOTFILES_DIR} ${PERSONAL_BIN_DIR} ${PERSONAL_CONFIGS_DIR}`
 
+**Known related repo -- `git-remote-gpg-encrypt`** (`${PROJECTS_BASE_DIR}/oss/git-remote-gpg-encrypt`,
+standalone, its own git history, not managed by `install-dotfiles.rb`): a Ruby tool
+extracted from this repo's `EncryptedBackup` module, with its own trimmed/adapted copy
+of `ruby-scripting.md` and friends under its own `.ai/domains/` (see that repo's
+`AGENTS.md` for specifics on what was dropped: `Logging`/`EnvVars`/`GitProcessor`/
+`CliParser`). It is NOT a fourth directory to blindly propagate identical fixes into --
+its rules were deliberately trimmed to that project's own, much smaller, dependency-free
+shape. When a Ruby-related refactoring/pattern fix/rule change is made here, check
+whether the *equivalent, adapted* version of that fix should also be back-ported to
+`git-remote-gpg-encrypt`'s own code and its own `.ai/domains/ruby-scripting.md` -- the
+same way a fix might get backported to any other sibling project that forked this
+repo's conventions.
+
+**Known related repo -- `homebrew-tap`** (`${PROJECTS_BASE_DIR}/oss/homebrew-tap`,
+standalone, its own git history, not managed by `install-dotfiles.rb`): a personal
+Homebrew tap (deliberately generic-named, not `homebrew-git-remote-gpg-encrypt` --
+intended to hold formulae for any number of future personal tools, not just this one),
+currently containing only `Formula/git-remote-gpg-encrypt.rb`. This is how
+`git-remote-gpg-encrypt` is installed from `files/--HOME--/Brewfile` (`tap
+'vraravam/tap'` + `brew 'vraravam/tap/git-remote-gpg-encrypt'`). Its only Ruby files are
+Homebrew Formula DSL files, which follow Homebrew's own established style (enforced by
+`brew style`/`brew audit`, see that repo's own `.rubocop.yml`) rather than this repo's
+`ruby-scripting.md` conventions -- there is nothing to back-port here the way there is
+for `git-remote-gpg-encrypt` above. When `git-remote-gpg-encrypt` cuts a new tagged
+release, this tap's `Formula/git-remote-gpg-encrypt.rb` needs its `tag:`/`revision:`
+updated to match (see that repo's own `README.md` for the exact steps).
+
 ## Git State Management — NEVER Modify Without Permission
 
 **DEFAULT WORKFLOW: The user reviews and stages changes manually.**

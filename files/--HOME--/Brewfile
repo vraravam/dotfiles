@@ -36,6 +36,13 @@ shellrc_path = File.expand_path('~/.shellrc')
 shellrc_content = File.exist?(shellrc_path) ? File.read(shellrc_path) : ''
 keybase_enabled = shellrc_content.match?(/^\s*export\s+KEYBASE_(?:HOME|PROFILES)_REPO_NAME=\S/)
 
+# Whether the gpg+git-bundle encrypted backup is enabled -- mirrors '.shellrc's
+# ENCRYPTED_HOME_REPO_URL/ENCRYPTED_PROFILES_REPO_URL exports (see
+# EnvVars::ENCRYPTED_HOME_REPO_URL/ENCRYPTED_PROFILES_REPO_URL). Comment out those
+# exports in .shellrc to disable the formula below entirely. Same rationale as
+# keybase_enabled above for reading '.shellrc' directly instead of ENV.
+encrypted_backup_enabled = shellrc_content.match?(/^\s*export\s+ENCRYPTED_(?:HOME|PROFILES)_REPO_URL=\S/)
+
 # TODO: Hardcoding of the dotfiles repo folder - since that env var is not available inside this env
 setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.rb"
 
@@ -59,7 +66,6 @@ end
 brew 'bash'
 brew 'curl'
 brew 'git'
-brew 'gnupg'  # Encrypted backup (gpg + git bundle, coexists with Keybase) -- see scripts/utilities/encrypted_backup.rb
 brew 'grep'
 brew 'jemalloc'  # used for faster ruby
 brew 'less'
@@ -70,6 +76,10 @@ brew 'sqlite3'
 brew 'vim'
 brew 'wget'
 brew 'zsh'
+
+if encrypted_backup_enabled
+  brew 'vraravam/tap/git-remote-gpg-encrypt', trusted: true  # encrypted backup (gpg + git bundle, coexists with Keybase)
+end
 
 # formulae pulled in for base configs (if these are absent, you will get errors and things won't work)
 brew 'antidote',

@@ -137,6 +137,8 @@ module Cron
   # to tracked crontab.txt). Users who need a template can run:
   #   create_crontab ${PERSONAL_CONFIGS_DIR}/crontab.txt
   # Mirrors create_crontab in .aliases.
+  #
+  # @param file [String, Pathname] Path to write the crontab template to
   def create_crontab(file)
     shell = EnvVars::SHELL
     username = EnvVars::USER
