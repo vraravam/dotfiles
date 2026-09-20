@@ -37,6 +37,7 @@ module ProfilesRepo
   def _profiles_dir
     @_profiles_dir ||= EnvVars::PERSONAL_PROFILES_DIR
   end
+
   private_class_method :_profiles_dir
 
   # Checks the pack size of the profiles repo and records an error if it exceeds
@@ -103,15 +104,13 @@ module ProfilesRepo
 
     Logging.debug "Updating profiles repo at '#{_profiles_dir.cyan}'"
 
-    # Clean up lock files and hooks
-    index_lock = _profiles_dir.join('.git', 'index.lock')
-    hooks_dir = _profiles_dir.join('.git', 'hooks')
-    index_lock.delete if index_lock.file?
-    hooks_dir.rmtree if hooks_dir.directory?
-
     # Stage and commit with timestamp (use block form for multiple operations)
     success = false
     GitProcessor.new(dir: _profiles_dir) do |git|
+      # Clean up lock files and hooks
+      git.delete_index_lock
+      git.delete_hooks_dir
+
       git.add('.')
       success = git.smart_commit
     end

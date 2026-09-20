@@ -346,17 +346,14 @@ module GitWorkspace
     end
 
     Logging.with_step("update #{repo_dir}", "#{'Updating'.yellow} '#{repo_dir.cyan}'") do
-      # Clean up stale lock files and hooks
-      index_lock = repo_dir.join('.git', 'index.lock')
-      commit_graph_lock = repo_dir.join('.git', 'objects', 'info', 'commit-graphs', 'commit-graph-chain.lock')
-      hooks_dir = repo_dir.join('.git', 'hooks')
-      index_lock.delete if index_lock.file?
-      commit_graph_lock.delete if commit_graph_lock.file?
-      hooks_dir.rmtree if hooks_dir.directory?
-
       # Stage and commit with timestamp (use block form for multiple operations)
       success = false
       GitProcessor.new(dir: repo_dir) do |git|
+        # Clean up stale lock files and hooks
+        git.delete_index_lock
+        git.delete_commit_graph_lock
+        git.delete_hooks_dir
+
         paths ||= ['.']
         paths.each { |path| git.add(path) }
         success = git.smart_commit

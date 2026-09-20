@@ -2,6 +2,8 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
+require 'fileutils'
+
 require_relative 'pathname_ext' # Extends Pathname with color methods - loaded here for universal availability
 
 # Core utility module with minimal dependencies.
@@ -100,6 +102,43 @@ module Core
   #   end
   def elapsed?(start_time, threshold)
     duration_since(start_time) >= threshold
+  end
+
+  # Runs the given block if a periodic operation guarded by a timestamp cache file is
+  # due to run again -- i.e. cache_file is missing, or at least interval_secs have
+  # elapsed since its mtime -- then touches cache_file to reset the timer. Centralizes
+  # the "run this at most once every N seconds" throttle pattern used by cron-driven
+  # background updates, so callers don't each re-derive File.mtime(...).to_i, risk an
+  # inverted condition, or forget to touch the cache file after a successful run.
+  #
+  # @param cache_file [String, Pathname] Path to the timestamp cache file.
+  # @param interval_secs [Integer] Minimum seconds that must have elapsed since
+  #   cache_file's mtime before the block runs.
+  # @yield Runs the guarded operation when due.
+  # @return [Boolean] true if the block ran (and cache_file was touched); false if
+  #   skipped because interval_secs hasn't elapsed yet.
+  #
+  # @example
+  #   ran = Core.due_for_periodic_update(cache_file, 6 * 3600) { do_the_update }
+  #   Logging.debug 'skipped -- not due yet' unless ran
+  def due_for_periodic_update(cache_file, interval_secs)
+    cache_file = Pathname.new(cache_file) unless cache_file.is_a?(Pathname)
+    return false if cache_file.file? && !elapsed?(File.mtime(cache_file).to_i, interval_secs)
+
+    yield
+    mark_updated!(cache_file)
+    true
+  end
+
+  # Resets a periodic-update cache file's mtime to now (creating it if it doesn't
+  # already exist). Called internally by due_for_periodic_update after its block
+  # runs; exposed publicly too in case a caller needs to reset the timer without
+  # going through the block form.
+  #
+  # @param cache_file [String, Pathname] Path to the timestamp cache file.
+  # @return [void]
+  def mark_updated!(cache_file)
+    FileUtils.touch(cache_file.to_s)
   end
 
   # Checks if the script is running in a TTY (terminal) context.

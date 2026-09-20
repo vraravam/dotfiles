@@ -590,10 +590,8 @@ module ResurrectRepositories
     end
 
     # Clean up stale lock files before fetch to avoid "File exists" errors
-    index_lock = Pathname.new(dir).join('.git', 'index.lock')
-    commit_graph_lock = Pathname.new(dir).join('.git', 'objects', 'info', 'commit-graphs', 'commit-graph-chain.lock')
-    index_lock.delete if index_lock.file?
-    commit_graph_lock.delete if commit_graph_lock.file?
+    git.delete_index_lock
+    git.delete_commit_graph_lock
 
     # Fetch failures are non-fatal -- repository exists and is usable, just couldn't pull latest changes
     Logging.with_step('fetching remotes', 'Fetching all remotes and tags...') do

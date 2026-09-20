@@ -2,7 +2,18 @@
 #   - ${^array} (rc-style expansion)
 #   - for key value in "${(@kv)assoc}" (associative array iteration)
 #   - ${~pattern} (glob matching in [[ == ]] comparisons)
+#   - ${#arr[@]:-0} (combining the '#' length operator with ':-' default-value
+#     operator -- zsh allows this combination, bash/shfmt's parser does not)
+#   - &| (zsh's disowned-background-job operator -- not valid bash/shfmt syntax
+#     at all, confirmed via 'bash -n')
+#   - ${(j: | :)array} (zsh's array-join operator -- 'bad substitution' in bash)
+# fresh-install-of-osx.sh has at least 3 independent constructs from this list
+# (confirmed via 'bash -n' -- the script cannot be parsed by bash at all, not
+# just reformatted by shfmt); this is intentional and not a portability bug --
+# its shebang is zsh, and Adoption.md's bootstrap command always pipes it into
+# 'zsh', never 'bash'.
 files/--ZDOTDIR--/.zshrc
+scripts/fresh-install-of-osx.sh
 
 # shfmt fmt:off/on directives are not honoured inside loop bodies (shfmt bug);
 # one-liners like 'while true; do ...; done' and 'pushd || { ...; }' get expanded

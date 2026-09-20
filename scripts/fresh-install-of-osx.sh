@@ -581,14 +581,73 @@ _configure_backup_remote() {
   fi
 }
 
-# Clones the home repo (private configs) from whichever backup mechanism(s) are
-# enabled (KEYBASE_HOME_REPO_NAME and/or ENCRYPTED_HOME_REPO_URL -- see
+# Clones target_folder from whichever backup mechanism(s) are enabled (a
+# KEYBASE_*_REPO_NAME and/or an ENCRYPTED_*_REPO_URL env var -- see
 # KeybaseMigration.md for how they coexist). Keybase is tried first (original
 # mechanism, historical precedence); the gpg+git-bundle encrypted backup (external
-# 'git-remote-gpg-encrypt' tool, installed via the 'vraravam/tap' Homebrew tap) is the
-# fallback, or the only option if Keybase isn't enabled/available. Whichever succeeds
-# performs the actual clone; if the other mechanism is also enabled, it is configured
-# as an additional remote (via _configure_backup_remote) rather than cloned from again.
+# 'git-remote-gpg-encrypt' tool, installed via the 'vraravam/tap' Homebrew tap) is
+# the fallback, or the only option if Keybase isn't enabled/available. Whichever
+# succeeds performs the actual clone; if the other mechanism is also enabled, it is
+# configured as an additional remote by the caller (via _configure_backup_remote)
+# rather than cloned from again. Shared by _clone_home_repo and _clone_profiles_repo
+# -- callers handle their own small differences (pull-on-exists behavior, extra git
+# config, one-time post-clone setup) since those aren't part of the
+# backup-mechanism selection logic itself.
+#
+# Writes into 'cloned_via' in the caller's scope (caller must declare it 'local'
+# before calling, same convention as parse_folder_and_switches) -- 'keybase' or
+# 'encrypted-backup' on success, empty string if both enabled mechanisms failed or
+# if neither is enabled for this repo (not itself a failure -- see the
+# _record_error vs info distinction below).
+#
+# Usage: local cloned_via; _clone_backup_repo "${folder}" "${keybase_name}" "${encrypted_url}" 'label' 'KEYBASE_ENV_VAR' 'ENCRYPTED_ENV_VAR'
+_clone_backup_repo() {
+  local target_folder="${1:?}"
+  local keybase_repo_name="${2:-}"
+  local encrypted_repo_url="${3:-}"
+  local label="${4:?}"
+  local keybase_env_var="${5:?}"
+  local encrypted_env_var="${6:?}"
+  cloned_via=''
+
+  if is_non_zero_string "${keybase_repo_name}"; then
+    if command_exists keybase && _ensure_keybase_logged_in && clone_repo_into "$(_build_keybase_repo_url "${keybase_repo_name}")" "${target_folder}"; then
+      cloned_via='keybase'
+      success "Successfully cloned ${label} from Keybase"
+    else
+      _record_warning "Failed to clone ${label} from Keybase -- will try encrypted-backup next if enabled"
+    fi
+  fi
+
+  if is_zero_string "${cloned_via}" && is_non_zero_string "${encrypted_repo_url}"; then
+    # The Keychain-passphrase reminder for this step is printed much earlier, right
+    # after '.shellrc' is downloaded/sourced in main() -- see the comment there for why.
+    # clone_repo_into's 'gpg-encrypt::' special-case already strips the bogus 'origin'
+    # that 'git gpg-encrypt-restore' leaves behind internally, so -- same as the
+    # Keybase branch above -- there is no remote to configure here; whichever remote
+    # name (origin/origin2) this backup ends up under is decided uniformly by the
+    # caller's '_configure_backup_remote' calls, regardless of which mechanism
+    # actually performed the clone.
+    if command_exists git-gpg-encrypt-restore && clone_repo_into "gpg-encrypt::${encrypted_repo_url}" "${target_folder}"; then
+      cloned_via='encrypted-backup'
+      success "Successfully cloned ${label} from encrypted backup"
+    else
+      _record_error "Failed to clone ${label} from encrypted backup"
+    fi
+  fi
+
+  if is_zero_string "${cloned_via}"; then
+    if is_non_zero_string "${keybase_repo_name}" || is_non_zero_string "${encrypted_repo_url}"; then
+      _record_error "Failed to clone ${label} from any enabled backup mechanism"
+    else
+      info "Skipping cloning of ${label} since neither '$(yellow "${keybase_env_var}")' nor '$(yellow "${encrypted_env_var}")' env var has been set"
+    fi
+  fi
+}
+
+# Clones the home repo (private configs) from whichever backup mechanism(s) are
+# enabled (KEYBASE_HOME_REPO_NAME and/or ENCRYPTED_HOME_REPO_URL -- see
+# _clone_backup_repo for the shared clone-selection logic).
 _clone_home_repo() {
   _current_section='Clone home repo'; _current_section_manual=1
   step_start
@@ -610,33 +669,8 @@ _clone_home_repo() {
     fi
   else
     _step_header 'Cloning home repo'
-    local cloned_via=''
-
-    if is_non_zero_string "${keybase_repo_name}"; then
-      if command_exists keybase && _ensure_keybase_logged_in && clone_repo_into "$(_build_keybase_repo_url "${keybase_repo_name}")" "${HOME}"; then
-        cloned_via='keybase'
-        success "Successfully cloned home repo from Keybase"
-      else
-        _record_warning 'Failed to clone home repo from Keybase -- will try encrypted-backup next if enabled'
-      fi
-    fi
-
-    if is_zero_string "${cloned_via}" && is_non_zero_string "${encrypted_repo_url}"; then
-      # The Keychain-passphrase reminder for this step is printed much earlier, right
-      # after '.shellrc' is downloaded/sourced in main() -- see the comment there for why.
-      # clone_repo_into's 'gpg-encrypt::' special-case already strips the bogus 'origin'
-      # that 'git gpg-encrypt-restore' leaves behind internally, so -- same as the
-      # Keybase branch above -- there is no remote to configure here; whichever remote
-      # name (origin/origin2) this backup ends up under is decided uniformly by the
-      # '_configure_backup_remote' calls below, regardless of which mechanism actually
-      # performed the clone.
-      if command_exists git-gpg-encrypt-restore && clone_repo_into "gpg-encrypt::${encrypted_repo_url}" "${HOME}"; then
-        cloned_via='encrypted-backup'
-        success "Successfully cloned home repo from encrypted backup"
-      else
-        _record_error 'Failed to clone home repo from encrypted backup'
-      fi
-    fi
+    local cloned_via
+    _clone_backup_repo "${HOME}" "${keybase_repo_name}" "${encrypted_repo_url}" 'home repo' 'KEYBASE_HOME_REPO_NAME' 'ENCRYPTED_HOME_REPO_URL'
 
     if is_non_zero_string "${cloned_via}"; then
       # Reset ssh/gnupg permissions so git/gpg don't complain -- both '.ssh' and '.gnupg'
@@ -647,10 +681,6 @@ _clone_home_repo() {
 
       # Fix /etc/hosts file to block facebook
       if is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts"; then sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts; fi
-    elif is_non_zero_string "${keybase_repo_name}" || is_non_zero_string "${encrypted_repo_url}"; then
-      _record_error 'Failed to clone home repo from any enabled backup mechanism'
-    else
-      info "Skipping cloning of home repo since neither '$(yellow 'KEYBASE_HOME_REPO_NAME')' nor '$(yellow 'ENCRYPTED_HOME_REPO_URL')' env var has been set"
     fi
   fi
 
@@ -669,8 +699,8 @@ _clone_home_repo() {
 }
 
 # Clones the browser-profiles repo (personal browser profile data) from whichever
-# backup mechanism(s) are enabled -- same Keybase-first, encrypted-backup-fallback
-# precedence as _clone_home_repo above.
+# backup mechanism(s) are enabled -- see _clone_backup_repo for the shared
+# clone-selection logic.
 _clone_profiles_repo() {
   _current_section='Clone profiles repo'; _current_section_manual=1
   step_start
@@ -689,37 +719,8 @@ _clone_profiles_repo() {
     _step_header 'Profiles repo already exists -- skipping clone'
   else
     _step_header 'Cloning profiles repo'
-    local cloned_via=''
-
-    if is_non_zero_string "${keybase_repo_name}"; then
-      if command_exists keybase && _ensure_keybase_logged_in && clone_repo_into "$(_build_keybase_repo_url "${keybase_repo_name}")" "${PERSONAL_PROFILES_DIR}"; then
-        cloned_via='keybase'
-        success "Successfully cloned browser-profiles repo from Keybase"
-      else
-        _record_warning 'Failed to clone browser-profiles repo from Keybase -- will try encrypted-backup next if enabled'
-      fi
-    fi
-
-    if is_zero_string "${cloned_via}" && is_non_zero_string "${encrypted_repo_url}"; then
-      # See _clone_home_repo's matching comment -- clone_repo_into's 'gpg-encrypt::'
-      # special-case already strips the bogus 'origin' left behind internally by
-      # 'git gpg-encrypt-restore', so there is no remote to configure here; the
-      # '_configure_backup_remote' calls below decide origin/origin2 uniformly.
-      if command_exists git-gpg-encrypt-restore && clone_repo_into "gpg-encrypt::${encrypted_repo_url}" "${PERSONAL_PROFILES_DIR}"; then
-        cloned_via='encrypted-backup'
-        success "Successfully cloned browser-profiles repo from encrypted backup"
-      else
-        _record_error 'Failed to clone browser-profiles repo from encrypted backup'
-      fi
-    fi
-
-    if is_zero_string "${cloned_via}"; then
-      if is_non_zero_string "${keybase_repo_name}" || is_non_zero_string "${encrypted_repo_url}"; then
-        _record_error 'Failed to clone browser-profiles repo from any enabled backup mechanism'
-      else
-        info "Skipping cloning of profiles repo since neither '$(yellow 'KEYBASE_PROFILES_REPO_NAME')' nor '$(yellow 'ENCRYPTED_PROFILES_REPO_URL')' env var has been set"
-      fi
-    fi
+    local cloned_via
+    _clone_backup_repo "${PERSONAL_PROFILES_DIR}" "${keybase_repo_name}" "${encrypted_repo_url}" 'browser-profiles repo' 'KEYBASE_PROFILES_REPO_NAME' 'ENCRYPTED_PROFILES_REPO_URL'
   fi
 
   if is_git_repo "${PERSONAL_PROFILES_DIR}"; then

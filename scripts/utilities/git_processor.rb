@@ -905,6 +905,40 @@ class GitProcessor
     end
   end
 
+  # Deletes .git/objects/info/commit-graphs/commit-graph-chain.lock if it exists.
+  # A stale commit-graph lock (left behind by an interrupted 'git commit-graph write'
+  # or a killed process) can block subsequent commit-graph writes; deleting it is
+  # safe since git regenerates the commit-graph on next use. Same rescue-nil pattern
+  # as delete_index_lock -- the file may not exist, which is the desired end state.
+  #
+  # @return [void]
+  def delete_commit_graph_lock
+    path = @dir.join('.git', 'objects', 'info', 'commit-graphs', 'commit-graph-chain.lock')
+    if @dry_run
+      Logging.info "Would delete: '#{path.cyan}' (if it exists)"
+    else
+      begin
+        path.delete
+      rescue StandardError
+        nil
+      end
+    end
+  end
+
+  # Removes .git/hooks entirely if it exists. Used before automated operations on
+  # repos that may have local hooks installed (e.g. via Husky/lint-staged) which
+  # could otherwise interfere with or slow down non-interactive git calls.
+  #
+  # @return [void]
+  def delete_hooks_dir
+    path = @dir.join('.git', 'hooks')
+    if @dry_run
+      Logging.info "Would remove: '#{path.cyan}' (if it exists)"
+    elsif path.directory?
+      path.rmtree
+    end
+  end
+
   # Creates a git bundle file capturing all refs reachable in this repo
   # (branches, remote-tracking branches, and tags). Streams git's own
   # progress output for large repos.

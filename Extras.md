@@ -244,6 +244,8 @@ You can control the search scope and filtering using environment variables:
 
 **Note**: Any shell command can be run — not just git commands. Each command executes in the context of the git repository root, giving you access to the repo's files and structure.
 
+**Per-repo overrides**: if you have a `${PERSONAL_BIN_DIR}/<name>-<repo-basename>.sh` script for a given repo (see [Per-project overrides](#per-project-overrides) below), `run-all.rb` runs that instead of the literal command for that repo — this is what lets things like cron suspension around a commit/push/pull happen transparently for one specific repo in the middle of an `all cc`/`all push`/etc. loop, without affecting any of the other repos.
+
 ## setup-login-item.rb
 
 Some apps must be registered as macOS login items programmatically after installation — the System Settings UI is not scriptable in a repeatable way. This script handles that registration so `fresh-install-of-osx.sh` can set up login items unattended. It is also safe to run manually at any time.
@@ -339,29 +341,72 @@ A set of git-workflow functions are available as zsh autoloads (lazily loaded on
 
 ### Per-project overrides
 
-For the six commands marked ✓, if a file named `<cmd>-<current-directory-name>.sh` exists in `${PERSONAL_BIN_DIR}` and is executable, it is sourced in the current shell instead of the built-in implementation.
+For the six commands marked ✓, if a file named `<cmd>-<current-directory-name>.sh` exists in `${PERSONAL_BIN_DIR}` and is executable, it is **run as a separate script** (not sourced into your interactive shell) instead of the built-in implementation. Because it runs as its own process, it does not automatically inherit functions or variables from your shell — it sources `.aliases`/`.shellrc` itself.
 
-**Example**: to customise `push` when inside a directory named `my-project`, create:
+**Example**: to customise `upreb` when inside a directory named `my-project`, create:
 
 ```zsh
-# ${PERSONAL_BIN_DIR}/push-my-project.sh
+#!/usr/bin/env zsh
+# ${PERSONAL_BIN_DIR}/upreb-my-project.sh
 
-# All functions and env vars from .shellrc and .aliases are available because
-# this file is sourced (not exec'd) in the current interactive shell.
+set -euo pipefail
 
-# Run whatever pre-push steps are needed, then call the default implementation.
-info "Running pre-push checks for my-project..."
-some_check || { warn "Pre-push check failed — aborting."; return 1; }
+# Re-source guard is inside .aliases itself -- safe to call unconditionally.
+source "${ZDOTDIR}/.aliases"
 
-# Call the private default implementation directly to avoid infinite recursion.
-# dispatch_or_fallback already resolved to this file, so calling push() again
-# would loop. _push (or _st, _count, etc.) is always the safe fallback target.
-_push "$@"
+# The autoload function hasn't necessarily run yet in this fresh process, so
+# _upreb doesn't exist until we explicitly load the script that defines it.
+require_env_var XDG_CONFIG_HOME
+load_file_if_exists "${XDG_CONFIG_HOME}/zsh/upreb"
+
+main() {
+  # Run whatever pre-upreb steps are needed for this repo...
+  info "Running pre-upreb checks for my-project..."
+  some_check || { warn "Pre-upreb check failed -- aborting."; return 1; }
+
+  # ...then call the default implementation. Calling the private '_upreb'
+  # directly (not 'upreb') avoids re-triggering the override dispatch.
+  _upreb
+}
+
+main "$@"
 ```
 
-The override file receives the same arguments the user passed to the public command (`"$@"`). It runs in the current shell, so `return 1` correctly aborts the operation without killing the terminal.
+```zsh
+chmod +x ${PERSONAL_BIN_DIR}/upreb-my-project.sh;
+```
+
+The override script receives the same arguments passed to the public command (`"$@"`). If you also want cron suspended for the duration (e.g. to keep a scheduled job from touching the repo mid-operation), wrap the call to the default implementation in `with_cron_suspended` (from `.aliases`) instead of calling it directly:
+
+```zsh
+main() {
+  with_cron_suspended _upreb "$@"
+}
+```
+
+`with_cron_suspended` suspends cron before running the given function, then restores it afterward — even on error (via an internal `EXIT` trap) — so a failed override never leaves cron permanently disabled.
 
 See [Technical Deep Dive § 10](TechnicalDeepDive.md#10-per-project-script-overrides) for the internal mechanics.
+
+### Overrides through `run-all.rb` / `all`
+
+The same `${PERSONAL_BIN_DIR}/<name>-<basename>.sh` override scripts also apply transparently when you run a command across many repos with `run-all.rb` (or the `all`/`home`/`profiles` aliases described in the [`run-all.rb`](#run-allrb) section above). Before running a command in each repo, `run-all.rb` checks whether an override script exists for that repo's directory name and, if so, runs it instead — with the working directory already set to that repo.
+
+This means:
+
+- `all cc` / `all upreb` — already worked before, since `git cc`/`git upreb` have their own override-detection built into the git alias itself.
+- `all push` / `all pull` — **now also work**, even though `push`/`pull` are git builtins (git always runs its own builtin instead of a same-named alias, so this was previously impossible to intercept). `run-all.rb` derives the override name from the git subcommand (`push`, `pull`, etc.) rather than going through git's alias mechanism at all.
+- Any other command you pass to `run-all.rb` (git subcommand or plain shell command) is looked up the same way — so any future `<name>-<basename>.sh` script you create will automatically apply the next time you run `all <name>` (or `run-all.rb <name>`), with no changes needed anywhere else.
+
+**Example**: given `${PERSONAL_BIN_DIR}/push-my-project.sh` (a wrapper that suspends cron for the duration of the push, then restores it), running:
+
+```zsh
+all push;
+```
+
+will, for every repo in the loop, suspend cron only while it is inside the `my-project` repo, run the override script there, restore cron, and then move on to the next repo — for every other repo (no matching override script) it just runs `git push` as normal.
+
+See `.ai/domains/git-config.md` § "`run-all.rb`'s Own Override Dispatch" for the full internal mechanics, including the cyclical-dispatch safety net.
 
 ### Git hook customizations
 

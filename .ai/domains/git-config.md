@@ -400,12 +400,47 @@ The shell autoload functions in `${XDG_CONFIG_HOME}/zsh/` also support overrides
 1. The function is called directly by name (e.g., `upreb` not `git upreb`)
 2. From a context where the autoload function is loaded (interactive shell)
 
-When using `run-all.rb git upreb`:
-- Executes `/bin/zsh -c "git upreb"` in each repo
-- Invokes the **git alias** (not the shell function)
-- Git alias override mechanism is the only way to customize behavior
+### `run-all.rb`'s Own Override Dispatch (covers git builtins too)
 
-This is why git aliases need their own override dispatch logic — they're the actual entry point in the `run-all.rb` workflow.
+`git cc`/`git upreb` already resolve their own override via the alias-level dispatch
+shown above, which works transparently through `all cc`/`all upreb` because
+`run-all.rb` re-invokes a fresh `git cc`/`git upreb` in each repo directory (the
+basename resolves correctly per-repo since the alias body derives it from the
+current working directory).
+
+That alias-level mechanism cannot cover git **builtins** (`push`, `pull`, etc.) --
+git always resolves a builtin before consulting `[alias]`, so there is no way to
+intercept `git push` via an alias of the same name. To close this gap, `run-all.rb`
+(`scripts/run-all.rb`) has its own override-dispatch check, applied generically to
+**every** command it runs (not just `git ...`) before invoking anything in a repo
+directory:
+
+- Derives an override name: `command[1]` when `command[0] == 'git'` (e.g. `push`,
+  `cc`, `upreb`), otherwise `command[0]` (e.g. `ls`, `custom-script.sh`).
+- Looks for `${PERSONAL_BIN_DIR}/<name>-<basename>.sh` for the repo currently being
+  processed (`<basename>` = the repo directory's basename).
+- If found and executable, execs that script directly (cwd = repo dir, remaining
+  args forwarded) **instead of** the original command -- this is what makes a
+  `with_cron_suspended`-wrapped override transparently apply to `push`/`pull`
+  through `all push`/`all pull`, exactly as it already did for `cc`/`upreb`.
+- If not found, falls back to the original `run-all.rb` behavior: `/bin/zsh -c
+  "<command joined>"` in the repo directory.
+
+**Cyclical-dispatch safety net**: before invoking a resolved override script,
+`run-all.rb` sets `_RUN_ALL_OVERRIDE_SKIP=1` in that subprocess's environment
+(mirroring `_GIT_OVERRIDE_SKIP`, which it also sets for `git ...` commands so the
+alias's own redundant check doesn't re-fire). If `run-all.rb` is ever invoked
+again from within that subprocess tree (e.g. a future override script mistakenly
+calls `all <cmd>` again), the inner invocation sees the env var already set and
+skips its own override-dispatch entirely -- bounding any accidental recursion to
+one level instead of looping.
+
+This makes the alias-level dispatch on `cc`/`upreb` effectively redundant for the
+`run-all.rb`/`all` code path specifically (run-all.rb finds and execs the same
+override script directly, without ever shelling out to `git cc`/`git upreb` at
+all) -- but the alias-level dispatch is still required and still active for a
+human running `git cc`/`git upreb` directly at the terminal, outside of
+`run-all.rb`.
 
 ---
 

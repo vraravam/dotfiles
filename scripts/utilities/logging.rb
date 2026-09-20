@@ -885,8 +885,7 @@ module Logging
   # @param message [String] Log message
   # @return [String] Text-formatted log entry
   def _format_text_log_entry(level, message)
-    timestamp = Time.now.strftime('%Y-%m-%d %H:%M:%S')
-    "[#{timestamp}] [#{level.to_s.upcase}] #{message.strip}"
+    "[#{Core.current_timestamp}] [#{level.to_s.upcase}] #{message.strip}"
   end
 
   # Rotates log file if it exceeds 10MB.

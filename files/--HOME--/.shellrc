@@ -2242,6 +2242,49 @@ clone_repo_into() {
   debug "Process took ${duration} seconds"
 }
 
+# Shared "secure a folder" skeleton for set_ssh_folder_permissions and
+# set_gnupg_folder_permissions: chmods target_dir (and optionally all of its
+# subdirectories) to 700, then chmods all regular files within it to 600.
+#
+# Arguments:
+#   $1 - target directory (e.g. "${HOME}/.ssh")
+#   $2 - 'true' to also chmod 700 every subdirectory (gnupg only -- it has a
+#        private-keys-v1.d subdirectory that also needs securing; ssh has no
+#        subdirectories in normal use so this is omitted there)
+#
+# Returns:
+#   0 if directory permissions were set (file-permission failures are only warned
+#     about, not treated as this function's failure)
+#   1 if directory permissions could not be set -- callers should bail out of any
+#     further mechanism-specific follow-up (e.g. ssh-add) the same way the
+#     original inline code did
+_secure_folder_permissions() {
+  local target_dir="${1:?}"
+  local secure_subdirs="${2:-false}"
+
+  ensure_dir_exists "${target_dir}"
+
+  if [[ "${secure_subdirs}" == 'true' ]]; then
+    if ! chmod 700 "${target_dir}" || ! find "${target_dir}" -type d -exec chmod 700 {} \;; then
+      warn "Failed to set directory permissions on '$(cyan "${target_dir}")'"
+      return 1
+    fi
+  elif ! chmod 700 "${target_dir}"; then
+    warn "Failed to set permissions on '$(cyan "${target_dir}")'"
+    return 1
+  fi
+
+  if ! is_directory_empty "${target_dir}"; then
+    if find "${target_dir}" -type f -exec chmod 600 {} \;; then
+      success "Ensured correct permissions for '$(cyan "${target_dir}")' and files within it."
+    else
+      warn "Failed to set file permissions in '$(cyan "${target_dir}")'"
+    fi
+  else
+    warn "'$(cyan "${target_dir}")' exists but is empty. No file permissions to set."
+  fi
+}
+
 # Sets secure permissions on ${HOME}/.ssh (700 on the directory, 600 on all
 # files) and adds any bare identity files (id_*) to the ssh-agent keychain.
 # Kept in .shellrc for two independent reasons:
@@ -2251,20 +2294,11 @@ clone_repo_into() {
 #      subshell); .aliases contains zsh-only syntax and cannot be sourced in bash.
 set_ssh_folder_permissions() {
   info "$(yellow 'Setting ssh config file permissions')"
-  ensure_dir_exists "${HOME}/.ssh"
-  # Set directory permissions first
-  if ! chmod 700 "${HOME}/.ssh"; then
-    warn "Failed to set permissions on '$(cyan "${HOME}/.ssh")'"
-    return
+  if ! _secure_folder_permissions "${HOME}/.ssh"; then
+    return 0
   fi
 
   if ! is_directory_empty "${HOME}/.ssh"; then
-    if find "${HOME}/.ssh" -type f -exec chmod 600 {} \;; then
-      success "Ensured correct permissions for '$(cyan "${HOME}/.ssh")' and files within it."
-    else
-      warn "Failed to set file permissions in '$(cyan "${HOME}/.ssh")'"
-    fi
-
     # Add keys to ssh-agent and store in macOS Keychain for persistence.
     # --apple-use-keychain (macOS 12+) stores passphrases in Keychain so keys persist
     # across reboots and are available to all processes. Without this, keys are only
@@ -2276,8 +2310,6 @@ set_ssh_folder_permissions() {
     else
       warn "Failed to add ssh identity files from '$(cyan "${HOME}/.ssh")'"
     fi
-  else
-    warn "'$(cyan "${HOME}/.ssh")' exists but is empty. No file permissions to set."
   fi
 }
 
@@ -2290,26 +2322,11 @@ set_ssh_folder_permissions() {
 # Socket files (gpg-agent's S.* sockets) are intentionally left untouched --
 # 'find -type f' only matches regular files, and chmod-ing a live socket is
 # unnecessary (gpg-agent already creates them with owner-only permissions).
-# Mirrors set_ssh_folder_permissions immediately above -- keep both in sync if
-# this logic changes.
+# Mirrors set_ssh_folder_permissions immediately above -- both share
+# _secure_folder_permissions for the common chmod/logging skeleton.
 set_gnupg_folder_permissions() {
   info "$(yellow 'Setting gnupg homedir file permissions')"
-  ensure_dir_exists "${HOME}/.gnupg"
-  # Set directory permissions first (top-level homedir and all subdirectories)
-  if ! chmod 700 "${HOME}/.gnupg" || ! find "${HOME}/.gnupg" -type d -exec chmod 700 {} \;; then
-    warn "Failed to set directory permissions on '$(cyan "${HOME}/.gnupg")'"
-    return
-  fi
-
-  if ! is_directory_empty "${HOME}/.gnupg"; then
-    if find "${HOME}/.gnupg" -type f -exec chmod 600 {} \;; then
-      success "Ensured correct permissions for '$(cyan "${HOME}/.gnupg")' and files within it."
-    else
-      warn "Failed to set file permissions in '$(cyan "${HOME}/.gnupg")'"
-    fi
-  else
-    warn "'$(cyan "${HOME}/.gnupg")' exists but is empty. No file permissions to set."
-  fi
+  _secure_folder_permissions "${HOME}/.gnupg" true
 }
 
 # Runs "$@" and evals its stdout into the current shell environment.

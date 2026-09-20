@@ -4,7 +4,47 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.2
+
+:white_check_mark: Tested on a vanilla macOS machine
+
+#### Fix a periodic-update polarity bug and consolidate the "run at most once every N seconds" throttle pattern into `Core`
+
+* *[scripts/utilities/core.rb]* Added `Core.due_for_periodic_update(cache_file, interval_secs) { ... }` -- runs the given block if `cache_file` is missing or `interval_secs` have elapsed since its mtime, then touches `cache_file` to reset the timer; returns `true`/`false` depending on whether the block ran. Centralizes a throttle pattern that was previously duplicated (and had drifted out of sync) across two independent call sites. Added `Core.mark_updated!(cache_file)` as the underlying touch helper (also usable standalone).
+* *[scripts/software-updates-cron.rb]* Both the mise-plugin-registry and ollama-model-pull throttles now use `Core.due_for_periodic_update`. The mise-plugins copy had an inverted condition (`if last_plugin_update_file.file? && Core.elapsed?(...)` skipped the update *when the interval had elapsed*, i.e. exactly backwards) -- it ran the update on every hourly cron tick until 6 hours had passed, then got permanently stuck skipping forever afterward (since it never touched the file again once in that branch). The ollama copy already had correct polarity and is now expressed via the same shared helper instead of its own inline `File.mtime`/`FileUtils.touch` bookkeeping.
+
+#### Consolidate duplicated stale git lock-file/hooks cleanup into `GitProcessor`
+
+* *[scripts/utilities/git_processor.rb]* Added `#delete_commit_graph_lock` and `#delete_hooks_dir`, alongside the pre-existing `#delete_index_lock` (dry-run aware, rescues missing files the same way).
+* *[scripts/utilities/git_workspace.rb, scripts/utilities/profiles_repo.rb, scripts/resurrect-repositories.rb]* All three previously hand-rolled `Pathname.join('.git', ...).delete if <path>.file?` for some subset of `{index.lock, commit-graph-chain.lock, hooks/}` instead of calling the (pre-existing, for index.lock) `GitProcessor` method. Now all three delegate to the `GitProcessor` methods above.
+
+#### Consolidate duplicated Keybase/encrypted-backup clone logic in `fresh-install-of-osx.sh`
+
+* *[scripts/fresh-install-of-osx.sh]* `_clone_home_repo` and `_clone_profiles_repo` shared a near-identical ~70-line "try Keybase, fall back to encrypted-backup, report success/failure" block, differing only in target directory, 4 env var names, and log wording. Extracted into a new shared `_clone_backup_repo` helper (writes into `cloned_via` in the caller's scope, mirroring the existing `parse_folder_and_switches` convention); both functions now call it and just handle their own small differences (pull-on-exists behavior, extra git config, one-time post-clone SSH/gnupg/`/etc/hosts` setup).
+
+#### Consolidate duplicated SSH/GPG folder-permission logic in `.shellrc`
+
+* *[files/--HOME--/.shellrc]* `set_ssh_folder_permissions` and `set_gnupg_folder_permissions` shared the same "ensure dir exists -> chmod 700 -> chmod 600 all files within" skeleton (self-acknowledged via an in-repo "keep both in sync" comment). Extracted into a new shared `_secure_folder_permissions` helper (with a flag for gnupg's extra "also chmod 700 every subdirectory" step, which ssh doesn't need); both public functions now call it, with `set_ssh_folder_permissions` layering its `ssh-add` step on top.
+
+#### Deduplicate a timestamp format string in `Logging`
+
+* *[scripts/utilities/logging.rb]* `_format_text_log_entry` now calls `Core.current_timestamp` instead of duplicating its exact `Time.now.strftime` format string inline -- brings this one remaining holdout in line with the convention every other timestamp use in the codebase already follows.
+
+#### Make `run-all.rb`'s per-repo command dispatch respect folder-specific override scripts
+
+* *[scripts/run-all.rb]* Before running a command in each repo it discovers, `run-all.rb` now checks for a folder-specific override script at `${PERSONAL_BIN_DIR}/<name>-<basename>.sh` (`<name>` = the git subcommand for `git ...` commands, otherwise the command's own name; `<basename>` = the repo directory's name) and execs that instead if present -- generalizing the existing per-alias override-dispatch pattern (previously only `git cc`/`git upreb` had this baked into their alias bodies) to cover every command `run-all.rb` runs, including git builtins like `push`/`pull` that can never be intercepted via a git alias (git always resolves a builtin before consulting `[alias]`). Sets `_RUN_ALL_OVERRIDE_SKIP=1` (and `_GIT_OVERRIDE_SKIP=1` for git commands) on the override subprocess's environment as a cyclical-dispatch safety net, mirroring the existing `_GIT_OVERRIDE_SKIP` convention -- bounds any accidental recursion (e.g. a future override script mistakenly invoking `run-all.rb`/`all` again) to one level.
+* *[.ai/domains/git-config.md]* Documented the new mechanism under a new "`run-all.rb`'s Own Override Dispatch" subsection, including its relationship to the pre-existing alias-level dispatch (which remains required for direct `git cc`/`git upreb` invocation outside of `run-all.rb`).
+* *[Extras.md]* Corrected a stale claim that per-project override scripts (`${PERSONAL_BIN_DIR}/<cmd>-<basename>.sh`) are "sourced" into the interactive shell -- they are actually executed as their own process, so the worked example was rewritten to match the real pattern used by in-use override scripts (explicit `source .aliases`, `main()` + `main "$@"`, etc.). Added a new "Overrides through `run-all.rb` / `all`" subsection documenting the new transparent dispatch behavior for `all push`/`all pull`/etc., with a worked example.
+
+#### Adopting these changes
+
+* Restart Terminal/iTerm (or run `unfunction is_shellrc_sourced; load_file_if_exists ~/.shellrc`) to pick up the new `_secure_folder_permissions` function in `.shellrc`.
+
+---
+
 ### 4.0.1
+
+:white_check_mark: Tested on a vanilla macOS machine
 
 #### Replace the embedded gpg+git-bundle encrypted backup with the extracted, standalone `git-remote-gpg-encrypt` tool
 
