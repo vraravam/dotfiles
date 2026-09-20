@@ -137,6 +137,14 @@ module ResurrectRepositories
       )
     end
 
+    # Creates a repository configuration. Prefer .from_hash for YAML-sourced data --
+    # this constructor performs no validation of its own.
+    #
+    # @param folder [String] Absolute, already-expanded path to the repository directory.
+    # @param remote [String] Primary remote URL (the 'origin' remote).
+    # @param other_remotes [Hash<String, String>] Additional remote name -> URL pairs.
+    # @param post_clone [Array<String>] Shell commands to run once after cloning.
+    # @param bundle [String, nil] Optional path to a local git bundle file to import from/export to.
     def initialize(folder:, remote:, other_remotes:, post_clone:, bundle: nil)
       @folder = folder
       @remote = remote
@@ -197,6 +205,10 @@ module ResurrectRepositories
   end
 
   # Run generate mode: scan directory and output YAML config
+  #
+  # @param discovery_dir [String] Directory to scan on disk for git repositories.
+  # @param filter [String, nil] Regex filter string to apply to discovered repo paths.
+  # @return [void]
   def _run_generate(discovery_dir, filter)
     Logging.with_step('generate config', 'Generating repository configuration') do
       discovery_dir = Pathname.new(discovery_dir).expand_path.to_s
@@ -219,6 +231,10 @@ module ResurrectRepositories
   private_class_method :_run_generate
 
   # Run resurrect mode: clone/update repos from config file
+  #
+  # @param config_file [String, Pathname] Path to the YAML config file to resurrect from.
+  # @param filter [String, nil] Regex filter string to apply to configured repo paths.
+  # @return [void] Sets @has_failures if any repo failed to resurrect.
   def _run_resurrect(config_file, filter)
     config_file = Pathname.new(config_file).expand_path
 
@@ -244,6 +260,10 @@ module ResurrectRepositories
   private_class_method :_run_resurrect
 
   # Run check mode: verify repos on disk match config file
+  #
+  # @param config_file [String, Pathname] Path to the YAML config file to verify against.
+  # @param filter [String, nil] Regex filter string to apply to configured repo paths.
+  # @return [void] Sets @has_failures if discrepancies are found (via _verify_all).
   def _run_check(config_file, filter)
     config_file = Pathname.new(config_file).expand_path
 
@@ -261,6 +281,10 @@ module ResurrectRepositories
   private_class_method :_run_check
 
   # Run bundle-export mode: create git bundle files for repos that have a 'bundle' key.
+  #
+  # @param config_file [String, Pathname] Path to the YAML config file to read repos from.
+  # @param filter [String, nil] Regex filter string to apply to configured repo paths.
+  # @return [void] Sets @has_failures if any bundle export failed.
   def _run_bundle_export(config_file, filter)
     config_file = Pathname.new(config_file).expand_path
 
@@ -392,7 +416,7 @@ module ResurrectRepositories
   # Reads repository configurations from a YAML file.
   # Validates and filters for active repositories, expands environment variables in dir paths.
   #
-  # @param filename [String] The path to the YAML configuration file.
+  # @param filename [String, Pathname] The path to the YAML configuration file.
   # @return [Array<RepositoryConfig>] An array of validated repository configuration objects.
   # :reek:FeatureEnvy -- Operates on method parameter for file I/O (intentional)
   def _read_git_repos_from_file(filename)
@@ -478,8 +502,6 @@ module ResurrectRepositories
   # On FIRST_INSTALL, GitProcessor.clone_repo_into uses --depth=1 (shallow clone).
   #
   # @param repo [RepositoryConfig] The repository configuration object.
-  # @param idx [Integer] The index of the current repository in the processing list (for logging).
-  # @param total [Integer] The total number of repositories to process (for logging).
   # @return [Boolean] Returns false for fatal failures (clone failure, verification failure)
   #   which abort processing of this repo and mark it as failed. Returns true for success,
   #   or when non-fatal failures (remote configuration, fetch, post-clone commands) are
@@ -606,7 +628,7 @@ module ResurrectRepositories
   # the Git repositories found on disk within a specified scope.
   # It reports any discrepancies.
   #
-  # @param repositories [Array<Hash>] An array of repository configurations from the YAML file.
+  # @param repositories [Array<RepositoryConfig>] An array of repository configurations from the YAML file.
   # @param discovered_count [Integer] Total count of repos before any filter was applied, used for the summary log.
   # @param filter [String] A filter string (regex) to apply to repository paths before comparison.
   # @param ref_dir [String, nil] Optional base directory to scope the comparison to (already expanded).

@@ -13,6 +13,10 @@ name: RSpec
 # spec/spec_helper.rb) to Codecov for the coverage badge in README.md. The
 # upload step is best-effort (fail_ci_if_error: false) so a Codecov outage or
 # a fork without CODECOV_TOKEN configured never blocks the actual test result.
+#
+# Requires a CODECOV_TOKEN repo secret (Settings > Secrets and variables > Actions) --
+# generate it from this repo's page on codecov.io (free for public/OSS repos; see
+# https://about.codecov.io/pricing/) after signing in with GitHub.
 
 on:
   push:
@@ -45,7 +49,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: always()
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: coverage/.resultset.json

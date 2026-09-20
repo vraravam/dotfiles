@@ -97,8 +97,10 @@ module SetupLoginItem
   # Registers +app_path+ via SMAppService.loginItem(url:) -- macOS 14-25 only.
   # APP_PATH is passed via the environment rather than heredoc interpolation so
   # that paths containing spaces or special characters are handled safely.
-  # Returns true if already registered or registration succeeded; false on failure.
   # Mirrors _register_smappservice in the shell version.
+  #
+  # @param app_path [String] Absolute path to the .app bundle to register.
+  # @return [Boolean] true if already registered or registration succeeded, false on failure.
   # :reek:UtilityFunction -- Stateless helper for SMAppService registration (intentional)
   def _register_smappservice(app_path)
     swift_src = <<~'SWIFT'
@@ -147,6 +149,11 @@ module SetupLoginItem
   # +hidden+ controls whether the app launches without a Dock icon.
   # Skips silently when already registered.
   # Mirrors _register_legacy in the shell version.
+  #
+  # @param app_name [String] Name of the application (used to check existing login items).
+  # @param app_path [String] Absolute path to the .app bundle to register.
+  # @param hidden [String] AppleScript boolean literal ('true' or 'false') controlling Dock visibility at launch.
+  # @return [Boolean] true if already registered or registration succeeded, false on failure.
   # :reek:UtilityFunction -- Stateless helper for legacy AppleScript registration (intentional)
   def _register_legacy(app_name, app_path, hidden)
     items_out = CommandUtils.query(MacOS::OSASCRIPT_CMD, '-e',

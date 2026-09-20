@@ -13,7 +13,6 @@ Reference documentation for the utility scripts bundled in this repo. Each secti
 - [recreate-repository.rb](#recreate-repositoryrb)
 - [resurrect-repositories.rb](#resurrect-repositoriesrb)
 - [run-all.rb](#run-allrb)
-- [setup-encrypted-backup.rb](#setup-encrypted-backuprb)
 - [setup-login-item.rb](#setup-login-itemrb)
 - [software-updates-cron.rb](#software-updates-cronrb)
 
@@ -138,8 +137,8 @@ When run with `-f`, the script follows this safety-first sequence:
 2. **Capture remote state** — Gets file list from `origin/<branch>` before any destructive operations
 3. **Recreate local repo** — Destroys `.git` and creates a fresh repository
 4. **Commit all files** — Stages and commits everything into a single initial commit
-5. **Verify file lists match** — Compares new local vs captured remote file lists (paths only -- `git ls-tree --name-only`, never content/blob hashes); aborts without pushing if they don't match (preserves the remote as backup). This is meaningful for a multi-file repo (catches `.gitignore` misconfiguration causing files to unexpectedly appear/disappear), but weak for a repo like the encrypted-backup wrapper repo (see [KeybaseMigration.md](KeybaseMigration.md)), whose working tree only ever contains a handful of numbered `backup.gpg.NNN` chunk files (split to stay under GitHub's 100MB per-file limit) -- there, path-only comparison can catch a chunk going missing/a stray extra file appearing, or the chunk count changing, but it provides no protection against force-pushing stale or corrupted chunks whose paths and count are unchanged but content is wrong. For that reason, force mode against a directory under `${XDG_CACHE_HOME}/encrypted-backups/` automatically runs an additional reassemble + decrypt + `git bundle verify` check first (`EncryptedBackup.verify_current_blob_decryptable?`) and refuses to squash if it fails -- no special flag needed, this is auto-detected from the directory path.
-6. **Compress and force-push to every remote** — For each configured remote: a `keybase://` remote is deleted and explicitly recreated first (`Keybase.recreate_repo`) since Keybase's own history/pruning model means a plain force-push there doesn't fully discard old history the way it does on a real git host; every other remote (encrypted-backup, plain GitHub, etc.) is just force-pushed directly.
+5. **Verify file lists match** — Compares new local vs captured remote file lists (paths only -- `git ls-tree --name-only`, never content/blob hashes); aborts without pushing if they don't match (preserves the remote as backup). This is meaningful for a multi-file repo (catches `.gitignore` misconfiguration causing files to unexpectedly appear/disappear). If you use this against the external [`git-remote-gpg-encrypt`](https://github.com/vraravam/git-remote-gpg-encrypt) tool's own wrapper-repo cache directory (see [KeybaseMigration.md](KeybaseMigration.md)), note that this check is weak there -- its working tree only ever contains a handful of numbered chunk files, so path-only comparison provides no protection against force-pushing stale or corrupted chunks whose paths and count are unchanged but content is wrong. Run `git gpg-encrypt-verify <url>` yourself first in that case; this repo's own force-mode no longer auto-detects/auto-verifies wrapper-repo directories (that cache directory is now the external tool's own opaque implementation detail, not something this repo reaches into).
+6. **Compress and force-push to every remote** — For each configured remote: a `keybase://` remote is deleted and explicitly recreated first (`Keybase.recreate_repo`) since Keybase's own history/pruning model means a plain force-push there doesn't fully discard old history the way it does on a real git host; every other remote (a `gpg-encrypt::` remote, plain GitHub, etc.) is just force-pushed directly.
 7. **Build commit graph** — Optimizes git operations (log, status, merge-base)
 
 The early capture (step 2) avoids prompting for `git remote add` or `git fetch` since remote tracking refs are lost when `.git` is destroyed.
@@ -244,16 +243,6 @@ You can control the search scope and filtering using environment variables:
 ```
 
 **Note**: Any shell command can be run — not just git commands. Each command executes in the context of the git repository root, giving you access to the repo's files and structure.
-
-## setup-encrypted-backup.rb
-
-Verifies the encrypted-backup mechanism (`gpg` + `git bundle`, see [`KeybaseMigration.md`](KeybaseMigration.md)) is ready to use: `gnupg` installed, and a passphrase configured in the macOS Keychain. It's idempotent — safe to run every time, and does nothing visible if already configured. It's called automatically on every `fresh-install-of-osx.sh` run, but can also be run manually at any time.
-
-```zsh
-setup-encrypted-backup.rb;
-```
-
-If a passphrase isn't yet configured and a real TTY is available, it prompts interactively via `security add-generic-password`'s own masked, double-entry prompt (the passphrase never touches Ruby memory or argv). In a non-interactive context (e.g. piped through `tee` during the bootstrap one-liner), it logs setup instructions instead of prompting.
 
 ## setup-login-item.rb
 

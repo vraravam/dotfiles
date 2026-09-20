@@ -22,6 +22,8 @@ module CliParser
     # Override OptionParser#warn to use Logging#warn instead of the default
     # behaviour which prepends the program name (e.g. "script: message").
     # :reek:UtilityFunction -- Override hook for OptionParser (intentional delegation)
+    #
+    # @param message [String] the warning message to display
     def warn(message)
       Logging.warn(message)
     end

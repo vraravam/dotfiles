@@ -50,23 +50,6 @@ module GitWorkspace
   # Git repo discovery
   # ---------------------------------------------------------------------------
 
-  # Finds all git repositories under the given directories, returning their root
-  # paths (directories containing .git). Supports filtering, depth control, and
-  # directory pruning.
-  #
-  # Delegates to CollectionProcessor.find_directories_matching for the low-level
-  # find operation, adding git-specific defaults and semantics (search for .git
-  # directories, return their parents as repo roots, prune common repo cruft).
-  #
-  # @param dirs [Array<String, Pathname>, String, Pathname] Root directory/directories to search
-  # @param mindepth [Integer] Minimum search depth (default: 1)
-  # @param maxdepth [Integer] Maximum search depth (default: 6)
-  # @param filter [String, Regexp, nil] Only include repos matching this pattern
-  # @param additional_prune [Array<String>] Additional directories to prune beyond
-  #   the defaults (node_modules, .cache, .Trash). Pass [] for no additional pruning.
-  # @param skip_symlinks [Boolean] Skip repo roots that are symlinks (default: true)
-  # @return [Array<String>] Repo root paths, deduplicated and sorted alphabetically
-
   # ---------------------------------------------------------------------------
   # Class methods
   # ---------------------------------------------------------------------------

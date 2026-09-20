@@ -70,8 +70,12 @@ function_name() {
 # ---------------------------------------------------------------------------
 # Section Name
 
-# Individual function/method comments use plain #
-def method_name
+# Individual function/method comments use plain # for the WHY-explanation,
+# followed by YARD @param/@return tags documenting the signature.
+#
+# @param name [String] description of the parameter
+# @return [Boolean] description of what's returned
+def method_name(name:)
   # Implementation detail comment
 end
 ```
@@ -81,7 +85,14 @@ end
 - File headers: Plain `#` lines with script name and purpose
 - Section separators: `# -----` line (71 dashes) - same as shell
 - Regular comments: Plain `#` with single space before text
-- No special RDoc/YARD tags (keep comments simple and readable)
+- YARD `@param`/`@return`/`@raise`/`@yield`/`@yieldparam` tags are used to
+  document method signatures (established convention throughout this
+  codebase -- see `ruby-scripting.md`'s dual-mode script template). These
+  complement, not replace, the WHY-explanation prose above them: a tag states
+  the type/shape mechanically, prose explains anything non-obvious about it.
+  Skip a tag only when it would add zero information beyond the parameter/
+  method name itself (e.g. don't force `@param force [Boolean]` with no
+  description when the parameter name already says everything there is to say).
 
 ## What Good Comments Explain
 

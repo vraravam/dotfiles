@@ -582,19 +582,19 @@ _configure_backup_remote() {
 }
 
 # Clones the home repo (private configs) from whichever backup mechanism(s) are
-# enabled (KEYBASE_HOME_REPO_NAME and/or ENCRYPTED_HOME_REPO_NAME -- see
+# enabled (KEYBASE_HOME_REPO_NAME and/or ENCRYPTED_HOME_REPO_URL -- see
 # KeybaseMigration.md for how they coexist). Keybase is tried first (original
-# mechanism, historical precedence); the gpg+git-bundle encrypted backup (see
-# scripts/utilities/encrypted_backup.rb) is the fallback, or the only option if
-# Keybase isn't enabled/available. Whichever succeeds performs the actual clone; if
-# the other mechanism is also enabled, it is configured as an additional remote
-# (via _configure_backup_remote) rather than cloned from again.
+# mechanism, historical precedence); the gpg+git-bundle encrypted backup (external
+# 'git-remote-gpg-encrypt' tool, installed via the 'vraravam/tap' Homebrew tap) is the
+# fallback, or the only option if Keybase isn't enabled/available. Whichever succeeds
+# performs the actual clone; if the other mechanism is also enabled, it is configured
+# as an additional remote (via _configure_backup_remote) rather than cloned from again.
 _clone_home_repo() {
   _current_section='Clone home repo'; _current_section_manual=1
   step_start
 
   local keybase_repo_name="${KEYBASE_HOME_REPO_NAME:-}"
-  local encrypted_repo_name="${ENCRYPTED_HOME_REPO_NAME:-}"
+  local encrypted_repo_url="${ENCRYPTED_HOME_REPO_URL:-}"
 
   if is_git_repo "${HOME}"; then
     # Pre-configured machine: pull latest changes to get fresh backup files.
@@ -621,22 +621,17 @@ _clone_home_repo() {
       fi
     fi
 
-    if is_zero_string "${cloned_via}" && is_non_zero_string "${encrypted_repo_name}"; then
+    if is_zero_string "${cloned_via}" && is_non_zero_string "${encrypted_repo_url}"; then
       # The Keychain-passphrase reminder for this step is printed much earlier, right
       # after '.shellrc' is downloaded/sourced in main() -- see the comment there for why.
-      if call_ruby_utility "require 'encrypted_backup'; require 'env_vars'; exit(EncryptedBackup.clone_and_decrypt(encrypted_repo_name: EnvVars::ENCRYPTED_HOME_REPO_NAME, target_dir: EnvVars::HOME) ? 0 : 1)"; then
+      # clone_repo_into's 'gpg-encrypt::' special-case already strips the bogus 'origin'
+      # that 'git gpg-encrypt-restore' leaves behind internally, so -- same as the
+      # Keybase branch above -- there is no remote to configure here; whichever remote
+      # name (origin/origin2) this backup ends up under is decided uniformly by the
+      # '_configure_backup_remote' calls below, regardless of which mechanism actually
+      # performed the clone.
+      if command_exists git-gpg-encrypt-restore && clone_repo_into "gpg-encrypt::${encrypted_repo_url}" "${HOME}"; then
         cloned_via='encrypted-backup'
-        # A bundle-based import ('git clone <bundle-file>') never creates an 'origin'
-        # remote at all (confirmed empirically: 'git remote get-url origin' errors
-        # "No such remote" immediately after) -- 'remote add' here, not 'remote set-url'
-        # (which requires the remote to already exist and would fail silently otherwise,
-        # since this line's own exit code isn't checked). If Keybase is ALSO configured
-        # (just failed/unavailable this run), it should still end up as 'origin' -- see
-        # the '_configure_backup_remote' calls below -- so claim 'origin2' directly here
-        # instead of 'origin', leaving 'origin' free for Keybase to claim.
-        local remote_name='origin'
-        if is_non_zero_string "${keybase_repo_name}"; then remote_name='origin2'; fi
-        git -C "${HOME}" remote add "${remote_name}" "encrypted-backup::${encrypted_repo_name}"
         success "Successfully cloned home repo from encrypted backup"
       else
         _record_error 'Failed to clone home repo from encrypted backup'
@@ -652,10 +647,10 @@ _clone_home_repo() {
 
       # Fix /etc/hosts file to block facebook
       if is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts"; then sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts; fi
-    elif is_non_zero_string "${keybase_repo_name}" || is_non_zero_string "${encrypted_repo_name}"; then
+    elif is_non_zero_string "${keybase_repo_name}" || is_non_zero_string "${encrypted_repo_url}"; then
       _record_error 'Failed to clone home repo from any enabled backup mechanism'
     else
-      info "Skipping cloning of home repo since neither '$(yellow 'KEYBASE_HOME_REPO_NAME')' nor '$(yellow 'ENCRYPTED_HOME_REPO_NAME')' env var has been set"
+      info "Skipping cloning of home repo since neither '$(yellow 'KEYBASE_HOME_REPO_NAME')' nor '$(yellow 'ENCRYPTED_HOME_REPO_URL')' env var has been set"
     fi
   fi
 
@@ -665,8 +660,8 @@ _clone_home_repo() {
     if is_non_zero_string "${keybase_repo_name}"; then
       _configure_backup_remote "${HOME}" "$(_build_keybase_repo_url "${keybase_repo_name}")"
     fi
-    if is_non_zero_string "${encrypted_repo_name}"; then
-      _configure_backup_remote "${HOME}" "encrypted-backup::${encrypted_repo_name}"
+    if is_non_zero_string "${encrypted_repo_url}"; then
+      _configure_backup_remote "${HOME}" "gpg-encrypt::${encrypted_repo_url}"
     fi
   fi
 
@@ -681,7 +676,7 @@ _clone_profiles_repo() {
   step_start
 
   local keybase_repo_name="${KEYBASE_PROFILES_REPO_NAME:-}"
-  local encrypted_repo_name="${ENCRYPTED_PROFILES_REPO_NAME:-}"
+  local encrypted_repo_url="${ENCRYPTED_PROFILES_REPO_URL:-}"
 
   if is_zero_string "${PERSONAL_PROFILES_DIR}"; then
     info "Skipping cloning of profiles repo since '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
@@ -705,16 +700,13 @@ _clone_profiles_repo() {
       fi
     fi
 
-    if is_zero_string "${cloned_via}" && is_non_zero_string "${encrypted_repo_name}"; then
-      if call_ruby_utility "require 'encrypted_backup'; require 'env_vars'; exit(EncryptedBackup.clone_and_decrypt(encrypted_repo_name: EnvVars::ENCRYPTED_PROFILES_REPO_NAME, target_dir: EnvVars::PERSONAL_PROFILES_DIR) ? 0 : 1)"; then
+    if is_zero_string "${cloned_via}" && is_non_zero_string "${encrypted_repo_url}"; then
+      # See _clone_home_repo's matching comment -- clone_repo_into's 'gpg-encrypt::'
+      # special-case already strips the bogus 'origin' left behind internally by
+      # 'git gpg-encrypt-restore', so there is no remote to configure here; the
+      # '_configure_backup_remote' calls below decide origin/origin2 uniformly.
+      if command_exists git-gpg-encrypt-restore && clone_repo_into "gpg-encrypt::${encrypted_repo_url}" "${PERSONAL_PROFILES_DIR}"; then
         cloned_via='encrypted-backup'
-        # See _clone_home_repo's matching comment -- a bundle-based import never
-        # creates an 'origin' remote at all, so 'remote add' (not 'remote set-url').
-        # If Keybase is ALSO configured, claim 'origin2' directly so Keybase can still
-        # claim 'origin' via the '_configure_backup_remote' calls below.
-        local remote_name='origin'
-        if is_non_zero_string "${keybase_repo_name}"; then remote_name='origin2'; fi
-        git -C "${PERSONAL_PROFILES_DIR}" remote add "${remote_name}" "encrypted-backup::${encrypted_repo_name}"
         success "Successfully cloned browser-profiles repo from encrypted backup"
       else
         _record_error 'Failed to clone browser-profiles repo from encrypted backup'
@@ -722,10 +714,10 @@ _clone_profiles_repo() {
     fi
 
     if is_zero_string "${cloned_via}"; then
-      if is_non_zero_string "${keybase_repo_name}" || is_non_zero_string "${encrypted_repo_name}"; then
+      if is_non_zero_string "${keybase_repo_name}" || is_non_zero_string "${encrypted_repo_url}"; then
         _record_error 'Failed to clone browser-profiles repo from any enabled backup mechanism'
       else
-        info "Skipping cloning of profiles repo since neither '$(yellow 'KEYBASE_PROFILES_REPO_NAME')' nor '$(yellow 'ENCRYPTED_PROFILES_REPO_NAME')' env var has been set"
+        info "Skipping cloning of profiles repo since neither '$(yellow 'KEYBASE_PROFILES_REPO_NAME')' nor '$(yellow 'ENCRYPTED_PROFILES_REPO_URL')' env var has been set"
       fi
     fi
   fi
@@ -734,8 +726,8 @@ _clone_profiles_repo() {
     if is_non_zero_string "${keybase_repo_name}"; then
       _configure_backup_remote "${PERSONAL_PROFILES_DIR}" "$(_build_keybase_repo_url "${keybase_repo_name}")"
     fi
-    if is_non_zero_string "${encrypted_repo_name}"; then
-      _configure_backup_remote "${PERSONAL_PROFILES_DIR}" "encrypted-backup::${encrypted_repo_name}"
+    if is_non_zero_string "${encrypted_repo_url}"; then
+      _configure_backup_remote "${PERSONAL_PROFILES_DIR}" "gpg-encrypt::${encrypted_repo_url}"
     fi
 
     # This repo is periodically force-squashed by recreate-repository.rb, so 'pull'
@@ -865,16 +857,16 @@ main() {
   _download_and_source_shellrc
 
   # Printed as early as possible (right after '.shellrc' is sourced, so 'user_action'
-  # is available and ENCRYPTED_*_REPO_NAME env vars are populated) rather than at the
+  # is available and ENCRYPTED_*_REPO_URL env vars are populated) rather than at the
   # much-later 'Cloning repos' step -- this manual escape hatch is only needed if the
-  # interactive Keychain prompt inside EncryptedBackup.prompt_and_store_passphrase
-  # fails or can't run (e.g. no TTY), and by the time that step is reached (after
-  # xcode tools/homebrew/etc.) it is too late for the user to act on this in parallel
-  # with the rest of the install. Gated on the encrypted-backup env vars actually
-  # being set -- no point reminding someone who has disabled this mechanism entirely.
-  if is_non_zero_string "${ENCRYPTED_HOME_REPO_NAME:-}" || is_non_zero_string "${ENCRYPTED_PROFILES_REPO_NAME:-}"; then
+  # external 'git-remote-gpg-encrypt' tool's interactive Keychain prompt fails or can't
+  # run (e.g. no TTY), and by the time that step is reached (after xcode tools/
+  # homebrew/etc.) it is too late for the user to act on this in parallel with the
+  # rest of the install. Gated on the encrypted-backup env vars actually being set --
+  # no point reminding someone who has disabled this mechanism entirely.
+  if is_non_zero_string "${ENCRYPTED_HOME_REPO_URL:-}" || is_non_zero_string "${ENCRYPTED_PROFILES_REPO_URL:-}"; then
     user_action "The 'home'/'browser-profiles' repo clone steps later in this script read their encrypted-backup passphrase from the macOS Keychain -- you won't normally be prompted."
-    user_action "If that fails, run this in another terminal now (no need to wait): security add-generic-password -A -a \"\${USER}\" -s 'gpg-encrypted-backup' -w"
+    user_action "If that fails, run this in another terminal now (no need to wait): security add-generic-password -A -a \"\${USER}\" -s 'git-remote-gpg-encrypt' -w"
   fi
 
   keep_sudo_alive
@@ -1023,22 +1015,23 @@ main() {
   step_end
 
   # Verify encrypted-backup mechanism is ready (gpg installed, Keychain passphrase set --
-  # see scripts/utilities/encrypted_backup.rb). Coexists with Keybase above -- see
-  # KeybaseMigration.md. gnupg homedir permissions were already fixed earlier in
-  # main() (mirroring set_ssh_folder_permissions) -- no need to repeat that here.
+  # see the external 'git-remote-gpg-encrypt' tool, installed via the 'vraravam/tap'
+  # Homebrew tap). Coexists with Keybase above -- see KeybaseMigration.md. gnupg
+  # homedir permissions were already fixed earlier in main() (mirroring
+  # set_ssh_folder_permissions) -- no need to repeat that here.
   _current_section='Setup encrypted backup'
   step_start
   section_header "$(yellow 'Setup encrypted backup')"
-  if is_zero_string "${ENCRYPTED_HOME_REPO_NAME:-}" && is_zero_string "${ENCRYPTED_PROFILES_REPO_NAME:-}"; then
-    debug "Neither 'ENCRYPTED_HOME_REPO_NAME' nor 'ENCRYPTED_PROFILES_REPO_NAME' env var is set -- skipping encrypted-backup setup"
-  elif command_exists 'setup-encrypted-backup.rb'; then
-    if setup-encrypted-backup.rb; then
+  if is_zero_string "${ENCRYPTED_HOME_REPO_URL:-}" && is_zero_string "${ENCRYPTED_PROFILES_REPO_URL:-}"; then
+    debug "Neither 'ENCRYPTED_HOME_REPO_URL' nor 'ENCRYPTED_PROFILES_REPO_URL' env var is set -- skipping encrypted-backup setup"
+  elif command_exists 'git-gpg-encrypt-setup'; then
+    if git-gpg-encrypt-setup; then
       success 'Encrypted backup is ready to use'
     else
       _record_warning 'Encrypted backup is not configured -- see instructions above'
     fi
   else
-    debug "setup-encrypted-backup.rb not found in PATH -- skipping encrypted backup setup"
+    debug "git-gpg-encrypt-setup not found in PATH -- skipping encrypted backup setup"
   fi
   step_end
 

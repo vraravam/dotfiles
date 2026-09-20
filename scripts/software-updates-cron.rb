@@ -92,6 +92,11 @@ module SoftwareUpdatesCron
 
   # Helper to wrap Logging.with_step with step counter progress indicator.
   # Automatically increments @current_step and prepends "[Step N of M]" to title.
+  #
+  # @param title [String] Step title (used for current_section tracking and the progress prefix)
+  # @param message [String, nil] Optional section header message to print
+  # @yield Block of code to execute within the step lifecycle
+  # @return [void]
   def _step(title, message = nil, &block)
     @current_step += 1
     prefix = "[#{"Step #{@current_step} of #{@total_steps}".purple}] "
@@ -100,6 +105,11 @@ module SoftwareUpdatesCron
 
   # Runs the block guarded by a check for +check_cmd+. Records a warning on
   # failure rather than aborting so all steps run regardless of earlier failures.
+  #
+  # @param title [String] Human-readable name of the thing being updated (used in step title/messages)
+  # @param check_cmd [String] Command name to check for existence in PATH before running the block
+  # @yield Block that performs the actual update; should return truthy on success
+  # @return [void]
   # :reek:UtilityFunction -- Stateless wrapper for command existence check (intentional)
   def _perform_update(title, check_cmd, &block)
     _step("update #{title}", "#{'Updating'.yellow} #{title.purple}") do
@@ -118,6 +128,9 @@ module SoftwareUpdatesCron
 
   private_class_method :_perform_update
 
+  # Rebases all git repos under HOME that match the config/zsh/mise filter.
+  #
+  # @return [void]
   # :reek:UtilityFunction -- Stateless helper for git operations (intentional delegation)
   def _update_home_repos
     _step('Update repos in home folder') do
@@ -134,6 +147,9 @@ module SoftwareUpdatesCron
 
   private_class_method :_update_home_repos
 
+  # Fetches, rebases, and pushes all git repos under PROJECTS_BASE_DIR/oss.
+  #
+  # @return [void]
   # :reek:UtilityFunction -- Stateless helper for git operations (intentional delegation)
   def _upreb_oss_repos
     _step('Upreb repos in oss folder') do
@@ -152,6 +168,15 @@ module SoftwareUpdatesCron
 
   private_class_method :_upreb_oss_repos
 
+  # Runs every periodic update step in sequence (brew, mise, tldr, git-ignore,
+  # claude-code, zsh-patina, antidote, bat cache, ollama models, home/oss repo
+  # updates, dev environment setup, preferences capture, profiles repo
+  # maintenance, and outdated-app checks). Each step is independently guarded
+  # and failures are recorded as warnings/errors rather than aborting the run.
+  #
+  # @return [String] Space/comma-separated summary of greedy brew apps still
+  #   outdated after the update pass (empty string if none), as reported by
+  #   MacOS.check_and_notify_outdated_apps.
   def _run_all_updates
     @total_steps = 21
     @current_step = 0

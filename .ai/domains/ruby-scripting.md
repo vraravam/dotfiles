@@ -2290,7 +2290,7 @@ end
 - Qualified calls work everywhere: module methods, class methods, instance methods
 
 **This rule applies to ALL files in `scripts/utilities/`** including:
-- Modules with `extend self` (cron.rb, keybase.rb, encrypted_backup.rb, antidote.rb, collection_processor.rb, etc.)
+- Modules with `extend self` (cron.rb, keybase.rb, antidote.rb, collection_processor.rb, etc.)
 - Classes (cli_parser.rb's Parser class, etc.)
 - Any other code structures
 

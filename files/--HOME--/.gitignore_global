@@ -1411,6 +1411,18 @@ zsdoc/data
 # AI-tooling that's specific to the local machine
 **/.claude/settings.local.json
 
+# LSP cache/index directories -- each named after a specific language server, so there
+# is no realistic collision risk with an actual project source directory (unlike the
+# generic 'bin/'/'lib/' patterns elsewhere in this file, these are always safe globally).
+# clangd's cache (.cache/clangd/) is not listed separately -- it's already covered by
+# the broader '.cache/' pattern from the Node/Gatsby section above.
+.ruby-lsp/
+.metals/
+.bloop/
+project/**/metals.sbt
+.elixir_ls/
+.ccls-cache/
+
 # Do NOT ignore the following files/directories (put these at the end)
 !.*keep
 !/personal/**/bin/
