@@ -38,4 +38,4 @@
   whitespace-error-style = "magenta reverse"
   navigate = true
   hyperlinks = true
-  hyperlinks-file-link-format = "zed://file/{path}:{line}"
+  hyperlinks-file-link-format = "vscodium-insiders://file/{path}:{line}"

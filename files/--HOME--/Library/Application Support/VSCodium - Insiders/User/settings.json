@@ -1,0 +1,42 @@
+{
+    "http.systemCertificatesNode": true,
+    "workbench.iconTheme": "vscode-icons",
+    "files.autoSave": "onFocusChange",
+    "editor.wordWrap": "on",
+    "files.exclude": {
+        "**/.*.zwc*": true,
+        "**/*.*.zwc*": true
+    },
+    "workbench.colorTheme": "Visual Studio Dark",
+    "editor.tabSize": 2,
+    "editor.fontSize": 13,
+    "window.confirmSaveUntitledWorkspace": false,
+    "security.workspace.trust.untrustedFiles": "open",
+    "git.openRepositoryInParentFolders": "always",
+    "workbench.startupEditor": "none",
+    "editor.wordWrapColumn": 120,
+    "files.trimTrailingWhitespace": true,
+    "rainbow_csv.highlight_rows": true,
+    "rainbow_csv.csv_lint_detect_trailing_spaces": true,
+    "direnv.restart.automatic": true,
+    "sortLines.sortEntireFile": true,
+    "sortLines.filterBlankLines": true,
+    "togglequotes.chars": [
+        "\"",
+        "'",
+        "`"
+    ],
+    "vsicons.dontShowNewVersionMessage": true,
+    "vsicons.dontShowConfigManuallyChangedMessage": true,
+    "vsicons.projectDetection.autoReload": true,
+    "geminicodeassist.displayInlineContextHint": false,
+    "security.promptForLocalFileProtocolHandling": false,
+    "yaml.disableSchemaDetection": [
+        "**/.github/workflows/*.yml",
+        "**/.github/workflows/*.yaml",
+        "**/.gitea/workflows/*.yml",
+        "**/.gitea/workflows/*.yaml",
+        "**/.forgejo/workflows/*.yml",
+        "**/.forgejo/workflows/*.yaml"
+    ]
+}

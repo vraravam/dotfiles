@@ -206,7 +206,7 @@ unset GIT_EDITOR
 if is_non_zero_string "${SSH_CONNECTION:-}"; then
   preferred_editors=('vi')
 else
-  preferred_editors=('zed --wait' 'code --wait' 'vi')
+  preferred_editors=('code --wait' 'zed --wait' 'vi')
 fi
 for editor in "${preferred_editors[@]}"; do
   # ${editor%% *} strips everything after the first space -- pure zsh, no fork.
