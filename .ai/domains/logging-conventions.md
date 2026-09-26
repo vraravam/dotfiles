@@ -1,3 +1,9 @@
+---
+applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**/*.{sh,rb}"
+name: dotfiles-logging-conventions
+description: Use when adding or reviewing logging/output calls in this dotfiles repo's shell or Ruby code -- info, success, warn, error, debug, user_action, Logging.info, record_warning/record_error, section_header, print_script_start/print_script_summary. Covers the unified color standard (cyan paths, yellow labels, etc.), message prefixes for RCA, and deferred error/warning collection.
+---
+
 # Logging Conventions
 
 > Cross-language logging rules applicable to both shell and Ruby scripts.

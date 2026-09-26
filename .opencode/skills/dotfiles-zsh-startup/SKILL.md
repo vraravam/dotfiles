@@ -1,0 +1,1 @@
+../../../.ai/domains/zsh-startup.md

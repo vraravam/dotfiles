@@ -545,9 +545,10 @@ _ensure_keybase_logged_in() {
 # completes the interactive login in _ensure_keybase_logged_in owns the account.
 # Usage: _build_keybase_repo_url <repo-name>
 _build_keybase_repo_url() {
+  local repo_name="${1:?_build_keybase_repo_url: repo-name argument required}"
   local username
   username="$(call_ruby_utility "require 'keybase'; puts Keybase.username")"
-  echo "keybase://private/${username}/${1:-}"
+  echo "keybase://private/${username}/${repo_name}"
 }
 
 # Configures remote_url as a git remote on target_folder -- 'origin' if no other

@@ -8,6 +8,8 @@ These agents are specialized reviewers that understand the dotfiles repository's
 
 **Important**: These agents provide REVIEW and RECOMMENDATIONS only. They do NOT edit files directly. You must apply suggested changes manually.
 
+**opencode users**: the same three reviewers are also available as native, directly-invocable subagents at `.opencode/agents/*.md` (`mode: subagent`, `edit`/`bash` denied) -- no copy-paste-into-chat step required; delegate to them via opencode's `task` tool instead. They are ported from these files, not generated independently, so keep both in sync when updating the review checklist.
+
 ## Available Agents
 
 ### 1. Shell Script Reviewer

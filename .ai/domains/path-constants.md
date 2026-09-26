@@ -1,5 +1,7 @@
 ---
 applyTo: "all cross-language scripts and configuration files"
+name: dotfiles-path-constants
+description: Use when a shell or Ruby script in this dotfiles repo needs to reference a repo path -- ${DOTFILES_DIR}, ${PERSONAL_BIN_DIR}, ${PERSONAL_CONFIGS_DIR}, ${XDG_CONFIG_HOME}, EnvVars::HOME, or any other path constant -- or when you're tempted to hardcode a path like /Users/<name>/.config. Covers when to use env vars vs hardcoded paths, and Pathname vs String conventions in Ruby.
 ---
 
 # Path Constants and Construction

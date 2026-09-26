@@ -1,5 +1,7 @@
 ---
 applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/osx-defaults.sh,**/setup-login-item.rb,**/capture-prefs.rb,**/resurrect-repositories.rb"
+name: dotfiles-fresh-install
+description: Use when editing scripts/fresh-install-of-osx.sh, scripts/install-dotfiles.rb, scripts/osx-defaults.sh, scripts/setup-login-item.rb, scripts/capture-prefs.rb, or scripts/resurrect-repositories.rb. Covers bootstrap idempotency for vanilla-OS vs pre-configured-machine modes, curl retry flags, crontab suspend/resume, and Brewfile truncation on FIRST_INSTALL.
 ---
 
 # Fresh Install Instructions
@@ -214,7 +216,7 @@ Third-party scripts (e.g., `antidote.zsh`) may reference unset variables
 
 ```zsh
 set +u
-source "/opt/homebrew/opt/antidote/share/antidote/antidote.zsh"
+source "${HOMEBREW_PREFIX}/opt/antidote/share/antidote/antidote.zsh"
 set -u
 ```
 

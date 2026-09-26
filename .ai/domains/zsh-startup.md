@@ -1,5 +1,7 @@
 ---
 applyTo: "**/files/--ZDOTDIR--/**,**/files/--XDG_CONFIG_HOME--/zsh/**,.zprofile"
+name: dotfiles-zsh-startup
+description: Use when editing zsh startup files in this dotfiles repo -- .zshenv, .zshrc, .zprofile, .zlogin, or anything under files/--ZDOTDIR--/ or files/--XDG_CONFIG_HOME--/zsh/. Covers startup performance, no-subshell-fork rules, zsh/stat module, Homebrew shellenv caching, antidote plugin loading, compinit caching, and zsh-defer deferral patterns.
 ---
 
 # Zsh Startup Performance Instructions

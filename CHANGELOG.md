@@ -4,6 +4,38 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.4
+
+#### Split opencode's AI instructions into on-demand skills, real subagents, and a trimmed always-on core
+
+* *[.opencode/skills/dotfiles-{shell-scripting,ruby-scripting,zsh-startup,fresh-install,git-config,path-constants,logging-conventions,script-depth-tracking,custom-gitignore-maintenance,rebase-methodology}/SKILL.md]* Added 10 new opencode skills, each a symlink into the corresponding `.ai/domains/*.md` file (or `.ai/REBASE-AND-REFACTORING-METHODOLOGY.md` for the last one) rather than a copy -- one physical file now serves both Copilot/Cursor/Windsurf (via the existing `applyTo` frontmatter key) and opencode (via a newly-added `name`/`description` key pair), loaded on-demand only when opencode recognizes the current task matches, instead of always.
+* *[.ai/domains/fresh-install.md, .ai/domains/git-config.md, .ai/domains/path-constants.md, .ai/domains/script-depth-tracking.md, .ai/domains/custom-gitignore-maintenance.md, .ai/domains/shell-scripting.md, .ai/domains/ruby-scripting.md, .ai/domains/zsh-startup.md, .ai/domains/logging-conventions.md, .ai/REBASE-AND-REFACTORING-METHODOLOGY.md]* Added the `name`/`description` frontmatter keys backing the skills above. `logging-conventions.md` and `REBASE-AND-REFACTORING-METHODOLOGY.md` previously had no frontmatter block at all and now have one.
+* *[.opencode/agents/shell-script-reviewer.md, .opencode/agents/ruby-script-reviewer.md, .opencode/agents/security-reviewer.md]* Ported the three existing `.github/agents/*.agent.md` Copilot-only reviewers (previously usable only by pasting into Copilot Chat) into real, natively-invocable opencode subagents (`mode: subagent`, `edit`/`bash` permissions denied) -- delegable directly via opencode's `task` tool.
+* *[.opencode/opencode.json]* Trimmed the `instructions` array from 6 always-force-loaded files (~8,100 lines, injected into every session regardless of task relevance) down to 5 (~1,250 lines): `instructions.md` plus only the four domains that are genuinely cross-cutting (`whitespace-rules.md`, `edit-checklist.md`, `character-encoding.md`, `comment-philosophy.md`). Everything else moved to the on-demand skills above.
+* *[.ai/instructions.md]* Removed the ~95-line duplicate whitespace-check section (content already fully covered by `domains/whitespace-rules.md`) and replaced it with a short pointer -- 683 -> 594 lines.
+* *[.ai/README.md]* Fixed the stale `.opencode/skills/dotfiles-domain/SKILL.md` reference (that file never existed) to describe the real always-on/on-demand split; added the previously-missing `custom-gitignore-maintenance` domain to both the structure tree and file-coverage table; added `REBASE-AND-REFACTORING-METHODOLOGY.md`/`FEATURE-PARITY-CHECKLIST.md` to the structure tree; added an "OpenCode-Specific Additions" section paralleling the existing "GitHub-Specific Additions" one.
+* *[.github/agents/README.md]* Added a cross-reference note pointing at the new `.opencode/agents/` subagents ported from these same files.
+
+#### Fix stale `.invalid` branch name after `git migrate-reftable`
+
+* *[files/--XDG_CONFIG_HOME--/git/config]* `migrate-reftable` now rewrites `.git/HEAD` with the real branch name after a successful migration. Git's `refs migrate --ref-format=reftable` (which this alias wraps) leaves `.git/HEAD` reading the literal string `ref: refs/heads/.invalid` by design -- the real ref lives in the reftable database, and `git symbolic-ref`/`status`/`branch` all resolve it correctly regardless -- but shell prompts that read `.git/HEAD` directly instead of shelling out to `git` would otherwise display `.invalid` as the branch name.
+* *[files/--HOME--/.shellrc]* Corrected the comment on the equivalent, pre-existing HEAD-fixup in `clone_repo_into`'s clone-via-mv path -- it previously attributed the `.invalid` placeholder to the mv trick "bypassing git's normal post-clone finalisation," but a plain `git init --ref-format=reftable` with no mv involved produces the identical placeholder; it's simply how reftable's `.git/HEAD` legacy-compat stub is always written, not a side effect of this repo's clone technique.
+
+#### Add fail-fast parameter validation to shell functions across `.shellrc`, `.aliases`, and bootstrap scripts
+
+* *[files/--HOME--/.shellrc]* Added fail-fast parameter guards to `is_empty_array`, `is_non_empty_array`, `_array_last`, `_array_pop_last` (array-name parameter, now captured into a validated local before use in `${(P)...}`/`eval` instead of bare `$1` throughout), `_epoch_seconds`, `_strftime`, `cache_and_source_command_output` (all had bare, unguarded positional parameters), and `print_usage` (its `script_name` parameter is now required, which also makes the unconditional `shift` immediately after it safe).
+* *[files/--ZDOTDIR--/.aliases]* `_ruby_opt`/`_python_opt` (nested helpers inside the Ruby/Python build-flag block) now validate their option-string argument; `dispatch_or_fallback`/`with_cron_suspended` now validate their required arguments before their unconditional `shift`/`shift 2` -- zsh's `shift` silently no-ops past the end of `$#` instead of failing, so an unguarded `shift` was masking a missing-argument condition rather than failing fast.
+* *[scripts/fresh-install-of-osx.sh]* `_build_keybase_repo_url`'s `repo-name` parameter was guarded with an optional-style `${1:-}` despite its own usage comment already documenting it as required -- now `${1:?...}`.
+* *[scripts/install-ruby26-gems.sh]* `_install_gem_if_missing`'s `gem_spec` parameter (bare, unguarded) is now required; `dependencies` (also bare) is now explicitly optional, matching its actual `[[ -n "${dependencies}" ]]` handling later in the function.
+
+#### Adopting these changes
+
+* Restart opencode (or any running session) to pick up the new `.opencode/opencode.json` instructions array, skills, and agents.
+* If a repo's shell prompt already shows `.invalid` as the branch name (from a `git migrate-reftable` run before this fix, or any reftable repo predating it), run `git symbolic-ref HEAD` in that repo and manually write `ref: <output>` into its `.git/HEAD` once -- future clones and migrations apply this automatically.
+* The parameter-validation additions are defensive-only; all existing call sites already pass valid arguments, so no action is needed.
+
+---
+
 ### 4.0.3
 
 #### Switch default editor back from Zed to VSCodium (Insiders build)

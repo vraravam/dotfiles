@@ -1,0 +1,1 @@
+../../../.ai/domains/custom-gitignore-maintenance.md

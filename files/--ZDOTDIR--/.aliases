@@ -90,17 +90,19 @@ if (($+commands[brew])); then
     # Extracts the option name (e.g., '--with-openssl-dir' from '--with-openssl-dir=/path')
     # and skips if an option with that name is already present, preventing conflicts.
     _ruby_opt() {
-      local opt_name="${1%%=*}"  # Extract option name before '=' (or full string if no '=')
+      local opt="${1:?_ruby_opt: option string required}"
+      local opt_name="${opt%%=*}"  # Extract option name before '=' (or full string if no '=')
       # Skip if an option starting with this name is already present
       if [[ "${RUBY_CONFIGURE_OPTS:-}" == *"${opt_name}"* ]]; then return 0; fi
-      export RUBY_CONFIGURE_OPTS="${RUBY_CONFIGURE_OPTS:+${RUBY_CONFIGURE_OPTS} }${1}"
+      export RUBY_CONFIGURE_OPTS="${RUBY_CONFIGURE_OPTS:+${RUBY_CONFIGURE_OPTS} }${opt}"
     }
     # Helper to append Python configure options while preserving existing values.
     # Same deduplication logic as _ruby_opt.
     _python_opt() {
-      local opt_name="${1%%=*}"
+      local opt="${1:?_python_opt: option string required}"
+      local opt_name="${opt%%=*}"
       if [[ "${PYTHON_CONFIGURE_OPTS:-}" == *"${opt_name}"* ]]; then return 0; fi
-      export PYTHON_CONFIGURE_OPTS="${PYTHON_CONFIGURE_OPTS:+${PYTHON_CONFIGURE_OPTS} }${1}"
+      export PYTHON_CONFIGURE_OPTS="${PYTHON_CONFIGURE_OPTS:+${PYTHON_CONFIGURE_OPTS} }${opt}"
     }
     local pkg
     for pkg in 'curl' 'gnu-tar' 'grep' 'sqlite' 'zlib'; do
@@ -312,8 +314,8 @@ parse_folder_and_switches() {
 #   push() { dispatch_or_fallback push _push "$@"; }
 dispatch_or_fallback() {
   require_env_var PERSONAL_BIN_DIR || return 1
-  local cmd="${1:-}"
-  local fallback_fn="${2:-}"
+  local cmd="${1:?dispatch_or_fallback: cmd argument required}"
+  local fallback_fn="${2:?dispatch_or_fallback: fallback_fn argument required}"
   shift 2
   local override="${PERSONAL_BIN_DIR}/${cmd}-${PWD##*/}.sh"
   if is_executable "${override}"; then
@@ -900,7 +902,7 @@ recron() {
 #
 # Example: with_cron_suspended _push "$@"
 with_cron_suspended() {
-  local fn="${1:-}"
+  local fn="${1:?with_cron_suspended: fn argument required}"
   shift
   trap 'resume_cron' EXIT
   suspend_cron

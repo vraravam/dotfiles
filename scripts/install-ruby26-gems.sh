@@ -47,8 +47,8 @@ _GEM_SPECS=(
 # Installs a gem and its dependencies if the gem executable is not present.
 # Args: $1 = gem spec (tool:version), $2 = space-separated dependency specs, $3 = debug_mode
 _install_gem_if_missing() {
-  local gem_spec="${1}"
-  local dependencies="${2}"
+  local gem_spec="${1:?_install_gem_if_missing: gem_spec argument required}"
+  local dependencies="${2:-}"
   local debug_mode="${3:-false}"
   local gem_bin_dir="${_GEM_DIR}/bin"
 

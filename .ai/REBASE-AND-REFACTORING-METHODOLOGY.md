@@ -1,3 +1,8 @@
+---
+name: dotfiles-rebase-methodology
+description: Use when rebasing a long-running branch onto master, backporting general-purpose improvements from a WIP branch back to master, converting a branch chain (e.g. shell-to-Ruby conversions), catching up a branch chain from its parent, or verifying no functionality was lost after a rebase/merge/squash. Covers forward-rebase mechanics, reverse-comparison technique, feature-parity verification (see FEATURE-PARITY-CHECKLIST.md), and duplication removal.
+---
+
 # Rebase and Refactoring Methodology
 
 **Purpose:** General-purpose patterns for rebasing feature branches and large refactorings

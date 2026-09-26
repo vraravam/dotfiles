@@ -1,5 +1,7 @@
 ---
 applyTo: "**/*.rb"
+name: dotfiles-ruby-scripting
+description: Use when creating or editing any Ruby script (.rb) in this dotfiles repo -- scripts/*.rb, scripts/utilities/*.rb, or ${PERSONAL_BIN_DIR}/*.rb. Covers the dual-mode module+CLI pattern, GitProcessor usage, Logging/EnvVars/CliParser conventions, Ruby 2.6 compatibility (no endless ranges, pattern matching, numbered block params), memoization, UTF-8 file reading, and private method discipline.
 ---
 
 # Ruby Script Instructions
@@ -31,6 +33,7 @@ Apply these rules when writing or editing any Ruby script in this repository.
 |------|---------|--------------|
 | Script template | Module + CLI wrapper | [§ Dual-Mode Ruby Scripts](#dual-mode-ruby-scripts-module--standalone----mandatory) |
 | Method parameters | Named for 2+ params | [§ Method Parameters](#method-parameters----named-vs-positional) |
+| Required-value fail-fast | `raise ArgumentError, '...' if nil_or_empty?(x)` | [§ Parameter Validation](#parameter-validation----fail-fast-on-missing-required-values) |
 | Logging | `Logging.info`, `Logging.success`, `Logging.warn` | [§ Logging](#logging) |
 | Path constants | `EnvVars::DOTFILES_DIR` | [§ Path Constants](#path-constants) |
 | Option parsing | `CliParser.parse` | [§ Option Parsing](#option-parsing----use-cliparser) |
@@ -524,6 +527,85 @@ grep -rn "method_name(" scripts/ --include="*.rb"
 # Syntax check after conversion
 find scripts -name "*.rb" -exec /usr/bin/ruby -c {} \;
 ```
+
+## Parameter Validation -- Fail Fast on Missing Required Values
+
+**Every method must either fail fast on a missing/invalid required value, or
+have a default it can safely proceed with. There is no third option: a
+parameter that's silently used while nil/empty is a bug.**
+
+### Required positional and keyword parameters -- Ruby already fails fast
+
+A required positional parameter (`def foo(bar)`) or required keyword parameter
+(`def foo(bar:)`, no default) automatically raises `ArgumentError` if the
+caller omits it. This is real, immediate fail-fast behavior -- no manual
+check is needed for these:
+
+```ruby
+# Good -- Ruby itself raises ArgumentError if dir is omitted; no guard needed
+def clone_repo(dir:)
+  # ...
+end
+```
+
+### Optional parameters with a nil-like default -- guard before use
+
+An optional parameter's default only removes the `ArgumentError` -- it does
+**not** make a nil value safe to use. If the method cannot sensibly proceed
+with `nil`/empty, guard it explicitly with `nil_or_empty?` (see
+[§ `nil_or_empty?` Helper](#nil_or_empty-helper)) and fail fast, rather than
+letting `nil` propagate into a path, command, or method call where it would
+raise a confusing low-level error (`NoMethodError`, malformed path) instead of
+a clear message:
+
+```ruby
+# BAD -- dir: nil is not a genuine "no-op" default; a nil here breaks
+# Pathname.new/system() downstream with a confusing error, not a clear one
+def clone_repo(dir: nil)
+  system('git', 'clone', dir.to_s)  # dir.to_s == "" if nil -- silently wrong
+end
+
+# Good -- fail fast with a clear message if the value the method actually
+# needs to proceed is missing
+def clone_repo(dir: nil)
+  raise ArgumentError, 'clone_repo: dir is required' if nil_or_empty?(dir)
+
+  system('git', 'clone', dir.to_s)
+end
+```
+
+Do NOT add a guard when the default is a genuinely safe, fully-functional
+value the method is designed to proceed with (`dry_run: false`, `force: false`,
+`ref_format: 'reftable'`, `remote: 'origin'`) -- these are real defaults, not
+placeholders standing in for "should have been required."
+
+### CLI-collected values -- `options` hash and `ARGV` bypass Ruby's enforcement
+
+The dual-mode CLI wrapper collects flags into an `options` hash and calls
+`Module.run(**options)`. A missing CLI flag becomes whatever the method's own
+keyword default is (often `nil`) rather than raising `ArgumentError` -- the
+`**options` splat bypasses Ruby's automatic required-keyword enforcement.
+Any value the script cannot function without must be checked explicitly
+**before** it's used, immediately after parsing:
+
+```ruby
+parser.abort_with_usage('Missing required option: --dir') if nil_or_empty?(options[:dir])
+```
+
+The same applies to positional `ARGV` reads:
+
+```ruby
+folder = ARGV.first
+parser.abort_with_usage('Missing required argument: <folder>') if nil_or_empty?(folder)
+```
+
+See [§ Option Parsing -- Use `CliParser`](#option-parsing----use-cliparser)
+for the complete `abort_with_usage` pattern.
+
+**Scan rule:** when editing any method, check every optional/keyword-default
+parameter that isn't a genuinely safe default, and every `options[:x]`/`ARGV`
+read -- confirm a `nil_or_empty?` guard (or Ruby's automatic enforcement, for
+required params) exists before first use.
 
 ## Logging
 
@@ -3696,7 +3778,7 @@ Based on code review patterns and debugging sessions, here are the most common m
 2. **Hardcoding paths** → Use `EnvVars::HOME` and other constants
    ```ruby
    # BAD
-   config = Pathname.new("/Users/vijay/.config/file")
+   config = Pathname.new("~/.config/file")
    # Good
    config = EnvVars::XDG_CONFIG_HOME.join('file')
    ```
@@ -3758,4 +3840,18 @@ Based on code review patterns and debugging sessions, here are the most common m
     # Good - direct module call
     require_relative 'install-dotfiles'
     InstallDotfiles.run
+    ```
+
+11. **Optional/CLI parameter used without a nil guard** → Fails confusingly downstream instead of failing fast (see § Parameter Validation)
+    ```ruby
+    # BAD - dir: nil silently reaches system() as an empty string
+    def clone_repo(dir: nil)
+      system('git', 'clone', dir.to_s)
+    end
+    # Good - fail fast with a clear message
+    def clone_repo(dir: nil)
+      raise ArgumentError, 'clone_repo: dir is required' if nil_or_empty?(dir)
+
+      system('git', 'clone', dir.to_s)
+    end
     ```

@@ -272,30 +272,32 @@ is_non_zero_string() {
 # fails with 'bad substitution' when actually expanded at runtime, so a plain
 # runtime is_zsh guard (not a separate never-called function) is sufficient here.
 is_empty_array() {
+  local _array_name="${1:?is_empty_array: array name required}"
   if is_zsh; then
-    if ((${#${(P)1}[@]} == 0)); then
+    if ((${#${(P)_array_name}[@]} == 0)); then
       return 0
     else
       return 1
     fi
   else
     local _count
-    eval "_count=\${#${1}[@]}"
+    eval "_count=\${#${_array_name}[@]}"
     [[ "${_count}" -eq 0 ]]
   fi
 }
 
 # Returns true if the array named $1 has at least one element.
 is_non_empty_array() {
+  local _array_name="${1:?is_non_empty_array: array name required}"
   if is_zsh; then
-    if ((${#${(P)1}[@]} > 0)); then
+    if ((${#${(P)_array_name}[@]} > 0)); then
       return 0
     else
       return 1
     fi
   else
     local _count
-    eval "_count=\${#${1}[@]}"
+    eval "_count=\${#${_array_name}[@]}"
     [[ "${_count}" -gt 0 ]]
   fi
 }
@@ -306,10 +308,11 @@ is_non_empty_array() {
 # indices (added in bash 4.3) and is 0-indexed, so 'last index' is computed as
 # count-1 instead. Used by step_end below as a portable stack "peek".
 _array_last() {
+  local _array_name="${1:?_array_last: array name required}"
   if is_zsh; then
-    print -r -- "${${(P)1}[-1]}"
+    print -r -- "${${(P)_array_name}[-1]}"
   else
-    eval "printf '%s' \"\${${1}[\$((\${#${1}[@]} - 1))]}\""
+    eval "printf '%s' \"\${${_array_name}[\$((\${#${_array_name}[@]} - 1))]}\""
   fi
 }
 
@@ -320,10 +323,11 @@ _array_last() {
 # "${arr[@]}" and "${#arr[@]}" only ever consider populated indices, not the
 # raw index range.
 _array_pop_last() {
+  local _array_name="${1:?_array_pop_last: array name required}"
   if is_zsh; then
-    eval "${1}=(\"\${(@)${1}[1,-2]}\")"
+    eval "${_array_name}=(\"\${(@)${_array_name}[1,-2]}\")"
   else
-    eval "unset '${1}[\$((\${#${1}[@]} - 1))]'"
+    eval "unset '${_array_name}[\$((\${#${_array_name}[@]} - 1))]'"
   fi
 }
 
@@ -827,10 +831,11 @@ format_duration() {
 # bash sources this file rarely (direnv .envrc only).
 # Usage: _epoch_seconds <varname>
 _epoch_seconds() {
+  local _varname="${1:?_epoch_seconds: varname argument required}"
   if is_zsh; then
-    eval "${1}=\${EPOCHSECONDS}"
+    eval "${_varname}=\${EPOCHSECONDS}"
   else
-    eval "${1}=\$(date +%s)"
+    eval "${_varname}=\$(date +%s)"
   fi
 }
 
@@ -841,10 +846,13 @@ _epoch_seconds() {
 # bash/.envrc context.
 # Usage: _strftime <varname> <format> <epoch-seconds>
 _strftime() {
+  local _varname="${1:?_strftime: varname argument required}"
+  local _fmt="${2:?_strftime: format argument required}"
+  local _epoch="${3:?_strftime: epoch-seconds argument required}"
   if is_zsh; then
-    strftime -s "${1}" "${2}" "${3}"
+    strftime -s "${_varname}" "${_fmt}" "${_epoch}"
   else
-    eval "${1}=\$(/bin/date -j -f '%s' '${3}' '+${2}')"
+    eval "${_varname}=\$(/bin/date -j -f '%s' '${_epoch}' '+${_fmt}')"
   fi
 }
 
@@ -1615,7 +1623,7 @@ load_file_if_exists() {
 # Usage: cache_and_source_command_output <cache-file> <generator-function> <mtime-source-binary>
 # Example: cache_and_source_command_output "${cache}" _generate_foo_cache "${commands[foo]}"
 cache_and_source_command_output() {
-  local cache_file="${1}" generator="${2}" mtime_source="${3}"
+  local cache_file="${1:?cache_and_source_command_output: cache_file argument required}" generator="${2:?cache_and_source_command_output: generator argument required}" mtime_source="${3:?cache_and_source_command_output: mtime_source argument required}"
   if is_file_older_than "${cache_file}" "${mtime_source}"; then
     "${generator}" >|"${cache_file}.tmp"
     mv "${cache_file}.tmp" "${cache_file}"
@@ -2100,8 +2108,13 @@ clone_repo_into() {
         git -C "${target_folder}" checkout-index -a 2>/dev/null || true
       fi
 
-      # Correct HEAD file after reftable clone-via-mv (.git/HEAD retains a '.invalid' placeholder since
-      # the move bypasses git's normal post-clone finalisation; shell prompts read .git/HEAD directly)
+      # Correct HEAD file after reftable clone-via-mv: reftable's own .git/HEAD legitimately
+      # (by design, not a bug) reads 'ref: refs/heads/.invalid' -- git itself resolves the
+      # real branch fine via its reftable database (symbolic-ref/status/branch all work
+      # correctly), but shell prompts that read .git/HEAD directly (bypassing a git
+      # subprocess for speed) would otherwise display '.invalid' as the branch name. The
+      # 'git migrate-reftable' alias (see git/config) applies this same fixup for repos
+      # migrated to reftable after the fact rather than cloned directly into it.
       local real_ref
       real_ref="$(git -C "${target_folder}" symbolic-ref HEAD 2>/dev/null)"
       if is_non_zero_string "${real_ref}"; then
@@ -2440,7 +2453,7 @@ load_zsh_configs() {
 #     "-a <app-name>  --> (mandatory) The application name" \
 #     "-v             --> (optional) Verbose output"
 print_usage() {
-  local script_name="${1:-}"
+  local script_name="${1:?print_usage: script_name argument required}"
   shift
   echo "$(red 'Usage'): $(cyan "${script_name}") $(yellow "${1:+"[options]"}")"
   while [[ $# -gt 0 ]]; do

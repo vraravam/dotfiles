@@ -93,7 +93,7 @@ brew 'git-tools'
 brew 'git-trim'
 brew 'mise'
 brew 'starship'
-brew 'terminal-notifier', postinstall: "xattr -rd com.apple.quarantine /opt/homebrew/opt/terminal-notifier/terminal-notifier.app"
+brew 'terminal-notifier', postinstall: "xattr -rd com.apple.quarantine \"${HOMEBREW_PREFIX}/opt/terminal-notifier/terminal-notifier.app\""
 brew 'zsh-patina',  # Rust-based syntax highlighter for cli
   postinstall: 'zsh-patina restart >/dev/null 2>&1 || true'
 
