@@ -191,18 +191,27 @@ case "${ARCH}" in
     ;;
 esac
 
-# Prepend Homebrew to PATH immediately (no subprocess fork -- just a string
+# Prepend nix + Homebrew to PATH immediately (no subprocess fork -- just a string
 # concat) so every context that sources .shellrc directly (cron jobs, scripts,
-# direnv's bash subshell, non-interactive/non-login shells) gets Homebrew-first
-# PATH ordering, not just full interactive login shells.
+# direnv's bash subshell, non-interactive/non-login shells) gets nix-first PATH
+# ordering, not just full interactive login shells.
 #
-# Without this, 'brew doctor' reports "/usr/bin occurs before /opt/homebrew/bin
-# in your PATH" for any such context, since only .zshrc (interactive shells)
-# previously ran the richer 'brew shellenv' caching mechanism below. That
-# mechanism still runs for interactive shells and supersedes this -- the final
-# 'typeset -gU ... PATH path ...' in .zshrc dedupes the resulting PATH, so this
-# early prepend is harmless (not just redundant) when .zshrc runs afterward.
-export PATH="${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
+# nix-darwin's own /etc/zshrc normally handles this (prepending
+# /run/current-system/sw/bin and ~/.nix-profile/bin) for interactive shells, but
+# only for shells that actually source /etc/zshrc -- non-interactive contexts
+# that source .shellrc directly do not. Ordered before Homebrew: nix is now the
+# sole CLI package manager (see nix/modules/packages.nix) -- Homebrew (see
+# nix/darwin-configuration.nix) installs GUI casks only, so it should never shadow
+# a nix-provided CLI tool of the same name.
+#
+# Without prepending Homebrew here too, 'brew doctor' reports "/usr/bin occurs
+# before /opt/homebrew/bin in your PATH" for any such context, since only .zshrc
+# (interactive shells) previously ran the richer 'brew shellenv' caching
+# mechanism below. That mechanism still runs for interactive shells and
+# supersedes this -- the final 'typeset -gU ... PATH path ...' in .zshrc dedupes
+# the resulting PATH, so this early prepend is harmless (not just redundant)
+# when .zshrc runs afterward.
+export PATH="/run/current-system/sw/bin:${HOME}/.nix-profile/bin:${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
 
 export HOMEBREW_NO_ANALYTICS=1
 export HOMEBREW_NO_ASK=1
@@ -210,8 +219,6 @@ export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
 export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
 export HOMEBREW_BAT=1
 export HOMEBREW_VERBOSE_USING_DOTS=1
-export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
-export HOMEBREW_BUNDLE_FILE_GLOBAL="${HOME}/Brewfile"
 export HOMEBREW_NO_ENV_HINTS=1
 # Note: If the number and size of downloads is large - allow up to 1hr for any single curl transfer.
 export HOMEBREW_CURL_EXTRA_CURL_ARGS='--connect-timeout 300 --max-time 3600'
@@ -230,7 +237,10 @@ case "${OSTYPE}" in
     export ANTIDOTE_HOME="${XDG_CACHE_HOME}/antidote"
     ;;
 esac
-export ANTIDOTE_ZSH="${HOMEBREW_PREFIX}/opt/antidote/share/antidote/antidote.zsh"
+# antidote is a nix package (see nix/modules/packages.nix) -- Homebrew no longer
+# installs any CLI formulae at all (see nix/darwin-configuration.nix), so there is
+# no brew-path fallback to probe here.
+export ANTIDOTE_ZSH="${HOME}/.nix-profile/share/antidote/antidote.zsh"
 export ANTIDOTE_PLUGIN_ZSH="${XDG_CONFIG_HOME}/zsh/plugins.zsh"
 export ANTIDOTE_PLUGIN_TXT="${XDG_CONFIG_HOME}/zsh/plugins.txt"
 
@@ -1832,8 +1842,9 @@ configure_branch_tracking_for_origin() {
 # 'gpg-encrypt::<clone-url>' first argument is a third, mutually-exclusive alternative
 # (mirroring the 'keybase://' special-case further down) that delegates entirely to the
 # external 'git-remote-gpg-encrypt' tool's own standalone restore path (`git
-# gpg-encrypt-restore`, installed via the 'vraravam/tap' Homebrew tap -- see
-# files/--HOME--/Brewfile) instead of a plain 'git clone'.
+# gpg-encrypt-restore`, installed via its own flake -- see
+# nix/modules/packages.nix's encryptedBackupEnabled-gated entry) instead of a plain
+# 'git clone'.
 #
 # The optional branch/bundle-file arguments (see Usage below) apply uniformly no matter
 # which of the three alternatives (network clone, keybase://, gpg-encrypt::) ends up

@@ -60,29 +60,31 @@ git -C "${PERSONAL_CONFIGS_DIR}" commit -m "Update repo catalog: $(date +'%Y-%m-
 git -C "${PERSONAL_CONFIGS_DIR}" push;
 ```
 
-### 4.3 Update Brewfile
+### 4.3 Update Nix Packages / Homebrew Casks
 
 **When to run:**
-- After manually installing packages via `brew install`
-- After removing packages
+- After wanting a new CLI tool (add it to `nix/modules/packages.nix`) or GUI app (add
+  it to `nix/darwin-configuration.nix`'s `homebrew.casks`)
+- After removing one
 
 ```zsh
-# Review current Brewfile
-cat "${HOMEBREW_BUNDLE_FILE}";
+# Review current package/cask lists
+"${EDITOR}" "${DOTFILES_DIR}/nix/modules/packages.nix";
+"${EDITOR}" "${DOTFILES_DIR}/nix/darwin-configuration.nix";
 
-# Add/remove entries manually (preserves comments and formatting)
-# DO NOT use 'brew bundle dump' again — it loses custom formatting
+# Add/remove entries manually, then apply immediately to verify:
+nixup;
 
 # Commit changes
-git -C "${DOTFILES_DIR}" add files/--HOME--/Brewfile;
-git -C "${DOTFILES_DIR}" commit -m "Brewfile: add <package>";
+git -C "${DOTFILES_DIR}" add nix/modules/packages.nix nix/darwin-configuration.nix;
+git -C "${DOTFILES_DIR}" commit -m "nix: add <package/cask>";
 git -C "${DOTFILES_DIR}" push;
 ```
 
 ### 4.4 Automated Maintenance via Cron
 
 See [Extras.md — software-updates-cron.rb](Extras.md#software-updates-cronrb) for automated:
-- Homebrew updates
+- Nix package + Homebrew cask updates (`darwin-rebuild switch`)
 - mise version updates
 - Git repo updates
 - Preference exports
@@ -303,7 +305,7 @@ git -C "${DOTFILES_DIR}" upreb;  # alias for: git rebase upstream/master && git 
 **If there are conflicts:**
 
 ```zsh
-# Review conflicts (typically in .shellrc, Brewfile, env_vars.rb)
+# Review conflicts (typically in .shellrc, nix/darwin-configuration.nix, env_vars.rb)
 git -C "${DOTFILES_DIR}" status;
 
 # Edit conflicted files
@@ -355,7 +357,7 @@ git -C "${DOTFILES_DIR}" diff upstream/master;
 
 **The second diff should show ONLY:**
 - Your GitHub username in the bootstrap command (Adoption.md § Phase 3.2)
-- Your custom Brewfile entries
+- Your custom nix package/cask entries
 - Your path adjustments
 
 ### 5.5 Post-Update Steps

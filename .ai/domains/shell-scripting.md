@@ -531,7 +531,7 @@ If a tool is known to be optionally present, its absence is not a warning.
 
 ```zsh
 user_action "Restart iTerm2 to apply the new font settings."
-user_action "Run 'bupc' to update Homebrew packages."
+user_action "Run 'bupc' to update nix packages and Homebrew casks."
 ```
 
 These are follow-up instructions, not warnings about something that went wrong.
@@ -992,14 +992,16 @@ Do NOT use this pattern for:
 
 ### Example: `bupc` function
 
-The `bupc` function (in `.aliases`) upgrades Homebrew packages via several `brew`
-commands (bundle cleanup, cleanup, autoremove, bundle install, upgrade). It follows
+The `bupc` function (in `.aliases`) upgrades nix packages, macOS defaults, and
+Homebrew GUI casks via `nixup` (`darwin-rebuild switch`), then runs a couple of
+`brew` cache/orphan cleanup commands. It follows
 this pattern so that:
 - `bupc` is recognized as the outermost script (via its own
   `_DOTFILES_SCRIPT_DEPTH` increment)
-- Log output from anything triggered underneath -- e.g. the `antidote` formula's
-  Brewfile `postinstall:` hook, which fires during `brew bundle install`/
-  `brew upgrade` and calls into `Antidote.update_and_regenerate_bundle` -- inherits
+- Log output from anything triggered underneath -- e.g. the `antidote` nix
+  package's `home.activation` postinstall hook in `nix/modules/packages.nix`,
+  which fires during `darwin-rebuild switch` and calls into
+  `Antidote.update_and_regenerate_bundle` -- inherits
   and correctly indents one level deeper, even though that method has no script
   infrastructure of its own (it is a plain utility method, not a top-level entry
   point; see script-depth-tracking.md)

@@ -378,7 +378,8 @@ has guards for both vars at the top. Do not remove them.
 | Hardware | Target | Acceptable | Needs Work |
 |----------|--------|------------|------------|
 | Apple Silicon (M1+) | <80ms | <120ms | >150ms |
-| Intel (2019+) | <100ms | <150ms | >200ms |
+
+(Intel/`x86_64-darwin` is no longer a supported target -- nixpkgs dropped it; see `TechnicalDeepDive.md` § 15.)
 
 **Measure impact:**
 ```zsh

@@ -38,9 +38,11 @@ repo's conventions.
 standalone, its own git history, not managed by `install-dotfiles.rb`): a personal
 Homebrew tap (deliberately generic-named, not `homebrew-git-remote-gpg-encrypt` --
 intended to hold formulae for any number of future personal tools, not just this one),
-currently containing only `Formula/git-remote-gpg-encrypt.rb`. This is how
-`git-remote-gpg-encrypt` is installed from `files/--HOME--/Brewfile` (`tap
-'vraravam/tap'` + `brew 'vraravam/tap/git-remote-gpg-encrypt'`). Its only Ruby files are
+currently containing only `Formula/git-remote-gpg-encrypt.rb`. This dotfiles repo
+itself no longer installs `git-remote-gpg-encrypt` from this tap -- it uses that
+tool's own Nix flake instead (see `nix/flake.nix`'s `git-remote-gpg-encrypt` input).
+The tap remains maintained as an alternate distribution channel for non-nix users of
+that standalone tool. Its only Ruby files are
 Homebrew Formula DSL files, which follow Homebrew's own established style (enforced by
 `brew style`/`brew audit`, see that repo's own `.rubocop.yml`) rather than this repo's
 `ruby-scripting.md` conventions -- there is nothing to back-port here the way there is
@@ -334,9 +336,14 @@ See: `script-depth-tracking.md`
 ```
 ~/.config/dotfiles/
 ├── files/
-│   ├── --HOME--/          # Symlinked to ~/ (Brewfile, .shellrc, .gitconfig)
+│   ├── --HOME--/          # Symlinked to ~/ (.shellrc, .gitconfig)
 │   ├── --ZDOTDIR--/       # Zsh config (.zshenv, .zshrc, .zlogin)
 │   └── --XDG_CONFIG_HOME--/zsh/  # Autoload functions
+├── nix/
+│   ├── flake.nix           # nix-darwin + home-manager entry point (darwinConfigurations.default)
+│   ├── darwin-configuration.nix  # System-level: nix settings, Homebrew (GUI casks only), macOS defaults
+│   ├── home.nix            # User-level: out-of-store symlinks for app-bundle CLI binaries
+│   └── modules/packages.nix  # Every CLI tool (nixpkgs name mappings, postinstall hooks)
 ├── scripts/
 │   ├── utilities/         # Shared Ruby modules (logging.rb, env_vars.rb, git_processor.rb)
 │   ├── fresh-install-of-osx.sh    # Bootstrap entry point

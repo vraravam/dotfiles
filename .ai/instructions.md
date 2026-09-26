@@ -70,10 +70,10 @@ security add-generic-password -A -a "${USER}" -s 'some-service' -w;
 
 ```zsh
 # BAD -- lone command with no trailing terminator
-brew bundle install
+nixup
 
 # Good -- terminated even though it's the only command in the block
-brew bundle install;
+nixup;
 ```
 
 **Why:** some terminal emulators, paste mechanisms, or automation (e.g. "bracketed paste" edge cases, or a block being flattened into one line by some intermediary) can lose or merge the newlines between commands. Without an explicit `;` after each command, two merged lines run together as one malformed command instead of failing loudly or behaving as two separate commands. A trailing `;` makes every command boundary explicit and immune to newline loss, regardless of how the block is pasted or by what mechanism.

@@ -1,6 +1,6 @@
 # Keybase and Encrypted-Backup Guide
 
-**Mechanism:** `git bundle` + `gpg --symmetric`, exposed as a real git remote via the external [`git-remote-gpg-encrypt`](https://github.com/vraravam/git-remote-gpg-encrypt) tool (installed via the [`vraravam/tap`](https://github.com/vraravam/homebrew-tap) Homebrew tap). See that repo's own `README.md`/`docs/DESIGN.md` for the full design rationale, including why `git-remote-gcrypt`, `git-remote-sealed`, `git-crypt`, `transcrypt`, and `age` were each evaluated and rejected -- this repo no longer implements any of that itself.
+**Mechanism:** `git bundle` + `gpg --symmetric`, exposed as a real git remote via the external [`git-remote-gpg-encrypt`](https://github.com/vraravam/git-remote-gpg-encrypt) tool (installed via its own Nix flake -- see `nix/flake.nix`'s `git-remote-gpg-encrypt` input; also separately distributed via the [`vraravam/tap`](https://github.com/vraravam/homebrew-tap) Homebrew tap for non-nix users of that standalone tool). See that repo's own `README.md`/`docs/DESIGN.md` for the full design rationale, including why `git-remote-gcrypt`, `git-remote-sealed`, `git-crypt`, `transcrypt`, and `age` were each evaluated and rejected -- this repo no longer implements any of that itself.
 
 ---
 
@@ -13,7 +13,7 @@ This is a second, independent encrypted-backup mechanism alongside Keybase, rath
 ### What Changed (relative to the original embedded implementation)
 
 **Keybase is untouched -- nothing about it was removed.** `scripts/utilities/keybase.rb`
-(identity/login-status derivation, repo create/delete/recreate), the Brewfile cask, and
+(identity/login-status derivation, repo create/delete/recreate), the `nix/darwin-configuration.nix`-managed Homebrew cask, and
 the fresh-install login flow are all still there. Both mechanisms are opt-in per repo,
 controlled purely by whether their env vars are exported in `.shellrc` --
 comment out (or leave unset) a pair to disable that mechanism entirely:
@@ -38,11 +38,15 @@ back to cloning from the encrypted backup if Keybase isn't enabled/available. Se
 `scripts/git-remote-encrypted-backup`, `scripts/setup-encrypted-backup.rb`) -- all three
 have been deleted. The same functionality now comes from the external
 [`git-remote-gpg-encrypt`](https://github.com/vraravam/git-remote-gpg-encrypt) tool,
-installed via `files/--HOME--/Brewfile`'s
-`brew 'vraravam/tap/git-remote-gpg-encrypt', trusted: true` (a fully-qualified formula
-reference, which auto-taps `vraravam/tap` -- no separate `tap` line needed; pulls in
-`gnupg` and `git` transitively -- no separate `brew 'gnupg'` line needed anymore). See
-`CHANGELOG.md`'s `4.0.1` entry for the full list of what changed in that migration.
+installed via `nix/modules/packages.nix`'s
+`git-remote-gpg-encrypt.packages.${system}.default` (a flake input pointing at that
+tool's own repo -- see `nix/flake.nix` -- gated on `encryptedBackupEnabled`, which is
+derived once from whether `ENCRYPTED_*_REPO_URL` is set in `.shellrc`; pulls in
+`gnupg` and `git` transitively via that flake's own derivation -- no separate nix
+package entries needed for either). See
+`CHANGELOG.md`'s `4.0.1` entry for the original embedded-to-external-tool migration,
+and the original nix-migration branch's commit for the Homebrew-tap-to-Nix-flake
+distribution change.
 
 ### How It Works
 
@@ -100,14 +104,15 @@ either manually or via the non-interactive prompt `fresh-install-of-osx.sh` atte
 first install). No repo-creation step is needed for Keybase -- it auto-creates personal
 repos on push.
 
-### 1. Install the tool (already in the base Brewfile section)
+### 1. Install the tool (already in the base nix package list)
 
 ```bash
-brew bundle install;
+nixup;
 ```
 
 Installs `git`, `gnupg`, and the `git-remote-gpg-encrypt` tool's four executables, via
-the `vraravam/tap` Homebrew tap.
+its own Nix flake (`nix/flake.nix`'s `git-remote-gpg-encrypt` input, referenced from
+`nix/modules/packages.nix`, gated on `encryptedBackupEnabled`).
 
 ### 2. Ensure the Keychain passphrase is set
 
@@ -150,7 +155,7 @@ gh repo create "${GH_USERNAME}/browser-profiles" --public;
 
 ### 4. Make the tool's executables available on `PATH`
 
-Already handled by step 1 -- Homebrew installs them into a directory already on `PATH`. Git finds `git-remote-gpg-encrypt` automatically by name (`git-remote-<scheme>` convention) -- no separate installation step beyond `brew bundle install`.
+Already handled by step 1 -- Nix installs them into `~/.nix-profile/bin`, already on `PATH`. Git finds `git-remote-gpg-encrypt` automatically by name (`git-remote-<scheme>` convention) -- no separate installation step beyond `nixup`.
 
 ---
 
@@ -214,7 +219,7 @@ git config --local pull.allowResetOnDivergedHistory true;
 **Recommended:** set the Keychain passphrase yourself beforehand (see Adoption.md § 3.2) so fresh-install runs start to finish without pausing for input. **Fallback if you forget:** `git gpg-encrypt-setup` still prompts for it interactively if missing, even when run via the documented bootstrap one-liner (`curl ... | zsh 2>&1 | tee ...`) -- that command pipes stdout through `tee`, which makes `$stdout.tty?` false for the whole script, but the external tool's passphrase prompt gates on a real `/dev/tty` check instead, so it still fires correctly: `/dev/tty` refers to the real controlling terminal regardless of stdout/stderr redirection, and `security add-generic-password`'s own prompt (via `getpass(3)`) already talks to `/dev/tty` directly by design. Either way, fresh-install stays fully non-interactive once the passphrase is set (the common case on a re-run). **iCloud Keychain sign-in does not carry the passphrase over automatically** (see "does not sync via iCloud Keychain" note above); it must be set on every new machine, either proactively (recommended) or via this fallback prompt.
 
 **Automated steps:**
-1. Homebrew installs -- including the `git-remote-gpg-encrypt` tool (via `vraravam/tap`) always, and the `keybase` cask if `KEYBASE_HOME_REPO_NAME`/`KEYBASE_PROFILES_REPO_NAME` are set.
+1. `darwin-rebuild switch` (via `_apply_nix_darwin_configuration`) installs -- including the `git-remote-gpg-encrypt` tool (via its own Nix flake, gated on `encryptedBackupEnabled`) always when that flag is set, and the `keybase` cask (via nix-darwin's `homebrew` module) if `KEYBASE_HOME_REPO_NAME`/`KEYBASE_PROFILES_REPO_NAME` are set.
 2. "Setup Keybase" -- if the Keybase env vars are set and the cask is installed, attempts a non-interactive `keybase login` on the true first-time bootstrap (silently syncs on later re-runs if already logged in).
 3. "Setup encrypted backup" -- if the encrypted-backup env vars are set, `git gpg-encrypt-setup` runs, prompting for the passphrase if missing (see above); otherwise silently confirms it's already set and continues.
 4. `_clone_home_repo` / `_clone_profiles_repo` try Keybase first (if enabled), falling back to the encrypted backup (if enabled) -- whichever succeeds clones the repo (Keybase: a direct `keybase://` clone; encrypted backup: `git gpg-encrypt-restore` fetches the plain public wrapper repo, reassembles the chunks, decrypts with the Keychain passphrase, and checks out the resulting bundle) -- full history restored either way.
@@ -264,7 +269,7 @@ A: Repo existence and the wrapper repo's own (trivial) commit history. File name
 ## Further Reading
 
 - [`git-remote-gpg-encrypt`](https://github.com/vraravam/git-remote-gpg-encrypt) -- the external tool itself; see its `README.md` and `docs/DESIGN.md` for the full design rationale, including the rejected `git-remote-gcrypt`/`git-remote-sealed`/`git-crypt`/`transcrypt`/`age` alternatives and why each was ruled out
-- [`homebrew-tap`](https://github.com/vraravam/homebrew-tap) -- the Homebrew tap the tool is installed from
+- [`homebrew-tap`](https://github.com/vraravam/homebrew-tap) -- an alternate Homebrew-based distribution channel for the tool (used by non-nix installs of that standalone tool; this dotfiles repo itself installs it via `nix/flake.nix`'s flake input instead, see above)
 - [gitremote-helpers documentation](https://git-scm.com/docs/gitremote-helpers) -- the protocol the remote helper implements
 - [GnuPG documentation](https://www.gnupg.org/documentation/) -- `gpg --symmetric` details
 - [git bundle documentation](https://git-scm.com/docs/git-bundle)

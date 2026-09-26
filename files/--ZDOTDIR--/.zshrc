@@ -148,9 +148,12 @@ autoload -Uz zrecompile
     # fpath assignment is sufficient -- zsh keeps fpath and FPATH in sync automatically.
     # Exporting FPATH leaks it into child processes and launchd user-session environment;
     # typeset +x at the bottom of this file strips the export flag after all sources.
+    # Nix profile's site-functions dir comes first: most CLI completions now ship from
+    # nix packages (see nix/modules/packages.nix), not Homebrew (GUI casks only, see
+    # nix/darwin-configuration.nix) -- e.g. git-extras' '_git_extras' autoload function.
     _generate_brew_shellenv_cache() {
       "${brew_bin}" shellenv 2>/dev/null
-      echo "fpath=('${HOMEBREW_PREFIX}/share/zsh/site-functions' \"\${fpath[@]}\");"
+      echo "fpath=('${HOME}/.nix-profile/share/zsh/site-functions' '${HOMEBREW_PREFIX}/share/zsh/site-functions' \"\${fpath[@]}\");"
     }
     cache_and_source_command_output "${brew_shellenv_cache}" _generate_brew_shellenv_cache "${brew_bin}"
     unfunction _generate_brew_shellenv_cache
@@ -161,25 +164,17 @@ autoload -Uz zrecompile
     export PATH="${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
     export MANPATH="${HOMEBREW_PREFIX}/share/man${MANPATH+:${MANPATH}}:"
     export INFOPATH="${HOMEBREW_PREFIX}/share/info:${INFOPATH:-}"
-    fpath=("${HOMEBREW_PREFIX}/share/zsh/site-functions" "${fpath[@]}")
+    fpath=("${HOME}/.nix-profile/share/zsh/site-functions" "${HOMEBREW_PREFIX}/share/zsh/site-functions" "${fpath[@]}")
   fi
 }
 
-# Defer git-extras completion to after first prompt (large file - 482 lines, 16KB).
-# git-extras commands (git-effort, git-summary, git-changelog, etc.) are rarely
-# used immediately after shell start, so completion definitions can load after
-# prompt renders without impacting user experience. Saves ~1.5-3ms from first prompt.
-_deferred_git_extras_completion() {
-  local git_extras_completion="${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
-  load_file_if_exists "${git_extras_completion}"
-  unfunction _deferred_git_extras_completion
-}
-
-if (($+functions[zsh-defer])); then
-  zsh-defer _deferred_git_extras_completion
-else
-  _deferred_git_extras_completion
-fi
+# Note: git-extras completions no longer need an explicit deferred-source step.
+# nixpkgs' git-extras package (see nix/modules/packages.nix) installs a proper
+# '_git_extras' zsh autoload function under 'share/zsh/site-functions/' (unlike the
+# former Homebrew formula, which shipped a plain script meant to be sourced
+# directly) -- compinit discovers and lazily autoloads it via the fpath entry added
+# above, the same as every other nix package's zsh completions, with no per-tool
+# deferred-loading code needed here.
 
 # compinit is deferred to after the antidote bundle and .aliases load (see
 # _deferred_compinit below). Deferring achieves two things:

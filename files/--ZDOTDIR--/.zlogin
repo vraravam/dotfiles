@@ -116,12 +116,12 @@ recompile_zsh_script "${ANTIDOTE_PLUGIN_ZSH}"
 # ANTIDOTE_HOME contains antidote.zsh and all plugin repositories.
 find_in_folder_and_recompile "${ANTIDOTE_HOME}"
 
-# Compile third-party completion scripts that are sourced directly at startup.
-# Without a .zwc these are parsed from source on every shell start.
-# These live outside DOTFILES_DIR / XDG_CACHE_HOME / ANTIDOTE_HOME, so they are
-# not covered by the find_in_folder_and_recompile calls below. Add any new
-# third-party sourced completions here rather than extending those scans.
-recompile_zsh_script "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
+# Note: there is no longer a "compile third-party completion scripts sourced
+# directly at startup" section here. nixpkgs' git-extras (the one example that
+# used to need this) ships a proper '_git_extras' fpath-discovered autoload
+# function (see .zshrc's brew-shellenv-cache fpath addition), not a plain script
+# meant to be 'source'd -- nothing here is sourced directly anymore, so there is
+# nothing outside DOTFILES_DIR/XDG_CACHE_HOME/ANTIDOTE_HOME left to compile.
 
 # Compile custom OMZ library files. These are symlinked by install-dotfiles.rb
 # from ${DOTFILES_DIR}/files/--ZDOTDIR--/lib/ to ${ZDOTDIR}/lib/.

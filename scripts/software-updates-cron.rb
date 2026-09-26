@@ -167,32 +167,31 @@ module SoftwareUpdatesCron
 
   private_class_method :_upreb_oss_repos
 
-  # Runs every periodic update step in sequence (brew, mise, tldr, git-ignore,
-  # claude-code, zsh-patina, antidote, bat cache, ollama models, home/oss repo
-  # updates, dev environment setup, preferences capture, profiles repo
-  # maintenance, and outdated-app checks). Each step is independently guarded
+  # Runs every periodic update step in sequence (nix + brew casks, mise, tldr,
+  # git-ignore, claude-code, zsh-patina, antidote, bat cache, ollama models,
+  # home/oss repo updates, dev environment setup, preferences capture, profiles
+  # repo maintenance, and outdated-app checks). Each step is independently guarded
   # and failures are recorded as warnings/errors rather than aborting the run.
   #
-  # @return [String] Space/comma-separated summary of greedy brew apps still
+  # @return [String] Space/comma-separated summary of greedy brew casks still
   #   outdated after the update pass (empty string if none), as reported by
   #   MacOS.check_and_notify_outdated_apps.
   def _run_all_updates
     @total_steps = 21
     @current_step = 0
 
-    # Brew update: use bundle check before full bundle to avoid reinstalling
-    # already-installed formulae on every cron run.
-    _perform_update('brews', 'brew') do
-      # Update brew itself first to get latest formula definitions
-      # Redirect stdout to suppress progress output in cron context
+    # nix + Homebrew casks: a single 'darwin-rebuild switch' now covers both (nix
+    # packages via nix/modules/packages.nix, GUI casks via nix-darwin's homebrew
+    # module in nix/darwin-configuration.nix) -- there is no separate 'brew bundle'
+    # step anymore. 'brew update' still needs to run first so Homebrew's own cask
+    # definitions are current before nix-darwin's homebrew module upgrades them.
+    _perform_update('nix + brew casks', 'darwin-rebuild') do
       CommandUtils.run_silent('brew', 'update', err: :err) || true
-      # 'brew bundle check' exits 0 when everything is installed -- skip the full
-      # bundle install in that case to avoid re-checking every formula every hour.
-      # Keep check output visible for debugging missing packages.
-      CommandUtils.run_interactive('brew', 'bundle', 'check', '-v') || CommandUtils.run_interactive('brew', 'bundle', 'install', '-q')
+      CommandUtils.run_interactive('darwin-rebuild', 'switch', '--flake', "#{EnvVars::DOTFILES_DIR}/nix#default", '--impure')
     end
     _perform_update('mise plugins', 'mise') do
-      # mise binary is upgraded using homebrew
+      # mise binary itself is upgraded via nix (see nix/modules/packages.nix), same
+      # as every other CLI tool -- this step only handles plugin/tool-version updates.
       # Plugin registry updates moved to 6-hour schedule (balance between freshness and rate limiting).
       # Check timestamp cache to avoid unnecessary API calls (GitHub rate limiting).
       plugin_update_interval = 6 * 3600 # 6 hours in seconds

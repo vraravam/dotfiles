@@ -22,6 +22,7 @@ If you are setting up a new machine for the first time, start with [Adoption.md]
 12. [`osx-defaults.sh` and `capture-prefs.rb` — Two-Phase Preference Architecture](#12-osx-defaultssh-and-capture-prefsrb--two-phase-preference-architecture)
 13. [Why `fresh-install-of-osx.sh` and `osx-defaults.sh` Remain Shell Scripts](#13-why-fresh-install-of-osxsh-and-osx-defaultssh-remain-shell-scripts)
 14. [Adding an Encrypted Backup (gpg + git bundle) Alongside Keybase](#14-adding-an-encrypted-backup-gpg--git-bundle-alongside-keybase)
+15. [Nix/nix-darwin Architecture](#15-nixnix-darwin-architecture)
 
 ---
 
@@ -57,6 +58,11 @@ files/
   --ZDOTDIR--/           symlinked into ${ZDOTDIR} (defaults to ${HOME})
   --XDG_CONFIG_HOME--/   symlinked into ${XDG_CONFIG_HOME}
   --PERSONAL_PROFILES_DIR--/  .envrc for direnv
+nix/
+  flake.nix              nix-darwin + home-manager entry point (darwinConfigurations.default)
+  darwin-configuration.nix  system-level config: nix settings, Homebrew (GUI casks only), macOS defaults
+  home.nix               user-level config: out-of-store symlinks for app-bundle CLI binaries
+  modules/packages.nix   every CLI tool (nixpkgs name mappings, home.activation postinstall hooks)
 scripts/
   fresh-install-of-osx.sh
   capture-prefs.rb
@@ -391,7 +397,7 @@ Running `ZSH_PROFILE=true zsh -i -c exit` reveals where time is actually spent d
 
 6. **Rust components**: Using `zsh-patina` (Rust-based syntax highlighting daemon) instead of traditional zsh syntax highlighters. This provides 62% faster input lag (1.4ms vs 3.6ms) compared to alternatives.
 
-7. **Optimization complete**: Current startup time of **~30ms** (Apple Silicon, verified via 20-run `time zsh -i -c exit` average on an M3 Pro) or an estimated **under 100ms** (Intel 2019+, untested) is excellent for a fully-featured shell with syntax highlighting, autosuggestions, completions, and 15+ plugins. Further optimization would require removing functionality or switching shells entirely (Fish/Nushell).
+7. **Optimization complete**: Current startup time of **~30ms** (Apple Silicon, verified via 20-run `time zsh -i -c exit` average on an M3 Pro) is excellent for a fully-featured shell with syntax highlighting, autosuggestions, completions, and 15+ plugins. Further optimization would require removing functionality or switching shells entirely (Fish/Nushell). (Intel/`x86_64-darwin` is no longer a supported target -- see [§ 15. Nix/nix-darwin Architecture](#15-nixnix-darwin-architecture)'s "Apple Silicon only" note.)
 
 **Conclusion**: The system is fully optimized. All low-hanging fruit has been addressed (deferrals, minimal libraries, bytecode compilation, caching). The remaining ~30ms is dominated by unavoidable operations (sourcing files, interpreter initialization, essential plugin loading).
 
@@ -530,41 +536,52 @@ Kill/restart is therefore scoped to: always on import; interactive (TTY) export 
 
 ---
 
-## 12. `osx-defaults.sh` and `capture-prefs.rb` — Two-Phase Preference Architecture
+## 12. Nix, `osx-defaults.sh`, and `capture-prefs.rb` — Three-Tier Preference Architecture
 
-macOS preferences are managed in two distinct, ordered phases. The order is load-bearing: phase 2 always wins over phase 1 by design. Both phases are invoked automatically by `fresh-install-of-osx.sh` in sequence.
+macOS preferences are managed in three distinct, ordered tiers. The order is load-bearing: each later tier wins over the ones before it by design. `darwin-rebuild switch` (tier 1) is applied by `fresh-install-of-osx.sh`'s `_apply_nix_darwin_configuration`, before phases 2 and 3 run in sequence.
 
-### Phase 1 — `osx-defaults.sh -s` (baseline seed)
+### Tier 1 — `nix/darwin-configuration.nix`'s `system.defaults` (declarative policy)
 
-`osx-defaults.sh` writes a curated, partial baseline of `defaults write` calls. "Partial" is intentional — it only codifies settings where a known-good starting value is worth establishing on a fresh machine. It does not attempt to replicate every preference the user has ever configured.
+Settings declared here are applied on **every** `darwin-rebuild switch`, unconditionally -- there is no "only if not already set" check, by design. This tier only holds settings the user would **never** want reverted to the declared value, even if they changed it yesterday via the app's UI (the same test used to classify every setting during the original nix migration -- see that migration's classification notes for the exact criteria: unconditional in the shell-script equivalent, non-sudo, non-PlistBuddy, non-`-currentHost`, non-`-dict-add`).
+
+Explicitly **not** appropriate for this tier (stays in tier 2 instead):
+- Settings requiring sudo, PlistBuddy, `systemsetup`, `pmset`, `scutil`, `-currentHost`, or `-dict-add` -- nix-darwin's typed `system.defaults` options and `CustomUserPreferences` escape hatch only cover plain `defaults write`-equivalent domain/key/value writes for the *current* user, not these mechanisms.
+- Anything currently gated behind an interactive `ask` prompt in `osx-defaults.sh` -- moving it here would make it unconditional, changing its behavior, not just its location.
+- Firefox/Zen Browser `user.js` file writes.
+
+### Tier 2 — `osx-defaults.sh -s` (baseline seed)
+
+`osx-defaults.sh` writes a curated, partial baseline of `defaults write` calls -- everything tier 1 above cannot express, plus every interactive/optional setting (via the `ask` helper). "Partial" is intentional — it only codifies settings where a known-good starting value is worth establishing on a fresh machine. It does not attempt to replicate every preference the user has ever configured.
 
 The baseline is appropriate for:
-- System settings the user has never changed via the UI (Dock behaviour, Finder display options, keyboard shortcuts).
+- System settings the user has never changed via the UI (Dock behaviour, Finder display options, keyboard shortcuts) that also require sudo/PlistBuddy/`-currentHost`/interactivity (otherwise: tier 1 instead).
 - App settings that are purely scriptable and have no meaningful UI-side equivalent (disabling analytics, enabling developer menus).
 
 The baseline is **not** appropriate for:
-- Any setting the user configures through the app's UI over time. Writing those here means `osx-defaults.sh -s` would reset them to stale values on every fresh-install, defeating the purpose of phase 2.
+- Any setting the user configures through the app's UI over time. Writing those here means `osx-defaults.sh -s` would reset them to stale values on every fresh-install, defeating the purpose of tier 3.
 - Ephemeral state (window coordinates, last-opened directory, migration sentinels, A/B experiment assignments). Apps manage these themselves.
 
-### Phase 2 — `capture-prefs.rb -i` (UI-configured overrides)
+### Tier 3 — `capture-prefs.rb -i` (UI-configured overrides)
 
-`capture-prefs.rb -i` imports the `.plist` files previously exported from the user's old machine via `capture-prefs.rb -e`. Because this runs *after* phase 1, every imported value overwrites the corresponding baseline value. The user's deliberate, UI-configured choices always win.
+`capture-prefs.rb -i` imports the `.plist` files previously exported from the user's old machine via `capture-prefs.rb -e`. Because this runs *after* tiers 1 and 2, every imported value overwrites the corresponding tier 1/2 value. The user's deliberate, UI-configured choices always win.
 
 ### Why the order is load-bearing
 
 ```zsh
-osx-defaults.sh -s    # phase 1 — write baseline
-capture-prefs.rb -i   # phase 2 — overwrite with UI-configured values
+darwin-rebuild switch --flake "${DOTFILES_DIR}/nix#default" --impure   # tier 1 — declarative policy (nix-darwin homebrew module also runs here)
+osx-defaults.sh -s                                                    # tier 2 — write baseline
+capture-prefs.rb -i                                                   # tier 3 — overwrite with UI-configured values
 ```
 
-Reversing the order causes `osx-defaults.sh` to overwrite the user's restored preferences with stale baseline values — exactly the wrong outcome. `fresh-install-of-osx.sh` encodes this order and must not be changed without understanding this constraint.
+Reversing tiers 2 and 3 causes `osx-defaults.sh` to overwrite the user's restored preferences with stale baseline values — exactly the wrong outcome. `fresh-install-of-osx.sh` encodes this order and must not be changed without understanding this constraint. Tier 1 is idempotent and safe to run before or interleaved with the others (re-running `darwin-rebuild switch` never reverts a tier-2/3 write to a *different* domain/key -- it only ever re-asserts its own declared keys).
 
 ### Decision rule for new preference code
 
 | Preference type | Where it goes |
 |---|---|
-| One-time baseline the user will not change via UI | `osx-defaults.sh` |
-| Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` — not `osx-defaults.sh` |
+| Policy value, never sudo/PlistBuddy/`-currentHost`/interactive, applied unconditionally every switch | `nix/darwin-configuration.nix`'s `system.defaults`/`CustomUserPreferences` |
+| One-time baseline the user will not change via UI, but requires sudo/PlistBuddy/`-currentHost`/interactivity | `osx-defaults.sh` |
+| Something the user configures through the app's UI | `capture-prefs-allowed-list.txt` — not `osx-defaults.sh` or nix |
 | Ephemeral state the app manages itself | `capture-prefs-excluded-keys.txt` or `-denied-list.txt` — nowhere else |
 
 See [Extras.md — osx-defaults.sh](Extras.md#osx-defaultssh) for the adopter-facing summary.
@@ -593,9 +610,9 @@ Converting `fresh-install-of-osx.sh` to Ruby would introduce unacceptable comple
 
 5. **Complexity explosion**: The current shell script is ~550 lines and handles all edge cases cleanly. A Ruby port would need:
    - Pre-flight checks for Ruby version (vanilla OS has 2.6, Homebrew installs 3.3+)
-   - Fallback paths for every system command (some exist in `/usr/bin`, others only after Homebrew)
+   - Fallback paths for every system command (some exist in `/usr/bin`, others only after Homebrew/Nix)
    - Manual `ENV` manipulation to replicate shell's automatic environment inheritance
-   - Explicit process management for background jobs (brew bundle full install)
+   - Explicit process management for `darwin-rebuild switch`'s output/exit-code handling
 
    The result would be longer, harder to debug, and more fragile than the shell version.
 
@@ -643,8 +660,9 @@ intact -- Keybase is not being replaced, deprecated, or phased out. What's new i
 second, independent backup mechanism running alongside it: `git bundle` +
 `gpg --symmetric`, provided by the external
 [`git-remote-gpg-encrypt`](https://github.com/vraravam/git-remote-gpg-encrypt) tool
-(installed via the [`vraravam/tap`](https://github.com/vraravam/homebrew-tap) Homebrew
-tap) and exposed as a real git remote via that tool's own custom remote helper. Both
+(installed via its own Nix flake -- see `nix/flake.nix`'s `git-remote-gpg-encrypt`
+input, and that repo's own `flake.nix`/README.md "Nix flake" section) and exposed as
+a real git remote via that tool's own custom remote helper. Both
 mechanisms are opt-in per repo, controlled purely by whether their env vars are set in
 `.shellrc` (`KEYBASE_HOME_REPO_NAME`/`KEYBASE_PROFILES_REPO_NAME` and
 `ENCRYPTED_HOME_REPO_URL`/`ENCRYPTED_PROFILES_REPO_URL`) -- either, both, or neither
@@ -681,11 +699,97 @@ security add-generic-password -A -a "${USER}" -s 'git-remote-gpg-encrypt' -w;
 `git gpg-encrypt-setup` (from the external tool) checks for this and prints the exact command if missing. `-A` allows any process to read the entry without a GUI prompt, required for non-interactive cron/fresh-install use.
 
 **Dotfiles-side integration points:**
-- `files/--HOME--/Brewfile` -- `brew 'vraravam/tap/git-remote-gpg-encrypt', trusted: true` (fully-qualified formula reference auto-taps `vraravam/tap`; pulls in `gnupg` + `git` transitively)
+- `nix/modules/packages.nix` -- `git-remote-gpg-encrypt.packages.${system}.default`, gated on `encryptedBackupEnabled` (derived once in `nix/flake.nix` from whether `ENCRYPTED_*_REPO_URL` is set in `.shellrc`)
 - `files/--HOME--/.shellrc` -- `ENCRYPTED_HOME_REPO_URL`/`ENCRYPTED_PROFILES_REPO_URL` env vars (full URLs, not bare names -- see `KeybaseMigration.md` for why)
 - `scripts/fresh-install-of-osx.sh`'s `_clone_home_repo`/`_clone_profiles_repo` -- vanilla-OS bootstrap path, tries Keybase first (if enabled), falls back to `git gpg-encrypt-restore`
 
 See `KeybaseMigration.md` for the step-by-step setup guide, including a section honestly comparing this mechanism's security against Keybase's (short version: comparable content confidentiality given a high-entropy passphrase, but weaker metadata privacy and no per-device key revocation -- not a like-for-like replacement).
+
+---
+
+## 15. Nix/nix-darwin Architecture
+
+CLI package management moved from Homebrew formulae to [Nix](https://nixos.org/) +
+[nix-darwin](https://github.com/nix-darwin/nix-darwin) +
+[home-manager](https://github.com/nix-community/home-manager), declared in `nix/`.
+Homebrew (still installed by `fresh-install-of-osx.sh`'s `_install_homebrew`, still
+required) is retained solely as nix-darwin's own supported mechanism for installing
+GUI casks nixpkgs doesn't package -- there is exactly one package manager decision
+per tool category, not a mix of both for the same category.
+
+### Why Nix, and why this is not a hybrid
+
+Every former Homebrew CLI formula has a nixpkgs equivalent (`nix/modules/packages.nix`
+documents the handful of non-identical name mappings, e.g. `grep` → `gnugrep`,
+`sqlite3` → `sqlite`). `homebrew.brews` in `nix/darwin-configuration.nix` is
+deliberately empty, and stays that way -- a new CLI tool always gets a nixpkgs
+package added to `nix/modules/packages.nix`, never a Homebrew formula, even if that
+means writing a small custom derivation (see `git-remote-gpg-encrypt`'s own flake for
+an example of a tool with no nixpkgs package, packaged in its own repo instead of
+vendored here -- `nix/flake.nix`'s `git-remote-gpg-encrypt` input).
+
+### Apple Silicon only
+
+nixpkgs dropped `x86_64-darwin` (Intel Mac) support entirely as of the nixpkgs
+revision this repo's `nix/flake.lock` pins (confirmed by actually evaluating
+`darwinConfigurations` against an `x86_64-darwin` target during the original
+migration -- it fails immediately with nixpkgs' own message pointing to the
+`nixpkgs-26.05-darwin` branch as the last release still supporting the platform).
+`nix/flake.nix` defines exactly one `darwinConfigurations.default`, targeting
+`aarch64-darwin`, with no Intel fallback -- this is a deliberate scope decision, not
+an oversight, since supporting Intel would require a second, separately-pinned
+nixpkgs input just for that one configuration.
+
+### `--impure` is required, always
+
+`nix/flake.nix` derives `username` (from `$USER`/`$USERNAME`), `keybaseEnabled`, and
+`encryptedBackupEnabled` (both from reading `~/.shellrc` directly, mirroring the old
+Brewfile's identically-gated Ruby snippet) via `builtins.getEnv`/`builtins.readFile`.
+Both are disallowed in Nix's default pure-evaluation mode for anything outside the
+flake's own source tree, so every `darwin-rebuild switch`/`nix run nix-darwin --
+switch`/`nix flake update` invocation against this flake must pass `--impure` -- this
+is not optional, and every alias/script that invokes the flake (`nixup`, `nixsync`,
+`_apply_nix_darwin_configuration`, `software-updates-cron.rb`'s update step) already
+does.
+
+### Typed `system.defaults` options vs `CustomUserPreferences`
+
+nix-darwin ships real, validated per-domain option modules for some macOS
+preferences (`system.defaults.dock`, `.finder`, `.menuExtraClock`, `.screensaver`,
+`.screencapture`, `.NSGlobalDomain`, etc.) but not all of them -- domains with no
+typed module (`com.apple.controlcenter` as a *regular*, non-ByHost domain;
+`com.apple.systemuiserver`; `com.apple.TimeMachine`; `com.apple.screencaptureui`; and
+several individual keys within otherwise-typed domains, like `menuExtraClock`'s
+`DateFormat`) go through `system.defaults.CustomUserPreferences` instead, a
+freeform escape hatch. Both mechanisms are mixed freely for the same domain where
+needed (e.g. `com.apple.finder`: some keys typed, some via
+`CustomUserPreferences."com.apple.finder"`) since they compile down to independent
+`defaults write` invocations against the same underlying domain, not a single merged
+attribute set.
+
+**One case is a deliberate divergence from the typed option, not an oversight:**
+nix-darwin's own `system.defaults.controlcenter` writes to a **ByHost** preference
+path (`~<user>/Library/Preferences/ByHost/com.apple.controlcenter`), whereas
+`osx-defaults.sh` writes the regular (non-ByHost) `com.apple.controlcenter` domain.
+Using the typed option there would silently turn a global preference into a
+per-machine (host-keyed) one -- exactly the behavior change the `-currentHost`/ByHost
+exclusion in § 12's tier-1 criteria exists to prevent. `com.apple.controlcenter`
+therefore goes through `CustomUserPreferences` exclusively, never the typed option,
+regardless of how many of its keys that option happens to cover.
+
+### Verification without a live machine
+
+This architecture was verified by actually evaluating
+`darwinConfigurations.default.config.system.build.toplevel.drvPath` inside a
+disposable `nixos/nix` Docker container (mounting this repo's `nix/` directory and a
+fixture `~/.shellrc`), not merely reviewed for syntax -- catching real errors static
+review would have missed: a `home.homeDirectory` type mismatch (needed
+`users.users.<name>.home` + `system.primaryUser` declared), a wrong type for
+`menuExtraClock.ShowDate` (a tristate int, not a bool), a nonexistent
+`homebrew.caskArgs.adopt` option (moved to a raw `cask_args` line in
+`homebrew.extraConfig` instead), and the x86_64-darwin platform-support finding
+above. No live `darwin-rebuild switch` was run against a real machine as part of
+that verification.
 
 ---
 

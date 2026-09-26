@@ -64,15 +64,24 @@ Now you have all scripts available in `/tmp/dotfiles-master/scripts/`.
 
 **Note:** GitHub's zip archives preserve executable permissions, so scripts are immediately runnable.
 
-### 1.1 Export Homebrew Package List
+### 1.1 List Existing Packages (Optional)
 
-If you already use Homebrew, dump your installed packages to avoid starting from scratch:
+If you already use Homebrew, list what's installed so you can compare against this
+fork's nix files -- CLI tools are managed entirely by Nix here, not Homebrew formulae
+(see [nix/modules/packages.nix](nix/modules/packages.nix)'s own nixpkgs-name-mapping
+comments for anything that isn't a 1:1 name match), while GUI apps stay as Homebrew
+casks (see [nix/darwin-configuration.nix](nix/darwin-configuration.nix)'s
+`homebrew.casks`):
 
 ```zsh
-brew bundle dump --force --file="${HOME}/Brewfile";
+brew list --cask;
+brew list --formula;
 ```
 
-**Important:** This is a **one-time** command. If you regenerate later, any custom comments/formatting will be lost. After the first dump, maintain the Brewfile manually.
+**Important:** unlike the old Brewfile-based workflow, there is no single file to
+dump into and merge -- add each cask directly to `nix/darwin-configuration.nix`'s
+`homebrew.casks` list, and each CLI formula's nixpkgs equivalent directly to
+`nix/modules/packages.nix`'s `home.packages` list.
 
 ### 1.2 Export Application Preferences
 
@@ -166,7 +175,7 @@ git -C "${HOME}" remote add origin gpg-encrypt::https://github.com/${GH_USERNAME
 Then, regardless of which mechanism(s) you configured above:
 
 ```zsh
-git -C "${HOME}" add Brewfile personal/dev/configs/;
+git -C "${HOME}" add personal/dev/configs/;
 git -C "${HOME}" commit -m "Backup: $(date +'%Y-%m-%d %H:%M:%S')";
 git -C "${HOME}" push origin master;
 # git -C "${HOME}" push origin2 master   # only if you configured a second remote above
@@ -249,19 +258,28 @@ export PERSONAL_PROFILES_DIR="${HOME}/personal/${USER}/browser-profiles"
 - Update `/dev/` entry in "HOME DIRECTORY TOP-LEVEL FOLDERS" section
 - Update all `/dev/**/` entries in "DEV WORKSPACE" section
 
-#### B. Brewfile
+#### B. Nix Packages and Homebrew Casks
 
-Review **[files/--HOME--/Brewfile](files/--HOME--/Brewfile)** and remove unwanted packages.
+Review **[nix/modules/packages.nix](nix/modules/packages.nix)** (CLI tools, installed
+via Nix -- add/remove entries from `home.packages`) and
+**[nix/darwin-configuration.nix](nix/darwin-configuration.nix)** (GUI apps, installed
+as Homebrew casks via nix-darwin's `homebrew` module -- add/remove entries from
+`homebrew.casks`) and remove unwanted packages.
 
-**If you exported from an existing machine (Phase 1.1):**
-
-1. Locate the `FIRST_INSTALL` guard comment in the fork's Brewfile (currently around line 63, but may shift)
-2. Keep everything BEFORE that line (base packages needed for vanilla OS)
-3. Replace everything AFTER that line with your exported Brewfile contents
-4. This merges your packages with the minimal base set needed for bootstrap
+**If you exported from an existing machine (Phase 1.1):** cross-reference `brew list
+--cask`/`brew list --formula`'s output against these two files and add anything
+missing -- for a CLI formula, look up its nixpkgs package name (usually identical;
+see `nix/modules/packages.nix`'s own name-mapping comments for the handful of
+exceptions like `grep` → `gnugrep`) rather than adding a Homebrew formula, since this
+setup manages zero CLI formulae through Homebrew (see `nix/darwin-configuration.nix`'s
+comment on `homebrew.brews` for why).
 
 **If starting fresh (no existing machine):**
-- Review the entire Brewfile and remove any packages you don't want
+- Review both files and remove any packages/casks you don't want
+- There is no `FIRST_INSTALL`-guarded base/full split for nix packages yet (a known
+  limitation -- see the `TODO(FIRST_INSTALL optimisation)` comment in
+  `nix/darwin-configuration.nix`); every package/cask listed installs on the first
+  `darwin-rebuild switch`
 
 #### C. Backup Mechanisms: Keybase, Encrypted Backup (Optional)
 
@@ -333,8 +351,9 @@ metadata privacy, no per-device key revocation).
    them manually at https://github.com/new instead -- public, no README/gitignore/license.
 3. Ensure the Keychain passphrase is set on the **target** machine (one-time-per-machine,
    see below) -- **on a genuinely vanilla machine, `git gpg-encrypt-setup` does not
-   exist yet at this point** (it's installed via the `vraravam/tap` Homebrew tap, which
-   Phase 3's bootstrap command hasn't run yet). Use the raw command instead, run directly
+   exist yet at this point** (it's installed via its own Nix flake -- see
+   `nix/flake.nix`'s `git-remote-gpg-encrypt` input -- which Phase 3's bootstrap
+   command hasn't applied yet). Use the raw command instead, run directly
    in the terminal you'll launch the [§ 3.2 bootstrap command](#32-run-bootstrap-command)
    from:
    ```bash
@@ -345,11 +364,11 @@ metadata privacy, no per-device key revocation).
    terminal to prompt you with**, so this has to happen *before* running it -- see the
    note right before that command for the full explanation of why.
 
-   Once `brew bundle install` has run (during Phase 3, or on any later/already-set-up
-   machine), `git gpg-encrypt-setup` becomes available as a convenience wrapper
-   around the same command -- it's idempotent and safe to run anytime to verify or
-   (re-)set the passphrase, and prompts interactively via the same masked, double-entry
-   `security` confirmation if it's ever missing.
+   Once `darwin-rebuild switch` has applied this repo's nix configuration (during
+   Phase 3, or on any later/already-set-up machine), `git gpg-encrypt-setup` becomes
+   available as a convenience wrapper around the same command -- it's idempotent and
+   safe to run anytime to verify or (re-)set the passphrase, and prompts interactively
+   via the same masked, double-entry `security` confirmation if it's ever missing.
 
    **This does not sync via iCloud Keychain, even if iCloud Keychain is enabled and you're signed in.** `security add-generic-password` has no flag for the `kSecAttrSynchronizable` attribute that iCloud Keychain sync depends on (confirmed via `security add-generic-password -h` -- only account/service/password/access-control options are exposed), so this item is local-only by design. **You must repeat the one-time Keychain setup (or re-run `git gpg-encrypt-setup` interactively) on every new machine** -- there is no way to carry it over automatically.
 
@@ -439,7 +458,7 @@ If you didn't change anything, skip straight to [Phase 3](#phase-3-first-time-se
 Copy-paste this single command to kick off the entire setup:
 
 ```zsh
-export GH_USERNAME='vraravam' DOTFILES_BRANCH='master' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true' COLUMNS="${COLUMNS}"; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/Downloads/fresh-install-of-osx.log"; unset FIRST_INSTALL;
+export GH_USERNAME='vraravam' DOTFILES_BRANCH='nix-migration' FIRST_INSTALL='true' CACHE_BUST_HEADERS='true' CURL_RETRY_OPTS='true' COLUMNS="${COLUMNS}"; curl -H "Cache-Control: no-cache, no-store, must-revalidate" -H "Pragma: no-cache" -H "Expires: 0" --retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/scripts/fresh-install-of-osx.sh?$(date +%s)" | zsh 2>&1 | tee "${HOME}/Downloads/fresh-install-of-osx.log"; unset FIRST_INSTALL;
 ```
 
 Note: This command is ready to copy-paste-run as-is on `vraravam`'s own machines.
@@ -458,20 +477,29 @@ terminal available); the script logs a fallback command and continues without it
 In summary:
 
 1. Downloads and sources `.shellrc` (provides logging and utilities)
-2. Installs Homebrew (or updates if already present)
+2. Installs Homebrew (or updates if already present) -- GUI casks only from here on;
+   see [nix/darwin-configuration.nix](nix/darwin-configuration.nix)
 3. Clones dotfiles repo to `${DOTFILES_DIR}` (typically `~/.config/dotfiles`)
 4. Runs `install-dotfiles.rb` (symlinks config files)
-5. Installs base Brewfile packages (full install continues in background) -- each
-   formula/cask handles its own post-install needs via Brewfile `postinstall:` hooks
-   (e.g. antidote's hook regenerates the plugin bundle)
-6. **Two-phase preference setup:**
-   - Phase 1: `osx-defaults.sh -s` (seeds baseline defaults)
+5. Installs the [Nix](https://nixos.org/) package manager (or skips if already present)
+6. Applies this repo's nix-darwin + home-manager configuration (`darwin-rebuild
+   switch --flake "${DOTFILES_DIR}/nix#default" --impure`, or `nix run nix-darwin --
+   switch ...` on the very first activation): installs/upgrades every nix package
+   ([nix/modules/packages.nix](nix/modules/packages.nix)), applies the nix-eligible
+   macOS defaults ([nix/darwin-configuration.nix](nix/darwin-configuration.nix)), and
+   installs/upgrades every Homebrew GUI cask (via nix-darwin's `homebrew` module,
+   same file) -- each cask handles its own post-install needs via its `postinstall:`
+   hook (e.g. Keybase's hook registers it as a login item), and the `antidote`/
+   `zsh-patina` nix packages get equivalent hooks via `home.activation` in
+   `nix/modules/packages.nix`
+7. **Two-phase preference setup:**
+   - Phase 1: `osx-defaults.sh -s` (seeds baseline defaults not already covered by nix)
    - Phase 2: `capture-prefs.rb -i` (imports your UI-configured overrides)
-7. Sets up cron jobs (falls back: existing → tracked → user action)
-8. Resurrects tracked git repositories (from Phase 1.3 catalogs)
-9. Prompts for password to set default shell to Homebrew zsh
+8. Sets up cron jobs (falls back: existing → tracked → user action)
+9. Resurrects tracked git repositories (from Phase 1.3 catalogs)
+10. Prompts for password to set default shell to nix-darwin's zsh
 
-**Optional shortcut for huge/slow repos:** if you added a `bundle` key for a repo in [Phase 1.3](#13-generate-repository-catalog), transfer the `.bundle` file to this machine (e.g. via AirDrop) to the same path referenced in the YAML. Step 8 above picks it up automatically -- no separate command needed, and no timing to get right: it imports from the bundle if present, otherwise falls back to a normal clone.
+**Optional shortcut for huge/slow repos:** if you added a `bundle` key for a repo in [Phase 1.3](#13-generate-repository-catalog), transfer the `.bundle` file to this machine (e.g. via AirDrop) to the same path referenced in the YAML. Step 9 above picks it up automatically -- no separate command needed, and no timing to get right: it imports from the bundle if present, otherwise falls back to a normal clone.
 
 ### 3.3 Post-Setup Manual Steps
 
@@ -562,7 +590,7 @@ Quit and restart Terminal/iTerm to load all new configs.
 Once you're up and running, see **[Advanced.md](Advanced.md)** for:
 
 - Exporting preferences and updating repository catalogs over time
-- Maintaining the Brewfile and automating tasks via cron
+- Maintaining `nix/modules/packages.nix` (CLI packages) and `nix/darwin-configuration.nix` (GUI casks, macOS defaults), and automating tasks via cron
 - Per-repository git customizations (hooks, wrapper functions, alias overrides)
 - Syncing your fork with upstream improvements
 
@@ -579,6 +607,20 @@ The script is **idempotent** — re-run the same command. It will skip completed
 - Check internet connection
 - Try setting `HTTP_PROXY` / `HTTPS_PROXY` if behind corporate firewall
 - Run `brew doctor` after installation completes
+
+### Nix Installation or `darwin-rebuild switch` Hangs/Fails
+
+- Check internet connection (the Determinate Systems installer and every flake
+  input -- nixpkgs, nix-darwin, home-manager, git-remote-gpg-encrypt -- are
+  downloaded over the network)
+- Re-run `sudo /nix/nix-installer uninstall` then re-run the bootstrap command if
+  the installer itself left the daemon in a broken state
+- `darwin-rebuild switch --flake "${DOTFILES_DIR}/nix#default" --impure` can be
+  re-run directly (it's idempotent) to see the full error output if the fresh-install
+  script only logged a warning and continued
+- `--impure` is required, not optional -- the flake reads `~/.shellrc` directly via
+  `builtins.readFile` to decide whether Keybase/encrypted-backup packages are
+  needed (see `nix/flake.nix`)
 
 ### Preferences Not Importing
 

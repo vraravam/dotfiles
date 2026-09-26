@@ -93,7 +93,8 @@ module EnvVars
   KEYBASE_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_PROFILES_REPO_NAME', nil))
 
   # Encrypted git repo URLs (used with the external 'git-remote-gpg-encrypt' tool,
-  # installed via the 'vraravam/tap' Homebrew tap -- see files/--HOME--/Brewfile). nil
+  # installed via its own flake -- see nix/modules/packages.nix's
+  # encryptedBackupEnabled-gated entry). nil
   # (unset/empty in .shellrc) means this mechanism is not enabled for that repo --
   # comment out the export in .shellrc to disable it entirely. Coexists with Keybase
   # above -- both can be enabled at once (see KeybaseMigration.md). Unlike
@@ -183,11 +184,6 @@ module EnvVars
       arch.include?('arm') ? '/opt/homebrew' : '/usr/local'
     end
   ).expand_path.freeze
-
-  # Homebrew bundle files (Brewfile).
-  # Mirrors: HOMEBREW_BUNDLE_FILE* exports in .shellrc (lines 147-148)
-  HOMEBREW_BUNDLE_FILE = Pathname.new(ENV.fetch('HOMEBREW_BUNDLE_FILE', HOME.join('Brewfile'))).expand_path.freeze
-  HOMEBREW_BUNDLE_FILE_GLOBAL = Pathname.new(ENV.fetch('HOMEBREW_BUNDLE_FILE_GLOBAL', HOME.join('Brewfile'))).expand_path.freeze
 
   # Antidote plugin manager paths.
   # Mirrors: ANTIDOTE_* exports in .shellrc (platform-specific and brew-dependent)

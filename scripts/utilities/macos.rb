@@ -36,21 +36,21 @@ module MacOS
 
   # Login-item apps that are killed before defaults writes and restarted after.
   # This is the single source of truth for the login-item app list.
-  # Keep in sync with Brewfile setup_login_items_script entries and
+  # Keep in sync with nix/darwin-configuration.nix's homebrew.casks postinstall entries and
   # defaults-write login-key sections in osx-defaults.sh.
   LOGIN_ITEM_APPS = [
     'Clocker',    # startAtLogin = true (com.abhishek.Clocker)
-    # 'DockDoor',   # login item via Brewfile setup_login_items_script (SMAppService)
-    'KeyCastr',   # login item via Brewfile setup_login_items_script (SMAppService)
+    # 'DockDoor',   # login item via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService)
+    'KeyCastr',   # login item via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService)
     'KeyClu',     # launchAtLogin = true (com.0804Team.KeyClu)
-    'Keybase',    # login item via Brewfile setup_login_items_script (SMAppService)
-    'Mechvibes',  # login item via Brewfile setup_login_items_script (SMAppService)
-    'ProtonVPN',  # login item via Brewfile setup_login_items_script (SMAppService)
-    'Shortcat',   # login item via Brewfile setup_login_items_script (SMAppService)
-    # 'Sol',        # login item via Brewfile setup_login_items_script (SMAppService)
+    'Keybase',    # login item via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService)
+    'Mechvibes',  # login item via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService)
+    'ProtonVPN',  # login item via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService)
+    'Shortcat',   # login item via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService)
+    # 'Sol',        # login item via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService)
     # 'Stats',      # LaunchAtLoginNext = true (eu.exelban.Stats)
-    'Thaw',       # login item via Brewfile setup_login_items_script (SMAppService)
-    'Vorssaint',  # login item via Brewfile setup_login_items_script (SMAppService)
+    'Thaw',       # login item via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService)
+    'Vorssaint',  # login item via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService)
   ].freeze
 
   # ---------------------------------------------------------------------------
