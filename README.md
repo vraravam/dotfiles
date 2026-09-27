@@ -11,21 +11,21 @@
 [![codecov](https://codecov.io/gh/vraravam/dotfiles/branch/master/graph/badge.svg)](https://codecov.io/gh/vraravam/dotfiles)
 [![Bundler Audit](https://github.com/vraravam/dotfiles/actions/workflows/bundler-audit.yml/badge.svg)](https://github.com/vraravam/dotfiles/actions/workflows/bundler-audit.yml)
 
-A comprehensive, idempotent backup and restore strategy that configures your mac for modern software development. Supports both **Intel** and **Apple Silicon** macs with automatic architecture detection.
+A comprehensive, idempotent backup and restore strategy that configures your mac for modern software development. Targets **Apple Silicon** Macs (nixpkgs, which this setup's package management depends on, dropped Intel/`x86_64-darwin` support -- see [TechnicalDeepDive.md](TechnicalDeepDive.md) for details).
 
 The script is **idempotent** — every step checks whether its work is already done before executing, so you can safely re-run after a partial failure without undoing completed steps. Each skipped step logs the reason, so you can see at a glance what was already in place.
 
 # ✨ Features
 
-- 🔍 **Auto-detects architecture** - supports both Intel x86_64 and Apple Silicon arm64
 - 🔄 **Idempotent** — safe to run multiple times
 - 📝 **Comprehensive logging** — shows all logs with colors for ease of debugging and checking status
 - 🛡️ **Safe** — retains your pre-existing configs instead of overwriting them
-- ⚡ **Fast shell startup** — typically ~30ms on Apple Silicon, under 100ms on Intel
+- ⚡ **Fast shell startup** — typically ~30ms on Apple Silicon
 
 # 📋 What Gets Installed
 
-- **Homebrew** and a curated set of modern CLI/GUI tools — see the [Brewfile](files/--HOME--/Brewfile)
+- **[Nix](https://nixos.org/) + [nix-darwin](https://github.com/nix-darwin/nix-darwin) + [home-manager](https://github.com/nix-community/home-manager)** — the sole CLI package manager for this setup, plus macOS system defaults and login-item/service management; declared in [nix/](nix/)
+- **Homebrew** — GUI casks only (nix-darwin's `homebrew` module manages it declaratively; no CLI formulae) — see [nix/darwin-configuration.nix](nix/darwin-configuration.nix)
 - **Zsh shell config** — [antidote](https://antidote.sh/) plugin manager, [Starship](https://starship.rs/) prompt, aliases and functions
 - **macOS system preferences** — seeded with sane defaults, then optionally overlaid with your own exported backup
 
@@ -33,7 +33,7 @@ The script is **idempotent** — every step checks whether its work is already d
 
 Setup is split into two guides:
 
-1. **[Adoption.md](Adoption.md)** (basic, start here) — fork the repo, set your GitHub username, and run the bootstrap command. This alone gets you a fully working machine: Homebrew, shell config, and macOS preferences.
+1. **[Adoption.md](Adoption.md)** (basic, start here) — fork the repo, set your GitHub username, and run the bootstrap command. This alone gets you a fully working machine: Nix + Homebrew, shell config, and macOS preferences.
 2. **[Advanced.md](Advanced.md)** — once you're up and running: keeping backups current, encrypted preference backups via [Keybase](https://keybase.io/) and/or `gpg` + `git bundle` (both optional, can be used together), per-repository git customizations, and staying in sync with upstream.
 
 > **⚡ Already forked and customized?** Jump straight to the [bootstrap command](Adoption.md#32-run-bootstrap-command) to copy-paste and run.

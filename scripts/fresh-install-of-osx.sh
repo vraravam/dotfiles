@@ -204,43 +204,6 @@ _download_and_source_shellrc() {
   success "Successfully sourced '$(cyan "${HOME}/.shellrc")'"
 }
 
-# Enable Touch ID for sudo command when running on the terminal
-_approve_fingerprint_sudo() {
-  step_start
-  _step_header "$(yellow 'Setting up touchId for sudo access in terminal shells')"
-
-  # AppleBiometricSensor = T1/T2 chip (Intel Macs); AppleBiometricServices = Apple Silicon
-  # Check for Touch ID hardware (single ioreg call for both classes)
-  # Note: Command substitution buffers all ioreg output first, avoiding SIGPIPE under pipefail
-  # (grep -q would exit early and trigger SIGPIPE on ioreg).
-  local biometric_output
-  biometric_output="$(/usr/sbin/ioreg -c AppleBiometricSensor -c AppleBiometricServices 2>/dev/null)" || true
-  if is_zero_string "${biometric_output}"; then
-    info 'Touch ID hardware is not detected -- skipping configuration.'
-    step_end
-    return 0  # Exit successfully as no action is needed
-  fi
-
-  local template_file='/etc/pam.d/sudo_local.template'
-  if ! is_file "${template_file}"; then
-    warn "Template file '$(cyan "${template_file}")' not found! Skipping!"
-    step_end
-    return
-  fi
-
-  local target_file='/etc/pam.d/sudo_local'
-  if ! is_file "${target_file}"; then
-    if sudo sh -c "sed 's/^#auth/auth/' '${template_file}' > '${target_file}'"; then
-      success "Created new file: '$(cyan "${target_file}")'"
-    else
-      error "Failed to create '${target_file}'"
-    fi
-  else
-    info "'$(cyan "${target_file}")' is already present -- skipping."
-  fi
-  step_end
-}
-
 # Verify FileVault disk encryption is active
 _ensure_filevault_is_on() {
   step_start
@@ -343,7 +306,12 @@ _clone_dot_files_repo() {
   step_end
 }
 
-# Install homebrew, tap repos, and run brew bundle
+# Install homebrew itself. This setup no longer runs 'brew bundle' -- nix-darwin's
+# homebrew module (see nix/darwin-configuration.nix) owns every Homebrew cask
+# declaratively and invokes 'brew bundle' itself as part of 'darwin-rebuild switch'
+# (see _apply_nix_darwin_configuration below). Homebrew itself must still be
+# pre-installed for that module to have something to drive -- nix-darwin does not
+# install Homebrew.
 _install_homebrew() {
   _current_section='Install Homebrew'; _current_section_manual=1
   step_start
@@ -382,100 +350,163 @@ _install_homebrew() {
   # Ensure homebrew's environment variables are set correctly for this session.
   eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
 
-  # Taps are no longer used in the FIRST_INSTALL base Brewfile section.
-  # The tap commands below are kept for reference in case a tap is needed again.
-  # /usr/bin/grep -E "^tap " "${HOMEBREW_BUNDLE_FILE}" | awk '{print $2}' | tr -d "'\"" | while read -r tap_name; do
-  #   brew tap "${tap_name}" || true
-  # done
-
-  # Note: Do not set the 'FIRST_INSTALL' in this script - since its supposed to run idempotently. Also, don't run the cleanup of pre-installed brews/casks (for the same reason)
-  # Run brew bundle install if check fails. Let brew handle idempotency. Continue script even if bundle fails.
-  # Note: Split into taps, formulae and casks separately so that curl doesnt timeout, and failures are isolated and reported clearly.
-  # Note: Each pass includes the Brewfile preamble (non tap/brew/cask lines) to preserve Ruby DSL context (e.g. cask_args, is_arm).
-  # Note: For FIRST_INSTALL, only process lines up to the first 'FIRST_INSTALL' guard in the Brewfile (which marks the end of the base install section).
-  local _brew_bundle_exit=0
-  if is_first_install; then
-    local brewfile_content
-    brewfile_content="$(sed "/^[^#].*FIRST_INSTALL/q" "${HOMEBREW_BUNDLE_FILE}")"
-    brewfile_content="${brewfile_content%$'\n'*FIRST_INSTALL*}"  # strip the FIRST_INSTALL guard line itself
-    # First pass: install taps and already-trusted formulae/casks
-    # Suppress stderr since untrusted-tap errors are expected and fixed by second pass
-    brew bundle check -v || brew bundle install -q --file=- <<<"${brewfile_content}" || _brew_bundle_exit=$?
-  else
-    # First pass: install taps and already-trusted formulae/casks
-    # Suppress stderr since untrusted-tap errors are expected and fixed by second pass
-    brew bundle check -v || brew bundle install -q || _brew_bundle_exit=$?
-  fi
-
-  if [[ "${_brew_bundle_exit}" -eq 0 ]]; then
-    success 'Successfully installed cmd-line and gui apps using homebrew'
-  else
-    _record_warning 'Homebrew bundle install encountered errors; continuing...'
-  fi
-
-  # Homebrew cask 'postinstall:' hooks only run when 'brew bundle install' actually
-  # (re)installs the cask -- if 'brew bundle check' above already reported success (e.g.
-  # Keybase.app was already present from an earlier partial run of this idempotent
-  # script), postinstall never fires, silently leaving the 'keybase' CLI symlink missing
-  # even though the app itself is installed and usable. The Brewfile's own postinstall
-  # for this cask already creates these symlinks too -- this is a redundant safety net
-  # for exactly that postinstall-skipped case. Both are safe to run every time since
-  # 'ln -sf' is idempotent. No KEYBASE_*_REPO_NAME gate needed here -- if the cask was
-  # never installed (Keybase disabled), the directory check below simply never matches.
-  if is_directory '/Applications/Keybase.app'; then
-    ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/keybase' "${HOMEBREW_PREFIX}/bin/keybase"
-    ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase' "${HOMEBREW_PREFIX}/bin/git-remote-keybase"
-  fi
-
-  if is_first_install; then
-    # The base section is done; fork the full Brewfile install in the background so
-    # optional/heavy packages install without blocking the rest of this run.
-    # FIRST_INSTALL is unset in the subshell so brew bundle runs the complete Brewfile.
-    local _full_bundle_log="${HOME}/Downloads/brew-bundle-full-install.log"
-    # Temporarily disable ERR trap: background job failures should not abort the main script.
-    # The background job logs to _full_bundle_log; users can check that file for issues.
-    trap - ERR
-    FIRST_INSTALL= brew bundle >>"${_full_bundle_log}"  2>&1 &|
-    trap '_cleanup_and_exit "${LINENO}"' ERR
-    info "Full Brewfile install running in background (log: '$(cyan "${_full_bundle_log}")')"
-  fi
-
-  # Note: load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)
-  DEBUG=true load_zsh_configs
-
-  if is_first_install; then
-    trap '_cleanup_and_exit "${LINENO}"' ERR
-  fi
-
-  # TODO: Commented out to avoid the second touchId popup. Need to investigate how to solve this.
-  # is_arm && sudo rm -rf /usr/local/bin/keybase /usr/local/bin/git-remote-keybase || true
   step_end
 }
 
-# Set the default login shell to Homebrew's zsh.
-# macOS ships with /bin/zsh but Homebrew's zsh is newer and managed independently.
+# Install the Nix package manager itself (multi-user daemon mode). Uses the
+# Determinate Systems installer rather than the plain upstream nixos.org/nix/install
+# script -- it is the installer nix-darwin's own docs now point adopters at:
+# handles the multi-user daemon setup reliably in one non-interactive pass, and
+# ships a clean 'sudo /nix/nix-installer uninstall' for the (rare) full-revert case.
+# All CLI packages and macOS defaults are managed by nix from here on (see
+# nix/modules/packages.nix, nix/darwin-configuration.nix) -- Homebrew (installed
+# above) is retained solely for GUI casks with no nixpkgs equivalent.
+_install_nix() {
+  _current_section='Install Nix'; _current_section_manual=1
+  step_start
+  _step_header "$(yellow 'Installing Nix package manager')"
+
+  if ! command_exists nix; then
+    local install_script_file
+    install_script_file="$(mktemp)"
+    if curl "${_cache_bust_headers[@]}" "${_curl_retry_opts[@]}" -fsSL "https://install.determinate.systems/nix?$(/bin/date +%s)" -o "${install_script_file}"; then
+      sh "${install_script_file}" install --no-confirm || {
+        rm -f "${install_script_file}"
+        error 'Nix installation failed'
+        exit 1
+      }
+      rm -f "${install_script_file}"
+      success 'Successfully installed Nix'
+    else
+      rm -f "${install_script_file}"
+      error 'Failed to download Nix installation script'
+      exit 1
+    fi
+  else
+    info "Skipping installation of $(yellow 'Nix') -- already installed."
+  fi
+
+  # Make the newly-installed (or already-installed) nix binary available to the
+  # rest of THIS script run without requiring a fresh shell. The daemon-mode
+  # installer places the multi-user profile's bin dir here regardless of whether
+  # nix-darwin has ever been applied yet (nix-darwin's own /run/current-system/sw/bin
+  # only exists after the first successful 'darwin-rebuild switch').
+  append_to_path_if_dir_exists '/nix/var/nix/profiles/default/bin'
+
+  if ! command_exists nix; then
+    error "'nix' command not found in PATH after installation. Aborting!!!"
+    exit 1
+  fi
+
+  step_end
+}
+
+# Apply this repo's nix-darwin + home-manager configuration. This single command
+# replaces the old 'brew bundle' step entirely: it installs/upgrades every nix
+# package (nix/modules/packages.nix), applies the nix-eligible macOS defaults
+# (nix/darwin-configuration.nix), and installs/upgrades every Homebrew GUI cask
+# (via nix-darwin's homebrew module, same file) -- Homebrew itself only needs to
+# already be installed (_install_homebrew above), not have anything bundled into it.
+#
+# '--impure' is required every time: the flake reads '.shellrc' directly via
+# 'builtins.readFile' to derive keybaseEnabled/encryptedBackupEnabled (see
+# nix/flake.nix) -- Nix's pure evaluation mode disallows that without this flag.
+_apply_nix_darwin_configuration() {
+  _current_section='Apply nix-darwin configuration'; _current_section_manual=1
+  step_start
+  _step_header "$(yellow 'Applying nix-darwin + home-manager configuration')"
+
+  local nix_flake_ref="${DOTFILES_DIR}/nix#default"
+  local _switch_exit=0
+
+  # One-time migration: back up a stale '/etc/pam.d/sudo_local' left by an older
+  # version of this same script's own bespoke _approve_fingerprint_sudo (now
+  # removed, superseded by nix-darwin's declarative
+  # 'security.pam.services.sudo_local.touchIdAuth' -- see
+  # nix/darwin-configuration.nix). nix-darwin refuses to activate at all
+  # ("error: Unexpected files in /etc, aborting activation") the first time it
+  # tries to take over managing a file it doesn't recognize, on any machine
+  # that ran this script before that change and hasn't been re-imaged since.
+  # Checking for the '.before-nix-darwin' backup (not the original file's
+  # content) as the "already migrated" marker keeps this idempotent: once
+  # migrated, nix-darwin fully owns and keeps rewriting the original path on
+  # every subsequent run, so this condition is only ever true once per machine.
+  local _stale_sudo_local='/etc/pam.d/sudo_local'
+  if is_file "${_stale_sudo_local}" && ! is_file "${_stale_sudo_local}.before-nix-darwin"; then
+    warn "Backing up pre-nix-darwin '$(cyan "${_stale_sudo_local}")' to '$(cyan "${_stale_sudo_local}.before-nix-darwin")' (leftover from an older version of this script) before nix-darwin's first activation..."
+    sudo mv "${_stale_sudo_local}" "${_stale_sudo_local}.before-nix-darwin"
+  fi
+
+  # 'sudo' is mandatory: current darwin-rebuild no longer self-elevates for the
+  # system-activation phase ('system activation must now be run as root').
+  # '--preserve-env=USER,USERNAME,HOME,PATH,DOTFILES_DIR' keeps $USER/$HOME
+  # pointing at the invoking (non-root) user rather than root -- nix/flake.nix's
+  # '--impure' evaluation derives homeDir from $USER/$USERNAME (not $SUDO_USER)
+  # to read '~/.shellrc', so without this the read would target '/Users/root'
+  # instead. PATH must also be preserved: 'nix'/'darwin-rebuild' live under
+  # '/nix/var/nix/profiles/default/bin', not a location sudo's env_reset
+  # guarantees on root's default PATH. DOTFILES_DIR must also be preserved:
+  # nix/darwin-configuration.nix's Homebrew cask 'postinstall' hooks (setupLoginItem,
+  # and the hand-written 'thaw'/'boring-notch' entries) reference '${DOTFILES_DIR}'/
+  # 'ENV["DOTFILES_DIR"]', expecting the shell/Ruby process that 'brew bundle'
+  # (invoked deep inside darwin-rebuild's activation script) eventually runs
+  # them in to already have it set -- confirmed via a real 'darwin-rebuild
+  # switch' run failing every such postinstall with "sh: /scripts/setup-login-
+  # item.rb: No such file or directory" (i.e. '${DOTFILES_DIR}' expanded to
+  # empty) once the earlier Brewfile-syntax bug was fixed and activation
+  # actually reached this point for the first time.
+  if command_exists darwin-rebuild; then
+    sudo --preserve-env=USER,USERNAME,HOME,PATH,DOTFILES_DIR darwin-rebuild switch --flake "${nix_flake_ref}" --impure || _switch_exit=$?
+  else
+    # First-ever activation on this machine: darwin-rebuild itself does not exist
+    # yet -- it is installed BY applying this configuration for the first time.
+    # 'nix run nix-darwin --' bootstraps it via the same 'switch' command.
+    sudo --preserve-env=USER,USERNAME,HOME,PATH,DOTFILES_DIR nix --extra-experimental-features 'nix-command flakes' run nix-darwin -- switch --flake "${nix_flake_ref}" --impure || _switch_exit=$?
+  fi
+
+  if [[ "${_switch_exit}" -eq 0 ]]; then
+    success 'Successfully applied nix-darwin configuration (nix packages, macOS defaults, and Homebrew GUI casks)'
+  else
+    _record_warning 'darwin-rebuild switch encountered errors; continuing...'
+  fi
+
+  # Note: load all zsh config files again for PATH and other env vars to take effect
+  # (nix-darwin's first-ever switch writes /etc/zshenv, adding /run/current-system/sw/bin
+  # and ${NIX_PROFILE_HOME}/bin to PATH -- this session needs to pick that up immediately).
+  DEBUG=true load_zsh_configs
+
+  step_end
+}
+
+# Set the default login shell to nix-darwin's zsh.
+# macOS ships with /bin/zsh but nix-darwin's zsh (see 'programs.zsh.enable' in
+# nix/darwin-configuration.nix) is newer and managed independently.
 # chsh requires the target shell to be listed in /etc/shells -- add it if absent.
 # Without this, iTerm2's "Login shell" setting uses /bin/zsh (system) even when
-# /opt/homebrew/bin/zsh is on PATH, and ${SHELL} stays /bin/zsh after a fresh install.
+# nix-darwin's zsh is on PATH, and ${SHELL} stays /bin/zsh after a fresh install.
 _set_default_shell() {
   _current_section='Set default shell'; _current_section_manual=1
   step_start
-  _step_header "$(yellow 'Setting default shell to Homebrew zsh')"
+  _step_header "$(yellow 'Setting default shell to nix-darwin zsh')"
 
-  local _brew_zsh="${HOMEBREW_PREFIX}/bin/zsh"
+  # nix-darwin's 'programs.zsh.enable = true' (see nix/darwin-configuration.nix)
+  # manages zsh via the SYSTEM profile (stable across per-user home-manager
+  # generations), not the per-user ${NIX_PROFILE_HOME}/bin/zsh that modules/packages.nix
+  # also installs -- use the system path here for the login-shell registration.
+  local _nix_zsh='/run/current-system/sw/bin/zsh'
 
-  if ! is_executable "${_brew_zsh}"; then
-    _record_error "Homebrew zsh not found at '$(cyan "${_brew_zsh}")' -- skipping default shell change."
+  if ! is_executable "${_nix_zsh}"; then
+    _record_error "nix-darwin zsh not found at '$(cyan "${_nix_zsh}")' -- skipping default shell change."
     step_end
     return 1
   fi
 
   # /etc/shells must list the shell before chsh will accept it.
-  if ! /usr/bin/grep -qxF "${_brew_zsh}" /etc/shells; then
-    info "Adding '$(yellow "${_brew_zsh}")' to /etc/shells"
-    echo "${_brew_zsh}" | sudo tee -a /etc/shells >/dev/null
+  if ! /usr/bin/grep -qxF "${_nix_zsh}" /etc/shells; then
+    info "Adding '$(yellow "${_nix_zsh}")' to /etc/shells"
+    echo "${_nix_zsh}" | sudo tee -a /etc/shells >/dev/null
   else
-    info "'$(yellow "${_brew_zsh}")' already in /etc/shells -- skipping."
+    info "'$(yellow "${_nix_zsh}")' already in /etc/shells -- skipping."
   fi
 
   # Check the user's configured default shell (not the current ${SHELL} env var).
@@ -483,13 +514,13 @@ _set_default_shell() {
   # This ensures we only run chsh if the login shell for future sessions needs updating.
   local configured_shell
   configured_shell="$(dscl . -read ~ UserShell | awk '{print $NF}')"
-  if [[ "${configured_shell}" == "${_brew_zsh}" ]]; then
-    info "Default shell is already configured as '$(cyan "${_brew_zsh}")' -- skipping."
+  if [[ "${configured_shell}" == "${_nix_zsh}" ]]; then
+    info "Default shell is already configured as '$(cyan "${_nix_zsh}")' -- skipping."
   else
-    if chsh -s "${_brew_zsh}"; then
-      success "Default shell changed to '$(cyan "${_brew_zsh}")'."
+    if chsh -s "${_nix_zsh}"; then
+      success "Default shell changed to '$(cyan "${_nix_zsh}")'."
     else
-      _record_warning "Failed to change default shell to '$(cyan "${_brew_zsh}")'. You may need to run 'chsh -s ${_brew_zsh}' manually after the installation completes."
+      _record_warning "Failed to change default shell to '$(cyan "${_nix_zsh}")'. You may need to run 'chsh -s ${_nix_zsh}' manually after the installation completes."
     fi
   fi
 
@@ -526,8 +557,9 @@ _ensure_keybase_logged_in() {
   fi
 
   # The keybase CLI talks to a background service (keybased) that is normally started
-  # when Keybase.app first launches -- e.g. via the login item registered by the
-  # Brewfile's postinstall hook, which only takes effect on the *next* login. On a
+  # when Keybase.app first launches -- e.g. via the login item registered by
+  # nix-darwin's homebrew.casks postinstall hook (see nix/darwin-configuration.nix),
+  # which only takes effect on the *next* login. On a
   # single-session vanilla-OS run the user never logs out/in, so the service is never
   # started, and 'keybase login' fails with "dial unix .../keybased.sock: no such file
   # or directory". Launch the app hidden (no Dock/focus steal) and wait briefly for the
@@ -652,7 +684,7 @@ main() {
   local -a _step_errors=()
 
   # Progress tracking: Shows [Step N of TOTAL] in section headers
-  local total_steps=14
+  local total_steps=16
   local current_step=0
 
   # Set ERR trap AFTER initializing arrays to prevent "parameter not set" errors in _cleanup_and_exit
@@ -722,7 +754,6 @@ main() {
   fi
 
   keep_sudo_alive
-  _approve_fingerprint_sudo
   _ensure_filevault_is_on
   _install_xcode_command_line_tools
   set_ssh_folder_permissions
@@ -820,11 +851,14 @@ main() {
    load_file_if_exists "${ZDOTDIR}/.aliases"
 
    _install_homebrew
+   _install_nix
+   _apply_nix_darwin_configuration
 
-  # Migrate repos cloned before Homebrew's git (2.45+) was on PATH. The system
-  # git on a vanilla macOS ignores -c init.defaultRefFormat=reftable and does not
-  # support 'git refs migrate', so clone_repo_into's migration call was a no-op
-  # for those early clones. Now that Homebrew's git is available, migrate them.
+  # Migrate repos cloned before nix's git (2.45+, see nix/modules/packages.nix's
+  # gitFull) was on PATH. The system git on a vanilla macOS ignores
+  # -c init.defaultRefFormat=reftable and does not support 'git refs migrate', so
+  # clone_repo_into's migration call was a no-op for those early clones. Now that
+  # nix's git is available, migrate them.
   _current_section='Migrate repos to reftable'; _current_section_manual=1
   step_start
   _step_header "$(yellow 'Migrating repos to reftable format')"
@@ -898,11 +932,11 @@ main() {
   # .zshrc's own comment above the "Source the pre-generated antidote static
   # bundle" block). Two benefits: (1) the rest of THIS script's own run picks up
   # newly-available aliases/functions/PATH immediately, same rationale as the
-  # 'DEBUG=true load_zsh_configs' call inside _install_homebrew above; (2) if
-  # the cloned 'plugins.txt' is newer than 'plugins.zsh' (bundle needs
-  # regenerating), triggering that now means it's already done by the time the
-  # user opens their next terminal, rather than that terminal being the one to
-  # lazily trigger (and wait out) the regeneration itself.
+  # 'DEBUG=true load_zsh_configs' call after _apply_nix_darwin_configuration
+  # above; (2) if the cloned 'plugins.txt' is newer than 'plugins.zsh' (bundle
+  # needs regenerating), triggering that now means it's already done by the
+  # time the user opens their next terminal, rather than that terminal being
+  # the one to lazily trigger (and wait out) the regeneration itself.
   DEBUG=true load_zsh_configs
 
   step_end
@@ -1005,15 +1039,15 @@ main() {
   fi
   step_end
 
-  # Set default shell to Homebrew zsh - done at the end to avoid blocking the
+  # Set default shell to nix-darwin's zsh - done at the end to avoid blocking the
   # automated flow with password prompts. On vanilla OS without cached sudo
   # credentials, chsh requires password entry. '|| true': _set_default_shell
   # legitimately 'return 1's (after already recording the failure itself via
-  # _record_error) whenever Homebrew's zsh isn't present -- e.g. if
-  # _install_homebrew above hit its own recorded warning instead of succeeding.
-  # A bare call here would let that 'return 1' trip 'set -e' and abort the whole
-  # script, skipping print_script_summary and every reminder below -- exactly the
-  # failure mode this guards against.
+  # _record_error) whenever nix-darwin's zsh isn't present yet -- e.g. if
+  # _apply_nix_darwin_configuration above hit its own recorded warning instead
+  # of succeeding. A bare call here would let that 'return 1' trip 'set -e' and
+  # abort the whole script, skipping print_script_summary and every reminder
+  # below -- exactly the failure mode this guards against.
   _set_default_shell || true
 
   # Print grouped summary of all collected warnings and errors, print duration,

@@ -191,23 +191,44 @@ case "${ARCH}" in
     ;;
 esac
 
-# Prepend Homebrew to PATH immediately (no subprocess fork -- just a string
+# The one home-manager-managed nix profile directory for this user (see
+# nix/flake.nix's 'home-manager.useUserPackages = false' comment for why this is
+# guaranteed to be exactly '${HOME}/.nix-profile' rather than
+# '/etc/profiles/per-user/<name>'). Deliberately NOT named 'NIX_USER_PROFILE' --
+# nix-darwin itself already exports a real 'NIX_USER_PROFILE_DIR' pointing at
+# '/nix/var/nix/profiles/per-user/$USER' (the generation-storage directory, a
+# different path entirely) -- a near-identical name would invite confusing the two.
+export NIX_PROFILE_HOME="${HOME}/.nix-profile"
+
+# Prepend nix + Homebrew to PATH immediately (no subprocess fork -- just a string
 # concat) so every context that sources .shellrc directly (cron jobs, scripts,
-# direnv's bash subshell, non-interactive/non-login shells) gets Homebrew-first
-# PATH ordering, not just full interactive login shells.
+# direnv's bash subshell, non-interactive/non-login shells) gets nix-first PATH
+# ordering, not just full interactive login shells.
 #
-# ${XDG_BIN_HOME} (~/.local/bin) is prepended too for XDG-compliance/convenience --
-# nothing in this repo currently writes there (unlike the nix-migration branch's
-# home-manager 'home.file' entries), but it's the common convention for a user's
-# own personal scripts, and an empty/nonexistent directory on PATH is harmless.
+# nix-darwin's own /etc/zshenv normally handles this (prepending
+# /run/current-system/sw/bin and ${NIX_PROFILE_HOME}/bin) for every shell, but
+# only for shells that actually source /etc/zshenv -- non-interactive contexts
+# that source .shellrc directly do not. Ordered before Homebrew: nix is now the
+# sole CLI package manager (see nix/modules/packages.nix) -- Homebrew (see
+# nix/darwin-configuration.nix) installs GUI casks only, so it should never shadow
+# a nix-provided CLI tool of the same name.
 #
-# Without this, 'brew doctor' reports "/usr/bin occurs before /opt/homebrew/bin
-# in your PATH" for any such context, since only .zshrc (interactive shells)
-# previously ran the richer 'brew shellenv' caching mechanism below. That
-# mechanism still runs for interactive shells and supersedes this -- the final
-# 'typeset -gU ... PATH path ...' in .zshrc dedupes the resulting PATH, so this
-# early prepend is harmless (not just redundant) when .zshrc runs afterward.
-export PATH="${XDG_BIN_HOME}:${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
+# ${XDG_BIN_HOME} (~/.local/bin) is where home.nix's 'home.file' entries land
+# (keybase, git-remote-keybase, codium/code out-of-store symlinks into their
+# .app bundles) -- confirmed missing here via a real fresh-install run: Keybase's
+# cask installed fine and the symlink existed, but 'command_exists keybase'
+# still failed ("Skipping Keybase setup since 'keybase' is not installed")
+# because this directory was never actually on PATH, despite nix/home.nix's own
+# comment claiming ".shellrc adds it to PATH".
+#
+# Without prepending Homebrew here too, 'brew doctor' reports "/usr/bin occurs
+# before /opt/homebrew/bin in your PATH" for any such context, since only .zshrc
+# (interactive shells) previously ran the richer 'brew shellenv' caching
+# mechanism below. That mechanism still runs for interactive shells and
+# supersedes this -- the final 'typeset -gU ... PATH path ...' in .zshrc dedupes
+# the resulting PATH, so this early prepend is harmless (not just redundant)
+# when .zshrc runs afterward.
+export PATH="/run/current-system/sw/bin:${XDG_BIN_HOME}:${NIX_PROFILE_HOME}/bin:${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
 
 export HOMEBREW_NO_ANALYTICS=1
 export HOMEBREW_NO_ASK=1
@@ -215,8 +236,6 @@ export HOMEBREW_CLEANUP_MAX_AGE_DAYS=3
 export HOMEBREW_CLEANUP_PERIODIC_FULL_DAYS=3
 export HOMEBREW_BAT=1
 export HOMEBREW_VERBOSE_USING_DOTS=1
-export HOMEBREW_BUNDLE_FILE="${HOME}/Brewfile"
-export HOMEBREW_BUNDLE_FILE_GLOBAL="${HOME}/Brewfile"
 export HOMEBREW_NO_ENV_HINTS=1
 # Note: If the number and size of downloads is large - allow up to 1hr for any single curl transfer.
 export HOMEBREW_CURL_EXTRA_CURL_ARGS='--connect-timeout 300 --max-time 3600'
@@ -235,7 +254,10 @@ case "${OSTYPE}" in
     export ANTIDOTE_HOME="${XDG_CACHE_HOME}/antidote"
     ;;
 esac
-export ANTIDOTE_ZSH="${HOMEBREW_PREFIX}/opt/antidote/share/antidote/antidote.zsh"
+# antidote is a nix package (see nix/modules/packages.nix) -- Homebrew no longer
+# installs any CLI formulae at all (see nix/darwin-configuration.nix), so there is
+# no brew-path fallback to probe here.
+export ANTIDOTE_ZSH="${NIX_PROFILE_HOME}/share/antidote/antidote.zsh"
 export ANTIDOTE_PLUGIN_ZSH="${XDG_CONFIG_HOME}/zsh/plugins.zsh"
 export ANTIDOTE_PLUGIN_TXT="${XDG_CONFIG_HOME}/zsh/plugins.txt"
 
@@ -1837,8 +1859,9 @@ configure_branch_tracking_for_origin() {
 # 'gpg-encrypt::<clone-url>' first argument is a third, mutually-exclusive alternative
 # (mirroring the 'keybase://' special-case further down) that delegates entirely to the
 # external 'git-remote-gpg-encrypt' tool's own standalone restore path (`git
-# gpg-encrypt-restore`, installed via the 'vraravam/tap' Homebrew tap -- see
-# files/--HOME--/Brewfile) instead of a plain 'git clone'.
+# gpg-encrypt-restore`, installed via its own flake -- see
+# nix/modules/packages.nix's encryptedBackupEnabled-gated entry) instead of a plain
+# 'git clone'.
 #
 # The optional branch/bundle-file arguments (see Usage below) apply uniformly no matter
 # which of the three alternatives (network clone, keybase://, gpg-encrypt::) ends up

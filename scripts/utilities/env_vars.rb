@@ -93,7 +93,8 @@ module EnvVars
   KEYBASE_PROFILES_REPO_NAME = _normalize_optional_string(ENV.fetch('KEYBASE_PROFILES_REPO_NAME', nil))
 
   # Encrypted git repo URLs (used with the external 'git-remote-gpg-encrypt' tool,
-  # installed via the 'vraravam/tap' Homebrew tap -- see files/--HOME--/Brewfile). nil
+  # installed via its own flake -- see nix/modules/packages.nix's
+  # encryptedBackupEnabled-gated entry). nil
   # (unset/empty in .shellrc) means this mechanism is not enabled for that repo --
   # comment out the export in .shellrc to disable it entirely. Coexists with Keybase
   # above -- both can be enabled at once (see KeybaseMigration.md). Unlike
@@ -184,16 +185,18 @@ module EnvVars
     end
   ).expand_path.freeze
 
-  # Homebrew bundle files (Brewfile).
-  # Mirrors: HOMEBREW_BUNDLE_FILE* exports in .shellrc (lines 147-148)
-  HOMEBREW_BUNDLE_FILE = Pathname.new(ENV.fetch('HOMEBREW_BUNDLE_FILE', HOME.join('Brewfile'))).expand_path.freeze
-  HOMEBREW_BUNDLE_FILE_GLOBAL = Pathname.new(ENV.fetch('HOMEBREW_BUNDLE_FILE_GLOBAL', HOME.join('Brewfile'))).expand_path.freeze
+  # The one home-manager-managed nix profile directory for this user.
+  # Mirrors: export NIX_PROFILE_HOME="${HOME}/.nix-profile" in .shellrc -- see that
+  # export's own comment for why this is guaranteed to be exactly '${HOME}/.nix-profile'
+  # (not '/etc/profiles/per-user/<name>'), and why it isn't named 'NIX_USER_PROFILE'
+  # (nix-darwin's own real 'NIX_USER_PROFILE_DIR' is a different path entirely).
+  NIX_PROFILE_HOME = Pathname.new(ENV.fetch('NIX_PROFILE_HOME', HOME.join('.nix-profile'))).expand_path.freeze
 
   # Antidote plugin manager paths.
-  # Mirrors: ANTIDOTE_* exports in .shellrc (platform-specific and brew-dependent)
+  # Mirrors: ANTIDOTE_* exports in .shellrc (platform-specific and nix-dependent)
   # Note: On macOS ANTIDOTE_HOME defaults to ~/Library/Caches/antidote, on Linux to ${XDG_CACHE_HOME}/antidote
   ANTIDOTE_HOME = Pathname.new(ENV.fetch('ANTIDOTE_HOME', HOME.join('Library', 'Caches', 'antidote'))).expand_path.freeze
-  ANTIDOTE_ZSH = Pathname.new(ENV.fetch('ANTIDOTE_ZSH', HOMEBREW_PREFIX.join('opt', 'antidote', 'share', 'antidote', 'antidote.zsh'))).expand_path.freeze
+  ANTIDOTE_ZSH = Pathname.new(ENV.fetch('ANTIDOTE_ZSH', NIX_PROFILE_HOME.join('share', 'antidote', 'antidote.zsh'))).expand_path.freeze
   ANTIDOTE_PLUGIN_ZSH = Pathname.new(ENV.fetch('ANTIDOTE_PLUGIN_ZSH', XDG_CONFIG_HOME.join('zsh', 'plugins.zsh'))).expand_path.freeze
   ANTIDOTE_PLUGIN_TXT = Pathname.new(ENV.fetch('ANTIDOTE_PLUGIN_TXT', XDG_CONFIG_HOME.join('zsh', 'plugins.txt'))).expand_path.freeze
 
