@@ -8,7 +8,7 @@ Personal macOS configuration management system using shell scripts (zsh/bash), R
 - **Shell**: zsh (primary), bash (compatibility for direnv)
 - **Scripting**: Ruby 2.6+ (system Ruby compatibility)
 - **Version Control**: git with custom aliases and hooks
-- **Package Management**: Homebrew, antidote (zsh plugins), mise (runtime versions)
+- **Package Management**: [Nix](https://nixos.org/) + nix-darwin + home-manager (sole CLI package manager -- antidote, mise, starship, etc.; see `nix/`), Homebrew (GUI casks only, via nix-darwin's `homebrew` module)
 - **macOS Integration**: defaults, plist manipulation, login items, cron
 
 ---

@@ -26,7 +26,7 @@ RSpec.describe DefaultShell do
 
   before do
     Logging.state.reset!
-    stub_const('EnvVars::HOMEBREW_PREFIX', tmp)
+    stub_const('DefaultShell::NIX_DARWIN_ZSH', zsh)
     stub_const('EnvVars::HOME', tmp)
     stub_const('DefaultShell::ETC_SHELLS', etc_shells)
     etc_shells.write("/bin/zsh\n")
@@ -37,10 +37,10 @@ RSpec.describe DefaultShell do
 
   after { Logging.state.reset! }
 
-  def run_quietly
+  def run_quietly(**kwargs)
     original = $stdout
     $stdout = StringIO.new
-    described_class.run
+    described_class.run(**kwargs)
   ensure
     $stdout = original
   end
@@ -69,7 +69,7 @@ RSpec.describe DefaultShell do
     expect(run_quietly).to be true
   end
 
-  it 'records an error and returns false when Homebrew zsh is missing' do
+  it 'records an error and returns false when nix-darwin zsh is missing' do
     zsh.delete
 
     expect(run_quietly).to be false
@@ -88,5 +88,13 @@ RSpec.describe DefaultShell do
     allow(Open3).to receive(:capture3).and_return(['', 'denied', failed_status])
 
     expect(run_quietly).to be false
+  end
+
+  it 'selects the shell it is given instead of the nix-darwin one' do
+    other = tmp.join('bin', 'other-zsh').tap { |f| f.write("#!/bin/sh\n") }
+    other.chmod(0o755)
+    expect(CommandUtils).to receive(:run_interactive).with('chsh', '-s', other.to_s).and_return(true)
+
+    expect(run_quietly(shell: other)).to be true
   end
 end

@@ -24,7 +24,7 @@ RSpec.describe 'implode' do
       root = Pathname(dir)
       files = %w[
         home/.zshenv home/.ssh/id_ed25519 home/.config/dotfiles/Brewfile home/.config/zsh/.aliases
-        home/personal/dev/bin/x home/dev/repo/a home/Brewfile home/anti/p home/old.log
+        home/personal/dev/bin/x home/dev/repo/a home/anti/p home/old.log
         home/Downloads/unshallow-batch.log home/Downloads/brew-bundle-full-install.log home/Documents/keep.txt
         home/.Trash/keep.txt tmp/crontab_backup tmp/crontab_backup.new tmp/other-file
       ]
@@ -56,7 +56,7 @@ RSpec.describe 'implode' do
         'HOME' => "#{dir}/home", 'USER' => 'nobody', 'TMPDIR' => "#{dir}/tmp/",
         'DOTFILES_DIR' => "#{dir}/home/.config/dotfiles", 'PERSONAL_CONFIGS_DIR' => "#{dir}/home/personal/dev/configs",
         'PERSONAL_PROFILES_DIR' => "#{dir}/home/personal/profiles", 'ANTIDOTE_HOME' => "#{dir}/home/anti",
-        'ANTIDOTE_PLUGIN_ZSH' => "#{dir}/home/anti/p.zsh", 'HOMEBREW_BUNDLE_FILE' => "#{dir}/home/Brewfile",
+        'ANTIDOTE_PLUGIN_ZSH' => "#{dir}/home/anti/p.zsh",
         'PROJECTS_BASE_DIR' => "#{dir}/home/dev", '_DOTFILES_CRON_BACKUP_FILE' => nil, 'SSH_AUTH_SOCK' => nil
       }
       _out, err, status = Open3.capture3(env, 'zsh', '-c', script)
@@ -104,6 +104,6 @@ RSpec.describe 'implode' do
   it 'still wipes the dot files, the personal folders and the project folders' do
     survivors, = run_implode
 
-    expect(survivors.grep(%r{\Ahome/(\.[a-z]|personal|dev|anti|Brewfile)})).to be_empty
+    expect(survivors.grep(%r{\Ahome/(\.[a-z]|personal|dev|anti)})).to be_empty
   end
 end

@@ -41,15 +41,14 @@ RSpec.describe FreshInstallPostClone do
     allow(HomebrewInstall).to receive(:run).and_return(true)
     allow(MacOS).to receive(:load_brew_shellenv)
     allow(MacOS).to receive(:notify)
-    allow(BrewBundle).to receive(:run).and_return(true)
+    allow(NixBootstrap).to receive(:install).and_return(true)
+    allow(NixBootstrap).to receive(:apply_configuration).and_return(true)
     allow(Keybase).to receive(:bootstrap_login).and_return(true)
     allow(GpgEncrypt).to receive(:bootstrap_setup).and_return(true)
     allow(BootstrapRepos).to receive(:run).and_return(true)
     allow(PreferencesRestore).to receive(:run).and_return(true)
     allow(PreferencesRestore).to receive(:start_baseline_in_background).and_return(true)
     allow(PreferencesRestore).to receive(:finish_pending)
-    allow(BrewBundle).to receive(:report_full_install).and_return(:none)
-    allow(BrewBundle).to receive(:full_install_state).and_return(:none)
     allow(Cron).to receive(:recron).and_return(true)
     allow(Cron).to receive(:retire_backup) { |backup| backup.delete if backup.file? }
     allow(Cron).to receive(:resume_cron)
@@ -81,7 +80,8 @@ RSpec.describe FreshInstallPostClone do
       allow(ShellrcCheck).to receive(:matches_repo?) { events << :shellrc_check }
       allow(InstallDotfiles).to receive(:run) { events << :install_dotfiles }
       allow(HomebrewInstall).to receive(:run) { events << :homebrew }
-      allow(BrewBundle).to receive(:run) { events << :brew_bundle }
+      allow(NixBootstrap).to receive(:install) { events << :nix_install }
+      allow(NixBootstrap).to receive(:apply_configuration) { events << :nix_switch }
       allow(Keybase).to receive(:bootstrap_login) { events << :keybase }
       allow(GpgEncrypt).to receive(:bootstrap_setup) { events << :gpg }
       allow(BootstrapRepos).to receive(:run) { events << :bootstrap_repos }
@@ -90,8 +90,8 @@ RSpec.describe FreshInstallPostClone do
       allow(ResurrectRepositories).to receive(:run).with(resurrect_all: true) { events << :tracked_repos }
       allow(DefaultShell).to receive(:run) { events << :default_shell }
 
-      expect(run_quietly(steps_done: 6)).to be true
-      expect(events).to eq(%i[shellrc_check install_dotfiles homebrew brew_bundle keybase gpg bootstrap_repos preferences tracked_repos cron default_shell])
+      expect(run_quietly(steps_done: 5)).to be true
+      expect(events).to eq(%i[shellrc_check install_dotfiles homebrew nix_install nix_switch keybase gpg bootstrap_repos preferences tracked_repos cron default_shell])
     end
 
     it 'installs the cron schedule only after the clones, and before the cache refresh and the default shell' do
@@ -113,10 +113,11 @@ RSpec.describe FreshInstallPostClone do
       run_quietly
     end
 
-    it 'exports the Homebrew environment into this process between the install and the Brewfile' do
+    it 'exports the Homebrew environment into this process between the Homebrew install and the Nix steps' do
       expect(HomebrewInstall).to receive(:run).ordered.and_return(true)
       expect(MacOS).to receive(:load_brew_shellenv).with(EnvVars::HOMEBREW_PREFIX.join('bin', 'brew')).ordered
-      expect(BrewBundle).to receive(:run).ordered.and_return(true)
+      expect(NixBootstrap).to receive(:install).ordered.and_return(true)
+      expect(NixBootstrap).to receive(:apply_configuration).ordered.and_return(true)
 
       run_quietly
     end
@@ -132,17 +133,17 @@ RSpec.describe FreshInstallPostClone do
 
   describe 'step numbering' do
     it 'continues after the steps the shell already numbered, up to the total' do
-      run_quietly(steps_done: 6)
+      run_quietly(steps_done: 5)
 
-      (7..14).each { |n| expect(printed).to include("Step #{n} of 14") }
-      expect(printed).not_to include('Step 6 of')
-      expect(printed).not_to include('Step 15 of')
+      (6..15).each { |n| expect(printed).to include("Step #{n} of 15") }
+      expect(printed).not_to include('Step 5 of')
+      expect(printed).not_to include('Step 16 of')
     end
 
     it 'accepts the count as the string call-utility passes' do
-      run_quietly(steps_done: '6')
+      run_quietly(steps_done: '5')
 
-      expect(printed).to include('Step 7 of 14')
+      expect(printed).to include('Step 6 of 15')
     end
 
     it 'declares as many numbered steps as it runs' do
@@ -195,7 +196,7 @@ RSpec.describe FreshInstallPostClone do
       run_quietly
     end
 
-    it 'loads the zsh configs with DEBUG set, after install-dotfiles, after Homebrew and after the clones' do
+    it 'loads the zsh configs with DEBUG set, after install-dotfiles, after the nix-darwin switch and after the clones' do
       expect(CommandUtils).to receive(:run_interactive).with({ 'DEBUG' => 'true' }, 'zsh', '-c', /load_zsh_configs\z/).exactly(3).times.and_return(true)
 
       run_quietly
@@ -282,9 +283,17 @@ RSpec.describe FreshInstallPostClone do
       expect(Logging.step_errors.join).to match(/install-dotfiles encountered errors/)
     end
 
-    it 'aborts when Homebrew cannot be installed, without trying the Brewfile' do
+    it 'aborts when Homebrew cannot be installed, without trying Nix' do
       allow(HomebrewInstall).to receive(:run).and_return(false)
-      expect(BrewBundle).not_to receive(:run)
+      expect(NixBootstrap).not_to receive(:install)
+      expect(Keybase).not_to receive(:bootstrap_login)
+
+      expect(run_quietly).to be false
+    end
+
+    it 'aborts when Nix cannot be installed, without applying the configuration' do
+      allow(NixBootstrap).to receive(:install).and_return(false)
+      expect(NixBootstrap).not_to receive(:apply_configuration)
       expect(Keybase).not_to receive(:bootstrap_login)
 
       expect(run_quietly).to be false
@@ -308,8 +317,8 @@ RSpec.describe FreshInstallPostClone do
   end
 
   describe 'non-fatal failures' do
-    it 'carries on and still succeeds when the Brewfile, Keybase, preferences or default shell fail' do
-      allow(BrewBundle).to receive(:run).and_return(false)
+    it 'carries on and still succeeds when the nix-darwin switch, Keybase, preferences or default shell fail' do
+      allow(NixBootstrap).to receive(:apply_configuration).and_return(false)
       allow(Keybase).to receive(:bootstrap_login).and_return(false)
       allow(PreferencesRestore).to receive(:run).and_return(false)
       allow(DefaultShell).to receive(:run).and_return(false)
@@ -441,64 +450,6 @@ RSpec.describe FreshInstallPostClone do
       expect(Logging).to receive(:user_action).with(/cloned shallow/)
 
       run_quietly
-    end
-  end
-
-  describe 'the background full Brewfile install' do
-    it 'is reported on before the summary, and a successful run with nothing running says so plainly' do
-      expect(BrewBundle).to receive(:report_full_install).and_return(:succeeded)
-
-      run_quietly
-
-      expect(MacOS).to have_received(:notify).with('Fresh install completed successfully.', '✅ Fresh Install Done')
-    end
-
-    it 'never claims everything is installed while it is still running' do
-      allow(BrewBundle).to receive(:report_full_install).and_return(:running)
-      allow(Logging).to receive(:user_action)
-
-      run_quietly
-
-      expect(MacOS).not_to have_received(:notify).with(/completed successfully/, anything)
-      expect(MacOS).to have_received(:notify).with('Install done -- the full Brewfile install is still running in the background', 'Fresh Install')
-      expect(Logging).to have_received(:user_action).with(/full Brewfile install is still running/)
-    end
-
-    it 'lists it together with the recorded issues' do
-      allow(BrewBundle).to receive(:report_full_install).and_return(:running)
-      allow(Keybase).to receive(:bootstrap_login) do
-        Logging.record_warning('keybase trouble')
-        false
-      end
-
-      run_quietly
-
-      expect(MacOS).to have_received(:notify).with(/1 warning\(s\): .*keybase trouble \| the full Brewfile install is still running/, '⚠️ Fresh Install')
-    end
-
-    it 'shows a failure of it as a warning in the notification' do
-      allow(BrewBundle).to receive(:report_full_install) do
-        Logging.record_warning('background bundle failed')
-        :failed
-      end
-
-      run_quietly
-
-      expect(MacOS).to have_received(:notify).with(/1 warning\(s\): .*background bundle failed/, '⚠️ Fresh Install')
-    end
-
-    it 'is reported even when the run is aborted' do
-      allow(HomebrewInstall).to receive(:run).and_return(false)
-      expect(BrewBundle).to receive(:report_full_install)
-
-      run_quietly
-    end
-
-    it 'notes that the first hourly run may overlap it when cron is installed while it runs' do
-      allow(BrewBundle).to receive(:full_install_state).and_return(:running)
-
-      expect(run_quietly).to be true
-      expect(printed).to match(/first hourly software-updates run may overlap it/)
     end
   end
 

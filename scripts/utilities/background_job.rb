@@ -6,7 +6,7 @@ require 'pathname'
 
 # Helpers for long-running subprocesses that the fresh install starts in the background and
 # joins (or reports on) later: the Homebrew installer started by the shell, the baseline
-# `osx-defaults.sh -s` run, and the full Brewfile install. Loaded under `ruby --disable-gems`
+# `osx-defaults.sh -s` run, and the unshallow batch. Loaded under `ruby --disable-gems`
 # by call-utility.rb, so it requires nothing beyond 'pathname'.
 module BackgroundJob
   extend self

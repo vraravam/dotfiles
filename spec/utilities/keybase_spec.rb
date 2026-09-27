@@ -469,34 +469,4 @@ RSpec.describe Keybase do
       expect(described_class.recreate_repo('home')).to be false
     end
   end
-
-  describe '.link_cli_into' do
-    around do |example|
-      Dir.mktmpdir('keybase-spec-') do |dir|
-        @tmp = Pathname(dir)
-        example.run
-      end
-    end
-
-    it 'does nothing when the Keybase app is not installed' do
-      stub_const('Keybase::APP_PATH', @tmp.join('Keybase.app'))
-      bin = @tmp.join('bin').tap(&:mkpath)
-
-      expect(described_class.link_cli_into(bin)).to be false
-      expect(bin.children).to be_empty
-    end
-
-    it 'links keybase and git-remote-keybase from the app and can be run again' do
-      app = @tmp.join('Keybase.app')
-      support = app.join('Contents', 'SharedSupport', 'bin').tap(&:mkpath)
-      %w[keybase git-remote-keybase].each { |tool| support.join(tool).write('#!/bin/sh') }
-      stub_const('Keybase::APP_PATH', app)
-      bin = @tmp.join('bin').tap(&:mkpath)
-
-      2.times { expect(described_class.link_cli_into(bin)).to be true }
-
-      expect(bin.join('keybase').readlink).to eq(support.join('keybase'))
-      expect(bin.join('git-remote-keybase').readlink).to eq(support.join('git-remote-keybase'))
-    end
-  end
 end

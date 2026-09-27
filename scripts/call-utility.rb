@@ -32,7 +32,6 @@
 UTILITIES = {
   'Antidote' => 'antidote',
   'BootstrapRepos' => 'bootstrap_repos',
-  'BrewBundle' => 'brew_bundle',
   'Cron' => 'cron',
   'DefaultShell' => 'default_shell',
   'DevEnvironment' => 'dev_environment',
@@ -43,6 +42,7 @@ UTILITIES = {
   'HomebrewInstall' => 'homebrew_install',
   'Keybase' => 'keybase',
   'MacOS' => 'macos',
+  'NixBootstrap' => 'nix_bootstrap',
   'PreferencesRestore' => 'preferences_restore',
   'ShellrcCheck' => 'shellrc_check'
 }.freeze

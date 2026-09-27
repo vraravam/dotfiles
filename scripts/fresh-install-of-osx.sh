@@ -283,43 +283,6 @@ _download_and_source_shellrc() {
   success "Successfully sourced '$(cyan "${HOME}/.shellrc")'"
 }
 
-# Enable Touch ID for sudo command when running on the terminal
-_approve_fingerprint_sudo() {
-  step_start
-  _step_header "$(yellow 'Setting up touchId for sudo access in terminal shells')"
-
-  # AppleBiometricSensor = T1/T2 chip (Intel Macs); AppleBiometricServices = Apple Silicon
-  # Check for Touch ID hardware (single ioreg call for both classes)
-  # Note: Command substitution buffers all ioreg output first, avoiding SIGPIPE under pipefail
-  # (grep -q would exit early and trigger SIGPIPE on ioreg).
-  local biometric_output
-  biometric_output="$(/usr/sbin/ioreg -c AppleBiometricSensor -c AppleBiometricServices 2>/dev/null)" || true
-  if is_zero_string "${biometric_output}"; then
-    info 'Touch ID hardware is not detected -- skipping configuration.'
-    step_end
-    return 0  # Exit successfully as no action is needed
-  fi
-
-  local template_file='/etc/pam.d/sudo_local.template'
-  if ! is_file "${template_file}"; then
-    warn "Template file '$(cyan "${template_file}")' not found! Skipping!"
-    step_end
-    return
-  fi
-
-  local target_file='/etc/pam.d/sudo_local'
-  if ! is_file "${target_file}"; then
-    if sudo sh -c "sed 's/^#auth/auth/' '${template_file}' > '${target_file}'"; then
-      success "Created new file: '$(cyan "${target_file}")'"
-    else
-      error "Failed to create '$(cyan "${target_file}")'"
-    fi
-  else
-    info "'$(cyan "${target_file}")' is already present -- skipping."
-  fi
-  step_end
-}
-
 # Verify FileVault disk encryption is active
 _ensure_filevault_is_on() {
   step_start
@@ -700,7 +663,7 @@ main() {
   local -a _step_errors=()
 
   # Progress tracking: Shows [Step N of TOTAL] in section headers
-  local total_steps=14
+  local total_steps=15
   local current_step=0
 
   # Set ERR trap AFTER initializing arrays to prevent "parameter not set" errors in _cleanup_and_exit
@@ -774,7 +737,6 @@ main() {
   fi
 
   keep_sudo_alive
-  _approve_fingerprint_sudo
   _ensure_filevault_is_on
   _install_xcode_command_line_tools
   _start_early_brew_install

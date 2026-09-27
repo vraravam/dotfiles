@@ -540,7 +540,7 @@ If a tool is known to be optionally present, its absence is not a warning.
 
 ```zsh
 user_action "Restart iTerm2 to apply the new font settings."
-user_action "Run 'bupc' to update Homebrew packages."
+user_action "Run 'bupc' to update nix packages and Homebrew casks."
 ```
 
 These are follow-up instructions, not warnings about something that went wrong.

@@ -26,7 +26,7 @@ This project follows standard open source etiquette:
 
 ### Prerequisites
 
-- macOS 11+ (Intel or Apple Silicon)
+- macOS 11+ on Apple Silicon (Intel/`x86_64-darwin` is no longer supported -- nixpkgs dropped it; see [TechnicalDeepDive.md § 15](TechnicalDeepDive.md#15-nixnix-darwin-architecture))
 - Git
 - GitHub account
 - Familiarity with shell scripting (zsh) and Ruby 2.6+
@@ -143,8 +143,8 @@ grep -q '[[:space:]]$' <file> && echo "FAIL: Has trailing whitespace"
 
 ### Manual Testing Checklist
 
-- [ ] Test on both Intel and Apple Silicon if possible
-- [ ] Test on vanilla macOS (no Homebrew, no dotfiles)
+- [ ] Test on Apple Silicon (Intel/`x86_64-darwin` is no longer a supported target -- see [TechnicalDeepDive.md § 15](TechnicalDeepDive.md#15-nixnix-darwin-architecture))
+- [ ] Test on vanilla macOS (no Homebrew, no Nix, no dotfiles)
 - [ ] Test on pre-configured machine (existing dotfiles installation)
 - [ ] Verify idempotency (run twice, second run should skip completed steps)
 - [ ] Check log output for clarity and correctness

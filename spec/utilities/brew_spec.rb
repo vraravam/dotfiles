@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'tmpdir'
 require 'brew'
 
 RSpec.describe Brew do
@@ -18,22 +17,6 @@ RSpec.describe Brew do
     end
   end
 
-  describe '.sync_bundle' do
-    it 'skips the install when the bundle check passes' do
-      expect(CommandUtils).to receive(:run_interactive).with('brew', 'bundle', 'check', '-v').and_return(true)
-      expect(CommandUtils).not_to receive(:run_interactive).with('brew', 'bundle', 'install', '-q')
-
-      expect(described_class.sync_bundle).to be true
-    end
-
-    it 'installs when the bundle check fails' do
-      allow(CommandUtils).to receive(:run_interactive).with('brew', 'bundle', 'check', '-v').and_return(false)
-      expect(CommandUtils).to receive(:run_interactive).with('brew', 'bundle', 'install', '-q').and_return(true)
-
-      expect(described_class.sync_bundle).to be true
-    end
-  end
-
   describe '.cleanup' do
     it 'runs every cleanup step even when an earlier one fails' do
       calls = []
@@ -41,15 +24,7 @@ RSpec.describe Brew do
 
       described_class.cleanup
 
-      expect(calls).to eq(['brew bundle cleanup -f', 'brew cleanup --prune=all', 'brew autoremove'])
-    end
-  end
-
-  describe '.upgrade' do
-    it 'upgrades without prompting' do
-      expect(CommandUtils).to receive(:run_interactive).with('brew', 'upgrade', '-y').and_return(true)
-
-      expect(described_class.upgrade).to be true
+      expect(calls).to eq(['brew cleanup --prune=all', 'brew autoremove'])
     end
   end
 
@@ -67,30 +42,6 @@ RSpec.describe Brew do
                                             .and_return("firefox (130) != 131\n\n  zoom (5) != 6  \nHomebrew is updating\nDownloading https://x\n")
 
       expect(described_class.outdated_greedy).to eq(['firefox (130) != 131', 'zoom (5) != 6'])
-    end
-  end
-
-  describe '.bundle_check and .bundle_install' do
-    let(:brew) { '/opt/homebrew/bin/brew' }
-
-    it 'checks with the given brew binary instead of PATH' do
-      expect(CommandUtils).to receive(:run_interactive).with(brew, 'bundle', 'check', '-v').and_return(true)
-
-      expect(described_class.bundle_check(brew_bin: brew)).to be true
-    end
-
-    it 'installs from the Brewfile on disk by default' do
-      expect(CommandUtils).to receive(:run_interactive).with('brew', 'bundle', 'install', '-q').and_return(true)
-
-      expect(described_class.bundle_install).to be true
-    end
-
-    it 'installs from the given content on stdin and reports its exit status' do
-      expect(Core).to receive(:stream_command)
-                        .with([brew, 'bundle', 'install', '-q', '--file=-'], stdin_data: "brew 'git'\n").and_return(0, 1)
-
-      expect(described_class.bundle_install(brew_bin: brew, content: "brew 'git'\n")).to be true
-      expect(described_class.bundle_install(brew_bin: brew, content: "brew 'git'\n")).to be false
     end
   end
 end

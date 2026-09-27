@@ -9,7 +9,6 @@ require_relative '../add-upstream-git-config'
 require_relative '../install-dotfiles'
 require_relative '../resurrect-repositories'
 require_relative 'bootstrap_repos'
-require_relative 'brew_bundle'
 require_relative 'command_utils'
 require_relative 'core'
 require_relative 'cron'
@@ -21,6 +20,7 @@ require_relative 'homebrew_install'
 require_relative 'keybase'
 require_relative 'logging'
 require_relative 'macos'
+require_relative 'nix_bootstrap'
 require_relative 'path_utils'
 require_relative 'preferences_restore'
 require_relative 'shellrc_check'
@@ -60,13 +60,11 @@ module FreshInstallPostClone
 
   FINISHED_MESSAGE = '** Finished auto installation process **'
 
-  CRON_OVERLAP_NOTE = 'The full Brewfile install is still running in the background, so the first hourly software-updates run may overlap it'
-
   # Number of steps below that call '_step' -- keep in sync when adding or removing one. The shell
   # numbers its own steps before the hand-off, and passes how many (steps_done), so the total
   # shown in '[Step N of TOTAL]' is steps_done + POST_CLONE_STEPS. The Keybase, encrypted-backup and
   # tracked-repos phases print their own headers and are deliberately not numbered.
-  POST_CLONE_STEPS = 8
+  POST_CLONE_STEPS = 10
 
   # Public API method.
   #
@@ -105,7 +103,6 @@ module FreshInstallPostClone
   def _run(steps_done)
     @steps = StepCounter.new(steps_done + POST_CLONE_STEPS, start_at: steps_done)
     @failure_message = nil
-    @bundle_state = :none
     Logging.script_name = SCRIPT_NAME
     Logging.adopt_issues_file
     _install
@@ -155,6 +152,8 @@ module FreshInstallPostClone
     _load_zsh_configs
 
     _install_homebrew
+    _install_nix
+    _apply_nix_darwin_configuration
     _migrate_reftable
 
     # Coexist -- see KeybaseMigration.md.
@@ -171,12 +170,12 @@ module FreshInstallPostClone
     _resurrect_tracked_repos
 
     # Only now: an hourly software-updates job firing during the clone phase would fight it (and
-    # the background Brewfile install) for the network and for Homebrew.
+    # the detached unshallow batch) for the network and for Homebrew.
     _setup_cron_jobs
     _refresh_zsh_caches
 
     # Done last to avoid a password prompt in the middle of the unattended steps.
-    _step('Set default shell', 'Setting default shell to Homebrew zsh') { DefaultShell.run }
+    _step('Set default shell', 'Setting default shell to nix-darwin zsh') { DefaultShell.run }
   end
 
   # Runs +block+ as the next numbered step: the header carries '[Step N of TOTAL]', the section name
@@ -277,8 +276,8 @@ module FreshInstallPostClone
     Logging.record_warning 'Failed to load the zsh configs -- caches and the antidote bundle will be rebuilt by the first new terminal instead'
   end
 
-  # Installing Homebrew itself is fatal when it fails (HomebrewInstall has recorded why); a failing
-  # Brewfile install is not (BrewBundle records it).
+  # Installing Homebrew itself is fatal when it fails (HomebrewInstall has recorded why). There is
+  # no Brewfile step: nix-darwin's homebrew module drives 'brew bundle' during the switch below.
   def _install_homebrew
     prefix = EnvVars::HOMEBREW_PREFIX
     _step('Install Homebrew', "Installing homebrew into '#{prefix.to_s.cyan}'") do
@@ -286,12 +285,28 @@ module FreshInstallPostClone
 
       # Export Homebrew's environment into this process, so every later subprocess sees it.
       MacOS.load_brew_shellenv(prefix.join('bin', 'brew'))
-      BrewBundle.run
+    end
+  end
+
+  # Installing Nix is fatal when it fails: every package after this comes from it.
+  def _install_nix
+    _step('Install Nix', 'Installing Nix package manager') do
+      raise Aborted unless NixBootstrap.install
+    end
+  end
+
+  # Installs every nix package, applies the nix-eligible macOS defaults and installs the Homebrew
+  # GUI casks, all in one 'darwin-rebuild switch'. A failure is recorded and the setup carries on.
+  # The switch writes /etc/zshenv (adding nix-darwin's bin directories to PATH), so the zsh configs
+  # are reloaded afterwards to pick that up.
+  def _apply_nix_darwin_configuration
+    _step('Apply nix-darwin configuration', 'Applying nix-darwin + home-manager configuration') do
+      NixBootstrap.apply_configuration
       _load_zsh_configs
     end
   end
 
-  # Migrates repos cloned before Homebrew's git (2.45+) was on PATH: the system git on a vanilla
+  # Migrates repos cloned before nix's git (2.45+) was on PATH: the system git on a vanilla
   # macOS ignores -c init.defaultRefFormat=reftable and has no 'git refs migrate', so the clone's
   # own migration call was a no-op for those early clones.
   def _migrate_reftable
@@ -331,7 +346,6 @@ module FreshInstallPostClone
     _step('Setup cron jobs', 'Setup cron jobs') do
       if Cron.recron
         Cron.retire_backup(EnvVars.cron_backup_file)
-        Logging.info CRON_OVERLAP_NOTE if BrewBundle.full_install_state == :running
       else
         Logging.record_error 'recron failed -- original cron schedule preserved in backup'
       end
@@ -365,13 +379,10 @@ module FreshInstallPostClone
 
   # Wraps up what steps started in the background and nothing else waits for, so the summary and the
   # notification can be truthful: the macOS defaults baseline is joined when the run stopped before
-  # the preferences step, and the full Brewfile install is reported on (failed: a warning; still
-  # running: noted, so the run never claims everything is installed while casks are installing).
+  # the preferences step.
   # Never raises (it runs from the 'ensure' of '_run').
   def _wrap_up_background_work
     PreferencesRestore.finish_pending
-    Logging.current_section = 'Background Brewfile install'
-    @bundle_state = BrewBundle.report_full_install
   rescue StandardError => e
     Kernel.warn "WARNING: could not wrap up the background work: #{e.message}"
   end
@@ -390,14 +401,12 @@ module FreshInstallPostClone
 
     Logging.user_action 'Review System Settings manually: some settings (FileVault, accessibility permissions, notification preferences) require GUI interaction and cannot be automated due to TCC restrictions.'
     Logging.user_action "Repositories were cloned shallow (--depth=1) to save time and a background job is fetching their complete history. Once it has finished (check with '#{'git rev-parse --is-shallow-repository'.yellow}' in a repo), run '#{'git rebase @{u}'.yellow}' or '#{'git merge @{u}'.yellow}' in each repo to update working trees; in a NEW terminal (this one predates the updated PATH and aliases), '#{'all unshallow'.yellow}' finishes any repo that is still shallow." if EnvVars.first_install?
-    Logging.user_action "The full Brewfile install is still running in the background -- keep the machine online and awake until it finishes (log: '#{BrewBundle::FULL_INSTALL_LOG.cyan}')." if @bundle_state == :running
 
     issues = Logging.issue_summary_parts
-    parts = @bundle_state == :running ? issues + ['the full Brewfile install is still running in the background'] : issues
-    if parts.empty?
+    if issues.empty?
       MacOS.notify('Fresh install completed successfully.', '✅ Fresh Install Done')
     else
-      MacOS.notify("Install done -- #{parts.join(' | ')}", issues.empty? ? 'Fresh Install' : '⚠️ Fresh Install')
+      MacOS.notify("Install done -- #{issues.join(' | ')}", issues.empty? ? 'Fresh Install' : '⚠️ Fresh Install')
     end
   end
 

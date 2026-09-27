@@ -9,14 +9,18 @@ require_relative 'core'
 require_relative 'env_vars'
 require_relative 'logging'
 
-# Makes Homebrew's zsh the user's login shell. macOS ships /bin/zsh, but Homebrew's is newer and
-# managed independently; without this, a terminal app's "Login shell" setting stays on /bin/zsh
-# even when ${HOMEBREW_PREFIX}/bin/zsh is on PATH, and ${SHELL} stays /bin/zsh after a fresh
-# install. fresh-install-of-osx.sh calls it through call-utility.rb at the very end of the run
+# Makes nix-darwin's zsh the user's login shell. macOS ships /bin/zsh, but nix-darwin's (see
+# 'programs.zsh.enable' in nix/darwin-configuration.nix) is newer and managed independently; without
+# this, a terminal app's "Login shell" setting stays on /bin/zsh even when nix-darwin's zsh is on
+# PATH, and ${SHELL} stays /bin/zsh after a fresh install. fresh-install-of-osx.sh calls it through call-utility.rb at the very end of the run
 # (so the password prompt does not interrupt the unattended steps); Ruby callers can use it
 # directly.
 module DefaultShell
   extend self
+
+  # nix-darwin manages zsh through the SYSTEM profile, which is stable across per-user home-manager
+  # generations, rather than the per-user profile that modules/packages.nix also installs.
+  NIX_DARWIN_ZSH = Core::ROOT.join('run', 'current-system', 'sw', 'bin', 'zsh').freeze
 
   # chsh only accepts shells listed in this file.
   ETC_SHELLS = Core::ROOT.join('etc', 'shells').freeze
@@ -25,13 +29,14 @@ module DefaultShell
   #
   # Every check is idempotent and re-run on each call: /etc/shells is validated even when chsh
   # is not needed, because a macOS update can wipe it while the user's UserShell record still
-  # points at Homebrew zsh.
+  # points at the same shell.
   #
-  # @return [Boolean] false when Homebrew zsh is missing or when /etc/shells or chsh could not
+  # @param shell [Pathname] The shell to make the login shell
+  # @return [Boolean] false when the shell is missing or when /etc/shells or chsh could not
   #   be updated (each of which is also recorded in this run's summary); true otherwise.
-  def run
-    Logging.run_script_result('default_shell', 'Setting the default shell to Homebrew zsh') do
-      _set_default_shell(EnvVars::HOMEBREW_PREFIX.join('bin', 'zsh'))
+  def run(shell: NIX_DARWIN_ZSH)
+    Logging.run_script_result('default_shell', 'Setting the default shell to nix-darwin zsh') do
+      _set_default_shell(Pathname(shell.to_s))
     end
   end
 
@@ -39,11 +44,11 @@ module DefaultShell
   # Private methods
   # ---------------------------------------------------------------------------
 
-  # @param brew_zsh [Pathname] Homebrew's zsh
+  # @param brew_zsh [Pathname] the shell to register and select
   # @return [Boolean]
   def _set_default_shell(brew_zsh)
     unless brew_zsh.executable?
-      Logging.record_error "Homebrew zsh not found at '#{brew_zsh.to_s.cyan}' -- skipping default shell change."
+      Logging.record_error "nix-darwin zsh not found at '#{brew_zsh.to_s.cyan}' -- skipping default shell change."
       return false
     end
 
