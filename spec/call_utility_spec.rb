@@ -1,6 +1,5 @@
 # frozen_string_literal: true
 
-require 'brew_bundle'
 require 'cron'
 require 'default_shell'
 require 'dev_environment'
@@ -27,12 +26,6 @@ RSpec.describe CallUtility do
       expect(DevEnvironment).to receive(:setup_dev_environment).with(first_install: true)
 
       expect(described_class.run(target: 'DevEnvironment.setup_dev_environment', args: ['--first_install=true'])).to be true
-    end
-
-    it 'lets the shell install the Brewfile and see a failure through --truthy' do
-      expect(BrewBundle).to receive(:run).with(first_install: true).and_return(false)
-
-      expect(described_class.run(target: 'BrewBundle.run', args: ['--first_install=true'], truthy: true)).to be false
     end
 
     it 'lets the shell set the default shell and see a failure through --truthy' do

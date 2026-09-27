@@ -10,7 +10,7 @@ require_relative 'core'
 require_relative 'env_vars'
 require_relative 'logging'
 
-# Installs Homebrew itself (not the Brewfile -- see BrewBundle) as a step of the machine setup.
+# Installs Homebrew itself (not the Brewfile) as a step of the machine setup.
 # fresh-install-of-osx.sh calls it through call-utility.rb once the dotfiles repository is
 # cloned; Ruby callers can use it directly. A no-op when ${HOMEBREW_PREFIX}/bin/brew exists.
 #

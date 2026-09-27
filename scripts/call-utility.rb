@@ -31,7 +31,6 @@
 # to load or invoke anything else.
 UTILITIES = {
   'Antidote' => 'antidote',
-  'BrewBundle' => 'brew_bundle',
   'Cron' => 'cron',
   'DefaultShell' => 'default_shell',
   'DevEnvironment' => 'dev_environment',

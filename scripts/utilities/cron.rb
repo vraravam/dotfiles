@@ -145,12 +145,12 @@ module Cron
     home = EnvVars::HOME
     downloads = EnvVars::DOWNLOADS
     homebrew_prefix = EnvVars::HOMEBREW_PREFIX
+    nix_profile_home = EnvVars::NIX_PROFILE_HOME
     personal_bin = EnvVars::PERSONAL_BIN_DIR
     personal_configs = EnvVars::PERSONAL_CONFIGS_DIR
     personal_profiles = EnvVars::PERSONAL_PROFILES_DIR
     dotfiles_dir = EnvVars::DOTFILES_DIR
     projects_base = EnvVars::PROJECTS_BASE_DIR
-    homebrew_bundle = EnvVars::HOMEBREW_BUNDLE_FILE
 
     file = Pathname.new(file) unless file.is_a?(Pathname)
 
@@ -162,21 +162,20 @@ module Cron
       f.puts "HOME=\"#{home}\""
       f.puts "USER=\"#{username}\""
       f.puts "HOMEBREW_PREFIX=\"#{homebrew_prefix}\""
+      f.puts "NIX_PROFILE_HOME=\"#{nix_profile_home}\""
       f.puts "PERSONAL_BIN_DIR=\"#{personal_bin}\""
       f.puts "PERSONAL_CONFIGS_DIR=\"#{personal_configs}\""
       f.puts "PERSONAL_PROFILES_DIR=\"#{personal_profiles}\""
       f.puts "DOTFILES_DIR=\"#{dotfiles_dir}\""
       f.puts "PROJECTS_BASE_DIR=\"#{projects_base}\""
-      f.puts "HOMEBREW_BUNDLE_FILE=\"#{homebrew_bundle}\""
-      f.puts "HOMEBREW_BUNDLE_FILE_GLOBAL=\"#{homebrew_bundle}\""
       f.puts '# Disable all mail generation from cron jobs (rely on macOS notifications instead)'
       f.puts 'MAILTO=""'
       f.puts '# Terminal width for Ruby logging (cron has no TTY, default 80 cols)'
       f.puts 'COLUMNS=80'
-      f.puts '# PATH: homebrew + system utils + personal bin + dotfiles scripts ' \
+      f.puts '# PATH: nix profile + homebrew + system utils + personal bin + dotfiles scripts ' \
              '(needed for run-all.rb, capture-prefs.rb etc.)'
       # Cron does not expand ${VAR} references in environment variables -- use literal expanded paths
-      f.puts "PATH=#{homebrew_prefix}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:#{personal_bin}:#{dotfiles_dir}/scripts"
+      f.puts "PATH=#{nix_profile_home}/bin:#{homebrew_prefix}/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:#{personal_bin}:#{dotfiles_dir}/scripts"
       f.puts
       f.puts "# Note: Need to use the full path to scripts inside the sub-shell since that's not a logged-in shell"
       f.puts '# MAILTO="" (above) disables all mail generation.'

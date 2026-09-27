@@ -707,7 +707,7 @@ end
 
 ```ruby
 Logging.user_action "Restart the app to apply changes."
-Logging.user_action "Run 'bupc' to update Homebrew packages."
+Logging.user_action "Run 'bupc' to update nix packages and Homebrew casks."
 ```
 
 ## Path Constants

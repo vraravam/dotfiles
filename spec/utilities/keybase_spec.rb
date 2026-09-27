@@ -33,8 +33,8 @@ RSpec.describe Keybase do
     it 'is nil when keybase is installed but nobody is logged in' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
       allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"","LoggedIn":false}')
+        .with('keybase', 'status', '--json')
+        .and_return('{"Username":"","LoggedIn":false}')
 
       expect(described_class.username).to be_nil
     end
@@ -42,8 +42,8 @@ RSpec.describe Keybase do
     it 'returns the logged-in username when keybase is installed and logged in' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
       allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"someuser","LoggedIn":true}')
+        .with('keybase', 'status', '--json')
+        .and_return('{"Username":"someuser","LoggedIn":true}')
 
       expect(described_class.username).to eq('someuser')
     end
@@ -51,8 +51,8 @@ RSpec.describe Keybase do
     it 'is nil when keybase status returns invalid JSON' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
       allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('not valid json')
+        .with('keybase', 'status', '--json')
+        .and_return('not valid json')
 
       expect(described_class.username).to be_nil
     end
@@ -92,8 +92,8 @@ RSpec.describe Keybase do
     it 'returns true without attempting login when already logged in' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
       allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"someuser","LoggedIn":true}')
+        .with('keybase', 'status', '--json')
+        .and_return('{"Username":"someuser","LoggedIn":true}')
       expect(CommandUtils).not_to receive(:run_interactive)
 
       expect(described_class.ensure_logged_in).to be true
@@ -102,8 +102,8 @@ RSpec.describe Keybase do
     it 'attempts an interactive login when not logged in, and returns its result' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
       allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"","LoggedIn":false}')
+        .with('keybase', 'status', '--json')
+        .and_return('{"Username":"","LoggedIn":false}')
       allow(CommandUtils).to receive(:run_interactive).with('keybase', 'login').and_return(true)
 
       expect(described_class.ensure_logged_in).to be true
@@ -113,8 +113,8 @@ RSpec.describe Keybase do
       stub_const('EnvVars::KEYBASE_USERNAME', 'someuser')
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
       allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"","LoggedIn":false}')
+        .with('keybase', 'status', '--json')
+        .and_return('{"Username":"","LoggedIn":false}')
       expect(CommandUtils).to receive(:run_interactive).with('keybase', 'login', 'someuser').and_return(true)
 
       expect(described_class.ensure_logged_in).to be true
@@ -124,8 +124,8 @@ RSpec.describe Keybase do
       stub_const('EnvVars::KEYBASE_USERNAME', 'someuser')
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
       allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"other","LoggedIn":true}')
+        .with('keybase', 'status', '--json')
+        .and_return('{"Username":"other","LoggedIn":true}')
       expect(CommandUtils).not_to receive(:run_interactive)
 
       expect(described_class.ensure_logged_in).to be true
@@ -134,8 +134,8 @@ RSpec.describe Keybase do
     it 'records an error when the interactive login fails' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
       allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"","LoggedIn":false}')
+        .with('keybase', 'status', '--json')
+        .and_return('{"Username":"","LoggedIn":false}')
       allow(CommandUtils).to receive(:run_interactive).with('keybase', 'login') do |&block|
         block.call
         false
@@ -382,36 +382,6 @@ RSpec.describe Keybase do
 
       expect(Logging).to receive(:record_error).with(/Failed to recreate keybase repo/)
       expect(described_class.recreate_repo('home')).to be false
-    end
-  end
-
-  describe '.link_cli_into' do
-    around do |example|
-      Dir.mktmpdir('keybase-spec-') do |dir|
-        @tmp = Pathname.new(dir)
-        example.run
-      end
-    end
-
-    it 'does nothing when the Keybase app is not installed' do
-      stub_const('Keybase::APP_PATH', @tmp.join('Keybase.app'))
-      bin = @tmp.join('bin').tap(&:mkpath)
-
-      expect(described_class.link_cli_into(bin)).to be false
-      expect(bin.children).to be_empty
-    end
-
-    it 'links keybase and git-remote-keybase from the app and can be run again' do
-      app = @tmp.join('Keybase.app')
-      support = app.join('Contents', 'SharedSupport', 'bin').tap(&:mkpath)
-      %w[keybase git-remote-keybase].each { |tool| support.join(tool).write('#!/bin/sh') }
-      stub_const('Keybase::APP_PATH', app)
-      bin = @tmp.join('bin').tap(&:mkpath)
-
-      2.times { expect(described_class.link_cli_into(bin)).to be true }
-
-      expect(bin.join('keybase').readlink).to eq(support.join('keybase'))
-      expect(bin.join('git-remote-keybase').readlink).to eq(support.join('git-remote-keybase'))
     end
   end
 end

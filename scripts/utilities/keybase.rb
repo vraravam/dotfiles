@@ -22,9 +22,6 @@ module Keybase
   # repo_url (builder) below so the literal only appears once.
   PROTOCOL = 'keybase://'
 
-  # Where the Keybase cask installs the app; its command-line tools live in SharedSupport/bin.
-  APP_PATH = Core::ROOT.join('Applications', 'Keybase.app').freeze
-
   # How many one-second polls ensure_service_running waits for the service to answer.
   SERVICE_START_ATTEMPTS = 15
 
@@ -127,29 +124,6 @@ module Keybase
   # ---------------------------------------------------------------------------
   # Mutation methods (modify state)
   # ---------------------------------------------------------------------------
-
-  # Links the 'keybase' and 'git-remote-keybase' command-line tools from the installed app into
-  # +bin_dir+ (normally ${HOMEBREW_PREFIX}/bin).
-  #
-  # Homebrew cask 'postinstall:' hooks only run when 'brew bundle install' actually (re)installs
-  # the cask. If 'brew bundle check' already reported success (e.g. Keybase.app was left behind
-  # by an earlier partial run of the idempotent install), the hook never fires and the CLI
-  # symlinks stay missing although the app itself is usable. The Brewfile's own hook creates the
-  # same links; this is a redundant safety net for exactly that case, and 'ln -sf' makes it safe
-  # to run every time. When the app is absent (Keybase disabled) nothing happens.
-  #
-  # @param bin_dir [Pathname, String] Directory to place the symlinks in.
-  # @return [Boolean] true if the links were (re)created, false if the app is not installed.
-  def link_cli_into(bin_dir)
-    return false unless APP_PATH.directory?
-
-    require 'fileutils'
-    support_bin = APP_PATH.join('Contents', 'SharedSupport', 'bin')
-    %w[keybase git-remote-keybase].each do |tool|
-      FileUtils.ln_sf(support_bin.join(tool).to_s, Pathname.new(bin_dir).join(tool).to_s)
-    end
-    true
-  end
 
   # The keybase CLI talks to a background service (keybased) that is normally started
   # when Keybase.app first launches -- e.g. via the login item registered by the

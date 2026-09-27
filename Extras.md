@@ -4,17 +4,31 @@ Reference documentation for the utility scripts bundled in this repo. Each secti
 
 ## 📋 Table of Contents
 
-- [add-upstream-git-config.rb](#add-upstream-git-configrb)
-- [capture-prefs.rb](#capture-prefsrb)
-- [cleanup-browser-profiles.rb](#cleanup-browser-profilesrb)
-- [fresh-install-of-osx.sh](#fresh-install-of-osxsh)
-- [install-dotfiles.rb](#install-dotfilesrb)
-- [osx-defaults.sh](#osx-defaultssh)
-- [recreate-repository.rb](#recreate-repositoryrb)
-- [resurrect-repositories.rb](#resurrect-repositoriesrb)
-- [run-all.rb](#run-allrb)
-- [setup-login-item.rb](#setup-login-itemrb)
-- [software-updates-cron.rb](#software-updates-cronrb)
+- [Extras](#extras)
+  - [📋 Table of Contents](#-table-of-contents)
+  - [add-upstream-git-config.rb](#add-upstream-git-configrb)
+  - [capture-prefs.rb](#capture-prefsrb)
+  - [cleanup-browser-profiles.rb](#cleanup-browser-profilesrb)
+  - [fresh-install-of-osx.sh](#fresh-install-of-osxsh)
+  - [install-dotfiles.rb](#install-dotfilesrb)
+  - [osx-defaults.sh](#osx-defaultssh)
+    - [Two-phase preference architecture](#two-phase-preference-architecture)
+    - [What belongs where](#what-belongs-where)
+  - [recreate-repository.rb](#recreate-repositoryrb)
+    - [Force mode workflow](#force-mode-workflow)
+    - [Usage](#usage)
+    - [Safety features](#safety-features)
+  - [resurrect-repositories.rb](#resurrect-repositoriesrb)
+    - [Environment variable support](#environment-variable-support)
+    - [Bundle support](#bundle-support)
+  - [run-all.rb](#run-allrb)
+  - [setup-login-item.rb](#setup-login-itemrb)
+  - [software-updates-cron.rb](#software-updates-cronrb)
+  - [Zsh Autoload Functions](#zsh-autoload-functions)
+    - [Per-project overrides](#per-project-overrides)
+    - [Overrides through `run-all.rb` / `all`](#overrides-through-run-allrb--all)
+    - [Git hook customizations](#git-hook-customizations)
+  - [delete\_caches](#delete_caches)
 
 ---
 
@@ -50,19 +64,18 @@ The lists of files and directories to clean are maintained in [`scripts/data/cle
 
 This is the main setup script for a fresh macOS installation. It is idempotent (see [Technical Deep Dive § 1.4](TechnicalDeepDive.md#14-idempotency)) and can be run multiple times safely. The script:
 
-* Detects Intel vs Apple Silicon architecture automatically
-* Installs Homebrew, antidote (zsh plugin manager), and Starship prompt
+* Installs Homebrew (GUI casks only from here on), antidote (zsh plugin manager, via Nix), and Starship prompt (via Nix)
 * Sets up the dotfiles repo and symlinks all config files
-* Installs essential CLI tools and GUI applications via the Brewfile
-* Configures macOS system defaults (phase 1: baseline seed via `osx-defaults.sh -s`)
-* Restores application preferences from backups (phase 2: UI-configured overrides via `capture-prefs.rb -i`)
+* Installs the [Nix](https://nixos.org/) package manager and applies this repo's nix-darwin + home-manager configuration (`nix/`) -- every CLI tool, plus GUI apps via nix-darwin's `homebrew` module
+* Configures macOS system defaults (tier 1: declarative policy via `darwin-rebuild switch`; tier 2: baseline seed via `osx-defaults.sh -s`; see [Technical Deep Dive § 12](TechnicalDeepDive.md#12-nix-osx-defaultssh-and-capture-prefsrb--three-tier-preference-architecture))
+* Restores application preferences from backups (tier 3: UI-configured overrides via `capture-prefs.rb -i`)
 * Sets up SSH keys and permissions
 * Configures cron jobs using fallback logic (existing → tracked → user action)
 * Resurrects tracked git repositories
 * Sets up development environment (mise versions, direnv configs)
-* Sets default shell to Homebrew zsh (prompts for password at the very end)
+* Sets default shell to nix-darwin's zsh (prompts for password at the very end)
 
-The script has two modes, distinguished by the `FIRST_INSTALL` environment variable (checked via `is_first_install`): a minimal bootstrap for a vanilla OS — with extended curl timeouts and relaxed Homebrew error handling because the network may be unreliable and not all tools exist yet — and a full idempotent run for an already-configured machine.
+The script has two modes, distinguished by the `FIRST_INSTALL` environment variable (checked via `is_first_install`): a minimal bootstrap for a vanilla OS — with extended curl timeouts and relaxed Homebrew/Nix error handling because the network may be unreliable and not all tools exist yet — and a full idempotent run for an already-configured machine.
 
 **Key ordering decisions:**
 - `chsh` moved to end to avoid blocking automation with password prompts
@@ -285,7 +298,7 @@ This ensures existing schedules are preserved while supporting vanilla OS instal
   ```
 This creates the default schedule (software-updates-cron hourly). Edit as needed, commit to home repo, and run `recron` to install.
 
-The generated crontab defines environment variables (`HOME`, `HOMEBREW_PREFIX`, `PERSONAL_BIN_DIR`, `DOTFILES_DIR`) at the top with expanded literal paths (cron does not expand `${VAR}` references in environment variables). This ensures tools in Homebrew's bin directory are available in PATH when the cron job runs.
+The generated crontab defines environment variables (`HOME`, `HOMEBREW_PREFIX`, `NIX_PROFILE_HOME`, `PERSONAL_BIN_DIR`, `DOTFILES_DIR`) at the top with expanded literal paths (cron does not expand `${VAR}` references in environment variables). Its `PATH` line is similarly expanded, prepending `${NIX_PROFILE_HOME}/bin` before `${HOMEBREW_PREFIX}/bin` -- this ensures nix-installed CLI tools (the vast majority; see [nix/modules/packages.nix](nix/modules/packages.nix)) and Homebrew's `brew` binary itself are both available when the cron job runs.
 
 The crontab is configured with `MAILTO=""` to disable mail generation (notifications are sent via macOS native alerts instead). The cron job uses a temporary buffer to capture output during execution and only appends it to the main log file if the run exits with an error/warning. Three files track execution state:
 

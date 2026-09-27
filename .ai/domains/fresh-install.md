@@ -1,7 +1,7 @@
 ---
 applyTo: "**/fresh-install-of-osx.sh,**/install-dotfiles.rb,**/osx-defaults.sh,**/setup-login-item.rb,**/capture-prefs.rb,**/resurrect-repositories.rb"
 name: dotfiles-fresh-install
-description: Use when editing scripts/fresh-install-of-osx.sh, scripts/install-dotfiles.rb, scripts/osx-defaults.sh, scripts/setup-login-item.rb, scripts/capture-prefs.rb, or scripts/resurrect-repositories.rb. Covers bootstrap idempotency for vanilla-OS vs pre-configured-machine modes, curl retry flags, crontab suspend/resume, and Brewfile truncation on FIRST_INSTALL.
+description: Use when editing scripts/fresh-install-of-osx.sh, scripts/install-dotfiles.rb, scripts/osx-defaults.sh, scripts/setup-login-item.rb, scripts/capture-prefs.rb, or scripts/resurrect-repositories.rb. Covers bootstrap idempotency for vanilla-OS vs pre-configured-machine modes, curl retry flags, crontab suspend/resume, and the Homebrew-then-Nix bootstrap order.
 ---
 
 # Fresh Install Instructions
@@ -133,14 +133,20 @@ inline -- it cannot use `_curl_opts`.
 
 
 On a vanilla OS, the order of availability is:
-1. `/bin/zsh` only -- no Homebrew, no dotfiles, no `.shellrc`
+1. `/bin/zsh` only -- no Homebrew, no Nix, no dotfiles, no `.shellrc`
 2. `.shellrc` downloaded via `curl` and sourced
-3. Homebrew installed
+3. Homebrew installed (GUI casks only from here on -- see `nix/darwin-configuration.nix`)
 4. dotfiles repo cloned → `.shellrc`/`.aliases` symlinked
 5. `install-dotfiles.rb` creates symlinks
-6. `brew bundle install` installs tools (each formula/cask handles its own post-install
-   needs via Brewfile `postinstall:` hooks -- e.g. antidote's hook regenerates the plugin
-   bundle; see "Antidote in Fresh Install" below)
+6. Nix package manager installed
+7. `darwin-rebuild switch`/`nix run nix-darwin -- switch` applies this repo's
+   nix-darwin + home-manager configuration -- installs/upgrades every nix package
+   (`nix/modules/packages.nix`), applies nix-eligible macOS defaults
+   (`nix/darwin-configuration.nix`), and installs/upgrades every Homebrew GUI cask
+   (via nix-darwin's `homebrew` module, same file). Each cask handles its own
+   post-install needs via its `postinstall:` hook; nix packages needing an
+   equivalent hook (antidote, zsh-patina) get one via `home.activation` in
+   `nix/modules/packages.nix` (see "Antidote in Fresh Install" below)
 
 Functions needed **before step 4** must live in `.shellrc`, not `.aliases`.
 `.shellrc` is curl-downloaded and must stay lean -- only put functions in it
@@ -149,6 +155,7 @@ that are genuinely required before the dotfiles repo is cloned. See the
 full rationale and decision rule.
 
 Functions needed **before step 3** (Homebrew install) cannot use brew-installed tools.
+Functions needed **before step 6/7** (Nix install/apply) cannot use nix-installed tools.
 
 ## `download_and_source_shellrc`
 
@@ -195,15 +202,16 @@ Extract into a single conditional.
 
 `Antidote.update_and_regenerate_bundle` is invoked two ways, neither of which is
 `fresh-install-of-osx.sh` itself:
-- The `antidote` formula's `postinstall:` hook in the Brewfile (via the
-  `update_antidote_and_regenerate_plugin_bundle` shell wrapper in `.aliases`) --
-  fires whenever `brew bundle install` installs or upgrades antidote, which
-  covers both a vanilla-OS first install and a pre-configured machine's re-run.
+- The `antidote` nix package's `home.activation` postinstall hook in
+  `nix/modules/packages.nix` (via the `update_antidote_and_regenerate_plugin_bundle`
+  shell wrapper in `.aliases`) -- fires on every `darwin-rebuild switch` that
+  (re)links the antidote package, which covers both a vanilla-OS first install and a
+  pre-configured machine's re-run.
 - `software-updates-cron.rb`'s periodic schedule, for day-to-day plugin updates
   outside of a fresh install.
 
 It does NOT need to be called separately in `fresh-install-of-osx.sh` -- the
-Brewfile hook already covers both first-install and pre-configured-machine modes.
+`home.activation` hook already covers both first-install and pre-configured-machine modes.
 
 When sourcing `antidote.zsh` inside fresh-install, use `load_file_if_exists` since
 antidote may not be installed yet on a vanilla OS.
@@ -277,34 +285,22 @@ The start time passed to `print_script_summary` must use epoch seconds
 `print_script_summary` subtracts the start epoch from `${EPOCHSECONDS}` at
 call time to compute the duration; a pre-formatted string breaks that arithmetic.
 
-## Brewfile Truncation on `FIRST_INSTALL`
+## No More Brewfile Truncation on `FIRST_INSTALL` (Known Limitation)
 
-The Brewfile install lives in Ruby (`BrewBundle` in `scripts/utilities/brew_bundle.rb`, built on the
-pure command wrappers in `Brew`). `fresh-install-of-osx.sh` calls it once the dotfiles repository is
-cloned and `install-dotfiles.rb` has linked `~/Brewfile`:
-
-```zsh
-call_utility --truthy BrewBundle.run "--first_install=${first_install_flag}" || _record_warning '...';
-```
-
-On a vanilla OS run (`FIRST_INSTALL=1`), `brew bundle` is run only against the **base section** of the
-Brewfile -- the lines above the sentinel. This keeps the initial install fast by skipping optional
-heavy packages; the whole Brewfile is then installed in a detached background job (with
-`FIRST_INSTALL` emptied in the child; its output goes to `~/Downloads/brew-bundle-full-install.log`).
-On a pre-configured machine (no `FIRST_INSTALL`) the whole Brewfile is used, and the install is skipped
-when `brew bundle check` already passes. A failure makes `BrewBundle.run` return false; the shell records
-it as a warning and carries on.
-
-The Brewfile must have exactly one sentinel **comment** line that starts with `# FIRST_INSTALL:` to mark
-the end of the base section. `Brew.base_brewfile_content` returns everything above it (nil when the
-sentinel is missing, in which case `BrewBundle` warns and installs the whole file as the base section).
-
-The sentinel is a comment, so the match must not exclude comment lines. (An earlier `sed` pattern,
-`/^[^#].*FIRST_INSTALL/q`, did exactly that: it never matched, so the whole Brewfile was installed as the
-"base section" and the split was a silent no-op.) `spec/brewfile_spec.rb` fails if the sentinel is
-missing, duplicated, or no longer splits the file, and checks `Brew.base_brewfile_content` against the
-real Brewfile. Do not remove or rename the sentinel line -- it is load-bearing for the vanilla OS
-install path.
+The old Brewfile-based bootstrap split the initial install into a fast "base
+section" (installed synchronously) and the full package list (forked into the
+background) via a `FIRST_INSTALL`-guarded sentinel line, truncated with `sed`.
+That mechanism no longer exists -- `nix/darwin-configuration.nix`'s
+`homebrew.casks` and `nix/modules/packages.nix`'s `home.packages` are flat lists
+with no base/full split, and `_apply_nix_darwin_configuration` runs
+`darwin-rebuild switch` synchronously, installing every nix package and every
+Homebrew GUI cask unconditionally, whether or not `FIRST_INSTALL` is set. This is
+a known, explicitly-documented limitation (see the
+`TODO(FIRST_INSTALL optimisation)` comment in `nix/darwin-configuration.nix`) --
+re-introducing an equivalent fast-path/background-install split for nix would
+need a separate, deliberate design (e.g. a minimal first-install
+`darwinConfiguration` distinct from the full one), not a straightforward port of
+the old `sed`-based truncation.
 
 ## Moving Steps of `fresh-install-of-osx.sh` Into Ruby
 

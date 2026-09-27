@@ -4,12 +4,15 @@
 
 # file location: ${DOTFILES_DIR}/scripts/brew-update-cleanup.rb
 #
-# Updates Homebrew, syncs installed packages with the Brewfile, upgrades everything
-# outdated and cleans up. Aliased as 'bupc' in ${ZDOTDIR}/.aliases for quick typing.
+# Upgrades and cleans up everything: nix packages + macOS defaults + Homebrew GUI casks
+# (all via the nix-darwin rebuild, the same as the 'nixup' alias), then Homebrew's own
+# cache/orphan cleanup (nix-darwin's homebrew module does not cover cached downloads or
+# orphaned dependencies). Aliased as 'bupc' in ${ZDOTDIR}/.aliases for quick typing, keeping
+# the name for muscle memory even though the mechanism is no longer Homebrew Bundle.
 #
-# Cleanup runs both before the Brewfile sync (so packages dropped from the Brewfile are
-# not needlessly refreshed) and after it (to prune whatever the sync left behind).
-# Antidote updates and tap trusting are handled by Brewfile postinstall hooks.
+# Homebrew metadata is refreshed first: homebrew.onActivation.autoUpdate is false (see
+# nix/darwin-configuration.nix), so the rebuild would otherwise upgrade casks against stale
+# formula/cask metadata.
 #
 # Usage:
 #   Standalone: brew-update-cleanup.rb
@@ -17,6 +20,8 @@
 
 require_relative 'utilities/brew'
 require_relative 'utilities/logging'
+require_relative 'utilities/nix'
+require_relative 'utilities/path_utils'
 
 # Module contains the business logic.
 # Returns true/false instead of calling exit().
@@ -28,10 +33,11 @@ module BrewUpdateCleanup
   # @return [Boolean] true if no step recorded a warning.
   def run
     Logging.record_warning("'#{'brew update'.cyan}' failed") unless Brew.update
+    # Skipped silently when nix-darwin is not installed (as the 'nixup' alias is only defined
+    # when 'darwin-rebuild' exists), so 'bupc' still does the Homebrew parts on such a machine.
+    rebuild_failed = PathUtils.command_exists?('darwin-rebuild') && !Nix.rebuild
+    Logging.record_warning("'#{'darwin-rebuild switch'.cyan}' failed") if rebuild_failed
     Brew.cleanup
-    Logging.record_warning("Failed to sync installed packages with the '#{'Brewfile'.cyan}'") unless Brew.sync_bundle
-    Brew.cleanup
-    Logging.record_warning("'#{'brew upgrade'.cyan}' failed") unless Brew.upgrade
 
     !Logging.warnings?
   end
@@ -47,7 +53,7 @@ if __FILE__ == $PROGRAM_NAME
   include Logging
 
   CliParser.parse('') do |opts|
-    opts.separator 'Updates Homebrew, syncs with the Brewfile, upgrades everything outdated and cleans up.'
+    opts.separator 'Rebuilds the nix-darwin configuration (nix packages, macOS defaults, Homebrew casks) and cleans up Homebrew.'
   end
 
   Logging.run_script do

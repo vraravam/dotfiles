@@ -38,6 +38,7 @@ require_relative 'utilities/dev_environment'
 require_relative 'utilities/git_workspace'
 require_relative 'utilities/logging'
 require_relative 'utilities/macos'
+require_relative 'utilities/nix'
 require_relative 'utilities/path_utils'
 require_relative 'utilities/profiles_repo'
 require_relative 'utilities/step_counter'
@@ -180,29 +181,32 @@ module SoftwareUpdatesCron
 
   private_class_method :_upreb_oss_repos
 
-  # Runs every periodic update step in sequence (brew, mise, tldr, git-ignore,
-  # claude-code, zsh-patina, antidote, bat cache, ollama models, home/oss repo
-  # updates, dev environment setup, preferences capture, profiles repo
-  # maintenance, and outdated-app checks). Each step is independently guarded
+  # Runs every periodic update step in sequence (nix + brew casks, mise, tldr,
+  # git-ignore, claude-code, zsh-patina, antidote, bat cache, ollama models,
+  # home/oss repo updates, dev environment setup, preferences capture, profiles
+  # repo maintenance, and outdated-app checks). Each step is independently guarded
   # and failures are recorded as warnings/errors rather than aborting the run.
   #
-  # @return [String] Space/comma-separated summary of greedy brew apps still
+  # @return [String] Space/comma-separated summary of greedy brew casks still
   #   outdated after the update pass (empty string if none), as reported by
   #   Brew.outdated_greedy.
   def _run_all_updates
     @steps = StepCounter.new(20)
 
-    # Brew update: Brew.sync_bundle checks before running the full bundle install to
-    # avoid reinstalling already-installed formulae on every cron run. Brew.update's
-    # failure is deliberately ignored here (as it always was) -- a transient network
-    # failure must not mask whether the bundle itself is in sync. quiet: true suppresses
-    # stdout progress output in the cron context (stderr is still shown).
-    _perform_update('brews', 'brew') do
+    # nix + Homebrew casks: a single 'darwin-rebuild switch' now covers both (nix
+    # packages via nix/modules/packages.nix, GUI casks via nix-darwin's homebrew
+    # module in nix/darwin-configuration.nix) -- there is no separate 'brew bundle'
+    # step anymore. 'brew update' still needs to run first so Homebrew's own cask
+    # definitions are current before nix-darwin's homebrew module upgrades them. Brew.update's
+    # failure is deliberately ignored (a transient network failure must not mask the rebuild);
+    # quiet: true suppresses stdout progress output in the cron context (stderr is still shown).
+    _perform_update('nix + brew casks', 'darwin-rebuild') do
       Brew.update(quiet: true)
-      Brew.sync_bundle
+      Nix.rebuild
     end
     _perform_update('mise plugins', 'mise') do
-      # mise binary is upgraded using homebrew
+      # mise binary itself is upgraded via nix (see nix/modules/packages.nix), same
+      # as every other CLI tool -- this step only handles plugin/tool-version updates.
       # Plugin registry updates moved to 6-hour schedule (balance between freshness and rate limiting).
       # Check timestamp cache to avoid unnecessary API calls (GitHub rate limiting).
       plugin_update_interval = 6 * 3600 # 6 hours in seconds
