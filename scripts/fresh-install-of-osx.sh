@@ -316,7 +316,6 @@ _clone_dot_files_repo() {
       if ! git -C "${DOTFILES_DIR}" config --get url.ssh://git@github.com/.pushInsteadOf &>/dev/null; then
         git -C "${DOTFILES_DIR}" config url.ssh://git@github.com/.pushInsteadOf https://github.com/
       fi
-      append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
     else
       error 'Failed to clone dotfiles repo'
       exit 1
@@ -324,6 +323,15 @@ _clone_dot_files_repo() {
   else
     info "Skipping cloning the dotfiles repo since '$(cyan "${DOTFILES_DIR}")' already exists and is a git repo"
   fi
+
+  # Unconditional: needed in both branches above, not just the freshly-cloned one --
+  # re-running this script against an already-cloned repo (e.g. testing without a
+  # full re-image) hit the 'else' branch and skipped this entirely, leaving
+  # 'add-upstream-git-config.rb' below (and anything else under DOTFILES_DIR/scripts)
+  # unresolvable via bare command name. (A second, later call before install-dotfiles.rb
+  # already existed for the same reason -- see that call site's own comment -- but it
+  # runs too late to help add-upstream-git-config.rb here.)
+  append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
 
   # Setup the DOTFILES_DIR repo's upstream remote (points at the repo this fork was
   # derived from). This runs regardless of whether the repo was just cloned or
@@ -545,9 +553,10 @@ _ensure_keybase_logged_in() {
 # completes the interactive login in _ensure_keybase_logged_in owns the account.
 # Usage: _build_keybase_repo_url <repo-name>
 _build_keybase_repo_url() {
+  local repo_name="${1:?_build_keybase_repo_url: repo-name argument required}"
   local username
   username="$(call_ruby_utility "require 'keybase'; puts Keybase.username")"
-  echo "keybase://private/${username}/${1:-}"
+  echo "keybase://private/${username}/${repo_name}"
 }
 
 # Configures remote_url as a git remote on target_folder -- 'origin' if no other
@@ -1043,6 +1052,19 @@ main() {
 
   _clone_home_repo
   _clone_profiles_repo
+
+  # Reload zsh config now that the home repo may have just brought in new state
+  # this session hasn't seen yet -- most notably '~/.config/zsh/plugins.zsh'
+  # (the antidote plugin bundle, tracked in the home repo, not this one -- see
+  # .zshrc's own comment above the "Source the pre-generated antidote static
+  # bundle" block). Two benefits: (1) the rest of THIS script's own run picks up
+  # newly-available aliases/functions/PATH immediately, same rationale as the
+  # 'DEBUG=true load_zsh_configs' call inside _install_homebrew above; (2) if
+  # the cloned 'plugins.txt' is newer than 'plugins.zsh' (bundle needs
+  # regenerating), triggering that now means it's already done by the time the
+  # user opens their next terminal, rather than that terminal being the one to
+  # lazily trigger (and wait out) the regeneration itself.
+  DEBUG=true load_zsh_configs
 
   step_end
 

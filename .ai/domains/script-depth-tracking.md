@@ -1,5 +1,7 @@
 ---
 applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**/*.{sh,rb}"
+name: dotfiles-script-depth-tracking
+description: Use when a shell or Ruby script in this dotfiles repo uses print_script_start/print_script_summary, _record_warning/_record_error, Logging.increment_script_depth, section_header, or otherwise needs nested-script auto-indentation. Covers the _DOTFILES_SCRIPT_DEPTH env var, EXIT-trap vs manual-decrement patterns, and how it differs between shell functions and scripts.
 ---
 
 # Script Depth Tracking

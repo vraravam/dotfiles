@@ -53,8 +53,9 @@ module CapturePrefs
     personal_configs_dir = EnvVars::PERSONAL_CONFIGS_DIR
     dotfiles_dir = EnvVars::DOTFILES_DIR
 
-    # Validate required env vars
-    Logging.error "PERSONAL_CONFIGS_DIR not found: '#{personal_configs_dir.cyan}'" unless personal_configs_dir.directory?
+    # Validate required env vars. PERSONAL_CONFIGS_DIR does not need to already
+    # exist (target_dir below creates it via ensure_directories_exist -- a fresh
+    # install running this for the first time legitimately won't have it yet).
     Logging.error "DOTFILES_DIR not found: '#{dotfiles_dir.cyan}'" unless dotfiles_dir.directory?
 
     target_dir = personal_configs_dir.join('defaults')

@@ -90,17 +90,19 @@ if (($+commands[brew])); then
     # Extracts the option name (e.g., '--with-openssl-dir' from '--with-openssl-dir=/path')
     # and skips if an option with that name is already present, preventing conflicts.
     _ruby_opt() {
-      local opt_name="${1%%=*}"  # Extract option name before '=' (or full string if no '=')
+      local opt="${1:?_ruby_opt: option string required}"
+      local opt_name="${opt%%=*}"  # Extract option name before '=' (or full string if no '=')
       # Skip if an option starting with this name is already present
       if [[ "${RUBY_CONFIGURE_OPTS:-}" == *"${opt_name}"* ]]; then return 0; fi
-      export RUBY_CONFIGURE_OPTS="${RUBY_CONFIGURE_OPTS:+${RUBY_CONFIGURE_OPTS} }${1}"
+      export RUBY_CONFIGURE_OPTS="${RUBY_CONFIGURE_OPTS:+${RUBY_CONFIGURE_OPTS} }${opt}"
     }
     # Helper to append Python configure options while preserving existing values.
     # Same deduplication logic as _ruby_opt.
     _python_opt() {
-      local opt_name="${1%%=*}"
+      local opt="${1:?_python_opt: option string required}"
+      local opt_name="${opt%%=*}"
       if [[ "${PYTHON_CONFIGURE_OPTS:-}" == *"${opt_name}"* ]]; then return 0; fi
-      export PYTHON_CONFIGURE_OPTS="${PYTHON_CONFIGURE_OPTS:+${PYTHON_CONFIGURE_OPTS} }${1}"
+      export PYTHON_CONFIGURE_OPTS="${PYTHON_CONFIGURE_OPTS:+${PYTHON_CONFIGURE_OPTS} }${opt}"
     }
     local pkg
     for pkg in 'curl' 'gnu-tar' 'grep' 'sqlite' 'zlib'; do
@@ -312,8 +314,8 @@ parse_folder_and_switches() {
 #   push() { dispatch_or_fallback push _push "$@"; }
 dispatch_or_fallback() {
   require_env_var PERSONAL_BIN_DIR || return 1
-  local cmd="${1:-}"
-  local fallback_fn="${2:-}"
+  local cmd="${1:?dispatch_or_fallback: cmd argument required}"
+  local fallback_fn="${2:?dispatch_or_fallback: fallback_fn argument required}"
   shift 2
   local override="${PERSONAL_BIN_DIR}/${cmd}-${PWD##*/}.sh"
   if is_executable "${override}"; then
@@ -900,7 +902,7 @@ recron() {
 #
 # Example: with_cron_suspended _push "$@"
 with_cron_suspended() {
-  local fn="${1:-}"
+  local fn="${1:?with_cron_suspended: fn argument required}"
   shift
   trap 'resume_cron' EXIT
   suspend_cron
@@ -941,6 +943,60 @@ fi
 
 # delete all personal data before re-imaging the laptop
 implode() {
+  # Keychain entries this repo's own scripts create. Removed here, before the
+  # dot-wipe below, since the SSH per-key lookups need '~/.ssh' filenames to
+  # reconstruct their service name -- once that line removes '~/.ssh' there is
+  # no reliable way to enumerate which keys existed. '|| true' guards against
+  # 'security's non-zero exit when no matching item exists yet on this machine.
+  security delete-generic-password -a "${USER}" -s 'git-remote-gpg-encrypt' 2>/dev/null || true
+  # Legacy service name (pre-4.0.1 rename) -- still present on machines set up
+  # before the rename; harmless no-op everywhere else.
+  security delete-generic-password -a "${USER}" -s 'gpg-encrypted-backup' 2>/dev/null || true
+
+  # Best-effort: macOS's 'ssh-add --apple-use-keychain' (see set_ssh_folder_permissions
+  # in .shellrc) stores each key's passphrase under service 'SSH: <absolute path>'
+  # (community-documented convention -- not independently verified on every macOS
+  # version). '-s' is an exact-match lookup, so an incorrect guess is a silent
+  # no-op, never a destructive match against something unrelated. '(N.)' means the
+  # loop simply does not run if '~/.ssh' does not exist yet on this machine.
+  local key_file
+  for key_file in "${HOME}"/.ssh/id_*(N.); do
+    if [[ "${key_file}" == *.* ]]; then continue; fi
+    security delete-generic-password -s "SSH: ${key_file}" 2>/dev/null || true
+  done
+
+  # Also clear the running ssh-agent's in-memory identities -- separate from the
+  # keychain-persisted passphrases above, and not tied to '~/.ssh' still existing.
+  # '-D' removes every identity the agent currently holds; '|| true' guards against
+  # no agent being reachable (e.g. '$SSH_AUTH_SOCK' unset or already empty).
+  ssh-add -D 2>/dev/null || true
+
+  # Symlinks this repo's own install/direnv mechanisms create under ~/Library --
+  # discovered dynamically (by matching each symlink's target, not by a hardcoded
+  # per-app path list) so newly added apps in install-dotfiles.rb/.envrc are covered
+  # automatically. Checked against all three canonical roots this repo's own
+  # mechanisms ever place real content under (DOTFILES_DIR -- currently VSCodium's
+  # settings/keybindings; PERSONAL_PROFILES_DIR -- currently the browser/app-profile
+  # redirects; PERSONAL_CONFIGS_DIR -- no current symlink targets it, included for
+  # forward-compatibility) BEFORE any of them are deleted below, so the still-valid
+  # target is available for comparison -- only the dangling symlink dirent is
+  # removed, never recursing into it. Fully recursive under '~/Library' (not scoped
+  # to e.g. 'Application Support' only) since symlinks can land 2-3+ levels deep in
+  # other locations too (e.g. '~/Library/Thunderbird' is a single level directly
+  # under Library, with no 'Application Support' involved at all) -- a shallower
+  # scan would miss those.
+  local -a symlink_target_roots=("${DOTFILES_DIR}" "${PERSONAL_CONFIGS_DIR}" "${PERSONAL_PROFILES_DIR}")
+  local link target root
+  for link in "${HOME}/Library"/**/*(D@N); do
+    target="$(readlink "${link}" 2>/dev/null)"
+    for root in "${symlink_target_roots[@]}"; do
+      if [[ "${target}" == "${root}"* ]]; then
+        sudo rm -fv "${link}"
+        break
+      fi
+    done
+  done
+
   sudo rm -rfv "${HOME}"/.[a-z]*
 
   local folders=(

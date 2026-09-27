@@ -297,7 +297,10 @@ main() {
   defaults write com.apple.menuextra.clock ShowSeconds -bool true
 
   if ask "Remove duplicates in the 'Open With' menu (also see 'lscleanup' alias)" 'Y'; then
-    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
+    # Newer macOS versions reject '-kill' outright (lsregister itself prints
+    # "The -kill option has been removed..." and exits non-zero) while still
+    # performing the '-r' rebuild -- tolerate the non-zero exit either way.
+    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user || true
   fi
 
   # Display ASCII control characters using caret notation in standard text views
@@ -1125,7 +1128,9 @@ main() {
   fi
 
   if ask 'Load new settings before rebuilding the index' 'Y'; then
-    killall mds &>/dev/null
+    # 'mds' runs as root; a non-root 'killall' finds no matching process it
+    # owns and exits non-zero even though nothing is actually wrong.
+    killall mds &>/dev/null || true
   fi
 
   # Keyboard Shortcuts > Spotlight: disable "Show Spotlight search" (Cmd+Space).
@@ -1325,11 +1330,13 @@ main() {
     local _iterm_plist="${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
     # Profiles > Text > Font. Stored as "PostScriptName Size" plain string -- no binary encoding needed.
     # PostScript name: MesloLGSNF-Italic (from MesloLGS Nerd Font Italic).
-    /usr/libexec/PlistBuddy -c "Set :'New Bookmarks':0:'Normal Font' 'MesloLGSNF-Italic 13'" "${_iterm_plist}"
+    # Uses the Set-or-Add helper: on a truly fresh iTerm2 install (never launched
+    # yet) 'New Bookmarks':0 doesn't exist at all, so a bare 'Set' fails.
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Normal Font'" "'MesloLGSNF-Italic 13'" "string"
     # Profiles > General > Command > Login shell. The 'Custom Command' key defaults to 'Custom Shell'
     # on a fresh iTerm2 install; 'No' means "Login shell", which is required for .zlogin to run on
     # every new window/tab and for the full zsh startup sequence to execute correctly.
-    /usr/libexec/PlistBuddy -c "Set :'New Bookmarks':0:'Custom Command' 'No'" "${_iterm_plist}"
+    _plist_set_or_add "${_iterm_plist}" ":'New Bookmarks':0:'Custom Command'" "'No'" "string"
     # Profiles > Keys > Key Bindings > Presets > Natural Text Editing.
     # Action 10 = send escape sequence; Action 11 = send hex code.
     # Key format: hex-keycode-modifierflags (0x80000=Option, 0x100000=Cmd, 0x280000=Option+Shift(?), 0x300000=Ctrl+Shift(?)).

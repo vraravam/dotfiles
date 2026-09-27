@@ -1,0 +1,1 @@
+../../../.ai/domains/fresh-install.md

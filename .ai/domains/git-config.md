@@ -1,5 +1,7 @@
 ---
 applyTo: "**/.gitconfig,**/custom.gitattributes,**/add-upstream-git-config.rb"
+name: dotfiles-git-config
+description: Use when editing ~/.config/git/config (.gitconfig), custom.gitattributes, git hooks under files/--XDG_CONFIG_HOME--/git/hooks/, scripts/add-upstream-git-config.rb, or any per-repo override script like upreb-<basename>.sh / push-<basename>.sh in ${PERSONAL_BIN_DIR}. Covers git alias shell-scripting conventions, the folder-context-aware override dispatch pattern, and native-hook vs wrapper-function lifecycle management.
 ---
 
 # Git Configuration Instructions
@@ -249,7 +251,7 @@ main "$@"
 
 **Usage**:
 ```bash
-cd ~/personal/vijay/browser-profiles
+cd "${PERSONAL_PROFILES_DIR}"
 ./push-browser-profiles.sh  # or add to PATH and call directly
 ```
 

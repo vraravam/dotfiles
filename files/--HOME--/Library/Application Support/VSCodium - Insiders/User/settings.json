@@ -38,5 +38,6 @@
         "**/.gitea/workflows/*.yaml",
         "**/.forgejo/workflows/*.yml",
         "**/.forgejo/workflows/*.yaml"
-    ]
+    ],
+    "redhat.telemetry.enabled": false
 }

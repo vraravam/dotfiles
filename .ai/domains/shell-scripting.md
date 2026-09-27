@@ -1,5 +1,7 @@
 ---
 applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**"
+name: dotfiles-shell-scripting
+description: Use when creating or editing any shell script in this dotfiles repo -- .sh, .zsh, .bash files, .shellrc, .aliases, .envrc, zsh autoload functions under files/--XDG_CONFIG_HOME--/zsh/, or git alias shell bodies in .gitconfig. Covers utility functions (is_file, is_directory, nil_or_empty), quoting/brace notation, set -e/&& safety, script depth tracking, logging levels, cron/direnv special cases, and the standard script template.
 ---
 
 # Shell Script Instructions
@@ -38,6 +40,7 @@ a comment when they conflict.
 |------|---------|--------------|
 | Source .shellrc | `source "${HOME}/.shellrc"` | [§ Mandatory: Source .shellrc](#mandatory-source-shellrc-for-utility-functions) |
 | Positional param with default | `dir="${1:-.}"` | [§ Positional Parameters](#positional-parameters) |
+| Required positional param | `dir="${1:?func: dir required}"` | [§ Positional Parameters](#positional-parameters) |
 | Check file exists | `is_file "${path}"` | [§ Prefer Utility Functions](#prefer-utility-functions-over-raw-shell-tests) |
 | Check directory exists | `is_directory "${path}"` | [§ Prefer Utility Functions](#prefer-utility-functions-over-raw-shell-tests) |
 | Avoid subshell fork | `${PWD:t}` not `$(basename "$PWD")` | [§ Zsh Parameter Expansion](#zsh-parameter-expansion-for-basename) |
@@ -283,7 +286,7 @@ extension="${file:e}"               # "sh" (not ${file##*.})
 
 # Absolute paths (replaces realpath/readlink subprocess)
 relative="../../scripts/file.sh"
-absolute="${relative:a}"            # "/Users/vijay/.config/dotfiles/scripts/file.sh"
+absolute="${relative:a}"            # "${HOME}/.config/dotfiles/scripts/file.sh"
 resolved="${relative:A}"            # Same but follows symlinks
 
 # Case conversion (zero cost)
@@ -636,6 +639,11 @@ done
 
 The `${2:?message}` expansion aborts with the message if `$2` is unset or
 empty -- use it for required flag arguments.
+
+`getopts` itself never enforces a flag as mandatory -- it just parses whatever
+is present. If a `getopts`-parsed flag is required, add an explicit
+`nil_or_empty` check after the loop; see § Positional Parameters below for the
+full pattern.
 
 ## Quoting and Variable References
 
@@ -1113,13 +1121,98 @@ Never collapse a two-step `local` + assignment back into a single line when
 
 ## Positional Parameters
 
-Always guard positional parameters with a default to avoid `unbound variable`
-errors under `set -u`:
+**Every function that uses a positional parameter (`$1`, `$2`, ...) must guard
+it -- either with a default it can safely proceed with, or with a fail-fast
+check if the function cannot proceed without it. A bare, unguarded `${1}` /
+`$1` is always a bug: it has neither a default nor a fail-fast message.**
+
+### Optional: has a sensible default, function can proceed without it
 
 ```zsh
-local arg="${1:-}"   # Good
-local arg="$1"       # BAD under set -u if $1 not provided
+local arg="${1:-}"          # Good -- empty is a valid, handled state
+local dir="${1:-${PWD}}"    # Good -- explicit fallback value
 ```
+
+### Required: function cannot proceed without it -- fail fast
+
+Use `${1:?message}` to abort immediately with a clear message if unset or empty:
+
+```zsh
+local folder="${1:?my_func: folder argument required}"
+```
+
+Or, when the failure needs to go through this repo's own logging/return-code
+conventions rather than a raw shell abort (e.g. inside a function that must
+`return 1` instead of killing the whole script -- see § Exit Points below),
+guard explicitly:
+
+```zsh
+local folder="${1:-}"
+if nil_or_empty "${folder}"; then
+  warn "my_func: folder argument required"
+  return 1
+fi
+```
+
+**Choosing between the two required-guard forms:** `${1:?message}` is
+simplest and correct for most internal/private helper functions (`_`-prefixed)
+where an immediate abort is acceptable. Prefer the explicit `nil_or_empty` +
+`warn` + `return 1` form for user-facing entry-point functions (where `warn`'s
+consistent logging format and a clean `return` -- not an abrupt `${1:?}` abort
+message -- matter for UX), or where the calling script needs to keep running
+other work after this one function fails.
+
+### Two related gaps that look guarded but are not
+
+**`getopts`-parsed flags are never automatically required.** `getopts` only
+parses whatever flags are present -- it does not know or enforce that a given
+flag is mandatory. If a flag is required, check it explicitly after the loop
+(see also § Option Parsing above):
+
+```zsh
+while getopts ":d:" opt; do
+  case "${opt}" in
+    d) dir="${OPTARG}" ;;
+  esac
+done
+if nil_or_empty "${dir:-}"; then
+  warn "my_func: -d <dir> is required"
+  usage
+  return 1
+fi
+```
+
+**`shift`/`shift N` silently no-ops past the end instead of failing.** In zsh,
+`shift N` when `$# < N` prints `shift: shift count must be <= $#` to stderr but
+does **not** abort or change `$#` -- the function continues executing with
+stale positional parameters instead of failing fast. Guard the count before
+shifting whenever it isn't already guaranteed present:
+
+```zsh
+# BAD -- if called with zero args, shift silently fails to consume anything
+_my_func() {
+  local fn="${1:-}"
+  shift
+  # ...
+}
+
+# Good -- verify enough args are present before shifting
+_my_func() {
+  if (($# < 1)); then
+    warn "_my_func: fn argument required"
+    return 1
+  fi
+  local fn="${1}"
+  shift
+  # ...
+}
+```
+
+**Scan rule:** when editing any function, check every `$1`/`$2`/.../`shift`
+reference against this section. A parameter that's genuinely optional gets
+`:-`; a parameter the function cannot function without gets `:?` or an
+explicit `nil_or_empty` check; every `shift`/`shift N` is preceded by a `$#`
+check if the count being shifted isn't already guaranteed present.
 
 ## Parameter Expansion Operators -- `:-` vs `-`
 
@@ -2162,4 +2255,16 @@ Based on code review patterns and debugging sessions, here are the most common m
     bcg | grep ...
     # Good - use underlying command
     brew outdated --greedy | grep ...
+    ```
+
+11. **Unguarded positional parameters / `shift` without a `$#` check** → No default and no fail-fast message (see § Positional Parameters)
+    ```zsh
+    # BAD - bare $1, no default and no fail-fast message
+    local dir="${1}"
+    # BAD - shift silently no-ops if $# < 1 instead of failing
+    shift
+    # Good - required param fails fast; shift only after count is verified
+    local dir="${1:?my_func: dir argument required}"
+    if (($# < 1)); then warn "my_func: fn argument required"; return 1; fi
+    shift
     ```

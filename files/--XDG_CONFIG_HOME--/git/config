@@ -813,7 +813,12 @@
   # Reftable is the modern reference storage format that replaces the traditional
   # .git/refs/* file hierarchy with a single packed file, improving performance.
   # No-op if already reftable or if git version doesn't support migration.
-  # Cleans up legacy loose refs after successful migration.
+  # Cleans up legacy loose refs after successful migration. Also rewrites .git/HEAD
+  # with the real branch name: reftable's own .git/HEAD legitimately (by design, not
+  # a bug) reads 'ref: refs/heads/.invalid' after migration -- git itself resolves
+  # the real branch fine via its reftable database (symbolic-ref/status/branch all
+  # work correctly), but shell prompts that read .git/HEAD directly (bypassing a git
+  # subprocess for speed) would otherwise display '.invalid' as the branch name.
   # Usage: git migrate-reftable [<dir>]
   migrate-reftable = "!f() { \
     dir=\"${1:-.}\"; \
@@ -824,6 +829,10 @@
     fi; \
     if git -C \"${dir}\" refs migrate --ref-format=reftable 2>/dev/null; then \
       rm -rf \"${dir}/.git/refs/heads\"/* \"${dir}/.git/refs/tags\"/* \"${dir}/.git/refs/remotes\"/* 2>/dev/null || true; \
+      real_ref=$(git -C \"${dir}\" symbolic-ref HEAD 2>/dev/null); \
+      if [ -n \"${real_ref}\" ]; then \
+        printf 'ref: %s\n' \"${real_ref}\" >\"${dir}/.git/HEAD\"; \
+      fi; \
       printf 'Migrated %s to reftable format\n' \"${dir}\"; \
     else \
       printf 'git refs migrate unavailable (requires git 2.45+) -- skipping migration in %s\n' \"${dir}\" >&2; \

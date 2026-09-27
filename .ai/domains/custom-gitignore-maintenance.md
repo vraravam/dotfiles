@@ -1,5 +1,7 @@
 ---
 applyTo: "**/files/**,**/scripts/install-dotfiles.rb,**/files/--HOME--/custom.gitignore"
+name: dotfiles-custom-gitignore-maintenance
+description: Use when adding, deleting, renaming, or moving files under files/ in this dotfiles repo, editing files/--HOME--/custom.gitignore or files/--PERSONAL_PROFILES_DIR--/custom.gitignore, or running scripts/install-dotfiles.rb. Covers keeping custom.gitignore in sync with the files/ tree so symlinked/copied dotfiles don't get accidentally tracked by nested git repos.
 ---
 
 # Custom Gitignore Maintenance Instructions
@@ -46,7 +48,7 @@ The same maintenance rules apply to any `custom.gitignore` files added in the fu
 `install-dotfiles.rb` transforms source paths to destination paths:
 
 1. **Strip `files/` prefix**: `files/--HOME--/.shellrc` → `--HOME--/.shellrc`
-2. **Interpolate env vars**: `--HOME--/.shellrc` → `~/.shellrc` (or `/Users/vijay/.shellrc`)
+2. **Interpolate env vars**: `--HOME--/.shellrc` → `~/.shellrc` (or the fully-resolved absolute path, e.g. `${HOME}/.shellrc`)
 3. **Custom git prefix replacement**: `custom.gitconfig` → `.gitconfig`, `custom.gitattributes` → `.gitattributes`
 4. **Remove root `/`**: Gitignore entries use HOME-relative paths starting with `/`
 

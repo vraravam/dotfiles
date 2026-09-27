@@ -42,10 +42,9 @@
   },
   "instructions": [
     ".ai/instructions.md",
-    ".ai/domains/shell-scripting.md",
-    ".ai/domains/ruby-scripting.md",
-    ".ai/domains/zsh-startup.md",
-    ".ai/domains/fresh-install.md",
-    ".ai/domains/git-config.md"
+    ".ai/domains/whitespace-rules.md",
+    ".ai/domains/edit-checklist.md",
+    ".ai/domains/character-encoding.md",
+    ".ai/domains/comment-philosophy.md"
   ]
 }

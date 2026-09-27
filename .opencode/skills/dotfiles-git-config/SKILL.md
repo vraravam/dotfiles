@@ -1,0 +1,1 @@
+../../../.ai/domains/git-config.md
