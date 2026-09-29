@@ -181,6 +181,8 @@ The config file for this script is a yaml file that is passed into this script a
     upstream2: <upstream remote url2>
   bundle: "${HOME}/Downloads/example-repo.bundle"
   active: true
+  post_checkout:
+    - set_ssh_folder_permissions
   post_clone:
     - ln -sf "${PERSONAL_CONFIGS_DIR}/XXX.gradle.properties" ./gradle.properties
     - git-crypt unlock XXX
@@ -189,15 +191,16 @@ The config file for this script is a yaml file that is passed into this script a
 
 * `folder` (mandatory) specifies the target folder where the repo should reside on local machine. If the folder name starts with `/`, then its assumed that the path starts from the root folder; if not, then its assumed to be relative to where the script is being run from. Supports `${<env-key>}` expansion -- see [Environment variable support](#environment-variable-support) below. Note: a literal `~` is NOT expanded; use `${HOME}` instead.
 * `remote` (mandatory) specifies the remote url of the repository
-* `other_remotes` (optional) specifies a hash of the other remotes keyed by the name with the value of the remote url
+* `other_remotes` (optional) specifies a hash of the other remotes keyed by the name with the value of the remote url. If cloning from `remote` fails and `folder` isn't yet a git repo, each `other_remotes` entry is also tried, in order, as a fallback clone source -- whichever succeeds becomes `origin` (matching `git clone`'s own behavior); `remote` (if it failed) is then recorded under the fallback's former name so it can still be retried manually later.
 * `bundle` (optional) specifies the path to a local git bundle file for this repo -- see [Bundle support](#bundle-support) below. Also supports `${<env-key>}` expansion, same as `folder`.
 * `active` (optional; default: false) specifies whether to process this folder/repo or not on your local machine
+* `post_checkout` (optional; default: empty array) specifies shell commands, joined with ` && ` and run once immediately after a fresh clone/import checks out files -- strictly before origin/branch cleanup, the reftable-migrate/unshallow/maintain/submodule-update chain, and any `other_remotes` fallback-clone attempt or fetch. Runs in-process inside `clone_repo_into` itself, so any `.shellrc` function (e.g. `set_ssh_folder_permissions`) is already in scope -- no need to `source ~/.shellrc` first, unlike `post_clone` below. Only fires on an actual fresh clone, never for a pre-existing repo. Intended for repos with files needing permissions fixed before anything else tries to use them (e.g. `$HOME`'s `.ssh`/`.gnupg` keys) -- `git checkout` does not preserve the strict permission modes those need, and the reftable/unshallow/maintain/submodule-update chain (or a second remote's fetch) could need SSH auth using a key the checkout just wrote with the wrong (too-open) permissions.
 * `post_clone` (optional; default: empty array) specifies other `bash` commands (in sequence) to be run once the resurrection is done - for eg, symlink a '.envrc' file if one exists
 
 ### Environment variable support
 
 * `folder` and `bundle` values in the YAML support `${<env-key>}` placeholders (eg `${PROJECTS_BASE_DIR}/oss/foo`), expanded via `ENV.fetch` when the config is read. If the referenced env var is not set, the literal placeholder is kept and a warning is logged -- it does not fail the run. A bare `~` is NOT expanded this way; use `${HOME}` instead. `other_remotes` values are used as-is (remote URLs don't need this).
-* `post_clone` commands are run through a shell (not through this placeholder mechanism), so normal shell `$VAR`/`${VAR}` expansion applies there at execution time -- an unset var expands to an empty string per standard shell semantics, rather than being kept as a literal placeholder.
+* `post_checkout` and `post_clone` commands are run through a shell (not through this placeholder mechanism), so normal shell `$VAR`/`${VAR}` expansion applies there at execution time -- an unset var expands to an empty string per standard shell semantics, rather than being kept as a literal placeholder.
 * `-g` (generate mode) does the reverse: absolute paths discovered on disk are rewritten back into `${<env-key>}` placeholder form before being printed, so the generated YAML stays portable across machines. The substitution checks `PROJECTS_BASE_DIR`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, then `HOME`, in that order (most specific first), and only the first matching prefix is replaced.
 * `FILTER` (regex) and `REF_FOLDER` (path) environment variables can also be set to scope which repos are processed or verified against -- see `resurrect-repositories.rb -h` for details.
 

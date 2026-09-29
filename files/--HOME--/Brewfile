@@ -125,7 +125,7 @@ cask 'google-chrome@beta'
 cask 'keepassxc@beta'
 cask 'keycastr', postinstall: "\"#{setup_login_items_script}\" -a 'Keycastr'"
 cask 'keyclu', postinstall: "\"#{setup_login_items_script}\" -a 'KeyClu'" if is_arm
-cask 'mechvibes', postinstall: "\"#{setup_login_items_script}\" -a 'Mechvibes'"
+# cask 'mechvibes', postinstall: "\"#{setup_login_items_script}\" -a 'Mechvibes'"
 cask 'onlyoffice'
 cask 'protonvpn' # , postinstall: "\"#{setup_login_items_script}\" -a 'ProtonVPN'"
 cask 'rancher' # if ::OS::Mac::version < 26

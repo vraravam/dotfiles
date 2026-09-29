@@ -16,6 +16,11 @@
 #     "${PROJECTS_BASE_DIR}/oss/foo") via ENV.fetch -- an unset var keeps the literal
 #     placeholder and logs a warning rather than failing. A bare '~' is NOT expanded;
 #     use '${HOME}' instead. 'other_remotes' values are used as-is (no expansion).
+#   - 'post_checkout' commands run inside clone_repo_into itself (in-process, .shellrc
+#     functions already in scope), immediately once a fresh clone/import checks out
+#     files -- strictly before origin/branch cleanup, the reftable-migrate/unshallow/
+#     maintain/siu chain, and any other_remotes fallback-clone attempt or fetch. Joined
+#     with ' && ' and 'eval'd as a single string, unlike 'post_clone' below.
 #   - 'post_clone' commands are run through a shell, so normal shell '$VAR'/'${VAR}'
 #     expansion applies there at execution time -- a different mechanism from the above.
 #   - '-g' (generate) does the reverse: absolute paths discovered on disk are rewritten
@@ -57,6 +62,7 @@ module ResurrectRepositories
   FOLDER_KEY_NAME = 'folder' # Key name in YAML for the repository dir
   REMOTE_KEY_NAME = 'remote' # Key name for the primary remote
   OTHER_REMOTES_KEY_NAME = 'other_remotes' # Key name for additional remotes
+  POST_CHECKOUT_KEY_NAME = 'post_checkout' # Key name for post-checkout commands
   POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
   BUNDLE_KEY_NAME = 'bundle' # Key name for an optional local git bundle file
   # Preference order for reverse env-var substitution in _find_and_reverse_replace_env_var
@@ -65,7 +71,7 @@ module ResurrectRepositories
 
   # Repository configuration object with validation
   class RepositoryConfig
-    attr_reader :folder, :remote, :other_remotes, :post_clone, :bundle
+    attr_reader :folder, :remote, :other_remotes, :post_checkout, :post_clone, :bundle
 
     # Creates a new repository configuration from a hash.
     #
@@ -111,6 +117,14 @@ module ResurrectRepositories
         return nil
       end
 
+      # Validate post_checkout (optional) -- see 'post_clone' validation below for why
+      # this isn't extracted into a shared generic validator (Flay similarity is intentional).
+      post_checkout = hash[POST_CHECKOUT_KEY_NAME]
+      if post_checkout && !post_checkout.is_a?(Array)
+        Logging.record_warning("Repository entry '#{remote}' has invalid 'post_checkout' (must be an array)")
+        return nil
+      end
+
       # Validate post_clone (optional)
       post_clone = hash[POST_CLONE_KEY_NAME]
       if post_clone && !post_clone.is_a?(Array)
@@ -132,6 +146,7 @@ module ResurrectRepositories
         folder: expanded_folder,
         remote: remote.strip,
         other_remotes: other_remotes || {},
+        post_checkout: post_checkout || [],
         post_clone: post_clone || [],
         bundle: expanded_bundle
       )
@@ -143,12 +158,20 @@ module ResurrectRepositories
     # @param folder [String] Absolute, already-expanded path to the repository directory.
     # @param remote [String] Primary remote URL (the 'origin' remote).
     # @param other_remotes [Hash<String, String>] Additional remote name -> URL pairs.
+    # @param post_checkout [Array<String>] Shell commands 'eval'd once immediately after a
+    #   fresh clone/import checks out files -- strictly before origin/branch cleanup, the
+    #   reftable-migrate/unshallow/maintain/siu chain, and any other_remotes fallback-clone
+    #   attempt or fetch. For repos with files needing permissions fixed before anything
+    #   else uses them (e.g. $HOME's '.ssh'/'.gnupg' keys) -- see clone_repo_into's own
+    #   comment in .shellrc for the full rationale. Joined with ' && ' and passed as a
+    #   single 'eval'd string (unlike 'post_clone', each entry does not run independently).
     # @param post_clone [Array<String>] Shell commands to run once after cloning.
     # @param bundle [String, nil] Optional path to a local git bundle file to import from/export to.
-    def initialize(folder:, remote:, other_remotes:, post_clone:, bundle: nil)
+    def initialize(folder:, remote:, other_remotes:, post_checkout:, post_clone:, bundle: nil)
       @folder = folder
       @remote = remote
       @other_remotes = other_remotes
+      @post_checkout = post_checkout
       @post_clone = post_clone
       @bundle = bundle
     end
@@ -170,6 +193,7 @@ module ResurrectRepositories
         'active' => true,
         REMOTE_KEY_NAME => @remote,
         OTHER_REMOTES_KEY_NAME => nil_or_empty?(@other_remotes) ? nil : @other_remotes,
+        POST_CHECKOUT_KEY_NAME => nil_or_empty?(@post_checkout) ? nil : @post_checkout,
         POST_CLONE_KEY_NAME => nil_or_empty?(@post_clone) ? nil : @post_clone,
         BUNDLE_KEY_NAME => @bundle
       }.compact
@@ -473,7 +497,7 @@ module ResurrectRepositories
   #
   # @param dir [String] The path to the Git repository directory.
   # @return [Hash] A hash with repository details (folder, active, remote, other_remotes).
-  #                The 'post_clone' key is intentionally not added here as per the script's design for generation.
+  #                The 'post_checkout'/'post_clone' keys are intentionally not added here as per the script's design for generation.
   # :reek:FeatureEnvy -- Builds hash for YAML serialization (intentional data structure construction)
   def _generate_each(dir)
     hash = { folder: _find_and_reverse_replace_env_var(dir), active: true }
@@ -501,6 +525,13 @@ module ResurrectRepositories
   # correctly configured, fetching all data, and running post-clone commands.
   # On FIRST_INSTALL, GitProcessor.clone_repo_into uses --depth=1 (shallow clone).
   #
+  # If cloning from 'remote' fails and 'dir' still isn't a git repo, each 'other_remotes'
+  # entry is tried in turn (in YAML order) as an alternate clone source -- e.g. a mirror
+  # reachable via a different transport/backup mechanism -- before giving up entirely.
+  # This only ever engages on a fresh clone: a pre-existing repo already succeeded
+  # (clone_repo_into is a no-op) regardless of which remote it was originally cloned
+  # from, so no fallback attempt is made in that case.
+  #
   # @param repo [RepositoryConfig] The repository configuration object.
   # @return [Boolean] Returns false for fatal failures (clone failure, verification failure)
   #   which abort processing of this repo and mark it as failed. Returns true for success,
@@ -508,10 +539,13 @@ module ResurrectRepositories
   #   logged as warnings but allow the repo to complete processing.
   # :reek:DuplicateMethodCall -- check_status pattern used with different error messages
   # :reek:FeatureEnvy -- Local hash tracks state during multi-step remote configuration
+  # :reek:TooManyStatements -- Fallback-clone bookkeeping is inherently sequential; splitting
+  # it into more methods would obscure the single-pass clone -> verify -> configure flow.
   def _resurrect_each(repo)
     dir = repo.folder # Assumed to be an absolute, resolved path
     dir_colored = dir.cyan
     remote_url = repo.remote
+    post_checkout_hook = repo.post_checkout.join(' && ')
     post_clone_commands = repo.post_clone
 
     PathUtils.ensure_directories_exist(dir)
@@ -525,11 +559,38 @@ module ResurrectRepositories
     # path) -- the verification step below adds it back from config. Either way, the
     # same reftable migration, maintenance, and submodule-update steps run afterward,
     # since they live inside clone_repo_into itself rather than being duplicated here.
-    unless GitProcessor.clone_repo_into(remote_url, dir, bundle: repo.bundle)
+    cloned_ok = GitProcessor.clone_repo_into(remote_url, dir, bundle: repo.bundle, post_checkout_hook: post_checkout_hook)
+
+    # Only attempt a fallback if the primary clone genuinely failed -- on success this
+    # loop never runs, so every existing single-remote repo is completely unaffected.
+    fallback_used = nil
+    if !cloned_ok && !nil_or_empty?(repo.other_remotes)
+      repo.other_remotes.each do |name, url|
+        Logging.info("Failed to clone primary remote -- trying '#{name.cyan}' ('#{url.cyan}') as a fallback clone source")
+        if GitProcessor.clone_repo_into(url, dir, bundle: repo.bundle, post_checkout_hook: post_checkout_hook)
+          fallback_used = { name: name, url: url }
+          break
+        end
+      end
+    end
+
+    unless cloned_ok || fallback_used
       # Clone/import failure is fatal for this repo -- cannot proceed without a repository
-      Logging.record_error("Failed to clone '#{remote_url.cyan}' into '#{dir_colored}'")
+      Logging.record_error("Failed to clone '#{remote_url.cyan}' (and any configured fallback) into '#{dir_colored}'")
       return false
     end
+
+    # 'origin' is whichever URL actually succeeded -- 'git clone' itself names it
+    # 'origin' regardless of which configured candidate it came from.
+    effective_origin_url = fallback_used ? fallback_used[:url] : remote_url
+
+    # The 'other_remotes' entry that just served as the clone source is now 'origin'
+    # itself -- don't re-add it under its own name below (it would just duplicate
+    # 'origin' under a second name). Instead, re-purpose that same name for the
+    # original 'remote' value, which failed but should still be recorded as a remote
+    # so it can be retried manually later (e.g. once the underlying issue is fixed).
+    remaining_other_remotes = repo.other_remotes.dup
+    remaining_other_remotes[fallback_used[:name]] = remote_url if fallback_used
 
     # After cloning, verify the origin URL using GitProcessor
     git = GitProcessor.new(dir: dir)
@@ -538,9 +599,9 @@ module ResurrectRepositories
       cloned_origin_url = git.remote_url(name: ORIGIN_NAME)
       if cloned_origin_url
         existing_remotes[ORIGIN_NAME] = cloned_origin_url
-        if cloned_origin_url != remote_url
+        if cloned_origin_url != effective_origin_url
           # Verification failure is fatal for this repo -- wrong URL means wrong code
-          Logging.record_error("Cloned origin URL '#{cloned_origin_url.cyan}' differs from config '#{remote_url.cyan}' for '#{dir_colored}'")
+          Logging.record_error("Cloned origin URL '#{cloned_origin_url.cyan}' differs from config '#{effective_origin_url.cyan}' for '#{dir_colored}'")
           return false
         end
       else
@@ -548,13 +609,13 @@ module ResurrectRepositories
         # import above, which deliberately strips the bogus 'origin' left by
         # 'git clone <bundle-file>') -- not fatal; add it from config instead of
         # failing, mirroring the 'other_remotes' handling just below.
-        Logging.info("No 'origin' remote found for pre-existing repo '#{dir_colored}' -- adding it from config: '#{remote_url.cyan}'")
-        stdout, stderr, status = git.add_remote(ORIGIN_NAME, remote_url)
+        Logging.info("No 'origin' remote found for pre-existing repo '#{dir_colored}' -- adding it from config: '#{effective_origin_url.cyan}'")
+        stdout, stderr, status = git.add_remote(ORIGIN_NAME, effective_origin_url)
         return false unless CommandUtils.check_status(stdout, stderr, status) do |st, output_msg|
-          Logging.record_error("Failed to add missing 'origin' remote '#{remote_url.cyan}' for repo '#{dir_colored}' (status: #{st.exitstatus})#{output_msg}")
+          Logging.record_error("Failed to add missing 'origin' remote '#{effective_origin_url.cyan}' for repo '#{dir_colored}' (status: #{st.exitstatus})#{output_msg}")
         end
 
-        existing_remotes[ORIGIN_NAME] = remote_url
+        existing_remotes[ORIGIN_NAME] = effective_origin_url
       end
     end
 
@@ -565,10 +626,10 @@ module ResurrectRepositories
         existing_remotes[name] = url
       end
       Logging.debug("Existing remotes: #{existing_remotes.keys.join(', ')}") unless nil_or_empty?(existing_remotes)
-      unless nil_or_empty?(repo.other_remotes)
+      unless nil_or_empty?(remaining_other_remotes)
         # Flay detects similarity between set_remote_url and add_remote check_status blocks.
         # This is intentional - each operation (update vs add) has different context and error messages.
-        repo.other_remotes.each do |name, remote|
+        remaining_other_remotes.each do |name, remote|
           if existing_remotes.key?(name)
             if existing_remotes[name] != remote
               # Remote exists but URL is different
@@ -697,7 +758,7 @@ if __FILE__ == $PROGRAM_NAME
     opts.separator ''
     opts.separator 'Options:'.purple
     opts.on('-g', '--generate FOLDER', 'Generate configuration from FOLDER onto stdout (usually on current laptop)',
-            "  Note: this option will not handle 'post_clone' commands in the generated yaml structure") do |dir|
+            "  Note: this option will not handle 'post_checkout'/'post_clone' commands in the generated yaml structure") do |dir|
       options[:generate] = dir
     end
     opts.on('-r', '--resurrect CONFIG_FILE', "Resurrect 'known' codebases from CONFIG_FILE (usually on fresh laptop)",

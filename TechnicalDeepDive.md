@@ -648,10 +648,12 @@ tap) and exposed as a real git remote via that tool's own custom remote helper. 
 mechanisms are opt-in per repo, controlled purely by whether their env vars are set in
 `.shellrc` (`KEYBASE_HOME_REPO_NAME`/`KEYBASE_PROFILES_REPO_NAME` and
 `ENCRYPTED_HOME_REPO_URL`/`ENCRYPTED_PROFILES_REPO_URL`) -- either, both, or neither
-can be enabled. When both are enabled for the same repo, it gets two independent
-remotes (`origin` for whichever was configured first, `origin2` for the other),
-pushed/pulled explicitly and separately -- see `KeybaseMigration.md` for the full
-day-to-day mechanics of that.
+can be enabled. When both are enabled for the same repo, Keybase is always the primary
+remote (`origin`, historical precedence) and the encrypted backup becomes a second,
+independent remote (`origin2`), pushed/pulled explicitly and separately -- see
+`KeybaseMigration.md` for the full day-to-day mechanics of that. If cloning from the
+primary fails during bootstrap, `resurrect-repositories.rb` also tries the encrypted
+backup as a fallback clone source before giving up (see item 2 below).
 
 **This repo previously implemented the gpg+git-bundle mechanism itself**
 (`scripts/utilities/encrypted_backup.rb`, `scripts/git-remote-encrypted-backup`,
@@ -683,7 +685,7 @@ security add-generic-password -A -a "${USER}" -s 'git-remote-gpg-encrypt' -w;
 **Dotfiles-side integration points:**
 - `files/--HOME--/Brewfile` -- `brew 'vraravam/tap/git-remote-gpg-encrypt', trusted: true` (fully-qualified formula reference auto-taps `vraravam/tap`; pulls in `gnupg` + `git` transitively)
 - `files/--HOME--/.shellrc` -- `ENCRYPTED_HOME_REPO_URL`/`ENCRYPTED_PROFILES_REPO_URL` env vars (full URLs, not bare names -- see `KeybaseMigration.md` for why)
-- `scripts/fresh-install-of-osx.sh`'s `_clone_home_repo`/`_clone_profiles_repo` -- vanilla-OS bootstrap path, tries Keybase first (if enabled), falls back to `git gpg-encrypt-restore`
+- `scripts/generate-bootstrap-repositories-yaml.rb` -- builds the YAML `resurrect-repositories.rb -r` consumes for the vanilla-OS bootstrap path: Keybase as the primary `remote` when enabled, the encrypted backup under `other_remotes['origin2']` when both are enabled (or as `remote` directly if Keybase isn't); `resurrect-repositories.rb` tries `other_remotes` as a fallback clone source if the primary fails
 
 See `KeybaseMigration.md` for the step-by-step setup guide, including a section honestly comparing this mechanism's security against Keybase's (short version: comparable content confidentiality given a high-entropy passphrase, but weaker metadata privacy and no per-device key revocation -- not a like-for-like replacement).
 

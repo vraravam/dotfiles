@@ -61,7 +61,10 @@ module RecreateRepository
     force = true if dir_pn == EnvVars::PERSONAL_PROFILES_DIR
 
     dir_colored = dir.cyan
-    Logging.error "'#{dir_colored}' is not a git repo. Please specify the root of a git repo." unless GitProcessor.repo?(dir)
+    unless GitProcessor.repo?(dir)
+      Logging.record_error("'#{dir_colored}' is not a git repo. Please specify the root of a git repo.")
+      return false
+    end
 
     Logging.section_header "#{'Processing dir:'.yellow} '#{dir_colored}'"
     GitProcessor.new(dir: dir_pn, dry_run: dry_run) do |git|

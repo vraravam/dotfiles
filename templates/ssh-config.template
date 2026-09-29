@@ -20,21 +20,19 @@
 # commands without the zsh environment loaded, this file MUST use hardcoded paths like
 # ~/.ssh/id_rsa-personal instead of variable references.
 
-# Default GitHub identity (used when cloning via git@github.com directly - unless you use github-personal, etc while cloning)
+# Default GitHub identity (used when cloning via git@github.com directly - unless you use github-personal, etc while cloning and pushing)
+# Note: This cannot be removed since the 'pushInsteadOf' setting is needed for the dotfiles repo in a fresh-install scenario
 Host github.com
-  User git
   IdentityFile ~/.ssh/id_rsa-personal
 
 # Personal GitHub account (explicit alias — used with url rewriting in gitconfig-inc.template)
 Host github-personal
   HostName github.com
-  User git
   IdentityFile ~/.ssh/id_rsa-personal
 
 # <company-name> GitHub account (explicit alias — used with url rewriting in gitconfig-inc.template)
 Host github-<company-name>
   HostName github.com
-  User git
   IdentityFile ~/.ssh/id_ed25519-<company-name>
 
 Include ~/.ssh/global_config

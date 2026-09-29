@@ -17,6 +17,10 @@ module Keybase
   include Core  # For instance methods (in blocks)
   extend Core   # For module methods
 
+  # URL scheme prefix for Keybase git repos. Used by both keybase_url? (validator) and
+  # repo_url (builder) below so the literal only appears once.
+  PROTOCOL = 'keybase://'
+
   # Note: Logging methods must be qualified (Logging.debug, Logging.error, etc.)
   # because 'include Logging' + 'extend self' doesn't make included methods
   # available as module methods.
@@ -54,7 +58,19 @@ module Keybase
   # @return [Boolean]
   # :reek:UtilityFunction -- Stateless URL validator
   def keybase_url?(url)
-    url.to_s.start_with?('keybase://')
+    url.to_s.start_with?(PROTOCOL)
+  end
+
+  # Builds the keybase:// URL for the given repo name, owned by whoever is currently
+  # logged into Keybase. Derived dynamically via 'username' above (reads 'keybase
+  # status') -- no username is stored anywhere; whoever completed the interactive
+  # login (see 'ensure_logged_in' below) owns the account.
+  #
+  # @param repo_name [String] Bare Keybase repo name (e.g. 'home').
+  # @return [String]
+  # :reek:UtilityFunction -- Stateless URL builder
+  def repo_url(repo_name)
+    "#{PROTOCOL}private/#{username}/#{repo_name}"
   end
 
   # ---------------------------------------------------------------------------

@@ -84,9 +84,29 @@ module CollectionProcessor
   #     noise_patterns: ['Permission denied', 'No such file or directory']
   #   )
   def find_directories_matching(dirs:, name_pattern:, mindepth: 1, maxdepth: 6, filter: nil, prune_dirs: [], exclude_regex: nil, skip_symlinks: true, transform_result: nil, noise_patterns: nil)
-    # Convert Pathname objects to strings, rejecting nil and empty strings
+    # Convert Pathname objects to strings, rejecting nil, empty, and non-existent paths.
+    # A caller-supplied root that doesn't exist (e.g. PROJECTS_BASE_DIR defaulting to
+    # '~/dev' on a machine where that directory was never created) must be silently
+    # skipped here rather than passed to 'find', which would otherwise fail with
+    # "No such file or directory" on that single root and surface as a spurious warning
+    # even though the other roots are perfectly searchable.
     # filter_map polyfill in enumerable_ext.rb provides optimized single-pass implementation for Ruby 2.6
-    dirs = Array(dirs).filter_map { |d| d.to_s unless nil_or_empty?(d) || nil_or_empty?(d.to_s) }
+    dirs = Array(dirs).filter_map do |d|
+      next if nil_or_empty?(d) || nil_or_empty?(d.to_s)
+
+      dir_str = d.to_s
+      unless File.directory?(dir_str)
+        Logging.debug "Skipping search dir '#{dir_str.cyan}' -- doesn't exist"
+        next
+      end
+
+      dir_str
+    end
+    # Nothing left to search (e.g. every root was missing) -- 'find' with no path
+    # arguments defaults to searching '.', which would silently search the wrong
+    # location instead of returning no results.
+    return [] if nil_or_empty?(dirs)
+
     prune = Array(prune_dirs)
 
     # Build prune expression: ( -name dir1 -o -name dir2 ... ) -prune -o

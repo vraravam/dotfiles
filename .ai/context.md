@@ -65,17 +65,19 @@ directly actionable when that work is picked up:
   it's the canonical implementation (see `shell-scripting.md` § `.shellrc` vs
   `.aliases` for why bootstrap-time functions must stay in `.shellrc`).
 
-- **When rebasing all WIP branches onto an updated `master`**: process them in
-  this order: `deja`, `stout-migration`, `fresh-install-ruby`,
-  `osx-defaults-ruby`. The last two must stay adjacent
-  and in that relative order regardless -- `osx-defaults-ruby` is chained on
-  top of `fresh-install-ruby` (not `master` directly), so `fresh-install-ruby`
-  must be rebased first and `osx-defaults-ruby` rebased onto the *updated*
-  `fresh-install-ruby`, never onto `master`. See
-  `REBASE-AND-REFACTORING-METHODOLOGY.md` § Forward Rebase for the mechanics,
-  and its § Rebase Workflow for the `rebase --onto <new-base> <old-base>
-  <branch>` form required when the branch's old base commit was itself
-  amended (a plain `git rebase master` will conflict in that case).
+- **When rebasing all WIP branches onto an updated `master`**: as of this
+  writing the full set is `nix-migration`, `test-gpg`, `stout-migration`,
+  `deja`, `fresh-install-ruby`, `osx-defaults-ruby` -- `nix-migration`/
+  `test-gpg`/`stout-migration`/`deja` are each independently based on `master`
+  (any order); `osx-defaults-ruby` is chained on top of `fresh-install-ruby`
+  (not `master` directly), so `fresh-install-ruby` must be rebased first and
+  `osx-defaults-ruby` rebased onto the *updated* `fresh-install-ruby`, never
+  onto `master`. See `REBASE-AND-REFACTORING-METHODOLOGY.md` § Forward Rebase
+  for the chain mechanics, its § Rebase Workflow step 3 for the `rebase --onto
+  <new-base> <old-base> <branch>` form required when `master`'s tip commit was
+  itself amended (a plain `git rebase master` will conflict in that case), and
+  its § 3a for the mandatory post-rebase no-functionality-lost checklist --
+  applies to every branch in the set, not just the chain.
 
 ## Known Issues
 

@@ -37,6 +37,65 @@ RSpec.describe GitProcessor do
     end
   end
 
+  describe '.clone_repo_into' do
+    let(:url) { 'https://github.com/example/repo.git' }
+    let(:dest) { '/tmp/example-repo' }
+
+    # Stubs CommandUtils.run_interactive and captures its arguments -- this only tests
+    # the positional-argument assembly clone_repo_into builds up before shelling out,
+    # not the shell function itself (which .shellrc's own bats-style expectations, if
+    # any, would cover -- there is no zsh/.shellrc dependency in this Ruby-level spec).
+    def captured_call(**kwargs)
+      captured = nil
+      allow(CommandUtils).to receive(:run_interactive) { |*args| captured = args }
+      described_class.clone_repo_into(url, dest, **kwargs)
+      captured
+    end
+
+    it 'passes only url and dest when branch/bundle/post_checkout_hook are all absent' do
+      _env, _zsh, _dash_c, cmd = captured_call
+
+      expect(cmd).to end_with("clone_repo_into #{url} #{dest}")
+    end
+
+    it 'emits only branch when just branch is given' do
+      _env, _zsh, _dash_c, cmd = captured_call(branch: 'main')
+
+      expect(cmd).to end_with("clone_repo_into #{url} #{dest} main")
+    end
+
+    it 'emits branch (as an empty placeholder) and bundle when bundle is given without a branch' do
+      _env, _zsh, _dash_c, cmd = captured_call(bundle: '/tmp/x.bundle')
+
+      expect(cmd).to end_with("clone_repo_into #{url} #{dest} '' /tmp/x.bundle")
+    end
+
+    it 'emits empty branch/bundle placeholders plus the hook when only post_checkout_hook is given -- ' \
+       'the hook must apply regardless of whether a bundle is used for this clone' do
+      _env, _zsh, _dash_c, cmd = captured_call(post_checkout_hook: 'set_ssh_folder_permissions')
+
+      expect(cmd).to end_with("clone_repo_into #{url} #{dest} '' '' set_ssh_folder_permissions")
+    end
+
+    it 'emits branch, the real bundle path, and the hook when all three are given' do
+      _env, _zsh, _dash_c, cmd = captured_call(branch: 'main', bundle: '/tmp/x.bundle', post_checkout_hook: 'set_ssh_folder_permissions')
+
+      expect(cmd).to end_with("clone_repo_into #{url} #{dest} main /tmp/x.bundle set_ssh_folder_permissions")
+    end
+
+    it 'passes an empty env hash when skip_maintenance is false (the default)' do
+      env, = captured_call
+
+      expect(env).to eq({})
+    end
+
+    it 'sets SKIP_POST_CLONE_MAINTENANCE in the env when skip_maintenance is true' do
+      env, = captured_call(skip_maintenance: true)
+
+      expect(env).to eq({ 'SKIP_POST_CLONE_MAINTENANCE' => 'true' })
+    end
+  end
+
   describe '#repo?' do
     subject(:git) { described_class.new(dir: tmp) }
 

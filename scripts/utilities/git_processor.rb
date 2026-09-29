@@ -135,18 +135,29 @@ class GitProcessor
   #   .shellrc for the full rationale (ephemeral/disposable repos that gain nothing from
   #   it, and where the chain's own duration can trip an *outer* with-retry's stall
   #   detection wrapping this whole call).
+  # @param post_checkout_hook [String, nil] Optional shell command 'eval'd immediately
+  #   once files land on disk from a fresh clone/import -- strictly before the reftable/
+  #   unshallow/maintain/siu chain and before this method returns to the caller (which
+  #   may configure/fetch a second remote next). See clone_repo_into's own comment in
+  #   .shellrc for the full rationale (e.g. fixing '.ssh'/'.gnupg' permissions on a
+  #   freshly-checked-out $HOME before anything else tries to use them for SSH auth).
   # @return [Boolean] true on success, false on failure.
-  def self.clone_repo_into(url, dest, branch: nil, bundle: nil, skip_maintenance: false)
+  def self.clone_repo_into(url, dest, branch: nil, bundle: nil, skip_maintenance: false, post_checkout_hook: nil)
     dest = Pathname.new(dest) unless dest.is_a?(Pathname)
 
     # Build the shell command
     # clone_repo_into accepts: url (arg 1), dest (arg 2), branch (optional arg 3),
-    # bundle-file (optional arg 4). 'branch' must always be emitted (even as an empty
-    # placeholder) once 'bundle' is also passed, to keep positional alignment.
+    # bundle-file (optional arg 4), post-checkout-hook (optional arg 5). Each of
+    # 'branch'/'bundle' must always be emitted (even as an empty placeholder) once a
+    # later positional argument is also passed, to keep positional alignment.
     cmd = "source #{EnvVars::HOME.join('.shellrc')} && clone_repo_into"
     cmd += " #{Shellwords.escape(url)}"
     cmd += " #{Shellwords.escape(dest.to_s)}"
-    if bundle && !nil_or_empty?(bundle)
+    if post_checkout_hook && !nil_or_empty?(post_checkout_hook)
+      cmd += " #{Shellwords.escape(branch.to_s)}"
+      cmd += " #{Shellwords.escape(bundle.to_s)}"
+      cmd += " #{Shellwords.escape(post_checkout_hook)}"
+    elsif bundle && !nil_or_empty?(bundle)
       cmd += " #{Shellwords.escape(branch.to_s)}"
       cmd += " #{Shellwords.escape(bundle.to_s)}"
     elsif branch && !nil_or_empty?(branch)

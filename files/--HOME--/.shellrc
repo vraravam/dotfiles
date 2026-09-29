@@ -1854,7 +1854,22 @@ configure_branch_tracking_for_origin() {
 # 'git remote get-url origin' returns, and which resurrect-repositories.rb feeds
 # straight back into this function), 'keybase://...', or 'gpg-encrypt::<url>'.
 #
-# Usage: clone_repo_into <clone-url> <target-folder> [branch] [bundle-file]
+# <post-checkout-hook> (fifth, optional argument), if given, is 'eval'd immediately
+# once files land on disk from a fresh clone/import (any of the three mechanisms) --
+# strictly before origin/branch cleanup below, the reftable-migrate/unshallow/maintain/
+# siu chain further down, and (back in the caller, e.g. resurrect-repositories.rb) any
+# second-remote configuration/fetch. Runs in-process (this function's own shell), so
+# any other .shellrc function is already in scope -- no 'source ~/.shellrc &&' prefix
+# needed, unlike a caller invoking this whole function from a fresh subshell. Exists
+# for repos like $HOME that check out files needing permissions fixed before anything
+# else tries to use them (e.g. '.ssh'/'.gnupg' keys) -- git checkout does not preserve
+# the strict permission modes those need, and unshallow/maintain/submodule-update/a
+# second remote's fetch could all need SSH auth using a key this checkout just wrote
+# with the wrong (too-open) permissions. Only fires on an actual fresh clone/import --
+# never for a pre-existing repo (the 'else' branch below), matching the assumption that
+# a repo which already exists had its permissions fixed on a prior run.
+#
+# Usage: clone_repo_into <clone-url> <target-folder> [branch] [bundle-file] [post-checkout-hook]
 clone_repo_into() {
   local start_time
   _epoch_seconds start_time  # zsh: $EPOCHSECONDS (no fork); bash: 'date +%s' fork
@@ -1885,6 +1900,7 @@ clone_repo_into() {
 
     local target_branch="${3:-}"
     local bundle_file="${4:-}"
+    local post_checkout_hook="${5:-}"
     local using_bundle=false
     if is_non_zero_string "${bundle_file}" && is_file "${bundle_file}"; then
       using_bundle=true
@@ -2127,6 +2143,12 @@ clone_repo_into() {
       fi
     fi
 
+    # Run the caller-supplied post-checkout hook (if any) now, before anything else --
+    # see this function's own header comment (search 'post-checkout-hook') for why.
+    if is_non_zero_string "${post_checkout_hook}"; then
+      eval "${post_checkout_hook}"
+    fi
+
     # ---- Origin cleanup, uniform across bundle-import and gpg-encrypt-restore -- both
     # internally do the equivalent of 'git clone <bundle-file> ...' against a scratch/
     # temp bundle under the hood, leaving 'origin' pointing at a since-deleted path
@@ -2142,19 +2164,17 @@ clone_repo_into() {
         git -C "${target_folder}" remote remove origin
       fi
       # Callers always re-add a real 'origin' afterward (e.g. resurrect-repositories.rb
-      # detects the missing 'origin' and reconfigures it from its own config) -- tracking
-      # only references the remote NAME, not its URL, so this is safe to set up now.
-      # Without it, a bare 'git pull' fails with "no tracking information".
-      configure_branch_tracking_for_origin "${target_folder}"
+      # detects the missing 'origin' and reconfigures it from its own config) -- branch
+      # tracking is configured uniformly for every path (this one included) after the
+      # if/else below, once it's settled whether a clone even happened.
     elif [[ "${restored_via_gpg_encrypt}" == true ]]; then
       # Unlike the bundle_file case above, we don't have the scratch bundle path to
       # compare against here (the restore tool manages its own tmpdir internally and
       # never reports it back to us) -- strip 'origin' unconditionally instead. Callers
       # are expected to (re-)configure the real remote(s) afterward, same as they
-      # already do for the bundle-import and keybase:// cases (e.g.
-      # '_configure_backup_remote' in fresh-install-of-osx.sh).
+      # already do for the bundle-import case above (e.g. resurrect-repositories.rb's
+      # 'other_remotes' handling).
       git -C "${target_folder}" remote remove origin 2>/dev/null || true
-      configure_branch_tracking_for_origin "${target_folder}"
     fi
 
     # ---- Branch enforcement, uniform across all three alternatives (network clone,
@@ -2186,6 +2206,20 @@ clone_repo_into() {
     # clone-url scheme was passed in).
     debug "Repo already exists at '$(yellow "${target_folder}")' -- will unshallow and fetch in background"
   fi
+
+  # Ensure branch tracking is configured regardless of path. A plain network clone
+  # (including keybase://) already sets this up natively via 'git clone' itself, and the
+  # bundle-import/gpg-encrypt-restore branches above strip a bogus 'origin' that would
+  # otherwise leave tracking pointing nowhere useful -- but a repo that was ALREADY a
+  # git repo before this call (the 'else' branch just above) never goes through any of
+  # that, e.g. one created by an older version of this function, or by some other means
+  # entirely. Idempotent -- returns early once tracking is already correct, so calling
+  # it unconditionally here is cheap and makes it a hard guarantee for every caller
+  # rather than something each branch has to remember to do individually. Tracking only
+  # references the remote NAME, not its URL, so this is safe to set up even before
+  # 'origin' itself is (re-)configured -- without it, a bare 'git pull' fails with "no
+  # tracking information".
+  configure_branch_tracking_for_origin "${target_folder}"
 
   # migrate_git_repo_to_reftable/unshallow/maintain/siu all depend on git aliases from
   # ${XDG_CONFIG_HOME}/git/config -- not yet symlinked into place on a vanilla OS when this

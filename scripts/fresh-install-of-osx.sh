@@ -547,207 +547,49 @@ _ensure_keybase_logged_in() {
   call_ruby_utility "require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
 }
 
-# Builds the keybase:// URL for the given repo name, owned by whoever is
-# currently logged into Keybase. Derived dynamically via Keybase.username
-# (which reads 'keybase status') -- no username is stored anywhere; whoever
-# completes the interactive login in _ensure_keybase_logged_in owns the account.
-# Usage: _build_keybase_repo_url <repo-name>
-_build_keybase_repo_url() {
-  local repo_name="${1:?_build_keybase_repo_url: repo-name argument required}"
-  local username
-  username="$(call_ruby_utility "require 'keybase'; puts Keybase.username")"
-  echo "keybase://private/${username}/${repo_name}"
-}
-
-# Configures remote_url as a git remote on target_folder -- 'origin' if no other
-# remote exists yet, 'origin2' if 'origin' is already something else (e.g. the other
-# backup mechanism, or a remote configured in a previous run). Idempotent: no-ops if
-# remote_url is already configured as either 'origin' or 'origin2'. Shared by both
-# backup mechanisms (Keybase and the gpg+git-bundle encrypted backup) so they can
-# coexist on the same repo, each pushed/pulled explicitly and independently -- see
-# KeybaseMigration.md. Never fans a URL into an existing remote's push URLs -- each
-# mechanism always gets its own separately-named remote.
-_configure_backup_remote() {
-  local target_folder="${1:?}"
-  local remote_url="${2:?}"
-
-  # Already configured as either remote -- nothing more to do.
-  if git -C "${target_folder}" remote get-url origin 2>/dev/null | /usr/bin/grep -qxF "${remote_url}"; then
-    return 0
-  fi
-  if git -C "${target_folder}" remote get-url origin2 2>/dev/null | /usr/bin/grep -qxF "${remote_url}"; then
-    return 0
-  fi
-
-  if ! git -C "${target_folder}" remote get-url origin &>/dev/null; then
-    git -C "${target_folder}" remote add origin "${remote_url}"
-    success "Added 'origin' -> '$(cyan "${remote_url}")' for '$(cyan "${target_folder}")'"
-  elif ! git -C "${target_folder}" remote get-url origin2 &>/dev/null; then
-    git -C "${target_folder}" remote add origin2 "${remote_url}"
-    success "Added 'origin2' -> '$(cyan "${remote_url}")' for '$(cyan "${target_folder}")' (separate from 'origin' -- push/pull each explicitly)"
-  else
-    _record_warning "Both 'origin' and 'origin2' are already configured on '$(cyan "${target_folder}")' with different URLs -- not adding '$(cyan "${remote_url}")'. Add it manually under a different remote name if you want it too."
-  fi
-}
-
-# Clones target_folder from whichever backup mechanism(s) are enabled (a
-# KEYBASE_*_REPO_NAME and/or an ENCRYPTED_*_REPO_URL env var -- see
-# KeybaseMigration.md for how they coexist). Keybase is tried first (original
-# mechanism, historical precedence); the gpg+git-bundle encrypted backup (external
-# 'git-remote-gpg-encrypt' tool, installed via the 'vraravam/tap' Homebrew tap) is
-# the fallback, or the only option if Keybase isn't enabled/available. Whichever
-# succeeds performs the actual clone; if the other mechanism is also enabled, it is
-# configured as an additional remote by the caller (via _configure_backup_remote)
-# rather than cloned from again. Shared by _clone_home_repo and _clone_profiles_repo
-# -- callers handle their own small differences (pull-on-exists behavior, extra git
-# config, one-time post-clone setup) since those aren't part of the
-# backup-mechanism selection logic itself.
+# Resurrects the home and browser-profiles repos via resurrect-repositories.rb, using
+# a YAML config generated on the fly by generate-bootstrap-repositories-yaml.rb from
+# whichever KEYBASE_*_REPO_NAME/ENCRYPTED_*_REPO_URL env vars are configured (see that
+# script's own header comment for how the primary vs fallback remote is chosen).
+# Replaces the old hand-rolled _clone_home_repo/_clone_profiles_repo/_clone_backup_repo/
+# _configure_backup_remote/_build_keybase_repo_url functions -- resurrect-repositories.rb
+# already owns clone/verify/remote-configuration/fetch/post-clone logic generically,
+# including trying a repo's 'other_remotes' as a fallback clone source if the primary
+# remote fails.
 #
-# Writes into 'cloned_via' in the caller's scope (caller must declare it 'local'
-# before calling, same convention as parse_folder_and_switches) -- 'keybase' or
-# 'encrypted-backup' on success, empty string if both enabled mechanisms failed or
-# if neither is enabled for this repo (not itself a failure -- see the
-# _record_error vs info distinction below).
-#
-# Usage: local cloned_via; _clone_backup_repo "${folder}" "${keybase_name}" "${encrypted_url}" 'label' 'KEYBASE_ENV_VAR' 'ENCRYPTED_ENV_VAR'
-_clone_backup_repo() {
-  local target_folder="${1:?}"
-  local keybase_repo_name="${2:-}"
-  local encrypted_repo_url="${3:-}"
-  local label="${4:?}"
-  local keybase_env_var="${5:?}"
-  local encrypted_env_var="${6:?}"
-  cloned_via=''
-
-  if is_non_zero_string "${keybase_repo_name}"; then
-    if command_exists keybase && _ensure_keybase_logged_in && clone_repo_into "$(_build_keybase_repo_url "${keybase_repo_name}")" "${target_folder}"; then
-      cloned_via='keybase'
-      success "Successfully cloned ${label} from Keybase"
-    else
-      _record_warning "Failed to clone ${label} from Keybase -- will try encrypted-backup next if enabled"
-    fi
-  fi
-
-  if is_zero_string "${cloned_via}" && is_non_zero_string "${encrypted_repo_url}"; then
-    # The Keychain-passphrase reminder for this step is printed much earlier, right
-    # after '.shellrc' is downloaded/sourced in main() -- see the comment there for why.
-    # clone_repo_into's 'gpg-encrypt::' special-case already strips the bogus 'origin'
-    # that 'git gpg-encrypt-restore' leaves behind internally, so -- same as the
-    # Keybase branch above -- there is no remote to configure here; whichever remote
-    # name (origin/origin2) this backup ends up under is decided uniformly by the
-    # caller's '_configure_backup_remote' calls, regardless of which mechanism
-    # actually performed the clone.
-    if command_exists git-gpg-encrypt-restore && clone_repo_into "gpg-encrypt::${encrypted_repo_url}" "${target_folder}"; then
-      cloned_via='encrypted-backup'
-      success "Successfully cloned ${label} from encrypted backup"
-    else
-      _record_error "Failed to clone ${label} from encrypted backup"
-    fi
-  fi
-
-  if is_zero_string "${cloned_via}"; then
-    if is_non_zero_string "${keybase_repo_name}" || is_non_zero_string "${encrypted_repo_url}"; then
-      _record_error "Failed to clone ${label} from any enabled backup mechanism"
-    else
-      info "Skipping cloning of ${label} since neither '$(yellow "${keybase_env_var}")' nor '$(yellow "${encrypted_env_var}")' env var has been set"
-    fi
-  fi
-}
-
-# Clones the home repo (private configs) from whichever backup mechanism(s) are
-# enabled (KEYBASE_HOME_REPO_NAME and/or ENCRYPTED_HOME_REPO_URL -- see
-# _clone_backup_repo for the shared clone-selection logic).
-_clone_home_repo() {
-  _current_section='Clone home repo'; _current_section_manual=1
+# The generated YAML lives directly in $HOME (not '${PERSONAL_CONFIGS_DIR}', which is
+# itself inside the home repo and doesn't exist until after this function clones it) --
+# see files/--HOME--/custom.gitignore for why it's safe to leave there permanently.
+_resurrect_bootstrap_repos() {
+  _current_section='Clone home/profiles repos'; _current_section_manual=1
   step_start
 
-  local keybase_repo_name="${KEYBASE_HOME_REPO_NAME:-}"
-  local encrypted_repo_url="${ENCRYPTED_HOME_REPO_URL:-}"
+  # clone_repo_into itself does not ensure Keybase is logged in -- only needed here if
+  # at least one of the two repos actually has Keybase enabled.
+  if is_non_zero_string "${KEYBASE_HOME_REPO_NAME:-}" || is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME:-}"; then
+    _ensure_keybase_logged_in || _record_warning 'Keybase login failed -- continuing without Keybase-based backups'
+  fi
 
-  if is_git_repo "${HOME}"; then
-    # Pre-configured machine: pull latest changes to get fresh backup files.
-    # Uses 'pull-safe' (not a bare 'pull --rebase') for 'with-retry' hang protection and
-    # a clean-working-tree guard, consistent with every other repo-sync path in this script.
-    _step_header 'Updating home repo'
-    info "Home repo already exists -- pulling latest changes"
-    configure_branch_tracking_for_origin "${HOME}"
-    if git -C "${HOME}" pull-safe; then
-      success "Successfully updated home repo"
-    else
-      _record_warning "Failed to pull home repo -- continuing with existing backup files"
+  local bootstrap_repos_yaml="${HOME}/.bootstrap-repositories.yml"
+  _step_header 'Generating bootstrap repositories config'
+  if COLUMNS="${COLUMNS}" generate-bootstrap-repositories-yaml.rb -o "${bootstrap_repos_yaml}"; then
+    _step_header 'Resurrecting home/profiles repos'
+    if ! COLUMNS="${COLUMNS}" resurrect-repositories.rb -r "${bootstrap_repos_yaml}"; then
+      _record_warning 'Failed to fully resurrect home/profiles repos -- see output above for details'
     fi
   else
-    _step_header 'Cloning home repo'
-    local cloned_via
-    _clone_backup_repo "${HOME}" "${keybase_repo_name}" "${encrypted_repo_url}" 'home repo' 'KEYBASE_HOME_REPO_NAME' 'ENCRYPTED_HOME_REPO_URL'
-
-    if is_non_zero_string "${cloned_via}"; then
-      # Reset ssh/gnupg permissions so git/gpg don't complain -- both '.ssh' and '.gnupg'
-      # (including GPG private keys under .gnupg/private-keys-v1.d) are tracked in the home
-      # repo, and git checkout does not preserve the strict permission modes either needs.
-      set_ssh_folder_permissions
-      set_gnupg_folder_permissions
-
-      # Fix /etc/hosts file to block facebook
-      if is_file "${PERSONAL_CONFIGS_DIR}/etc.hosts"; then sudo cp "${PERSONAL_CONFIGS_DIR}/etc.hosts" /etc/hosts; fi
-    fi
+    _record_error 'Failed to generate bootstrap repositories config -- skipping home/profiles repo resurrection'
   fi
 
-  # Ensure remotes for both enabled mechanisms are present, whether the repo was just
-  # cloned above or already existed -- idempotent, safe to call every run.
-  if is_git_repo "${HOME}"; then
-    if is_non_zero_string "${keybase_repo_name}"; then
-      _configure_backup_remote "${HOME}" "$(_build_keybase_repo_url "${keybase_repo_name}")"
-    fi
-    if is_non_zero_string "${encrypted_repo_url}"; then
-      _configure_backup_remote "${HOME}" "gpg-encrypt::${encrypted_repo_url}"
-    fi
-  fi
-
-  step_end
-}
-
-# Clones the browser-profiles repo (personal browser profile data) from whichever
-# backup mechanism(s) are enabled -- see _clone_backup_repo for the shared
-# clone-selection logic.
-_clone_profiles_repo() {
-  _current_section='Clone profiles repo'; _current_section_manual=1
-  step_start
-
-  local keybase_repo_name="${KEYBASE_PROFILES_REPO_NAME:-}"
-  local encrypted_repo_url="${ENCRYPTED_PROFILES_REPO_URL:-}"
-
-  if is_zero_string "${PERSONAL_PROFILES_DIR}"; then
-    info "Skipping cloning of profiles repo since '$(yellow 'PERSONAL_PROFILES_DIR')' env var hasn't been set"
-  elif is_git_repo "${PERSONAL_PROFILES_DIR}"; then
-    configure_branch_tracking_for_origin "${PERSONAL_PROFILES_DIR}"
-    # This repo is periodically force-squashed by recreate-repository.rb, so it is not
-    # routinely pulled here the way the home repo is above -- see the
-    # pull.allowResetOnDivergedHistory config flag set below, which lets the 'pull'
-    # autoload function handle that safely if/when the user pulls it manually.
-    _step_header 'Profiles repo already exists -- skipping clone'
+  # Run setup_dev_environment once now, as a safety net, immediately after the
+  # home/profiles repos are cloned -- covers mise tool-version installation and
+  # direnv allow for these two repos even if a later step in main() aborts before
+  # reaching resurrect_tracked_repos, which also calls setup_dev_environment at
+  # the very end (for all tracked repos, including these two again -- idempotent).
+  if command_exists setup_dev_environment; then
+    setup_dev_environment
   else
-    _step_header 'Cloning profiles repo'
-    local cloned_via
-    _clone_backup_repo "${PERSONAL_PROFILES_DIR}" "${keybase_repo_name}" "${encrypted_repo_url}" 'browser-profiles repo' 'KEYBASE_PROFILES_REPO_NAME' 'ENCRYPTED_PROFILES_REPO_URL'
-  fi
-
-  if is_git_repo "${PERSONAL_PROFILES_DIR}"; then
-    if is_non_zero_string "${keybase_repo_name}"; then
-      _configure_backup_remote "${PERSONAL_PROFILES_DIR}" "$(_build_keybase_repo_url "${keybase_repo_name}")"
-    fi
-    if is_non_zero_string "${encrypted_repo_url}"; then
-      _configure_backup_remote "${PERSONAL_PROFILES_DIR}" "gpg-encrypt::${encrypted_repo_url}"
-    fi
-
-    # This repo is periodically force-squashed by recreate-repository.rb, so 'pull'
-    # (files/--XDG_CONFIG_HOME--/zsh/pull) needs to hard-reset instead of rebase when
-    # local and remote history have diverged with no common ancestor -- see
-    # KeybaseMigration.md. Opt-in via this per-repo config flag (idempotent, safe to
-    # set on every run) rather than a dedicated pull-browser-profiles.sh override
-    # script, which this replaced. Applies regardless of which backup mechanism(s) are
-    # configured -- the squashing itself is what causes the divergence, not the remote.
-    git -C "${PERSONAL_PROFILES_DIR}" config --local pull.allowResetOnDivergedHistory true
+    _record_warning "Skipping early 'setup_dev_environment' safety-net call since it couldn't be found in the PATH"
   fi
 
   step_end
@@ -993,7 +835,7 @@ main() {
   # scripts/utilities/keybase.rb) enable it. Coexists with the encrypted-backup setup
   # below -- see KeybaseMigration.md. This is a readiness/login step only; the actual
   # clone attempt (which also calls _ensure_keybase_logged_in defensively) happens in
-  # _clone_home_repo/_clone_profiles_repo below.
+  # _resurrect_bootstrap_repos below.
   _current_section='Setup Keybase'
   step_start
   section_header "$(yellow 'Setup Keybase')"
@@ -1045,13 +887,10 @@ main() {
   fi
   step_end
 
-  # Clone repos from whichever backup mechanism(s) are enabled (home and browser-profiles)
-  _current_section='Clone repos'
-  step_start
-  section_header "$(yellow 'Cloning repos')"
-
-  _clone_home_repo
-  _clone_profiles_repo
+  # Clone/update repos from whichever backup mechanism(s) are enabled (home and
+  # browser-profiles) -- _resurrect_bootstrap_repos manages its own step timing and
+  # section header internally, so no outer step_start/step_end wrapper is needed here.
+  _resurrect_bootstrap_repos
 
   # Reload zsh config now that the home repo may have just brought in new state
   # this session hasn't seen yet -- most notably '~/.config/zsh/plugins.zsh'
@@ -1124,7 +963,9 @@ main() {
 
   # Resurrect tracked repos. With shallow cloning (FIRST_INSTALL), large repos
   # download much faster, making this call non-blocking enough to run in-line.
-  # resurrect_tracked_repos calls setup_dev_environment internally.
+  # resurrect_tracked_repos calls setup_dev_environment internally (again --
+  # _resurrect_bootstrap_repos above already ran it once as an early safety net
+  # right after the home/profiles repos were cloned; idempotent either way).
   _current_section='Resurrect tracked repos'; _current_section_manual=1
   if command_exists resurrect_tracked_repos; then
     resurrect_tracked_repos
@@ -1166,8 +1007,14 @@ main() {
 
   # Set default shell to Homebrew zsh - done at the end to avoid blocking the
   # automated flow with password prompts. On vanilla OS without cached sudo
-  # credentials, chsh requires password entry.
-  _set_default_shell
+  # credentials, chsh requires password entry. '|| true': _set_default_shell
+  # legitimately 'return 1's (after already recording the failure itself via
+  # _record_error) whenever Homebrew's zsh isn't present -- e.g. if
+  # _install_homebrew above hit its own recorded warning instead of succeeding.
+  # A bare call here would let that 'return 1' trip 'set -e' and abort the whole
+  # script, skipping print_script_summary and every reminder below -- exactly the
+  # failure mode this guards against.
+  _set_default_shell || true
 
   # Print grouped summary of all collected warnings and errors, print duration,
   # then send exactly one notification. Exit code is unchanged (0) -- the summary

@@ -97,6 +97,48 @@ git rebase main
 - `git rebase --continue` after staging fixes
 - `git rebase --abort` if you need to start over
 
+**If `main`'s tip commit was itself amended/rewritten** (not just fast-forwarded with new commits on top -- e.g. `git commit --amend` folded additional changes into a commit the branch was already based on), a plain `git rebase main` replays the branch's commits against the OLD, now-superseded version of that commit and conflicts on every hunk `main`'s amend also touched, even when the branch's own content is completely unaffected by the amend. Use `--onto` to skip replaying the superseded commit entirely:
+
+```bash
+# <old-base> is the commit the branch was ACTUALLY based on before main's amend
+# (often still resolvable via: git merge-base <branch> <old-main-ref-or-reflog-entry>)
+git rebase --onto main <old-base> <branch>
+```
+
+This replays only the branch's own commits directly onto the new `main`, without ever touching the superseded intermediate commit -- for branches that don't independently touch the exact lines `main`'s amend changed, this usually eliminates conflicts entirely rather than just resolving them.
+
+---
+
+#### 3a. MANDATORY: Verify No Functionality Is Lost -- Every Branch, Every Time
+
+**Applies whether the rebase reported conflicts or not.** A clean, conflict-free rebase is NOT proof that nothing was lost -- it only proves git could mechanically apply every hunk; it says nothing about whether the *result* still contains everything both sides intended. "It rebased without conflicts" and "nothing was lost" are two different claims, and only the second one matters.
+
+After every rebase (plain or `--onto`), before considering it done, for **every** branch being brought up to date with a new `main`/`master` (not just one flagship branch):
+
+1. **Inherited files must be unaffected.** For any file the branch does NOT independently modify, it must come out byte-identical to `main`:
+   ```bash
+   git diff main..<branch> -- <file-the-branch-does-not-own>
+   # Empty output required -- any diff here means something was lost or altered unexpectedly
+   ```
+
+2. **No leftover conflict markers anywhere in the tree** (a manually-resolved conflict can leave a stray marker behind if a hunk was missed):
+   ```bash
+   grep -rn '^<<<<<<<\|^=======$\|^>>>>>>>' . 2>/dev/null | grep -v '/\.git/'
+   ```
+
+3. **Re-run syntax checks on every file the rebase touched** -- conflict resolution can silently break syntax even when git reports a clean, automatic merge:
+   ```bash
+   zsh -n <each-changed-.sh-or-.zsh-file>
+   /usr/bin/ruby -c <each-changed-.rb-file>
+   ```
+
+4. **Re-check for reintroduced duplication** if the branch independently added something `main`'s new commits also added (e.g. both sides added a similarly-named helper method/constant for the same purpose). This is the single most common way a "clean" rebase silently loses correctness -- git's automatic merge happily keeps BOTH copies when they don't textually conflict. Grep for the specific symbol/method names touched by `main`'s changes across the branch's own changed files; see [Duplication Removal](#duplication-removal) for resolution patterns once found.
+
+5. **For a chain of branches** (one branch built on top of another -- see [Forward Rebase](#forward-rebase-catching-up-a-branch-chain-from-its-parent)), re-verify the chain relationship still holds after rebasing both:
+   ```bash
+   git merge-base --is-ancestor parent child && echo "parent is still an ancestor of child: OK"
+   ```
+
 ---
 
 #### 4. Conflict Resolution Strategy
@@ -388,6 +430,8 @@ git push origin feature-branch --force-with-lease
 
 ## Reverse Comparison Technique
 
+**See also:** [§ 3a. MANDATORY: Verify No Functionality Is Lost](#3a-mandatory-verify-no-functionality-is-lost----every-branch-every-time) for the concrete, mechanical checklist (byte-identical inherited files, conflict-marker grep, syntax checks, duplication re-check, chain-ancestor check) to run after every rebase, regardless of whether this deeper technique is also needed.
+
 ### Why It Matters
 
 **Forward comparison** (what main has): Standard conflict resolution
@@ -643,8 +687,9 @@ chain, and only the final branch eventually merges to `master`.
    For the specific file(s) being converted in the target branch, confirm the
    conversion (e.g., shell -> Ruby) is functionally correct: nothing was added
    that wasn't in the original, and nothing was silently dropped. Use
-   [Feature Parity Verification](#feature-parity-verification) and the
-   [Reverse Comparison Technique](#reverse-comparison-technique) above.
+   [Feature Parity Verification](#feature-parity-verification), the
+   [Reverse Comparison Technique](#reverse-comparison-technique), and the
+   [mandatory no-loss-of-functionality checklist](#3a-mandatory-verify-no-functionality-is-lost----every-branch-every-time) above.
 
 5. **Verify compliance and static analysis**
    New/changed code must conform to `.ai/domains/`. Run the project's

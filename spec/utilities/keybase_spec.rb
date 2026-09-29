@@ -56,6 +56,20 @@ RSpec.describe Keybase do
     end
   end
 
+  describe '.repo_url' do
+    it 'builds a keybase:// URL for the given repo name, owned by the logged-in user' do
+      allow(described_class).to receive(:username).and_return('someuser')
+
+      expect(described_class.repo_url('home')).to eq('keybase://private/someuser/home')
+    end
+
+    it 'is recognized by .keybase_url? once built' do
+      allow(described_class).to receive(:username).and_return('someuser')
+
+      expect(described_class.keybase_url?(described_class.repo_url('profiles'))).to be true
+    end
+  end
+
   describe '.ensure_logged_in' do
     it 'returns false and records an error when keybase is not installed' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(false)
