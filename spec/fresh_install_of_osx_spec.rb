@@ -90,7 +90,7 @@ RSpec.describe FreshInstallOfOsx do
     it 'downloads with the headers, the retry options and the target file in order' do
       with_env('CACHE_BUST_HEADERS' => nil) do
         expect(CommandUtils).to receive(:run_interactive)
-            .with('curl', '--retry', '5', '-fsSL', 'http://example.test/x', '-o', '/tmp/x').and_return(true)
+                                  .with('curl', '--retry', '5', '-fsSL', 'http://example.test/x', '-o', '/tmp/x').and_return(true)
 
         expect(described_class.send(:_curl_download, 'http://example.test/x', Pathname.new('/tmp/x'), %w[--retry 5])).to be true
       end
@@ -100,6 +100,29 @@ RSpec.describe FreshInstallOfOsx do
       described_class.instance_variable_set(:@steps, StepCounter.new(3))
 
       expect(described_class.send(:_numbered_step_label, 'First')).to eq("#{"[#{'Step 1 of 3'.purple}] "}First")
+    end
+
+    describe '._baseline_preferences' do
+      it 'runs OsxDefaults in silent mode as a module call and reports success' do
+        expect(OsxDefaults).to receive(:run).with(silent: true).and_return(true)
+
+        expect { described_class.send(:_baseline_preferences) }.to output(/Successfully baselined preferences/).to_stdout
+        expect(Logging.step_errors).to be_empty
+      end
+
+      it 'records an error when the baseline reports failure' do
+        allow(OsxDefaults).to receive(:run).and_return(false)
+
+        expect { described_class.send(:_baseline_preferences) }.to output.to_stdout
+        expect(Logging.step_errors.last).to match(/osx-defaults failed -- baseline preferences manually/)
+      end
+
+      it 'records an exception instead of aborting the install' do
+        allow(OsxDefaults).to receive(:run).and_raise('no sudo')
+
+        expect { expect { described_class.send(:_baseline_preferences) }.not_to raise_error }.to output.to_stdout
+        expect(Logging.step_errors.last).to match(/osx-defaults failed \(no sudo\)/)
+      end
     end
 
     it 'records a warning instead of raising when the zsh configs could not be loaded' do

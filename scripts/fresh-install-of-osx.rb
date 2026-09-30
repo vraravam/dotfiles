@@ -23,6 +23,7 @@ require 'shellwords'
 
 require_relative 'add-upstream-git-config'
 require_relative 'install-dotfiles'
+require_relative 'osx-defaults'
 require_relative 'resurrect-repositories'
 require_relative 'utilities/brew_bundle'
 require_relative 'utilities/command_utils'
@@ -271,18 +272,7 @@ module FreshInstallOfOsx
 
     # Restore macOS preferences.
     Logging.with_step('Restore preferences', _numbered_step_label('Restore preferences')) do
-      osx_defaults = EnvVars::DOTFILES_DIR.join('scripts', 'osx-defaults.sh')
-      if osx_defaults.file?
-        # osx-defaults.sh is a shell script -- invoke it directly via its own shebang, not
-        # through the Ruby interpreter.
-        if CommandUtils.run_interactive(osx_defaults.to_s, '-s')
-          Logging.success 'Successfully baselined preferences'
-        else
-          Logging.record_error "osx-defaults.sh exited non-zero -- baseline preferences manually: #{osx_defaults.cyan}"
-        end
-      else
-        Logging.record_error "osx-defaults.sh not found at '#{osx_defaults.cyan}' -- baseline preferences manually"
-      end
+      _baseline_preferences
 
       capture_prefs = EnvVars::DOTFILES_DIR.join('scripts', 'capture-prefs.rb')
       if capture_prefs.file?
@@ -699,6 +689,22 @@ module FreshInstallOfOsx
     end
   end
 
+  # Applies the baseline macOS defaults. OsxDefaults is called as a module (it keeps no at_exit
+  # hooks, so no subprocess is needed): its warnings and errors land in this script's summary and
+  # notification. An exception is recorded rather than aborting the install -- a failing baseline
+  # has never been fatal to the rest of the setup.
+  def _baseline_preferences
+    ok = OsxDefaults.run(silent: true)
+    Logging.info 'Note that some of the baselined settings require a logout/restart to take effect.'
+    if ok
+      Logging.success 'Successfully baselined preferences'
+    else
+      Logging.record_error "osx-defaults failed -- baseline preferences manually: #{'osx-defaults.rb -s'.cyan}"
+    end
+  rescue StandardError => e
+    Logging.record_error "osx-defaults failed (#{e.message}) -- baseline preferences manually: #{'osx-defaults.rb -s'.cyan}"
+  end
+
   # Refreshes the preferences backup (export + commit) on a pre-configured machine
   # before importing, so the git-timestamp check in capture-prefs.rb -i passes.
   def _refresh_preferences_backup(capture_prefs)
@@ -725,7 +731,7 @@ module FreshInstallOfOsx
     end
   end
 
-  private_class_method :_install, :_numbered_step_label, :_cache_bust_headers, :_curl_download, :_load_zsh_configs, :_setup_jio_dns, :_resolve_gh_username, :_resolve_dotfiles_branch, :_download_and_source_shellrc, :_recompile_zsh_startup_files, :_restore_shellrc_after_install_dotfiles, :_clone_dot_files_repo, :_install_homebrew, :_resurrect_bootstrap_repos, :_refresh_preferences_backup, :_set_default_shell
+  private_class_method :_install, :_numbered_step_label, :_cache_bust_headers, :_curl_download, :_load_zsh_configs, :_setup_jio_dns, :_resolve_gh_username, :_resolve_dotfiles_branch, :_download_and_source_shellrc, :_recompile_zsh_startup_files, :_restore_shellrc_after_install_dotfiles, :_clone_dot_files_repo, :_install_homebrew, :_resurrect_bootstrap_repos, :_baseline_preferences, :_refresh_preferences_backup, :_set_default_shell
 end
 
 # ---------------------------------------------------------------------------
