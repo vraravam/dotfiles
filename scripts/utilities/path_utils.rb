@@ -291,6 +291,60 @@ module PathUtils
     Logging.debug "Prepended to PATH: '#{dir_str.cyan}'"
   end
 
+  # Shared chmod/logging skeleton behind set_ssh_folder_permissions and
+  # set_gnupg_folder_permissions. Ruby equivalent of _secure_folder_permissions in
+  # .shellrc -- see that function's own comment for why both callers share this.
+  # Chmods target_dir (and, when secure_subdirs, every subdirectory within it,
+  # recursively) to 700, then every regular file within it (recursively, including
+  # dotfiles -- mirrors shell's 'find -type f', which has no special dotfile
+  # handling) to 600.
+  #
+  # @param target_dir [Pathname, String] Directory to secure.
+  # @param secure_subdirs [Boolean] When true, also chmod 700 every subdirectory
+  #   (gnupg needs this for private-keys-v1.d/ etc; ssh does not).
+  # @return [Boolean] true if target_dir was non-empty and file permissions were
+  #   applied (regardless of whether every individual chmod succeeded -- failures
+  #   are logged as warnings, not treated as fatal); false if the directory-level
+  #   chmod failed, or target_dir was empty (nothing to secure).
+  # :reek:FeatureEnvy -- Sequential chmod/logging operations on the given dir (intentional)
+  def _secure_folder_permissions(target_dir, secure_subdirs: false)
+    target_dir = Pathname.new(target_dir) unless target_dir.is_a?(Pathname)
+    target_dir_cyan = target_dir.to_s.cyan
+
+    ensure_directories_exist(target_dir)
+
+    dir_chmod_ok = CommandUtils.run_silent('chmod', '700', target_dir.to_s)
+    if secure_subdirs
+      glob_pathnames(target_dir.join('**', '*'), File::FNM_DOTMATCH) do |path|
+        dir_chmod_ok &&= CommandUtils.run_silent('chmod', '700', path.to_s) if path.directory?
+      end
+    end
+    unless dir_chmod_ok
+      Logging.warn "Failed to set directory permissions on '#{target_dir_cyan}'"
+      return false
+    end
+
+    if Dir.empty?(target_dir)
+      Logging.warn "'#{target_dir_cyan}' exists but is empty. No file permissions to set."
+      return false
+    end
+
+    success = true
+    glob_pathnames(target_dir.join('**', '*'), File::FNM_DOTMATCH) do |path|
+      success &&= CommandUtils.run_silent('chmod', '600', path.to_s) if path.file?
+    end
+
+    if success
+      Logging.success "Ensured correct permissions for '#{target_dir_cyan}' and files within it."
+    else
+      Logging.warn "Failed to set file permissions in '#{target_dir_cyan}'"
+    end
+
+    true
+  end
+
+  private_class_method :_secure_folder_permissions
+
   # Sets correct permissions on ~/.ssh directory and its contents.
   # Directory: 700, Files: 600. Also adds SSH keys to macOS Keychain.
   #
@@ -298,32 +352,10 @@ module PathUtils
   # :reek:FeatureEnvy -- Sequential permission/keychain operations on the ssh dir (intentional)
   def set_ssh_folder_permissions
     ssh_dir = EnvVars::HOME.join('.ssh')
-    ssh_dir_str = ssh_dir.to_s
-    ssh_dir_cyan = ssh_dir_str.cyan
+    ssh_dir_cyan = ssh_dir.to_s.cyan
 
     Logging.info 'Setting ssh config file permissions'.yellow
-    ensure_directories_exist(ssh_dir)
-
-    # Set directory permissions first
-    unless CommandUtils.run_silent('chmod', '700', ssh_dir_str)
-      Logging.warn "Failed to set permissions on '#{ssh_dir_cyan}'"
-      return
-    end
-
-    # Check if directory is empty
-    if Dir.empty?(ssh_dir)
-      Logging.warn "'#{ssh_dir_cyan}' exists but is empty. No file permissions to set."
-      return
-    end
-
-    # Set file permissions -- recursive (including dotfiles), mirrors shell's
-    # 'find "${HOME}/.ssh" -type f -exec chmod 600 {} \;'. ssh_dir.children (non-recursive)
-    # would miss any file nested in a subdirectory of ~/.ssh.
-    files = Dir.glob(ssh_dir.join('**', '*').to_s, File::FNM_DOTMATCH).map { |f| Pathname.new(f) }.select(&:file?)
-    files.each do |file|
-      Logging.warn "Failed to set permissions on '#{file.to_s.cyan}'" unless CommandUtils.run_silent('chmod', '600', file.to_s)
-    end
-    Logging.success "Ensured correct permissions for '#{ssh_dir_cyan}' and files within it."
+    return unless _secure_folder_permissions(ssh_dir)
 
     # Add keys to ssh-agent and store in macOS Keychain for persistence.
     # --apple-use-keychain (macOS 12+) stores passphrases in Keychain so keys persist
@@ -356,38 +388,12 @@ module PathUtils
   # permissive umask when some other tool first created the homedir). Socket files
   # (gpg-agent's S.* sockets) are intentionally left untouched -- only regular files and
   # directories are chmod'd; gpg-agent already creates sockets with owner-only permissions.
+  # Mirrors set_ssh_folder_permissions immediately above -- both share
+  # _secure_folder_permissions for the common chmod/logging skeleton.
   #
   # @return [void]
   def set_gnupg_folder_permissions
-    gnupg_dir = EnvVars::HOME.join('.gnupg')
-    gnupg_dir_cyan = gnupg_dir.to_s.cyan
-
     Logging.info 'Setting gnupg homedir file permissions'.yellow
-    ensure_directories_exist(gnupg_dir)
-
-    unless CommandUtils.run_silent('chmod', '700', gnupg_dir.to_s)
-      Logging.warn "Failed to set permissions on '#{gnupg_dir_cyan}'"
-      return
-    end
-
-    if Dir.empty?(gnupg_dir)
-      Logging.warn "'#{gnupg_dir_cyan}' exists but is empty. No file permissions to set."
-      return
-    end
-
-    success = true
-    glob_pathnames(gnupg_dir.join('**', '*')) do |path|
-      if path.directory?
-        success &&= CommandUtils.run_silent('chmod', '700', path.to_s)
-      elsif path.file?
-        success &&= CommandUtils.run_silent('chmod', '600', path.to_s)
-      end
-    end
-
-    if success
-      Logging.success "Ensured correct permissions for '#{gnupg_dir_cyan}' and files within it."
-    else
-      Logging.warn "Failed to set some permissions within '#{gnupg_dir_cyan}'"
-    end
+    _secure_folder_permissions(EnvVars::HOME.join('.gnupg'), secure_subdirs: true)
   end
 end

@@ -714,17 +714,17 @@ Cron.with_cron_suspended do
 
   # Restore macOS preferences.
   Logging.with_step('Restore preferences', _numbered_step_label('Restore preferences')) do
-    osx_defaults = EnvVars::DOTFILES_DIR.join('scripts', 'osx-defaults.sh')
+    osx_defaults = EnvVars::DOTFILES_DIR.join('scripts', 'osx-defaults.rb')
     if osx_defaults.file?
-      # osx-defaults.sh is still a shell script (not yet converted to Ruby) -- invoke it
-      # directly via its own shebang, not through the Ruby interpreter.
+      # Invoke directly via its own shebang rather than through the Ruby interpreter --
+      # works the same whether the target is a shell script or (as here) a Ruby script.
       if system(osx_defaults.to_s, '-s')
         success 'Successfully baselined preferences'
       else
-        record_error "osx-defaults.sh exited non-zero -- baseline preferences manually: #{osx_defaults}"
+        record_error "osx-defaults.rb exited non-zero -- baseline preferences manually: #{osx_defaults}"
       end
     else
-      record_error "osx-defaults.sh not found at '#{osx_defaults}' -- baseline preferences manually"
+      record_error "osx-defaults.rb not found at '#{osx_defaults}' -- baseline preferences manually"
     end
 
     capture_prefs = EnvVars::DOTFILES_DIR.join('scripts', 'capture-prefs.rb')
