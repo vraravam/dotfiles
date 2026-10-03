@@ -205,7 +205,7 @@ etc.) is just force-pushed directly.
 ```bash
 git config --local pull.allowResetOnDivergedHistory true;
 ```
-`pull` (the shell function, `files/--XDG_CONFIG_HOME--/zsh/pull`) checks this flag only if the normal `git pull` fails, and falls back to `GitProcessor#pull_or_reset`, which hard-resets instead of rebasing when it detects diverged history. `fresh-install-of-osx.sh` sets this flag automatically after cloning `browser-profiles`. `${HOME}` never sets it -- it's never squashed, so plain `pull` is sufficient there, and a failed pull is left as a failure (no silent data loss from an unexpected reset).
+`pull` (the shell function, `files/--XDG_CONFIG_HOME--/zsh/pull`) checks this flag only if the normal `git pull` fails, and falls back to the `pull-safe` git alias (`${XDG_CONFIG_HOME}/git/config`), which hard-resets instead of rebasing when it detects diverged history. `fresh-install-of-osx.sh` sets this flag automatically after cloning `browser-profiles`. `${HOME}` never sets it -- it's never squashed, so plain `pull` is sufficient there, and a failed pull is left as a failure (no silent data loss from an unexpected reset).
 
 ---
 

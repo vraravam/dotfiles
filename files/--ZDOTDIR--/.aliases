@@ -462,11 +462,19 @@ delete_caches() {
   # following) to avoid cycles in user home dirs. HOMEBREW_PREFIX must use -L so
   # that find descends into opt/<formula>/ directories, which are all symlinks to
   # Cellar/<formula>/<version>/. Without -L, stale .zwc files in those paths are
-  # silently skipped.
-  find "${HOME}" -maxdepth 10 \( -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' \) -prune -o -name '*.zwc*' -type f -print -delete || warn "find command failed in ${HOME}"
+  # silently skipped. Both calls otherwise share the identical predicate (prune
+  # list + name/type match), factored out here so it can't drift out of sync
+  # between the two -- only the final action (-delete vs -exec rm -f, see below)
+  # legitimately differs.
+  local -a _zwc_find_predicate=(
+    -maxdepth 10
+    '(' -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' ')'
+    -prune -o -name '*.zwc*' -type f -print
+  )
+  find "${HOME}" "${_zwc_find_predicate[@]}" -delete || warn "find command failed in ${HOME}"
   # macOS find forbids -delete when -L is active (safety guard against deleting
   # symlink targets). Use -exec rm -f instead, which is exempt from this restriction.
-  find -L "${HOMEBREW_PREFIX}" -maxdepth 10 \( -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' \) -prune -o -name '*.zwc*' -type f -print -exec rm -f {} + || warn "find command failed in ${HOMEBREW_PREFIX}"
+  find -L "${HOMEBREW_PREFIX}" "${_zwc_find_predicate[@]}" -exec rm -f {} + || warn "find command failed in ${HOMEBREW_PREFIX}"
 
   # Delete the entire XDG_CACHE_HOME directory. This removes all generated cache
   # files (brew-shellenv-cache.zsh, starship-init-cache.zsh, repo-aliases-cache.zsh, zsh
@@ -1022,17 +1030,17 @@ implode() {
 # corresponding to the current directory name, e.g. 'launch-ferdium.sh'.
 launch_me() {
   require_env_var PERSONAL_BIN_DIR || return 1
-  "${PERSONAL_BIN_DIR}/launch-${PWD##*/}.sh"
+  "${PERSONAL_BIN_DIR}/launch-${PWD##*/}.sh" "$@"
 }
 debug_me() {
   require_env_var PERSONAL_BIN_DIR || return 1
   # Runs the per-project debug script in PERSONAL_BIN_DIR for the current directory.
-  "${PERSONAL_BIN_DIR}/debug-${PWD##*/}.sh"
+  "${PERSONAL_BIN_DIR}/debug-${PWD##*/}.sh" "$@"
 }
 build_me() {
   require_env_var PERSONAL_BIN_DIR || return 1
   # Runs the per-project build script in PERSONAL_BIN_DIR for the current directory.
-  "${PERSONAL_BIN_DIR}/build-${PWD##*/}.sh"
+  "${PERSONAL_BIN_DIR}/build-${PWD##*/}.sh" "$@"
 }
 
 # rails

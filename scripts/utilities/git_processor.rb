@@ -336,8 +336,9 @@ class GitProcessor
 
   # Checks whether two refs share a common ancestor (i.e. a rebase/merge between
   # them is even meaningful). False after e.g. a force-squash on one side rewrote
-  # history with no shared base -- see pull_or_reset, which uses this to decide
-  # between rebasing and falling back to a hard reset.
+  # history with no shared base -- mirrors the same check the 'pull-safe' git
+  # alias makes (via 'git merge-base') to decide between rebasing and falling
+  # back to a hard reset.
   #
   # @param ref1 [String] First ref (e.g. a branch name).
   # @param ref2 [String] Second ref (e.g. 'origin/main', a remote-tracking ref).
@@ -470,7 +471,7 @@ class GitProcessor
   # Fetches from a single named remote -- unlike fetch_all, does not go through the
   # 'fo' alias (no with-retry/promisor-ordering, no fetching of all tags). Used for
   # one-off fetches against a specific remote outside the routine multi-remote workflow
-  # (e.g. pull_or_reset).
+  # (e.g. add_remote followed by an initial fetch of just that remote).
   #
   # @param remote [String] Remote name to fetch from.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
@@ -492,9 +493,10 @@ class GitProcessor
 
   # Hard-resets the current branch to ref, discarding local commits and working-tree
   # changes. Deliberately destructive -- only for callers that have already decided
-  # preserving local history is not meaningful (e.g. pull_or_reset's fallback for a
-  # squash-prone repo whose local and remote histories have diverged with no common
-  # ancestor, so there is nothing sensible to rebase onto anyway).
+  # preserving local history is not meaningful (e.g. a squash-prone repo whose local
+  # and remote histories have diverged with no common ancestor, so there is nothing
+  # sensible to rebase onto anyway -- see the 'pull-safe' git alias's own
+  # 'pull.allowResetOnDivergedHistory' handling for the primary use of this).
   #
   # @param ref [String] Ref to reset to (e.g. a remote-tracking ref).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
@@ -502,73 +504,6 @@ class GitProcessor
     return _mock_status_response(false) unless repo?
 
     _execute('reset', '--hard', ref)
-  end
-
-  # Fetches remote and rebases the current branch onto <remote>/<branch> -- or
-  # hard-resets, if allow_reset_on_diverged_history is true and the two histories share
-  # no common ancestor (e.g. after a force-squash, see recreate-repository.rb). A
-  # generic "pull that tolerates a rewritten remote history" primitive -- not specific
-  # to any particular remote transport. Keybase, a 'gpg-encrypt::' remote (see the
-  # external 'git-remote-gpg-encrypt' tool), or a plain GitHub remote all work
-  # identically here, since this only depends on git's own ref/object model, not on how
-  # the remote's objects got there.
-  #
-  # @param remote [String] Name of the remote to fetch from.
-  # @param allow_reset_on_diverged_history [Boolean] When true, falls back to a hard
-  #   reset instead of a rebase if the local branch and the remote branch share no
-  #   common ancestor. Defaults to false: for a repo that is never squashed, diverged
-  #   history is unexpected and should fail loudly rather than silently discard local
-  #   commits.
-  # @return [Boolean] true on success, false on failure
-  def pull_or_reset(remote: 'origin', allow_reset_on_diverged_history: false)
-    _stdout, _stderr, clean_status = run_alias('is-clean', read_only: true)
-    unless clean_status.success?
-      Logging.record_error "'#{@dir.cyan}' has uncommitted changes -- commit or stash before pulling"
-      return false
-    end
-
-    branch = current_branch
-    if nil_or_empty?(branch)
-      Logging.record_error "Could not determine current branch in '#{@dir.cyan}'"
-      return false
-    end
-
-    _stdout, stderr, fetch_status = fetch(remote)
-    unless fetch_status.success?
-      Logging.record_error "Failed to fetch '#{remote}': #{stderr}"
-      return false
-    end
-
-    remote_ref = "#{remote}/#{branch}"
-
-    unless common_ancestor?(branch, remote_ref)
-      unless allow_reset_on_diverged_history
-        Logging.record_error "'#{branch}' and '#{remote_ref}' have no common ancestor (unexpected -- " \
-                             'was history rewritten on one side?) -- refusing to rebase blindly'
-        return false
-      end
-
-      Logging.warn "'#{branch}' and '#{remote_ref}' have no common ancestor (expected after a " \
-                   "force-squash) -- resetting '#{branch}' to '#{remote_ref}' instead of rebasing"
-      _stdout, stderr, reset_status = reset_hard(remote_ref)
-      unless reset_status.success?
-        Logging.record_error "Failed to reset '#{branch}' to '#{remote_ref}': #{stderr}"
-        return false
-      end
-
-      Logging.success "Reset '#{branch}' to '#{remote_ref}' for '#{@dir.cyan}'"
-      return true
-    end
-
-    _stdout, stderr, rebase_status = rebase(remote_ref)
-    unless rebase_status.success?
-      Logging.record_error "Failed to rebase '#{branch}' onto '#{remote_ref}' -- resolve manually " \
-                           "(git rebase --abort to cancel): #{stderr}"
-      return false
-    end
-
-    Logging.success "Rebased '#{branch}' onto '#{remote_ref}' for '#{@dir.cyan}'"
-    true
   end
 
   # Initializes a new git repository in the directory.
@@ -720,9 +655,12 @@ class GitProcessor
   # so this gets 'with-retry' hang protection (via the 'fo' fetch inside pull-safe) and
   # a clean-working-tree guard for free (pull-safe skips the rebase and exits non-zero
   # if the tree is dirty, rather than risking a rebase failing mid-way on uncommitted
-  # changes). Always rebases onto '@{u}' -- this codebase has no caller that wants a
-  # merge-pull (verified: the only caller, ProfilesRepo.update_chrome_folders, already
-  # passed rebase: true), so no rebase/quiet options are exposed.
+  # changes). Rebases onto '@{u}' -- or, for a repo with 'pull.allowResetOnDivergedHistory'
+  # set locally (e.g. browser-profiles' chrome folders), falls back to a hard reset onto
+  # '@{u}' if the local and remote histories share no common ancestor (e.g. after a
+  # force-squash) -- this codebase has no caller that wants a merge-pull (verified: the
+  # only caller, ProfilesRepo.update_chrome_folders, already passed rebase: true), so no
+  # rebase/quiet options are exposed.
   # stream: true -- see fetch_all's matching comment: 'pull-safe' is a custom alias, not
   # a literal 'pull', so _execute's auto-detection would otherwise silently buffer all
   # of 'fo'/'with-retry's live progress output until the whole rebase completes.
@@ -847,8 +785,12 @@ class GitProcessor
     end
   end
 
-  # Compresses the repository by expiring reflog and running gc.
-  # Runs 'git rfc' (reflog expire) and 'git cc' (gc --aggressive) aliases.
+  # Compresses the repository by expiring the reflog and running gc.
+  # Runs the 'compress' git alias, which combines 'rfc' (reflog expire) and
+  # 'cc' (repack/gc) into a single operation -- previously this method called
+  # both as two separate run_alias steps; the combo now lives in git/config
+  # itself (mirrors how 'unshallow' combines 'fo'+'backfill-blobs'), so any
+  # other caller that wants both steps together can use 'git compress' too.
   #
   # @return [Boolean] true on success, false on failure.
   def compress
@@ -860,8 +802,7 @@ class GitProcessor
     return false unless repo?
 
     Logging.debug "#{'Compressing'.yellow} '#{@dir.cyan}'"
-    run_alias('rfc')
-    run_alias('cc')
+    run_alias('compress')
     true
   end
 

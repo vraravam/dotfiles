@@ -491,10 +491,10 @@ Used in: `pull-safe`, `upreb`
 
 **`git is-shallow [<dir>]`** - Returns 0 if repo is shallow clone:
 ```ini
-is-shallow = "!f() { git -C \"${1:-.}\" rev-parse --is-shallow-repository | /usr/bin/grep -q true; }; f"
+is-shallow = "!f() { output=$(git -C \"${1:-.}\" rev-parse --is-shallow-repository); [ \"${output}\" = \"true\" ]; }; f"
 ```
 
-Used in: `unshallow`
+Used in: `unshallow`'s own no-op guard, `fo` (decides `fetch` vs `fetch --unshallow` per remote)
 
 **`git all-refs [<dir>]`** - Lists all branches (local + remote-tracking):
 ```ini
@@ -525,18 +525,21 @@ my-cmd = "!f() { git -C \"${1:-.}\" command \"$@\"; }; f"
 **Benefits:**
 - Clearer structure (no nested quotes)
 - Easier to read multi-line logic
-- Consistent with rest of codebase (17/22 aliases use this pattern)
+- Consistent with the majority of multi-step aliases in this file (single-command aliases like `co = checkout` don't need it)
 - Simpler argument handling
 
-**Example with multi-step logic:**
+**Example with multi-step logic** (see § Shallow Clone Aliases below for the
+full explanation of what this one does and why it starts with a guard clause):
 ```ini
 unshallow = "!f() { \
   dir=\"${1:-.}\"; \
-  git -C \"${dir}\" remote | while IFS= read -r remote; do \
-    git -C \"${dir}\" remote set-branches \"${remote}\" '*'; \
-  done && \
-  ( git -C \"${dir}\" is-shallow && git -C \"${dir}\" fetch --unshallow || true ); \
-}; f"
+  if [ \"$(git -C \"${dir}\" rev-parse --is-shallow-repository 2>/dev/null)\" != 'true' ] && \
+    [ \"$(git -C \"${dir}\" config --get remote.origin.promisor 2>/dev/null)\" != 'true' ]; then \
+    printf 'Already a full clone -- nothing to unshallow in %s\n' \"${dir}\"; \
+    exit 0; \
+  fi; \
+  git -C \"${dir}\" fo && git -C \"${dir}\" backfill-blobs; \
+}; f \"$@\""
 ```
 
 ### Legacy Pattern: `!sh -c '...' -`
@@ -564,40 +567,157 @@ Both handle `"$@"` the same way for passing through extra arguments.
 Simpler single-command aliases can use `!git` or bare git subcommand directly:
 
 ```ini
-st = status --short --branch
+co = checkout
 ```
 
 ## Shallow Clone Aliases
 
-**`git unshallow [<dir>]`** - Converts a shallow repository to a full clone and configures it to fetch all branches:
+**`git unshallow [<dir>]`** - Converts a shallow and/or partial (blobless) clone
+into a full clone. Delegates to two smaller aliases rather than reimplementing
+fetch/backfill logic itself:
 
 ```ini
 unshallow = "!f() { \
   dir=\"${1:-.}\"; \
-  git -C \"${dir}\" remote | while IFS= read -r remote; do \
-    git -C \"${dir}\" remote set-branches \"${remote}\" '*'; \
-  done && \
-  ( git -C \"${dir}\" is-shallow && git -C \"${dir}\" fetch --unshallow || true ); \
-}; f"
+  if [ \"$(git -C \"${dir}\" rev-parse --is-shallow-repository 2>/dev/null)\" != 'true' ] && \
+    [ \"$(git -C \"${dir}\" config --get remote.origin.promisor 2>/dev/null)\" != 'true' ]; then \
+    printf 'Already a full clone -- nothing to unshallow in %s\n' \"${dir}\"; \
+    exit 0; \
+  fi; \
+  git -C \"${dir}\" fo && git -C \"${dir}\" backfill-blobs; \
+}; f \"$@\""
 ```
 
-- Configures all remotes to fetch all branches (`remote set-branches <remote> '*'` for each remote)
-- If shallow, runs `fetch --unshallow` to convert to a full clone
-- **After running this, you must run `git fetch` or `git pull` to retrieve the complete history for all branches**
-- No-op if repo is already a full clone
-- Replaces the previous `fetch-unshallow` and `pull-unshallow` aliases
+- **No-op guard first**: if the repo is neither shallow (`is-shallow-repository`)
+  nor a partial/blobless clone (`remote.origin.promisor`), there is nothing to
+  convert -- returns immediately without even calling `fo`, rather than paying
+  for a full multi-remote fetch cycle for zero benefit. This is the pattern to
+  copy for any new alias whose purpose is "convert/fix X if needed" -- see
+  § No-Op Guards below for the general principle.
+- **`git fo`** -- fetches all remotes (promisor-first ordering), widens a
+  shallow clone's default single-branch tracking to all branches, and (per
+  remote) uses `fetch --unshallow` instead of a plain `fetch` when still
+  shallow. This is the "routine sync" half -- also used standalone everywhere
+  else in this config (`pull-safe`, `upreb`, `pullsub`, cron, `antidote.rb`).
+- **`git backfill-blobs`** -- backfills any missing blob objects for a partial
+  (`--filter=blob:none`) clone, in up to 5 chunks (fewer for a repo with under
+  5 commits), newest history first, each chunk wrapped in `with-retry`. No-op
+  (self-guarded) if the repo isn't a partial clone or the installed git
+  predates 2.44 (`git backfill`). See the alias's own comment in
+  `${XDG_CONFIG_HOME}/git/config` for why chunking matters: `git backfill`
+  groups every historical blob at a given path into one batch regardless of
+  `--min-batch-size`, so a single path with many large historical versions
+  (e.g. a binary committed directly) can otherwise produce one multi-GB,
+  unsplittable transfer that a flaky connection can never complete.
+- Routine freshness for an already-full repo is **not** this alias's job --
+  callers that want that use `git fo` directly, or `git pull-safe`/`git upreb`
+  for the fetch-and-rebase workflows. `unshallow` answers "does this repo need
+  converting", not "is this repo up to date".
 
 **Typical workflow:**
 ```bash
-# Convert shallow clone to full clone
+# Convert shallow/partial clone to full clone (no-op if already full)
 git unshallow
-
-# Fetch complete history for all branches
-git fetch
-
-# Or use in one line
-git unshallow && git fetch
 ```
+
+### `git st` -- Surfacing Missing Objects on a Partial Clone
+
+`git st` (all three modes -- default, `-s`, `-m`) appends a report of any
+objects still missing locally whenever the repo is a partial/blobless clone
+(`remote.origin.promisor` = true), so it's visible at a glance -- without
+remembering to run a separate command -- whether `git unshallow` still has
+backfill work left to do:
+
+```ini
+if [ \"$(git -C \"${dir}\" config --get remote.origin.promisor 2>/dev/null)\" = 'true' ]; then \
+  missing=$(git -C \"${dir}\" rev-list --objects --all --missing=print 2>/dev/null | grep '^?'); \
+  if [ -n \"${missing}\" ]; then \
+    count=$(printf '%s\n' \"${missing}\" | wc -l | xargs); \
+    printf '\n%s object(s) missing locally (partial clone) -- run git unshallow to backfill:\n' \"${count}\"; \
+    printf '%s\n' \"${missing}\"; \
+  fi; \
+fi; \
+```
+
+- **Guarded on `remote.origin.promisor`** first (same no-op-guard philosophy as
+  `unshallow`/`siu` above) -- skipped entirely for the common case (a normal,
+  non-partial clone), which could never have anything missing.
+- **Silent when nothing is missing** -- `--missing=print` naturally produces no
+  `?`-prefixed lines once everything is backfilled, so a fully-backfilled
+  partial clone (post-`unshallow`) shows no extra output either; the report
+  only appears while there's real, actionable missing content.
+- **Cost**: ~0.2s even on a 7000-commit/11GB repo (measured) -- acceptable for
+  `git st`'s human-triggered, interactive use (unlike `st-nolock`/`is-dirty`,
+  which run on every prompt render and must stay lock-free and near-zero-cost;
+  see § Lock-Free Status Helpers above -- this is exactly why the missing-
+  objects report lives in `st`, not `st-nolock`).
+- Prints the **raw** `?<sha>` lines from `--missing=print` (git's own format
+  for this doesn't include the path for every entry -- cross-reference with
+  `git rev-list --objects --all | grep <sha>` if you need to know which file a
+  given missing object belongs to), rather than a summary-only count, so the
+  exact objects are visible if you want to investigate before running
+  `unshallow`.
+
+## No-Op Guards -- "Stop Early If There's Nothing To Do"
+
+Aliases whose purpose is conditional ("convert X if needed", "update submodules
+if any exist") should check that condition **first** and return immediately
+when it doesn't hold, rather than running their full body and relying on the
+underlying git commands to discover there's nothing to do. This avoids paying
+for expensive setup (a multi-remote fetch, a `with-retry` wrapper, a subprocess
+fork) when the answer was knowable up front from a cheap, local check.
+
+Three examples currently in `${XDG_CONFIG_HOME}/git/config`:
+
+| Alias | Guard condition | Cheap check used |
+|---|---|---|
+| `unshallow` | Repo is already a full, non-partial clone | `rev-parse --is-shallow-repository` + `config --get remote.origin.promisor` |
+| `siu` | Repo has no submodules | `[ -f "${dir}/.gitmodules" ]` |
+| `migrate-reftable` | Repo is already reftable format | `rev-parse --show-ref-format` |
+
+`maintain` is a partial exception: there is no single deterministic boolean for
+"nothing to maintain" (a repo always has *some* loose objects/reflog entries a
+`gc` could touch), so it uses a **time-based** throttle instead (skip if a
+`.git/dotfiles-last-maintain` stamp file is newer than 3h), mirroring the
+`Core.due_for_periodic_update` pattern already used for mise-plugin/ollama-model
+update throttling in `software-updates-cron.rb`. Always support a `--force`
+(or equivalent) override on a time-throttled alias so the "run this now
+regardless, I'm diagnosing a real problem" use case is never silently
+swallowed -- this matters especially for a repair/diagnostic tool like
+`maintain` ("like brew doctor").
+
+**When adding a new no-op guard to an alias that can receive arguments**:
+remember the "bare `f` doesn't forward args" gotcha below -- a guard that reads
+`$1`/`$2` (e.g. a `--force` flag) silently never sees them unless the alias
+ends in `f \"$@\"`, not bare `f`.
+
+### Gotcha: Bare `f` vs `f "$@"` -- Argument Forwarding
+
+Every `!f() { ... }; f` alias is invoked by git as `sh -c '<value>' <argv0>
+<arg1> <arg2> ...`. Ending the value with bare `f` (no arguments) calls the
+function with **zero** arguments -- POSIX shell functions do not automatically
+inherit the outer script's positional parameters; `"$@"` must be forwarded
+explicitly:
+
+```ini
+# BAD -- $1/$2/... inside f() are ALWAYS empty, regardless of what the caller
+# passed to the alias, because f is invoked with no arguments
+my-alias = "!f() { dir=\"${1:-.}\"; ...; }; f"
+
+# Good -- forwards the real arguments into f()
+my-alias = "!f() { dir=\"${1:-.}\"; ...; }; f \"$@\""
+```
+
+This is harmless for most existing aliases in this file because every current
+call site invokes them via `git -C "${dir}" <alias>` (no trailing args) --
+`-C` already changes the process's cwd before the alias runs, so `${1:-.}`
+correctly defaults to `.` without needing argument forwarding at all. It only
+becomes a real bug the moment an alias needs to read an actual argument (a
+flag like `maintain`'s `--force`, or a second positional) -- verify this is
+fixed (`f \"$@\"`) for any alias you add or modify that reads `$1`/`$2` beyond
+a plain `${1:-.}` dir default. Not all aliases in this file have been swept for
+this yet -- when touching one, check and fix it if it now depends on argument
+forwarding that bare `f` cannot provide.
 
 ## `git sci` (Smart Commit -- Non-Interactive)
 
@@ -638,11 +758,54 @@ state.
 
 The correct pattern is an **early exit**: check first, do nothing if dirty.
 
-**`git pull-safe`** -- fetch all remotes, rebase onto `@{u}` only if clean:
+**`git pull-safe`** -- fetch all remotes (via `fo`, for with-retry + promisor-
+first ordering), rebase onto `@{u}` only if clean, falling back to a hard
+reset onto `@{u}` if the histories have diverged with no common ancestor
+(e.g. after a remote force-squash -- see `KeybaseMigration.md`) **and** the
+repo has opted in with `git config --local pull.allowResetOnDivergedHistory
+true`:
 
 ```ini
-pull-safe = "!f() { git -C \"${1:-.}\" fetch; if git -C \"${1:-.}\" diff --quiet && git -C \"${1:-.}\" dc --quiet; then git -C \"${1:-.}\" rebase '@{u}'; else printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' \"${1:-.}\" >&2; exit 1; fi; }; f"
+pull-safe = "!f() { \
+  dir=\"${1:-.}\"; \
+  git -C \"${dir}\" fo; \
+  if ! git -C \"${dir}\" is-clean; then \
+    printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' \"${dir}\" >&2; \
+    exit 1; \
+  fi; \
+  branch=$(git -C \"${dir}\" br); \
+  if [ -z \"${branch}\" ]; then exit 1; fi; \
+  if git -C \"${dir}\" merge-base \"${branch}\" '@{u}' >/dev/null 2>&1; then \
+    git -C \"${dir}\" rebase '@{u}'; \
+    exit $?; \
+  fi; \
+  allow_reset=$(git -C \"${dir}\" config --type=bool --default false pull.allowResetOnDivergedHistory); \
+  if [ \"${allow_reset}\" != 'true' ]; then exit 1; fi; \
+  git -C \"${dir}\" reset --hard '@{u}'; \
+}; f \"$@\""
 ```
+
+This is the **single, canonical** implementation of "pull that tolerates a
+rewritten remote history" in this codebase -- both `pull`/`_pull` (the shell
+autoload, only as its fallback after a bare `git pull` fails; see below for
+why the *primary* interactive path stays on bare `git pull`) and
+`GitProcessor#pull` (Ruby) call into this one alias rather than each carrying
+their own copy of the fetch/clean-check/merge-base/rebase-or-reset logic. A
+previous, Ruby-only duplicate of this exact logic (`GitProcessor#pull_or_reset`)
+was removed once its logic moved here -- if you're tempted to add a diverged-
+history-aware pull anywhere else, extend or call this alias instead of writing
+a new implementation.
+
+**Why `pull`/`_pull`'s primary path is still a bare `git pull`, not
+`pull-safe`**: `pull-safe` is deliberately cron/automation-oriented -- it
+**refuses** outright on a dirty tree rather than touching it. The interactive
+`pull` command benefits from this repo's `[merge]/[rebase] autoStash = true`
+(silently stash-pull-pop on a dirty tree), which is a real daily-use
+convenience. Routing the common (clean, no-diverged-history) case through
+`pull-safe` would silently regress that autostash behavior for every
+interactive pull, not just diverged ones -- so `_pull` only reaches for
+`pull-safe` as its fallback, after a bare `git pull` has already failed and
+`pull.allowResetOnDivergedHistory` is set locally.
 
 **`git upreb`** -- abort before touching anything if dirty (a mid-workflow
 failure after fetch+rebase but before push would leave the repo in a worse
@@ -694,6 +857,31 @@ The same rule applies inside `git cc` -- the `reflog expire` step must use
 must be excluded -- tags have no reflogs in any repo (git only maintains reflogs for
 `HEAD` and branches), and passing them to `git reflog expire` always produces
 "reflog could not be found" errors for every tag.
+
+**`git compress [<dir>] [--expire=<when>] [<extra-reflog-flags>]`** -- combines
+`rfc && cc` into a single named operation, since the two are almost always run
+together (this section's own examples show `git rfc && git cc`). Mirrors how
+`unshallow` combines `fo`+`backfill-blobs`: when two aliases are routinely
+chained by every caller, add a third alias that does both rather than leaving
+every call site (interactively, or in Ruby via multiple `run_alias` calls) to
+chain them manually.
+
+```ini
+compress = "!f() { \
+  case \"${1:-}\" in \
+    -*|'') dir='.' ;; \
+    *) dir=\"${1:-}\" ;; \
+  esac; \
+  git -C \"${dir}\" rfc && git -C \"${dir}\" cc \"$@\"; \
+}; f \"$@\""
+```
+
+`rfc` only ever needs the `<dir>` argument (it has no flags of its own), so
+`compress` extracts just that for the `rfc` call -- the full, unmodified `"$@"`
+is still forwarded to `cc`, which already knows how to parse its own
+`<dir>`/`--expire=<when>`/`<extra-reflog-flags>` combination (reusing `cc`'s
+existing parsing rather than duplicating it a third time). `GitProcessor#compress`
+(Ruby) calls this one alias instead of two separate `run_alias` calls.
 
 ## `[delta]` -- Diff Rendering
 

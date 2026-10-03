@@ -155,7 +155,11 @@ module MacOS
 
     # Now kill the apps so they reload preferences on restart.
     # Finder and Dock restart automatically. SystemUIServer manages menu bar extras.
-    %w[Dock Finder SystemUIServer].each do |app|
+    # NotificationCenter/usernoted/usernotificationsd own com.apple.ncprefs (per-app
+    # notification permissions) -- without restarting these too, an imported ncprefs
+    # change (e.g. via capture-prefs.rb -i) stays invisible until the next logout.
+    # All are launchd-managed and relaunch automatically once killed.
+    %w[Dock Finder SystemUIServer NotificationCenter usernoted usernotificationsd].each do |app|
       CommandUtils.run_silent('killall', app)
     end
 

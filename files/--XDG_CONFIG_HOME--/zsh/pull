@@ -22,7 +22,12 @@ _pull() {
   # Wrapped in 'git with-retry' (not a bare 'git pull') for hang protection -- 'git pull'
   # is a builtin and always wins over the same-named git alias (confirmed empirically;
   # see the WARNING comment on the 'pull' alias in git/config), so this is the one place
-  # that actually needs to add retry protection for the bare 'pull' command.
+  # that actually needs to add retry protection for the bare 'pull' command. Deliberately
+  # NOT 'pull-safe' here (unlike the fallback below) -- 'pull-safe' is designed for
+  # unattended/cron use and refuses outright on a dirty tree, whereas this primary,
+  # interactive path benefits from this repo's own '[merge]/[rebase] autoStash = true'
+  # (stash-pull-pop transparently); routing the common case through 'pull-safe' would
+  # regress that convenience for every interactive 'pull' call, not just diverged ones.
   if _GIT_OVERRIDE_SKIP=1 git with-retry 60 3 /dev/null "${folder}/.git/objects" git -C "${folder}" pull "${switches[@]}"; then
     return 0
   fi
@@ -39,12 +44,16 @@ _pull() {
     return 0
   fi
 
+  # 'pull-safe' (git/config) already implements the exact fetch + clean-check +
+  # rebase-or-reset-on-diverged-history workflow needed here -- reused directly
+  # instead of a second, Ruby-only reimplementation (previously
+  # GitProcessor#pull_or_reset, called here via a 'call_ruby_utility' subprocess
+  # hop). 'pull-safe' does its own 'fo' fetch (with-retry + promisor-first
+  # ordering) and its own is-clean guard, so this is a complete, self-contained
+  # recovery attempt on its own -- not merely "finish what the failed bare pull
+  # above started".
   info "Pull failed -- '$(cyan "${folder}")' has 'pull.allowResetOnDivergedHistory' set; checking for diverged history"
-  # Escape any single quotes in folder before embedding it in the Ruby string literal
-  # below -- folder is an arbitrary shell path, not a fixed value, so it isn't safe to
-  # interpolate unescaped the way an EnvVars:: constant reference elsewhere would be.
-  local folder_escaped="${folder//\'/\\\'}"
-  if ! call_ruby_utility "require 'git_processor'; exit(GitProcessor.new(dir: '${folder_escaped}').pull_or_reset(allow_reset_on_diverged_history: true) ? 0 : 1)"; then
+  if ! _GIT_OVERRIDE_SKIP=1 git -C "${folder}" pull-safe; then
     _record_warning "Failed to reconcile '$(cyan "${folder}")' -- see errors above"
   fi
 }

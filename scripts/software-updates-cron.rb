@@ -127,6 +127,28 @@ module SoftwareUpdatesCron
 
   private_class_method :_perform_update
 
+  # Runs the given block via Core.due_for_periodic_update, additionally logging a
+  # debug message describing how long ago it last ran when skipped. Consolidates
+  # the "skipped -- last ran N hour(s) ago" bookkeeping previously duplicated at
+  # each periodic-update call site in this file.
+  #
+  # @param cache_file [Pathname] Path to the timestamp cache file (see Core.due_for_periodic_update).
+  # @param interval_secs [Integer] Minimum seconds that must have elapsed since cache_file's mtime.
+  # @param label [String] Human-readable name of the periodic operation, used in the skip message.
+  # @yield Runs the guarded operation when due.
+  # @return [Boolean] true if the block ran; false if skipped because interval_secs hasn't elapsed yet.
+  # :reek:UtilityFunction -- Stateless wrapper around Core.due_for_periodic_update (intentional)
+  def _run_if_due(cache_file, interval_secs, label, &block)
+    ran = Core.due_for_periodic_update(cache_file, interval_secs, &block)
+    unless ran
+      hours_since = Core.duration_since(File.mtime(cache_file).to_i) / 3600
+      Logging.debug "#{label} were updated #{hours_since} hour(s) ago -- skipping (interval: #{interval_secs / 3600} hours)"
+    end
+    ran
+  end
+
+  private_class_method :_run_if_due
+
   # Rebases all git repos under HOME that match the config/zsh/mise filter.
   #
   # @return [void]
@@ -200,12 +222,8 @@ module SoftwareUpdatesCron
 
       # Update plugins (every 6 hours) - check timestamp to avoid rate limiting
       # Redirect stdout to suppress 'all tools are installed' messages
-      ran = Core.due_for_periodic_update(last_plugin_update_file, plugin_update_interval) do
+      _run_if_due(last_plugin_update_file, plugin_update_interval, 'mise plugins') do
         CommandUtils.run_silent('mise', 'plugins', 'update', err: :err)
-      end
-      unless ran
-        hours_since = Core.duration_since(File.mtime(last_plugin_update_file).to_i) / 3600
-        Logging.debug "mise plugins were updated #{hours_since} hour(s) ago -- skipping (interval: #{plugin_update_interval / 3600} hours)"
       end
 
       # Always run tool upgrades (hourly is appropriate for version updates)
@@ -259,7 +277,7 @@ module SoftwareUpdatesCron
         model_update_interval = 24 * 3600 # seconds
         last_update_file = EnvVars::XDG_CACHE_HOME.join('ollama-last-update')
 
-        ran = Core.due_for_periodic_update(last_update_file, model_update_interval) do
+        _run_if_due(last_update_file, model_update_interval, 'Ollama models') do
           # reference: https://insiderllm.com/guides/ollama-mac-setup-optimization/
           # reference: https://popularaitools.ai/blog/run-gemma-4-locally-opencode-2026
           # Note: This list is up-to-date as of 2026-06-06
@@ -297,11 +315,6 @@ module SoftwareUpdatesCron
               end
             end
           end
-        end
-
-        unless ran
-          hours_since = Core.duration_since(File.mtime(last_update_file).to_i) / 3600
-          Logging.debug "Ollama models were updated #{hours_since} hour(s) ago -- skipping (interval: #{model_update_interval / 3600} hours)"
         end
       else
         Logging.debug 'ollama not found -- skipping model pulls'

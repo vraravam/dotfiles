@@ -166,6 +166,28 @@
     git -C \"${dir}\" size; \
   }; f"
 
+  # Combines 'git rfc' (expire reflog now) and 'git cc' (repack/gc) into one
+  # named operation -- these two are almost always used together (see 'cc's own
+  # doc comment: "git rfc && git cc"), mirroring how 'unshallow' already
+  # combines 'fo'+'backfill-blobs' into a single alias rather than leaving
+  # every caller to chain them manually (GitProcessor#compress previously did
+  # exactly that: two separate run_alias calls). 'rfc' only ever needs the
+  # <dir> argument (it has no flags of its own), so this extracts just that
+  # from "$@" for the 'rfc' call -- the full, unmodified "$@" is still forwarded
+  # to 'cc', which already knows how to parse its own <dir>/--expire=<when>/
+  # <extra-reflog-flags> combination (see 'cc's own parsing above).
+  # Usage: git compress [<dir>] [--expire=<when>] [<extra-reflog-flags>]
+  # Example: git compress                       (expire reflog now + full cleanup)
+  # Example: git compress --expire=3.days.ago
+  # Example: git compress /path/to/repo --expire=now
+  compress = "!f() { \
+    case \"${1:-}\" in \
+      -*|'') dir='.' ;; \
+      *) dir=\"${1:-}\" ;; \
+    esac; \
+    git -C \"${dir}\" rfc && git -C \"${dir}\" cc \"$@\"; \
+  }; f \"$@\""
+
   # Shows dangling commits (unreachable objects).
   # Usage: git dangling
   dangling = fsck --no-reflog
@@ -364,6 +386,13 @@
   # Default: full status output.
   # -s flag: short branch+status summary (branch name and per-file status flags).
   # -m flag: status with submodule summary.
+  # For a partial/blobless clone (remote.origin.promisor), also reports any
+  # objects still missing locally -- exactly 'git rev-list --objects --all
+  # --missing=print's own output (one '?<sha> <path>' line per missing object),
+  # so it's visible at a glance whether 'git unshallow' still has backfill work
+  # left to do. Skipped entirely for a non-partial clone (the common case) --
+  # cheap in practice (~0.2s even on a 7000-commit/11GB repo) but still a
+  # wasted rev-list walk for a repo that could never have anything missing.
   # Usage: git st [<dir>] [-s|-m]
   # Example: git st          (full status)
   # Example: git st -s       (short status)
@@ -385,7 +414,15 @@
       submodule) git -C \"${dir}\" status && git -C \"${dir}\" submodule summary ;; \
       *) git -C \"${dir}\" status ;; \
     esac; \
-  }; f"
+    if [ \"$(git -C \"${dir}\" config --get remote.origin.promisor 2>/dev/null)\" = 'true' ]; then \
+      missing=$(git -C \"${dir}\" rev-list --objects --all --missing=print 2>/dev/null | grep '^?'); \
+      if [ -n \"${missing}\" ]; then \
+        count=$(printf '%s\n' \"${missing}\" | wc -l | xargs); \
+        printf '\n%s object(s) missing locally (partial clone) -- run git unshallow to backfill:\n' \"${count}\"; \
+        printf '%s\n' \"${missing}\"; \
+      fi; \
+    fi; \
+  }; f \"$@\""
 
   # Shows the upstream tracking branch for the current branch in <remote>/<branch> format.
   # Usage: git track
@@ -744,25 +781,115 @@
   # fetch blob content -- these are two independent axes, so this is a separate step.
   # No-op if not a partial clone, or if the installed git version predates 'git
   # backfill' (2.44+). Run this AFTER 'git fo' has fetched from the promisor remote --
-  # backfilling against stale/incomplete history would be wasted work. Wrapped in 'git
-  # with-retry' (inactivity-based) since a full backfill can be a much larger, longer
-  # transfer than a regular fetch and is prone to the same network stalls.
+  # backfilling against stale/incomplete history would be wasted work.
+  #
+  # No-op guard: checks for any object still missing from HEAD's own reachable
+  # history (via 'rev-list --objects HEAD --missing=print', the same technique 'git
+  # st' already uses with --all) before doing any of the work below, and exits
+  # immediately if there's nothing left. Callers such as 'git unshallow' invoke this
+  # on every run with no memory of a previous successful backfill -- without this
+  # check, a repo that's already fully backfilled would still pay for the full
+  # chunked walk-and-fetch dance below (same commit-count math, same 5 retried
+  # remote round-trips) on every single invocation, forever, even though 'git
+  # backfill' itself has nothing left to actually transfer.
+  #
+  # Backfills in up to 5 chunks (fewer for a repo with under 5 commits), newest
+  # history first, rather than one single 'git backfill' call across all of HEAD.
+  # 'git backfill' groups every historical blob at a given path into one batch
+  # regardless of --min-batch-size (per git-backfill(1): batch size "may be exceeded
+  # by the last set of blobs seen at a given path") -- a single path with many large
+  # historical versions (e.g. a binary committed directly) can therefore produce one
+  # multi-GB, unsplittable transfer that a flaky connection can never complete, since
+  # a failed 'index-pack' discards all progress and the next retry re-requests the
+  # exact same oversized batch from scratch. Splitting the commit range into chunks
+  # bounds how many historical versions of any one path fall into a single 'git
+  # backfill' invocation, so the same oversized path's blobs are spread across
+  # several smaller, actually-transferable batches instead of one unbatchable one.
+  # Commit boundaries come from 'git rev-list --count'/'--reverse' against the LOCAL
+  # repo, not the remote -- a blobless partial clone already has full commit/tree
+  # history (only blobs are filtered), so this needs no extra network round-trip.
+  # Each chunk is wrapped in 'with-retry' exactly as the single-call version was; if
+  # a chunk exhausts its retries, the loop stops (older chunks are skipped) rather
+  # than pressing on -- the skipped history's blobs simply lazy-fetch on demand
+  # later, the same fallback already used when backfill fails entirely.
+  #
+  # The chunk loop above only ever walks HEAD's own ancestry ('rev-list --reverse
+  # HEAD'), so a blob reachable only from some other ref (a tag, a remote-tracking
+  # branch never checked out locally, etc.) is invisible to it. After the HEAD-scoped
+  # chunks finish (and are skipped entirely by the no-op guard above), a final
+  # unchunked 'git backfill --all' pass mops up anything still missing across every
+  # ref -- itself skipped via the same missing=print check if there's nothing left.
+  # Deliberately not chunked like the HEAD pass above: by this point only the
+  # handful of blobs unique to non-HEAD refs remain, not the full repository
+  # history, so the oversized-single-batch risk the chunking exists to avoid doesn't
+  # apply here.
   # Usage: git backfill-blobs [<dir>]
   backfill-blobs = "!f() { \
     dir=\"${1:-.}\"; \
-    if [ \"$(git -C \"${dir}\" config --get remote.origin.promisor 2>/dev/null)\" = 'true' ]; then \
-      if git backfill -h 2>&1 | grep -q 'is not a git command'; then \
-        printf 'Skipping blob backfill -- installed git version predates git backfill (needs 2.44+)\n' >&2; \
+    if [ \"$(git -C \"${dir}\" config --get remote.origin.promisor 2>/dev/null)\" != 'true' ]; then \
+      exit 0; \
+    fi; \
+    if git backfill -h 2>&1 | grep -q 'is not a git command'; then \
+      printf 'Skipping blob backfill -- installed git version predates git backfill (needs 2.44+)\n' >&2; \
+      exit 0; \
+    fi; \
+    chunk_failed=0; \
+    if [ -z \"$(git -C \"${dir}\" rev-list --objects HEAD --missing=print 2>/dev/null | grep '^?')\" ]; then \
+      printf 'No missing blob objects reachable from HEAD -- nothing to backfill.\n'; \
+    else \
+      total=$(git -C \"${dir}\" rev-list --count HEAD 2>/dev/null); \
+      if [ -z \"${total}\" ] || [ \"${total}\" -le 0 ]; then \
+        printf 'Skipping blob backfill -- could not determine commit history\n' >&2; \
       else \
-        printf 'Backfilling missing blob objects (partial clone)...\n'; \
-        backfill_stderr=\"$(mktemp)\"; \
-        if git with-retry 90 5 \"${backfill_stderr}\" \"${dir}/.git/objects\" git -C \"${dir}\" backfill --min-batch-size=500; then \
-          printf 'Backfill complete.\n'; \
+        chunks=5; \
+        if [ \"${total}\" -lt \"${chunks}\" ]; then chunks=\"${total}\"; fi; \
+        seg_size=$(( (total + chunks - 1) / chunks )); \
+        commits_file=\"$(mktemp)\"; \
+        git -C \"${dir}\" rev-list --reverse HEAD >\"${commits_file}\"; \
+        printf 'Backfilling missing blob objects in %s chunk(s) (partial clone, %s commits total, newest first)...\n' \"${chunks}\" \"${total}\"; \
+        i=\"${chunks}\"; \
+        while [ \"${i}\" -ge 1 ]; do \
+          end_line=$(( i * seg_size )); \
+          if [ \"${end_line}\" -gt \"${total}\" ]; then end_line=\"${total}\"; fi; \
+          start_line=$(( (i - 1) * seg_size )); \
+          end_sha=$(sed -n \"${end_line}p\" \"${commits_file}\"); \
+          if [ \"${start_line}\" -gt 0 ]; then \
+            start_sha=$(sed -n \"${start_line}p\" \"${commits_file}\"); \
+            range=\"${start_sha}..${end_sha}\"; \
+          else \
+            range=\"${end_sha}\"; \
+          fi; \
+          printf 'Backfill chunk %s/%s (commits %s-%s of %s)...\n' \"${i}\" \"${chunks}\" \"$((start_line + 1))\" \"${end_line}\" \"${total}\" >&2; \
+          backfill_stderr=\"$(mktemp)\"; \
+          if git with-retry 90 5 \"${backfill_stderr}\" \"${dir}/.git/objects\" git -C \"${dir}\" backfill --min-batch-size=500 \"${range}\"; then \
+            printf 'Chunk %s/%s backfilled.\n' \"${i}\" \"${chunks}\"; \
+            rm -f \"${backfill_stderr}\"; \
+          else \
+            printf 'Warning: could not backfill chunk %s/%s after retries -- stopping (remaining older history will lazy-fetch on demand). Last error:\n' \"${i}\" \"${chunks}\" >&2; \
+            cat \"${backfill_stderr}\" >&2; \
+            rm -f \"${backfill_stderr}\"; \
+            chunk_failed=1; \
+            break; \
+          fi; \
+          i=$((i - 1)); \
+        done; \
+        rm -f \"${commits_file}\"; \
+        if [ \"${chunk_failed}\" -eq 0 ]; then printf 'Backfill complete.\n'; fi; \
+      fi; \
+    fi; \
+    if [ \"${chunk_failed}\" -eq 0 ]; then \
+      remaining=$(git -C \"${dir}\" rev-list --objects --all --missing=print 2>/dev/null | grep '^?'); \
+      if [ -n \"${remaining}\" ]; then \
+        count=$(printf '%s\n' \"${remaining}\" | wc -l | xargs); \
+        printf 'Backfilling %s remaining blob object(s) outside HEAD (other branches/tags)...\n' \"${count}\"; \
+        backfill_stderr2=\"$(mktemp)\"; \
+        if git with-retry 90 5 \"${backfill_stderr2}\" \"${dir}/.git/objects\" git -C \"${dir}\" backfill --min-batch-size=500 --all; then \
+          printf 'Remaining backfill complete.\n'; \
         else \
-          printf 'Warning: could not backfill all blobs after retries -- will lazy-fetch on demand. Last error:\n' >&2; \
-          cat \"${backfill_stderr}\" >&2; \
+          printf 'Warning: could not backfill remaining objects after retries. Last error:\n' >&2; \
+          cat \"${backfill_stderr2}\" >&2; \
         fi; \
-        rm -f \"${backfill_stderr}\"; \
+        rm -f \"${backfill_stderr2}\"; \
       fi; \
     fi; \
   }; f"
@@ -777,9 +904,28 @@
   # operation used everywhere else (interactive use, cron via antidote.rb,
   # clone_repo_into's background job -- none of these call sites needed to change:
   # this alias still does the same combined job under the same name).
+  #
+  # No-op guard: if the repo is already a full clone (not shallow) AND has no
+  # promisor remote (not a partial/blobless clone either), there is nothing left
+  # to convert -- returns immediately without even calling 'fo', rather than
+  # paying for a full multi-remote fetch cycle for zero conversion benefit.
+  # Routine freshness (keeping an already-full repo up to date) is handled
+  # elsewhere by whichever call site actually wants it ('git fo' directly, or
+  # 'git pull-safe'/'git upreb' for the fetch-and-rebase workflows) -- callers
+  # that specifically invoke 'unshallow' are asking "convert this if needed",
+  # not "sync this". Before this guard existed, callers that wanted to avoid a
+  # redundant fetch against an already-full repo had to check this themselves
+  # (see antidote.rb's own 'git.shallow?' check preceding its 'unshallow' call,
+  # which is now redundant but harmless -- kept there as defense in depth).
   # Usage: git unshallow [<dir>]
   unshallow = "!f() { \
-    git -C \"${1:-.}\" fo && git -C \"${1:-.}\" backfill-blobs; \
+    dir=\"${1:-.}\"; \
+    if [ \"$(git -C \"${dir}\" rev-parse --is-shallow-repository 2>/dev/null)\" != 'true' ] && \
+      [ \"$(git -C \"${dir}\" config --get remote.origin.promisor 2>/dev/null)\" != 'true' ]; then \
+      printf 'Already a full clone -- nothing to unshallow in %s\n' \"${dir}\"; \
+      exit 0; \
+    fi; \
+    git -C \"${dir}\" fo && git -C \"${dir}\" backfill-blobs; \
   }; f"
 
   # Performs comprehensive repository maintenance and repair (like 'brew doctor').
@@ -790,14 +936,39 @@
   # - Runs garbage collection
   # - Rebuilds commit graph
   # - Restores mtimes from git history
-  # Idempotent — safe to run multiple times. Gracefully handles missing tools.
+  # Idempotent -- safe to run multiple times. Gracefully handles missing tools.
   # Used by: clone_repo_into() in .shellrc and GitProcessor.clone_repo_into().
   # Also useful for manually cloned repos or to repair corruption.
   # Note: Background maintenance is now handled automatically via global maintenance.auto=true
   # (see git-config maintenance.* settings). No manual registration needed.
-  # Usage: git maintain [<dir>]
+  #
+  # Throttled to at most once per 3h per repo (tracked via a stamp file under
+  # '.git/') -- unlike 'unshallow'/'siu', there is no single boolean that means
+  # "nothing to do" here (a repo always has some loose objects/reflog entries
+  # that gc *could* touch), so this uses the same time-based no-op pattern as
+  # the mise-plugin/ollama-model update throttles in software-updates-cron.rb
+  # rather than a true deterministic guard. This specifically targets the
+  # repeated-fsck-on-an-unchanged-repo cost: 'clone_repo_into' calls 'maintain'
+  # unconditionally on every invocation, including every run of
+  # resurrect-repositories.rb against repos that already exist and were already
+  # maintained recently. Pass '--force' to always run regardless of the stamp
+  # (e.g. when actually diagnosing suspected corruption -- the "brew doctor"
+  # use case this alias exists for should never be silently throttled away).
+  # Usage: git maintain [<dir>] [--force]
   maintain = "!f() { \
-    dir=\"${1:-.}\"; \
+    dir='.'; \
+    force=0; \
+    for a in \"$@\"; do \
+      case \"${a}\" in \
+        --force) force=1 ;; \
+        *) dir=\"${a}\" ;; \
+      esac; \
+    done; \
+    stamp=\"${dir}/.git/dotfiles-last-maintain\"; \
+    if [ \"${force}\" -eq 0 ] && [ -f \"${stamp}\" ] && [ -z \"$(find \"${stamp}\" -mmin +180 2>/dev/null)\" ]; then \
+      printf 'Repository maintenance already ran within the last 3h in %s -- skipping (use --force to override)\n' \"${dir}\"; \
+      exit 0; \
+    fi; \
     fullpath=\"$(cd \"${dir}\" && pwd)\"; \
     printf 'Running repository maintenance in %s...\n' \"${fullpath}\"; \
     rm -f \"${dir}/.git/index.lock\" \"${dir}/.git/objects/info/commit-graphs/commit-graph-chain.lock\" 2>/dev/null || true; \
@@ -806,8 +977,9 @@
     git -C \"${dir}\" gc 2>/dev/null || true; \
     git -C \"${dir}\" commit-graph write --reachable --changed-paths 2>/dev/null || true; \
     git -C \"${dir}\" restore-mtime -c 2>/dev/null || true; \
+    touch \"${stamp}\" 2>/dev/null || true; \
     printf 'Maintenance complete.\n'; \
-  }; f"
+  }; f \"$@\""
 
   # Migrates repository from legacy files format to reftable format (git 2.45+).
   # Reftable is the modern reference storage format that replaces the traditional
@@ -852,22 +1024,52 @@
 
   # Fetches all remotes, then rebases onto @{u} only if the working tree is clean
   # (no uncommitted or staged changes). If the tree is dirty, skips the rebase,
-  # prints a message to stderr, and exits non-zero — callers such as run-all.rb
+  # prints a message to stderr, and exits non-zero -- callers such as run-all.rb
   # surface this as a per-repo warning so the user knows to pull manually.
   # Designed for cron: a dirty skip is surfaced as a warning, not silently dropped.
   # Uses 'git fo' (not a bare 'git fetch') for the same reason every other alias in
   # this config does: hang protection via 'with-retry' and promisor-first remote
   # ordering for partial/blobless clones -- a bare 'git fetch' here would bypass both.
+  #
+  # If the rebase target has no common ancestor with the current branch (e.g. after
+  # a remote force-squash -- see recreate-repository.rb/KeybaseMigration.md), a plain
+  # rebase is meaningless (there is no shared base to replay onto). By default this
+  # is treated as an error (unexpected -- refuses to silently discard local commits).
+  # Repos that expect this can opt in with:
+  #   git config --local pull.allowResetOnDivergedHistory true
+  # in which case a diverged history instead falls back to a hard reset onto @{u}.
+  # This absorbs what was previously a separate, Ruby-only code path
+  # (GitProcessor#pull_or_reset) -- both the shell 'pull' autoload (for the bare
+  # 'git pull' case, which can't use this alias directly -- see the WARNING above)
+  # and GitProcessor#pull (which already called this alias) now get the same
+  # diverged-history recovery for free from this one implementation, instead of
+  # a second, independent reimplementation existing only in Ruby with its own
+  # (non-'fo', non-retry-protected) fetch step.
   # Usage: git pull-safe [<dir>]
   pull-safe = "!f() { \
-    git -C \"${1:-.}\" fo; \
-    if git -C \"${1:-.}\" is-clean; then \
-      git -C \"${1:-.}\" rebase '@{u}'; \
-    else \
-      printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' \"${1:-.}\" >&2; \
+    dir=\"${1:-.}\"; \
+    git -C \"${dir}\" fo; \
+    if ! git -C \"${dir}\" is-clean; then \
+      printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' \"${dir}\" >&2; \
       exit 1; \
     fi; \
-  }; f"
+    branch=$(git -C \"${dir}\" br); \
+    if [ -z \"${branch}\" ]; then \
+      printf 'Could not determine current branch in %s\n' \"${dir}\" >&2; \
+      exit 1; \
+    fi; \
+    if git -C \"${dir}\" merge-base \"${branch}\" '@{u}' >/dev/null 2>&1; then \
+      git -C \"${dir}\" rebase '@{u}'; \
+      exit $?; \
+    fi; \
+    allow_reset=$(git -C \"${dir}\" config --type=bool --default false pull.allowResetOnDivergedHistory); \
+    if [ \"${allow_reset}\" != 'true' ]; then \
+      printf '%s and @{u} have no common ancestor in %s (unexpected -- was history rewritten upstream?) -- refusing to rebase blindly\n' \"${branch}\" \"${dir}\" >&2; \
+      exit 1; \
+    fi; \
+    printf '%s and @{u} have no common ancestor in %s (expected after a force-squash) -- resetting %s to @{u} instead of rebasing\n' \"${branch}\" \"${dir}\" \"${branch}\" >&2; \
+    git -C \"${dir}\" reset --hard '@{u}'; \
+  }; f \"$@\""
 
   # Pulls all submodules (runs unshallow + pull in each submodule).
   # The embedded pull is 'git with-retry ... git pull' (not a bare 'git pull') for hang
@@ -948,9 +1150,16 @@
   # would otherwise hang indefinitely. Uses '.git/modules' (the object store shared by all
   # submodules) as the progress-path so growth in ANY submodule's fetch counts as progress,
   # not just the one currently being processed.
+  # No-op guard: a repo with no '.gitmodules' file has no submodules by
+  # definition -- skip the 'with-retry' setup and subprocess fork entirely
+  # rather than paying for both just to run a 'submodule update' that would
+  # have nothing to do anyway.
   # Usage: git siu [<dir>]
   siu = "!f() { \
     dir=\"${1:-.}\"; \
+    if [ ! -f \"${dir}/.gitmodules\" ]; then \
+      exit 0; \
+    fi; \
     git with-retry 120 3 /dev/null \"${dir}/.git/modules\" git -C \"${dir}\" submodule update --init --recursive --remote --rebase --force; \
   }; f"
 

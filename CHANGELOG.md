@@ -4,6 +4,35 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.6
+
+:white_check_mark: Tested on a vanilla macOS machine
+
+#### Consolidate diverged-history pull recovery into a single `pull-safe` git alias; add no-op guards, argument forwarding, and chunked blob backfill across several git aliases
+
+* *[files/--XDG_CONFIG_HOME--/git/config]* `pull-safe` now handles the full "fetch, then rebase-or-reset" workflow previously split across the alias and `GitProcessor#pull_or_reset`: after `fo` and the existing dirty-tree guard, it checks `git merge-base` between the current branch and `@{u}` -- if a common ancestor exists, rebases as before; if not (e.g. after a remote force-squash), falls back to `git reset --hard @{u}` only when the repo has opted in with `git config --local pull.allowResetOnDivergedHistory true`, otherwise refuses and exits non-zero. This is now the single, canonical implementation of diverged-history-tolerant pulling in the repo.
+* *[files/--XDG_CONFIG_HOME--/zsh/pull]* The `_pull` fallback (used only after a bare `git pull` fails and `pull.allowResetOnDivergedHistory` is set) now calls `git -C "${folder}" pull-safe` directly instead of shelling out to `call_ruby_utility` for `GitProcessor#pull_or_reset`. The primary interactive path is unchanged (still a bare, `with-retry`-wrapped `git pull`) so this repo's `autoStash` convenience is preserved for the common case.
+* *[scripts/utilities/git_processor.rb]* Removed `GitProcessor#pull_or_reset` (~70 lines) now that its logic lives in the `pull-safe` alias; `#compress` now calls the new `compress` alias directly (see below) instead of running `rfc`/`cc` as two separate `run_alias` steps.
+* *[files/--XDG_CONFIG_HOME--/git/config]* New `compress` alias combines `rfc` (reflog expire) and `cc` (repack/gc) into one operation, mirroring how `unshallow` already combines `fo`+`backfill-blobs`.
+* *[files/--XDG_CONFIG_HOME--/git/config]* `unshallow` gained a no-op guard: if the repo is already a full, non-partial clone (checked via `rev-parse --is-shallow-repository` + `remote.origin.promisor`), it prints a message and exits immediately instead of paying for a full `fo` fetch cycle.
+* *[files/--XDG_CONFIG_HOME--/git/config]* `siu` gained a no-op guard: exits immediately if the repo has no `.gitmodules`, skipping the `with-retry` setup and subprocess fork entirely.
+* *[files/--XDG_CONFIG_HOME--/git/config]* `maintain` is now throttled to once per 3h per repo via a `.git/dotfiles-last-maintain` stamp file (mirrors the existing mise-plugin/ollama-model update throttle pattern), since -- unlike `unshallow`/`siu` -- there's no single boolean for "nothing to maintain." Accepts a `--force` flag to always run regardless of the stamp, for the "diagnose a real problem now" case.
+* *[files/--XDG_CONFIG_HOME--/git/config]* `backfill-blobs` now backfills in up to 5 chunks (fewer for repos with under 5 commits), newest history first, each independently wrapped in `with-retry`, instead of one single `git backfill` call across all of HEAD -- avoids a single historical path with many large blob versions (e.g. a binary committed directly) producing one multi-GB, unsplittable, unretryable transfer. Stops (rather than continuing) if a chunk exhausts its retries; older history simply lazy-fetches on demand later, same as the existing full-backfill-failure fallback.
+* *[files/--XDG_CONFIG_HOME--/git/config]* `st` now also reports any objects still missing locally (via `rev-list --objects --all --missing=print`) when the repo is a partial/blobless clone, so it's visible at a glance whether `unshallow` still has backfill work left to do. Guarded on `remote.origin.promisor` and silent when nothing is missing.
+* *[files/--XDG_CONFIG_HOME--/git/config]* Fixed `unshallow`, `maintain`, `compress`, and `st` to end their `f() { ... }; f` invocation with `f "$@"` instead of a bare `f` -- POSIX shell functions don't automatically inherit the outer script's positional parameters, so any of these that read an argument (`maintain`'s new `--force`, `compress`'s forwarded flags) would otherwise silently never see it.
+* *[.ai/domains/git-config.md]* Documented all of the above, plus two new general-purpose sections: "No-Op Guards -- Stop Early If There's Nothing To Do" (the `unshallow`/`siu`/`migrate-reftable` pattern, with `maintain`'s time-based exception) and a "Gotcha: Bare `f` vs `f \"$@\"`" writeup of the argument-forwarding issue above.
+* *[KeybaseMigration.md]* Updated the `pull.allowResetOnDivergedHistory` explanation to point at the `pull-safe` git alias instead of the now-removed `GitProcessor#pull_or_reset`.
+
+#### Restart notification-related processes so imported `com.apple.ncprefs` changes take effect immediately
+
+* *[scripts/utilities/macos.rb]* `reload_macos_prefs` (called after `capture-prefs.rb -i`) now also kills `NotificationCenter`, `usernoted`, and `usernotificationsd` alongside the existing `Dock`/`Finder`/`SystemUIServer` -- these three own `com.apple.ncprefs` (per-app notification permissions), and without restarting them an imported change stayed invisible until the next logout. All three are launchd-managed and relaunch automatically once killed.
+
+#### Adopting these changes
+
+* No action needed -- all changes are to git aliases (`${XDG_CONFIG_HOME}/git/config`, read fresh on every `git` invocation) and to Ruby/zsh helpers already reloaded by their normal mechanisms. If you use `git maintain` to diagnose suspected corruption, remember it's now throttled to once per 3h per repo -- pass `--force` to bypass.
+
+---
+
 ### 4.0.5
 
 :white_check_mark: Tested on a vanilla macOS machine

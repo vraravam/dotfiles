@@ -19,5 +19,5 @@ scripts/fresh-install-of-osx.sh
 # one-liners like 'while true; do ...; done' and 'pushd || { ...; }' get expanded
 # into ugly multi-line padded form by keep_padding. Excluding these files is the
 # only reliable fix.
-files/--HOME--/.aliases
+files/--ZDOTDIR--/.aliases
 files/--HOME--/.shellrc
