@@ -125,19 +125,19 @@ cask 'google-chrome@beta'
 cask 'keepassxc@beta'
 cask 'keycastr', postinstall: "\"#{setup_login_items_script}\" -a 'Keycastr'"
 cask 'keyclu', postinstall: "\"#{setup_login_items_script}\" -a 'KeyClu'" if is_arm
-# cask 'mechvibes', postinstall: "\"#{setup_login_items_script}\" -a 'Mechvibes'"
 cask 'onlyoffice'
 cask 'protonvpn' # , postinstall: "\"#{setup_login_items_script}\" -a 'ProtonVPN'"
+cask 'qlmarkdown'
 cask 'rancher' # if ::OS::Mac::version < 26
 cask 'shortcat', postinstall: "\"#{setup_login_items_script}\" -a 'Shortcat'"
 cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'" if ::OS::Mac::version >= 14 && ::OS::Mac::version < 27
 cask 'vorssaint/tap/vorssaint', trusted: true, postinstall: "\"#{setup_login_items_script}\" -a 'Vorssaint'"
-# cask 'xykong/tap/flux-markdown', trusted: true, postinstall: 'qlmanage -r'
-cask 'qlmarkdown'
+cask 'vraravam/tap/mechvibes-dx', trusted: true, postinstall: "\"#{setup_login_items_script}\" -a 'MechvibesDX'"
 cask 'vscodium@insiders',
   postinstall: "ln -sf '/Applications/VSCodium - Insiders.app/Contents/Resources/app/bin/codium-insiders' \"${HOMEBREW_PREFIX}/bin/codium-insiders\" && " \
                "ln -sf \"${HOMEBREW_PREFIX}/bin/codium-insiders\" \"${HOMEBREW_PREFIX}/bin/codium\" && " \
                "ln -sf \"${HOMEBREW_PREFIX}/bin/codium\" \"${HOMEBREW_PREFIX}/bin/code\""
+# cask 'xykong/tap/flux-markdown', trusted: true, postinstall: 'qlmanage -r'
 # cask 'zed@preview',
 #   postinstall: "ln -sf '/Applications/Zed Preview.app/Contents/MacOS/cli' \"${HOMEBREW_PREFIX}/bin/zed\""
 cask 'zen@twilight'
@@ -147,7 +147,7 @@ cask 'zoom'
 # tap 'jundot/omlx', 'git@github.com/jundot/omlx'
 # reference: https://www.agileguy.ca/opencode-fully-local/
 # to start ollama: ollama launch opencode --model gpt-oss-20b-MXFP4-Q8 -- ${DOTFILES_DIR}
-brew 'ollama', link: true, restart_service: :changed
+# brew 'ollama', link: true, restart_service: :changed
 # brew 'jundot/omlx/omlx', trusted: true, restart_service: :changed if is_arm
 brew 'anomalyco/tap/opencode', trusted: true
 

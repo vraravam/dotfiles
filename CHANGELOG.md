@@ -4,6 +4,15 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.7
+
+:white_check_mark: Tested on a vanilla macOS machine
+
+#### Brewfile cleanup
+
+* Replace `mechvibes` with `mechvibes-dx`.
+* Comment out `ollama` since I don't seem to use it at all.
+
 ### 4.0.6
 
 :white_check_mark: Tested on a vanilla macOS machine
