@@ -414,17 +414,38 @@ module ResurrectRepositories
 
   private_class_method :_find_and_reverse_replace_env_var
 
+  # Single source of truth for the order in which this script lists and processes
+  # repositories, used by every mode (generate, resurrect, check, bundle-export).
+  # Alphabetical by path, case-insensitive, with the exact (case-sensitive) path as a
+  # tie-breaker so ordering stays deterministic when two paths differ only by case.
+  # A parent folder always sorts before its own subfolders (it is a string prefix of
+  # them), so a repo nested inside another configured repo is processed after its parent.
+  #
+  # @param items [Array] Paths (Strings), or any objects a block can extract a path from.
+  # @yield [item] Optional; returns the path to sort +item+ by (e.g. +repo.folder+).
+  #   Without a block, each item is itself treated as the path.
+  # @return [Array] A new array holding the same items, sorted by path.
+  # :reek:UtilityFunction -- Stateless sorting helper (intentional)
+  def _sort_by_path(items)
+    items.sort_by do |item|
+      path = (block_given? ? yield(item) : item).to_s
+      [path.downcase, path]
+    end
+  end
+
+  private_class_method :_sort_by_path
+
   # Finds all Git repositories on disk starting from a given path.
   # Delegates to CollectionProcessor.find_directories_matching with git-specific
   # configuration (exclude hidden directories, transform to repo roots).
   #
   # @param path [String] The base path to search for Git repositories.
-  # @return [Array<String>] A sorted, deduplicated array of absolute paths to the root
-  #   directories of discovered Git repositories (i.e. the parent of each +.git+ dir).
-  #   Returns an empty array on failure.
+  # @return [Array<String>] A deduplicated array of absolute paths to the root
+  #   directories of discovered Git repositories (i.e. the parent of each +.git+ dir),
+  #   ordered by _sort_by_path. Returns an empty array on failure.
   # :reek:UtilityFunction -- Stateless helper for git repo discovery (intentional delegation)
   def _find_git_repos_from_disk(path)
-    CollectionProcessor.find_directories_matching(
+    repos = CollectionProcessor.find_directories_matching(
       dirs: [path],
       name_pattern: '.git',
       mindepth: 1,
@@ -433,6 +454,9 @@ module ResurrectRepositories
       transform_result: ->(git_path) { Pathname.new(git_path).dirname.to_s },
       noise_patterns: ['Permission denied', 'No such file or directory']
     )
+    # CollectionProcessor sorts case-sensitively (shared with other callers); re-sort here
+    # so this script's ordering is uniform across modes.
+    _sort_by_path(repos)
   end
 
   private_class_method :_find_git_repos_from_disk
@@ -440,8 +464,12 @@ module ResurrectRepositories
   # Reads repository configurations from a YAML file.
   # Validates and filters for active repositories, expands environment variables in dir paths.
   #
+  # The result is ordered by _sort_by_path on the expanded folder rather than left in YAML
+  # file order, so every mode (resurrect, check, bundle-export) processes and reports
+  # repositories in a predictable order regardless of how the file was authored.
+  #
   # @param filename [String, Pathname] The path to the YAML configuration file.
-  # @return [Array<RepositoryConfig>] An array of validated repository configuration objects.
+  # @return [Array<RepositoryConfig>] Validated repository configuration objects, sorted by folder.
   # :reek:FeatureEnvy -- Operates on method parameter for file I/O (intentional)
   def _read_git_repos_from_file(filename)
     filename = Pathname.new(filename) unless filename.is_a?(Pathname)
@@ -450,11 +478,13 @@ module ResurrectRepositories
     raw_repos = Array(YAML.safe_load(filename.read(encoding: 'UTF-8')))
 
     # Filter active repos and convert to RepositoryConfig objects
-    raw_repos.filter_map do |repo_hash|
+    repos = raw_repos.filter_map do |repo_hash|
       next unless repo_hash.is_a?(Hash) && repo_hash['active']
 
       RepositoryConfig.from_hash(repo_hash)
     end
+
+    _sort_by_path(repos, &:folder)
   end
 
   private_class_method :_read_git_repos_from_file
@@ -690,31 +720,34 @@ module ResurrectRepositories
   # @param repositories [Array<RepositoryConfig>] An array of repository configurations from the YAML file.
   # @param discovered_count [Integer] Total count of repos before any filter was applied, used for the summary log.
   # @param filter [String] A filter string (regex) to apply to repository paths before comparison.
-  # @param ref_dir [String, nil] Optional base directory to scope the comparison to (already expanded).
+  # @param ref_dir [Pathname, String, nil] Optional base directory to scope the comparison to
+  #   (already expanded). EnvVars.ref_folder supplies a Pathname; it is converted to a String
+  #   only where it is compared against the String folder paths from the YAML config.
   # @return [void] Sets @has_failures if discrepancies are found.
   def _verify_all(repositories, discovered_count, filter, ref_dir: nil)
     # Get dir paths from the YAML configuration (already filtered by FILTER if it was set).
     # filter_map polyfill in enumerable_ext.rb covers Ruby 2.6 (system Ruby on vanilla macOS).
-    yml_dirs = repositories.filter_map(&:folder).uniq.sort
+    yml_dirs = _sort_by_path(repositories.filter_map(&:folder).uniq)
     if ref_dir
       # If ref_dir is set, filter yml_dirs to include only those starting with this path
       # or exactly matching this path (if ref_dir itself is a repo path).
       # Ensure comparison is against a directory prefix by normalizing paths.
-      path_prefix_for_selection = ref_dir.chomp(File::SEPARATOR)
+      path_prefix_for_selection = ref_dir.to_s.chomp(File::SEPARATOR)
       yml_dirs = yml_dirs.select do |dir|
         normalized_dir = dir.chomp(File::SEPARATOR)
         normalized_dir == path_prefix_for_selection || normalized_dir.start_with?(path_prefix_for_selection + File::SEPARATOR)
       end
     end
 
-    # _find_git_repos_from_disk already returns a sorted unique array; _apply_filter preserves uniqueness.
-    local_dirs = _apply_filter(_find_git_repos_from_disk(ref_dir || EnvVars::HOME), filter).sort
+    # _find_git_repos_from_disk already returns a sorted unique array; _apply_filter preserves
+    # both uniqueness and order.
+    local_dirs = _apply_filter(_find_git_repos_from_disk(ref_dir || EnvVars::HOME), filter)
 
     # Convert to Sets for O(1) membership checks on the symmetric difference
     yml_set = Set.new(yml_dirs)
     local_set = Set.new(local_dirs)
-    diff_repos = (local_set ^ yml_set).to_a.sort # ^ = symmetric difference
-    common_repos = (local_set & yml_set).to_a.sort # & = intersection
+    diff_repos = _sort_by_path((local_set ^ yml_set).to_a) # ^ = symmetric difference
+    common_repos = _sort_by_path((local_set & yml_set).to_a) # & = intersection
 
     puts ''
     Logging.info('Summary'.yellow)

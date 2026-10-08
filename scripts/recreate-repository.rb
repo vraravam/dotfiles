@@ -191,9 +191,9 @@ if __FILE__ == $PROGRAM_NAME
       options[:dry_run] = true
     end
     opts.separator ''
-    opts.separator "  eg: #{File.basename(__FILE__).cyan} -f -d #{EnvVars::HOME}"
+    opts.separator "  eg: #{File.basename(__FILE__).cyan} -f -d ${HOME}"
     opts.separator "  eg: #{File.basename(__FILE__).cyan} -d ${PERSONAL_PROFILES_DIR}"
-    opts.separator "  eg: #{File.basename(__FILE__).cyan} -n -d ~/dev/my-repo  # dry-run"
+    opts.separator "  eg: #{File.basename(__FILE__).cyan} -n -d ${PROJECTS_BASE_DIR}/my-repo  # dry-run"
   end
 
   parser.abort_with_usage('Missing required option: -d <dir>') if nil_or_empty?(options[:dir])

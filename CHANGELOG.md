@@ -4,6 +4,28 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.8
+
+#### Make `find_and_append_prefs` match on domain names, not key/value contents
+
+* *[files/--ZDOTDIR--/.aliases]* `find_and_append_prefs <search-string>` now filters `defaults domains` for domains whose name contains the search string (case-insensitive) instead of parsing `defaults find` output, which matched on key/value contents and pulled in unrelated domains that merely mentioned the app (Finder recents, launcher usage stats, `Apple Global Domain`, etc.) and could not see domains with an empty plist. It now reports what it did per match: `success` when appended, `info` when already in the allowed list, `warn` (promoted from `debug`, matching the function's documented behavior) when skipped because the domain is on the denied list, and a `warn` when no domain name matches at all (e.g. the app has not written any preferences yet). Returns 1 with a usage error when called without an argument. The allowed list is still sorted and de-duplicated at the end.
+* *[Extras.md]* Updated the `find_and_append_prefs` description to reflect domain-name matching and the skip/warn behavior.
+* *[scripts/data/capture-prefs-allowed-list.txt]* Added `com.hainguyents13.mechvibesdx`.
+
+#### Process repositories in one consistent, case-insensitive order in `resurrect-repositories.rb`
+
+* *[scripts/resurrect-repositories.rb]* New private `_sort_by_path(items, &block)` helper is the single source of truth for ordering: alphabetical by path, case-insensitive, with the exact path as a tie-breaker (a parent folder always sorts before its own subfolders). `_find_git_repos_from_disk` re-sorts with it (`CollectionProcessor` sorts case-sensitively because it is shared with other callers), `_read_git_repos_from_file` now sorts by `folder` instead of leaving repos in YAML file order, and `_verify_all` uses it for `yml_dirs`, `diff_repos`, and `common_repos` in place of the scattered `.sort` calls. Every mode (generate, resurrect, check, bundle-export) therefore processes and reports repositories in the same predictable order. `_verify_all` also converts a `Pathname` `ref_dir` with `.to_s` where it is compared against the `String` folder paths from the YAML config.
+
+#### Brewfile updates
+
+* *[files/--HOME--/Brewfile]* Added the `vraravam/tap/wobbly` cask (with a `Wobbly` login item) and enabled the `microsoft-teams` cask.
+
+#### Adopting these changes
+
+* Restart the Terminal/iTerm application to reload `.aliases`.
+
+---
+
 ### 4.0.7
 
 :white_check_mark: Tested on a vanilla macOS machine

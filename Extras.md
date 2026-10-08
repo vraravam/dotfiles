@@ -32,7 +32,7 @@ This script exports or imports the preferences of known applications (both syste
 
 Three data files govern which domains are processed and how:
 
-- **[`scripts/data/capture-prefs-allowed-list.txt`](scripts/data/capture-prefs-allowed-list.txt)** — domains to export/import. Use `find_and_append_prefs <search-string>` to discover and append a domain automatically; it checks the denied list before appending.
+- **[`scripts/data/capture-prefs-allowed-list.txt`](scripts/data/capture-prefs-allowed-list.txt)** — domains to export/import. Use `find_and_append_prefs <search-string>` to discover and append every domain whose name contains the (case-insensitive) search string; it skips domains already listed and warns instead of appending denied-list domains.
 - **[`scripts/data/capture-prefs-denied-list.txt`](scripts/data/capture-prefs-denied-list.txt)** — domains that must never be exported or imported (machine-specific identifiers, account credentials, ephemeral sync state). Each entry has an inline comment explaining why.
 - **[`scripts/data/capture-prefs-excluded-keys.txt`](scripts/data/capture-prefs-excluded-keys.txt)** — individual keys within allowed domains that are stripped before export or import (display geometry, device UUIDs embedded in per-domain keys).
 

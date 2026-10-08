@@ -133,6 +133,7 @@ cask 'shortcat', postinstall: "\"#{setup_login_items_script}\" -a 'Shortcat'"
 cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'" if ::OS::Mac::version >= 14 && ::OS::Mac::version < 27
 cask 'vorssaint/tap/vorssaint', trusted: true, postinstall: "\"#{setup_login_items_script}\" -a 'Vorssaint'"
 cask 'vraravam/tap/mechvibes-dx', trusted: true, postinstall: "\"#{setup_login_items_script}\" -a 'MechvibesDX'"
+cask 'vraravam/tap/wobbly', trusted: true, postinstall: "\"#{setup_login_items_script}\" -a 'Wobbly'"
 cask 'vscodium@insiders',
   postinstall: "ln -sf '/Applications/VSCodium - Insiders.app/Contents/Resources/app/bin/codium-insiders' \"${HOMEBREW_PREFIX}/bin/codium-insiders\" && " \
                "ln -sf \"${HOMEBREW_PREFIX}/bin/codium-insiders\" \"${HOMEBREW_PREFIX}/bin/codium\" && " \
@@ -263,7 +264,7 @@ brew 'watchman'
 # cask 'licecap'
 # cask 'lulu'
 cask 'windows-app'    # replacement for microsoft-remote-desktop
-# cask 'microsoft-teams'
+cask 'microsoft-teams'
 # cask 'monolingual'
 # cask 'netspot'
 # cask 'ngrok'

@@ -675,22 +675,43 @@ if is_macos; then
   alias hide_desktop='defaults write com.apple.finder CreateDesktop -bool false && killall Finder'
   alias show_desktop='defaults write com.apple.finder CreateDesktop -bool true && killall Finder'
 
-  # Finds and appends the preferences associated with the partial string passed in as an argument.
+  # Finds and appends the preference domains whose NAME contains the partial string passed in
+  # as an argument (case-insensitive). Matching is on domain names (from 'defaults domains'),
+  # not on key/value contents as 'defaults find' does, because content matching pulls in
+  # unrelated domains that merely mention the app (Finder recents, launcher usage stats, etc.).
   # Also, sorts (and removes duplicates) from the config file used to capture preferences.
   # Warns (and does NOT append) if the discovered domain is on the denied list of
   # machine-specific/account-bound domains defined in capture-prefs-denied-list.txt.
   # Usage: find_and_append_prefs <search-string>
   find_and_append_prefs() {
+    local search="${1:-}"
+    if is_zero_string "${search}"; then
+      error "Usage: find_and_append_prefs <search-string>"
+      return 1
+    fi
+
     local allowed_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-allowed-list.txt"
     local denied_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-denied-list.txt"
-    defaults find "${1:-}" | /usr/bin/grep 'keys in domain' | while IFS="'" read -r _ field _; do
+    local -a all_domains=("${(@s:, :)$(defaults domains)}")
+    local domain
+    local -i matched=0
+    for domain in "${all_domains[@]}"; do
+      if [[ "${domain:l}" != *"${search:l}"* ]]; then continue; fi
+      matched+=1
       # Check whether this domain is on the denied list before appending.
-      if /usr/bin/grep -Fxq "${field}" "${denied_list_file}" 2>/dev/null; then
-        debug "Skipping '$(yellow "${field}")' -- it is on the denied list (machine-specific data; see capture-prefs-denied-list.txt)"
+      if /usr/bin/grep -Fxq "${domain}" "${denied_list_file}" 2>/dev/null; then
+        warn "Skipping '$(yellow "${domain}")' -- it is on the denied list (machine-specific data; see capture-prefs-denied-list.txt)"
+      elif /usr/bin/grep -Fxq "${domain}" "${allowed_list_file}" 2>/dev/null; then
+        info "'$(cyan "${domain}")' is already in the allowed list"
       else
-        print -- "${field}" >>"${allowed_list_file}"
+        print -- "${domain}" >>"${allowed_list_file}"
+        success "Appended '$(cyan "${domain}")' to the allowed list"
       fi
     done
+
+    if ((matched == 0)); then
+      warn "No preference domain name contains '$(yellow "${search}")' (the app may not have written any preferences yet)"
+    fi
     sort -u -o "${allowed_list_file}" "${allowed_list_file}"
   }
 elif is_linux; then
