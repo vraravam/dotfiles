@@ -4,6 +4,20 @@ require 'core'
 require 'tempfile'
 
 RSpec.describe Core do
+  describe '.stream_command' do
+    it 'returns the child exit status (not always 0)' do
+      expect(described_class.stream_command(['sh', '-c', 'exit 3'])).to eq(3)
+    end
+
+    it 'returns 0 for a successful command and streams its output' do
+      expect { expect(described_class.stream_command(%w[echo hi])).to eq(0) }.to output("hi\n").to_stdout
+    end
+
+    it 'passes stdin_data to the child' do
+      expect { described_class.stream_command(%w[cat], stdin_data: 'abc') }.to output('abc').to_stdout
+    end
+  end
+
   describe '.nil_or_empty?' do
     it 'is true for nil' do
       expect(described_class.nil_or_empty?(nil)).to be true

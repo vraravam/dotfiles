@@ -23,6 +23,12 @@ RSpec.describe EnvVars do
     end
   end
 
+  describe 'UPSTREAM_GH_USERNAME' do
+    it 'defaults to the upstream owner' do
+      expect(described_class::UPSTREAM_GH_USERNAME).to be_a(String).and(satisfy { |v| !v.empty? })
+    end
+  end
+
   describe '.debug?' do
     it 'is false when DEBUG is unset' do
       with_env('DEBUG' => nil) do

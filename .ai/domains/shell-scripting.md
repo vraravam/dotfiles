@@ -567,7 +567,7 @@ The direct append pattern is the exception, not the rule. Use it only when:
 - The message is only meaningful in the context of the final summary
 
 The pattern mirrors Ruby's `record_warning` (immediate) vs direct append to
-`@step_warnings` (summary-only).
+`Logging.step_warnings` (summary-only).
 
 ## Script Depth Tracking
 

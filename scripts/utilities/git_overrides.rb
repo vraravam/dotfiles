@@ -57,7 +57,7 @@ module GitOverrides
   #
   # @return [String]
   def rubylib
-    [EnvVars::DOTFILES_DIR.join('scripts', 'utilities').to_s, ENV.fetch('RUBYLIB', nil)].compact.join(File::PATH_SEPARATOR)
+    [EnvVars::DOTFILES_DIR.join('scripts', 'utilities').to_s, EnvVars.rubylib].compact.join(File::PATH_SEPARATOR)
   end
 
   # @return [Boolean] true when override detection must be skipped (see SKIP_ENV_VAR)

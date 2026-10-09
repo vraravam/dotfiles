@@ -2,8 +2,9 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-require 'fileutils'
+require 'English' # $CHILD_STATUS (stream_command) -- without it the alias is nil and the exit status is lost
 
+require_relative 'env_lite'
 require_relative 'pathname_ext' # Extends Pathname with color methods - loaded here for universal availability
 
 # Core utility module with minimal dependencies.
@@ -21,9 +22,9 @@ require_relative 'pathname_ext' # Extends Pathname with color methods - loaded h
 #    - No Linux-specific calls (systemctl, apt, etc.)
 #    - Only cross-platform Ruby stdlib and standard Unix tools
 #
-# 3. **Check ENV directly** when needed, not via EnvVars module
+# 3. **Read the environment via EnvLite**, not EnvVars
 #    - EnvVars requires Core, so Core cannot require EnvVars (circular dependency)
-#    - Use ENV.fetch('VAR', 'default') directly in method bodies
+#    - EnvLite is the dependency-free accessor layer for exactly this situation
 #
 # 4. **Examples of appropriate methods for Core:**
 #    - nil_or_empty? checks (pure Ruby logic)
@@ -138,6 +139,7 @@ module Core
   # @param cache_file [String, Pathname] Path to the timestamp cache file.
   # @return [void]
   def mark_updated!(cache_file)
+    require 'fileutils' # lazily: ~7ms to load, and most scripts never touch a cache marker
     FileUtils.touch(cache_file.to_s)
   end
 
@@ -151,10 +153,8 @@ module Core
   # @example
   #   Core.running_in_tty?  # => true (in terminal), false (in cron)
   def running_in_tty?
-    # NOTE: Uses ENV.fetch('FORCE_COLOR') directly instead of EnvVars.force_color?
-    # to avoid circular dependency. EnvVars requires Core, so Core cannot require EnvVars:
-    # env_vars.rb -> core.rb -> env_vars.rb (circular!)
-    $stdout.tty? || !nil_or_empty?(ENV.fetch('FORCE_COLOR', ''))
+    # EnvLite (not EnvVars): EnvVars requires Core, so Core cannot require EnvVars.
+    $stdout.tty? || EnvLite.force_color?
   end
 
   # Checks if a real controlling terminal is available for interactive input, via
@@ -262,7 +262,7 @@ module Core
     IO.copy_stream(io, $stdout)
     io.close
 
-    # Return exit status (use safe navigation in case $CHILD_STATUS is nil)
+    # IO#close on a popen handle sets $CHILD_STATUS for the child just reaped.
     $CHILD_STATUS&.exitstatus || 0
   end
 

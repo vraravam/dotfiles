@@ -1334,6 +1334,15 @@ end
 api_key = ENV.fetch('API_KEY')  # Raises if API_KEY not set
 ```
 
+**Where `ENV` may be read directly**: only inside `env_vars.rb` (the typed accessors every other
+script uses) and `env_lite.rb`. `EnvLite` is the dependency-free accessor layer for the modules
+underneath `EnvVars` in the require chain (`Core`, `Colorizable`), which cannot require `EnvVars`
+without a circular dependency. Everything else uses `EnvVars` (add an accessor there, e.g.
+`EnvVars.log_file`, `EnvVars.rubylib`, `EnvVars.script_depth=`, rather than calling `ENV.fetch`).
+Dynamic lookups by a name that comes from data (template/YAML `${VAR}` expansion) are the
+legitimate exception. Never mutate the process `ENV` to configure one child: pass an env Hash as
+the first argument to `system`/`Open3`/`CommandUtils.query` instead.
+
 **Why `ENV.fetch` is better:**
 - **Explicit defaults**: `ENV.fetch('VAR', '')` makes it clear the default is empty string
 - **Intentional failure**: `ENV.fetch('VAR')` without default raises KeyError for required vars
@@ -2460,6 +2469,10 @@ stripped = line.strip  # Safe now, and guaranteed non-empty after stripping
 ## UTF-8 File Reading
 
 **CRITICAL: Always specify UTF-8 encoding when reading text files.**
+
+`spec/utf8_file_reads_spec.rb` fails the build when any file under `scripts/` reads a file without an
+explicit encoding (`.read`, `.readlines`, `File.read/foreach`, `YAML.load_file`, ... on a line that
+does not name `encoding:`), so new code cannot regress this.
 
 ### The Problem
 
@@ -3825,3 +3838,16 @@ Based on code review patterns and debugging sessions, here are the most common m
       system('git', 'clone', dir.to_s)
     end
     ```
+
+## Cost of `require` on the Per-Command Path
+
+Utilities such as `git_commands.rb` run on every `git cc`/`push`/`pull`/`upreb` and from hooks, so
+the stdlib they load eagerly is paid on every invocation (measured on system Ruby 2.6: `json` 4.5ms,
+`time` 4.3ms, `fileutils` 7ms, `yaml` 29ms, `rexml/document` 27ms; `open3`/`set`/`pathname` ~1ms each).
+
+- Load a heavy library lazily, inside the one method that needs it, when that method is rarely
+  reached (`Logging::Sinks` requires `json`/`time` only when `LOG_FORMAT=json` is actually used;
+  `Core.mark_updated!` requires `fileutils` on first call). A repeated `require` is a cheap no-op.
+- Keep `yaml`/`rexml` out of shared utilities; require them in the script that parses with them.
+- Re-measure with `ruby -I scripts/utilities -rbenchmark -e 'p Benchmark.realtime { require "git_commands" }'`
+  after changing a utility's requires.

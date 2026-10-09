@@ -138,6 +138,58 @@ RSpec.describe GitProcessor do
       end
     end
 
+    describe '#commit_count with a range' do
+      it 'counts only the commits in the range, and is 0 when it cannot be resolved' do
+        File.write(tmp.join('a.txt'), 'a')
+        git.add('a.txt')
+        git.commit('one')
+        File.write(tmp.join('b.txt'), 'b')
+        git.add('b.txt')
+        git.commit('two')
+
+        expect(git.commit_count(range: 'HEAD~1..HEAD')).to eq(1)
+        expect(git.commit_count(range: 'HEAD..@{u}')).to eq(0)
+      end
+    end
+
+    describe '#config_bool' do
+      it 'honours the default for an unset key' do
+        expect(git.config_bool('some.flag')).to be false
+        expect(git.config_bool('some.flag', default: true)).to be true
+      end
+
+      it 'normalises git boolean spellings' do
+        system('git', '-C', tmp.to_s, 'config', 'some.flag', 'yes')
+        expect(described_class.new(dir: tmp).config_bool('some.flag')).to be true
+
+        system('git', '-C', tmp.to_s, 'config', 'some.flag', 'off')
+        expect(described_class.new(dir: tmp).config_bool('some.flag')).to be false
+      end
+    end
+
+    describe '#local_branches' do
+      it 'lists every local branch by short name' do
+        File.write(tmp.join('a.txt'), 'a')
+        git.add('a.txt')
+        git.commit('one')
+        system('git', '-C', tmp.to_s, 'branch', 'feature')
+
+        expect(git.local_branches).to contain_exactly('main', 'feature')
+      end
+    end
+
+    describe '#same_content_as?' do
+      it 'is true for an identical tree and false after a change' do
+        File.write(tmp.join('a.txt'), 'a')
+        git.add('a.txt')
+        git.commit('one')
+
+        expect(git.same_content_as?('HEAD')).to be true
+        File.write(tmp.join('a.txt'), 'changed')
+        expect(git.same_content_as?('HEAD')).to be false
+      end
+    end
+
     describe '#config_value / #config_set' do
       it 'returns nil for an unset key' do
         expect(git.config_value('some.unset.key')).to be_nil

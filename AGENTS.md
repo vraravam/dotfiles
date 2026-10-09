@@ -345,7 +345,7 @@ See: `script-depth-tracking.md`
 │   ├── --ZDOTDIR--/       # Zsh config (.zshenv, .zshrc, .zlogin)
 │   └── --XDG_CONFIG_HOME--/zsh/  # Autoload functions
 ├── scripts/
-│   ├── utilities/         # Shared Ruby modules (logging.rb, env_vars.rb, git_processor.rb)
+│   ├── utilities/         # Shared Ruby modules (logging*.rb, env_vars.rb, env_lite.rb, git_processor.rb, git_recreate.rb)
 │   ├── fresh-install-of-osx.sh    # Bootstrap entry point
 │   ├── install-dotfiles.rb        # Symlink/copy manager
 │   └── capture-prefs.rb           # Preferences export/import

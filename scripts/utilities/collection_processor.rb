@@ -134,9 +134,8 @@ module CollectionProcessor
     # Log formatted output on failure (warnings logged but processing continues for partial results).
     # noise_patterns filters stderr if provided, otherwise shows all stderr.
     # Stdout is not logged - it contains the list of found directories which are processed and returned.
-    success = CommandUtils.check_status(nil, stderr_str, status, noise_patterns: noise_patterns) do |st, output_msg|
-      Logging.record_warning("Issues while searching directories (status: #{st.exitstatus})#{output_msg}")
-    end
+    success = CommandUtils.check_status_or_record(nil, stderr_str, status, 'Issues while searching directories',
+                                                  noise_patterns: noise_patterns)
 
     # Process results if command succeeded OR produced output (partial success case:
     # find may encounter permission denied but still return results for accessible dirs)

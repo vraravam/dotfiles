@@ -12,6 +12,8 @@
 #   - pathname.to_s.cyan can be simplified to pathname.cyan
 #
 # All color methods apply HOME -> ~ substitution automatically, so paths are display-ready.
+require_relative 'env_lite'
+
 module Colorizable
   # Wraps the string in the ANSI escape sequence for +code+, after replacing
   # the HOME path with '~' so any path argument is display-ready automatically.
@@ -54,15 +56,13 @@ module Colorizable
   #
   # When called on Pathname, converts to String first.
   #
-  # NOTE: Uses ENV.fetch('HOME') directly instead of EnvVars::HOME to avoid circular
-  # dependency. This file is required by pathname_ext, which is required by core,
-  # which is required by env_vars. Using EnvVars here would create:
-  # core -> pathname_ext -> colorizable -> env_vars -> core (circular!)
+  # NOTE: Uses EnvLite (not EnvVars) because this file sits underneath env_vars in the
+  # require chain: core -> pathname_ext -> colorizable. EnvLite has no dependencies.
   #
   # @return [String]
   def replace_home_path_with_tilde
     str = is_a?(String) ? self : to_s
-    home_dir = ENV.fetch('HOME', '')
+    home_dir = EnvLite.home
     # sub (not gsub) -- a path contains HOME at most once (at the start); this runs on
     # nearly every logged path in the codebase, so avoiding the full-string gsub scan matters.
     str.sub(home_dir, '~')

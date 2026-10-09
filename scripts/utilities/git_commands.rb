@@ -2,7 +2,6 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-require 'open3'
 require 'pathname'
 
 require_relative 'command_utils'
@@ -103,9 +102,7 @@ module GitCommands
     return true unless _ready?(folder, 'Pulling', 'pulling of', header)
     return true if _with_retry(folder, Pathname.new(folder).join('.git', 'objects').to_s, 'pull', *switches)
 
-    allow_reset, = Open3.capture2('git', '-C', folder, 'config', '--type=bool', '--default', 'false',
-                                  'pull.allowResetOnDivergedHistory')
-    return true unless allow_reset.strip == 'true'
+    return true unless GitProcessor.new(dir: folder).config_bool('pull.allowResetOnDivergedHistory')
 
     Logging.info "Pull failed -- '#{folder.cyan}' has 'pull.allowResetOnDivergedHistory' set; checking for diverged history"
     Logging.record_warning("Failed to reconcile '#{folder.cyan}' -- see errors above") unless _git(folder, 'pull-safe')
@@ -138,12 +135,14 @@ module GitCommands
     folder, = parse_args(args)
     Logging.section_header("#{'Upreb-ing'.yellow} '#{folder.cyan}'") if header
 
-    current = nil
-    GitProcessor.new(dir: folder) { |git| current = git.current_branch }
+    current = branches = nil
+    GitProcessor.new(dir: folder) do |git|
+      current = git.current_branch
+      branches = git.local_branches
+    end
     Logging.info "current branch: #{current.to_s.yellow}"
-    branches, = Open3.capture2('git', '-C', folder, 'branch', '--format=%(refname:short)')
     # The checked-out branch goes last so the repo ends up where it started.
-    ordered = branches.split("\n").reject { |branch| branch == current } + [current].compact
+    ordered = branches.reject { |branch| branch == current } + [current].compact
 
     ordered.each do |branch|
       Logging.debug "processing: #{branch.yellow}"
@@ -205,18 +204,13 @@ module GitCommands
   # same number of commits with no content difference has only diverged cosmetically (the
   # remote was force-pushed or rebased). Rebasing onto the upstream is then lossless.
   def _rebase_if_symmetric_divergence(folder, branch)
-    incoming = _count_commits(folder, 'HEAD..@{u}')
-    outgoing = _count_commits(folder, '@{u}..HEAD')
+    git = GitProcessor.new(dir: folder)
+    incoming = git.commit_count(range: 'HEAD..@{u}')
+    outgoing = git.commit_count(range: '@{u}..HEAD')
     return unless incoming.positive? && incoming == outgoing
-    return unless system('git', '-C', folder, 'diff', '@{u}', '--quiet', err: File::NULL)
+    return unless git.same_content_as?('@{u}')
 
     Logging.info "Symmetric diverge with no content diff -- rebasing #{branch.yellow} onto @{u}"
     _git(folder, 'rebase', '@{u}', skip_override: false)
-  end
-
-  # @return [Integer] commits in +range+, 0 if it cannot be resolved (e.g. no upstream)
-  def _count_commits(folder, range)
-    out, = Open3.capture2('git', '-C', folder, 'rev-list', range, '--count', err: File::NULL)
-    out.to_i
   end
 end

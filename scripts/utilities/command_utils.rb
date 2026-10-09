@@ -7,6 +7,7 @@
 require 'open3'
 require_relative 'core'
 require_relative 'enumerable_ext'
+require_relative 'logging'
 require_relative 'string_ext'
 
 module CommandUtils
@@ -79,6 +80,32 @@ module CommandUtils
     end
 
     status.success?
+  end
+
+  # check_status that records the failure itself: on failure, a single
+  # "<message> (status: N)<stdout/stderr>" entry is added to the Logging warnings or
+  # errors collection (and echoed inline), so callers don't each re-spell the block.
+  #
+  # Choose +severity+ by what the failure means for the run: :error for something that
+  # prevents the operation's goal, :warning for something the run can continue without.
+  #
+  # @param stdout [String, nil] Captured stdout
+  # @param stderr [String, nil] Captured stderr
+  # @param status [Process::Status] Status of the command
+  # @param message [String] What failed, e.g. "Failed to add remote 'x' for repo 'y'"
+  # @param severity [Symbol] :warning (default) or :error
+  # @param noise_patterns [Array<String>, nil] stderr patterns to ignore (see check_status)
+  # @return [Boolean] true if the command succeeded, false otherwise
+  #
+  # @example
+  #   stdout, stderr, status = git.fetch_all
+  #   CommandUtils.check_status_or_record(stdout, stderr, status, "Failed to fetch '#{dir}'")
+  def check_status_or_record(stdout, stderr, status, message, severity: :warning, noise_patterns: nil)
+    raise ArgumentError, "severity must be :warning or :error, got #{severity.inspect}" unless %i[warning error].include?(severity)
+
+    check_status(stdout, stderr, status, noise_patterns: noise_patterns) do |st, output_msg|
+      Logging.public_send("record_#{severity}", "#{message} (status: #{st.exitstatus})#{output_msg}")
+    end
   end
 
   # ---------------------------------------------------------------------------

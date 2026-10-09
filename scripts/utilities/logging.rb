@@ -2,11 +2,11 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-require 'json'
-require 'fileutils'
-
 require_relative 'core'
 require_relative 'env_vars'
+require_relative 'logging_sinks'
+require_relative 'logging_state'
+require_relative 'logging_summary'
 require_relative 'string_ext'
 
 # Logging helpers that replicate the shell functions defined in .shellrc
@@ -27,10 +27,21 @@ require_relative 'string_ext'
 #
 # Or call methods directly on the module:
 #   Logging.info('hello')
+#
+# Layout: this file holds the console emitters, section headers, script lifecycle
+# (run_script, depth tracking) and indentation. The other concerns are mixed in from
+# logging_summary.rb (timing, deferred warnings/errors, summaries), logging_sinks.rb
+# (LOG_LEVEL filtering, LOG_FILE sink) and logging_state.rb (the shared run state).
 module Logging
+  # The mixins must be included BEFORE `extend self`: `extend self` snapshots Logging's
+  # ancestors at that moment, so modules included afterwards would be missing from the
+  # module-method (`Logging.info`) side.
+  include Core  # For instance methods (in blocks)
+  include Sinks
+  include Summary
+
   # Make the module usable both as `include Logging` and as `Logging.info(...)`.
   extend self
-  include Core  # For instance methods (in blocks)
   extend Core   # For module methods
 
   # Section header styles by level. Each level has a distinct visual style
@@ -48,15 +59,6 @@ module Logging
   ].freeze
 
   # Log levels in priority order (lowest to highest severity).
-  # Used for filtering based on LOG_LEVEL environment variable.
-  LOG_LEVELS = {
-    debug: 0,
-    info: 1,
-    success: 2,
-    warn: 3,
-    error: 4,
-    user_action: 5
-  }.freeze
 
   # ---------------------------------------------------------------------------
   # Semantic log-level helpers
@@ -229,26 +231,11 @@ module Logging
     # is disabled (the common case -- LOG_FILE is opt-in). This is a cheap ENV lookup;
     # _write_to_log_file would discard the expensive work via its own early return, but
     # only after that work has already been done on every single log call.
-    return if nil_or_empty?(ENV.fetch('LOG_FILE', nil))
+    return unless EnvVars.log_file
 
-    # File output (stripped of ANSI, plain text or JSON based on LOG_FORMAT)
-    # Extract log level from message prefix if present, otherwise default to :info
-    log_level = case message
-                when /\*\*SUCCESS\*\*/
-                  :success
-                when /\*\*INFO\*\*/
-                  :info
-                when /\*\*WARN\*\*/
-                  :warn
-                when /\*\*DEBUG\*\*/
-                  :debug
-                when /\*\*ERROR\*\*/
-                  :error
-                when /\*\*ACTION\*\*/
-                  :user_action
-                else
-                  :info
-                end
+    # File output (stripped of ANSI, plain text or JSON based on LOG_FORMAT); the level is
+    # recovered from the severity marker in the console prefix.
+    log_level = _log_level_for(message)
 
     # Strip ANSI codes for file output
     plain_message = _strip_ansi(message)
@@ -277,7 +264,7 @@ module Logging
 
   # Prints a section header with visual hierarchy based on current script depth.
   # Level is automatically derived from script depth (depth 1 = level 0, depth 2 = level 1, etc.).
-  # Only level 0 (outermost script) updates @current_section for error attribution.
+  # Only level 0 (outermost script) updates the current section for error attribution.
   # Output matches the shell version in .shellrc (section_header function).
   #
   # Visual styles:
@@ -295,9 +282,9 @@ module Logging
     # This provides progressively more specific context as execution descends through nested
     # operations. Manual assignments (via `current_section=`) set a flag that prevents
     # auto-updates, allowing concise error attribution while displaying descriptive headers.
-    unless @current_section_manual
+    unless state.current_section_manual
       # Direct assignment (not via setter) to avoid setting the manual flag
-      @current_section = _strip_ansi(header.to_s)
+      state.current_section = _strip_ansi(header.to_s)
     end
 
     # Get style for this level (fallback to highest defined level if out of bounds)
@@ -327,176 +314,6 @@ module Logging
 
     # Emit the formatted header at level 0 (base indent only)
     emit("#{left_pad} #{glyph} #{header_str} #{right_pad}", level: 0)
-  end
-
-  # Prints the script start timestamp, prefixed with the script name. Mirrors:
-  #   echo "$(cyan "${_SCRIPT_NAME:-}") $(purple '==>') $(yellow 'Script started at:') $(light_blue "...")"
-  # Returns the start time as a Unix epoch integer so the caller can pass it to
-  # print_script_duration. This deviates from the shell version (which cannot
-  # return a value) but eliminates the two-call pattern and ensures the logged
-  # timestamp and the in-memory start time are identical.
-  # Only prints when this is the outermost script -- see outermost_script?.
-  #
-  # @return [Integer] Unix epoch of the logged start time.
-  def print_script_start
-    @script_start_time = Time.now.to_i
-    return @script_start_time unless outermost_script?
-    # Suppressed when running inside a direnv subshell (same as info/success).
-    return @script_start_time if EnvVars.suppress_log?
-
-    emit("#{script_name.cyan} #{'==>'.purple} #{'Script started at:'.yellow} #{Core.current_timestamp.light_blue}", level: 0)
-    @script_start_time
-  end
-
-  # Prints the script finish timestamp and total duration.
-  #
-  # @param start_time [Integer] Unix epoch returned by an earlier +Time.now.to_i+.
-  # @return [void]
-  def print_script_duration(start_time)
-    return unless outermost_script?
-    # Suppressed when running inside a direnv subshell (same as info/success).
-    return if EnvVars.suppress_log?
-
-    human = format_duration(Core.duration_since(start_time))
-    emit("#{script_name.cyan} #{'==>'.purple} #{'Script finished at:'.yellow} #{Core.current_timestamp.light_blue} " \
-         "(#{'Total duration:'.yellow} #{human.light_blue} #{'seconds'.yellow}).", level: 0)
-  end
-
-  # ---------------------------------------------------------------------------
-  # Deferred error/warning collection
-  # These mirror _record_warning, _record_error, and print_script_summary from
-  # .shellrc. Each entry is prefixed with [script_name][current_section] for
-  # traceability. print_script_summary prints collected issues grouped by type.
-  # No macOS notification is sent -- osascript is not appropriate for library code.
-  # ---------------------------------------------------------------------------
-
-  # Sets the current logical section name, used as context in record_warning /
-  # record_error entries. Mirrors the _current_section local in shell scripts.
-  # Automatically strips ANSI codes to ensure clean error messages.
-  #
-  # @param name [String] The section name to set as current context
-  def current_section=(name)
-    @current_section = _strip_ansi(name.to_s)
-    @current_section_manual = true # Mark as manually set
-  end
-
-  # Wraps a block of code with step lifecycle management (current_section, step_start, step_end).
-  # Ensures step_end is called even if the block raises an exception.
-  #
-  # @param section_name [String] Name for current_section tracking
-  # @param header [String, nil] Optional section header to print (uses section_header if provided)
-  # @yield Block of code to execute within the step lifecycle
-  # @return [void]
-  #
-  # @example
-  #   Logging.with_step('Install Homebrew', "Installing Homebrew into '#{path}'") do
-  #     # ... install logic ...
-  #   end
-  def with_step(section_name, header = nil)
-    self.current_section = section_name
-    step_start
-    section_header(header) if header
-
-    yield
-  ensure
-    step_end
-  end
-
-  # Appends a non-critical issue to the warnings collection and emits an inline
-  # warn so the issue is visible in the log at the point it occurs.
-  #
-  # @param message [String] The warning message to record
-  def record_warning(message)
-    _record_message(step_warnings, message)
-  end
-
-  # Appends a significant non-fatal failure to the errors collection and emits
-  # an inline warn so the failure is visible in the log at the point it occurs.
-  #
-  # @param message [String] The error message to record
-  def record_error(message)
-    _record_message(step_errors, message)
-  end
-
-  # Prints a grouped summary of all collected warnings and errors, prefixing
-  # each section header with the script name, then prints the total duration.
-  # Mirrors print_script_summary in .shellrc. No macOS notification -- callers
-  # that need one must handle it themselves.
-  #
-  # Accepts an optional +start_time+ (Unix epoch returned by +print_script_start+).
-  # When provided, calls +print_script_duration+ so the caller never needs to
-  # invoke it separately. This deviates from the shell version, which cannot
-  # call print_script_duration from within print_script_summary because shell
-  # functions cannot propagate a return value for the start time.
-  # When omitted (e.g. early-exit paths inside methods that cannot access the
-  # top-level start-time local), the duration line is skipped.
-  #
-  # Accepts an optional +message+ to print before the warnings/errors sections.
-  # Mirrors the second parameter of the shell version.
-  #
-  # @param start_time [Integer, nil] Unix epoch of script start, or nil to skip duration.
-  # @param message [String, nil] Optional success message to print before summary.
-  def print_script_summary(start_time = nil, message = nil)
-    # outermost_script? encapsulates the _DOTFILES_SCRIPT_DEPTH check -- see its
-    # definition for the full rationale.
-    return unless outermost_script?
-
-    info(message) unless nil_or_empty?(message)
-    _print_collected_messages(step_warnings, 'warning(s)', :yellow) unless nil_or_empty?(step_warnings)
-    _print_collected_messages(step_errors, 'error(s) -- manual attention needed', :red) unless nil_or_empty?(step_errors)
-    print_script_duration(start_time) if start_time
-  end
-
-  # Returns the live collection of collected warnings. Public so callers (e.g.
-  # software-updates-cron.rb notification block) can read them without
-  # reaching into private state via instance_variable_get.
-  #
-  # @return [Array<String>] Collected warning messages
-  def step_warnings
-    @step_warnings ||= []
-  end
-
-  # Returns the live collection of collected errors. Public for the same reason
-  # as step_warnings above.
-  #
-  # @return [Array<String>] Collected error messages
-  def step_errors
-    @step_errors ||= []
-  end
-
-  # Returns true if any warnings have been recorded during script execution.
-  # Prefer this over directly checking step_warnings.any? for cleaner code.
-  #
-  # @return [Boolean] true if warnings exist, false otherwise
-  #
-  # @example
-  #   @has_failures = true if Logging.warnings? || Logging.errors?
-  def warnings?
-    step_warnings.any?
-  end
-
-  # Returns true if any errors have been recorded during script execution.
-  # Prefer this over directly checking step_errors.any? for cleaner code.
-  #
-  # @return [Boolean] true if errors exist, false otherwise
-  #
-  # @example
-  #   exit(1) if Logging.errors?
-  def errors?
-    step_errors.any?
-  end
-
-  # Formats +seconds+ as "Hh:MMm:SSs". Public so callers that build their own
-  # notification or summary strings can format a duration without reaching into
-  # private state via send().
-  #
-  # @param seconds [Integer] Duration in seconds to format
-  # @return [String] Formatted duration string (e.g. "00h:05m:30s")
-  # :reek:FeatureEnvy -- Stateless formatter operating on argument
-  def format_duration(seconds)
-    # rubocop:disable Style/FormatStringToken
-    format('%02dh:%02dm:%02ds', seconds / 3600, (seconds % 3600) / 60, seconds % 60)
-    # rubocop:enable Style/FormatStringToken
   end
 
   # Wraps the standard script lifecycle: increment depth, print start banner,
@@ -549,7 +366,7 @@ module Logging
     # Save the previous script name so we can restore it on exit.
     # This prevents nested run_script calls from leaking their script name
     # to the outer script's print_script_summary call.
-    previous_script_name = @script_name
+    previous_script_name = state.script_name
 
     # Auto-detect script name from caller if not provided.
     # caller_locations(1, 1) fetches exactly one frame (the immediate caller).
@@ -562,8 +379,8 @@ module Logging
     self.script_name = script_name
     # Initialize current_section to '(init)' for consistency with shell scripts.
     # Use direct assignment (not setter) to avoid setting the manual flag.
-    @current_section = '(init)'
-    @current_section_manual = false
+    state.current_section = '(init)'
+    state.current_section_manual = false
 
     # When already nested (called from shell function at depth >= 1), increment
     # depth for the module execution to ensure outermost_script? returns false,
@@ -576,7 +393,7 @@ module Logging
       ensure
         decrement_script_depth
         # Restore the previous script name (nested call cleanup)
-        @script_name = previous_script_name
+        state.script_name = previous_script_name
       end
       return
     end
@@ -591,7 +408,7 @@ module Logging
     # The early return above ensures this only runs for standalone calls.
     print_script_summary(start_time, message) if start_time
     # Restore the previous script name (standalone call cleanup)
-    @script_name = previous_script_name
+    state.script_name = previous_script_name
   end
 
   # ---------------------------------------------------------------------------
@@ -614,47 +431,6 @@ module Logging
     EnvVars.script_depth == 1
   end
 
-  # Prints a summary of processing results from a hash returned by
-  # CollectionProcessor.process_items or similar iteration helpers.
-  #
-  # @param results [Hash] Results hash with keys:
-  #   - :total [Integer] Total items processed (excludes skipped)
-  #   - :successful [Array<String>] Successful item names
-  #   - :failed [Array<String>] Failed item names
-  #   - :skipped [Integer] Count of skipped items (optional)
-  # @param item_label [String] What to call each item (default: 'repositories')
-  #
-  # @example
-  #   results = CollectionProcessor.process_items(...) { |item| ... }
-  #   print_results_summary(results)
-  #   print_results_summary(results, item_label: 'files')
-  def print_results_summary(results, item_label: 'repositories')
-    # Only print when this is the outermost script -- suppresses nested summaries
-    # when called from a wrapper script/function that prints its own final summary.
-    return unless outermost_script?
-
-    total = results[:total]
-    successful = results[:successful]
-    failed = results[:failed]
-
-    puts ''
-    info('Summary'.yellow)
-    emit("Total #{item_label}: #{total}", level: 1)
-    emit("Successful:         #{successful.length.to_s.green}", level: 1)
-
-    unless nil_or_empty?(failed)
-      singular = item_label.sub(/ies$/, 'y').sub(/s$/, '')
-      plural = item_label
-      count_label = failed.length == 1 ? singular : plural
-
-      emit("Failed:             #{failed.length.to_s.red}", level: 1)
-      emit("Failed #{count_label}:".red, level: 0)
-      puts join_array(failed, :red)
-    end
-
-    info "Skipped: #{results[:skipped].to_s.purple}" if results[:skipped]&.positive?
-  end
-
   # Sets the script name override. Use this in module methods that act as
   # standalone entry points (e.g., GitWorkspace.install_mise_versions) where
   # $PROGRAM_NAME would be '-e' or unhelpful. Must be public so module methods
@@ -662,14 +438,14 @@ module Logging
   #
   # @param name [String] The script name to use in log output
   def script_name=(name)
-    @script_name = name
+    state.script_name = name
   end
 
   # Increments _DOTFILES_SCRIPT_DEPTH and registers an at_exit hook to
   # decrement it on exit (clean or error). Called internally by run_script
   # and CollectionProcessor. Mirrors the export + trap pattern in shell scripts.
   def increment_script_depth
-    ENV['_DOTFILES_SCRIPT_DEPTH'] = (EnvVars.script_depth + 1).to_s
+    EnvVars.script_depth = EnvVars.script_depth + 1
     at_exit { decrement_script_depth }
   end
 
@@ -679,7 +455,15 @@ module Logging
   # :reek:UtilityFunction -- Stateless modifier of global state
   def decrement_script_depth
     depth = EnvVars.script_depth
-    ENV['_DOTFILES_SCRIPT_DEPTH'] = (depth - 1).to_s if depth.positive?
+    EnvVars.script_depth = depth - 1 if depth.positive?
+  end
+
+  # The shared run state (see Logging::State). One object for the whole process, so
+  # `include Logging` receivers and `Logging.` callers always see the same data.
+  #
+  # @return [Logging::State]
+  def state
+    STATE
   end
 
   # ---------------------------------------------------------------------------
@@ -706,12 +490,12 @@ module Logging
   end
 
   # The name of the currently running script, mirroring _SCRIPT_NAME in shell.
-  # Can be overridden by setting @script_name (used by module methods that act
+  # Can be overridden by setting script_name= (used by module methods that act
   # as entry points, where $PROGRAM_NAME would be '-e' or unhelpful).
   #
   # @return [String] The current script name
   def script_name
-    @script_name || File.basename($PROGRAM_NAME)
+    state.script_name || File.basename($PROGRAM_NAME)
   end
 
   # Returns the depth-based indent string (2 spaces per depth level).
@@ -720,14 +504,13 @@ module Logging
   #
   # @return [String] The indentation string for the current script depth
   def _log_indent
-    @indent_cache ||= {}
     depth = EnvVars.script_depth
     # Guard against depth 0 (called before increment_script_depth) - treat as depth 1
     # to prevent negative multiplication. This can happen when print_script_summary
     # decrements depth before calling section_header.
     depth = 1 if depth < 1
     # Outermost script (depth 1) has 0 indentation, depth 2 has 2 spaces, etc.
-    @indent_cache[depth] ||= '  ' * (depth - 1)
+    state.indent_cache[depth] ||= '  ' * (depth - 1)
   end
 
   # Returns the subordinate indent string (depth-based indent + N levels of nesting).
@@ -749,52 +532,13 @@ module Logging
     char * length
   end
 
-  # Pushes the current epoch seconds onto the step timing stack. Called by
-  # with_step at the start of a step. Mirrors step_start in .shellrc.
-  def step_start
-    @step_start_times ||= []
-    @step_start_times.push(Time.now.to_i)
-  end
-
-  # Pops the most recent step start time from the stack, computes elapsed time,
-  # and logs it. Called by with_step's ensure block. Mirrors step_end in .shellrc.
-  def step_end
-    @step_start_times ||= []
-    now = Time.now.to_i
-
-    # Pop the step start time; fall back to script start time if stack is empty
-    if nil_or_empty?(@step_start_times)
-      # No step timing available - skip timing output
-      return
-    end
-
-    step_start_time = @step_start_times.pop
-    delta_step = now - step_start_time
-
-    # Compute total elapsed from script start if available
-    script_start_time = @script_start_time || now
-    delta_total = now - script_start_time
-
-    # Format: "(Step: XXs  Total: YYs)"
-    emit("(#{'Step:'.yellow} #{delta_step.to_s.light_blue}s  #{'Total:'.yellow} #{delta_total.to_s.light_blue}s)", level: 0)
-  end
-
-  # Per-includer stacks stored as instance variables so that each object (or
-  # the top-level main object when `include`d at script level) has its own
-  # independent stacks, matching the zsh array semantics.
-  #
-  # @return [Array<Integer>] Stack of step start times (Unix epoch seconds)
-  def script_start_times
-    @script_start_times ||= []
-  end
-
   # Returns the current terminal column width, falling back to COLUMNS env var or 80.
   # Reads from: 1) $stdout.winsize (ioctl), 2) EnvVars.columns (COLUMNS env var), 3) hardcoded 80
   # Matches shell behavior: ${COLUMNS:-${_FALLBACK_TERMINAL_WIDTH}}
   #
   # @return [Integer] Terminal column width
   def terminal_width
-    return @terminal_width if @terminal_width
+    return state.terminal_width if state.terminal_width
 
     # Try ioctl first (real terminal attached)
     cols = begin
@@ -804,135 +548,6 @@ module Logging
     end
 
     # Fall back to COLUMNS env var (set by parent shell), then hardcoded 80
-    @terminal_width = cols.nonzero? || EnvVars.columns
-  end
-
-  # Checks if a log message at the given level should be printed.
-  # Compares requested level against LOG_LEVEL environment variable.
-  # Returns true if message level >= configured minimum level.
-  #
-  # Log levels (severity order): debug < info < success < warn < error < user_action
-  #
-  # Examples:
-  #   LOG_LEVEL=debug -> show all messages
-  #   LOG_LEVEL=info  -> show info, success, warn, error, user_action (default)
-  #   LOG_LEVEL=warn  -> show only warn, error, user_action
-  #   LOG_LEVEL=error -> show only error
-  #
-  # @param level [Symbol] The log level to check (:debug, :info, :success, :warn, :error, :user_action)
-  # @return [Boolean] true if message should be logged, false otherwise
-  def _should_log?(level)
-    # Cache the configured minimum level (avoid repeated ENV lookups)
-    @_min_log_level ||= begin
-      env_level = ENV.fetch('LOG_LEVEL', 'info').downcase.to_sym
-      LOG_LEVELS.key?(env_level) ? LOG_LEVELS[env_level] : LOG_LEVELS[:info]
-    end
-
-    # Allow message if its priority >= configured minimum
-    LOG_LEVELS[level] >= @_min_log_level
-  end
-
-  # Writes log entry to file if LOG_FILE is set.
-  # Handles log rotation (keeps last 5 files, max 10MB each).
-  # Format determined by LOG_FORMAT env var (json or human-readable).
-  #
-  # @param level [Symbol] Log level
-  # @param message [String] Log message (plain text, no color codes)
-  # @return [void]
-  def _write_to_log_file(level, message)
-    log_file = ENV.fetch('LOG_FILE', nil)
-    return if nil_or_empty?(log_file)
-
-    log_path = Pathname.new(log_file)
-    _rotate_log_if_needed(log_path)
-
-    # Determine format
-    format = ENV.fetch('LOG_FORMAT', 'text').downcase
-
-    entry = if format == 'json'
-              _format_json_log_entry(level, message)
-            else
-              _format_text_log_entry(level, message)
-            end
-
-    File.open(log_path, 'a') do |f|
-      f.puts(entry)
-    end
-  rescue StandardError => e
-    # Log file write failures should not crash the script
-    warn "Failed to write to log file: #{e.message}" if EnvVars.debug?
-  end
-
-  # Formats log entry as JSON.
-  #
-  # @param level [Symbol] Log level
-  # @param message [String] Log message
-  # @return [String] JSON-formatted log entry
-  def _format_json_log_entry(level, message)
-    {
-      timestamp: Time.now.utc.iso8601,
-      level: level.to_s.upcase,
-      message: message.strip,
-      script: ENV.fetch('SCRIPT_NAME', $PROGRAM_NAME),
-      depth: EnvVars.script_depth,
-      section: @current_section
-    }.to_json
-  end
-
-  # Formats log entry as human-readable text.
-  #
-  # @param level [Symbol] Log level
-  # @param message [String] Log message
-  # @return [String] Text-formatted log entry
-  def _format_text_log_entry(level, message)
-    "[#{Core.current_timestamp}] [#{level.to_s.upcase}] #{message.strip}"
-  end
-
-  # Rotates log file if it exceeds 10MB.
-  # Keeps last 5 log files (log.1, log.2, ..., log.5).
-  #
-  # @param log_path [Pathname] Path to log file
-  # @return [void]
-  def _rotate_log_if_needed(log_path)
-    return unless log_path.file?
-    return if log_path.size < 10 * 1024 * 1024 # 10MB
-
-    # Rotate existing backups (log.4 -> log.5, log.3 -> log.4, etc.)
-    (4).downto(1) do |i|
-      old_file = Pathname.new("#{log_path}.#{i}")
-      new_file = Pathname.new("#{log_path}.#{i + 1}")
-      FileUtils.mv(old_file.to_s, new_file.to_s) if old_file.exist?
-    end
-
-    # Move current log to .1
-    FileUtils.mv(log_path.to_s, "#{log_path}.1")
-
-    # Delete oldest backup if it exists
-    oldest = Pathname.new("#{log_path}.6")
-    oldest.delete if oldest.exist?
-  end
-
-  # Prints collected warnings or errors with proper indentation.
-  # Temporarily decrements depth so both header and messages print one level less indented.
-  #
-  # @param messages [Array<String>] Collection of warning/error messages
-  # @param label [String] Label for the message type (e.g., 'warning(s)', 'error(s)')
-  # @param color [Symbol] Color method to apply to count (e.g., :yellow, :red)
-  # @return [void]
-  def _print_collected_messages(messages, label, color)
-    decrement_script_depth
-    section_header("#{script_name.cyan} #{"#{messages.length} #{label}".send(color)}")
-    messages.each { |msg| warn(msg) }
-    increment_script_depth
-  end
-
-  # Appends a message to a collection with script/section prefix and emits inline warning.
-  #
-  # @param collection [Array<String>] Target collection (step_warnings or step_errors)
-  # @param message [String] The message to record
-  # @return [void]
-  def _record_message(collection, message)
-    collection << "[#{script_name || 'unknown'}][#{@current_section || 'unknown'}] #{message}"
-    warn(message)
+    state.terminal_width = cols.nonzero? || EnvVars.columns
   end
 end

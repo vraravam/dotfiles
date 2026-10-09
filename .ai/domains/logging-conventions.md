@@ -274,6 +274,15 @@ External tools (`git`, `mise`, `sqlite3`, `keybase`, `gpg`, etc.) may print at c
      - Removes lines matching any pattern in the array
      - Useful for commands like `find` that generate expected noise during traversal
      - Patterns visible at call site (not hidden in method implementation)
+   - **Prefer `CommandUtils.check_status_or_record`** when the only thing the block does is record a
+     failure -- it formats `"<message> (status: N)<stdout/stderr>"` and records it as a warning
+     (default) or error (`severity: :error`) in one call:
+     ```ruby
+     stdout, stderr, status = git.fetch_all
+     CommandUtils.check_status_or_record(stdout, stderr, status, "Failed to fetch '#{dir.cyan}'")
+     return false unless CommandUtils.check_status_or_record(stdout, stderr, status, 'Failed to add remote', severity: :error)
+     ```
+     Keep the explicit `check_status { ... }` block only when the failure handling does more than record.
    - Eliminates duplicate error formatting code at call sites
    - Use when: Already have captured output (GitProcessor, custom capture logic)
    - **Pass `nil` for stdout parameter when**: stdout contains sensitive data (crontab), is large/verbose (directory lists), or represents success not failure (partial-success scenarios)
@@ -324,9 +333,21 @@ External tools (`git`, `mise`, `sqlite3`, `keybase`, `gpg`, etc.) may print at c
 - `_record_error`/`_record_warning` - Automatically prefix messages, use `${_current_section:-unknown}` as fallback
 
 **Ruby** (`logging.rb`):
-- `_script_name` - Set via `Logging.run_script`
-- `@current_section` - Initialize to `'(init)'` in `run_script`, auto-set by `section_header`, can be manually overridden
-- `Logging.record_error`/`record_warning` - Automatically prefix messages, use `@current_section || 'unknown'` as fallback
+- `Logging.state.script_name` - Set via `Logging.run_script` (or `Logging.script_name=`)
+- `Logging.state.current_section` - Initialize to `'(init)'` in `run_script`, auto-set by `section_header`, can be manually overridden
+- `Logging.record_error`/`record_warning` - Automatically prefix messages, use `state.current_section || 'unknown'` as fallback
+
+**All Ruby logging state lives in ONE shared object (`Logging::State`, returned by `Logging#state`)**:
+warnings, errors, current section, script name, step timers and caches. Bare calls after
+`include Logging` and `Logging.`-qualified calls therefore read and write the same data -- a
+`record_warning` made through one is visible to a `print_script_summary` made through the other.
+Never store logging state in instance variables of the mixin. Specs reset it with
+`Logging.state.reset!`.
+
+**`logging.rb` layout**: console emitters, section headers, script lifecycle and indentation stay in
+`logging.rb`; `logging_summary.rb` (`Logging::Summary`: timing, deferred warnings/errors, summaries),
+`logging_sinks.rb` (`Logging::Sinks`: LOG_LEVEL filtering, LOG_FILE sink) and `logging_state.rb` are
+mixed in. Mixins must be `include`d BEFORE `extend self` in `logging.rb`.
 
 **Three states of `current_section`:**
 1. **Unset/nil** → `'unknown'` fallback (error case: variable never initialized)

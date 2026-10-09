@@ -565,7 +565,7 @@ _log_indent() {
   # Guard against depth 0 (called before increment_script_depth) - treat as depth 1
   # to prevent negative multiplication. This can happen when print_script_summary
   # decrements depth before calling section_header. Default to 1 if unset.
-  [[ ${depth} -lt 1 ]] && depth=1
+  if [[ ${depth} -lt 1 ]]; then depth=1; fi
   # _INDENT_CACHE (associative array) is a zsh/bash-4+ feature -- macOS's
   # default /bin/bash (3.2, no Homebrew bash guaranteed in PATH) doesn't
   # support it, so this whole function must branch. The zsh path keeps the
@@ -760,7 +760,7 @@ section_header() {
 
   # Automatically derive level from script depth: depth 1 -> level 0, depth 2 -> level 1, etc.
   local level=$((${_DOTFILES_SCRIPT_DEPTH:-1} - 1))
-  [[ ${level} -lt 0 ]] && level=0
+  if [[ ${level} -lt 0 ]]; then level=0; fi
 
   # Auto-set _current_section unless manually set via direct assignment (which also
   # sets _current_section_manual=1). This provides progressively more specific context
@@ -786,8 +786,9 @@ section_header() {
   # Use (( ... )) for array length - safer under set -u than ${#...[@]}
   local max_level=0
   (( max_level = ${#_SECTION_STYLES[@]} - 1 )) 2>/dev/null || max_level=4
-  [[ ${max_level} -lt 0 ]] && max_level=0  # Safety: ensure non-negative
-  [[ ${level} -gt ${max_level} ]] && level=${max_level}
+  # Safety: ensure non-negative
+  if [[ ${max_level} -lt 0 ]]; then max_level=0; fi
+  if [[ ${level} -gt ${max_level} ]]; then level=${max_level}; fi
 
   # If array key doesn't exist, fall back to simple output without style
   # Use ${+...} to check if parameter is set (works under set -u). This is a
@@ -824,9 +825,9 @@ section_header() {
   # Left padding: 5 chars min (prevents touching left edge)
   # Right padding: fills remaining width minus 10 chars (prevents touching right edge)
   local left_padding_len=$((5 - indent_len))
-  [[ ${left_padding_len} -lt 1 ]] && left_padding_len=1
+  if [[ ${left_padding_len} -lt 1 ]]; then left_padding_len=1; fi
   local right_padding_len=$((viewport_length - indent_len - left_padding_len - 3 - header_length - _HEADER_MIN_PADDING))
-  [[ ${right_padding_len} -lt 1 ]] && right_padding_len=1
+  if [[ ${right_padding_len} -lt 1 ]]; then right_padding_len=1; fi
 
   local left_padding right_padding
   left_padding="$(_repeat_char "${char}" "${left_padding_len}")"

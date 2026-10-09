@@ -82,9 +82,7 @@ module Antidote
       stdin_data: plugin_txt.read(encoding: 'UTF-8')
     )
 
-    success = CommandUtils.check_status(nil, stderr_str, status) do |st, output_msg|
-      Logging.record_warning("Failed to regenerate antidote bundle (status: #{st.exitstatus})#{output_msg}")
-    end
+    success = CommandUtils.check_status_or_record(nil, stderr_str, status, 'Failed to regenerate antidote bundle')
 
     return unless success
 

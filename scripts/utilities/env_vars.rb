@@ -2,8 +2,10 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
+require 'rbconfig'
 require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
 require_relative 'core'
+require_relative 'env_lite'
 
 # Centralized environment variable access for dotfiles scripts.
 #
@@ -60,14 +62,14 @@ module EnvVars
   # Handles both unset vars (vanilla OS) and accidentally-empty vars (user error).
   #
   # @param key [String] Environment variable name
-  # @yield Block that returns the default Pathname when var is unset/empty
+  # @yield Block that returns the default (Pathname or String) when var is unset/empty
   # @return [Pathname] Expanded pathname from env var or default
   #
   # @example
   #   DOTFILES_DIR = _fetch_pathname('DOTFILES_DIR') { HOME.join('.config', 'dotfiles') }
   def self._fetch_pathname(key)
-    val = ENV.fetch(key, '')
-    nil_or_empty?(val.strip) ? yield : Pathname.new(val).expand_path
+    val = ENV.fetch(key, '').strip
+    Pathname.new(val.empty? ? yield : val).expand_path
   end
   private_class_method :_fetch_pathname
 
@@ -82,6 +84,12 @@ module EnvVars
   # Current user's default shell.
   # Mirrors: ${SHELL} (always set by the shell)
   SHELL = ENV.fetch('SHELL', '/bin/zsh').freeze
+
+  # GitHub username of the upstream owner of this dotfiles repo; passed to
+  # add-upstream-git-config.rb (-u), which skips adding an 'upstream' remote when the
+  # clone's 'origin' already belongs to this user.
+  # Mirrors: export UPSTREAM_GH_USERNAME='vraravam'
+  UPSTREAM_GH_USERNAME = ENV.fetch('UPSTREAM_GH_USERNAME', 'vraravam').freeze
 
   # Optional Keybase username. When set, fresh-install-of-osx.sh logs in with
   # 'keybase login <username>' (see Keybase.ensure_logged_in) instead of the fully
@@ -120,10 +128,10 @@ module EnvVars
   # User's home directory.
   # Mirrors: export HOME (always set by the shell)
   #
-  # NOTE: This is the single source of truth for HOME in Ruby code. The only
-  # exception is colorizable.rb which uses ENV.fetch('HOME') directly to avoid
-  # circular dependency (colorizable is required before env_vars in the load chain).
-  HOME = Pathname.new(ENV.fetch('HOME', '~')).expand_path.freeze
+  # NOTE: This is the single source of truth for HOME in Ruby code. The lowest layers
+  # (colorizable.rb) read it through EnvLite.home, which sits beneath env_vars in the
+  # require chain.
+  HOME = _fetch_pathname('HOME') { '~' }.freeze
 
   # User's Downloads directory.
   # Standard macOS location for temporary/transient files.
@@ -151,59 +159,45 @@ module EnvVars
 
   # XDG base directory specification paths.
   # Mirrors: XDG_* exports in .shellrc
-  XDG_CACHE_HOME = Pathname.new(
-    ENV.fetch('XDG_CACHE_HOME', HOME.join('.cache'))
-  ).expand_path.freeze
-
-  XDG_CONFIG_HOME = Pathname.new(
-    ENV.fetch('XDG_CONFIG_HOME', HOME.join('.config'))
-  ).expand_path.freeze
-
-  XDG_DATA_HOME = Pathname.new(
-    ENV.fetch('XDG_DATA_HOME', HOME.join('.local', 'share'))
-  ).expand_path.freeze
-
-  XDG_STATE_HOME = Pathname.new(
-    ENV.fetch('XDG_STATE_HOME', HOME.join('.local', 'state'))
-  ).expand_path.freeze
+  XDG_CACHE_HOME = _fetch_pathname('XDG_CACHE_HOME') { HOME.join('.cache') }.freeze
+  XDG_CONFIG_HOME = _fetch_pathname('XDG_CONFIG_HOME') { HOME.join('.config') }.freeze
+  XDG_DATA_HOME = _fetch_pathname('XDG_DATA_HOME') { HOME.join('.local', 'share') }.freeze
+  XDG_STATE_HOME = _fetch_pathname('XDG_STATE_HOME') { HOME.join('.local', 'state') }.freeze
 
   # Temporary directory for transient files.
   # Mirrors: ${TMPDIR} (set by macOS, falls back to /tmp on other systems)
   # Used for cron backups, cache invalidation markers, etc.
-  TMPDIR = Pathname.new(ENV.fetch('TMPDIR', '/tmp')).expand_path.freeze
+  TMPDIR = _fetch_pathname('TMPDIR') { '/tmp' }.freeze
 
   # Zsh dotfiles directory.
   # Mirrors: export ZDOTDIR="${ZDOTDIR:-"${XDG_CONFIG_HOME:-${HOME}/.config}/zsh"}" in .shellrc
-  ZDOTDIR = Pathname.new(
-    ENV.fetch('ZDOTDIR', XDG_CONFIG_HOME.join('zsh').to_s)
-  ).expand_path.freeze
+  ZDOTDIR = _fetch_pathname('ZDOTDIR') { XDG_CONFIG_HOME.join('zsh') }.freeze
 
   # Zsh history file location.
   # Mirrors: export HISTFILE="${XDG_STATE_HOME}/zsh/history" in .shellrc
-  HISTFILE = Pathname.new(ENV.fetch('HISTFILE', XDG_STATE_HOME.join('zsh', 'history'))).expand_path.freeze
+  HISTFILE = _fetch_pathname('HISTFILE') { XDG_STATE_HOME.join('zsh', 'history') }.freeze
 
   # Homebrew paths.
   # Mirrors: HOMEBREW_* exports (set by brew shellenv, or fallback based on architecture)
   # ARM (Apple Silicon) uses /opt/homebrew, Intel uses /usr/local
-  HOMEBREW_PREFIX = Pathname.new(
-    ENV.fetch('HOMEBREW_PREFIX') do
-      arch = `uname -m`.strip
-      arch.include?('arm') ? '/opt/homebrew' : '/usr/local'
-    end
-  ).expand_path.freeze
+  # The CPU comes from RbConfig (no subprocess); 'uname -m' would fork just to learn it.
+  # Apple Silicon reports 'arm64' via uname but 'aarch64' via RbConfig, hence both spellings.
+  HOMEBREW_PREFIX = _fetch_pathname('HOMEBREW_PREFIX') do
+    RbConfig::CONFIG['host_cpu'].match?(/arm|aarch64/) ? '/opt/homebrew' : '/usr/local'
+  end.freeze
 
   # Homebrew bundle files (Brewfile).
   # Mirrors: HOMEBREW_BUNDLE_FILE* exports in .shellrc (lines 147-148)
-  HOMEBREW_BUNDLE_FILE = Pathname.new(ENV.fetch('HOMEBREW_BUNDLE_FILE', HOME.join('Brewfile'))).expand_path.freeze
-  HOMEBREW_BUNDLE_FILE_GLOBAL = Pathname.new(ENV.fetch('HOMEBREW_BUNDLE_FILE_GLOBAL', HOME.join('Brewfile'))).expand_path.freeze
+  HOMEBREW_BUNDLE_FILE = _fetch_pathname('HOMEBREW_BUNDLE_FILE') { HOME.join('Brewfile') }.freeze
+  HOMEBREW_BUNDLE_FILE_GLOBAL = _fetch_pathname('HOMEBREW_BUNDLE_FILE_GLOBAL') { HOME.join('Brewfile') }.freeze
 
   # Antidote plugin manager paths.
   # Mirrors: ANTIDOTE_* exports in .shellrc (platform-specific and brew-dependent)
   # Note: On macOS ANTIDOTE_HOME defaults to ~/Library/Caches/antidote, on Linux to ${XDG_CACHE_HOME}/antidote
-  ANTIDOTE_HOME = Pathname.new(ENV.fetch('ANTIDOTE_HOME', HOME.join('Library', 'Caches', 'antidote'))).expand_path.freeze
-  ANTIDOTE_ZSH = Pathname.new(ENV.fetch('ANTIDOTE_ZSH', HOMEBREW_PREFIX.join('opt', 'antidote', 'share', 'antidote', 'antidote.zsh'))).expand_path.freeze
-  ANTIDOTE_PLUGIN_ZSH = Pathname.new(ENV.fetch('ANTIDOTE_PLUGIN_ZSH', XDG_CONFIG_HOME.join('zsh', 'plugins.zsh'))).expand_path.freeze
-  ANTIDOTE_PLUGIN_TXT = Pathname.new(ENV.fetch('ANTIDOTE_PLUGIN_TXT', XDG_CONFIG_HOME.join('zsh', 'plugins.txt'))).expand_path.freeze
+  ANTIDOTE_HOME = _fetch_pathname('ANTIDOTE_HOME') { HOME.join('Library', 'Caches', 'antidote') }.freeze
+  ANTIDOTE_ZSH = _fetch_pathname('ANTIDOTE_ZSH') { HOMEBREW_PREFIX.join('opt', 'antidote', 'share', 'antidote', 'antidote.zsh') }.freeze
+  ANTIDOTE_PLUGIN_ZSH = _fetch_pathname('ANTIDOTE_PLUGIN_ZSH') { XDG_CONFIG_HOME.join('zsh', 'plugins.zsh') }.freeze
+  ANTIDOTE_PLUGIN_TXT = _fetch_pathname('ANTIDOTE_PLUGIN_TXT') { XDG_CONFIG_HOME.join('zsh', 'plugins.txt') }.freeze
 
   # ---------------------------------------------------------------------------
   # Non-path variables (String objects)
@@ -283,13 +277,11 @@ module EnvVars
   # Returns true if FORCE_COLOR is set (used by color output methods).
   # Mirrors: FORCE_COLOR env var (standard convention for forcing color output)
   #
-  # NOTE: This is the single source of truth for FORCE_COLOR in Ruby code. The only
-  # exception is core.rb which uses ENV.fetch('FORCE_COLOR') directly to avoid
-  # circular dependency (env_vars.rb requires core.rb, so core.rb cannot use EnvVars).
+  # Delegates to EnvLite, which Core uses too (Core sits beneath EnvVars in the require chain).
   #
   # @return [Boolean] true if FORCE_COLOR is set to a non-empty (stripped) value
   def self.force_color?
-    !nil_or_empty?(ENV.fetch('FORCE_COLOR', '').strip)
+    EnvLite.force_color?
   end
 
   # Current script depth (incremented by increment_script_depth).
@@ -299,6 +291,49 @@ module EnvVars
   # @return [Integer] Current script nesting depth (default: 0)
   def self.script_depth
     ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+  end
+
+  # Writes the script nesting depth back to the environment so child processes (shell
+  # functions, nested Ruby scripts) inherit it. The only sanctioned writer of
+  # _DOTFILES_SCRIPT_DEPTH in Ruby (see Logging.increment_script_depth).
+  #
+  # @param depth [Integer] The new nesting depth
+  # @return [Integer] The depth that was set
+  def self.script_depth=(depth)
+    ENV['_DOTFILES_SCRIPT_DEPTH'] = depth.to_s
+    depth
+  end
+
+  # Log file path for structured file logging (opt-in).
+  # Mirrors: LOG_FILE env var
+  #
+  # @return [String, nil] Path, or nil when unset/blank (file logging disabled)
+  def self.log_file
+    _normalize_optional_string(ENV.fetch('LOG_FILE', nil))
+  end
+
+  # Minimum log level name (debug, info, success, warn, error, user_action).
+  # Mirrors: LOG_LEVEL env var
+  #
+  # @return [Symbol] Lowercased level name (default: :info; validity is checked by Logging)
+  def self.log_level
+    ENV.fetch('LOG_LEVEL', 'info').downcase.to_sym
+  end
+
+  # Log file entry format.
+  # Mirrors: LOG_FORMAT env var
+  #
+  # @return [String] 'json' or 'text' (default: 'text')
+  def self.log_format
+    ENV.fetch('LOG_FORMAT', 'text').downcase
+  end
+
+  # Script name override used in JSON log entries.
+  # Mirrors: SCRIPT_NAME env var
+  #
+  # @return [String] SCRIPT_NAME, falling back to $PROGRAM_NAME
+  def self.log_script_name
+    ENV.fetch('SCRIPT_NAME', $PROGRAM_NAME)
   end
 
   # Terminal column width from COLUMNS env var.
@@ -317,11 +352,7 @@ module EnvVars
   #
   # @return [Pathname] Cron backup file path
   def self.cron_backup_file
-    Pathname.new(
-      ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do
-        TMPDIR.join('crontab_backup').to_s
-      end
-    )
+    _fetch_pathname('_DOTFILES_CRON_BACKUP_FILE') { TMPDIR.join('crontab_backup') }
   end
 
   # Returns true if logging output should be suppressed.
@@ -351,5 +382,12 @@ module EnvVars
   # @return [String] Current PATH value (empty string if unset)
   def self.path
     ENV.fetch('PATH', '')
+  end
+
+  # Returns the current RUBYLIB (the directories Ruby searches for 'require').
+  #
+  # @return [String, nil] RUBYLIB, or nil when unset
+  def self.rubylib
+    ENV.fetch('RUBYLIB', nil)
   end
 end

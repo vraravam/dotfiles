@@ -59,9 +59,8 @@ module SoftwareUpdatesCron
     # Build a single grouped macOS notification.
     notification_parts = []
 
-    # Access logging module's private step tracking variables
-    step_errors = Logging.instance_variable_get(:@step_errors) || []
-    step_warnings = Logging.instance_variable_get(:@step_warnings) || []
+    step_errors = Logging.step_errors
+    step_warnings = Logging.step_warnings
     has_errors = !nil_or_empty?(step_errors)
     has_warnings = !nil_or_empty?(step_warnings)
     success = !has_errors && !has_warnings

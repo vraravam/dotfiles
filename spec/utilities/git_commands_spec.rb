@@ -99,12 +99,14 @@ RSpec.describe GitCommands do
     before { allow(GitProcessor).to receive(:repo?).and_return(true) }
 
     def stub_config_flag(value)
-      allow(Open3).to receive(:capture2).with('git', '-C', folder, 'config', '--type=bool', '--default', 'false', 'pull.allowResetOnDivergedHistory').and_return(["#{value}\n", nil])
+      git = instance_double(GitProcessor)
+      allow(GitProcessor).to receive(:new).with(dir: folder).and_return(git)
+      allow(git).to receive(:config_bool).with('pull.allowResetOnDivergedHistory').and_return(value == 'true')
     end
 
     it 'does nothing further when the pull succeeds' do
       allow(CommandUtils).to receive(:run_interactive).and_return(true)
-      expect(Open3).not_to receive(:capture2)
+      expect(GitProcessor).not_to receive(:new)
 
       described_class.pull(args: [folder], header: false)
     end
@@ -139,8 +141,8 @@ RSpec.describe GitCommands do
 
   describe '.upreb' do
     it 'rebases every other branch first and finishes on the branch that was checked out' do
-      allow(GitProcessor).to receive(:new).with(dir: folder).and_yield(instance_double(GitProcessor, current_branch: 'main'))
-      allow(Open3).to receive(:capture2).with('git', '-C', folder, 'branch', '--format=%(refname:short)').and_return(["main\nfeature\nfix\n", nil])
+      git = instance_double(GitProcessor, current_branch: 'main', local_branches: %w[main feature fix])
+      allow(GitProcessor).to receive(:new).with(dir: folder).and_yield(git)
       switched = []
       allow(described_class).to receive(:_git) do |_dir, *args, **_opts|
         switched << args.last if args.first == 'switch'

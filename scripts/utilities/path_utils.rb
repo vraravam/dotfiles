@@ -149,14 +149,7 @@ module PathUtils
   #   PathUtils.git_repo_size_mb(git_dir)  # => 1.37 (MB)
   # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def git_repo_size_mb(repo_dir)
-    repo_path = repo_dir.to_s
-    # If passed .git directory, use parent as repo root for git -C
-    repo_path = File.dirname(repo_path) if repo_path.end_with?('.git')
-
-    # Call git size alias with GIT_SIZE_QUIET to get just the size (e.g., "1.37 MiB")
-    ENV['GIT_SIZE_QUIET'] = '1'
-    size_str = CommandUtils.query('git', '-C', repo_path, 'size').strip
-    ENV.delete('GIT_SIZE_QUIET')
+    size_str = git_repo_size_human(repo_dir)
 
     # Parse value and unit (e.g., "1.37 MiB" -> ["1.37", "MiB"])
     parts = size_str.split
@@ -195,12 +188,9 @@ module PathUtils
     # If passed .git directory, use parent as repo root for git -C
     repo_path = File.dirname(repo_path) if repo_path.end_with?('.git')
 
-    # Call git size alias with GIT_SIZE_QUIET to get just the size
-    ENV['GIT_SIZE_QUIET'] = '1'
-    result = CommandUtils.query('git', '-C', repo_path, 'size').strip
-    ENV.delete('GIT_SIZE_QUIET')
-
-    result
+    # GIT_SIZE_QUIET makes the 'size' alias print just the size. It is passed to the child
+    # only (never written to this process's ENV, where it would leak on an exception).
+    CommandUtils.query({ 'GIT_SIZE_QUIET' => '1' }, 'git', '-C', repo_path, 'size')
   end
 
   # Extract a path segment at a given index from a dir path

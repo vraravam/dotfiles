@@ -4,6 +4,32 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.10
+
+#### Fix Logging state sharing and `Core.stream_command` exit status; split the largest utilities; add specs
+
+* *[scripts/utilities/core.rb]* `require 'English'` so `$CHILD_STATUS` exists: `Core.stream_command` always returned 0 before (it also fed the status message in `run-all.rb` and the `mise install` result in `GitWorkspace`). `mark_updated!` now requires `fileutils` lazily.
+* *[scripts/utilities/env_vars.rb]* Added `EnvVars::UPSTREAM_GH_USERNAME` (default `vraravam`, mirrors the `.shellrc` export) so Ruby callers cannot hit a `NameError`.
+* *[scripts/utilities/logging.rb, scripts/utilities/logging_state.rb]* All mutable Logging state (warnings, errors, current section, script name, step timers, caches) now lives in one process-wide `Logging::State` returned by `Logging#state`. Previously these were instance variables, so a bare `record_warning` after `include Logging` was invisible to `Logging.print_script_summary` (and vice versa); bare and `Logging.`-qualified calls now behave identically. `Logging.state.reset!` is available for specs.
+* *[scripts/utilities/logging.rb, scripts/utilities/logging_summary.rb, scripts/utilities/logging_sinks.rb]* Split the 938-line `Logging` module: `Logging::Summary` (script/step timing, deferred warnings and errors, summaries) and `Logging::Sinks` (`LOG_LEVEL` filtering, `LOG_FILE` text/JSON sink and rotation) are mixed in; the public API is unchanged. `json`, `time` and `fileutils` are required only when file logging is actually used.
+* *[scripts/utilities/git_processor.rb, scripts/utilities/git_recreate.rb, scripts/utilities/git_url_parser.rb]* Moved the destructive recreate workflow (`verify_and_recreate_local_repo`, `verify_pre_recreation` and helpers) into `GitProcessor::Recreate` and `GitProcessor::GitUrlParser` into their own files; `GitProcessor` keeps the everyday queries and mutations. New `GitProcessor#config_bool`, `#local_branches`, `#same_content_as?` and `#commit_count(range:)`.
+* *[scripts/utilities/git_commands.rb]* No longer calls `Open3` directly: `pull` and `upreb` use the new `GitProcessor` methods above.
+* *[scripts/utilities/env_lite.rb, scripts/utilities/core.rb, scripts/utilities/colorizable.rb, scripts/utilities/env_vars.rb, scripts/utilities/git_hooks.rb, scripts/utilities/git_overrides.rb]* New dependency-free `EnvLite` for the layers beneath `EnvVars` (`Core`, `Colorizable`), replacing their ad-hoc `ENV.fetch` workarounds; `EnvVars` gained `log_file`, `log_level`, `log_format`, `log_script_name`, `rubylib` and `script_depth=` so `Logging`, `GitHooks` and `GitOverrides` no longer read or write `ENV` directly.
+* *[scripts/utilities/env_vars.rb]* Every path constant is built with the one `_fetch_pathname` helper (also treats a blank value as unset); `HOMEBREW_PREFIX` derives the architecture from `RbConfig` instead of forking `uname -m`.
+* *[scripts/utilities/path_utils.rb]* `git_repo_size_mb` delegates to `git_repo_size_human`; `GIT_SIZE_QUIET` is passed to the child process only instead of being set (and possibly leaked on an exception) in this process's `ENV`.
+* *[scripts/utilities/command_utils.rb, scripts/resurrect-repositories.rb, scripts/add-upstream-git-config.rb, scripts/utilities/antidote.rb, scripts/utilities/collection_processor.rb]* New `CommandUtils.check_status_or_record(stdout, stderr, status, message, severity:)` replaces the repeated `check_status { record_warning/record_error }` blocks (and their "Flay similarity is intentional" comments).
+* *[scripts/resurrect-repositories.rb]* `_resurrect_each` (about 150 lines) is split into `_clone_with_fallback`, `_verify_origin`, `_sync_other_remotes`, `_fetch_all_remotes` and `_run_post_clone_commands`, and `RepositoryConfig.from_hash` validates optional fields through one `_invalid_field` helper; behavior and output are unchanged. An `origin` that differs from the configuration is still a fatal error for that repo, but when it equals one of the `other_remotes` URLs (the state an earlier fallback clone leaves behind) the message now says so and how to resolve it. `RepositoryConfig` includes `Core` explicitly.
+* *[scripts/software-updates-cron.rb]* Reads `Logging.step_errors` / `Logging.step_warnings` instead of `instance_variable_get`.
+* *[files/--HOME--/.shellrc, files/--ZDOTDIR--/.zshrc]* Replaced standalone `[[ ... ]] && x=...` clamps (and the `NOUNSET` save/restore) with explicit `if` blocks per the `&&`-under-`set -e` rule. Full interactive startup is unchanged (median about 64 ms vs 66 ms, interleaved runs).
+* *[spec/]* New specs for `Logging` (shared state, summaries, steps, level filtering, file sink and rotation), `CommandUtils`, `PathUtils`, `EnvLite`, `CollectionProcessor`, `Cron` (crontab validation incl. UTF-8 under a US-ASCII default encoding, backup pruning), `ResurrectRepositories` (`RepositoryConfig`, env-var expansion, clone/fallback/verify/remote-sync flow), the new `GitProcessor` methods, `Core.stream_command` and `EnvVars::UPSTREAM_GH_USERNAME`; `spec/utf8_file_reads_spec.rb` fails when any script reads a file without an explicit UTF-8 encoding (suite grows from 220 to 326 examples).
+* *[.ai/domains/logging-conventions.md, .ai/domains/ruby-scripting.md, .ai/domains/shell-scripting.md, AGENTS.md]* Documented the shared `Logging::State`, the `logging*.rb` layout, `check_status_or_record`, where `ENV` may be read (`EnvVars` / `EnvLite`), the UTF-8 read spec and the per-command `require` cost guidance.
+
+#### Adopting these changes
+
+* Run `delete_caches` so no stale `.zwc` bytecode from `.shellrc`/`.zshrc` is loaded, then quit and restart the Terminal/iTerm application.
+
+---
+
 ### 4.0.9
 
 :white_check_mark: Tested on a vanilla macOS machine

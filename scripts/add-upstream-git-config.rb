@@ -58,19 +58,14 @@ module AddUpstreamGitConfig
 
       upstream_url_colored = upstream_url.cyan
       # Add the upstream remote.
-      # Flay detects similarity between these two check_status blocks (add_remote and fetch_all).
-      # This is intentional - each operation has its own specific error message context.
-      # Extracting would lose clarity about which operation failed.
       stdout, stderr, status = git.add_remote('upstream', upstream_url)
-      return false unless CommandUtils.check_status(stdout, stderr, status) do |st, output_msg|
-        Logging.record_error("Failed to add upstream remote '#{upstream_url_colored}' (status: #{st.exitstatus})#{output_msg}")
-      end
+      return false unless CommandUtils.check_status_or_record(stdout, stderr, status,
+                                                              "Failed to add upstream remote '#{upstream_url_colored}'", severity: :error)
 
       # Fetch all remotes, unshallowing if needed.
       stdout, stderr, status = git.fetch_all
-      return false unless CommandUtils.check_status(stdout, stderr, status) do |st, output_msg|
-        Logging.record_error("Failed to fetch upstream remote '#{upstream_url_colored}' after adding it (status: #{st.exitstatus})#{output_msg}")
-      end
+      return false unless CommandUtils.check_status_or_record(stdout, stderr, status,
+                                                              "Failed to fetch upstream remote '#{upstream_url_colored}' after adding it", severity: :error)
 
       Logging.success "Successfully added and fetched upstream remote '#{upstream_url_colored}' to repo in '#{target_dir_colored}'"
       true

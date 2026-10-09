@@ -246,10 +246,10 @@ fi
 # reference bare positionals like $3 without defaults), then restore it after.
 if is_file "${ANTIDOTE_PLUGIN_ZSH}"; then
   local _nounset_was_set=0
-  [[ -o NOUNSET ]] && _nounset_was_set=1
+  if [[ -o NOUNSET ]]; then _nounset_was_set=1; fi
   unsetopt NOUNSET
   load_file_if_exists "${ANTIDOTE_PLUGIN_ZSH}"
-  (( _nounset_was_set )) && setopt NOUNSET
+  if (( _nounset_was_set )); then setopt NOUNSET; fi
   unset _nounset_was_set
 fi
 
