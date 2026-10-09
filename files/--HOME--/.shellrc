@@ -115,8 +115,8 @@ fi
 # derives it live from 'keybase status', since whoever is logged in owns the account.
 
 # Keybase repo names (comment out to disable Keybase entirely).
-export KEYBASE_HOME_REPO_NAME='home'
-export KEYBASE_PROFILES_REPO_NAME='profiles'
+# export KEYBASE_HOME_REPO_NAME='home'
+# export KEYBASE_PROFILES_REPO_NAME='profiles'
 # Optional: only a hint for the first-time 'keybase login <username>' (skips the account
 # prompt); has no effect once someone is logged in. Uncomment and set to use it.
 # export KEYBASE_USERNAME='your_username'
@@ -127,8 +127,8 @@ export KEYBASE_PROFILES_REPO_NAME='profiles'
 # mechanism. Takes a full URL (any git host), unlike KEYBASE_*_REPO_NAME above -- that
 # tool has no concept of a "default owner" to derive from a repo name, by design (see
 # its docs/DESIGN.md § Remote naming is entirely outside this tool's purview).
-# export ENCRYPTED_HOME_REPO_URL='https://github.com/vraravam/home.git'
-# export ENCRYPTED_PROFILES_REPO_URL='https://github.com/vraravam/browser-profiles.git'
+export ENCRYPTED_HOME_REPO_URL='https://github.com/vraravam/home.git'
+export ENCRYPTED_PROFILES_REPO_URL='https://github.com/vraravam/browser-profiles.git'
 # --------------------------------------------------------------------------------
 
 # ---------- Env vars for basic/common setup (can be optionally changed) ---------
