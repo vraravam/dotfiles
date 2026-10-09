@@ -1,13 +1,13 @@
-#!/usr/bin/env zsh
-
-# vim:filetype=zsh syntax=zsh tabstop=2 shiftwidth=2 softtabstop=2 expandtab autoindent fileencoding=utf-8
+#!/usr/bin/env ruby
+# encoding: utf-8
+# frozen_string_literal: true
 
 # Global pre-push hook that runs before every 'git push' in any repository.
 # Installed via core.hooksPath in .gitconfig.
 #
 # Execution order:
 #   1. Repo-specific hook (.git/hooks.local/pre-push) if exists
-#   2. Per-repo customization (${PERSONAL_BIN_DIR}/push-<basename>-pre.sh) if exists
+#   2. Per-repo customization (${PERSONAL_BIN_DIR}/pre-push-<basename>.rb or .sh) if exists
 #
 # This hook receives arguments from git:
 #   $1 = remote name (e.g., 'origin')
@@ -15,23 +15,10 @@
 #
 # Standard input provides refs being pushed:
 #   <local ref> <local sha1> <remote ref> <remote sha1>
+#
+# The logic lives in scripts/utilities/git_hooks.rb. The path below is resolved relative
+# to this file's real location (require_relative follows the core.hooksPath symlink).
 
-set -euo pipefail
+require_relative '../../../../scripts/utilities/git_hooks'
 
-# Re-source guard is inside .shellrc itself -- safe to call unconditionally.
-source "${HOME}/.shellrc"
-
-# Run hooks in sequence - abort push if any hook fails
-local -a hooks=(
-  ".git/hooks.local/pre-push"
-  "${PERSONAL_BIN_DIR}/pre-push-${PWD:t}.sh"
-)
-
-local hook
-for hook in "${hooks[@]}"; do
-  if is_executable "${hook}"; then
-    "${hook}" "$@" || exit 1
-  fi
-done
-
-exit 0
+exit(GitHooks.pre_push(ARGV) ? 0 : 1)

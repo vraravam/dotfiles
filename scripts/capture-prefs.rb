@@ -11,12 +11,16 @@
 # Usage:
 #   Standalone: capture-prefs.rb -e  # Export current prefs to git repo
 #               capture-prefs.rb -i  # Import prefs from git repo to current system
+#               capture-prefs.rb -f <search>  # Discover and append matching domains to the allowed list
 #   Module:     CapturePrefs.run(operation: 'export')  # or 'import'
+#               CapturePrefs.find_and_append(search: 'ghostty')
 
 require 'fileutils'
 require 'pathname'
+require 'set'
 require 'tempfile'
 
+require_relative 'utilities/command_utils'
 require_relative 'utilities/core'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
@@ -39,13 +43,19 @@ module CapturePrefs
     'Terminal' => 'Terminal'
   }.freeze
 
+  # Data files that drive which domains are processed and which keys are stripped.
+  DATA_DIR = EnvVars::DOTFILES_DIR.join('scripts', 'data').freeze
+  ALLOWED_LIST_FILE = DATA_DIR.join('capture-prefs-allowed-list.txt').freeze
+  DENIED_LIST_FILE = DATA_DIR.join('capture-prefs-denied-list.txt').freeze
+  EXCLUDED_KEYS_FILE = DATA_DIR.join('capture-prefs-excluded-keys.txt').freeze
+
   # Public API method.
   #
   # @param operation [String] Either 'export' or 'import'
   # @return [Boolean] true on success, false on error
   # :reek:UtilityFunction -- Uses instance variable @operation for memoized helpers
   def run(operation:)
-    Logging.error "Invalid operation: '#{operation}'. Must be 'export' or 'import'." unless %w[export import].include?(operation)
+    Logging.error "Invalid operation: '#{operation.to_s.yellow}'. Must be 'export' or 'import'." unless %w[export import].include?(operation)
 
     @operation = operation
 
@@ -86,16 +96,9 @@ module CapturePrefs
     end
 
     # Load data files (each helper validates its own file)
-    denied = _load_denied_list(
-      dotfiles_dir.join('scripts', 'data', 'capture-prefs-denied-list.txt')
-    )
-    excluded_by_domain = _load_excluded_keys(
-      dotfiles_dir.join('scripts', 'data', 'capture-prefs-excluded-keys.txt')
-    )
-    domains = _load_domains_list(
-      dotfiles_dir.join('scripts', 'data', 'capture-prefs-allowed-list.txt'),
-      denied
-    )
+    denied = _load_denied_list(DENIED_LIST_FILE)
+    excluded_by_domain = _load_excluded_keys(EXCLUDED_KEYS_FILE)
+    domains = _load_domains_list(ALLOWED_LIST_FILE, denied)
 
     if nil_or_empty?(domains)
       Logging.info 'No domains found -- nothing to do.'
@@ -178,6 +181,52 @@ module CapturePrefs
 
     saved_msg = _exporting? ? " -- #{saved_count.to_s.purple} files saved after stripping" : ''
     Logging.success "Operation finished. Processed #{domains.length.to_s.purple} domains (denied-list entries filtered at load time)#{saved_msg}."
+    true
+  end
+
+  # Finds every preference domain whose NAME contains +search+ (case-insensitive) and
+  # appends the ones not yet listed to the allowed list, then re-sorts the file
+  # (case-insensitive, duplicates removed). Matching is on domain names (from
+  # 'defaults domains'), not on key/value contents as 'defaults find' does, because
+  # content matching pulls in unrelated domains that merely mention the app (Finder
+  # recents, launcher usage stats, etc.). Domains on the denied list (machine-specific or
+  # account-bound data -- see capture-prefs-denied-list.txt) are reported and never
+  # appended.
+  #
+  # @param search [String] Case-insensitive substring to look for in domain names.
+  # @return [Boolean] true on success, false if no domain matched.
+  def find_and_append(search:)
+    search = search.to_s.strip
+    Logging.error 'Usage: capture-prefs.rb -f <search-string>' if search.empty?
+
+    denied = Plist.load_denied_list(DENIED_LIST_FILE)
+    allowed = Plist.load_domains_list(ALLOWED_LIST_FILE, Set.new)
+
+    # 'defaults domains' prints one comma-separated line.
+    all_domains = CommandUtils.query(MacOS::DEFAULTS_CMD, 'domains').split(', ').map(&:strip)
+    matches = all_domains.select { |domain| domain.downcase.include?(search.downcase) }
+
+    if matches.empty?
+      Logging.warn "No preference domain name contains '#{search.yellow}' (the app may not have written any preferences yet)"
+      return false
+    end
+
+    matches.each do |domain|
+      if denied.include?(domain)
+        Logging.warn "Skipping '#{domain.light_cyan}' -- it is on the denied list (machine-specific data; see '#{DENIED_LIST_FILE.cyan}')"
+      elsif allowed.include?(domain)
+        Logging.info "'#{domain.light_cyan}' is already in the allowed list"
+      else
+        allowed.add(domain)
+        Logging.success "Appended '#{domain.light_cyan}' to the allowed list"
+      end
+    end
+
+    # Sort key mirrors the locale-aware order the file has always been kept in: compare
+    # case-insensitively, and on a tie put the lowercase spelling first (swapcase flips
+    # which of the two sorts earlier in plain byte order).
+    sorted = allowed.to_a.sort_by { |domain| [domain.downcase, domain.swapcase] }
+    ALLOWED_LIST_FILE.write("#{sorted.join("\n")}\n", encoding: 'UTF-8')
     true
   end
 
@@ -270,7 +319,7 @@ module CapturePrefs
 
     return if nil_or_empty?(running)
 
-    Logging.user_action "Quit and restart to pick up imported preferences: #{running.join(', ')}."
+    Logging.user_action "Quit and restart to pick up imported preferences: #{running.join(', ').yellow}."
   end
 
   private_class_method :_notify_apps_needing_restart
@@ -296,18 +345,21 @@ if __FILE__ == $PROGRAM_NAME
     opts.on('-i', '--import', 'Import preferences from dotfiles repo to current system') do
       options[:import] = true
     end
+    opts.on('-f', '--find SEARCH', 'Append every preference domain whose name contains SEARCH (case-insensitive)',
+            '  to the allowed list; domains on the denied list are skipped with a warning') do |search|
+      options[:find] = search
+    end
     opts.separator ''
     opts.separator "  eg: #{File.basename(__FILE__).cyan} -e"
+    opts.separator "      #{File.basename(__FILE__).cyan} -f ghostty"
   end
 
-  if options[:export] && options[:import]
-    parser.abort_with_usage('Options -e and -i are mutually exclusive')
-  elsif !options[:export] && !options[:import]
-    parser.abort_with_usage('Must specify either -e (export) or -i (import)')
-  end
+  parser.abort_with_usage('Options -e, -i and -f are mutually exclusive') if options.size > 1
+  parser.abort_with_usage('Must specify one of -e (export), -i (import) or -f (find and append)') if options.empty?
 
   Logging.run_script do
-    success = CapturePrefs.run(operation: options[:export] ? 'export' : 'import')
+    operation = options[:export] ? 'export' : 'import'
+    success = options[:find] ? CapturePrefs.find_and_append(search: options[:find]) : CapturePrefs.run(operation: operation)
     exit(success ? 0 : 1)
   end
 end

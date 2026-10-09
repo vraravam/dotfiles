@@ -1,0 +1,63 @@
+#!/bin/sh
+
+# file location: ${DOTFILES_DIR}/scripts/git-upreb
+#
+# External git subcommand: git runs this as 'git upreb' (any 'git-<name>' executable on PATH
+# is a subcommand). Plain /bin/sh and dependency-free on purpose -- no .shellrc -- so it works
+# from cron and before the dotfiles shell environment exists.
+#
+# Full upstream rebase workflow: fetches unconditionally, then rebases from upstream (if present),
+# sets tracking, pushes, updates submodules, and prunes gone branches — but only if the working
+# tree is clean. A dirty tree skips everything after the fetch to avoid a mid-workflow failure
+# (after rebase but before push) that would leave the repo in an inconsistent state.
+# If no upstream remote exists, rebases from origin instead (gracefully falls back for non-fork repos).
+# Callers (e.g. run-all.rb in cron) receive a non-zero exit and surface a warning on dirty tree.
+# Supports folder-specific overrides: if ${PERSONAL_BIN_DIR}/upreb-<basename>.rb (or .sh) exists, runs it
+# instead of running the default implementation. Override scripts can customize pre/post behavior
+# while calling the common implementation via GitCommands.upreb (scripts/utilities/git_commands.rb).
+# Uses 'git fo' (not a bare 'git fetch --all') for the initial fetch: hang protection via
+# 'with-retry' and promisor-first remote ordering matter here just as much as anywhere else --
+# 'fo' already prunes gone branches ('dlb'), so no separate 'dlb' call is needed at the end. The
+# later 'fetch upstream --tags' (checking for new tags pushed between the initial fetch and now,
+# right before this command pushes) is wrapped directly in 'with-retry' rather than calling 'fo'
+# again, since only that one remote/ref needs re-checking at that point.
+# Usage: git upreb [<dir>]
+
+# Git ran the former alias from the work tree's top level; an external command runs from the
+# caller's directory, so the default directory is the top level (not '.') to keep
+# 'git upreb' from a subdirectory working the same way.
+
+main() {
+  dir="${1:-$(git rev-parse --show-toplevel 2>/dev/null || printf .)}"
+  if [ -n "${PERSONAL_BIN_DIR:-}" ] && [ -z "${_GIT_OVERRIDE_SKIP:-}" ]; then
+    basename="$(basename "$(cd "${dir}" && pwd)")"
+    for ext in rb sh; do
+      override="${PERSONAL_BIN_DIR}/upreb-${basename}.${ext}"
+      [ -x "${override}" ] || continue
+      if [ "${ext}" = rb ]; then
+        (cd "${dir}" && _GIT_OVERRIDE_SKIP=1 "${override}")
+      else
+        (cd "${dir}" && _GIT_OVERRIDE_SKIP=1 /bin/zsh -l "${override}")
+      fi
+      return $?
+    done
+  fi
+  git -C "${dir}" fo
+  if git -C "${dir}" is-clean; then
+    git -C "${dir}" branch -u "origin/$(git -C "${dir}" br)"
+    if git -C "${dir}" has-upstream; then
+      git -C "${dir}" rebase "upstream/$(git -C "${dir}" br)" --no-verify &&
+        git with-retry 60 3 /dev/null "${dir}/.git/objects" git -C "${dir}" fetch upstream --tags &&
+        git -C "${dir}" push --no-verify &&
+        git -C "${dir}" push --tags --no-verify
+    else
+      git -C "${dir}" rebase "origin/$(git -C "${dir}" br)" --no-verify
+    fi &&
+      git -C "${dir}" siu
+  else
+    printf 'Skipping rebase/push in %s: working tree has uncommitted changes. Run manually.\n' "${dir}" >&2
+    exit 1
+  fi
+}
+
+main "$@"

@@ -83,6 +83,14 @@ module EnvVars
   # Mirrors: ${SHELL} (always set by the shell)
   SHELL = ENV.fetch('SHELL', '/bin/zsh').freeze
 
+  # Optional Keybase username. When set, fresh-install-of-osx.sh logs in with
+  # 'keybase login <username>' (see Keybase.ensure_logged_in) instead of the fully
+  # interactive flow; nil (unset/empty) keeps the interactive flow. Only consulted when
+  # nobody is logged in yet -- the active username is otherwise derived from
+  # 'keybase status' (see Keybase.username). It is only a hint, never a source of truth.
+  # Mirrors: export KEYBASE_USERNAME='someuser'
+  KEYBASE_USERNAME = _normalize_optional_string(ENV.fetch('KEYBASE_USERNAME', nil))
+
   # Keybase repository names (used with the Keybase backup mechanism, see
   # scripts/utilities/keybase.rb). nil (unset/empty in .shellrc) means Keybase support is
   # not enabled for that repo -- comment out the export in .shellrc to disable it entirely.

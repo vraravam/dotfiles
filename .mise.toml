@@ -9,6 +9,6 @@
 # - mise cannot pin transitive dependency versions (e.g., sexp_processor:4.15.0)
 # - Manual installation with specific dependency versions is required
 #
-# To install gems for this repo, run: scripts/install-ruby26-gems.sh
+# To install gems for this repo, run: scripts/install-ruby26-gems.rb
 [settings]
 disable_tools = ["ruby"]

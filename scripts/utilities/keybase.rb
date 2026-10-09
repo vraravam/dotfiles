@@ -78,8 +78,10 @@ module Keybase
   # ---------------------------------------------------------------------------
 
   # Ensures keybase is installed and someone is logged in, prompting an
-  # interactive login if not. Whoever completes the login becomes the active
-  # account -- no target username is required in advance.
+  # interactive login if not. If KEYBASE_USERNAME is set, it is passed to
+  # 'keybase login <username>' (so the prompt for the account is skipped); otherwise
+  # whoever completes the login becomes the active account. Already being logged in
+  # (as any account) is accepted as-is.
   # Returns false on failure so callers can decide whether to abort or continue.
   # Called by fresh-install-of-osx.sh (_ensure_keybase_logged_in) and recreate-repository.rb.
   #
@@ -105,7 +107,9 @@ module Keybase
       return true
     end
 
-    CommandUtils.run_interactive('keybase', 'login') do
+    username = EnvVars::KEYBASE_USERNAME
+    Logging.info "Logging into keybase as '#{username.purple}'" if username
+    CommandUtils.run_interactive('keybase', 'login', *username) do
       Logging.record_error 'Could not log into keybase -- retry after logging in manually'
     end
   end

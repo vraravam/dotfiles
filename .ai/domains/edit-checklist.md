@@ -35,6 +35,7 @@ Apply this checklist after every edit to any script or configuration file in thi
 | 5. Whitespace | ✅ | ✅ | ✅ |
 | 6. Executable | `chmod +x` if needed | N/A | N/A |
 | 7. Delete .zwc | `rm -f file.zwc` | N/A | N/A |
+| 8. Startup impact | Required for zsh startup files | N/A | N/A |
 
 ## Universal Steps (All Files)
 
@@ -208,6 +209,14 @@ find ~/.config/zsh -name "*.zwc" -type f -delete
 After deleting `.zwc` files, they will be automatically recreated on the next zsh startup by `.zlogin` via:
 - `find_in_folder_and_recompile` for regular files
 - `recompile_zsh_autoload_dir` for autoload functions
+
+### Step 8 -- Verify No Startup-Time Regression (Zsh Startup Files Only)
+
+If the edit touches `.shellrc`, `.aliases`, `.zshenv`, `.zshrc`, `.zlogin`, `${ZDOTDIR}/lib/*.zsh`,
+an autoload function, or any code that runs while those files load, follow
+[`zsh-startup.md`](./zsh-startup.md) § **Startup-Impact Verification (Mandatory)**: static
+review, an old-vs-new measurement under identical conditions, and a report of the numbers.
+This applies equally when *suggesting* such a change, not only when making it.
 
 ## Quick Reference
 

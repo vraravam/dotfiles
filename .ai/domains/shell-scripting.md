@@ -70,7 +70,7 @@ a comment when they conflict.
 - `${PERSONAL_BIN_DIR}/*.sh` - All shell scripts use kebab-case
 - Autoload functions in `${XDG_CONFIG_HOME}/zsh/` - Single-word names (no separator)
 
-**Autoload function naming**: Zsh autoload functions in `${XDG_CONFIG_HOME}/zsh/` use single-word names by design (e.g., `upreb`, `status`, `push`). This is not a "no separator needed" exception—it's a deliberate convention for autoloaded commands that matches shell built-in naming patterns (`cd`, `ls`, `git`, `grep`).
+**Autoload function naming**: Zsh autoload functions in `${XDG_CONFIG_HOME}/zsh/` use single-word names by design (e.g., `st`, `count`). This is not a "no separator needed" exception—it's a deliberate convention for autoloaded commands that matches shell built-in naming patterns (`cd`, `ls`, `git`, `grep`).
 
 ## Function Naming Convention
 
@@ -122,7 +122,7 @@ source "${HOME}/.shellrc"
   - Validation: `is_file`, `is_directory`, `is_non_zero_string`, `nil_or_empty`
   - Git operations: `clone_repo_into`, `migrate_git_repo_to_reftable`
   - Script infrastructure: `print_script_start`, `print_script_summary`, `print_usage`
-  - Cron management: `suspend_cron`, `resume_cron`, `with_cron_suspended`
+  - Cron management: `suspend_cron`, `resume_cron`, `restore_cron` (`with_cron_suspended` is Ruby-only: `Cron.with_cron_suspended { ... }`)
   - Path utilities: `ensure_dir_exists`, `load_file_if_exists`
   - Logging helpers: `section_header`, `current_timestamp`
 - Ensures consistent behavior across all scripts
@@ -790,21 +790,21 @@ public_function() { ... }    # no prefix - part of public API
 - Helper functions in `${PERSONAL_BIN_DIR}/*.sh`
 - Internal implementation functions in `.shellrc` and `.aliases`
 
-**Exception:** Autoload functions in `${XDG_CONFIG_HOME}/zsh/` follow a dual-function pattern where the public wrapper (no underscore) calls a private implementation (with underscore):
+**Exception:** Autoload functions in `${XDG_CONFIG_HOME}/zsh/` (`st`, `count`) follow a dual-function pattern where the public wrapper (no underscore) calls a private implementation (with underscore):
 
 ```zsh
 # Autoload function pattern
-_status_all_repos() {
+_st() {
   # Implementation
-  _call_ruby_git_workspace status_all_repos
+  git -C "${folder}" status "${switches[@]}"
 }
 
-status_all_repos() {
-  dispatch_or_fallback status_all_repos _status_all_repos "$@"
+st() {
+  dispatch_or_fallback st _st "$@"
 }
 ```
 
-This pattern allows `dispatch_or_fallback` to choose between Ruby module mode (fast, when available) and shell fallback mode (when Ruby unavailable).
+This pattern allows `dispatch_or_fallback` to run a per-repo override script (`.rb` or `.sh`) when one exists, and the default implementation otherwise. Commands that are not typed constantly and benefit from Ruby (`push`, `pull`, `cc`, `upreb`, `status_all_repos`, `update_all_repos`) are not autoload functions: they are aliases (`git-command.rb <cmd>`, `call-utility.rb <Module.method>`) defined in `.aliases`.
 
 ## Deleting Functions -- Mandatory Codebase Scan
 
@@ -1991,23 +1991,23 @@ notify "Backup completed"        # title defaults to "Dotfiles"
 `error` from `.shellrc` calls `notify` automatically -- prefer `error` over
 calling `notify` directly when reporting failures.
 
-## Cron Suspension -- `with_cron_suspended`
+## Cron Suspension -- `Cron.with_cron_suspended`
 
-For scripts that must not run concurrently with the cron job, use the
-`with_cron_suspended` wrapper (defined in `.aliases`). It suspends cron,
-runs the given function, then restores cron -- including on error via an
-internal `EXIT` trap:
+For scripts that must not run concurrently with the cron job, use
+`Cron.with_cron_suspended` (`scripts/utilities/cron.rb`) -- Ruby only; there is no
+shell equivalent. It suspends cron, yields to the block, then restores cron --
+including on an exception or an early `return`, via an `ensure` clause:
 
-```zsh
-main() {
-  with_cron_suspended _main_impl "$@"
-}
+```ruby
+Cron.with_cron_suspended { run_main_logic }
 ```
 
-Do not call `suspend_cron` / `resume_cron` directly in scripts that have a
-single entry point -- use `with_cron_suspended` instead. Use the low-level
-functions only when the suspend/resume scope spans multiple code paths (e.g.
-`fresh-install-of-osx.sh` where the scope is the entire `main()`).
+A script that needs this should be a Ruby script (or a Ruby override of a git
+command -- see `git-config.md` § Per-Repo Overrides for Lifecycle Management). In
+shell, use the low-level `suspend_cron` / `resume_cron` functions only when the
+suspend/resume scope spans multiple code paths (e.g. `fresh-install-of-osx.sh`
+where the scope is the entire `main()`); `.shellrc` keeps pure-shell fallbacks of
+these so they work before the dotfiles repo is cloned.
 
 ## `parse_folder_and_switches` Convention
 
@@ -2035,7 +2035,7 @@ Rules:
 
 ## Autoload Script Structure
 
-Every file under `files/--XDG_CONFIG_HOME--/zsh/` is a zsh autoload script.
+Every file under `files/--XDG_CONFIG_HOME--/zsh/` (except `plugins.txt`) is a zsh autoload script.
 The structure is fixed -- all four components must be present in every file:
 
 ```zsh
@@ -2109,6 +2109,19 @@ The trailing `|| true` is required because `(($+functions[compdef]))` exits 1
 when `compdef` is not defined (arithmetic 0 = false = exit 1 in zsh). Without
 `|| true`, sourcing an autoload script from a script that has an ERR trap (e.g.
 a cron job) would fire the trap every time `compdef` is not available.
+
+## Shebang Choice
+
+- **zsh scripts** (use `.shellrc`, zsh builtins): `#!/usr/bin/env zsh` -- zsh may live in
+  Homebrew rather than `/bin`, so it must be found via `PATH`.
+- **Ruby scripts**: `#!/usr/bin/env ruby` (see `ruby-scripting.md`).
+- **Plain POSIX `sh` scripts** that must run anywhere with no repo/shell setup (`wait-editor`,
+  the `scripts/git-<name>` git subcommands): `#!/bin/sh`, NOT `#!/usr/bin/env sh`. `/bin/sh` is a
+  fixed, guaranteed path on macOS and Linux, so `env` adds an extra exec and a `PATH` lookup for
+  nothing -- and under cron's minimal `PATH`, or a `PATH` shadowed by mise/Homebrew, it can only
+  make resolution less predictable. Keep such scripts strictly POSIX (no arrays, `[[ ]]`, `local`
+  or `${var:t}`): on macOS `/bin/sh` is bash 3.2 in POSIX mode, on Debian/Ubuntu it is `dash`.
+  Verify with `sh -n` and `dash -n`.
 
 ## `exec`-Wrapper Scripts
 

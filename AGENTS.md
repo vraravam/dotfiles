@@ -105,6 +105,14 @@ tail -n 1 file | grep -q '^$' && echo "Has trailing blank lines"
 grep -q '[[:space:]]$' file && echo "Has trailing whitespace"
 ```
 
+## Startup-Time Check -- Mandatory for Zsh Startup Files
+
+Whenever you suggest or make any change to `.shellrc`, `.aliases`, `.zshenv`, `.zshrc`,
+`.zlogin`, autoload functions, or other code run during shell startup, verify it has no
+detrimental effect on shell startup time and report the old-vs-new numbers. Starting Ruby
+on the startup path costs ~100ms -- guard it with a pure-shell freshness check. See
+`zsh-startup.md` § Startup-Impact Verification (Mandatory).
+
 ## Decision-Making Priority Order
 
 When choices conflict, this order wins:
@@ -203,38 +211,37 @@ basename="${PWD:t}"  # Zsh :t modifier (no fork)
 
 See: `zsh-startup.md` § No Subshell Forks, `shell-scripting.md` § Zsh Parameter Expansion
 
-### 5. Git Alias Overrides — Folder-Context Pattern
+### 5. Git Command Overrides -- Folder-Context Pattern
 
-Git aliases support per-repository overrides via `${PERSONAL_BIN_DIR}/<alias>-<basename>.sh`:
+`push`, `pull`, `cc` and `upreb` (aliases for `scripts/git-command.rb`) and the `git cc`/`git upreb` commands (`scripts/git-cc`, `scripts/git-upreb`) support per-repository overrides via `${PERSONAL_BIN_DIR}/<command>-<basename>.rb` (or `.sh`; `.rb` wins). The lookup lives in `GitOverrides.script_for` (`scripts/utilities/git_overrides.rb`); those two scripts mirror it in shell (and `dispatch_or_fallback` in `.aliases` for `st`/`count`):
 
-```ini
-# In .gitconfig
-upreb = "!f() { \
-  dir=\"${1:-.}\"; \
-  basename=\"$(basename \"$(cd \"${dir}\" && pwd)\")\"; \
-  override=\"${PERSONAL_BIN_DIR}/upreb-${basename}.sh\"; \
-  if [ -x \"${override}\" ]; then (cd \"${dir}\" && . \"${override}\"); return $?; fi; \
-  # ... default implementation ...; \
-}; f"
+```sh
+dir="${1:-$(git rev-parse --show-toplevel 2>/dev/null || printf .)}"
+basename="$(basename "$(cd "${dir}" && pwd)")"
+for ext in rb sh; do override="${PERSONAL_BIN_DIR}/upreb-${basename}.${ext}"; ...; done
+# ... default implementation ...
 ```
 
-Override script pattern:
-```zsh
-#!/usr/bin/env zsh
-source "${ZDOTDIR}/.aliases"
-load_file_if_exists "${XDG_CONFIG_HOME}/zsh/upreb"  # Load common _upreb function
+Override script pattern (Ruby; `${PERSONAL_BIN_DIR}` is on `RUBYLIB` so `require` finds the utilities):
+```ruby
+#!/usr/bin/env ruby
+require 'git_commands'
+require 'git_processor'
+require 'logging'
 
-main() {
+Logging.run_script do
   # Custom pre-logic
-  git delete-tag twilight 2>/dev/null
+  git = GitProcessor.new(dir: Dir.pwd)
+  git.run_alias('delete-tag', 'twilight') if git.tag_exists?('twilight')
 
-  # Call common implementation
-  _upreb
+  # Call common implementation (header: false -- run_script already printed a banner)
+  GitCommands.upreb(args: ARGV, header: false)
 
   # Custom post-logic (if needed)
-}
-main "$@"
+end
 ```
+
+To suspend cron around the default: `Cron.with_cron_suspended { GitCommands.push(args: ARGV, header: false) }`.
 
 See: `git-config.md` § Folder-Context-Aware Override Pattern
 

@@ -16,7 +16,7 @@ All domain-specific rules are in [`domains/`](./domains/):
 | Ruby scripting | [`ruby-scripting.md`](./domains/ruby-scripting.md) | All `.rb` files |
 | Script depth tracking | [`script-depth-tracking.md`](./domains/script-depth-tracking.md) | All cross-language scripts using deferred error collection |
 | Shell scripting | [`shell-scripting.md`](./domains/shell-scripting.md) | All `.sh`, `.zsh`, `.bash`, `.shellrc`, `.aliases`, `.envrc`, zsh autoload functions |
-| Zsh startup | [`zsh-startup.md`](./domains/zsh-startup.md) | `.zshenv`, `.zshrc`, `.zprofile`, `.zlogin`, zsh config directory |
+| Zsh startup | [`zsh-startup.md`](./domains/zsh-startup.md) | `.shellrc`, `.aliases`, `.zshenv`, `.zshrc`, `.zprofile`, `.zlogin`, zsh config directory (includes the mandatory startup-impact verification) |
 
 **Tool-agnostic design**: These files use standard markdown with YAML frontmatter (`applyTo` patterns).
 Any AI assistant can parse them. See [`README.md`](./README.md) for details on the `.ai/` folder convention.

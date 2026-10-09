@@ -455,15 +455,9 @@ node_modules/
 /.config/zsh/.aliases
 /.config/zsh/.zlogin
 /.config/zsh/.zshrc
-/.config/zsh/cc
 /.config/zsh/count
 /.config/zsh/plugins.txt
-/.config/zsh/pull
-/.config/zsh/push
 /.config/zsh/st
-/.config/zsh/status_all_repos
-/.config/zsh/update_all_repos
-/.config/zsh/upreb
 /.config/zsh/*.zwc
 /.config/zsh/plugins.zsh
 /.config/zsh/.zsh_history

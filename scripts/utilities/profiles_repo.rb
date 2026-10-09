@@ -51,7 +51,7 @@ module ProfilesRepo
   # @return [void]
   def check_size_limit(limit_gb: 2)
     unless GitProcessor.repo?(_profiles_dir)
-      Logging.debug "Skipping size check -- '#{_profiles_dir}' is not a git repo"
+      Logging.debug "Skipping size check -- '#{_profiles_dir.cyan}' is not a git repo"
       return
     end
 
@@ -66,7 +66,7 @@ module ProfilesRepo
         "Consider running: recreate-repository.rb -d \"#{_profiles_dir.cyan}\""
       )
     else
-      Logging.debug "Profiles repo pack size within #{limit_gb}GB threshold"
+      Logging.debug "Profiles repo pack size within #{limit_gb.to_s.purple}GB threshold"
     end
   end
 
@@ -130,7 +130,7 @@ module ProfilesRepo
   # @return [void]
   def prune_old_session_backups(days: 7)
     unless GitProcessor.repo?(_profiles_dir)
-      Logging.debug "Skipping session backup pruning -- '#{_profiles_dir}' is not a git repo"
+      Logging.debug "Skipping session backup pruning -- '#{_profiles_dir.cyan}' is not a git repo"
       return
     end
 
@@ -163,7 +163,7 @@ module ProfilesRepo
       pruned_count = old_backups.length
     end
 
-    Logging.success "Pruned #{pruned_count} session backup file(s) older than #{days} days"
+    Logging.success "Pruned #{pruned_count.to_s.purple} session backup file(s) older than #{days.to_s.purple} days"
   end
 
   # Finds and updates all browser profile chrome folders that are git repositories.
@@ -189,11 +189,12 @@ module ProfilesRepo
       end
 
       Logging.with_step("update chrome #{folder_pn.basename}", "#{'Updating chrome folder:'.yellow} '#{folder_pn_colored}'") do
-        _stdout, _stderr, status = GitProcessor.new(dir: folder_pn).pull
+        status = nil
+        GitProcessor.new(dir: folder_pn) { |git| _stdout, _stderr, status = git.pull }
         if status.success?
           Logging.success "Successfully updated: '#{folder_pn_colored}'"
         else
-          Logging.record_warning("Failed to update chrome folder: '#{folder_pn}'")
+          Logging.record_warning("Failed to update chrome folder: '#{folder_pn_colored}'")
         end
       end
     end

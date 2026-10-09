@@ -1,0 +1,67 @@
+#!/bin/sh
+
+# file location: ${DOTFILES_DIR}/scripts/git-maintain
+#
+# External git subcommand: git runs this as 'git maintain' (any 'git-<name>' executable on PATH
+# is a subcommand). Plain /bin/sh and dependency-free on purpose -- no .shellrc -- so it works
+# from cron and before the dotfiles shell environment exists.
+#
+# Performs comprehensive repository maintenance and repair (like 'brew doctor').
+# Automatically detects and fixes common git issues:
+# - Cleans up stale lock files (index.lock, commit-graph-chain.lock)
+# - Runs fsck to detect corrupted objects
+# - Prunes unreachable objects
+# - Runs garbage collection
+# - Rebuilds commit graph
+# - Restores mtimes from git history
+# Idempotent -- safe to run multiple times. Gracefully handles missing tools.
+# Used by: clone_repo_into() in .shellrc and GitProcessor.clone_repo_into().
+# Also useful for manually cloned repos or to repair corruption.
+# Note: Background maintenance is now handled automatically via global maintenance.auto=true
+# (see git-config maintenance.* settings). No manual registration needed.
+#
+# Throttled to at most once per 3h per repo (tracked via a stamp file under
+# '.git/') -- unlike 'unshallow'/'siu', there is no single boolean that means
+# "nothing to do" here (a repo always has some loose objects/reflog entries
+# that gc *could* touch), so this uses the same time-based no-op pattern as
+# the mise-plugin/ollama-model update throttles in software-updates-cron.rb
+# rather than a true deterministic guard. This specifically targets the
+# repeated-fsck-on-an-unchanged-repo cost: 'clone_repo_into' calls 'maintain'
+# unconditionally on every invocation, including every run of
+# resurrect-repositories.rb against repos that already exist and were already
+# maintained recently. Pass '--force' to always run regardless of the stamp
+# (e.g. when actually diagnosing suspected corruption -- the "brew doctor"
+# use case this command exists for should never be silently throttled away).
+# Usage: git maintain [<dir>] [--force]
+
+# Git ran the former alias from the work tree's top level; an external command runs from the
+# caller's directory, so the default directory is the top level (not '.') to keep
+# 'git maintain' from a subdirectory working the same way.
+
+main() {
+  dir="$(git rev-parse --show-toplevel 2>/dev/null || printf .)"
+  force=0
+  for a in "$@"; do
+    case "${a}" in
+    --force) force=1 ;;
+    *) dir="${a}" ;;
+    esac
+  done
+  stamp="${dir}/.git/dotfiles-last-maintain"
+  if [ "${force}" -eq 0 ] && [ -f "${stamp}" ] && [ -z "$(find "${stamp}" -mmin +180 2>/dev/null)" ]; then
+    printf 'Repository maintenance already ran within the last 3h in %s -- skipping (use --force to override)\n' "${dir}"
+    exit 0
+  fi
+  fullpath="$(cd "${dir}" && pwd)"
+  printf 'Running repository maintenance in %s...\n' "${fullpath}"
+  rm -f "${dir}/.git/index.lock" "${dir}/.git/objects/info/commit-graphs/commit-graph-chain.lock" 2>/dev/null || true
+  git -C "${dir}" fsck --full 2>&1 | grep -v 'Checking object directories' || true
+  git -C "${dir}" prune 2>/dev/null || true
+  git -C "${dir}" gc 2>/dev/null || true
+  git -C "${dir}" commit-graph write --reachable --changed-paths 2>/dev/null || true
+  git -C "${dir}" restore-mtime -c 2>/dev/null || true
+  touch "${stamp}" 2>/dev/null || true
+  printf 'Maintenance complete.\n'
+}
+
+main "$@"

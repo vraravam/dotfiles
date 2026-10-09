@@ -60,7 +60,7 @@ Each domain file uses `applyTo` patterns to specify which files it covers:
 | **script-depth-tracking** | All cross-language scripts using deferred error collection |
 | **shell-scripting** | `**/*.sh*`, `.shellrc`, `.aliases`, `.envrc`, `*.zsh*`, zsh autoload functions |
 | **whitespace-rules** | All files (cross-language formatting/whitespace rules) |
-| **zsh-startup** | `.zshenv`, `.zshrc`, `.zprofile`, `.zlogin`, zsh config directory |
+| **zsh-startup** | `.shellrc`, `.aliases`, `.zshenv`, `.zshrc`, `.zprofile`, `.zlogin`, zsh config directory |
 
 ## Tool-Specific Entry Points
 

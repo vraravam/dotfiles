@@ -121,7 +121,7 @@ module InstallDotfiles
       ENV.key?(var_name) || EnvVars.const_defined?(var_name)
     end
     if missing_vars.any?
-      Logging.warn("Skipping processing involving '#{source_file}' because env var '#{missing_vars.join(', ')}' was not defined")
+      Logging.warn("Skipping processing involving '#{source_file.cyan}' because env var '#{missing_vars.join(', ').yellow}' was not defined")
       return
     end
 
@@ -298,7 +298,7 @@ module InstallDotfiles
 
       # Target must exist (should be symlinked by this script from repo)
       unless config_target.exist?
-        Logging.warn("Skipping #{tool_name} config symlink -- target file '#{config_target_str.cyan}' does not exist")
+        Logging.warn("Skipping #{tool_name.yellow} config symlink -- target file '#{config_target_str.cyan}' does not exist")
         return
       end
 
@@ -306,22 +306,22 @@ module InstallDotfiles
       # Note: Parent directory (~/.config/git/) is guaranteed to exist at this point because
       # _process_dotfile already created it when processing the main config symlink.
       if config_symlink.exist?
-        Logging.debug("#{display_name} config symlink already exists at '#{config_symlink_colored}'")
+        Logging.debug("#{display_name.yellow} config symlink already exists at '#{config_symlink_colored}'")
       else
-        Logging.info("Creating #{tool_name} config symlink: '#{config_symlink_colored}' -> '#{config_target_str.cyan}'")
+        Logging.info("Creating #{tool_name.yellow} config symlink: '#{config_symlink_colored}' -> '#{config_target_str.cyan}'")
         FileUtils.ln_sf(config_target_str, config_symlink_str)
-        Logging.success("Created #{tool_name} config symlink")
+        Logging.success("Created #{tool_name.yellow} config symlink")
       end
     elsif config_symlink.exist?
       # Tool is not installed -- remove symlink if it exists
-      Logging.info("Removing #{tool_name} config symlink (#{command_name} not in PATH): '#{config_symlink_colored}'")
+      Logging.info("Removing #{tool_name.yellow} config symlink (#{command_name.yellow} not in PATH): '#{config_symlink_colored}'")
       FileUtils.rm_f(config_symlink_str)
-      Logging.success("Removed #{tool_name} config symlink")
+      Logging.success("Removed #{tool_name.yellow} config symlink")
     else
-      Logging.debug("#{command_name} not in PATH and symlink doesn't exist -- nothing to do")
+      Logging.debug("#{command_name.yellow} not in PATH and symlink doesn't exist -- nothing to do")
     end
   rescue StandardError => e
-    Logging.warn("Failed to ensure #{tool_name} symlink: #{e.message}")
+    Logging.warn("Failed to ensure #{tool_name.yellow} symlink: #{e.message}")
   end
 
   # Handles conflict resolution for custom.git files when target already exists.

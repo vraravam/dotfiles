@@ -225,9 +225,21 @@ See `TechnicalDeepDive.md` § 6 for the full rationale on why the decrement is a
 
 Beyond banner suppression (depth ≤ 1), scripts can use `_DOTFILES_SCRIPT_DEPTH` to conditionally suppress other output when called from wrapper scripts.
 
-### Pattern: Suppress section_header in Autoload Functions
+### Pattern: Suppress section_header When Called From an Override
 
-Autoload functions that can be called directly OR from wrapper scripts should conditionally show `section_header`:
+Commands that can be called directly OR from a per-repo override script should show their `section_header` only when called directly. In Ruby (`GitCommands`, `scripts/utilities/git_commands.rb`) this is an explicit `header:` keyword:
+
+```ruby
+# Direct call: 'push' alias -> git-command.rb -> GitCommands.run -> header: true
+GitCommands.push(args: ARGV)
+
+# From an override: the override's own Logging.run_script already printed a banner
+Logging.run_script do
+  Cron.with_cron_suspended { GitCommands.push(args: ARGV, header: false) }
+end
+```
+
+The remaining shell autoload functions (`st`, `count`) use the depth check instead:
 
 ```zsh
 _my_operation() {
@@ -246,115 +258,44 @@ _my_operation() {
 ```
 
 **Why this works:**
-- **Direct invocation** (`git operation` or `my_operation`): depth is 0, header shows
-- **Via wrapper script**: wrapper calls `print_script_start` (increments depth to 1), then calls autoload function, header is suppressed
+- **Direct invocation**: depth is 0, header shows
+- **Via an override script**: the override increments depth (`Logging.run_script`), so the header is suppressed
 - Eliminates duplicate headers without code duplication
 
-**Example wrapper script pattern:**
-```zsh
-#!/usr/bin/env zsh
-set -euo pipefail
+A direct `push`/`pull`/`cc`/`upreb` deliberately does NOT wrap itself in `Logging.run_script`, so it prints only its section header (no "Script started/finished" banner), exactly as the shell functions it replaced did.
 
-_SCRIPT_NAME="${0:t}"
-source "${ZDOTDIR}/.aliases"
-require_env_var XDG_CONFIG_HOME
-load_file_if_exists "${XDG_CONFIG_HOME}/zsh/my_operation"
+### Pattern: Skip Git Alias Override Detection When Calling Git Aliases
 
-main() {
-  local _current_section='(init)'
-  local -a _step_warnings=()
-  local -a _step_errors=()
-  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
-  trap '_decrement_script_depth' EXIT
+Code that calls a git alias with override detection (`git cc`, `git upreb`) MUST set `_GIT_OVERRIDE_SKIP=1` to prevent double-execution. The variable is `GitOverrides::SKIP_ENV_VAR` in Ruby.
 
-  local script_start_time="${EPOCHSECONDS}"
-  print_script_start                # Shows wrapper's banner, sets depth=1
+**Problem:** When a per-repo override exists, the following sequence occurs without the skip:
 
-  with_cron_suspended _my_operation "$@"  # Autoload skips section_header
-
-  print_script_summary "${script_start_time}"
-}
-
-main "$@"
-```
-
-**Output comparison:**
-```bash
-# Direct invocation - shows section_header
-$ git operation /path/to/repo
-Operation name '/path/to/repo'
-... operation output ...
-
-# Via wrapper - no duplicate header
-$ operation-wrapper.sh /path/to/repo
-[operation-wrapper.sh] Starting...
-... operation output (no section_header) ...
-[operation-wrapper.sh] Summary: completed in 2s
-```
-
-### Pattern: Skip Git Alias Override Detection in Autoload Functions
-
-Autoload functions that call git aliases with override detection MUST set `_GIT_OVERRIDE_SKIP=1` to prevent double-execution.
-
-**Problem:** When a wrapper script uses `dispatch_or_fallback`, the following sequence occurs:
-
-1. User types `cc` → `dispatch_or_fallback` finds `cc-browser-profiles.sh` → executes wrapper
-2. Wrapper increments depth, calls `with_cron_suspended _cc`
-3. `_cc` calls `git -C "${folder}" cc` (the git alias)
-4. Git alias detects override script exists → calls `cc-browser-profiles.sh` AGAIN
+1. User types `cc` -> `git-command.rb` finds `cc-browser-profiles.rb` -> runs the override
+2. Override calls `GitCommands.cc`
+3. `GitCommands.cc` calls `git -C "${folder}" cc` (the git alias)
+4. Git alias detects the override exists -> runs `cc-browser-profiles.rb` AGAIN
 5. Second invocation increments depth again, prints duplicate output
 
-**Solution:** Set `_GIT_OVERRIDE_SKIP=1` before calling git aliases from autoload functions:
+**Solution:** `GitCommands` sets `_GIT_OVERRIDE_SKIP=1` in the environment of every git call it makes (`_git`/`_with_retry`), and `exec_override`/`run-all.rb` set it for the override process itself:
 
-```zsh
-_cc() {
-  local folder
-  local -a switches
-  parse_folder_and_switches "$@"
-
-  # Only show section_header when called directly (not from wrapper scripts).
-  if [[ "${_DOTFILES_SCRIPT_DEPTH:-0}" -le 0 ]]; then
-    section_header "$(yellow 'Compressing') '$(cyan "${folder}")'"
-  fi
-
-  if ! is_git_repo "${folder}"; then
-    warn "Skipping repo '${folder}' -- not a git repo"
-  else
-    # Skip git alias override detection to prevent double-execution when called
-    # from wrapper scripts (dispatch_or_fallback already found the override).
-    _GIT_OVERRIDE_SKIP=1 git -C "${folder}" cc "${switches[@]}" || true
-  fi
-}
+```ruby
+# GitCommands#_git
+env = skip_override ? { GitOverrides::SKIP_ENV_VAR => '1' } : {}
+CommandUtils.run_interactive(env, 'git', '-C', folder, *args)
 ```
 
 **Why this works:**
-- Git aliases check `[ -z "${_GIT_OVERRIDE_SKIP:-}" ]` before running override detection
-- When set, git alias bypasses override check and runs the actual git commands
-- Prevents wrapper script from being called twice
+- The `git cc`/`git upreb` commands (`scripts/git-cc`, `scripts/git-upreb`) check `[ -z "${_GIT_OVERRIDE_SKIP:-}" ]` before running override detection
+- When set, the alias bypasses the override check and runs the actual git commands
+- Prevents the override from being called twice
 
-**Applies to all git aliases with override detection:**
+**Applies to all code that calls git aliases with override detection:**
 - `cc` (compress/clean)
-- `push` (git push)
-- `pull` (git pull)
 - `upreb` (update+rebase)
 
-**Files affected:**
-- `files/--XDG_CONFIG_HOME--/zsh/cc` (line 36)
-- `files/--XDG_CONFIG_HOME--/zsh/push` (line 22)
-- `files/--XDG_CONFIG_HOME--/zsh/pull` (line 18)
-- `files/--XDG_CONFIG_HOME--/zsh/upreb` (lines 30, 42)
+`push` and `pull` have no same-named git alias to re-dispatch (git always resolves builtins first), but `GitCommands` still sets the variable on those calls so a shell override reached through them cannot loop.
 
-**Pattern in upreb:**
-`upreb` autoload function calls both `git upreb` and `git push` in a loop, so both need `_GIT_OVERRIDE_SKIP=1`:
-
-```zsh
-for branch in "${local_branches[@]}"; do
-  git -C "${dir}" switch "${branch}"
-  _GIT_OVERRIDE_SKIP=1 git -C "${dir}" upreb || true
-  # ... symmetric diverge check ...
-  _GIT_OVERRIDE_SKIP=1 git -C "${dir}" push || true
-done
-```
+**Pattern in upreb:** `GitCommands.upreb` calls `git upreb` for each local branch with the skip variable set, but `git switch` and the symmetric-divergence `git rebase` without it (neither is an alias that dispatches overrides).
 
 ## Summary
 

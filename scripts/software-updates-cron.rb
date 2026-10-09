@@ -28,6 +28,7 @@ require 'shellwords'
 
 require_relative 'run-all'
 require_relative 'utilities/antidote'
+require_relative 'utilities/brew'
 require_relative 'utilities/command_utils'
 require_relative 'utilities/core'
 require_relative 'utilities/enumerable_ext'
@@ -113,14 +114,14 @@ module SoftwareUpdatesCron
   def _perform_update(title, check_cmd, &block)
     _step("update #{title}", "#{'Updating'.yellow} #{title.purple}") do
       unless PathUtils.command_exists?(check_cmd)
-        Logging.debug "Command not found: '#{check_cmd}'"
+        Logging.debug "Command not found: '#{check_cmd.cyan}'"
         return
       end
 
       if block.call
-        Logging.success "Successfully updated: '#{title}'"
+        Logging.success "Successfully updated: '#{title.yellow}'"
       else
-        Logging.record_warning("Failed to update '#{title}'")
+        Logging.record_warning("Failed to update '#{title.yellow}'")
       end
     end
   end
@@ -142,7 +143,7 @@ module SoftwareUpdatesCron
     ran = Core.due_for_periodic_update(cache_file, interval_secs, &block)
     unless ran
       hours_since = Core.duration_since(File.mtime(cache_file).to_i) / 3600
-      Logging.debug "#{label} were updated #{hours_since} hour(s) ago -- skipping (interval: #{interval_secs / 3600} hours)"
+      Logging.debug "#{label.yellow} were updated #{hours_since.to_s.purple} hour(s) ago -- skipping (interval: #{(interval_secs / 3600).to_s.purple} hours)"
     end
     ran
   end
@@ -202,16 +203,14 @@ module SoftwareUpdatesCron
     @total_steps = 21
     @current_step = 0
 
-    # Brew update: use bundle check before full bundle to avoid reinstalling
-    # already-installed formulae on every cron run.
+    # Brew update: Brew.sync_bundle checks before running the full bundle install to
+    # avoid reinstalling already-installed formulae on every cron run. Brew.update's
+    # failure is deliberately ignored here (as it always was) -- a transient network
+    # failure must not mask whether the bundle itself is in sync. quiet: true suppresses
+    # stdout progress output in the cron context (stderr is still shown).
     _perform_update('brews', 'brew') do
-      # Update brew itself first to get latest formula definitions
-      # Redirect stdout to suppress progress output in cron context
-      CommandUtils.run_silent('brew', 'update', err: :err) || true
-      # 'brew bundle check' exits 0 when everything is installed -- skip the full
-      # bundle install in that case to avoid re-checking every formula every hour.
-      # Keep check output visible for debugging missing packages.
-      CommandUtils.run_interactive('brew', 'bundle', 'check', '-v') || CommandUtils.run_interactive('brew', 'bundle', 'install', '-q')
+      Brew.update(quiet: true)
+      Brew.sync_bundle
     end
     _perform_update('mise plugins', 'mise') do
       # mise binary is upgraded using homebrew
@@ -305,7 +304,7 @@ module SoftwareUpdatesCron
           if nil_or_empty?(ollama_models)
             Logging.info 'No ollama models found locally -- skipping updates'
           else
-            Logging.info "Found #{ollama_models.size} ollama model(s) to update: #{ollama_models.join(', ')}"
+            Logging.info "Found #{ollama_models.size.to_s.purple} ollama model(s) to update: #{ollama_models.join(', ').yellow}"
             ollama_models.each do |model|
               # Redirect stdout/stderr to suppress progress bars and ANSI escape sequences in cron context
               if CommandUtils.run_silent('ollama', 'pull', model)

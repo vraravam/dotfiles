@@ -305,7 +305,7 @@ parse_folder_and_switches() {
   folder="${folder:-${PWD}}"
 }
 
-# Sources ${PERSONAL_BIN_DIR}/<cmd>-<cwd-basename>.sh if it exists and is
+# Runs ${PERSONAL_BIN_DIR}/<cmd>-<cwd-basename>.rb (or .sh) if it exists and is
 # executable; otherwise falls back to calling <fallback_fn> with all args.
 #
 # Usage: dispatch_or_fallback <cmd> <fallback_fn> "$@"
@@ -317,7 +317,9 @@ dispatch_or_fallback() {
   local cmd="${1:?dispatch_or_fallback: cmd argument required}"
   local fallback_fn="${2:?dispatch_or_fallback: fallback_fn argument required}"
   shift 2
-  local override="${PERSONAL_BIN_DIR}/${cmd}-${PWD##*/}.sh"
+  # A Ruby override wins over a shell one, matching GitOverrides.script_for.
+  local override="${PERSONAL_BIN_DIR}/${cmd}-${PWD##*/}.rb"
+  if ! is_executable "${override}"; then override="${PERSONAL_BIN_DIR}/${cmd}-${PWD##*/}.sh"; fi
   if is_executable "${override}"; then
     # Execute override script instead of sourcing to prevent EXIT traps and
     # top-level main() execution from affecting the interactive shell.
@@ -376,38 +378,6 @@ if command_exists btop; then alias top='btop'; fi
 if command_exists ncdu; then alias du='ncdu --color dark -r -x --exclude .git --exclude .svn --exclude node_modules --exclude .npm --exclude .nuget --exclude Library'; fi
 
 # --------------------------------------------------------------------------
-# Helper functions for delegating to Ruby utilities
-# --------------------------------------------------------------------------
-
-# Internal helper: calls a Ruby Repos module method with keyword arguments.
-# Eliminates duplication of $LOAD_PATH setup across repo wrapper functions.
-# Usage: _call_ruby_git_workspace <method_name> <key1>=<value1> [<key2>=<value2> ...]
-# Example: _call_ruby_git_workspace install_mise_versions first_install=true
-#          _call_ruby_git_workspace regenerate_repo_aliases force=false
-_call_ruby_git_workspace() {
-  local method="${1:?_call_ruby_git_workspace: method name required}"
-  shift
-
-  local kwargs_str=""
-  if [[ $# -gt 0 ]]; then
-    # Build comma-separated list of keyword arguments: key1: value1, key2: value2
-    # Each arg is expected in "key=value" format
-    local -a kwargs_parts=()
-    local arg
-    for arg in "$@"; do
-      local key="${arg%%=*}"
-      local value="${arg#*=}"
-      kwargs_parts+=("${key}: ${value}")
-    done
-    # Join with ', '
-    local IFS=', '
-    kwargs_str="${kwargs_parts[*]}"
-  fi
-
-  call_ruby_utility "require 'git_workspace'; GitWorkspace.${method}(${kwargs_str})"
-}
-
-# --------------------------------------------------------------------------
 # 3c. Multi-repo git shortcuts (via run-all.rb)
 # --------------------------------------------------------------------------
 if command_exists 'run-all.rb'; then
@@ -433,15 +403,43 @@ if command_exists 'run-all.rb'; then
     local force_flag="false"
     if [[ "${1-}" == "-f" ]]; then force_flag="true"; fi
 
-    # Delegate to Ruby implementation in utilities/git_workspace.rb
-    _call_ruby_git_workspace regenerate_repo_aliases "force=${force_flag}"
+    local repo_alias_cache="${XDG_CACHE_HOME}/repo-aliases-cache.zsh"
+
+    # Starting Ruby costs ~100ms on every shell start, so only do it when the cache is
+    # missing or older than PROJECTS_BASE_DIR (the same staleness test the Ruby side
+    # applies) or a rebuild was requested. Otherwise the cache is already current.
+    if [[ "${force_flag}" == "true" ]] || is_file_older_than "${repo_alias_cache}" "${PROJECTS_BASE_DIR}"; then
+      # Delegate to Ruby implementation in utilities/git_workspace.rb
+      call_utility GitWorkspace.regenerate_repo_aliases "--force=${force_flag}"
+    fi
 
     # Load the generated cache
-    local repo_alias_cache="${XDG_CACHE_HOME}/repo-aliases-cache.zsh"
     load_file_if_exists "${repo_alias_cache}"
   }
 
   regenerate_repo_aliases
+fi
+
+# --------------------------------------------------------------------------
+# 3c2. Folder-aware git commands and workspace reports
+#
+# Aliases (not functions) so each costs one hash insert at load time and zero until used.
+# git-command.rb handles the optional folder argument, '--switches', the git-repo guard,
+# hang protection and per-repo override scripts (see GitCommands in
+# scripts/utilities/git_commands.rb). 'st' and 'count' stay zsh autoload functions: they
+# are one-line wrappers around 'git status'/'git count' used constantly, so the ~100ms
+# Ruby start-up would be a visible regression there.
+# --------------------------------------------------------------------------
+if command_exists 'git-command.rb'; then
+  alias push='git-command.rb push'
+  alias pull='git-command.rb pull'
+  alias cc='git-command.rb cc'
+  alias upreb='git-command.rb upreb'
+fi
+if command_exists 'call-utility.rb'; then
+  # Status / update across HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR and the Chrome profile dirs.
+  alias status_all_repos='call-utility.rb GitWorkspace.status_all_repos'
+  alias update_all_repos='call-utility.rb GitWorkspace.update_all_repos'
 fi
 
 # --------------------------------------------------------------------------
@@ -487,6 +485,7 @@ delete_caches() {
     # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
     if is_root_dir "${XDG_CACHE_HOME%/*}"; then
       error "Refusing to delete cache directory in root: '$(cyan "${XDG_CACHE_HOME}")'"
+      return 1
     fi
     rm -rfv "${XDG_CACHE_HOME}"
 
@@ -519,84 +518,6 @@ delete_caches() {
 # 3e. Repo management & environment setup
 # --------------------------------------------------------------------------
 
-# Clones all repositories listed in repositories-*.yml catalogue files under
-# PERSONAL_CONFIGS_DIR, then runs post-clone operations (setup_dev_environment
-# regenerate_repo_aliases).
-resurrect_tracked_repos() {
-  # Deferred-collection locals. _SCRIPT_NAME is read by logging functions via
-  # dynamic scoping (no argument passing needed). _current_section is declared
-  # for consistency with scripts using deferred collection but not used here.
-  # _step_warnings and _step_errors accumulate issues for the final summary.
-  local _SCRIPT_NAME='resurrect_tracked_repos'
-  local _current_section='(init)'
-  local _current_section_manual=0  # 0 = auto-set allowed, 1 = manual override active
-  local -a _step_warnings=()
-  local -a _step_errors=()
-
-  # Increment script depth and register decrement trap. This ensures that when
-  # called directly from the command line, this function acts as the outermost
-  # script (depth 1, prints banners). When called from fresh-install-of-osx.sh
-  # (which already incremented to depth 1), this increments to depth 2 and
-  # suppresses nested script banners from resurrect-repositories.rb.
-  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
-  # Shell functions cannot set EXIT traps -- they only fire on process exit, not
-  # function return. The manual decrement at the end is the correct pattern for
-  # functions. Scripts use 'trap _decrement_script_depth EXIT'.
-
-  local script_start_time="${EPOCHSECONDS}"
-  print_script_start
-
-  # resurrect repositories that are in the repo catalogues
-  section_header 'Resurrecting all tracked git repos'
-
-  if is_non_zero_string "${PERSONAL_CONFIGS_DIR}"; then
-    # TODO: Add the github.com host to the known_hosts file so that the script is not blocked for user input
-    # ssh-keyscan -H -t ED25519 github.com >> "${HOME}/.ssh/known_hosts"
-    # Use zsh glob qualifier (N.) for nullglob and regular files
-    local file
-    local -a failed_files=()
-    for file in "${PERSONAL_CONFIGS_DIR}"/repositories-*.yml(N.); do
-      if ! COLUMNS="${COLUMNS}" resurrect-repositories.rb -r "${file}"; then
-        # Transform and store failed files: replace HOME with ~ and colorize in red
-        failed_files+=("$(red "$(replace_home_with_tilde "${file}")")")
-      fi
-    done
-    # resurrect-repositories.rb exits non-zero if there are any failures OR
-    # warnings (fetch failures, post-clone failures, etc.), so failed_files
-    # will contain any yaml file that had issues.
-    if is_empty_array failed_files; then
-      success 'Successfully resurrected all tracked git repos'
-    else
-      # Temporarily decrement depth so join_array bakes in the correct indentation
-      # for when this warning is printed in print_script_summary (which decrements
-      # before printing). This ensures the list is indented 2 more spaces than parent.
-      _decrement_script_depth
-      local msg="$(red "Failed to process ${#failed_files[@]} file(s):")"
-      msg+=$'\n'"$(join_array failed_files)"
-      _increment_script_depth
-      # Append directly to _step_warnings instead of calling _record_warning
-      # to avoid duplicate output (don't print immediately, only in final summary)
-      _step_warnings+=("[${_SCRIPT_NAME}][${_current_section}] ${msg}")
-    fi
-  else
-    debug "Skipping resurrecting of repositories since '$(cyan "${PERSONAL_CONFIGS_DIR}")' doesn't exist"
-  fi
-
-  # post-clone operations for installing system dependencies
-  setup_dev_environment
-  regenerate_repo_aliases
-
-  # Only print success message if there were no warnings/errors. print_script_summary
-  # will show the warnings/errors section if any were recorded.
-  local summary_msg=''
-  if is_empty_array _step_warnings && is_empty_array _step_errors; then
-    summary_msg='Finished resurrecting tracked repos'
-  fi
-  print_script_summary "${script_start_time}" "${summary_msg}"
-  # Manual decrement -- EXIT trap does not fire on function return in shell functions.
-  _decrement_script_depth
-}
-
 # Internal helper: calls a Ruby GitWorkspace module method with optional arguments.
 # Installs any missing tool versions declared via mise config files (.mise.toml,
 # .tool-versions, etc.) across all git repos and their ancestor directories under
@@ -609,7 +530,7 @@ install_mise_versions() {
   fi
   local first_install_flag="false"
   if is_first_install; then first_install_flag="true"; fi
-  _call_ruby_git_workspace install_mise_versions "first_install=${first_install_flag}"
+  call_utility GitWorkspace.install_mise_versions "--first_install=${first_install_flag}"
 }
 
 # Runs 'direnv allow' for every directory that has an .envrc file across all
@@ -623,7 +544,7 @@ allow_all_direnv_configs() {
   fi
   local first_install_flag="false"
   if is_first_install; then first_install_flag="true"; fi
-  _call_ruby_git_workspace allow_all_direnv_configs "first_install=${first_install_flag}"
+  call_utility GitWorkspace.allow_all_direnv_configs "--first_install=${first_install_flag}"
 }
 
 # Runs both direnv authorization and mise installation in a single optimized pass.
@@ -633,7 +554,7 @@ allow_all_direnv_configs() {
 setup_dev_environment() {
   local first_install_flag="false"
   if is_first_install; then first_install_flag="true"; fi
-  _call_ruby_git_workspace setup_dev_environment "first_install=${first_install_flag}"
+  call_utility GitWorkspace.setup_dev_environment "--first_install=${first_install_flag}"
 }
 
 # --------------------------------------------------------------------------
@@ -674,46 +595,6 @@ if is_macos; then
   # Hide/show all desktop icons (useful when presenting)
   alias hide_desktop='defaults write com.apple.finder CreateDesktop -bool false && killall Finder'
   alias show_desktop='defaults write com.apple.finder CreateDesktop -bool true && killall Finder'
-
-  # Finds and appends the preference domains whose NAME contains the partial string passed in
-  # as an argument (case-insensitive). Matching is on domain names (from 'defaults domains'),
-  # not on key/value contents as 'defaults find' does, because content matching pulls in
-  # unrelated domains that merely mention the app (Finder recents, launcher usage stats, etc.).
-  # Also, sorts (and removes duplicates) from the config file used to capture preferences.
-  # Warns (and does NOT append) if the discovered domain is on the denied list of
-  # machine-specific/account-bound domains defined in capture-prefs-denied-list.txt.
-  # Usage: find_and_append_prefs <search-string>
-  find_and_append_prefs() {
-    local search="${1:-}"
-    if is_zero_string "${search}"; then
-      error "Usage: find_and_append_prefs <search-string>"
-      return 1
-    fi
-
-    local allowed_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-allowed-list.txt"
-    local denied_list_file="${DOTFILES_DIR}/scripts/data/capture-prefs-denied-list.txt"
-    local -a all_domains=("${(@s:, :)$(defaults domains)}")
-    local domain
-    local -i matched=0
-    for domain in "${all_domains[@]}"; do
-      if [[ "${domain:l}" != *"${search:l}"* ]]; then continue; fi
-      matched+=1
-      # Check whether this domain is on the denied list before appending.
-      if /usr/bin/grep -Fxq "${domain}" "${denied_list_file}" 2>/dev/null; then
-        warn "Skipping '$(yellow "${domain}")' -- it is on the denied list (machine-specific data; see capture-prefs-denied-list.txt)"
-      elif /usr/bin/grep -Fxq "${domain}" "${allowed_list_file}" 2>/dev/null; then
-        info "'$(cyan "${domain}")' is already in the allowed list"
-      else
-        print -- "${domain}" >>"${allowed_list_file}"
-        success "Appended '$(cyan "${domain}")' to the allowed list"
-      fi
-    done
-
-    if ((matched == 0)); then
-      warn "No preference domain name contains '$(yellow "${search}")' (the app may not have written any preferences yet)"
-    fi
-    sort -u -o "${allowed_list_file}" "${allowed_list_file}"
-  }
 elif is_linux; then
   alias free_wifi='_free_wifi eth0'
 fi
@@ -731,36 +612,7 @@ if is_macos && command_exists brew; then
 
   # Upgrades and cleans up all regular outdated casks and libs (non-greedy).
   # Antidote updates and tap trusting are handled via Brewfile postinstall hooks.
-  bupc() {
-    local _SCRIPT_NAME='bupc'
-    local _current_section='(init)'
-    local _current_section_manual=0  # 0 = auto-set allowed, 1 = manual override active
-    local -a _step_warnings=()
-    local -a _step_errors=()
-    export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
-    # Shell functions cannot set EXIT traps -- they only fire on process exit, not
-    # function return. The manual decrement at the end is the correct pattern for
-    # functions. Scripts use 'trap _decrement_script_depth EXIT'.
-
-    local start_time="${EPOCHSECONDS}"
-    print_script_start
-
-    # First pass: install taps and already-trusted formulae/casks
-    # Suppress stderr since untrusted-tap errors are expected and fixed by second pass
-    brew update || true
-    brew bundle cleanup -f || true
-    brew cleanup --prune=all || true
-    brew autoremove || true
-    brew bundle check -v || brew bundle install -q || true
-    brew bundle cleanup -f || true
-    brew cleanup --prune=all || true
-    brew autoremove || true
-    brew upgrade -y || true
-
-    print_script_summary "${start_time}"
-    # Manual decrement -- EXIT trap does not fire on function return in shell functions.
-    _decrement_script_depth
-  }
+  if command_exists 'brew-update-cleanup.rb'; then alias bupc='brew-update-cleanup.rb'; fi
 
   # Thin wrapper that delegates to Ruby Antidote.update_and_regenerate_bundle.
   # Updates all installed antidote plugins, unshallows their git repos, and
@@ -768,7 +620,7 @@ if is_macos && command_exists brew; then
   # Called by the antidote formula's postinstall hook in Brewfile (whenever
   # antidote is installed/upgraded) and by software-updates-cron.sh (periodic updates).
   update_antidote_and_regenerate_plugin_bundle() {
-    call_ruby_utility "require 'antidote'; Antidote.update_and_regenerate_bundle"
+    call_utility Antidote.update_and_regenerate_bundle
   }
 
   # Audits and auto-styles a Homebrew cask formula for contribution readiness.
@@ -803,8 +655,8 @@ fi
 bench_zsh() {
   local zsh_bench_bin="${PROJECTS_BASE_DIR}/oss/zsh-bench/zsh-bench"
   if ! is_executable "${zsh_bench_bin}"; then
-    warn "zsh-bench not found at '${zsh_bench_bin}'"
-    warn "Clone it via: git clone https://github.com/romkatv/zsh-bench '${PROJECTS_BASE_DIR}/oss/zsh-bench'"
+    warn "zsh-bench not found at '$(cyan "${zsh_bench_bin}")'"
+    warn "Clone it via: '$(cyan "git clone https://github.com/romkatv/zsh-bench ${PROJECTS_BASE_DIR}/oss/zsh-bench")'"
     return 1
   fi
   "${zsh_bench_bin}" "$@"
@@ -844,7 +696,7 @@ fi
 # Usage: pdf_to_png <pdf-file>
 pdf_to_png() {
   if [[ $# -ne 1 ]]; then
-    warn "Usage: ${0} <pdf_file>"
+    warn "Usage: $(cyan "${0}") $(yellow '<pdf_file>')"
     return 1 # Failure, invalid arguments
   fi
 
@@ -913,7 +765,7 @@ fi
 # Usage: create_crontab <output-file-path>
 create_crontab() {
   local file="${1:?create_crontab: output file path required}"
-  _call_ruby_cron create_crontab "${file}"
+  call_utility Cron.create_crontab -- "${file}"
 }
 
 # Thin wrapper that delegates to Ruby Cron.recron.
@@ -922,32 +774,7 @@ create_crontab() {
 # so there is always a known-good file on disk.
 # Edit crontab.txt directly to change the schedule; recron will pick it up.
 recron() {
-  _call_ruby_cron recron
-}
-
-# Wraps a function call in the cron bracket: suspend cron, run the function,
-# call recron to restore it, then clear the backup so the EXIT trap is a no-op.
-#
-# Usage: with_cron_suspended <fn> "$@"
-#
-# Example: with_cron_suspended _push "$@"
-with_cron_suspended() {
-  local fn="${1:?with_cron_suspended: fn argument required}"
-  shift
-  trap 'resume_cron' EXIT
-  suspend_cron
-  "${fn}" "$@"
-  recron
-  # Prevent operations on paths in root directory
-  # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
-  if is_non_zero_string "${_DOTFILES_CRON_BACKUP_FILE:-}"; then
-    if is_root_dir "${_DOTFILES_CRON_BACKUP_FILE%/*}"; then
-      warn "Refusing to delete cron backup file in root: '$(cyan "${_DOTFILES_CRON_BACKUP_FILE}")'"
-    else
-      rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
-    fi
-  fi
-  trap - EXIT
+  call_utility Cron.recron
 }
 
 # --------------------------------------------------------------------------
@@ -960,7 +787,7 @@ with_cron_suspended() {
 if command_exists keybase; then
   kbgc() {
     if [[ $# -ne 1 ]]; then
-      error "$(red 'Usage:') ${0} $(yellow '<repo name>')\n For eg: '\$KEYBASE_HOME_REPO_NAME' or '\$KEYBASE_PROFILES_REPO_NAME'"
+      error "$(red 'Usage:') $(cyan "${0}") $(yellow '<repo name>')\n For eg: '\$KEYBASE_HOME_REPO_NAME' or '\$KEYBASE_PROFILES_REPO_NAME'"
       return
     fi
     keybase git gc --force "${1:-}"
@@ -973,6 +800,13 @@ fi
 
 # delete all personal data before re-imaging the laptop
 implode() {
+  # Every deletion below is rooted at HOME (directly or via a path under it), so an
+  # empty/unset or root HOME would turn "${HOME}"/.[a-z]* into /.[a-z]* -- refuse early.
+  if is_zero_string "${HOME:-}" || is_root_dir "${HOME}"; then
+    error "Refusing to implode: HOME is unset or '/'"
+    return 1
+  fi
+
   # Keychain entries this repo's own scripts create. Removed here, before the
   # dot-wipe below, since the SSH per-key lookups need '~/.ssh' filenames to
   # reconstruct their service name -- once that line removes '~/.ssh' there is
@@ -1027,21 +861,39 @@ implode() {
     done
   done
 
-  sudo rm -rfv "${HOME}"/.[a-z]*
+  # The '(N)' glob qualifier (NULL_GLOB for this one pattern) is required on every glob
+  # below: zsh's default NOMATCH option aborts the entire function the moment any pattern
+  # matches nothing, which would silently skip every deletion after it.
+  local -a matches
+  matches=("${HOME}"/.[a-z]*(N))
+  if is_non_empty_array matches; then sudo rm -rfv "${matches[@]}"; fi
 
-  local folders=(
+  # Each entry is a path PREFIX: it is removed together with every sibling sharing it
+  # (e.g. a '.zwc' bytecode file next to a plugin bundle, or a backup next to a Brewfile).
+  local -a prefixes=(
     "${ANTIDOTE_HOME}"
     "${ANTIDOTE_PLUGIN_ZSH}"
     "${DOTFILES_DIR}"
     "${HOMEBREW_BUNDLE_FILE}"
-    "${HOME}/*.log"
     "${HOME}/personal"
     "${PROJECTS_BASE_DIR}"
   )
-  local f
-  for f in "${folders[@]}"; do
-    sudo rm -rfv "${f}"*
+  local prefix
+  for prefix in "${prefixes[@]}"; do
+    # An empty prefix would turn "${prefix}"* into a bare '*' (everything in the current
+    # directory); '/' or HOME itself would match far more than intended.
+    if is_zero_string "${prefix}" || is_root_dir "${prefix}" || [[ "${prefix}" == "${HOME}" ]]; then
+      warn "Skipping unsafe or unset path prefix: '$(cyan "${prefix}")'"
+      continue
+    fi
+    matches=("${prefix}"*(N))
+    if is_non_empty_array matches; then sudo rm -rfv "${matches[@]}"; fi
   done
+
+  # The glob must be unquoted to expand ("${HOME}/*.log" would match a file literally
+  # named '*.log'), with only the variable part quoted.
+  matches=("${HOME}"/*.log*(N))
+  if is_non_empty_array matches; then sudo rm -rfv "${matches[@]}"; fi
 }
 
 # --------------------------------------------------------------------------
@@ -1089,38 +941,27 @@ build_me() {
 # 3n. macOS prefs helpers
 # --------------------------------------------------------------------------
 
-# Invokes a method on the MacOS Ruby module (scripts/utilities/macos.rb).
-# Used by the delegation functions below to eliminate repetitive ruby -e calls.
-#
-# Arguments:
-#   $1 - method name to call on MacOS module
-_call_ruby_macos() {
-  local method="${1:?_call_ruby_macos: method name required}"
-
-  call_ruby_utility "require 'macos'; MacOS.${method}"
-}
-
 # Delegates to MacOS.kill_login_item_apps (scripts/utilities/macos.rb).
 kill_login_item_apps() {
-  _call_ruby_macos 'kill_login_item_apps'
+  call_utility MacOS.kill_login_item_apps
 }
 
 # Delegates to MacOS.restart_login_item_apps (scripts/utilities/macos.rb).
 restart_login_item_apps() {
-  _call_ruby_macos 'restart_login_item_apps'
+  call_utility MacOS.restart_login_item_apps
 }
 
 # Delegates to MacOS.suspend_softwareupdate_schedule (scripts/utilities/macos.rb).
 suspend_softwareupdate_schedule() {
-  _call_ruby_macos 'suspend_softwareupdate_schedule'
+  call_utility MacOS.suspend_softwareupdate_schedule
 }
 
 # Delegates to MacOS.resume_softwareupdate_schedule (scripts/utilities/macos.rb).
 resume_softwareupdate_schedule() {
-  _call_ruby_macos 'resume_softwareupdate_schedule'
+  call_utility MacOS.resume_softwareupdate_schedule
 }
 
 # Delegates to MacOS.reload_macos_prefs (scripts/utilities/macos.rb).
 reload_macos_prefs() {
-  _call_ruby_macos 'reload_macos_prefs'
+  call_utility MacOS.reload_macos_prefs
 }

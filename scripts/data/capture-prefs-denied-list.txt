@@ -4,7 +4,7 @@
 # hardware UUIDs, MDM tokens, or ephemeral CloudKit cache state that is either
 # meaningless or actively harmful when imported onto a different machine.
 #
-# Entries here are also checked by find_and_append_prefs: a warning is printed
+# Entries here are also checked by 'capture-prefs.rb -f': a warning is printed
 # if you try to add a denied-list domain to the allowed list.
 #
 # Format: one domain per line; lines starting with '#' and blank lines are ignored.

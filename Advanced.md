@@ -123,7 +123,7 @@ chmod +x ${PERSONAL_BIN_DIR}/pre-push-my-repo.sh;
 
 **How it works:**
 1. Global hook in `${XDG_CONFIG_HOME}/git/hooks/pre-push` checks for per-repo script
-2. If `${PERSONAL_BIN_DIR}/pre-push-<basename>.sh` exists and is executable, runs it
+2. If `${PERSONAL_BIN_DIR}/pre-push-<basename>.rb` (or `.sh`) exists and is executable, runs it
 3. Non-zero exit blocks the git operation
 
 **Available hooks:** `pre-push`, `pre-commit`, `post-commit`, `post-merge`, `pre-merge-commit` (see `man githooks`)
@@ -139,50 +139,34 @@ chmod +x ${PERSONAL_BIN_DIR}/pre-push-my-repo.sh;
 **Example: Suspend cron during browser-profiles push**
 
 ```zsh
-cat > ${PERSONAL_BIN_DIR}/push-browser-profiles.sh << 'EOF'
-#!/usr/bin/env zsh
-set -euo pipefail
+cat > ${PERSONAL_BIN_DIR}/push-browser-profiles.rb << 'EOF'
+#!/usr/bin/env ruby
+# frozen_string_literal: true
 
-_SCRIPT_NAME="${0:t}"
-source "${ZDOTDIR}/.aliases"
+require 'cron'
+require 'git_commands'
+require 'logging'
 
-# Load autoload script to get _push function
-require_env_var XDG_CONFIG_HOME
-load_file_if_exists "${XDG_CONFIG_HOME}/zsh/push"
-
-main() {
-  local _current_section='(init)'
-  local -a _step_warnings=()
-  local -a _step_errors=()
-  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
-  trap '_decrement_script_depth' EXIT
-
-  local script_start_time="${EPOCHSECONDS}"
-  print_script_start
-
-  # Suspend cron, run push, restore cron automatically
-  with_cron_suspended _push "$@"
-
-  print_script_summary "${script_start_time}"
-}
-
-main "$@"
+Logging.run_script do
+  # Suspend cron, run the default push, restore cron -- even if the push raises or returns early.
+  # header: false because run_script already prints this script's own banner.
+  Cron.with_cron_suspended { GitCommands.push(args: ARGV, header: false) }
+end
 EOF
 
-chmod +x ${PERSONAL_BIN_DIR}/push-browser-profiles.sh;
+chmod +x ${PERSONAL_BIN_DIR}/push-browser-profiles.rb;
 ```
 
-**Usage:**
-```bash
-push-browser-profiles.sh "${PERSONAL_PROFILES_DIR}";  # or add to PATH and call directly
-```
+`${PERSONAL_BIN_DIR}` is on `RUBYLIB` (and `RUBYLIB` is set for override scripts launched by `push`/`pull`/`cc`/`upreb`/`run-all.rb`), so `require 'cron'` and `require 'git_commands'` resolve to `scripts/utilities/`.
 
-**How `with_cron_suspended` works:**
+**Usage:** just type `push` inside the `browser-profiles` directory -- the override is found automatically.
+
+**How `Cron.with_cron_suspended` works:**
 1. Suspends cron (backs up current crontab)
-2. Runs the wrapped function (`_push`)
-3. Calls `recron` to restore crontab from tracked file
-4. Cleans up backup file
-5. Handles errors via EXIT trap - cron is always restored
+2. Yields to the block (the default `push`)
+3. Calls `recron` to restore crontab from the tracked file
+4. Cleans up the backup file
+5. Uses an `ensure` clause, so cron is restored even on an exception or an early `return` inside the block
 
 **When to use wrapper functions vs hooks:**
 - **Wrapper:** Need cleanup AFTER operation completes (push/pull with cron suspension)
@@ -190,68 +174,52 @@ push-browser-profiles.sh "${PERSONAL_PROFILES_DIR}";  # or add to PATH and call 
 
 #### 4.5.2 Custom Git Aliases (upreb, cc, etc.)
 
-Use **override scripts** in `${PERSONAL_BIN_DIR}` for custom aliases. These must source the corresponding autoload script to get the default implementation.
+Use **override scripts** in `${PERSONAL_BIN_DIR}` to customise `push`, `pull`, `cc` and `upreb` for a single repo. An override replaces the default implementation; it can call the default back through `GitCommands`.
 
-**Pattern:** `<alias>-<repo-basename>.sh`
+**Pattern:** `<command>-<repo-basename>.rb` (a `.sh` file is also accepted; a `.rb` file wins if both exist)
 
 **Example: Delete stale tag before upreb in zen-browser-desktop**
 
 ```zsh
-cat > ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh << 'EOF'
-#!/usr/bin/env zsh
-set -euo pipefail
+cat > ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.rb << 'EOF'
+#!/usr/bin/env ruby
+# frozen_string_literal: true
 
-_SCRIPT_NAME="${0:t}"
-source "${ZDOTDIR}/.aliases"
+require 'git_commands'
+require 'git_processor'
+require 'logging'
 
-# Load autoload script to get _upreb function
-require_env_var XDG_CONFIG_HOME
-load_file_if_exists "${XDG_CONFIG_HOME}/zsh/upreb"
-
-main() {
-  local _current_section='(init)'
-  local -a _step_warnings=()
-  local -a _step_errors=()
-  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
-  trap '_decrement_script_depth' EXIT
-
-  local script_start_time="${EPOCHSECONDS}"
-  print_script_start
+Logging.run_script do
+  git = GitProcessor.new(dir: Dir.pwd)
 
   # Custom pre-logic: delete stale tag
-  if git rev-parse -q --verify refs/tags/twilight &>/dev/null; then
-    git delete-tag twilight
-  fi
+  git.run_alias('delete-tag', 'twilight') if git.tag_exists?('twilight')
 
-  # Call common implementation
-  _upreb
-
-  print_script_summary "${script_start_time}"
-}
-
-main "$@"
+  # Call the default implementation
+  GitCommands.upreb(args: ARGV, header: false)
+end
 EOF
 
-chmod +x ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh;
+chmod +x ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.rb;
 ```
 
 **How it works:**
-1. Git alias checks for override script: `${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.sh`
-2. If exists and executable, sources it instead of running default implementation
-3. Override script loads autoload function (`_upreb`) and adds custom logic around it
+1. `push`, `pull`, `cc` and `upreb` are aliases for `scripts/git-command.rb`, which looks for `${PERSONAL_BIN_DIR}/<command>-<repo-basename>.rb` (then `.sh`)
+2. If one exists and is executable, it runs *instead of* the default, with the repo as its working directory and only the `--switches` as arguments
+3. The override calls `GitCommands.<command>` for the default behaviour and adds its own logic around it
+4. `_GIT_OVERRIDE_SKIP=1` is set for the override, so anything it calls (the `git cc`/`git upreb` aliases, `GitCommands`) skips override detection instead of recursing
 
 **Common use cases:**
-- `upreb-<repo>.sh` - Custom fetch/rebase/push workflow
-- `push-<repo>.sh` - Pre-push validation or cleanup
-- `pull-<repo>.sh` - Post-pull actions (submodule update, build trigger)
-- `cc-<repo>.sh` - Custom cache cleanup steps
+- `upreb-<repo>.rb` - Custom fetch/rebase/push workflow
+- `push-<repo>.rb` - Pre-push validation or cleanup
+- `pull-<repo>.rb` - Post-pull actions (submodule update, build trigger)
+- `cc-<repo>.rb` - Custom cache cleanup steps
 
 **Template structure:**
-1. Source `${ZDOTDIR}/.aliases` to get utility functions
-2. Load corresponding autoload script (`load_file_if_exists "${XDG_CONFIG_HOME}/zsh/<alias>"`)
-3. Implement `main()` with script infrastructure (depth tracking, timing, summaries)
-4. Add custom pre-logic before calling `_<alias>` default implementation
-5. Add custom post-logic after calling `_<alias>`
+1. `require` the utility modules you need (`git_commands`, `git_processor`, `cron`, `logging`)
+2. Wrap the body in `Logging.run_script` (depth tracking, timing, summary)
+3. Add custom pre-logic before calling `GitCommands.<command>(args: ARGV, header: false)`
+4. Add custom post-logic after it
 
 **Available for customization:**
 - `upreb` - Update via fetch + rebase

@@ -1,0 +1,98 @@
+#!/bin/sh
+
+# file location: ${DOTFILES_DIR}/scripts/git-with-retry
+#
+# External git subcommand: git runs this as 'git with-retry' (any 'git-<name>' executable on PATH
+# is a subcommand). Plain /bin/sh and dependency-free on purpose -- no .shellrc -- so it works
+# from cron and before the dotfiles shell environment exists.
+#
+# Runs an arbitrary command with an inactivity timeout, retrying on failure or true
+# stall while tolerating work that is merely slow. Works around commands that hang
+# indefinitely on flaky networks (observed: VPN/MTU black-hole symptom -- 'unexpected
+# disconnect while reading sideband packet' printed immediately, followed by a silent
+# stall at 0% CPU that never exits) without killing a transfer that is still actively
+# making progress (e.g. a large blob backfill on a modest connection) -- a plain fixed
+# wall-clock timeout cannot tell those two cases apart. macOS has no 'timeout'/
+# 'gtimeout' by default, so this implements a manual background-job + poll + kill
+# loop. If <progress-path> is not '-', its on-disk size (via 'du -sk', works for both
+# files and directories -- e.g. pass a repo's '.git/objects' dir to track fetch/
+# backfill progress) is polled every 5s; growth resets the inactivity clock, so
+# <timeout-secs> only fires after that many seconds of NO observed growth. Bounded
+# overall by a hard cap of 10x <timeout-secs> regardless of trickling progress, so a
+# command that technically inches forward forever cannot run unbounded. Pass '-' for
+# <progress-path> to fall back to a plain fixed wall-clock timeout (original
+# behavior) when there is no natural on-disk growth signal to poll (e.g. non-git
+# commands). Not git-specific -- can wrap any command -- but exposed as a git
+# subcommand so any other script or git alias (e.g. 'unshallow') can call it as
+# 'git with-retry' without sourcing ~/.shellrc.
+#
+# 'disown' is called ONLY in the timeout/kill branch, right before 'kill-process-tree'
+# -- never immediately after backgrounding. 'disown' stops the shell from printing a
+# leaked 'Killed: 9 <command>' job-control message when the process is later killed by
+# signal, but it ALSO breaks 'wait <pid>' -- once disowned, 'wait' unconditionally
+# returns 0 regardless of the process's real exit status (tested empirically: 'false &
+# disown $!; wait $!' prints exit code 0, not 1). Disowning immediately after
+# backgrounding (an earlier version of this command did this) silently converted every
+# command failure into a false "success", since the normal (non-timeout) completion
+# path relies on 'wait's real exit status to detect failure. Disowning only in the
+# kill branch is safe because that branch already knows the attempt failed (timed out)
+# and discards the exit status of the post-kill 'wait' regardless.
+# Usage: git with-retry <timeout-secs> <max-attempts> <stderr-file|/dev/null> <progress-path|-> <command...>
+
+main() {
+  timeout_secs="${1:?with-retry: timeout_secs required}"
+  max_attempts="${2:?with-retry: max_attempts required}"
+  stderr_file="${3:?with-retry: stderr_file required}"
+  progress_path="${4:?with-retry: progress_path required (pass '-' for none)}"
+  if [ "${progress_path}" = '-' ]; then progress_path=''; fi
+  hard_cap_secs=$((timeout_secs * 10))
+  shift 4
+  quiet=0
+  for arg in "$@"; do case "${arg}" in -q | --quiet) quiet=1 ;; esac done
+  attempt=1
+  while [ "${attempt}" -le "${max_attempts}" ]; do
+    printf 'Attempt %s/%s (timeout %ss): %s\n' "${attempt}" "${max_attempts}" "${timeout_secs}" "$*" >&2
+    if [ "${quiet}" -eq 1 ]; then
+      "$@" >/dev/null 2>"${stderr_file}" &
+    else
+      "$@" &
+    fi
+    pid=$!
+    waited=0
+    elapsed=0
+    last_size=''
+    if [ -n "${progress_path}" ]; then last_size=$(du -sk "${progress_path}" 2>/dev/null | cut -f1); fi
+    while kill -0 "${pid}" 2>/dev/null && [ "${waited}" -lt "${timeout_secs}" ] && [ "${elapsed}" -lt "${hard_cap_secs}" ]; do
+      sleep 5
+      elapsed=$((elapsed + 5))
+      if [ -n "${progress_path}" ]; then
+        cur_size=$(du -sk "${progress_path}" 2>/dev/null | cut -f1)
+        if [ "${cur_size}" != "${last_size}" ]; then
+          waited=0
+          last_size="${cur_size}"
+        else
+          waited=$((waited + 5))
+        fi
+      else
+        waited=$((waited + 5))
+      fi
+    done
+    if kill -0 "${pid}" 2>/dev/null; then
+      disown "${pid}" 2>/dev/null || true
+      git kill-process-tree "${pid}"
+      wait "${pid}" 2>/dev/null
+      printf 'No progress for %ss on attempt %s/%s -- retrying\n' "${timeout_secs}" "${attempt}" "${max_attempts}" >&2
+    else
+      wait "${pid}"
+      cmd_status=$?
+      if [ "${cmd_status}" -eq 0 ]; then
+        exit 0
+      fi
+      printf 'Failed (exit %s) on attempt %s/%s -- retrying\n' "${cmd_status}" "${attempt}" "${max_attempts}" >&2
+    fi
+    attempt=$((attempt + 1))
+  done
+  exit 1
+}
+
+main "$@"

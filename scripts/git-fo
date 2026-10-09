@@ -1,0 +1,79 @@
+#!/bin/sh
+
+# file location: ${DOTFILES_DIR}/scripts/git-fo
+#
+# External git subcommand: git runs this as 'git fo' (any 'git-<name>' executable on PATH
+# is a subcommand). Plain /bin/sh and dependency-free on purpose -- no .shellrc -- so it works
+# from cron and before the dotfiles shell environment exists.
+#
+# Fetches all remotes and tags, then prunes local branches deleted on remote. This
+# is the one robust fetch mechanism in this config -- 'unshallow', antidote.rb (via
+# GitProcessor), and the 'pullsub' alias all delegate here rather than calling 'git
+# fetch' directly, so hang protection and repair logic live in one place. Before
+# fetching, sweeps any stale 'tmp_pack_*'/'tmp_obj_*' files left in '.git/objects' by
+# a previous killed/interrupted fetch (with-retry's SIGKILL bypasses git's own
+# cleanup-on-signal handling, so these otherwise accumulate indefinitely) -- gated to
+# files older than 15 minutes (matches the longest with-retry hard-cap in use here:
+# 90s x 10) so a genuinely-concurrent fetch elsewhere on this same repo is never
+# touched. Configures all remotes to fetch all branches (widens a shallow clone's
+# default single-branch tracking; idempotent, cheap to redo every call). If the repo
+# has a promisor remote (partial/blobless clone), that remote is always fetched
+# FIRST, before any other remote: fetching a non-promisor remote (e.g. 'upstream' in
+# a fork) while blobs are still missing from the promisor can fail with 'did not
+# receive expected object <sha>' / 'invalid index-pack output', because the
+# non-promisor remote may build thin-pack deltas against base objects the client
+# doesn't actually have yet. Each fetch is wrapped in 'git with-retry' (inactivity-
+# based, not a fixed wall-clock timeout, so a slow-but-progressing transfer is not
+# killed early). If a fetch still fails after retries, that most likely means locally
+# corrupted objects rather than a network stall (with-retry already absorbs
+# transient/stall failures) -- a single prune + gc is attempted, followed by one more
+# retry pass. A failure past that point is logged and skipped rather than escalated
+# further: more aggressive local repair (removing the remote, 'gc --aggressive
+# --prune=now') is expensive, drops git's default unreachable-object grace period,
+# and risks colliding with a concurrent 'git maintain' call run nearby. Remote is the
+# source of truth. Note: --all/--tags/--prune flags on the fetches themselves are
+# omitted -- fetch.all, fetch.pruneTags, and fetch.prune=true in config make each
+# 'git fetch <remote>' below equivalent to 'git fetch <remote> --tags --prune'.
+# Usage: git fo [<dir>]
+
+# Git ran the former alias from the work tree's top level; an external command runs from the
+# caller's directory, so the default directory is the top level (not '.') to keep
+# 'git fo' from a subdirectory working the same way.
+
+main() {
+  dir="${1:-$(git rev-parse --show-toplevel 2>/dev/null || printf .)}"
+  find "${dir}/.git/objects/pack" -name 'tmp_*' -type f -mmin +15 -delete 2>/dev/null || true
+  find "${dir}/.git/objects" -maxdepth 1 -name 'tmp_*' -type f -mmin +15 -delete 2>/dev/null || true
+  git -C "${dir}" remote | while IFS= read -r remote; do
+    git -C "${dir}" remote set-branches "${remote}" '*'
+  done
+  promisor_remote=''
+  rest_remotes=''
+  for remote in $(git -C "${dir}" remote); do
+    if [ -z "${promisor_remote}" ] && [ "$(git -C "${dir}" config --get "remote.${remote}.promisor" 2>/dev/null)" = 'true' ]; then
+      promisor_remote="${remote}"
+    else
+      rest_remotes="${rest_remotes} ${remote}"
+    fi
+  done
+  remotes_ordered="${promisor_remote}${rest_remotes}"
+  for remote in ${remotes_ordered}; do
+    printf 'Fetching %s\n' "${remote}"
+    fetch_cmd='fetch'
+    git -C "${dir}" is-shallow && fetch_cmd='fetch --unshallow'
+    fetch_stderr="$(mktemp)"
+    if ! git with-retry 60 3 "${fetch_stderr}" "${dir}/.git/objects" git -C "${dir}" ${fetch_cmd} "${remote}"; then
+      printf 'Fetch from %s still failing after retries, trying prune + gc...\n' "${remote}" >&2
+      git -C "${dir}" prune 2>/dev/null || true
+      git -C "${dir}" gc 2>/dev/null || true
+      if ! git with-retry 60 2 "${fetch_stderr}" "${dir}/.git/objects" git -C "${dir}" ${fetch_cmd} "${remote}"; then
+        printf 'Warning: could not fetch from %s after retries and local repair -- skipping. Last error:\n' "${remote}" >&2
+        cat "${fetch_stderr}" >&2
+      fi
+    fi
+    rm -f "${fetch_stderr}"
+  done
+  git -C "${dir}" dlb
+}
+
+main "$@"

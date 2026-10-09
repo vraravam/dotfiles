@@ -132,7 +132,8 @@ module GitWorkspace
     end
 
     Logging.with_step("status #{repo_dir}", "#{'Status'.yellow} '#{repo_dir.cyan}'") do
-      _stdout, _stderr, status = GitProcessor.new(dir: repo_dir).status(*switches)
+      status = nil
+      GitProcessor.new(dir: repo_dir) { |git| _stdout, _stderr, status = git.status(*switches) }
       status.success?
     end
   end

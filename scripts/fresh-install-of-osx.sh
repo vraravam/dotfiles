@@ -233,7 +233,7 @@ _approve_fingerprint_sudo() {
     if sudo sh -c "sed 's/^#auth/auth/' '${template_file}' > '${target_file}'"; then
       success "Created new file: '$(cyan "${target_file}")'"
     else
-      error "Failed to create '${target_file}'"
+      error "Failed to create '$(cyan "${target_file}")'"
     fi
   else
     info "'$(cyan "${target_file}")' is already present -- skipping."
@@ -489,7 +489,7 @@ _set_default_shell() {
     if chsh -s "${_brew_zsh}"; then
       success "Default shell changed to '$(cyan "${_brew_zsh}")'."
     else
-      _record_warning "Failed to change default shell to '$(cyan "${_brew_zsh}")'. You may need to run 'chsh -s ${_brew_zsh}' manually after the installation completes."
+      _record_warning "Failed to change default shell to '$(cyan "${_brew_zsh}")'. You may need to run '$(cyan "chsh -s ${_brew_zsh}")' manually after the installation completes."
     fi
   fi
 
@@ -502,8 +502,7 @@ _set_default_shell() {
 #
 # IMPORTANT: This is called after load_zsh_configs, which re-sources .shellrc
 # after unfunctioning the guard. By that point, DOTFILES_DIR exists (cloned by
-# _clone_dot_files_repo), so .shellrc sets RUBYLIB correctly, making 'require'
-# work without ${LOAD_PATH}.unshift.
+# _clone_dot_files_repo), so call_utility can find scripts/call-utility.rb.
 _ensure_keybase_logged_in() {
   if ! command_exists keybase; then
     error "'keybase' command not found in the PATH. Aborting!!!"
@@ -544,7 +543,7 @@ _ensure_keybase_logged_in() {
     done
   fi
 
-  call_ruby_utility "require 'keybase'; exit(Keybase.ensure_logged_in ? 0 : 1)"
+  call_utility --truthy Keybase.ensure_logged_in
 }
 
 # Resurrects the home and browser-profiles repos via resurrect-repositories.rb, using
@@ -584,7 +583,7 @@ _resurrect_bootstrap_repos() {
   # Run setup_dev_environment once now, as a safety net, immediately after the
   # home/profiles repos are cloned -- covers mise tool-version installation and
   # direnv allow for these two repos even if a later step in main() aborts before
-  # reaching resurrect_tracked_repos, which also calls setup_dev_environment at
+  # reaching 'resurrect-repositories.rb -a', which also runs setup_dev_environment at
   # the very end (for all tracked repos, including these two again -- idempotent).
   if command_exists setup_dev_environment; then
     setup_dev_environment
@@ -597,9 +596,9 @@ _resurrect_bootstrap_repos() {
 
 main() {
   # Suspend cron early before .shellrc or .aliases are available -- neither
-  # suspend_cron nor with_cron_suspended can be called yet, so the backup and
+  # suspend_cron nor Cron.with_cron_suspended can be called yet, so the backup and
   # removal are done inline here. Even after both files are sourced, the
-  # with_cron_suspended wrapper is not appropriate: the suspend/resume scope
+  # Cron.with_cron_suspended wrapper is not appropriate: the suspend/resume scope
   # spans the entire main(), not a single delegated function call.
   # Once .shellrc is sourced, the EXIT and ERR traps use resume_cron/recron
   # from .shellrc for restore.
@@ -764,7 +763,7 @@ main() {
   # their own explicit step -- deliberately not deferred to load_zsh_configs a
   # few lines below (which would also recompile .zshenv/.zshrc/.zlogin/.aliases
   # as a side effect of sourcing them). Later steps in this script (e.g.
-  # resurrect_tracked_repos) can run for tens of minutes; establishing correct
+  # 'resurrect-repositories.rb -a') can run for tens of minutes; establishing correct
   # bytecode this early -- immediately after install-dotfiles.rb (re-)creates
   # these symlinks -- means it does not depend on reaching (or the timing of)
   # any later step. recompile_zsh_script no-ops when the .zwc is already
@@ -805,21 +804,21 @@ main() {
   # Must happen before any subsequent git operations.
   unset GIT_SSH_COMMAND
 
-   # Load all zsh config files for PATH and other env vars to take effect
-   # load_zsh_configs internally calls unfunction for both is_shellrc_sourced and
-   # is_aliases_sourced, so no need to do it here.
-   DEBUG=true load_zsh_configs
-   # ${XDG_CONFIG_HOME}/zsh/plugins.zsh (the antidote bundle) is checked into the home git repo and was
-   # symlinked by install-dotfiles.rb above, so it is present on both vanilla OS and
-   # pre-configured machines. .zshrc sources the bundle, which defines zsh-defer, and
-   # then defers .aliases loading to the next ZLE idle event. In a non-interactive
-   # script context there is no ZLE idle event, so the deferred callback never fires.
-   # Source .aliases directly to make its functions (resurrect_tracked_repos, etc.)
-   # available in this process.
-   # The is_aliases_sourced guard inside .aliases prevents double-loading.
-   load_file_if_exists "${ZDOTDIR}/.aliases"
+  # Load all zsh config files for PATH and other env vars to take effect
+  # load_zsh_configs internally calls unfunction for both is_shellrc_sourced and
+  # is_aliases_sourced, so no need to do it here.
+  DEBUG=true load_zsh_configs
+  # ${XDG_CONFIG_HOME}/zsh/plugins.zsh (the antidote bundle) is checked into the home git repo and was
+  # symlinked by install-dotfiles.rb above, so it is present on both vanilla OS and
+  # pre-configured machines. .zshrc sources the bundle, which defines zsh-defer, and
+  # then defers .aliases loading to the next ZLE idle event. In a non-interactive
+  # script context there is no ZLE idle event, so the deferred callback never fires.
+  # Source .aliases directly to make its functions (setup_dev_environment, etc.)
+  # available in this process.
+  # The is_aliases_sourced guard inside .aliases prevents double-loading.
+  load_file_if_exists "${ZDOTDIR}/.aliases"
 
-   _install_homebrew
+  _install_homebrew
 
   # Migrate repos cloned before Homebrew's git (2.45+) was on PATH. The system
   # git on a vanilla macOS ignores -c init.defaultRefFormat=reftable and does not
@@ -843,7 +842,7 @@ main() {
     debug "Neither 'KEYBASE_HOME_REPO_NAME' nor 'KEYBASE_PROFILES_REPO_NAME' env var is set -- skipping Keybase setup"
   elif ! command_exists keybase; then
     info "Skipping Keybase setup since '$(yellow 'keybase')' is not installed"
-  elif call_ruby_utility "require 'keybase'; exit(Keybase.username ? 0 : 1)"; then
+  elif call_utility --truthy Keybase.username; then
     # Already logged in (from a previous run, or 'keybase login' run manually) --
     # sync silently every time, never re-ask. This is what makes re-running this
     # idempotent script pleasant: once set up, it just stays set up.
@@ -963,14 +962,12 @@ main() {
 
   # Resurrect tracked repos. With shallow cloning (FIRST_INSTALL), large repos
   # download much faster, making this call non-blocking enough to run in-line.
-  # resurrect_tracked_repos calls setup_dev_environment internally (again --
-  # _resurrect_bootstrap_repos above already ran it once as an early safety net
+  # 'resurrect-repositories.rb -a' runs setup_dev_environment itself at the very end
+  # (_resurrect_bootstrap_repos above already ran it once as an early safety net
   # right after the home/profiles repos were cloned; idempotent either way).
   _current_section='Resurrect tracked repos'; _current_section_manual=1
-  if command_exists resurrect_tracked_repos; then
-    resurrect_tracked_repos
-  else
-    _record_error "Skipping resurrecting tracked repos since '$(purple 'resurrect_tracked_repos')' couldn't be found in the PATH; Please run it manually"
+  if ! COLUMNS="${COLUMNS}" resurrect-repositories.rb -a; then
+    _record_warning 'Failed to fully resurrect tracked repos -- see output above for details; re-run '"'$(cyan 'resurrect-repositories.rb -a')'"' manually'
   fi
 
   # To install the latest versions of the hex, rebar and phoenix packages
@@ -1026,7 +1023,7 @@ main() {
 
   # On FIRST_INSTALL, remind user to unshallow repos to get full history.
   if is_non_zero_string "${FIRST_INSTALL:-}"; then
-    user_action "Repositories were cloned shallow (--depth=1) to save time. Run '$(yellow 'all unshallow')' to fetch complete history, then '$(yellow 'git rebase @{u}')' or '$(yellow 'git merge @{u}')' in each repo to update working trees."
+    user_action "Repositories were cloned shallow (--depth=1) to save time. In a NEW terminal (this one predates the updated PATH and aliases), run '$(yellow 'all unshallow')' to fetch complete history, then '$(yellow 'git rebase @{u}')' or '$(yellow 'git merge @{u}')' in each repo to update working trees."
   fi
 
   local -a _notification_parts=()

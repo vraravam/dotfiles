@@ -1,0 +1,87 @@
+#!/bin/sh
+
+# file location: ${DOTFILES_DIR}/scripts/git-cc
+#
+# External git subcommand: git runs this as 'git cc' (any 'git-<name>' executable on PATH
+# is a subcommand). Plain /bin/sh and dependency-free on purpose -- no .shellrc -- so it works
+# from cron and before the dotfiles shell environment exists.
+#
+# Compresses the repo and reclaims disk space by pruning, repacking, and running gc.
+# Note: refs/stash is intentionally excluded from reflog expire to preserve stashes.
+# --expire and --expire-unreachable use the same window (default: 1.week.ago) so
+# reachable and unreachable commits (rebases, amends, deleted branches) all get the
+# same 1-week recovery window. --stale-fix is always applied to prune broken entries.
+# All other flags (e.g. --dry-run, --verbose) are passed to 'git reflog expire'.
+# The first argument is treated as <dir> if it does not start with '-'; flags follow.
+# Cleanup operations:
+#   - Delete stale prefetch refs (created by git maintenance, may reference old commits after rebase)
+#   - Expire reflog entries older than --expire (default: 1 week)
+#   - Prune deleted worktrees
+#   - Remove stale commit-graph files
+#   - Repack all objects with optimal compression
+#   - Run garbage collection (NOTE: git gc includes rerere gc automatically - respects gc.rerereResolved/gc.rerereUnresolved)
+# Supports folder-specific overrides: if ${PERSONAL_BIN_DIR}/cc-<basename>.rb (or .sh) exists, runs it
+# instead of running the default implementation. Override scripts can customize behavior.
+# Usage: git cc [<dir>] [--expire=<when>] [<extra-reflog-flags>]
+# Example: git cc --expire=now          (expire entire reflog immediately - aggressive)
+# Example: git cc --expire=1.hour.ago   (expire reflog older than 1 hour - very aggressive)
+# Example: git cc --expire=3.days.ago   (expire entries older than 3 days)
+# Example: git cc /path/to/repo --expire=now
+
+# Git ran the former alias from the work tree's top level; an external command runs from the
+# caller's directory, so the default directory is the top level (not '.') to keep
+# 'git cc' from a subdirectory working the same way.
+
+main() {
+  case "${1:-}" in
+  -* | '') dir="$(git rev-parse --show-toplevel 2>/dev/null || printf .)" ;;
+  *)
+    dir="${1:-}"
+    shift
+    ;;
+  esac
+  if [ -n "${PERSONAL_BIN_DIR:-}" ] && [ -z "${_GIT_OVERRIDE_SKIP:-}" ]; then
+    basename="$(basename "$(cd "${dir}" && pwd)")"
+    for ext in rb sh; do
+      override="${PERSONAL_BIN_DIR}/cc-${basename}.${ext}"
+      [ -x "${override}" ] || continue
+      if [ "${ext}" = rb ]; then
+        (cd "${dir}" && _GIT_OVERRIDE_SKIP=1 "${override}" "$@")
+      else
+        (cd "${dir}" && _GIT_OVERRIDE_SKIP=1 /bin/zsh -l "${override}" "$@")
+      fi
+      return $?
+    done
+  fi
+  # Pull --expire=<when> out of the arguments; whatever else is left in "$@" is forwarded
+  # to 'git reflog expire'. (Positional parameters stand in for an array -- plain sh has none.)
+  expire=''
+  remaining=$#
+  while [ "${remaining}" -gt 0 ]; do
+    arg="$1"
+    shift
+    remaining=$((remaining - 1))
+    case "${arg}" in
+    --expire=*) expire="${arg#--expire=}" ;;
+    *) set -- "$@" "${arg}" ;;
+    esac
+  done
+  [ -n "${expire}" ] || expire=1.week.ago
+  git -C "${dir}" size
+  git -C "${dir}" for-each-ref --format='delete %(refname)' refs/prefetch/ | git -C "${dir}" update-ref --stdin 2>/dev/null || true
+  git -C "${dir}" remote | while IFS= read -r r; do git -C "${dir}" remote prune "${r}"; done
+  git -C "${dir}" worktree prune
+  git -C "${dir}" pack-refs --all
+  git -C "${dir}" repack -a -d -F --depth=250 --window=250
+  # Intentionally unquoted below: 'all-refs' prints one ref per line, to be passed as separate arguments.
+  refs="$(git -C "${dir}" all-refs)"
+  if [ -n "${refs}" ]; then
+    # shellcheck disable=SC2086
+    git -C "${dir}" reflog expire --expire="${expire}" --expire-unreachable="${expire}" --stale-fix "$@" ${refs}
+  fi
+  git -C "${dir}" commit-graph write --reachable --changed-paths
+  git -C "${dir}" maintenance run --task=gc
+  git -C "${dir}" size
+}
+
+main "$@"

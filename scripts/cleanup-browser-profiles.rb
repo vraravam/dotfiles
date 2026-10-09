@@ -256,7 +256,7 @@ module CleanupBrowserProfiles
       # Measure size before cleanup (only for actual runs)
       unless dry_run
         size_before_kb = PathUtils.dir_size_kb(profile_dir)
-        Logging.info "--> Size before: '#{profile_dir_colored}' --> #{_format_size(size_before_kb)}"
+        Logging.info "--> Size before: '#{profile_dir_colored}' --> #{_format_size(size_before_kb).purple}"
       end
 
       # Vacuum SQLite databases
@@ -268,8 +268,8 @@ module CleanupBrowserProfiles
       # Report space savings (only for actual runs)
       unless dry_run
         size_after_kb = PathUtils.dir_size_kb(profile_dir)
-        Logging.info "--> Size after: '#{profile_dir_colored}' --> #{_format_size(size_after_kb)}"
-        Logging.info "-> Space saved: #{_format_size(size_before_kb - size_after_kb)}"
+        Logging.info "--> Size after: '#{profile_dir_colored}' --> #{_format_size(size_after_kb).purple}"
+        Logging.info "-> Space saved: #{_format_size(size_before_kb - size_after_kb).purple}"
       end
 
       Logging.success "Successfully processed profile dir for '#{browser_name.yellow}'"

@@ -450,7 +450,7 @@ class GitProcessor
     _execute('remote', 'remove', name)
   end
 
-  # Fetches from all remotes and all tags via the 'fo' git alias -- not a bare
+  # Fetches from all remotes and all tags via the 'fo' git command (scripts/git-fo) -- not a bare
   # 'git fetch --all', so this gets 'with-retry' hang protection (inactivity-based,
   # not a fixed timeout) and promisor-first remote ordering (avoids 'did not receive
   # expected object' failures on secondary remotes of a partial/blobless clone) for
@@ -469,7 +469,7 @@ class GitProcessor
   end
 
   # Fetches from a single named remote -- unlike fetch_all, does not go through the
-  # 'fo' alias (no with-retry/promisor-ordering, no fetching of all tags). Used for
+  # 'fo' command (no with-retry/promisor-ordering, no fetching of all tags). Used for
   # one-off fetches against a specific remote outside the routine multi-remote workflow
   # (e.g. add_remote followed by an initial fetch of just that remote).
   #
@@ -495,7 +495,7 @@ class GitProcessor
   # changes. Deliberately destructive -- only for callers that have already decided
   # preserving local history is not meaningful (e.g. a squash-prone repo whose local
   # and remote histories have diverged with no common ancestor, so there is nothing
-  # sensible to rebase onto anyway -- see the 'pull-safe' git alias's own
+  # sensible to rebase onto anyway -- see the 'pull-safe' git command's (scripts/git-pull-safe) own
   # 'pull.allowResetOnDivergedHistory' handling for the primary use of this).
   #
   # @param ref [String] Ref to reset to (e.g. a remote-tracking ref).
@@ -569,7 +569,7 @@ class GitProcessor
 
     if nil_or_empty?(remote_files)
       Logging.record_error "Failed to get file list from remote branch '#{remote_ref.cyan}' or remote is empty"
-      Logging.user_action "Ensure remote branch '#{remote_ref}' exists and has been pushed"
+      Logging.user_action "Ensure remote branch '#{remote_ref.yellow}' exists and has been pushed"
       return false
     end
 
@@ -651,7 +651,7 @@ class GitProcessor
     _execute('tag', '-d', name)
   end
 
-  # Pulls changes from upstream via the 'pull-safe' git alias -- not a bare 'git pull',
+  # Pulls changes from upstream via the 'pull-safe' git command (scripts/git-pull-safe) -- not a bare 'git pull',
   # so this gets 'with-retry' hang protection (via the 'fo' fetch inside pull-safe) and
   # a clean-working-tree guard for free (pull-safe skips the rebase and exits non-zero
   # if the tree is dirty, rather than risking a rebase failing mid-way on uncommitted
@@ -752,7 +752,7 @@ class GitProcessor
   def push(branch:, remote: 'origin', force: false, force_with_lease: false)
     if @dry_run
       Logging.info 'Would push to remote'
-      Logging.info "Would set upstream tracking: #{remote}/#{branch}"
+      Logging.info "Would set upstream tracking: #{remote.yellow}/#{branch.yellow}"
       return _mock_status_response(true)
     end
 
@@ -776,9 +776,9 @@ class GitProcessor
       # Set upstream tracking after successful push
       _stdout, _stderr, status = _execute('branch', '-u', "#{remote}/#{branch}")
       if status.success?
-        Logging.debug "Set upstream tracking: #{remote}/#{branch}"
+        Logging.debug "Set upstream tracking: #{remote.yellow}/#{branch.yellow}"
       else
-        Logging.warn "Failed to set upstream tracking for '#{branch}'"
+        Logging.warn "Failed to set upstream tracking for '#{branch.yellow}'"
       end
 
       Logging.success "Pushed from '#{@dir.cyan}' to #{url.cyan}"
@@ -824,8 +824,9 @@ class GitProcessor
     status.success?
   end
 
-  # Runs a git alias command (e.g., 'amq', 'rfc', 'cc').
-  # Git aliases are user-defined commands in .gitconfig.
+  # Runs a custom git command (e.g., 'amq', 'rfc', 'cc') -- either an alias from .gitconfig or
+  # an external 'git-<name>' script on PATH (e.g. 'fo', 'unshallow'); both are invoked as
+  # 'git <name>', so callers need not know which kind it is.
   #
   # @param alias_name [String] The alias name (e.g., 'amq').
   # @param args [Array<String>] Additional arguments to pass to the alias.
@@ -1017,7 +1018,7 @@ class GitProcessor
   # - Streams (system): push, pull, fetch (unless -q/--quiet flag present)
   # - Captures: all other commands
   # 'stream:' overrides this auto-detection -- see its own doc below for why this is
-  # needed for alias-based calls (run_alias('fo'), run_alias('pull-safe'), etc.).
+  # needed for calls to custom git commands (run_alias('fo'), run_alias('pull-safe'), etc.).
   #
   # @param args [Array<String>] Git subcommand and arguments (e.g., 'status', '--short').
   # @param read_only [Boolean] When true, always actually runs the command even in dry-run
@@ -1030,7 +1031,7 @@ class GitProcessor
   # @param stream [Boolean, nil] Explicit override for the stream-vs-capture decision.
   #   nil (default) falls back to _should_stream_output?'s auto-detection based on the
   #   literal command name. Pass true/false to bypass auto-detection entirely -- required
-  #   for any call whose first arg is a *custom alias name* (e.g. 'fo', 'pull-safe',
+  #   for any call whose first arg is a *custom command name* (e.g. 'fo', 'pull-safe',
   #   'unshallow') rather than a literal git subcommand: _should_stream_output? only
   #   recognizes literal 'push'/'pull'/'fetch' in args, so an alias that internally wraps
   #   one of those (and 'with-retry', which prints its own retry-attempt progress to

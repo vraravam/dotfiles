@@ -1,7 +1,7 @@
 ---
-applyTo: "**/files/--ZDOTDIR--/**,**/files/--XDG_CONFIG_HOME--/zsh/**,.zprofile"
+applyTo: "**/files/--ZDOTDIR--/**,**/files/--XDG_CONFIG_HOME--/zsh/**,**/files/--HOME--/.shellrc,**/files/--HOME--/.zshenv,.zprofile"
 name: dotfiles-zsh-startup
-description: Use when editing zsh startup files in this dotfiles repo -- .zshenv, .zshrc, .zprofile, .zlogin, or anything under files/--ZDOTDIR--/ or files/--XDG_CONFIG_HOME--/zsh/. Covers startup performance, no-subshell-fork rules, zsh/stat module, Homebrew shellenv caching, antidote plugin loading, compinit caching, and zsh-defer deferral patterns.
+description: Use when editing or suggesting changes to zsh startup files in this dotfiles repo -- .shellrc, .aliases, .zshenv, .zshrc, .zprofile, .zlogin, or anything under files/--ZDOTDIR--/ or files/--XDG_CONFIG_HOME--/zsh/. Covers the mandatory startup-impact verification, startup performance, no-subshell-fork rules, zsh/stat module, Homebrew shellenv caching, antidote plugin loading, compinit caching, and zsh-defer deferral patterns.
 ---
 
 # Zsh Startup Performance Instructions
@@ -20,6 +20,7 @@ optimisation uses zsh-specific syntax, add a comment explaining why.
 
 **This file applies to**: Zsh startup files and performance-critical shell initialization, including:
 - `.zshenv` - Always sourced first (minimal, env vars only)
+- `.shellrc` (`files/--HOME--/.shellrc`) and `.aliases` (`${ZDOTDIR}/.aliases`) - sourced on every shell start
 - `.zshrc` - Interactive shell initialization (heavy lifting)
 - `.zprofile` - Login shell initialization (not used in this repository)
 - `.zlogin` - Post-initialization tasks (compilation, cache generation)
@@ -406,6 +407,71 @@ zprof
 - Homebrew shellenv (15ms without cache) - cache based on binary mtime
 - Starship prompt (1-2ms) - cache init script
 - Mise activation (1-2ms) - cache activation script
+
+## Startup-Impact Verification (Mandatory)
+
+**Whenever you suggest or make ANY change to `.shellrc`, `.aliases`, `.zshenv`, `.zshrc`,
+`.zlogin`, `${ZDOTDIR}/lib/*.zsh`, an autoload function, or anything else sourced or run
+during shell startup, you MUST verify -- before presenting the change as done -- that it
+has no detrimental effect on shell startup time, and report the evidence.** "It looks
+cheap" is not verification.
+
+"Anything run during startup" is broader than the edited lines: a function you change or
+call may itself be invoked while the file loads (e.g. `regenerate_repo_aliases` runs at
+the end of `.aliases` loading, so a change to what it calls changes startup cost).
+Removing a function or moving logic between files counts too -- it shifts cost between
+the always-sourced `.shellrc`, the deferred `.aliases`, and first use.
+
+### 1. Static review (every change)
+
+- No new `$(...)` / backticks / external commands on the hot path (see
+  [No Subshell Forks](#no-subshell-forks-in-startup-code)).
+- **No Ruby spawn at startup unless guarded.** Starting Ruby costs ~100ms (measured: `ruby -e 1`
+  ~100-130ms vs ~10ms for a whole shell start). If startup code must call into Ruby, gate it
+  behind a pure-shell freshness check (e.g. `is_file_older_than <cache> <source>`) so Ruby only
+  runs when there is real work. See `regenerate_repo_aliases` in `.aliases`.
+- New top-level statements and `command_exists`/`is_directory` probes are cheap individually
+  but add up -- prefer defining functions (parsed once, free until called) over executing
+  work at load time.
+- Prefer the deferred `.aliases` (loaded via `zsh-defer` after the first prompt) over
+  `.shellrc` (always sourced, in the first-prompt path) for anything not needed during
+  bootstrap -- see `shell-scripting.md` § `.shellrc` vs `.aliases` Split.
+
+### 2. Measure (any change that adds work, or touches a load-time code path)
+
+Compare **old vs new under identical conditions** -- a one-sided number proves nothing.
+
+```zsh
+# Old versions come from git, never from a stash or checkout (see Git State Management).
+git show HEAD:files/--HOME--/.shellrc > /tmp/shellrc.old;
+cp files/--HOME--/.shellrc /tmp/shellrc.new;
+# Compile both: .zlogin compiles the live files to .zwc, so an uncompiled copy
+# would unfairly include parse time that real shells do not pay.
+zcompile /tmp/shellrc.old; zcompile /tmp/shellrc.new;
+
+# Interleave old/new runs (>= 60 each) to cancel out machine-load drift:
+zsh -c 'zmodload zsh/datetime; for w in old new old new; do t=0; for i in {1..60}; do s=$EPOCHREALTIME; zsh -fc "source /tmp/shellrc.$w" >/dev/null 2>&1; t=$((t+EPOCHREALTIME-s)); done; printf "%s: %.2f ms\n" $w $((t*1000/60)); done';
+# Baseline for scale: bare 'zsh -f -c exit' (~11ms on Apple Silicon).
+```
+
+- For `.aliases` (deferred), time the `source` inside an **interactive** shell
+  (`zsh -i -c '...'`) so cached state (`XDG_CACHE_HOME`, keg-only paths, Homebrew env)
+  matches real use, and also remember it runs after the first prompt -- it does not add to
+  first-prompt lag but still burns CPU and can delay the first command.
+- **Pair versions consistently.** The old `.aliases` must be measured against the old
+  `.shellrc`: if the running shell already has the new `.shellrc`, the old `.aliases` can fail
+  on a function that no longer exists, return instantly, and look falsely fast.
+- Remember stale bytecode: an edited file is newer than its `.zwc`, so zsh parses source
+  until a login shell (or `delete_caches`) recompiles. Compare compiled to compiled.
+- For the end-to-end number use the average-of-N and `zprof` recipes in
+  [Performance Targets](#performance-targets); run them several times -- single runs on a
+  busy machine vary by tens of ms.
+
+### 3. Report
+
+State in the response: what was measured, old vs new numbers, and the verdict. If there is a
+regression, either fix it (cache, defer, or shell-side guard) or document the trade-off in a
+comment, following the decision-making priority order (startup speed is #1).
 
 ## `zmodload` and `ZSH_VERSION`
 

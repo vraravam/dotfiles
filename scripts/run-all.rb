@@ -27,6 +27,7 @@ require 'open3'
 require_relative 'utilities/collection_processor'
 require_relative 'utilities/command_utils'
 require_relative 'utilities/env_vars'
+require_relative 'utilities/git_overrides'
 require_relative 'utilities/git_workspace'
 require_relative 'utilities/logging'
 
@@ -34,16 +35,6 @@ require_relative 'utilities/logging'
 # Returns true/false instead of calling exit().
 module RunAll
   extend self
-
-  # Env var set on override script subprocesses (mirrors '_GIT_OVERRIDE_SKIP', the
-  # equivalent guard already used by the 'cc'/'upreb' git aliases). If an override
-  # script -- or anything it calls -- ends up invoking run-all.rb again for the same
-  # repo, the inner invocation sees this already set and skips its own
-  # override-dispatch, falling back to running the literal command instead of
-  # re-dispatching to the same override script. This bounds the recursion to one
-  # level even if a future override script is accidentally written to call back
-  # into 'all'/'run-all.rb'.
-  OVERRIDE_SKIP_ENV_VAR = '_RUN_ALL_OVERRIDE_SKIP'
 
   # Public API method.
   #
@@ -85,7 +76,7 @@ module RunAll
       dir_array,
       operation_desc: "Running '#{command.join(' ').cyan}' #{'in'.yellow}"
     ) do |dir, _idx, _total|
-      # Resolves to a folder-specific override script (e.g. cc-browser-profiles.sh)
+      # Resolves to a folder-specific override script (e.g. cc-browser-profiles.rb)
       # when one exists for this repo, otherwise falls back to the user's shell
       # running the command as-is. See _resolve_exec_command for details.
       exec_command = _resolve_exec_command(command: command, dir: dir)
@@ -119,7 +110,7 @@ module RunAll
   # Resolves the actual command to exec for a given repo directory.
   #
   # If a folder-specific override script exists at
-  # ${PERSONAL_BIN_DIR}/<name>-<basename>.sh (where <name> is the git subcommand
+  # ${PERSONAL_BIN_DIR}/<name>-<basename>.rb or .sh (where <name> is the git subcommand
   # for 'git ...' commands, or the command's own name otherwise, and <basename>
   # is the repo directory's basename), this returns an exec array that runs the
   # override script directly instead of the original command.
@@ -143,7 +134,7 @@ module RunAll
     default_exec = [shell, '-c', command.join(' ')]
 
     # Already inside a dispatched override's subprocess tree -- do not re-dispatch.
-    return default_exec unless nil_or_empty?(ENV.fetch(OVERRIDE_SKIP_ENV_VAR, nil))
+    return default_exec if GitOverrides.skip?
 
     override = _override_script_for(command: command, dir: dir)
     return default_exec if override.nil?
@@ -153,13 +144,12 @@ module RunAll
     is_git = command[0] == 'git'
     extra_args = is_git ? command[2..-1] : command[1..-1]
 
-    env = { OVERRIDE_SKIP_ENV_VAR => '1' }
-    # Also skip the git alias's own (redundant but harmless) override check, in
-    # case the override script shells out to 'git cc'/'git upreb' without having
-    # set this itself -- matches the existing '_cc'/'_upreb' convention.
-    env['_GIT_OVERRIDE_SKIP'] = '1' if is_git
+    # The skip env var also stops the 'git cc'/'git upreb' commands and GitCommands from
+    # re-dispatching to this same override if it shells out to them. RUBYLIB lets a Ruby
+    # override 'require' the shared utilities even under cron, where it is unset.
+    env = { GitOverrides::SKIP_ENV_VAR => '1', 'RUBYLIB' => GitOverrides.rubylib }
 
-    [env, override.to_s, *Array(extra_args)]
+    [env, *GitOverrides.command_for(override), *Array(extra_args)]
   end
 
   private_class_method :_resolve_exec_command
@@ -175,10 +165,7 @@ module RunAll
     override_name = command[0] == 'git' && command.size > 1 ? command[1] : command[0]
     return nil if nil_or_empty?(override_name)
 
-    candidate = EnvVars::PERSONAL_BIN_DIR.join("#{override_name}-#{File.basename(dir)}.sh")
-    return nil unless candidate.file? && File.executable?(candidate)
-
-    candidate
+    GitOverrides.script_for(override_name, dir)
   end
 
   private_class_method :_override_script_for

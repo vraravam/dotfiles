@@ -71,7 +71,7 @@ This follows standard Ruby community conventions:
 - `${PERSONAL_BIN_DIR}/*.rb` - All executable scripts use kebab-case
 - Shell scripts follow same pattern: `fresh-install-of-osx.sh`, `osx-defaults.sh`
 
-**Autoload function naming**: Zsh autoload functions in `${XDG_CONFIG_HOME}/zsh/` use single-word names by design (e.g., `upreb`, `status`, `push`). This is not a "no separator needed" exception—it's a deliberate convention for autoloaded commands that matches shell built-in naming patterns.
+**Autoload function naming**: Zsh autoload functions in `${XDG_CONFIG_HOME}/zsh/` use single-word names by design (e.g., `st`, `count`). This is not a "no separator needed" exception—it's a deliberate convention for autoloaded commands that matches shell built-in naming patterns.
 
 **Scan rule:** When creating or renaming Ruby files:
 1. Is it an executable entry point (has `if __FILE__ == $PROGRAM_NAME`)? → Use kebab-case
@@ -1237,47 +1237,42 @@ require 'logging'  # works because RUBYLIB includes utilities/
 
 Choose based on preference. Option 1 is more idiomatic Ruby, Option 2 is more concise.
 
-### Shell integration with `call_ruby_utility`
+### Shell integration with `call_utility`
 
-Shell functions invoke Ruby utilities via the `call_ruby_utility` helper function defined in `.shellrc`. This function automatically sets up `RUBYLIB` and preserves `COLUMNS` for terminal width information:
+Shell functions invoke Ruby utilities via the `call_utility` helper defined in `.shellrc`, which runs `scripts/call-utility.rb`. Arguments travel as real argv entries -- never spliced into Ruby source -- so values with quotes or spaces are safe, and no `RUBYLIB` setup is needed. It preserves `COLUMNS` for terminal width:
 
 ```zsh
 # Shell function in .shellrc or .aliases
 my_function() {
-  # call_ruby_utility handles RUBYLIB setup automatically
-  call_ruby_utility "require 'logging'; Logging.info('message')"
-  call_ruby_utility "require 'git_processor'; GitProcessor.some_method(arg: 'value')"
+  call_utility GitWorkspace.install_mise_versions "--first_install=${flag}"
+  call_utility Cron.create_crontab -- "${file}"      # '--' makes the rest positional
+  call_utility --truthy Keybase.username              # exit 1 if the method returns nil/false
 }
 ```
 
-**Benefits of `call_ruby_utility`:**
-- Automatic `RUBYLIB` setup (adds `utilities/` and bin directories)
+**Argument conventions** (see `scripts/call-utility.rb`):
+- `<Module>.<method>` is the first argument; only the modules in its `UTILITIES` allow-list can be called -- add a new utility module there to expose it
+- `--key=value` becomes a keyword argument (`true`/`false` become booleans); everything else is positional; after a literal `--` everything is positional
+- `--truthy` also fails (exit 1) when the method returns nil/false, for predicate-style methods
+
+**Benefits of `call_utility`:**
+- No string-built Ruby source (no quoting/injection hazards)
 - Preserves `COLUMNS` env var (needed for terminal width)
 - Ruby availability check (graceful no-op if Ruby not installed)
-- Consistent pattern across all shell→Ruby calls
+- Consistent pattern across all shell->Ruby calls
 
 **Do NOT use raw `ruby -e` calls directly:**
 ```zsh
-# BAD -- bypasses call_ruby_utility, no RUBYLIB setup
-ruby -e "require 'logging'; Logging.info('message')"
+# BAD -- builds Ruby source from shell values, needs RUBYLIB set up
+ruby -e "require 'logging'; Logging.info('${message}')"
 
-# BAD -- manual RUBYLIB setup is redundant
-setup_rubylib
-COLUMNS="${COLUMNS}" ruby -e "require 'logging'; ..."
-
-# Good -- use call_ruby_utility wrapper
-call_ruby_utility "require 'logging'; Logging.info('message')"
+# Good -- use the call_utility wrapper
+call_utility MacOS.notify -- "${message}" "${title}"
 ```
 
-**Pattern for delegation functions:**
-```zsh
-# Create a thin wrapper that delegates to Ruby module
-my_shell_function() {
-  call_ruby_utility "require 'my_module'; MyModule.my_method"
-}
-```
+**Before the dotfiles repo is cloned** `scripts/call-utility.rb` does not exist, so `call_utility` returns 1 without doing anything. Anything `.shellrc` must do on a vanilla OS (e.g. `suspend_cron`/`resume_cron`/`restore_cron`) therefore keeps a pure-shell fallback, selected with `_call_utility_script_available`.
 
-This works in all contexts (vanilla OS and configured OS) because `.shellrc` is always sourced before any shell functions are called.
+If a shell function only wraps a single Ruby entry point that is also useful on the command line, prefer an alias for the script itself (e.g. `alias bupc='brew-update-cleanup.rb'`) over a shell function.
 
 ### Sorting and grouping `require` statements
 
@@ -1770,27 +1765,31 @@ system(RbConfig.ruby, capture_prefs_script.to_s, '-e')
 all git operations. It handles dry-run mode, error reporting, and directory
 context automatically.
 
-### Block Form vs Instance Form
+### Block Form (Default) vs Instance Form (Exception)
 
-**Use block form when:**
-- Performing multiple consecutive git operations in the same scope
-- Operations are localized side effects (add, commit, tag, etc.)
-- Don't need return values outside the block
+**Rule: whenever you create a `GitProcessor`, use the block form as much as possible.**
+A block scopes the object to the code that needs it: the instance cannot leak into
+unrelated code, its lifetime ends when the block does (so it becomes garbage-collectable
+immediately rather than whenever the enclosing method/script ends), and every git
+operation on one repo is visibly grouped in one place. Prefer it even for a single call.
 
 ```ruby
-# Good -- multiple operations, block form
+# Good -- block form, multiple operations
 GitProcessor.new(dir: repo_dir) do |git|
   git.stage_all
   git.smart_commit
   git.push(branch: 'main')
 end
 
-# Good -- localized side effect, block form
+# Good -- block form, localized side effect
 GitProcessor.new(dir: EnvVars::PERSONAL_PROFILES_DIR) do |git|
   old_backups.each { |f| git.rm_cached(f, quiet: true) }
 end
 
-# Good -- multiple operations including relative_path (rescue outside block)
+# Good -- block form, even for a single call
+GitProcessor.new(dir: folder_pn) { |git| git.delete_tag('twilight') }
+
+# Good -- rescue outside the block
 GitProcessor.new(dir: repo_dir) do |git|
   rel_path = relative_path ? git.relative_path(relative_path) : '.'
   git.add(rel_path)
@@ -1801,53 +1800,24 @@ rescue RuntimeError => e
   false
 ```
 
-**Use instance form when:**
-- Only calling a single method (chain directly instead of block overhead)
-- Operations spread across conditionals/branches
-- Need return values outside the block's scope
+**`GitProcessor.new(...) { }` returns the new instance, NOT the block's value** (the block
+runs inside `initialize`). When you need a result outside the block, assign it to a local
+declared before the block:
 
 ```ruby
-# Good -- single method call, chain directly
-status = GitProcessor.new(dir: repo_dir).status(*switches)
-
-# Good -- return value needed outside block
-git = GitProcessor.new(dir: folder_pn)
-_out, _err, status = git.pull(rebase: true)
-if status.success?
-  success "Updated successfully"
-else
-  record_warning "Failed to update"
-end
-
-# Good -- operations across branches
-git = GitProcessor.new(dir: repo_dir)
-if needs_fetch?
-  git.fetch
-end
-if needs_rebase?
-  git.rebase
-end
+status = nil
+GitProcessor.new(dir: folder_pn) { |git| _out, _err, status = git.pull }
+log_result(status)
 ```
 
-**Exception for single calls in blocks:**
-When there's only one git operation inside another block (like an `each` loop),
-prefer chaining over nested blocks for readability:
+**Use the instance form (`git = GitProcessor.new(dir: ...)`) only when the block form
+would be clearly worse**, i.e. when:
+- The same instance must be shared across separate methods or long, branching control
+  flow that cannot reasonably be nested in one block
+- The block form would force awkward result-capture for several values
 
-```ruby
-# Good -- single operation, chain directly (avoids nested block)
-chrome_folders.each do |folder_pn|
-  status = GitProcessor.new(dir: folder_pn).pull(rebase: true)
-  log_result(status)
-end
-
-# BAD -- unnecessary nested block for single operation
-chrome_folders.each do |folder_pn|
-  GitProcessor.new(dir: folder_pn) do |git|
-    status = git.pull(rebase: true)
-    log_result(status)
-  end
-end
-```
+Never keep an instance in an instance variable or constant "to reuse it": create a
+scoped one per unit of work (`GitProcessor` is cheap -- it only stores `dir`/`dry_run`).
 
 ### Exception Handling
 
@@ -2366,7 +2336,7 @@ end
 ```
 
 **Why this matters:**
-- Shell functions delegate to Ruby utilities via `call_ruby_utility` (e.g., `suspend_cron` → `Cron.suspend_cron`)
+- Shell functions delegate to Ruby utilities via `call_utility` (e.g., `suspend_cron` → `Cron.suspend_cron`)
 - Ruby scripts call utility modules directly (e.g., `Cron.with_cron_suspended { }`)
 - Both contexts need the same behavior
 - Qualified calls work everywhere: module methods, class methods, instance methods
@@ -3087,13 +3057,13 @@ bat_config_dir, = Open3.capture3('bat', '--config-dir')
 bat_syntax_dir_pn = Pathname.new(bat_config_dir.strip).join('syntaxes')
 
 # BAD -- inlining hurts readability (complex expression)
-status = GitProcessor.new(
+GitProcessor.new(
   dir: Pathname.new(ENV.fetch('PERSONAL_PROFILES_DIR')).expand_path.join('Chrome')
-).pull(rebase: true)
+) { |git| git.pull }
 
 # Good -- keep variable for complex multi-step construction
 chrome_profiles = Pathname.new(ENV.fetch('PERSONAL_PROFILES_DIR')).expand_path.join('Chrome')
-status = GitProcessor.new(dir: chrome_profiles).pull(rebase: true)
+GitProcessor.new(dir: chrome_profiles) { |git| git.pull }
 ```
 
 **Keep variable even if used once when it provides:**

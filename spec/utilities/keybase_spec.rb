@@ -71,6 +71,8 @@ RSpec.describe Keybase do
   end
 
   describe '.ensure_logged_in' do
+    before { stub_const('EnvVars::KEYBASE_USERNAME', nil) }
+
     it 'returns false and records an error when keybase is not installed' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(false)
       expect(Logging).to receive(:record_error).with(/keybase.*not found/)
@@ -101,6 +103,28 @@ RSpec.describe Keybase do
         .with('keybase', 'status', '--json')
         .and_return('{"Username":"","LoggedIn":false}')
       allow(CommandUtils).to receive(:run_interactive).with('keybase', 'login').and_return(true)
+
+      expect(described_class.ensure_logged_in).to be true
+    end
+
+    it 'passes KEYBASE_USERNAME to keybase login when it is set' do
+      stub_const('EnvVars::KEYBASE_USERNAME', 'someuser')
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
+      allow(CommandUtils).to receive(:query)
+        .with('keybase', 'status', '--json')
+        .and_return('{"Username":"","LoggedIn":false}')
+      expect(CommandUtils).to receive(:run_interactive).with('keybase', 'login', 'someuser').and_return(true)
+
+      expect(described_class.ensure_logged_in).to be true
+    end
+
+    it 'does not log in again when already logged in, even if KEYBASE_USERNAME is set' do
+      stub_const('EnvVars::KEYBASE_USERNAME', 'someuser')
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
+      allow(CommandUtils).to receive(:query)
+        .with('keybase', 'status', '--json')
+        .and_return('{"Username":"other","LoggedIn":true}')
+      expect(CommandUtils).not_to receive(:run_interactive)
 
       expect(described_class.ensure_logged_in).to be true
     end

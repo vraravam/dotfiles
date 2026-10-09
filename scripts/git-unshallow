@@ -1,0 +1,48 @@
+#!/bin/sh
+
+# file location: ${DOTFILES_DIR}/scripts/git-unshallow
+#
+# External git subcommand: git runs this as 'git unshallow' (any 'git-<name>' executable on PATH
+# is a subcommand). Plain /bin/sh and dependency-free on purpose -- no .shellrc -- so it works
+# from cron and before the dotfiles shell environment exists.
+#
+# Converts a shallow and/or partial (blobless) clone into a full clone: fetches
+# complete history (via 'git fo', which also widens a shallow clone's default
+# single-branch tracking to all branches and repairs a promisor-first fetch order)
+# then backfills any missing blob objects (via 'git backfill-blobs'). Kept as a
+# separate command name for backward compatibility and because the combined operation
+# (history + blobs) is what callers converting a fresh shallow/partial clone
+# actually want -- 'git fo' alone is the lighter-weight, faster, routine-sync
+# operation used everywhere else (interactive use, cron via antidote.rb,
+# clone_repo_into's background job -- none of these call sites needed to change:
+# this command still does the same combined job under the same name).
+#
+# No-op guard: if the repo is already a full clone (not shallow) AND has no
+# promisor remote (not a partial/blobless clone either), there is nothing left
+# to convert -- returns immediately without even calling 'fo', rather than
+# paying for a full multi-remote fetch cycle for zero conversion benefit.
+# Routine freshness (keeping an already-full repo up to date) is handled
+# elsewhere by whichever call site actually wants it ('git fo' directly, or
+# 'git pull-safe'/'git upreb' for the fetch-and-rebase workflows) -- callers
+# that specifically invoke 'unshallow' are asking "convert this if needed",
+# not "sync this". Before this guard existed, callers that wanted to avoid a
+# redundant fetch against an already-full repo had to check this themselves
+# (see antidote.rb's own 'git.shallow?' check preceding its 'unshallow' call,
+# which is now redundant but harmless -- kept there as defense in depth).
+# Usage: git unshallow [<dir>]
+
+# Git ran the former alias from the work tree's top level; an external command runs from the
+# caller's directory, so the default directory is the top level (not '.') to keep
+# 'git unshallow' from a subdirectory working the same way.
+
+main() {
+  dir="${1:-$(git rev-parse --show-toplevel 2>/dev/null || printf .)}"
+  if [ "$(git -C "${dir}" rev-parse --is-shallow-repository 2>/dev/null)" != 'true' ] &&
+    [ "$(git -C "${dir}" config --get remote.origin.promisor 2>/dev/null)" != 'true' ]; then
+    printf 'Already a full clone -- nothing to unshallow in %s\n' "${dir}"
+    exit 0
+  fi
+  git -C "${dir}" fo && git -C "${dir}" backfill-blobs
+}
+
+main "$@"

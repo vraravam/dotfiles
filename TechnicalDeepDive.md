@@ -477,21 +477,17 @@ After symlinking, `install-dotfiles.rb` ensures the line `Include "./global_conf
 
 ## 10. Per-Project Script Overrides
 
-### `dispatch_or_fallback`
+### Git workflow commands (`git-command.rb` + `GitOverrides`)
 
-Autoload functions (`cc`, `count`, `pull`, `push`, `st`, `upreb`) support per-project overrides. The public function is a thin wrapper:
+`push`, `pull`, `cc` and `upreb` are aliases for `scripts/git-command.rb`, which calls `GitCommands.run` (`scripts/utilities/git_commands.rb`). Before running the default implementation it asks `GitOverrides.script_for(<command>, <folder>)` (`scripts/utilities/git_overrides.rb`) for `${PERSONAL_BIN_DIR}/<command>-<folder-basename>.rb` (then `.sh`). If one exists and is executable, the process is **replaced** (`exec`) by it, with the repo as the working directory, only the `--switches` as arguments, `_GIT_OVERRIDE_SKIP=1` (so the `git cc`/`git upreb` commands and `GitCommands` itself skip override detection instead of recursing) and `RUBYLIB` pointing at `scripts/utilities/` so a Ruby override can `require` the shared modules. A `.rb` override is launched with the interpreter already running (`RbConfig.ruby`) rather than via its `#!/usr/bin/env ruby` shebang: when that resolves to a mise shim in a directory with no pinned Ruby, a shim started from a process that was itself started through the shim trips mise's recursion guard.
 
-```zsh
-push() { dispatch_or_fallback push _push "$@"; }
-```
+`count` and `st` remain zsh autoload functions whose public wrapper is `count() { dispatch_or_fallback count _count "$@"; }`. `dispatch_or_fallback` looks for `${PERSONAL_BIN_DIR}/<cmd>-<cwd-basename>.rb` (then `.sh`) and **runs** it as a separate script if present; otherwise the default `_count` implementation is called.
 
-When called, `dispatch_or_fallback` looks for `${PERSONAL_BIN_DIR}/<cmd>-<cwd-basename>.sh`. If the file exists and is executable, it is **sourced in the current shell** (so it inherits all functions and env vars). Otherwise the default `_push` implementation is called.
+This means you can have a file `${PERSONAL_BIN_DIR}/push-my-project.rb` that overrides the push behaviour specifically when you are inside a directory named `my-project`, without touching the shared implementation.
 
-This means you can have a file `${PERSONAL_BIN_DIR}/push-my-project.sh` that overrides the push behaviour specifically when you are inside a directory named `my-project`, without touching the shared `push` function.
+`status_all_repos` and `update_all_repos` intentionally do not support overrides — they operate on a fixed set of repos and a cwd-based override would not be meaningful.
 
-`status_all_repos` and `update_all_repos` intentionally do not use this pattern — they operate on a fixed set of repos and a cwd-based override would not be meaningful.
-
-The same dispatch mechanism applies to `launch_me`, `debug_me`, and `build_me` — they look for `launch-<dir>.sh`, `debug-<dir>.sh`, and `build-<dir>.sh` respectively.
+The same name-based lookup applies to `launch_me`, `debug_me`, and `build_me` — they look for `launch-<dir>.sh`, `debug-<dir>.sh`, and `build-<dir>.sh` respectively.
 
 ---
 

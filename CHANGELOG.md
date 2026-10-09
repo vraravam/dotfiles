@@ -4,6 +4,78 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.9
+
+:white_check_mark: Tested on a vanilla macOS machine
+
+#### Convert shell commands to Ruby where it gives cleaner logging, depth handling and cron bracketing
+
+* *[scripts/resurrect-repositories.rb, files/--ZDOTDIR--/.aliases, scripts/fresh-install-of-osx.sh]* New `-a`/`--all` mode (`ResurrectRepositories.run(resurrect_all: true)`) resurrects every `repositories-*.yml` catalogue in `PERSONAL_CONFIGS_DIR`, lists the catalogues that failed in one warning, then runs `GitWorkspace.setup_dev_environment` and `regenerate_repo_aliases`. This replaces the hand-rolled `resurrect_tracked_repos` shell function (removed); `fresh-install-of-osx.sh` now calls `resurrect-repositories.rb -a` directly. `_run_resurrect` now returns whether that one file had failures/warnings, so multi-file callers can attribute them.
+* *[scripts/brew-update-cleanup.rb, scripts/utilities/brew.rb, scripts/software-updates-cron.rb, files/--ZDOTDIR--/.aliases]* The `bupc` shell function is now `alias bupc='brew-update-cleanup.rb'` (same 4 keystrokes; `bcg`/`bcug` unchanged). The `Brew` module (`update`, `sync_bundle`, `cleanup`, `upgrade`) holds the brew steps shared with the hourly cron job, which now calls it instead of duplicating the commands; every method is a plain subprocess with no TTY or login-shell assumption, so cron behaviour is unchanged.
+* *[scripts/capture-prefs.rb, files/--ZDOTDIR--/.aliases]* `find_and_append_prefs` (shell function and alias) is removed; use `capture-prefs.rb -f <search-string>` instead (`CapturePrefs.find_and_append`). Behaviour is the same (domain-name match, denied-list warning, case-insensitive sort and dedupe of the allowed list), and it no longer needs `.shellrc`. The data-file paths are now `Pathname` constants (`ALLOWED_LIST_FILE`, `DENIED_LIST_FILE`, `EXCLUDED_KEYS_FILE`).
+* *[scripts/install-ruby26-gems.rb, .envrc, .mise.toml]* `install-ruby26-gems.sh` is now Ruby; the pinned gem list lives only in this script and `.envrc` just runs it (it returns immediately and silently once all gems are present).
+* *[.github/scripts/check-system-ruby-version.rb, .github/workflows/system-ruby-version-check.yml]* The CI drift check is now a dependency-free Ruby script (heredoc issue body, tempfile cleanup via block); the workflow runs it with `/usr/bin/ruby`.
+* *[scripts/call-utility.rb, files/--HOME--/.shellrc, files/--ZDOTDIR--/.aliases, files/--XDG_CONFIG_HOME--/zsh/status_all_repos, files/--XDG_CONFIG_HOME--/zsh/update_all_repos, scripts/fresh-install-of-osx.sh]* `call_ruby_utility` and the `_call_ruby_git_workspace`/`_call_ruby_cron`/`_call_ruby_macos` string-building helpers are replaced by `call_utility <Module.method> [args] [--key=value]`, which runs `scripts/call-utility.rb` with real argv entries (no Ruby source is built from shell values, so quoting is safe; no `RUBYLIB` setup is needed). Only an allow-list of utility modules can be called; `--truthy` maps a nil/false return to exit 1. `status_all_repos` and `update_all_repos` are now aliases of `call-utility.rb GitWorkspace.<method>`.
+* *[files/--HOME--/.shellrc]* `suspend_cron`, `resume_cron` and `restore_cron` keep working before the dotfiles repo is cloned: they call Ruby once `scripts/call-utility.rb` exists and otherwise run a pure-shell equivalent (`_call_utility_script_available` selects). `call_utility` uses `command -v` so it also works when direnv sources the file in bash. `with_cron_suspended` (shell, `.aliases`) is removed -- it is `Cron.with_cron_suspended { }` in Ruby only.
+
+#### Folder-aware `push`, `pull`, `cc` and `upreb` in Ruby, with Ruby overrides
+
+* *[scripts/git-command.rb, scripts/utilities/git_commands.rb, scripts/utilities/git_overrides.rb, files/--ZDOTDIR--/.aliases]* `push`, `pull`, `cc` and `upreb` are now aliases of `git-command.rb <command>` (`GitCommands.run`), replacing the four zsh autoload files (deleted). Same behaviour: optional folder plus `--switches`, git-repo guard, `git with-retry` hang protection, `pull-safe` fallback for repos with `pull.allowResetOnDivergedHistory`, symmetric-divergence rebase in `upreb`. `count` and `st` stay zsh autoloads (one-line wrappers, used constantly, where Ruby start-up would be noticeable).
+* *[scripts/utilities/git_overrides.rb, scripts/run-all.rb, files/--XDG_CONFIG_HOME--/git/config, files/--ZDOTDIR--/.aliases]* `GitOverrides.script_for` is the single Ruby implementation of the `${PERSONAL_BIN_DIR}/<command>-<repo-dir>.rb|.sh` lookup (a `.rb` file wins). The `cc`/`upreb` git aliases and `dispatch_or_fallback` mirror it in shell, and `run-all.rb` uses it. One variable, `_GIT_OVERRIDE_SKIP`, now bounds recursion everywhere (`_RUN_ALL_OVERRIDE_SKIP` is removed). Ruby overrides are started with the running interpreter (`RbConfig.ruby`) rather than their shebang, because a mise shim launched from a process that was itself started via the shim aborts on mise's recursion guard in directories with no pinned Ruby.
+* *[files/--XDG_CONFIG_HOME--/git/hooks/pre-commit, files/--XDG_CONFIG_HOME--/git/hooks/pre-push, scripts/utilities/git_hooks.rb]* The global hooks are now few-line Ruby scripts around `GitHooks`. This also fixes a bug: staged files with spaces or non-ASCII names were silently skipped by the syntax/RuboCop checks (the file list was split on whitespace and git's quoted names failed the existence test); names are now read NUL-delimited. Per-repo hooks may be `.rb` or `.sh`; `pre-push` replays git's stdin to each of them.
+* *[~/personal/dev/bin]* (outside this repo) `cc-browser-profiles`, `pull-service-center`, `upreb-zen-browser-desktop`, `upreb-homebrew-brew` and `upreb-homebrew-cask` are converted to Ruby overrides; `upreb-homebrew-common.sh` is removed.
+* *[files/--HOME--/custom.gitignore]* Removed the `/.config/zsh/{cc,pull,push,upreb,status_all_repos,update_all_repos}` entries.
+* *[.ai/domains/git-config.md, .ai/domains/script-depth-tracking.md, .ai/domains/shell-scripting.md, .ai/domains/ruby-scripting.md, AGENTS.md, Advanced.md, Extras.md, TechnicalDeepDive.md, KeybaseMigration.md, Adoption.md]* Documentation rewritten for the Ruby override mechanism, `call_utility`, `Cron.with_cron_suspended { }` and `capture-prefs.rb -f`.
+
+#### Move the large `!f() { ... }` git aliases to `scripts/git-<name>` external subcommands
+
+* *[scripts/git-with-retry, git-kill-process-tree, git-fo, git-unshallow, git-backfill-blobs, git-maintain, git-migrate-reftable, git-pull-safe, git-cc, git-upreb; files/--XDG_CONFIG_HOME--/git/config]* The ten largest aliases (about 560 lines of escaped config strings) are now plain `#!/bin/sh` scripts that git runs as `git <name>` (any `git-<name>` executable on `PATH` is a subcommand, and takes precedence over an alias). Same arguments, output and exit behaviour -- verified by running every command against scratch repos both as the old alias and as the new script (also under `dash`), including shallow/blobless clones, reftable migration, diverged-history `pull-safe`, stale-process killing and `.sh` overrides. The scripts are strict POSIX (the `cc` bash array became positional parameters) and have no `.shellrc` dependency. The default directory is now the work tree's top level, because git ran aliases from there but runs external commands from the caller's directory. Short aliases stay in the config, which now has a pointer comment listing the moved commands.
+* *[files/--HOME--/.shellrc]* `clone_repo_into` detects the commands with `command -v git-with-retry` / `git-maintain` (and the `siu` alias) instead of `git config --get alias.*`; the vanilla-OS bootstrap fallbacks are unchanged.
+* *[.ai/domains/git-config.md, .ai/domains/shell-scripting.md, code comments]* Documented alias-vs-external-subcommand and the shebang rule: plain POSIX scripts use `#!/bin/sh` (fixed path; `env` only adds a `PATH` lookup), zsh/Ruby scripts use `env`.
+
+#### Optional `KEYBASE_USERNAME`
+
+* *[scripts/utilities/env_vars.rb, scripts/utilities/keybase.rb, files/--HOME--/.shellrc, Adoption.md, spec/utilities/keybase_spec.rb]* New optional `EnvVars::KEYBASE_USERNAME`: when exported (an optional, commented-out `export KEYBASE_USERNAME='your_username'` is added to `.shellrc`'s "Customizable env vars" section next to `KEYBASE_HOME_REPO_NAME`; it is not needed in the bootstrap command because `.shellrc` is already sourced before the login step), `Keybase.ensure_logged_in` runs `keybase login <username>` instead of the fully interactive flow. Unset keeps the interactive login. It is only used when nobody is logged in yet; an existing login (as any account) is accepted unchanged. It is only a login hint, never a source of truth -- the active username is still derived from `keybase status`.
+
+#### Make a failed gem install non-fatal for `direnv allow` and diagnose toolchain errors
+
+* *[.envrc]* A failed `install-ruby26-gems.rb` no longer aborts `.envrc` under `set -e` (the gems are optional lint tooling): the installer's output now goes to stderr, which direnv shows (stdout was discarded and `warn` is silenced inside direnv, so the reason was hidden), a one-line notice is printed, and the gem `bin` directory is still added to `PATH`.
+* *[scripts/install-ruby26-gems.rb, spec/install_ruby26_gems_spec.rb]* When `gem install` fails with a native-extension compile error (`No rule to make target ...`, missing `ruby/config.h`, `extconf.rb failed` -- e.g. `racc`, pulled in by `reek`), the installer checks whether the Ruby header the system Ruby was built against exists, and explains that the Xcode Command Line Tools are probably missing or out of date, with the exact reinstall commands (`xcode-select --install`, `xcrun --show-sdk-path`).
+
+#### Put `${DOTFILES_DIR}/scripts` on `PATH` wherever `.shellrc` is sourced
+
+* *[files/--HOME--/.shellrc]* Appends `${DOTFILES_DIR}/scripts` (home of `run-all.rb`, `git-command.rb`, `call-utility.rb` and the `git-<name>` subcommands such as `git unshallow`) to `PATH`, case-guarded against duplicates, so scripts, direnv and cron-style contexts that source `.shellrc` find them -- previously only interactive shells (via `.zshrc`) did. A terminal that already sourced an older `.shellrc` keeps its old `PATH` (the re-source guard makes a plain `source ~/.shellrc` a no-op): open a new terminal or `exec zsh`.
+* *[scripts/fresh-install-of-osx.sh]* The closing "run `all unshallow`" reminder now says to do so in a new terminal, since the one that ran the bootstrap predates the updated `PATH` and aliases.
+
+#### Fix `implode` skipping deletions, and make failed safety guards actually stop
+
+* *[files/--ZDOTDIR--/.aliases]* `implode` used `"${HOME}/*.log"*` and `"${f}"*` loops where the quoted `*` never expanded and zsh's default `NOMATCH` aborted the whole function at the first pattern with no match (so `~/personal` and `PROJECTS_BASE_DIR` were never removed). Every glob now uses the `(N)` qualifier, results are collected into an array, an empty/root `HOME` or an empty/`/`/`HOME` prefix is refused, and `delete_caches` returns after refusing a root-level cache directory.
+* *[files/--HOME--/.shellrc]* `ensure_dir_exists` and `clone_repo_into` now `return 1` after their "Refusing ... in root" `error` (which only prints and returns 1 -- it never aborted the caller).
+
+#### Logging conventions
+
+* *[all ruby scripts, .shellrc, .aliases, scripts/fresh-install-of-osx.sh, scripts/osx-defaults.sh, files/--PERSONAL_PROFILES_DIR--/.envrc]* Log calls now follow the colour rules: paths and URLs cyan and quoted, commands cyan, component/tool/remote/key names yellow, preference domains light_cyan, neutral counts purple.
+* *[.ai/domains/ruby-scripting.md, scripts/**/*.rb]* New rule: create `GitProcessor` with the block form (`GitProcessor.new(dir:) { |git| ... }`) wherever possible; call sites converted (one long branching method in `resurrect-repositories.rb` keeps the instance form).
+* *[.ai/domains/zsh-startup.md, .ai/domains/edit-checklist.md, .ai/instructions.md, .ai/README.md, AGENTS.md]* New mandatory rule: any suggested or made change to `.shellrc`, `.aliases`, `.zshenv`, `.zshrc`, `.zlogin`, `lib/*.zsh` or autoload functions must be verified (static review plus a paired old-vs-new measurement) not to slow shell startup. Measured for this release (compiled, interleaved): `.aliases` load fell from ~160-280 ms to ~13-16 ms because `regenerate_repo_aliases` no longer starts Ruby when its cache is fresh (a pure-shell `is_file_older_than` check gates it); `.shellrc` is unchanged within noise (~1-2 ms).
+
+#### Turned off ENCRYPTED_* backup repo origins
+
+* *[files/--HOME--/.shellrc]* Turned off `ENCRYPTED_*` env variables to effectively disable the publicly encrypted keybase-backup repos.
+
+#### Adopting these changes
+
+* Optionally uncomment `export KEYBASE_USERNAME='your_username'` in `.shellrc` to skip the account prompt on `keybase login`.
+* Run `install-dotfiles.rb` (files were added/removed under `files/`), then remove the now-dangling autoload symlinks: `find "${XDG_CONFIG_HOME}/zsh" -maxdepth 1 -type l -exec sh -c 'test -e "$1" || rm -fv "$1"' _ {} \;;`
+* Run `delete_caches` so no stale `.zwc` bytecode from the removed/changed zsh files is loaded, then quit and restart the Terminal/iTerm application (`.shellrc`, `.aliases` and the autoload set changed).
+* In the dotfiles checkout run `direnv allow` (`.envrc` now runs `install-ruby26-gems.rb`).
+* `find_and_append_prefs` is gone: use `capture-prefs.rb -f <search-string>`.
+* Any of your own `${PERSONAL_BIN_DIR}/{push,pull,cc,upreb}-<repo>.sh` overrides that `load_file_if_exists` an autoload script and call `_push`/`_pull`/`_cc`/`_upreb`, or `with_cron_suspended`, no longer work: convert them to Ruby (see Advanced.md § 4.5 and Extras.md § Per-project overrides), e.g. `Cron.with_cron_suspended { GitCommands.push(args: ARGV, header: false) }`.
+* `${DOTFILES_DIR}/scripts` must be on `PATH` for the moved git commands (it already is for interactive shells, the crontab and `fresh-install-of-osx.sh`); open a new terminal to pick up the updated `~/.config/git/config`.
+* Re-run `./fresh-install-of-osx.sh` (idempotent) to exercise the changed bootstrap path.
+* Run `git -C "${HOME}" remote remove origin2; git -C "${PERSONAL_PROFILES_DIR}" remote remove origin2` to remove the secondary origin from these 2 repos.
+
+---
+
 ### 4.0.8
 
 #### Make `find_and_append_prefs` match on domain names, not key/value contents

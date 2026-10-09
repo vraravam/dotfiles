@@ -112,7 +112,7 @@ _plist_set_or_add() {
     return 0
   else
     if is_zero_string "${type}"; then
-      error "_plist_set_or_add: type required for Add when Set fails (key: ${key})"
+      error "_plist_set_or_add: type required for Add when Set fails (key: $(yellow "${key}"))"
       return 1
     fi
     /usr/libexec/PlistBuddy -c "Add ${key} ${type} ${value}" "${plist}"
@@ -139,7 +139,7 @@ main() {
         auto='Y'
         ;;
       \?)
-        warn "-${OPTARG} is not a valid option"
+        warn "$(yellow "-${OPTARG}") is not a valid option"
         usage
         return 1
         ;;
@@ -1667,7 +1667,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
       for _ff_profile_dir in "${_ff_profiles_root}"/*/; do
         if is_directory "${_ff_profile_dir}"; then
           printf '%s' "${_firefox_user_js_content}" >"${_ff_profile_dir}user.js"
-          success "Wrote user.js -> ${_ff_profile_dir}"
+          success "Wrote user.js -> '$(cyan "${_ff_profile_dir}")'"
         fi
       done
     fi
@@ -1962,7 +1962,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
       for _zen_profile_dir in "${_zen_profiles_root}"/*/; do
         if is_directory "${_zen_profile_dir}"; then
           printf '%s' "${_firefox_user_js_content}" >"${_zen_profile_dir}user.js"
-          success "Wrote user.js -> ${_zen_profile_dir}"
+          success "Wrote user.js -> '$(cyan "${_zen_profile_dir}")'"
         fi
       done
     fi

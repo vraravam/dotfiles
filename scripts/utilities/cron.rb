@@ -222,7 +222,7 @@ module Cron
         crontab_file_colored = CRONTAB_FILE.cyan
         schedule_source = nil
         if temp_crontab.size.positive?
-          Logging.debug "Found existing crontab with #{temp_crontab.size} bytes"
+          Logging.debug "Found existing crontab with #{temp_crontab.size.to_s.purple} bytes"
           schedule_source = Pathname.new(temp_crontab.path)
         elsif file?(CRONTAB_FILE)
           # Step 2b: Fallback to tracked crontab.txt if it exists and is non-empty

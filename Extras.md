@@ -32,7 +32,7 @@ This script exports or imports the preferences of known applications (both syste
 
 Three data files govern which domains are processed and how:
 
-- **[`scripts/data/capture-prefs-allowed-list.txt`](scripts/data/capture-prefs-allowed-list.txt)** — domains to export/import. Use `find_and_append_prefs <search-string>` to discover and append every domain whose name contains the (case-insensitive) search string; it skips domains already listed and warns instead of appending denied-list domains.
+- **[`scripts/data/capture-prefs-allowed-list.txt`](scripts/data/capture-prefs-allowed-list.txt)** — domains to export/import. Use `capture-prefs.rb -f <search-string>` to discover and append every domain whose name contains the (case-insensitive) search string; it skips domains already listed and warns instead of appending denied-list domains.
 - **[`scripts/data/capture-prefs-denied-list.txt`](scripts/data/capture-prefs-denied-list.txt)** — domains that must never be exported or imported (machine-specific identifiers, account credentials, ephemeral sync state). Each entry has an inline comment explaining why.
 - **[`scripts/data/capture-prefs-excluded-keys.txt`](scripts/data/capture-prefs-excluded-keys.txt)** — individual keys within allowed domains that are stripped before export or import (display geometry, device UUIDs embedded in per-domain keys).
 
@@ -325,75 +325,72 @@ To check for errors/warnings over time:
 
 See [Technical Deep Dive § 8](TechnicalDeepDive.md#8-cron-safety-mechanisms) for how cron safety, `sudo` guards, and TTY detection work internally.
 
-## Zsh Autoload Functions
+## Git Workflow Commands
 
-A set of git-workflow functions are available as zsh autoloads (lazily loaded on first call) from `files/--XDG_CONFIG_HOME--/zsh/`:
+A set of git-workflow commands are available from `.aliases`:
 
-| Function | What it does | Supports override? |
-|----------|-------------|:-----------------:|
-| `cc` | Compacts the git repo (`git cc` — garbage collection, pruning, etc.) | ✓ |
-| `count` | Counts commits in the current branch ahead of the remote | ✓ |
-| `pull` | Pulls with rebase; handles shallow-clone unshallowing | ✓ |
-| `push` | Pushes current branch; handles force-with-lease for rebased branches | ✓ |
-| `st` | Git status for the current repo | ✓ |
-| `upreb` | Fetches upstream and rebases the current branch onto it | ✓ |
-| `status_all_repos` | Git status for all tracked repos (HOME, dotfiles, profiles, chrome folders) | — |
-| `update_all_repos` | Stages and commits all changes in the HOME and profiles repos | — |
+| Command | What it does | Implementation | Supports override? |
+|---------|-------------|----------------|:-----------------:|
+| `cc` | Compacts the git repo (`git cc` — garbage collection, pruning, etc.) | alias for `scripts/git-command.rb` | ✓ |
+| `pull` | Pulls (with hang protection); falls back to `pull-safe` for repos that opt in to reset-on-diverged-history | alias for `scripts/git-command.rb` | ✓ |
+| `push` | Pushes the current branch (with hang protection) | alias for `scripts/git-command.rb` | ✓ |
+| `upreb` | Fetches upstream, rebases every local branch onto it and pushes | alias for `scripts/git-command.rb` | ✓ |
+| `count` | Counts commits on the current branch | zsh autoload (`files/--XDG_CONFIG_HOME--/zsh/`) | ✓ |
+| `st` | Git status for the current repo | zsh autoload (`files/--XDG_CONFIG_HOME--/zsh/`) | ✓ |
+| `status_all_repos` | Git status for all tracked repos (HOME, dotfiles, profiles, chrome folders) | alias for `scripts/call-utility.rb GitWorkspace.status_all_repos` | — |
+| `update_all_repos` | Stages and commits all changes in the HOME and profiles repos | alias for `scripts/call-utility.rb GitWorkspace.update_all_repos` | — |
 
-`status_all_repos` and `update_all_repos` do not support per-project overrides — they operate on a fixed set of repos and a cwd-based override would not be meaningful.
+`count` and `st` stay as zsh functions because they are one-line wrappers used constantly, where Ruby's ~100ms start-up would be noticeable. `status_all_repos` and `update_all_repos` do not support per-project overrides — they operate on a fixed set of repos and a cwd-based override would not be meaningful.
+
+The four `git-command.rb` commands take an optional folder and `--switches` that are forwarded to the underlying git command: `cc /path/to/repo --expire=now`.
 
 ### Per-project overrides
 
-For the six commands marked ✓, if a file named `<cmd>-<current-directory-name>.sh` exists in `${PERSONAL_BIN_DIR}` and is executable, it is **run as a separate script** (not sourced into your interactive shell) instead of the built-in implementation. Because it runs as its own process, it does not automatically inherit functions or variables from your shell — it sources `.aliases`/`.shellrc` itself.
+For the commands marked ✓, if a file named `<cmd>-<current-directory-name>.rb` (or `.sh`) exists in `${PERSONAL_BIN_DIR}` and is executable, it is **run as a separate script** (not sourced into your interactive shell) instead of the built-in implementation. A `.rb` file wins over a `.sh` file.
 
 **Example**: to customise `upreb` when inside a directory named `my-project`, create:
 
-```zsh
-#!/usr/bin/env zsh
-# ${PERSONAL_BIN_DIR}/upreb-my-project.sh
+```ruby
+#!/usr/bin/env ruby
+# ${PERSONAL_BIN_DIR}/upreb-my-project.rb
 
-set -euo pipefail
+require 'git_commands'
+require 'logging'
 
-# Re-source guard is inside .aliases itself -- safe to call unconditionally.
-source "${ZDOTDIR}/.aliases"
-
-# The autoload function hasn't necessarily run yet in this fresh process, so
-# _upreb doesn't exist until we explicitly load the script that defines it.
-require_env_var XDG_CONFIG_HOME
-load_file_if_exists "${XDG_CONFIG_HOME}/zsh/upreb"
-
-main() {
+Logging.run_script do
   # Run whatever pre-upreb steps are needed for this repo...
-  info "Running pre-upreb checks for my-project..."
-  some_check || { warn "Pre-upreb check failed -- aborting."; return 1; }
+  Logging.info 'Running pre-upreb checks for my-project...'
+  abort 'Pre-upreb check failed -- aborting.' unless system('some_check')
 
-  # ...then call the default implementation. Calling the private '_upreb'
-  # directly (not 'upreb') avoids re-triggering the override dispatch.
-  _upreb
-}
-
-main "$@"
+  # ...then call the default implementation. Calling GitCommands.upreb directly
+  # (not the 'upreb' alias) avoids re-triggering the override dispatch.
+  GitCommands.upreb(args: ARGV, header: false)
+end
 ```
 
 ```zsh
-chmod +x ${PERSONAL_BIN_DIR}/upreb-my-project.sh;
+chmod +x ${PERSONAL_BIN_DIR}/upreb-my-project.rb;
 ```
 
-The override script receives the same arguments passed to the public command (`"$@"`). If you also want cron suspended for the duration (e.g. to keep a scheduled job from touching the repo mid-operation), wrap the call to the default implementation in `with_cron_suspended` (from `.aliases`) instead of calling it directly:
+The override runs with the repo as its working directory and receives only the `--switches` that were passed to the command (the folder argument is consumed). If you also want cron suspended for the duration (e.g. to keep a scheduled job from touching the repo mid-operation), wrap the call to the default implementation in `Cron.with_cron_suspended`:
 
-```zsh
-main() {
-  with_cron_suspended _upreb "$@"
-}
+```ruby
+require 'cron'
+
+Logging.run_script do
+  Cron.with_cron_suspended { GitCommands.upreb(args: ARGV, header: false) }
+end
 ```
 
-`with_cron_suspended` suspends cron before running the given function, then restores it afterward — even on error (via an internal `EXIT` trap) — so a failed override never leaves cron permanently disabled.
+`Cron.with_cron_suspended` suspends cron before yielding, then restores it afterward — even on an exception or an early `return` (via an `ensure` clause) — so a failed override never leaves cron permanently disabled.
+
+A shell override (`<cmd>-<dir>.sh`) is still supported: it is run directly with the same working directory and arguments. There are no `_push`/`_upreb`-style helper functions to call back into any more, so for the default behaviour it should run `git-command.rb <cmd>` with `_GIT_OVERRIDE_SKIP=1` exported (to avoid recursing into itself).
 
 See [Technical Deep Dive § 10](TechnicalDeepDive.md#10-per-project-script-overrides) for the internal mechanics.
 
 ### Overrides through `run-all.rb` / `all`
 
-The same `${PERSONAL_BIN_DIR}/<name>-<basename>.sh` override scripts also apply transparently when you run a command across many repos with `run-all.rb` (or the `all`/`home`/`profiles` aliases described in the [`run-all.rb`](#run-allrb) section above). Before running a command in each repo, `run-all.rb` checks whether an override script exists for that repo's directory name and, if so, runs it instead — with the working directory already set to that repo.
+The same `${PERSONAL_BIN_DIR}/<name>-<basename>.rb` (or `.sh`) override scripts also apply transparently when you run a command across many repos with `run-all.rb` (or the `all`/`home`/`profiles` aliases described in the [`run-all.rb`](#run-allrb) section above). Before running a command in each repo, `run-all.rb` checks whether an override script exists for that repo's directory name and, if so, runs it instead — with the working directory already set to that repo.
 
 This means:
 

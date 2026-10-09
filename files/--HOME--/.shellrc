@@ -87,7 +87,8 @@ fi
 # any alias, script, or operation that depends on it to be silently skipped.
 #
 # Note: There is no GH_USERNAME, DOTFILES_BRANCH, or KEYBASE_USERNAME declared
-# below. None of these need to be pre-configured in a fork:
+# below. None of these need to be pre-configured in a fork (KEYBASE_USERNAME is purely
+# an optional login hint -- see its entry):
 # - GH_USERNAME is only needed transiently by the bootstrap one-liner (see
 #   Adoption.md Phase 3.2) to know which fork to clone. Re-runs of
 #   fresh-install-of-osx.sh on an already-cloned machine derive it automatically
@@ -99,20 +100,26 @@ fi
 #   that can't be determined (e.g. the repo doesn't exist yet).
 # - KEYBASE_USERNAME (Keybase is optional, for encrypted preference backups, and can
 #   coexist with the encrypted-backup mechanism below -- see KeybaseMigration.md) is
-#   decided interactively during fresh-install-of-osx.sh (login prompt), and the
-#   active username is derived from 'keybase status' wherever it's needed (see
-#   Keybase.username in scripts/utilities/keybase.rb) -- whoever logs in owns
-#   the account, so there's nothing to keep in sync here.
+#   only an optional login hint, and is NOT declared below by default: unlike the two
+#   above it is not needed to download this file, so it can simply be exported here
+#   (see the commented example below). If set, fresh-install-of-osx.sh runs
+#   'keybase login <username>' instead of the fully interactive flow. It is never a
+#   source of truth: the active username is always derived live from 'keybase
+#   status' (see Keybase.username in scripts/utilities/keybase.rb) -- whoever is
+#   logged in owns the account -- so nothing needs to be kept in sync.
 
 # ------------ Customizable env vars (MUST BE CHANGED to your values) ------------
 # Both backup mechanisms below can be enabled at once (see KeybaseMigration.md) --
 # comment out (or leave unset) either group's exports to disable that mechanism
-# entirely for that repo. Username is never stored for Keybase -- Keybase.username
+# entirely for that repo. The Keybase username is not stored here -- Keybase.username
 # derives it live from 'keybase status', since whoever is logged in owns the account.
 
 # Keybase repo names (comment out to disable Keybase entirely).
 export KEYBASE_HOME_REPO_NAME='home'
 export KEYBASE_PROFILES_REPO_NAME='profiles'
+# Optional: only a hint for the first-time 'keybase login <username>' (skips the account
+# prompt); has no effect once someone is logged in. Uncomment and set to use it.
+# export KEYBASE_USERNAME='your_username'
 
 # Encrypted git repo URLs (plain public git repos holding the gpg-encrypted git-bundle
 # blob; installed via the 'git-remote-gpg-encrypt' Homebrew tap -- see
@@ -120,8 +127,8 @@ export KEYBASE_PROFILES_REPO_NAME='profiles'
 # mechanism. Takes a full URL (any git host), unlike KEYBASE_*_REPO_NAME above -- that
 # tool has no concept of a "default owner" to derive from a repo name, by design (see
 # its docs/DESIGN.md § Remote naming is entirely outside this tool's purview).
-export ENCRYPTED_HOME_REPO_URL='https://github.com/vraravam/home.git'
-export ENCRYPTED_PROFILES_REPO_URL='https://github.com/vraravam/browser-profiles.git'
+# export ENCRYPTED_HOME_REPO_URL='https://github.com/vraravam/home.git'
+# export ENCRYPTED_PROFILES_REPO_URL='https://github.com/vraravam/browser-profiles.git'
 # --------------------------------------------------------------------------------
 
 # ---------- Env vars for basic/common setup (can be optionally changed) ---------
@@ -208,6 +215,20 @@ esac
 # 'typeset -gU ... PATH path ...' in .zshrc dedupes the resulting PATH, so this
 # early prepend is harmless (not just redundant) when .zshrc runs afterward.
 export PATH="${XDG_BIN_HOME}:${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
+
+# Put this repo's scripts (run-all.rb, git-command.rb, call-utility.rb, and the
+# 'git-<name>' executables git runs as 'git <name>': unshallow, fo, with-retry, ...) on
+# PATH for every context that sources .shellrc -- not only interactive shells (.zshrc
+# also adds it). A terminal that already sourced an older .shellrc keeps its old PATH:
+# the re-source guard above makes a plain 'source ~/.shellrc' a no-op there, so open a
+# new terminal (or 'exec zsh'; or 'unfunction is_shellrc_sourced' first, then source).
+# Appended (lowest priority) so nothing in it can shadow a system or Homebrew command.
+# Pure string test, no fork or stat; the directory not existing yet (before the repo is
+# cloned) is harmless on PATH. Case-guarded so re-sourcing never duplicates the entry.
+case ":${PATH}:" in
+  *":${DOTFILES_DIR}/scripts:"*) ;;
+  *) export PATH="${PATH}:${DOTFILES_DIR}/scripts" ;;
+esac
 
 export HOMEBREW_NO_ANALYTICS=1
 export HOMEBREW_NO_ASK=1
@@ -514,13 +535,9 @@ _dotfiles_notify() {
 
   # Prefer Ruby implementation (single source of truth) if available (post-bootstrap).
   # Fall back to shell implementation for vanilla OS / bootstrap phase.
-  if command_exists ruby && is_file "${DOTFILES_DIR}/scripts/utilities/macos.rb"; then
+  if _call_utility_script_available; then
     # Delegate to Ruby MacOS.notify (terminal-notifier with osascript fallback)
-    # Uses call_ruby_utility for proper RUBYLIB setup and error handling
-    # Escape single quotes in message and title for Ruby string safety
-    local _msg_escaped="${_msg//\'/\'\\\'\'}"
-    local _title_escaped="${_title//\'/\'\\\'\'}"
-    call_ruby_utility "require 'macos'; MacOS.notify('${_msg_escaped}', '${_title_escaped}')" 2>/dev/null || true
+    call_utility MacOS.notify -- "${_msg}" "${_title}" 2>/dev/null || true
   elif command_exists terminal-notifier; then
     # Shell fallback: terminal-notifier for richer notifications
     terminal-notifier -message "${_msg}" -title "${_title}" -sound default 2>/dev/null || true
@@ -1448,6 +1465,7 @@ ensure_dir_exists() {
   # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
   if is_root_dir "${target_dir%/*}"; then
     error "Refusing to create directory in root: '$(cyan "${target_dir}")'"
+    return 1
   fi
   if ! is_directory "${target_dir}"; then
     mkdir -pv "${target_dir}"
@@ -1455,9 +1473,9 @@ ensure_dir_exists() {
 }
 
 # Ruby load path for shared utilities -- add both dotfiles and personal bin to RUBYLIB
-# so 'ruby -e' one-liners in shell functions (like resume_cron, with_cron_suspended, etc.)
-# can use 'require' to load utility modules. Ruby scripts that run as standalone programs
-# (like install-dotfiles.rb) use 'require_relative' and do not need RUBYLIB.
+# so Ruby scripts outside the dotfiles repo (e.g. in PERSONAL_BIN_DIR) can use 'require' to
+# load the shared utility modules. Ruby scripts inside the dotfiles repo (like
+# install-dotfiles.rb) use 'require_relative' and do not need RUBYLIB.
 #
 # IMPORTANT: Must stay in .shellrc (not moved to .aliases) for the fresh-install error
 # handling window. During fresh-install, .shellrc is sourced twice: first before dotfiles
@@ -1480,9 +1498,8 @@ fi
 # Adds scripts/utilities/ and bin directories to Ruby's load path.
 # Deduplicates and exports RUBYLIB. Safe to call multiple times (idempotent).
 #
-# Called by:
-#   - .zshrc during shell startup (makes RUBYLIB available for all subprocesses)
-#   - call_ruby_utility before each ruby -e invocation (ensures paths are set)
+# Called by .zshrc during shell startup (makes RUBYLIB available for all subprocesses,
+# e.g. the Ruby scripts in PERSONAL_BIN_DIR that 'require' shared utilities).
 #
 # Usage:
 #   setup_rubylib
@@ -1505,34 +1522,49 @@ setup_rubylib() {
   fi
 }
 
-# Invokes a Ruby utility module method with proper environment setup.
-# Automatically sets up RUBYLIB and preserves COLUMNS for Ruby scripts that
-# need terminal width information.
+# Calls a public method of a utility module (scripts/utilities/*.rb) through
+# scripts/call-utility.rb. Arguments travel as real argv entries -- never spliced into
+# Ruby source -- so values containing quotes or spaces are safe. Preserves COLUMNS (a
+# non-exported shell variable) so Ruby's logging can size itself to the terminal.
 #
-# Arguments:
-#   $1 - Ruby code to execute (require + method call)
+# Usage: call_utility [--truthy] <Module.method> [arg ...] [--key=value ...]
+#   --truthy       also exit 1 when the method returns nil/false (predicate-style methods)
+#   --key=value    passed as a keyword argument ('true'/'false' become booleans)
+# See scripts/call-utility.rb for the allow-list of callable modules.
 #
-# Usage:
-#   call_ruby_utility "require 'git_processor'; GitProcessor.migrate_to_reftable(folder: '${folder}')"
-#   call_ruby_utility "require 'macos'; MacOS.kill_login_item_apps"
+# Returns 0 without doing anything when Ruby is not installed yet (vanilla OS before
+# Homebrew), and 1 when the dotfiles repo has not been cloned yet (script missing).
 #
 # Example delegation pattern:
-#   my_wrapper() {
-#     call_ruby_utility "require 'my_module'; MyModule.my_method"
-#   }
-call_ruby_utility() {
-  local ruby_code="${1:?call_ruby_utility: Ruby code required}"
-
-  # Guard: Ruby must be available (vanilla OS before Homebrew installs it)
-  if ! command_exists ruby; then
+#   suspend_cron() { call_utility Cron.suspend_cron; }
+#   install_mise_versions() { call_utility GitWorkspace.install_mise_versions "--first_install=${flag}"; }
+call_utility() {
+  # 'command -v' rather than command_exists: this file is also sourced by bash (direnv).
+  if ! command -v ruby &>/dev/null; then
     debug "Ruby not available -- skipping Ruby call"
     return 0
   fi
 
-  # Set up RUBYLIB to include utility modules
-  setup_rubylib
+  if ! _call_utility_script_available; then
+    debug "'$(cyan "$(_call_utility_script)")' not available yet -- skipping Ruby call"
+    return 1
+  fi
 
-  COLUMNS="${COLUMNS}" ruby -e "${ruby_code}"
+  COLUMNS="${COLUMNS}" "$(_call_utility_script)" "$@"
+}
+
+# Path of the Ruby bridge script. It only exists once the dotfiles repo has been cloned,
+# so everything needed during the vanilla-OS bootstrap must have a pure-shell path that is
+# taken when _call_utility_script_available is false.
+_call_utility_script() {
+  echo "${DOTFILES_DIR}/scripts/call-utility.rb"
+}
+
+# Returns true if Ruby and the bridge script are both present (i.e. the dotfiles repo has
+# been cloned). Callers that must also work before the clone use this to choose between
+# call_utility and an inline shell implementation.
+_call_utility_script_available() {
+  command -v ruby &>/dev/null && is_executable "$(_call_utility_script)"
 }
 
 # Returns true if $1 is a non-empty path whose direct child .git directory exists.
@@ -1572,7 +1604,7 @@ recompile_zsh_script() {
   local real
   _resolve_absolute_path real "${file}"
   if is_non_empty_file "${real}" && is_file_older_than "${file}.zwc" "${real}"; then
-    debug "recompiling '${file}'"
+    debug "recompiling '$(cyan "${file}")'"
     # zrecompile is only autoloaded by .zshrc (interactive shells). Any caller
     # that reaches this point without .zshrc having run yet (cron jobs,
     # scripts, load_file_if_exists's safeguard from a non-interactive context)
@@ -1794,7 +1826,7 @@ keep_sudo_alive() {
 }
 
 # Migrates a git repository to reftable format if git 2.45+ is available.
-# Thin wrapper that delegates to the git migrate-reftable alias.
+# Thin wrapper that delegates to the git migrate-reftable command (scripts/git-migrate-reftable).
 # Usage: migrate_git_repo_to_reftable <repo-directory>
 # Returns: 0 on success or if already reftable, 1 if git 2.45+ unavailable
 # Note: On vanilla macOS with system git < 2.45, this returns 1 (unsupported).
@@ -1884,7 +1916,7 @@ clone_repo_into() {
     https://* | http://* | ssh://* | git://* | git+ssh://* | file://* | keybase://* | gpg-encrypt::*) ;;
     *@*:*) ;; # scp-style SSH, e.g. 'git@github.com:owner/repo.git' -- see the comment above
     *)
-      error "clone_repo_into: '${clone_url}' has no recognizable clone-url scheme -- expected https://, http://, ssh://, git://, git+ssh://, file://, keybase://, gpg-encrypt::, or scp-style user@host:path"
+      error "clone_repo_into: '$(cyan "${clone_url}")' has no recognizable clone-url scheme -- expected https://, http://, ssh://, git://, git+ssh://, file://, keybase://, gpg-encrypt::, or scp-style user@host:path"
       return 1
       ;;
   esac
@@ -1967,7 +1999,7 @@ clone_repo_into() {
       if is_non_zero_string "${target_branch}"; then
         clone_args+=('--branch' "${target_branch}")
       fi
-      debug "Using clone args: ${clone_args[*]:-(none -- plain full clone)}"
+      debug "Using clone args: '$(cyan "${clone_args[*]:-(none -- plain full clone)}")'"
 
       # Capture stderr to display on failure
       local stderr_file
@@ -1981,7 +2013,7 @@ clone_repo_into() {
       # Wrapped with 'git with-retry': flaky networks (VPN/MTU black-holes) can cause this
       # clone to stall indefinitely rather than fail fast. Implemented as a git alias (not a
       # shell function) so the retry/timeout/process-tree-kill logic lives in one place and
-      # is reusable by any other git alias (e.g. 'unshallow') without sourcing ~/.shellrc.
+      # is reusable by any other git alias or script (e.g. 'unshallow') without sourcing ~/.shellrc.
       # Passes tmp_folder as the progress-path so with-retry only kills on genuine inactivity
       # (no growth in the folder being cloned into) rather than a fixed wall-clock timeout --
       # a large repo that is transferring slowly but steadily is not killed prematurely.
@@ -2028,7 +2060,7 @@ clone_repo_into() {
         info "Waiting for KBFS to be ready at '$(cyan "${kbfs_check_path}")'"
         local kbfs_stderr_file
         kbfs_stderr_file="$(mktemp)"
-        if git config --get alias.with-retry &>/dev/null; then
+        if command -v git-with-retry &>/dev/null; then
           # Reuses the same hang-protected retry mechanism as the clone itself below --
           # 'keybase fs ls' can itself hang while KBFS is still coming up, not just fail fast.
           git with-retry 10 6 "${kbfs_stderr_file}" '-' keybase fs ls "${kbfs_check_path}" &>/dev/null || warn "KBFS did not become ready within 60s -- attempting clone anyway"
@@ -2047,7 +2079,7 @@ clone_repo_into() {
         mkdir -p "${tmp_folder}"
         git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${clone_url}" . 2>"${stderr_file}"
         clone_status=$?
-      elif git config --get alias.with-retry &>/dev/null; then
+      elif command -v git-with-retry &>/dev/null; then
         # Wrapped in 'zsh -c' so the temp folder is wiped and recreated fresh before every
         # attempt -- 'with-retry' itself just re-runs the same command on failure/stall
         # without cleaning up. If attempt 1 gets killed (or fails) mid-clone, it can leave a
@@ -2064,16 +2096,16 @@ clone_repo_into() {
           zsh -c 'rm -rf "${1:?}"; mkdir -p "${1}"; exec git -C "${1}" clone -n -c init.defaultRefFormat=reftable "${@:2}"' -- "${tmp_folder}" "${clone_args[@]}" "${clone_url}" .
         clone_status=$?
       else
-        # Bootstrap edge case: the 'with-retry' alias lives in ${XDG_CONFIG_HOME}/git/config,
-        # which is part of the dotfiles repo -- not yet symlinked into place on a vanilla OS
-        # when this function is used to clone the dotfiles repo itself (the very first
-        # clone_repo_into call in fresh-install-of-osx.sh). Falling back silently here would
-        # be wrong: 'git with-retry ...' with an undefined alias fails at the alias-resolution
-        # step itself ("git: 'with-retry' is not a git command"), so the wrapped clone would
-        # never run at all -- not merely lose retry protection. Fall back to a plain clone
-        # (no retry/hang protection) only for this one bootstrap window; every subsequent
-        # call automatically regains with-retry once install-dotfiles.rb has run.
-        debug "'with-retry' alias not yet available (expected before the dotfiles repo is cloned) -- using plain clone without retry protection"
+        # Bootstrap edge case: 'git-with-retry' is an executable in ${DOTFILES_DIR}/scripts, which
+        # is part of the dotfiles repo -- not on PATH on a vanilla OS when this function is used
+        # to clone the dotfiles repo itself (the very first clone_repo_into call in
+        # fresh-install-of-osx.sh). Falling back silently here would be wrong: 'git with-retry
+        # ...' with no such command on PATH fails at the command-resolution step itself ("git:
+        # 'with-retry' is not a git command"), so the wrapped clone would never run at all --
+        # not merely lose retry protection. Fall back to a plain clone (no retry/hang
+        # protection) only for this one bootstrap window; every subsequent call automatically
+        # regains with-retry once the scripts directory is on PATH.
+        debug "'git-with-retry' not yet on PATH (expected before the dotfiles repo is cloned) -- using plain clone without retry protection"
         git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${clone_url}" . 2>"${stderr_file}"
         clone_status=$?
       fi
@@ -2108,6 +2140,7 @@ clone_repo_into() {
         # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
         if is_root_dir "${target_folder%/*}"; then
           error "Refusing to remove .git directory from path in root: '$(cyan "${target_folder}")'"
+          return 1
         fi
         rm -rf "${target_folder}/.git"
       fi
@@ -2134,7 +2167,7 @@ clone_repo_into() {
       # real branch fine via its reftable database (symbolic-ref/status/branch all work
       # correctly), but shell prompts that read .git/HEAD directly (bypassing a git
       # subprocess for speed) would otherwise display '.invalid' as the branch name. The
-      # 'git migrate-reftable' alias (see git/config) applies this same fixup for repos
+      # 'git migrate-reftable' command (scripts/git-migrate-reftable) applies this same fixup for repos
       # migrated to reftable after the fact rather than cloned directly into it.
       local real_ref
       real_ref="$(git -C "${target_folder}" symbolic-ref HEAD 2>/dev/null)"
@@ -2221,15 +2254,18 @@ clone_repo_into() {
   # tracking information".
   configure_branch_tracking_for_origin "${target_folder}"
 
-  # migrate_git_repo_to_reftable/unshallow/maintain/siu all depend on git aliases from
-  # ${XDG_CONFIG_HOME}/git/config -- not yet symlinked into place on a vanilla OS when this
-  # function clones the dotfiles repo itself (the very first clone_repo_into call in
-  # fresh-install-of-osx.sh, which runs before install-dotfiles.rb). Checking one alias
-  # ('maintain') is a reliable proxy for all four, since they all live in the same config
-  # file -- skip this whole block in that case; every subsequent call (this repo once
+  # migrate_git_repo_to_reftable/unshallow/maintain/siu depend on two things that are not both
+  # present on a vanilla OS when this function clones the dotfiles repo itself (the very first
+  # clone_repo_into call in fresh-install-of-osx.sh, which runs before install-dotfiles.rb):
+  #   - the 'git-migrate-reftable'/'git-unshallow'/'git-maintain' executables in
+  #     ${DOTFILES_DIR}/scripts (on PATH only once the repo is cloned), and
+  #   - the small aliases they call (is-shallow, dlb, is-clean, ..., 'siu') from
+  #     ${XDG_CONFIG_HOME}/git/config (symlinked into place by install-dotfiles.rb).
+  # Checking one of each ('git-maintain' on PATH, the 'siu' alias) is a reliable proxy for all
+  # of them -- skip this whole block until both exist; every subsequent call (this repo once
   # install-dotfiles.rb has run, or any other repo) runs it normally.
   #
-  # SKIP_POST_CLONE_MAINTENANCE opts out of this entire block regardless of alias
+  # SKIP_POST_CLONE_MAINTENANCE opts out of this entire block regardless of command
   # availability -- for ephemeral/disposable repos that gain nothing from it (e.g. a
   # throwaway mirror clone holding nothing but small, wholesale-replaced files). This is
   # not just a wasted-cost optimization: 'unshallow' internally calls 'fo'
@@ -2244,7 +2280,7 @@ clone_repo_into() {
   # future ephemeral-clone use case with the same shape.
   if is_non_zero_string "${SKIP_POST_CLONE_MAINTENANCE:-}"; then
     debug "SKIP_POST_CLONE_MAINTENANCE set -- skipping post-clone maintenance for '$(yellow "${target_folder}")'"
-  elif git config --get alias.maintain &>/dev/null; then
+  elif command -v git-maintain &>/dev/null && git config --get alias.siu &>/dev/null; then
     # Migrate to reftable format BEFORE background unshallow to avoid race conditions.
     # Migrating refs while unshallow is fetching history could cause lock contention or
     # corrupted refs. Migration must complete before any background ref writes begin.
@@ -2257,7 +2293,7 @@ clone_repo_into() {
     # Unshallow and run repository maintenance for both new clones and existing repos.
     # Converts shallow repos to full clones. If the repo is already a full clone, 'git
     # unshallow' is a no-op. 'unshallow' wraps its own fetch/backfill steps in 'git
-    # with-retry' internally (see git/config) so a stalled fetch (flaky network) cannot
+    # with-retry' internally (see scripts/git-unshallow) so a stalled fetch (flaky network) cannot
     # hang this step forever -- every other caller of 'git unshallow' (e.g. antidote.rb,
     # 'pullsub') gets the same hang protection automatically. 'maintain' (mtime restore +
     # prune/gc/commit-graph) is run sequentially AFTER unshallow completes -- running it
@@ -2286,12 +2322,12 @@ clone_repo_into() {
     # a stalled fetch inside any submodule would otherwise hang this function indefinitely.
     git -C "${target_folder}" siu
   else
-    debug "Git aliases (migrate-reftable/unshallow/maintain/siu) not yet available (expected before the dotfiles repo is cloned) -- skipping post-clone maintenance for this one bootstrap call"
+    debug "Git commands (git-migrate-reftable/git-unshallow/git-maintain on PATH, and the 'siu' alias) not yet available (expected before the dotfiles repo is cloned) -- skipping post-clone maintenance for this one bootstrap call"
   fi
   local end_time
   _epoch_seconds end_time
   local duration=$((end_time - start_time))
-  debug "Process took ${duration} seconds"
+  debug "Process took $(purple "${duration}") seconds"
 }
 
 # Shared "secure a folder" skeleton for set_ssh_folder_permissions and
@@ -2407,52 +2443,64 @@ eval_shellenv() {
 # shell environment has been set up.  See the matching section in .aliases for
 # those functions and a fuller explanation of the split.
 # --------------------------------------------------------------------------
-# Helper functions for delegating to Ruby utilities
-# --------------------------------------------------------------------------
 
-# Internal helper: calls a Ruby Cron module method with positional arguments.
-# Eliminates duplication of ${LOAD_PATH} setup across cron wrapper functions.
-# Usage: _call_ruby_cron <method_name> [args...]
-# Example: _call_ruby_cron create_crontab "/path/to/file"
-#          _call_ruby_cron recron
-_call_ruby_cron() {
-  local method="${1:?_call_ruby_cron: method name required}"
-  shift
+# Each of these delegates to Ruby (scripts/utilities/cron.rb) once the dotfiles repo has
+# been cloned. Before that -- when only this file exists -- they run an equivalent
+# pure-shell implementation, so cron is suspended and restored correctly throughout the
+# vanilla-OS bootstrap.
 
-  local args_str=""
-  if [[ $# -gt 0 ]]; then
-    # Build comma-separated list of single-quoted Ruby string literals.
-    local -a args_parts=()
-    local arg
-    for arg in "$@"; do
-      args_parts+=("'${arg}'")
-    done
-    # Join with ', '
-    local IFS=', '
-    args_str="${args_parts[*]}"
-  fi
-
-  call_ruby_utility "require 'cron'; Cron.${method}(${args_str})"
+# Backup location shared with fresh-install-of-osx.sh and Ruby's EnvVars.cron_backup_file.
+_cron_backup_file() {
+  echo "${_DOTFILES_CRON_BACKUP_FILE:-${TMPDIR:-/tmp}/crontab_backup}"
 }
 
 # Loads a cron file into the system crontab. Shared by suspend_cron/resume_cron
 # (bootstrap layer, here) and recron (.aliases layer) so neither duplicates logic.
-# Thin wrapper that delegates to Ruby Cron.restore_cron.
 # Usage: restore_cron <cron-file-path>
 restore_cron() {
-  _call_ruby_cron restore_cron "$@"
+  if _call_utility_script_available; then
+    call_utility Cron.restore_cron -- "$@"
+    return
+  fi
+  local cron_file="${1:-}"
+  if ! is_file "${cron_file}"; then
+    warn "No '$(cyan "${cron_file}")' found; returning without any processing"
+    return 1
+  fi
+  crontab "${cron_file}"
 }
 
-# Thin wrapper that delegates to Ruby Cron.suspend_cron.
 # Backs up the current crontab to _DOTFILES_CRON_BACKUP_FILE and removes all cron jobs.
 suspend_cron() {
-  _call_ruby_cron suspend_cron
+  if _call_utility_script_available; then
+    call_utility Cron.suspend_cron
+    return
+  fi
+  local backup_file
+  backup_file="$(_cron_backup_file)"
+  # 'crontab -l' exits non-zero when no crontab exists yet; the backup is then left empty.
+  crontab -l >"${backup_file}" 2>/dev/null || : >"${backup_file}"
+  crontab -r &>/dev/null || true
 }
 
-# Thin wrapper that delegates to Ruby Cron.resume_cron.
 # Restores crontab from _DOTFILES_CRON_BACKUP_FILE and cleans up the backup file.
 resume_cron() {
-  _call_ruby_cron resume_cron
+  if _call_utility_script_available; then
+    call_utility Cron.resume_cron
+    return
+  fi
+  local backup_file
+  backup_file="$(_cron_backup_file)"
+  if is_non_empty_file "${backup_file}"; then
+    crontab "${backup_file}" && success 'Cron jobs resumed from backup'
+  else
+    info 'No cron backup to restore; skipping'
+  fi
+  # Prevent operations on paths in root directory
+  # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
+  if is_file "${backup_file}" && ! is_root_dir "${backup_file%/*}"; then
+    rm -f "${backup_file}"
+  fi
 }
 
 # --------------------------------------------------------------------------

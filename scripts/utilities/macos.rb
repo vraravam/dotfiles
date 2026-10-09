@@ -185,7 +185,7 @@ module MacOS
     if @_notification_history.key?(key)
       last_sent = @_notification_history[key]
       if now - last_sent < 60
-        Logging.debug "Skipping duplicate notification (sent #{now - last_sent}s ago): #{message}"
+        Logging.debug "Skipping duplicate notification (sent #{(now - last_sent).to_s.purple}s ago): #{message}"
         return
       end
     end

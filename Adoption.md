@@ -92,7 +92,7 @@ ls -la "${PERSONAL_CONFIGS_DIR}/defaults/";
 - Files are exported to `${PERSONAL_CONFIGS_DIR}/defaults/` (ready to be committed to your home git repo)
 - Filters out machine-specific IDs, display geometry, ephemeral state
 
-**Note**: The `find_and_append_prefs` function is not available at this stage (it requires `.shellrc` to be installed). To add new app preferences, manually edit the downloaded `capture-prefs-allowed-list.txt` file before running the export.
+**Note**: To add new app preferences, either run `capture-prefs.rb -f <search-string>` (once the repo is cloned) or manually edit the downloaded `capture-prefs-allowed-list.txt` file before running the export.
 
 ### 1.3 Generate Repository Catalog
 
@@ -310,8 +310,10 @@ set) and handles login interactively:
   that running `keybase login` manually and re-running this script will pick it up).
 
 Whoever completes the login owns the account -- the username is derived from
-`keybase status` wherever it's needed, so there's no `KEYBASE_USERNAME` (or any other
-Keybase identity var) to set anywhere, ever.
+`keybase status` wherever it's needed, so nothing has to be configured. Optionally,
+uncomment `export KEYBASE_USERNAME='your_username'` in the "Customizable env vars" section
+of `.shellrc` (next to `KEYBASE_HOME_REPO_NAME`) to run `keybase login your_username`
+instead of the fully interactive flow; it is only a hint, used solely when nobody is logged in yet.
 
 **Before relying on the encrypted backup for sensitive data**, read
 [KeybaseMigration.md § Is This as Secure as Keybase?](KeybaseMigration.md#is-this-as-secure-as-keybase)
