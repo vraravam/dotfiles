@@ -49,6 +49,66 @@ if [[ -o interactive && -o zle && -t 1 ]] && (( $+commands[starship] )); then
   # Source ftl-prompt function directly from antidote cache
   load_file_if_exists "${ANTIDOTE_HOME}/github.com/mattmc3/starship-ftl/ftl-prompt.zsh"
 
+  # ftl-prompt draws the instant prompt by expanding PS1 (one starship run) and, by design,
+  # expands it again for the first real prompt (a second run, ~60-100ms in a git repo). The
+  # shell state is identical at both points, so keep the first expansion's result
+  # (_ftl_first_ps1, still containing the %{ %} / %F sequences) and show it for the first real
+  # prompt too; _ftl_restore_ps1 (registered below, after starship's init sets PS1) puts the
+  # live PS1 back as soon as that prompt is painted. The override replaces ftl-prompt's own
+  # helper of the same name and must be kept in step with it.
+  if (($+functions[_ftl_prompt_expand])); then
+    _ftl_prompt_expand() {
+      emulate -L zsh
+      setopt prompt_subst
+      # In iTerm2, render the prompt marks into the kept copy so the first real prompt has
+      # them like every later one (starship picks them up from these variables, see the
+      # env_var segments in starship.toml); they are stripped from the instant prompt that is
+      # drawn here, which has never carried marks.
+      if [[ -n "${ITERM_SESSION_ID:-}" ]]; then
+        local -x _STARSHIP_ITERM2_MARK_A=$'\e]133;A\a' _STARSHIP_ITERM2_MARK_B=$'\e]133;B\a'
+      fi
+      typeset -g _ftl_first_ps1=${(e)1}
+      print -nr -- ${(%)${_ftl_first_ps1//$'\e]133;'[AB]$'\a'/}}
+    }
+  fi
+
+  # Feeds starship's [env_var.GIT_SIZE] segment (replaces a custom module that forked sh +
+  # git + awk on every prompt). Defined and called here, before the instant prompt is drawn,
+  # so that prompt shows the repo size too; the precmd hook that keeps it current is
+  # registered in the starship init block below. 'size-pack' only changes when a pack file is added or
+  # removed, which always changes the mtime of '.git/objects/pack', so that mtime (read
+  # with zsh/stat's zstat builtin -- no fork) is a complete cache key: git is re-run only
+  # when it changes or the directory is a new repo. A '.git' file (worktree/submodule) has
+  # no readable pack dir at that path, so it is simply recomputed each prompt.
+  # Outside a repo the variable is unset, which hides the segment.
+  zmodload -F zsh/stat b:zstat
+  typeset -g _prompt_git_size_key='' _prompt_git_size_val=''
+  _prompt_git_size() {
+    local dir="${PWD}"
+    until [[ -e "${dir}/.git" ]]; do
+      if [[ "${dir}" == / ]]; then
+        unset _STARSHIP_GIT_SIZE
+        return 0
+      fi
+      dir="${dir:h}"
+    done
+
+    local key=''
+    local -a mtime
+    if zstat -A mtime +mtime "${dir}/.git/objects/pack" 2>/dev/null; then key="${dir}:${mtime[1]}"; fi
+
+    if [[ -z "${key}" || "${key}" != "${_prompt_git_size_key}" ]]; then
+      local out
+      out="$(command git -C "${dir}" count-objects -vH 2>/dev/null)"
+      _prompt_git_size_key="${key}"
+      # 'size-pack: 2.63 MiB' -> '2.63 MiB'
+      # Unquoted on purpose: inside double quotes (f) no longer splits into lines.
+      _prompt_git_size_val=${${(M)${(f)out}:#size-pack:*}#size-pack: }
+    fi
+    typeset -gx _STARSHIP_GIT_SIZE="${_prompt_git_size_val}"
+  }
+  _prompt_git_size
+
   # Draw instant prompt (loads starship theme, captures output during startup)
   # Only call if ftl-prompt function was successfully loaded
   (( $+functions[ftl-prompt] )) && ftl-prompt starship
@@ -390,6 +450,23 @@ if (($+commands[starship])); then
   # emitted by the cache takes effect globally and is not scoped to a function.
   load_file_if_exists "${_starship_init_cache}"
   unset _starship_bin _starship_init_cache
+  if (($+functions[_prompt_git_size])); then precmd_functions+=(_prompt_git_size); fi
+
+  # First real prompt reuses the instant prompt's rendered PS1 (see the _ftl_prompt_expand
+  # override above); the '${...}' is expanded by prompt_subst without re-scanning its result,
+  # so characters like '$' or '`' in a path cannot be re-evaluated.
+  if [[ -n "${_ftl_first_ps1:-}" ]]; then
+    typeset -g _ftl_live_ps1="${PS1}"
+    PS1='${_ftl_first_ps1}'
+    _ftl_restore_ps1() {
+      PS1="${_ftl_live_ps1}"
+      unset _ftl_first_ps1 _ftl_live_ps1
+      add-zle-hook-widget -d zle-line-init _ftl_restore_ps1
+      unfunction _ftl_restore_ps1
+    }
+    autoload -Uz add-zle-hook-widget
+    add-zle-hook-widget zle-line-init _ftl_restore_ps1
+  fi
 fi
 
 # setup paths in the beginning so that all other conditions work correctly
@@ -724,7 +801,7 @@ if [[ -n "${ZSH_PROFILE:-}" ]]; then zprof; fi
 #
 # MARK PLACEMENT STRATEGY:
 #   Mark A: output by starship at start of prompt (always fresh, even after ⌘K)
-#   Mark B: output by starship at end of prompt
+#   Mark B: output by starship at end of the prompt's segments
 #   Newline: output in precmd BEFORE starship renders (for spacing)
 #   Marks C/D: wrap command execution in preexec/precmd
 #
@@ -759,18 +836,18 @@ if [[ -n "${ITERM_SESSION_ID:-}" ]]; then
   precmd_functions+=(_iterm2_precmd_after)
   preexec_functions+=(_iterm2_preexec)
 
-  # Signal that .zshrc has finished loading. This is used by starship custom segment
-  # (custom.iterm2_start and custom.iterm2_end) to prevent marks from appearing during
-  # shell initialization.
-  # Only set in iTerm2 sessions since it's only checked by iTerm2-specific segments.
-  export PROMPT_INITIALIZED=1
+  # Hand the mark escape sequences to starship's env_var modules (see [env_var.ITERM2_MARK_A]
+  # in starship.toml). Exported only here -- inside iTerm2 and after .zshrc has finished
+  # loading -- so no marks appear in other terminals or during shell initialization.
+  export _STARSHIP_ITERM2_MARK_A=$'\e]133;A\a'
+  export _STARSHIP_ITERM2_MARK_B=$'\e]133;B\a'
 
   # Output mark A manually for the initial prompt that's already visible.
   # This ensures the very first prompt (which appeared during .zshrc loading) has marks,
   # allowing ⌘↑ to wrap around to it. Without this, ⌘↑ stops at the first command.
   # Note: This doesn't trigger a new prompt render, it just injects mark A into the
   # current prompt that's already on screen. The next prompt render (after first command)
-  # will have marks via starship segments.
+  # will have marks via the starship env_var segments.
   iterm2_mark_prompt_start
 fi
 

@@ -4,7 +4,28 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.11
+
+:white_check_mark: Tested on a vanilla macOS machine
+
+#### Cut first-command lag: no forks per prompt for the git size and iTerm2 marks, and reuse the instant prompt for the first real prompt
+
+* *[files/--XDG_CONFIG_HOME--/starship.toml]* The repo-size segment and the iTerm2 prompt marks A/B are now starship `env_var` modules (`GIT_SIZE`, `ITERM2_MARK_A`, `ITERM2_MARK_B`) instead of `custom` modules. Every `custom` module forked `sh` for its `when` and again for its `command` on every prompt (the size segment alone cost about 55 ms, `git` + `awk` included); rendered prompts are byte-identical to before in and outside iTerm2, in and outside a git repo.
+* *[files/--ZDOTDIR--/.zshrc]* New `_prompt_git_size` precmd hook feeds the `GIT_SIZE` segment. `size-pack` can only change when a pack file is added or removed, which always changes the mtime of `.git/objects/pack`, so the hook reads that mtime with the `zsh/stat` `zstat` builtin (no fork) and re-runs `git count-objects` only when it changes; a cached prompt costs about 0.05 ms instead of an 18 ms git call. The variable is unset outside a repo, which hides the segment. It is also called once before `ftl-prompt` so the instant prompt shows the size.
+* *[files/--ZDOTDIR--/.zshrc]* The iTerm2 block exports `_STARSHIP_ITERM2_MARK_A` / `_STARSHIP_ITERM2_MARK_B` (replacing the `PROMPT_INITIALIZED` flag the old `custom` segments checked) only after `.zshrc` has finished loading and only inside iTerm2, so no marks appear in other terminals or during initialization.
+* *[files/--ZDOTDIR--/.zshrc]* `ftl-prompt` expands `PS1` (one starship run) to draw the instant prompt and, by design, again for the first real prompt (a second run, 60-100 ms in a large git repo). `_ftl_prompt_expand` is overridden to keep the first result, the first real prompt shows that copy (with the iTerm2 marks rendered into it, so mark counts are unchanged), and a one-shot `zle-line-init` hook restores the live `PS1` once it is painted. The kept string is expanded by `prompt_subst` without re-scanning its result, so characters such as `$` or a backtick in a path are not re-evaluated. If a `starship-ftl` update renames or reshapes `_ftl_prompt_expand` the override simply stops applying and the first prompt runs starship twice again, as before.
+* *[files/--HOME--/.shellrc]* Comment on `iterm2_mark_prompt_start` updated to describe the new `env_var` segment.
+* Measured with `zsh-bench` in a 10,000-file repo (shell started inside the repo): `first_command_lag_ms` about 320 -> about 220, `command_lag_ms` about 158 -> about 147; `input_lag_ms` and `exit_time_ms` unchanged within noise.
+
+#### Adopting these changes
+
+* Run `delete_caches` so no stale `.zwc` bytecode for `.zshrc` is loaded, then quit and restart the Terminal/iTerm application (`.zshrc` and `starship.toml` changed).
+
+---
+
 ### 4.0.10
+
+:white_check_mark: Tested on a vanilla macOS machine
 
 #### Fix Logging state sharing and `Core.stream_command` exit status; split the largest utilities; add specs
 

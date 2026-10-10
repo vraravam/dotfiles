@@ -33,7 +33,7 @@ add_newline = false
 command_timeout = 1000
 
 # ── Left prompt ───────────────────────────────────────────────────────────────
-# Segment order: iterm2_mark -> os -> directory -> git_branch -> git_size -> git_status -> git_state -> iterm2_end -> character
+# Segment order: iterm2 mark A -> os -> directory -> git_branch -> git_size -> git_status -> git_state -> iterm2 mark B -> character
 # Arrow separators transition: white -> blue -> green -> (yellow if dirty) -> terminal default
 #
 # Design:
@@ -52,22 +52,23 @@ command_timeout = 1000
 # - Clean but ahead/behind: green branch -> size -> yellow symbols (⇡/⇣) -> yellow arrow
 # - Dirty & ahead/behind: green branch -> size -> yellow symbols -> yellow arrow -> yellow ahead/behind -> yellow arrow
 #
-# Performance: Built-in Rust modules (zero forks, gitoxide-based) + 1 custom segment
-# for repo size (~25-30ms, see [custom.git_size] below). Modules render in parallel
-# (starship's async scheduler), so this does not add to total prompt latency serially.
+# Performance: Built-in Rust modules only (zero forks, gitoxide-based). The repo-size and
+# iTerm2-mark segments are env_var modules fed by .zshrc (see [env_var.GIT_SIZE] and
+# [env_var.ITERM2_MARK_A] below) because every 'custom' module forks a shell per prompt
+# ('when' and 'command' each fork one), which dominated the prompt render time.
 #
-# iTerm2 shell integration: mark A (prompt start) + mark B (prompt end) output by starship.
+# iTerm2 shell integration: mark A (prompt start) + mark B (prompt end) output by starship (via env_var).
 # Newline output in precmd hook (runs before starship).
 format = """
-${custom.iterm2_start}\
+${env_var.ITERM2_MARK_A}\
 [$os](bg:white fg:black)\
 [\uE0B0](fg:white bg:blue)\
 [$directory](bg:blue fg:#e4e4e4)\
 $git_branch\
-${custom.git_size}\
+${env_var.GIT_SIZE}\
 $git_status\
 $git_state\
-${custom.iterm2_end}\
+${env_var.ITERM2_MARK_B}\
 $character"""
 
 # ── Right prompt ──────────────────────────────────────────────────────────────
@@ -193,29 +194,24 @@ diverged = "[\uE0B0](fg:green bg:yellow)[ ⇣${ahead_count}⇡${behind_count} ](
 # Empty (default) when there's no upstream configured at all, matching prior behavior.
 up_to_date = "[\uE0B0](fg:green)"
 
-# ── Custom: Git repository size ──────────────────────────────────────────────
+# ── Git repository size (env_var, populated by .zshrc) ───────────────────────
 # Shows pack size in human-readable format (e.g., "1.37 MiB").
-# Calls 'git count-objects -vH' + awk directly instead of 'git size' (~30ms vs
-# ~10ms measured via 'starship timings'). Going through the alias forks an extra
-# process to resolve/execute the '!f() {...}; f' shell function on top of the
-# count-objects + awk forks the alias itself needs -- calling count-objects
-# directly here skips that redundant fork entirely. The 'git size' alias itself
-# remains available for interactive/manual use (see git-config.md, "git size"
-# section) and for scripts (path_utils.rb) where the extra fork is negligible.
+# '_STARSHIP_GIT_SIZE' is set by the _prompt_git_size precmd hook in .zshrc, which only
+# re-runs 'git count-objects -vH' when the repo's objects/pack directory changed (that is
+# the only thing 'size-pack' measures) and unsets it outside a repo, so this segment is
+# hidden there. This replaces a custom module that forked 'sh', 'git' and 'awk' on every
+# prompt (~30-55ms on the critical path). The 'git size' alias remains available for
+# interactive/manual use and for scripts (path_utils.rb).
 #
 # Visual integration:
 # - Placed after git_branch on green background
 # - No trailing arrow (git_status provides the transition: either its own yellow
 #   entry arrow when dirty, or up_to_date's plain green arrow when clean and synced)
-[custom.git_size]
-command = "git count-objects -vH | awk '/size-pack:/ {print $2, $3}'"
-require_repo = true
-when = "true"
-shell = ["sh", "--noprofile", "--norc"]
-format = "[$output ](bg:green fg:black)"
-ignore_timeout = true
+[env_var.GIT_SIZE]
+variable = "_STARSHIP_GIT_SIZE"
+format = "[$env_value ](bg:green fg:black)"
 
-# ── Custom: iTerm2 shell integration marks A and B ──────────────────────────
+# ── iTerm2 shell integration marks A and B (env_var, populated by .zshrc) ────
 # Mark A (prompt start) and mark B (prompt end) for iTerm2 shell integration.
 # Newline output in precmd hook (runs before starship renders).
 # Marks C/D (command start/end) output in preexec/precmd hooks in .zshrc.
@@ -225,19 +221,18 @@ ignore_timeout = true
 #   - Mark navigation/cycling (⌘↑ / ⌘↓ with wraparound)
 #   - Shell integration features without iTerm2's auto-detection
 #
-# Performance: Inline escape sequences (no function call overhead)
-# Conditional on ITERM_SESSION_ID (only in iTerm2) and PROMPT_INITIALIZED (after .zshrc loads).
-[custom.iterm2_start]
-command = 'printf "\033]133;A\007"'
-when = 'test -n "${ITERM_SESSION_ID:-}" && test -n "${PROMPT_INITIALIZED:-}"'
-shell = ["sh", "--noprofile", "--norc"]
-format = "$output"
+# The escape sequences are exported once by .zshrc's iTerm2 block as
+# '_STARSHIP_ITERM2_MARK_A' / '_STARSHIP_ITERM2_MARK_B', and only after .zshrc has
+# finished loading and only inside iTerm2, so an unset variable (anywhere else, or during
+# shell initialization) renders nothing. Using env_var instead of custom modules avoids
+# forking two shells per module per prompt.
+[env_var.ITERM2_MARK_A]
+variable = "_STARSHIP_ITERM2_MARK_A"
+format = "$env_value"
 
-[custom.iterm2_end]
-command = 'printf "\033]133;B\007"'
-when = 'test -n "${ITERM_SESSION_ID:-}" && test -n "${PROMPT_INITIALIZED:-}"'
-shell = ["sh", "--noprofile", "--norc"]
-format = "$output"
+[env_var.ITERM2_MARK_B]
+variable = "_STARSHIP_ITERM2_MARK_B"
+format = "$env_value"
 description = "iTerm2 prompt end mark (after visible prompt content)"
 
 # ── Exit status ───────────────────────────────────────────────────────────────

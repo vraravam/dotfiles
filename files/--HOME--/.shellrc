@@ -683,9 +683,8 @@ fi
 # Outputs iTerm2 shell integration mark A (prompt start).
 # Called manually once in .zshrc to inject a mark into the initial prompt that's
 # already on screen before the first precmd cycle runs (see .zshrc's iTerm2 shell
-# integration section). Starship's custom.iterm2_start segment inlines this same
-# printf directly instead of calling this function, to avoid the overhead of
-# sourcing .shellrc inside its 'sh --noprofile --norc' subprocess on every render.
+# integration section). Starship's [env_var.ITERM2_MARK_A] segment emits the same escape
+# sequence from an exported variable (see .zshrc), so no subprocess is needed per render.
 # Returns: escape sequence \033]133;A\007
 iterm2_mark_prompt_start() {
   printf '\033]133;A\007'
