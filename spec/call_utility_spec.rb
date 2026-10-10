@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 require 'cron'
-require 'git_workspace'
+require 'dev_environment'
 require_relative '../scripts/call-utility'
 
 RSpec.describe CallUtility do
@@ -19,9 +19,9 @@ RSpec.describe CallUtility do
     end
 
     it 'passes keyword arguments through, coercing booleans' do
-      expect(GitWorkspace).to receive(:setup_dev_environment).with(first_install: true)
+      expect(DevEnvironment).to receive(:setup_dev_environment).with(first_install: true)
 
-      expect(described_class.run(target: 'GitWorkspace.setup_dev_environment', args: ['--first_install=true'])).to be true
+      expect(described_class.run(target: 'DevEnvironment.setup_dev_environment', args: ['--first_install=true'])).to be true
     end
 
     it 'does not pass an empty keyword hash to methods that take none' do

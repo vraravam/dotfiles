@@ -3,6 +3,8 @@
 # frozen_string_literal: true
 
 require_relative 'command_utils'
+require_relative 'enumerable_ext'
+require_relative 'path_utils'
 
 # Homebrew maintenance steps shared by the interactive 'bupc' command
 # (scripts/brew-update-cleanup.rb) and the hourly cron job
@@ -55,5 +57,20 @@ module Brew
   # @return [Boolean] true if the upgrade succeeded.
   def upgrade
     CommandUtils.run_interactive('brew', 'upgrade', '-y')
+  end
+
+  # Lists casks (including those that update themselves, via --greedy) and formulae that
+  # still need an update. Lines that are Homebrew's own progress/noise rather than package
+  # names are dropped.
+  #
+  # @return [Array<String>] One entry per outdated package, e.g. "firefox (130.0) != 131.0"
+  #   (empty when everything is current or 'brew' is not installed)
+  def outdated_greedy
+    return [] unless PathUtils.command_exists?('brew')
+
+    CommandUtils.query('brew', 'outdated', '--greedy').lines.filter_map do |line|
+      stripped = line.strip
+      stripped unless stripped.empty? || stripped.match?(/homebrew|Downloading/i)
+    end
   end
 end

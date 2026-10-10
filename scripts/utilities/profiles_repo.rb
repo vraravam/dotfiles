@@ -40,11 +40,20 @@ module ProfilesRepo
 
   private_class_method :_profiles_dir
 
+  # Memoized GitProcessor for the profiles repo (shared by every method that operates on it).
+  #
+  # @return [GitProcessor]
+  def _profiles_git
+    @_profiles_git ||= GitProcessor.new(dir: _profiles_dir)
+  end
+
+  private_class_method :_profiles_git
+
   # Checks the pack size of the profiles repo and records an error if it exceeds
   # the specified limit. Suggests running recreate-repository.rb when the threshold
   # is breached.
   #
-  # Uses git_repo_size_* for 2-3x faster measurement (~10-20ms vs ~50ms).
+  # Uses GitProcessor#pack_size_* for 2-3x faster measurement (~10-20ms vs ~50ms).
   # Note: Measures pack size only, which is typically 70-90% of total .git size.
   #
   # @param limit_gb [Integer] Size limit in gigabytes (default: 2)
@@ -55,12 +64,10 @@ module ProfilesRepo
       return
     end
 
-    git_dir = _profiles_dir.join('.git')
-    size_mb = PathUtils.git_repo_size_mb(git_dir)
     limit_mb = limit_gb * 1024
 
-    if size_mb > limit_mb
-      size_human = PathUtils.git_repo_size_human(git_dir)
+    if _profiles_git.pack_size_mb > limit_mb
+      size_human = _profiles_git.pack_size_human
       Logging.record_error(
         "Profiles repo pack size is #{size_human} -- exceeds #{limit_gb}GB threshold. " \
         "Consider running: recreate-repository.rb -d \"#{_profiles_dir.cyan}\""
@@ -104,17 +111,7 @@ module ProfilesRepo
 
     Logging.debug "Updating profiles repo at '#{_profiles_dir.cyan}'"
 
-    # Stage and commit with timestamp (use block form for multiple operations)
-    success = false
-    GitProcessor.new(dir: _profiles_dir) do |git|
-      # Clean up lock files and hooks
-      git.delete_index_lock
-      git.delete_hooks_dir
-
-      git.add('.')
-      success = git.smart_commit
-    end
-    success
+    _profiles_git.commit_all
   rescue RuntimeError => e
     # Git operations may raise RuntimeError on failures
     Logging.warn "Skipping profiles repo update -- #{e.message}"
@@ -137,31 +134,28 @@ module ProfilesRepo
     cutoff = (Time.now - days * 24 * 3600).strftime('%Y-%m-%d')
     pruned_count = 0
 
-    GitProcessor.new(dir: _profiles_dir) do |git|
-      tracked = git.ls_files('*/zen-sessions-backup/zen-sessions-*.jsonlz4')
+    git = _profiles_git
+    tracked = git.ls_files('*/zen-sessions-backup/zen-sessions-*.jsonlz4')
 
-      old_backups = tracked.select do |tracked_file|
-        tracked_path = Pathname.new(tracked_file)
-        basename = tracked_path.basename('.*').to_s # strip .jsonlz4
-        basename = Pathname.new(basename).basename('.*').to_s # strip potential second ext
-        date_part = basename.sub('zen-sessions-', '').sub(/-\d{2}\z/, '')
-        date_part < cutoff
-      end
-
-      if nil_or_empty?(old_backups)
-        Logging.debug 'No old session backups to prune'
-        # rubocop:disable Lint/NonLocalExitFromIterator
-        return # Early exit from method (not from iterator) - false positive
-        # rubocop:enable Lint/NonLocalExitFromIterator
-      end
-
-      old_backups.each do |f|
-        git.rm_cached(f, quiet: true)
-        Logging.debug "Unpinned old session backup: #{f.yellow}"
-      end
-
-      pruned_count = old_backups.length
+    old_backups = tracked.select do |tracked_file|
+      tracked_path = Pathname.new(tracked_file)
+      basename = tracked_path.basename('.*').to_s # strip .jsonlz4
+      basename = Pathname.new(basename).basename('.*').to_s # strip potential second ext
+      date_part = basename.sub('zen-sessions-', '').sub(/-\d{2}\z/, '')
+      date_part < cutoff
     end
+
+    if nil_or_empty?(old_backups)
+      Logging.debug 'No old session backups to prune'
+      return
+    end
+
+    old_backups.each do |f|
+      git.rm_cached(f, quiet: true)
+      Logging.debug "Unpinned old session backup: #{f.yellow}"
+    end
+
+    pruned_count = old_backups.length
 
     Logging.success "Pruned #{pruned_count.to_s.purple} session backup file(s) older than #{days.to_s.purple} days"
   end

@@ -188,7 +188,7 @@ conflicted = "=${count}"
 # exit arrow) since it's no longer sharing a bracket with $all_status (see comment above).
 ahead = "[\uE0B0](fg:green bg:yellow)[ ⇡${count} ](bg:yellow fg:black)[\uE0B0](fg:yellow)"
 behind = "[\uE0B0](fg:green bg:yellow)[ ⇣${count} ](bg:yellow fg:black)[\uE0B0](fg:yellow)"
-diverged = "[\uE0B0](fg:green bg:yellow)[ ⇣${ahead_count}⇡${behind_count} ](bg:yellow fg:black)[\uE0B0](fg:yellow)"
+diverged = "[\uE0B0](fg:green bg:yellow)[ ⇣${behind_count}⇡${ahead_count} ](bg:yellow fg:black)[\uE0B0](fg:yellow)"
 # Plain green arrow (no background) when there's an upstream and no ahead/behind --
 # matches the old custom.git_sync_status segment's exact look ('[\uE0B0](fg:green)').
 # Empty (default) when there's no upstream configured at all, matching prior behavior.

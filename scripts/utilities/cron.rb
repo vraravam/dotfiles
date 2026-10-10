@@ -205,8 +205,15 @@ module Cron
   # - No default schedule imposed if user has neither
   #
   # Mirrors recron in .aliases.
+  #
+  # The result is tracked in a local rather than taken from Logging.run_script's return value,
+  # which is nil when this is called from another script (nested mode).
+  #
+  # @return [Boolean] false only when a schedule was found but could not be loaded into the
+  #   system crontab; true when it was loaded or there was nothing to load.
   # :reek:FeatureEnvy -- Local variable manages temp file lifecycle through validation
   def recron
+    loaded = true
     Logging.run_script('recron') do
       Logging.debug 'Setting up crontab'
 
@@ -234,16 +241,20 @@ module Cron
         end
 
         # Step 4: Load non-empty schedule into system crontab
-        Logging.success 'Crontab set up successfully' if schedule_source && restore_cron(schedule_source)
-        # Error already logged by restore_cron if it failed
+        if schedule_source
+          loaded = restore_cron(schedule_source)
+          Logging.success 'Crontab set up successfully' if loaded
+          # Error already logged by restore_cron if it failed
+        end
       ensure
         temp_crontab.unlink
       end
     end
+    loaded
   end
 
   # Wraps a block in the cron bracket: suspend cron, yield, call recron to
-  # restore it, then clear the backup so any at_exit hook is a no-op.
+  # restore it, then clear the backup (only if recron succeeded) so any at_exit hook is a no-op.
   # Mirrors with_cron_suspended in .aliases. Restores cron via an ensure clause so it
   # always runs, regardless of how the block exits: a normal return, an exception, OR a
   # non-local 'return' from inside the block (e.g. 'return false unless x' in a caller
@@ -291,12 +302,16 @@ module Cron
   private
 
   # Success path for with_cron_suspended: reinstalls the (possibly-updated) crontab and
-  # cleans up the backup file. Split out from with_cron_suspended itself so its early
-  # 'return unless backup.exist?' can never end up textually inside that method's
+  # cleans up the backup file -- but only if the reinstall succeeded, because the backup is then
+  # the only copy of the original schedule. Split out from with_cron_suspended itself so its
+  # early 'return unless backup.exist?' can never end up textually inside that method's
   # 'ensure' clause (see the safety note there).
   def _finish_cron_suspension_successfully
-    recron
     backup = EnvVars.cron_backup_file
+    unless recron
+      Logging.warn "Could not reinstall the crontab -- keeping the backup of the original schedule: '#{backup.cyan}'"
+      return
+    end
     return unless backup.exist?
 
     if PathUtils.safe_for_write?(backup)

@@ -1537,7 +1537,7 @@ setup_rubylib() {
 #
 # Example delegation pattern:
 #   suspend_cron() { call_utility Cron.suspend_cron; }
-#   install_mise_versions() { call_utility GitWorkspace.install_mise_versions "--first_install=${flag}"; }
+#   install_mise_versions() { call_utility DevEnvironment.install_mise_versions "--first_install=${flag}"; }
 call_utility() {
   # 'command -v' rather than command_exists: this file is also sourced by bash (direnv).
   if ! command -v ruby &>/dev/null; then

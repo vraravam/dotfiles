@@ -281,6 +281,40 @@ RSpec.describe GitProcessor do
     end
   end
 
+  describe '#commit_all' do
+    subject(:git) { described_class.new(dir: '/tmp/some-repo') }
+
+    before do
+      %i[delete_index_lock delete_commit_graph_lock delete_hooks_dir].each { |m| allow(git).to receive(m) }
+      allow(git).to receive(:add)
+      allow(git).to receive(:smart_commit).and_return(true)
+    end
+
+    it 'clears stale locks and hooks, then stages the whole repo by default and commits' do
+      expect(git).to receive(:delete_index_lock).ordered
+      expect(git).to receive(:delete_commit_graph_lock).ordered
+      expect(git).to receive(:delete_hooks_dir).ordered
+      expect(git).to receive(:add).with('.').ordered
+      expect(git).to receive(:smart_commit).ordered
+
+      expect(git.commit_all).to be true
+    end
+
+    it 'stages only the given paths' do
+      expect(git).to receive(:add).with('a')
+      expect(git).to receive(:add).with('b')
+      expect(git).not_to receive(:add).with('.')
+
+      git.commit_all(paths: %w[a b])
+    end
+
+    it "returns smart_commit's result" do
+      allow(git).to receive(:smart_commit).and_return(false)
+
+      expect(git.commit_all).to be false
+    end
+  end
+
   describe 'dry_run mode' do
     subject(:git) { described_class.new(dir: tmp, dry_run: true) }
 

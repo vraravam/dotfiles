@@ -169,6 +169,18 @@ module Logging
       step_errors.any?
     end
 
+    # One entry per non-empty issue collection -- "N error(s): a; b" then "N warning(s): c" -- for
+    # building a single grouped notification (software-updates-cron.rb, fresh-install-of-osx.rb).
+    # Empty when nothing was recorded.
+    #
+    # @return [Array<String>] Zero, one or two entries (errors first)
+    def issue_summary_parts
+      parts = []
+      parts << "#{step_errors.length} error(s): #{step_errors.join('; ')}" if errors?
+      parts << "#{step_warnings.length} warning(s): #{step_warnings.join('; ')}" if warnings?
+      parts
+    end
+
     # Formats +seconds+ as "Hh:MMm:SSs". Public so callers that build their own
     # notification or summary strings can format a duration without reaching into
     # private state via send().

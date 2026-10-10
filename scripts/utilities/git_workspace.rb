@@ -6,27 +6,23 @@ require 'pathname'
 require 'set'
 
 require_relative 'collection_processor'
-require_relative 'command_utils'
 require_relative 'core'
 require_relative 'env_vars'
 require_relative 'git_processor'
 require_relative 'logging'
-require_relative 'path_utils'
 require_relative 'profiles_repo'
 
-# Git workspace discovery and developer environment setup. Shell functions in
-# .aliases delegate to these Ruby methods (install_mise_versions,
-# activate_all_direnv_configs, setup_dev_environment, regenerate_repo_aliases).
+# Git workspace discovery and reporting across the repositories this setup tracks. Shell
+# aliases delegate to these Ruby methods (status_all_repos, update_all_repos,
+# regenerate_repo_aliases).
 #
 # Responsibilities:
-# - Finding git repositories within a directory tree
-# - Installing mise tool versions across repos
-# - Authorizing direnv configs across repos
+# - Finding git repositories (and their ancestor directories) within a directory tree
+# - Reporting status of, and committing changes in, the fixed set of tracked repos
 # - Generating shell aliases for quick repo navigation
 #
-# The +shared_dirs:+ keyword argument allows callers (Ruby scripts, not shell)
-# to optimize by collecting ancestor dirs once and passing to multiple methods,
-# avoiding repeated find traversals.
+# Developer-environment setup (mise, direnv) lives in DevEnvironment; the single-repo git
+# operations themselves live in GitProcessor.
 module GitWorkspace
   extend self
   include Core  # For instance methods (in blocks)
@@ -34,17 +30,6 @@ module GitWorkspace
 
   # Directories that are always excluded from repo searches (huge, rarely contain repos)
   DEFAULT_PRUNE_DIRS = %w[node_modules .cache .Trash].freeze
-
-  # Mise config filenames that indicate a directory has version declarations.
-  MISE_CONFIG_FILES = %w[
-    .mise.toml
-    .tool-versions
-    .ruby-version
-    .python-version
-    .node-version
-    .java-version
-    .nvmrc
-  ].freeze
 
   # ---------------------------------------------------------------------------
   # Git repo discovery
@@ -117,6 +102,40 @@ module GitWorkspace
     end
   end
 
+  # Collects all ancestor directories of the given repo roots, walking up to a
+  # specified boundary directory. Deduplicates using a Set for O(1) membership checks.
+  #
+  # @param repo_roots [Array<String>] Array of repository root paths
+  # @param stop_at [Pathname] Upper boundary directory (exclusive unless include_stop_boundary is true)
+  # @param include_repo_root [Boolean] When true, includes repo root itself in results;
+  #   when false, starts from parent of repo root
+  # @param include_stop_boundary [Boolean] When true, includes stop_at directory if reached;
+  #   when false, stops before stop_at
+  # @return [Array<String>] Deduplicated ancestor directory paths as strings
+  def collect_ancestors(repo_roots, stop_at:, include_repo_root: false, include_stop_boundary: false)
+    seen = Set.new
+
+    repo_roots.each do |repo_root|
+      dir = Pathname.new(repo_root)
+      dir = dir.dirname unless include_repo_root
+
+      while dir != Core::ROOT
+        # Stop before reaching stop_at (unless include_stop_boundary is true)
+        if dir == stop_at
+          seen.add(dir) if include_stop_boundary
+          break
+        end
+
+        break if seen.include?(dir)
+
+        seen.add(dir)
+        dir = dir.dirname
+      end
+    end
+
+    seen.to_a.map(&:to_s)
+  end
+
   # Reports git status for a single repository.
   #
   # @param repo_dir [Pathname, String] The repository directory
@@ -161,115 +180,6 @@ module GitWorkspace
   # Mutation methods (modify state)
   # ---------------------------------------------------------------------------
 
-  # Installs any missing tool versions declared via mise config files across
-  # all git repos and their ancestor directories. Skips silently if mise is not
-  # on PATH. Mirrors install_mise_versions in .aliases.
-  #
-  # @param shared_dirs [Array<String>, nil] Pre-collected ancestor dirs (avoids
-  #   a second find traversal when collect_ancestor_dirs was already called by
-  #   the same script). Pass nil to trigger collection internally.
-  # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
-  def install_mise_versions(shared_dirs: nil, first_install: false)
-    Logging.run_script('install_mise_versions', 'Installing mise in all git repos and ancestors') do
-      unless PathUtils.command_exists?('mise')
-        Logging.debug "Couldn't find 'mise' in PATH -- skipping mise config loading"
-        return
-      end
-
-      all_dirs = shared_dirs || collect_ancestor_dirs(first_install: first_install)
-
-      # Filter to dirs that actually have a mise config, then sort by depth so
-      # parents come before children (shallower paths have fewer separators).
-      dirs_with_config = all_dirs.select do |dir|
-        dir_pn = Pathname.new(dir)
-        MISE_CONFIG_FILES.any? { |cfg| dir_pn.join(cfg).file? }
-      end
-      sorted = dirs_with_config.sort_by { |d| d.count(File::SEPARATOR) }
-
-      # Use CollectionProcessor for unified progress logging and error tracking
-      results = CollectionProcessor.process_items(
-        sorted,
-        operation_desc: 'Installing mise tools'
-      ) do |dir, _idx, _total|
-        dir_str = dir.to_s
-        dir_colored = dir_str.cyan
-
-        # mise trust can be captured (quick, no progress to show)
-        trust_success = CommandUtils.capture_output('mise', '-C', dir_str, 'trust', '-y', '-a') do |status, output_msg|
-          exit_code = status&.exitstatus || 'unknown'
-          Logging.warn("mise trust failed in '#{dir_colored}' (status: #{exit_code})#{output_msg}")
-        end
-
-        # mise install needs streaming output (downloads/builds plugins, slow, users want progress)
-        install_exitstatus = stream_command(['mise', '-C', dir_str, 'install'])
-        install_success = install_exitstatus.zero?
-        Logging.warn("mise install failed in '#{dir_colored}' (exit code: #{install_exitstatus})") unless install_success
-
-        # Return boolean: true only if both operations succeeded
-        trust_success && install_success
-      end
-
-      Logging.print_results_summary(results)
-    end
-  end
-
-  # Runs 'direnv allow' and then 'direnv exec' (to evaluate the .envrc right away) for every
-  # directory that has an .envrc file across all git repos and their ancestor directories.
-  # Skips silently if direnv is not on PATH. Mirrors activate_all_direnv_configs in .aliases.
-  #
-  # @param shared_dirs [Array<String>, nil] See install_mise_versions.
-  # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
-  def activate_all_direnv_configs(shared_dirs: nil, first_install: false)
-    Logging.run_script('activate_all_direnv_configs', 'Activating direnv configs in all git repos and ancestors') do
-      unless PathUtils.command_exists?('direnv')
-        Logging.debug "Couldn't find 'direnv' in PATH -- skipping direnv config loading"
-        return
-      end
-
-      all_dirs = shared_dirs || collect_ancestor_dirs(first_install: first_install)
-
-      # Filter to dirs with .envrc, sort parents before children.
-      dirs_with_envrc = all_dirs
-                        .select { |dir| Pathname.new(dir).join('.envrc').file? }
-                        .sort_by { |d| d.count(File::SEPARATOR) }
-
-      # Use CollectionProcessor for unified progress logging and error tracking
-      results = CollectionProcessor.process_items(
-        dirs_with_envrc,
-        operation_desc: 'Activating direnv in'
-      ) do |dir, _idx, _total|
-        # 'direnv allow' only records trust -- it never evaluates the .envrc. The shell hook
-        # does that on the next interactive 'cd', so side effects of the .envrc (e.g. the
-        # profile symlinks created by the browser-profiles .envrc) would not exist until then.
-        # 'direnv exec' evaluates the .envrc immediately, with no TTY or hook required.
-        CommandUtils.run_silent('direnv', 'allow', dir) && CommandUtils.run_silent('direnv', 'exec', dir, 'true')
-      end
-
-      Logging.print_results_summary(results)
-    end
-  end
-
-  # Runs both mise installation and direnv authorization in a single pass,
-  # collecting ancestor directories once and reusing for both operations.
-  # This avoids redundant filesystem traversals -- saves 200-500ms per run
-  # compared to calling install_mise_versions and activate_all_direnv_configs
-  # independently.
-  #
-  # Designed for callers that need both operations (e.g., software-updates-cron.rb).
-  # Single-operation callers should continue using the individual methods.
-  #
-  # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
-  def setup_dev_environment(first_install: false)
-    Logging.run_script('setup_dev_environment') do
-      # Collect ancestor dirs once, reuse for both operations
-      shared_dirs = collect_ancestor_dirs(first_install: first_install)
-
-      # Both methods receive shared_dirs and skip their own collection
-      activate_all_direnv_configs(shared_dirs: shared_dirs, first_install: first_install)
-      install_mise_versions(shared_dirs: shared_dirs, first_install: first_install)
-    end
-  end
-
   # Regenerates the repo alias cache under XDG_CACHE_HOME.
   # Because the cache file is a zsh script consumed by the interactive shell
   # (not by Ruby), this method regenerates the file contents and leaves
@@ -306,7 +216,7 @@ module GitWorkspace
     )
 
     # Collect parent dirs (ancestors of repo roots, up to but not including PROJECTS_BASE_DIR)
-    parent_dirs = _collect_ancestors(
+    parent_dirs = collect_ancestors(
       repo_roots,
       stop_at: Pathname.new(projects_base),
       include_repo_root: false,
@@ -351,18 +261,8 @@ module GitWorkspace
     end
 
     Logging.with_step("update #{repo_dir}", "#{'Updating'.yellow} '#{repo_dir.cyan}'") do
-      # Stage and commit with timestamp (use block form for multiple operations)
       success = false
-      GitProcessor.new(dir: repo_dir) do |git|
-        # Clean up stale lock files and hooks
-        git.delete_index_lock
-        git.delete_commit_graph_lock
-        git.delete_hooks_dir
-
-        paths ||= ['.']
-        paths.each { |path| git.add(path) }
-        success = git.smart_commit
-      end
+      GitProcessor.new(dir: repo_dir) { |git| success = git.commit_all(paths: paths) }
       success
     end
   rescue RuntimeError => e
@@ -391,75 +291,5 @@ module GitWorkspace
     )
 
     home_success && profiles_success
-  end
-
-  # ---------------------------------------------------------------------------
-  # Private methods
-  # ---------------------------------------------------------------------------
-
-  private
-
-  # Collects all ancestor directories of the given repo roots, walking up to a
-  # specified boundary directory. Deduplicates using a Set for O(1) membership checks.
-  #
-  # @param repo_roots [Array<String>] Array of repository root paths
-  # @param stop_at [Pathname] Upper boundary directory (exclusive unless include_stop_boundary is true)
-  # @param include_repo_root [Boolean] When true, includes repo root itself in results;
-  #   when false, starts from parent of repo root
-  # @param include_stop_boundary [Boolean] When true, includes stop_at directory if reached;
-  #   when false, stops before stop_at
-  # @return [Array<String>] Deduplicated ancestor directory paths as strings
-  def _collect_ancestors(repo_roots, stop_at:, include_repo_root: false, include_stop_boundary: false)
-    seen = Set.new
-
-    repo_roots.each do |repo_root|
-      dir = Pathname.new(repo_root)
-      dir = dir.dirname unless include_repo_root
-
-      while dir != Core::ROOT
-        # Stop before reaching stop_at (unless include_stop_boundary is true)
-        if dir == stop_at
-          seen.add(dir) if include_stop_boundary
-          break
-        end
-
-        break if seen.include?(dir)
-
-        seen.add(dir)
-        dir = dir.dirname
-      end
-    end
-
-    seen.to_a.map(&:to_s)
-  end
-
-  # Finds all git repos under HOME, DOTFILES_DIR, and PROJECTS_BASE_DIR (up to
-  # +find_maxdepth+ levels deep) and returns a deduplicated array of every ancestor
-  # directory from each repo root up to (and including) HOME.
-  #
-  # @param first_install [Boolean] When true, uses a shallower search depth (3
-  #   instead of 6) to keep vanilla-OS boot time low.
-  # @return [Array<String>] Unique ancestor directory paths.
-  def collect_ancestor_dirs(first_install: false)
-    home = EnvVars::HOME
-
-    maxdepth = first_install ? 3 : 6
-    dirs = [home, EnvVars::DOTFILES_DIR, EnvVars::PROJECTS_BASE_DIR]
-
-    # Find all repo roots using the consolidated method
-    repo_roots = find_git_repos(
-      dirs: dirs,
-      maxdepth: maxdepth,
-      additional_prune: %w[Library Caches], # Add to defaults (node_modules, .cache, .Trash)
-      skip_symlinks: true
-    )
-
-    # Walk up from each repo root to HOME, collecting all ancestors
-    _collect_ancestors(
-      repo_roots,
-      stop_at: home,
-      include_repo_root: true,
-      include_stop_boundary: true
-    )
   end
 end

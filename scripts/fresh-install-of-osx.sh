@@ -473,7 +473,10 @@ _set_default_shell() {
   # /etc/shells must list the shell before chsh will accept it.
   if ! /usr/bin/grep -qxF "${_brew_zsh}" /etc/shells; then
     info "Adding '$(yellow "${_brew_zsh}")' to /etc/shells"
-    echo "${_brew_zsh}" | sudo tee -a /etc/shells >/dev/null
+    # A failure is recorded as an error (not fatal): the chsh below then fails and is recorded too.
+    if ! echo "${_brew_zsh}" | sudo tee -a /etc/shells >/dev/null; then
+      _record_error "Failed to add '$(cyan "${_brew_zsh}")' to /etc/shells"
+    fi
   else
     info "'$(yellow "${_brew_zsh}")' already in /etc/shells -- skipping."
   fi
@@ -912,8 +915,12 @@ main() {
   step_start
   _step_header "$(yellow 'Restore preferences')"
   if command_exists 'osx-defaults.sh'; then
-    osx-defaults.sh -s
-    success 'Successfully baselines preferences'
+    # A failure is recorded as an error and the install carries on with the remaining steps.
+    if osx-defaults.sh -s; then
+      success 'Successfully baselines preferences'
+    else
+      _record_error "osx-defaults.sh exited non-zero -- baseline preferences manually: $(cyan "$(command -v osx-defaults.sh)")"
+    fi
   else
     _record_error "Skipping baselining of preferences since '$(purple 'osx-defaults.sh')' couldn't be found in the PATH; Please baseline manually and follow it up with re-import of the backed-up preferences"
   fi
@@ -930,8 +937,12 @@ main() {
       fi
     fi
 
-    COLUMNS="${COLUMNS}" capture-prefs.rb -i
-    success 'Successfully restored preferences from backup'
+    # A failure is recorded as an error and the install carries on with the remaining steps.
+    if COLUMNS="${COLUMNS}" capture-prefs.rb -i; then
+      success 'Successfully restored preferences from backup'
+    else
+      _record_error "capture-prefs.rb -i exited non-zero -- import preferences manually: $(cyan "$(command -v capture-prefs.rb)")"
+    fi
   else
     _record_error "Skipping importing of preferences since '$(purple 'capture-prefs.rb')' couldn't be found in the PATH; Please set it up manually"
   fi

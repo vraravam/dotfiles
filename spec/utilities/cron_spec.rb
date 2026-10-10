@@ -72,4 +72,86 @@ RSpec.describe Cron do
       expect { described_class.send(:_cleanup_old_backups) }.not_to(change { Dir[tmp.join('crontab_backup*').to_s].size })
     end
   end
+
+  describe '.recron' do
+    before do
+      Logging.state.reset!
+      stub_const('Cron::CRONTAB_FILE', tmp.join('crontab.txt'))
+    end
+
+    after { Logging.state.reset! }
+
+    # Simulates 'crontab -l' by writing +existing+ into the capture file recron asks for.
+    def stub_existing_crontab(existing)
+      allow(CommandUtils).to receive(:run_silent) do |*args, **opts|
+        File.write(opts[:out], existing) if args == %w[crontab -l]
+        true
+      end
+    end
+
+    it 'is true after loading the existing crontab' do
+      stub_existing_crontab("0 * * * * echo hi\n")
+      expect(described_class).to receive(:restore_cron).and_return(true)
+
+      expect { expect(described_class.recron).to be true }.to output.to_stdout
+    end
+
+    it 'is false when the schedule could not be loaded' do
+      stub_existing_crontab("0 * * * * echo hi\n")
+      allow(described_class).to receive(:restore_cron).and_return(false)
+
+      expect(described_class.recron).to be false
+    end
+
+    it 'falls back to the tracked crontab.txt when there is no active crontab' do
+      stub_existing_crontab('')
+      tmp.join('crontab.txt').write("0 * * * * echo hi\n")
+      expect(described_class).to receive(:restore_cron).with(tmp.join('crontab.txt')).and_return(true)
+
+      expect { expect(described_class.recron).to be true }.to output.to_stdout
+    end
+
+    it 'is true, without loading anything, when there is no schedule anywhere' do
+      stub_existing_crontab('')
+      expect(described_class).not_to receive(:restore_cron)
+
+      expect { expect(described_class.recron).to be true }.to output.to_stdout
+    end
+  end
+
+  describe '.with_cron_suspended' do
+    let(:backup) { tmp.join('crontab_backup') }
+
+    before do
+      Logging.state.reset!
+      backup.write("0 * * * * echo original\n")
+      allow(EnvVars).to receive(:cron_backup_file).and_return(backup)
+      allow(described_class).to receive(:suspend_cron)
+    end
+
+    after { Logging.state.reset! }
+
+    it 'removes the backup once the crontab was reinstalled' do
+      allow(described_class).to receive(:recron).and_return(true)
+
+      described_class.with_cron_suspended { :work }
+
+      expect(backup).not_to exist
+    end
+
+    it 'keeps the backup of the original schedule when the reinstall failed' do
+      allow(described_class).to receive(:recron).and_return(false)
+
+      expect { described_class.with_cron_suspended { :work } }.to output(/keeping the backup/).to_stdout
+
+      expect(backup).to exist
+    end
+
+    it 'restores from the backup instead when the block raises' do
+      expect(described_class).to receive(:resume_cron)
+      expect(described_class).not_to receive(:recron)
+
+      expect { described_class.with_cron_suspended { raise 'boom' } }.to raise_error('boom')
+    end
+  end
 end

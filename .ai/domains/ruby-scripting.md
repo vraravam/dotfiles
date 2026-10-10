@@ -179,13 +179,11 @@ if __FILE__ == $PROGRAM_NAME
 
   parser.abort_with_usage('Missing required option: --param') if nil_or_empty?(options[:param])
 
-  increment_script_depth
-  start_time = print_script_start
-
-  success = MyScript.run(param: options[:param])
-
-  print_script_summary(start_time)
-  exit(success ? 0 : 1)
+  # run_script increments the script depth, prints the start banner and, when the block
+  # finishes (or raises), the grouped warnings/errors summary and duration.
+  Logging.run_script do
+    exit(MyScript.run(param: options[:param]) ? 0 : 1)
+  end
 end
 ```
 
@@ -200,7 +198,9 @@ end
 2. **Standalone block is CLI wrapper only**
    - Wrapped in `if __FILE__ == $PROGRAM_NAME`
    - Handles argument parsing with `CliParser`
-   - Calls `increment_script_depth` / `print_script_start` / `print_script_summary`
+   - Wraps the call in `Logging.run_script { ... }` (script depth, start banner, final summary;
+     pass a message as the second argument for a custom completion line, e.g.
+     `Logging.run_script(nil, 'Done.') { ... }`)
    - Converts module's boolean return to exit code: `exit(success ? 0 : 1)`
    - Only place `include Logging` is used (for CLI convenience)
 
@@ -214,6 +214,17 @@ end
    - Use `Logging.record_error` for non-fatal errors (return false, keep processing)
    - Use `Logging.error` (raises RuntimeError) only for fatal errors that should abort
    - Caller can `rescue` if needed
+
+5. **Long procedural scripts follow the same shape**
+   - An install-style script with many sequential steps still puts its body in `run` (returning
+     `true`/`false`) and keeps process-level concerns (`at_exit` hooks, `exit`, the final
+     notification) in the CLI block, so requiring the file never starts an install.
+   - Numbered progress uses `StepCounter` (`utilities/step_counter.rb`): `StepCounter.new(total)`
+     then `counter.step(title, header) { ... }`, or `counter.next_prefix` when the caller composes
+     its own header.
+   - A single grouped notification is built from `Logging.issue_summary_parts` (the
+     "N error(s): ..." / "N warning(s): ..." entries) rather than re-deriving them from
+     `Logging.step_errors`/`step_warnings`.
 
 ### Examples
 
@@ -1244,7 +1255,7 @@ Shell functions invoke Ruby utilities via the `call_utility` helper defined in `
 ```zsh
 # Shell function in .shellrc or .aliases
 my_function() {
-  call_utility GitWorkspace.install_mise_versions "--first_install=${flag}"
+  call_utility DevEnvironment.install_mise_versions "--first_install=${flag}"
   call_utility Cron.create_crontab -- "${file}"      # '--' makes the rest positional
   call_utility --truthy Keybase.username              # exit 1 if the method returns nil/false
 }
@@ -2204,7 +2215,7 @@ end
 
 **Section separators**: Use `# ---------------------------------------------------------------------------` with descriptive labels for all sections in utility files (even short ones) to clearly demarcate organization.
 
-**Files following this pattern**: `git_processor.rb`, `git_workspace.rb`, `keybase.rb`, `macos.rb`, `profiles_repo.rb`, `plist.rb`, `path_utils.rb`, `command_utils.rb`.
+**Files following this pattern**: `git_processor.rb`, `git_workspace.rb`, `dev_environment.rb`, `mise.rb`, `direnv.rb`, `keybase.rb`, `macos.rb`, `profiles_repo.rb`, `plist.rb`, `path_utils.rb`, `command_utils.rb`.
 
 **GitProcessor as reference**: See `scripts/utilities/git_processor.rb` for a complete example:
 - Class methods: lines 59-94
@@ -3200,17 +3211,17 @@ def capture_and_commit
   end
 end
 
-# BAD -- git_dir.join('.git') computed twice
+# BAD -- GitProcessor.new(dir: git_dir) constructed twice
 def check_size_limit(limit_gb: 2)
-  size_mb = PathUtils.git_repo_size_mb(git_dir.join('.git'))
-  size_human = PathUtils.git_repo_size_human(git_dir.join('.git'))
+  size_mb = GitProcessor.new(dir: git_dir).pack_size_mb
+  size_human = GitProcessor.new(dir: git_dir).pack_size_human
 end
 
-# Good -- extract .git path
+# Good -- build the processor once
 def check_size_limit(limit_gb: 2)
-  git_path = git_dir.join('.git')
-  size_mb = PathUtils.git_repo_size_mb(git_path)
-  size_human = PathUtils.git_repo_size_human(git_path)
+  git = GitProcessor.new(dir: git_dir)
+  size_mb = git.pack_size_mb
+  size_human = git.pack_size_human
 end
 
 # BAD -- limit_gb * 1024 appears multiple times

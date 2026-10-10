@@ -432,7 +432,7 @@ module Logging
   end
 
   # Sets the script name override. Use this in module methods that act as
-  # standalone entry points (e.g., GitWorkspace.install_mise_versions) where
+  # standalone entry points (e.g., DevEnvironment.install_mise_versions) where
   # $PROGRAM_NAME would be '-e' or unhelpful. Must be public so module methods
   # can call it before increment_script_depth.
   #

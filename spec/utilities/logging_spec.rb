@@ -58,6 +58,34 @@ RSpec.describe Logging do
     end
   end
 
+  describe '.issue_summary_parts' do
+    it 'is empty when nothing was recorded' do
+      expect(described_class.issue_summary_parts).to eq([])
+    end
+
+    it 'lists errors first, then warnings, each with a count and the joined messages' do
+      described_class.script_name = 'demo.rb'
+      expect do
+        described_class.record_warning('w1')
+        described_class.record_error('e1')
+        described_class.record_error('e2')
+      end.to output.to_stdout
+
+      parts = described_class.issue_summary_parts
+
+      expect(parts.size).to eq(2)
+      expect(parts[0]).to match(/\A2 error\(s\): .*e1; .*e2\z/)
+      expect(parts[1]).to match(/\A1 warning\(s\): .*w1\z/)
+    end
+
+    it 'omits the collection that is empty' do
+      described_class.script_name = 'demo.rb'
+      expect { described_class.record_warning('only') }.to output.to_stdout
+
+      expect(described_class.issue_summary_parts.map { |part| part[/\A\d+ \w+/] }).to eq(['1 warning'])
+    end
+  end
+
   describe '.print_script_summary' do
     it 'prints nothing when there is no issue and no message' do
       expect { described_class.print_script_summary }.not_to output.to_stdout
@@ -70,8 +98,7 @@ RSpec.describe Logging do
         described_class.record_error('e')
       end.to output.to_stdout
 
-      expect { described_class.print_script_summary(nil, 'All done') }
-        .to output(/All done.*1 warning\(s\).*1 error\(s\)/m).to_stdout
+      expect { described_class.print_script_summary(nil, 'All done') }.to output(/All done.*1 warning\(s\).*1 error\(s\)/m).to_stdout
     end
 
     it 'is silent for nested scripts (depth > 1)' do
@@ -188,8 +215,7 @@ RSpec.describe Logging do
   describe '.print_results_summary' do
     it 'prints totals and the failed items' do
       results = { total: 3, successful: %w[a b], failed: %w[c], skipped: 0 }
-      expect { described_class.print_results_summary(results) }
-        .to output(/Total repositories: 3.*Failed repository:.*- 'c'/m).to_stdout
+      expect { described_class.print_results_summary(results) }.to output(/Total repositories: 3.*Failed repository:.*- 'c'/m).to_stdout
     end
   end
 

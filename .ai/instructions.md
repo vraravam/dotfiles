@@ -272,6 +272,10 @@ After completing any rebase (whether manual conflict resolution or automated):
 - § Backporting: Bringing Branch Improvements Back to Master -- when
   general-purpose improvements on a WIP branch should land on `master` now,
   without merging that branch's incomplete conversion work
+- § Rebasing All Branches: Scope, Order and Handoff -- what "rebase all
+  branches" covers, the order of work (master change, user review and push,
+  rebase, user force-push, next task), parent-before-child `--onto`, and why the
+  agent never pushes
 
 #### Pre-Commit Verification — Functional Completeness Check
 

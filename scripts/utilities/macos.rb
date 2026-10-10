@@ -213,29 +213,6 @@ module MacOS
     @_notification_history.delete_if { |_k, timestamp| now - timestamp > 300 }
   end
 
-  # Checks for outdated Homebrew casks (with --greedy flag) and returns a
-  # formatted string of outdated app names. Logs a warning if any are found.
-  # Returns empty string if none are outdated or if brew is not available.
-  #
-  # @return [String] Comma-separated list of outdated apps, or empty string
-  def check_and_notify_outdated_apps
-    return '' unless PathUtils.command_exists?('brew')
-
-    outdated_raw = CommandUtils.query('brew', 'outdated', '--greedy')
-    # filter_map polyfill in enumerable_ext.rb provides optimized single-pass implementation for Ruby 2.6
-    outdated = outdated_raw.lines.filter_map do |line|
-      next if nil_or_empty?(line)
-
-      stripped = line.strip
-      stripped unless stripped.match?(/homebrew|Downloading/i)
-    end
-
-    return '' if nil_or_empty?(outdated)
-
-    Logging.warn "Found outdated software needing manual update: #{outdated.join(', ').yellow}"
-    outdated.join(', ')
-  end
-
   # ---------------------------------------------------------------------------
   # Private methods
   # ---------------------------------------------------------------------------

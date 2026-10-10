@@ -9,6 +9,7 @@ require 'shellwords'
 
 require_relative 'core'
 require_relative 'env_vars'
+require_relative 'git_maintenance'
 require_relative 'git_recreate'
 require_relative 'git_url_parser'
 require_relative 'logging'
@@ -41,6 +42,7 @@ require_relative 'path_utils'
 class GitProcessor
   include Core  # For instance methods
   include Recreate # verify_and_recreate_local_repo and friends (git_recreate.rb)
+  include Maintenance # compress, commit-graph, lock/hook cleanup, bundles, pack size (git_maintenance.rb)
   extend Core   # For class methods
 
   attr_reader :dir
@@ -668,6 +670,26 @@ class GitProcessor
     status.success?
   end
 
+  # Stages +paths+ and commits them without prompting, after clearing the stale lock files
+  # and local hooks that could block or slow a non-interactive commit. Intended for repos
+  # that track auto-generated state (e.g., preference exports) where the caller does not
+  # need to review individual changes before committing.
+  #
+  # Uses smart_commit: amends when ahead of the remote (keeping a single commit), creates a
+  # new commit otherwise.
+  #
+  # @param paths [Array<Pathname, String>, nil] Paths to stage (relative or absolute --
+  #   git handles both). Defaults to the whole repo.
+  # @return [Boolean] true if the commit succeeded
+  def commit_all(paths: nil)
+    delete_index_lock
+    delete_commit_graph_lock
+    delete_hooks_dir
+
+    (paths || ['.']).each { |path| add(path) }
+    smart_commit
+  end
+
   # Pushes to a remote and sets up upstream tracking.
   #
   # @param remote [String] Remote name (defaults to 'origin').
@@ -711,42 +733,6 @@ class GitProcessor
     end
   end
 
-  # Compresses the repository by expiring the entire reflog immediately and running the
-  # full cleanup (prune, repack, gc). Runs 'git cc --expire=now', which does both in one
-  # operation -- 'cc' always enumerates refs/heads and refs/remotes only, so stashes survive.
-  #
-  # @return [Boolean] true on success, false on failure.
-  def compress
-    if @dry_run
-      Logging.info 'Would compress (reflog + gc)'
-      return true
-    end
-
-    return false unless repo?
-
-    Logging.debug "#{'Compressing'.yellow} '#{@dir.cyan}'"
-    run_alias('cc', '--expire=now')
-    true
-  end
-
-  # Builds the commit graph for the repository to optimize git operations.
-  # Commit graphs speed up operations like git log, git merge-base, and git status.
-  # Use --reachable to include all commits reachable from any ref (branches, tags).
-  #
-  # @return [Boolean] true on success, false on failure
-  def build_commit_graph
-    if @dry_run
-      Logging.info 'Would build commit graph'
-      return true
-    end
-
-    return false unless repo?
-
-    Logging.debug "#{'Building commit graph'.yellow} for '#{@dir.cyan}'"
-    _stdout, _stderr, status = _execute('commit-graph', 'write', '--reachable', '--changed-paths')
-    status.success?
-  end
-
   # Runs a custom git command (e.g., 'amq', 'rfc', 'cc') -- either an alias from .gitconfig or
   # an external 'git-<name>' script on PATH (e.g. 'fo', 'unshallow'); both are invoked as
   # 'git <name>', so callers need not know which kind it is.
@@ -762,75 +748,6 @@ class GitProcessor
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def run_alias(alias_name, *args, read_only: false, stream: nil)
     _execute(alias_name, *args, read_only: read_only, stream: stream)
-  end
-
-  # Deletes .git/index.lock if it exists. This is a recovery operation for
-  # stale lock files that can block git operations. Rescue nil because the
-  # file may not exist (which is fine -- that's the desired end state).
-  #
-  # @return [void]
-  def delete_index_lock
-    if @dry_run
-      Logging.info "Would delete: '#{@dir.join('.git', 'index.lock').cyan}' (if it exists)"
-    else
-      begin
-        @dir.join('.git', 'index.lock').delete
-      rescue StandardError
-        nil
-      end
-    end
-  end
-
-  # Deletes .git/objects/info/commit-graphs/commit-graph-chain.lock if it exists.
-  # A stale commit-graph lock (left behind by an interrupted 'git commit-graph write'
-  # or a killed process) can block subsequent commit-graph writes; deleting it is
-  # safe since git regenerates the commit-graph on next use. Same rescue-nil pattern
-  # as delete_index_lock -- the file may not exist, which is the desired end state.
-  #
-  # @return [void]
-  def delete_commit_graph_lock
-    path = @dir.join('.git', 'objects', 'info', 'commit-graphs', 'commit-graph-chain.lock')
-    if @dry_run
-      Logging.info "Would delete: '#{path.cyan}' (if it exists)"
-    else
-      begin
-        path.delete
-      rescue StandardError
-        nil
-      end
-    end
-  end
-
-  # Removes .git/hooks entirely if it exists. Used before automated operations on
-  # repos that may have local hooks installed (e.g. via Husky/lint-staged) which
-  # could otherwise interfere with or slow down non-interactive git calls.
-  #
-  # @return [void]
-  def delete_hooks_dir
-    path = @dir.join('.git', 'hooks')
-    if @dry_run
-      Logging.info "Would remove: '#{path.cyan}' (if it exists)"
-    elsif path.directory?
-      path.rmtree
-    end
-  end
-
-  # Creates a git bundle file capturing all refs reachable in this repo
-  # (branches, remote-tracking branches, and tags). Streams git's own
-  # progress output for large repos.
-  #
-  # @param file [String, Pathname] Destination path for the bundle file.
-  # @return [Boolean] true on success, false on failure.
-  def bundle_create(file:)
-    if @dry_run
-      Logging.info "Would run: #{"git -C #{@dir} bundle create #{file} --all".cyan}"
-      return true
-    end
-
-    return false unless repo?
-
-    Pathname.new(file).dirname.mkpath
-    CommandUtils.run_interactive(*_git_command, 'bundle', 'create', file.to_s, '--all')
   end
 
   # ---------------------------------------------------------------------------

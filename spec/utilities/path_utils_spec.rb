@@ -98,27 +98,4 @@ RSpec.describe PathUtils do
       expect(described_class.command_exists?('definitely-not-a-command-xyz')).to be false
     end
   end
-
-  describe '.git_repo_size_mb / .git_repo_size_human' do
-    it 'parses the git size alias output into megabytes without mutating ENV' do
-      allow(CommandUtils).to receive(:query).with({ 'GIT_SIZE_QUIET' => '1' }, 'git', '-C', '/repo', 'size').and_return('2.00 GiB')
-
-      expect(described_class.git_repo_size_mb('/repo/.git')).to eq(2048.0)
-      expect(described_class.git_repo_size_human('/repo')).to eq('2.00 GiB')
-      expect(ENV).not_to have_key('GIT_SIZE_QUIET')
-    end
-
-    it 'is 0.0 when the output cannot be parsed' do
-      allow(CommandUtils).to receive(:query).and_return('')
-
-      expect(described_class.git_repo_size_mb('/repo')).to eq(0.0)
-    end
-
-    it 'converts KiB and bytes' do
-      allow(CommandUtils).to receive(:query).and_return('512 KiB', '1048576 bytes')
-
-      expect(described_class.git_repo_size_mb('/r')).to eq(0.5)
-      expect(described_class.git_repo_size_mb('/r')).to eq(1.0)
-    end
-  end
 end

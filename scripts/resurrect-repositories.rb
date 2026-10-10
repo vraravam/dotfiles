@@ -46,6 +46,7 @@ require_relative 'utilities/core'
 require_relative 'utilities/enumerable_ext'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
+require_relative 'utilities/dev_environment'
 require_relative 'utilities/git_workspace'
 require_relative 'utilities/logging'
 require_relative 'utilities/macos'
@@ -354,7 +355,7 @@ module ResurrectRepositories
 
       # Post-clone operations for installing system dependencies. Both are idempotent and
       # safe to run even when no catalogue was found (e.g. only the bootstrap repos exist).
-      GitWorkspace.setup_dev_environment(first_install: EnvVars.first_install?)
+      DevEnvironment.setup_dev_environment(first_install: EnvVars.first_install?)
       GitWorkspace.regenerate_repo_aliases
     end
   end

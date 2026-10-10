@@ -134,65 +134,6 @@ module PathUtils
     CommandUtils.query(MacOS::DU_CMD, '-sh', dir.to_s).split("\t").first
   end
 
-  # Returns the pack size of a git repository in MB using git size alias.
-  # Approximately 2-3x faster than dir_size_kb for git repos (~10-20ms vs ~50ms).
-  # Shows pack size only (excludes refs, logs, indexes, config) which is typically
-  # 70-90% of total .git directory size.
-  #
-  # Only works for git repositories. For non-git directories, use dir_size_kb.
-  #
-  # @param repo_dir [Pathname, String] Git repository root or .git directory path
-  # @return [Float] Pack size in MB
-  #
-  # @example
-  #   git_dir = EnvVars::DOTFILES_DIR.join('.git')
-  #   PathUtils.git_repo_size_mb(git_dir)  # => 1.37 (MB)
-  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
-  def git_repo_size_mb(repo_dir)
-    size_str = git_repo_size_human(repo_dir)
-
-    # Parse value and unit (e.g., "1.37 MiB" -> ["1.37", "MiB"])
-    parts = size_str.split
-    return 0.0 if parts.size < 2
-
-    size_value = parts[0].to_f
-    size_unit = parts[1]
-
-    # Convert to MB based on unit
-    case size_unit
-    when 'KiB' then size_value / 1024.0
-    when 'MiB' then size_value
-    when 'GiB' then size_value * 1024
-    when 'bytes' then size_value / 1024.0 / 1024.0
-    else 0.0
-    end
-  end
-
-  # Returns the pack size of a git repository in human-readable format.
-  # Calls the git size alias (which uses git count-objects internally).
-  # Approximately 2-3x faster than dir_size_human for git repos (~10-20ms vs ~50ms).
-  # Shows pack size only (excludes refs, logs, indexes, config) which is typically
-  # 70-90% of total .git directory size.
-  #
-  # Only works for git repositories. For non-git directories, use dir_size_human.
-  #
-  # @param repo_dir [Pathname, String] Git repository root or .git directory path
-  # @return [String] Pack size in human-readable format (e.g., "1.37 MiB", "503.45 MiB")
-  #
-  # @example
-  #   git_dir = EnvVars::DOTFILES_DIR.join('.git')
-  #   PathUtils.git_repo_size_human(git_dir)  # => "1.37 MiB"
-  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
-  def git_repo_size_human(repo_dir)
-    repo_path = repo_dir.to_s
-    # If passed .git directory, use parent as repo root for git -C
-    repo_path = File.dirname(repo_path) if repo_path.end_with?('.git')
-
-    # GIT_SIZE_QUIET makes the 'size' alias print just the size. It is passed to the child
-    # only (never written to this process's ENV, where it would leak on an exception).
-    CommandUtils.query({ 'GIT_SIZE_QUIET' => '1' }, 'git', '-C', repo_path, 'size')
-  end
-
   # Extract a path segment at a given index from a dir path
   #
   # @param dir [String] The dir path

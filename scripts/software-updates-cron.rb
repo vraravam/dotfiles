@@ -34,11 +34,13 @@ require_relative 'utilities/core'
 require_relative 'utilities/enumerable_ext'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
+require_relative 'utilities/dev_environment'
 require_relative 'utilities/git_workspace'
 require_relative 'utilities/logging'
 require_relative 'utilities/macos'
 require_relative 'utilities/path_utils'
 require_relative 'utilities/profiles_repo'
+require_relative 'utilities/step_counter'
 
 # Module contains the business logic.
 # Returns true/false instead of calling exit().
@@ -57,16 +59,8 @@ module SoftwareUpdatesCron
     Logging.success "Finished software updates at #{now.purple} in #{duration.light_blue}"
 
     # Build a single grouped macOS notification.
-    notification_parts = []
-
-    step_errors = Logging.step_errors
-    step_warnings = Logging.step_warnings
-    has_errors = !nil_or_empty?(step_errors)
-    has_warnings = !nil_or_empty?(step_warnings)
-    success = !has_errors && !has_warnings
-
-    notification_parts << "#{step_errors.length} error(s): #{step_errors.join('; ')}" if has_errors
-    notification_parts << "#{step_warnings.length} warning(s): #{step_warnings.join('; ')}" if has_warnings
+    notification_parts = Logging.issue_summary_parts
+    success = notification_parts.empty?
 
     title_icon = success ? '✅' : '⚠️'
     msg = nil_or_empty?(notification_parts) ? '.' : " -- #{notification_parts.join(' | ')}"
@@ -89,17 +83,14 @@ module SoftwareUpdatesCron
     success
   end
 
-  # Helper to wrap Logging.with_step with step counter progress indicator.
-  # Automatically increments @current_step and prepends "[Step N of M]" to title.
+  # Runs a block as the next numbered step ("[Step N of M]" is prepended to the title).
   #
   # @param title [String] Step title (used for current_section tracking and the progress prefix)
   # @param message [String, nil] Optional section header message to print
   # @yield Block of code to execute within the step lifecycle
   # @return [void]
   def _step(title, message = nil, &block)
-    @current_step += 1
-    prefix = "[#{"Step #{@current_step} of #{@total_steps}".purple}] "
-    Logging.with_step("#{prefix}#{title}", message, &block)
+    @steps.step(title, message, &block)
   end
 
   # Runs the block guarded by a check for +check_cmd+. Records a warning on
@@ -197,10 +188,9 @@ module SoftwareUpdatesCron
   #
   # @return [String] Space/comma-separated summary of greedy brew apps still
   #   outdated after the update pass (empty string if none), as reported by
-  #   MacOS.check_and_notify_outdated_apps.
+  #   Brew.outdated_greedy.
   def _run_all_updates
-    @total_steps = 21
-    @current_step = 0
+    @steps = StepCounter.new(20)
 
     # Brew update: Brew.sync_bundle checks before running the full bundle install to
     # avoid reinstalling already-installed formulae on every cron run. Brew.update's
@@ -330,11 +320,7 @@ module SoftwareUpdatesCron
     # of git forks/hour.
 
     _step('setup dev env', 'Setup dev environment'.yellow) do
-      GitWorkspace.setup_dev_environment(first_install: EnvVars.first_install?)
-    end
-
-    _step('regenerate repo aliases', 'Regenerate repo aliases'.yellow) do
-      GitWorkspace.regenerate_repo_aliases
+      DevEnvironment.setup_dev_environment(first_install: EnvVars.first_install?)
     end
 
     _step('capture preferences', 'Capture app preferences'.yellow) do
@@ -372,7 +358,9 @@ module SoftwareUpdatesCron
     end
 
     _step('check outdated greedy brew apps', 'Checking if any greedy applications are outdated'.yellow) do
-      MacOS.check_and_notify_outdated_apps
+      outdated = Brew.outdated_greedy
+      Logging.warn "Found outdated software needing manual update: #{outdated.join(', ').yellow}" unless outdated.empty?
+      outdated.join(', ')
     end
   end
 

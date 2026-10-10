@@ -18,8 +18,9 @@ description: Use when rebasing a long-running branch onto master, backporting ge
 3. [Feature Parity Verification](#feature-parity-verification)
 4. [Duplication Removal](#duplication-removal)
 5. [Forward Rebase: Catching Up a Branch Chain from Its Parent](#forward-rebase-catching-up-a-branch-chain-from-its-parent)
-6. [Backporting: Bringing Branch Improvements Back to Master](#backporting-bringing-branch-improvements-back-to-master)
-7. [Lessons Learned](#lessons-learned)
+6. [Rebasing All Branches: Scope, Order and Handoff](#rebasing-all-branches-scope-order-and-handoff)
+7. [Backporting: Bringing Branch Improvements Back to Master](#backporting-bringing-branch-improvements-back-to-master)
+8. [Lessons Learned](#lessons-learned)
 
 **See also:** [FEATURE-PARITY-CHECKLIST.md](FEATURE-PARITY-CHECKLIST.md) - Comprehensive post-rebase verification checklist
 
@@ -405,23 +406,28 @@ prettier --write src/**/*.ts              # TypeScript
 
 ---
 
-#### 9. Force Push (After Verification)
+#### 9. Force Push (The User's Step -- Never the Agent's)
+
+A rebase rewrites history, so every rebased branch that already exists on the
+remote needs a force-push. **The agent never pushes** (see `.ai/instructions.md`
+§ Git State Management Rules): after verifying, it tells the user which
+branches changed and the exact command, and the user pushes.
 
 ```bash
-# Force push rebased branch (rewrites history)
-git push origin feature-branch --force-with-lease
+# Run by the user, once per rebased branch (parents before children):
+git push origin <branch> --force-with-lease
 
 # --force-with-lease is safer than --force:
 # - Aborts if remote has changes you don't have locally
 # - Prevents accidentally overwriting teammate's work
 ```
 
-**When to force push:**
-- After successful rebase
-- After amending commit messages
-- After squashing commits
+**Ready to hand off when:**
+- The rebase succeeded and the verification in 3a/5/8 passed
+- Every branch in a chain has been rebased *locally* first -- see
+  [Rebasing All Branches](#rebasing-all-branches-scope-order-and-handoff) for why
 
-**When NOT to force push:**
+**Not ready (do not hand off) when:**
 - Branch is shared with others (coordinate first)
 - Unsure if rebase succeeded (verify first)
 - CI is running (wait for it to finish)
@@ -724,6 +730,135 @@ chain, and only the final branch eventually merges to `master`.
 
 ---
 
+## Rebasing All Branches: Scope, Order and Handoff
+
+**Purpose:** What "rebase all branches" means in this repo, in what order the
+work happens, and where the agent's job ends and the user's begins. The
+per-branch mechanics are in [Rebase Workflow](#rebase-workflow) and
+[Forward Rebase](#forward-rebase-catching-up-a-branch-chain-from-its-parent);
+this section covers everything around them.
+
+### 1. Scope
+
+- "All branches" means **every local branch except `master`**, after
+  `git fetch --all --prune` (reload from the remote first, since the user may
+  have pushed or amended since the last session):
+  ```bash
+  git -C "${DOTFILES_DIR}" fetch --all --prune
+  git -C "${DOTFILES_DIR}" branch --format='%(refname:short)' | grep -v '^master$'
+  ```
+- That includes standalone single-commit branches (experiments, analysis,
+  test branches) as well as members of a conversion chain. Branches already on
+  top of the target are reported as such, not silently skipped.
+- Before touching anything, record each branch's current tip
+  (`git rev-parse <branch>`) and its ahead/behind counts against `master`. The
+  old tips are needed for `--onto` below and for proving nothing was lost.
+
+### 2. Order of work across tasks
+
+When a request combines a change on `master` with rebasing and a follow-up
+task, the sequence is fixed and each handoff waits for the user:
+
+1. Make the change on `master` (working tree only -- see Git State Management).
+2. **Stop and wait** for the user to review, stage, commit and push `master`.
+3. Only then rebase the other branches onto the new `master`.
+4. **Stop and wait** for the user to force-push the rebased branches.
+5. Only then start the next task (for example cutting a new branch from
+   `master`). If the user says to hold a task, leave it entirely untouched
+   until released -- do not create its branch or edit its files.
+
+### 3. Order within one rebase pass
+
+1. Independent branches (those whose parent is `master`) can go in any order.
+2. In a chain, **parent before child**. The child is moved with `--onto`,
+   using the parent's *old* tip, because the parent's commit was rewritten and
+   a plain `git rebase <parent>` would replay the stale parent commit too:
+   ```bash
+   git -C "${DOTFILES_DIR}" rebase --onto <rebased-parent> <parent-OLD-tip> <child>
+   git -C "${DOTFILES_DIR}" merge-base --is-ancestor <rebased-parent> <child> && echo "chain intact"
+   ```
+3. The same applies whenever the user amends a parent after the fact: the child
+   is stale again and must be moved `--onto` the amended parent (old tip = the
+   SHA the child was last based on).
+4. If `master`'s own tip is amended (including by the agent -- see section 6),
+   every branch is rebased again with `--onto master <old-master-tip>`.
+5. `git range-diff <old-tip>...<new-tip>` (or comparing patch-ids) is a quick
+   proof that a branch's own commit survived unchanged (`=` for every commit).
+
+### 4. Push handoff
+
+- The agent never pushes or force-pushes. It reports which branches changed
+  and gives the user the `--force-with-lease` commands, parents first.
+- **Rebase the entire chain locally before the user pushes anything.** Pushing
+  a child branch before its parent's final commit exists, or pushing the same
+  branch twice, triggers one CI run per pushed commit -- the earlier run is
+  then a red/obsolete run against a commit that no longer exists on the branch.
+- Leave the working tree on the branch that was checked out when the session
+  started (normally `master`) and clean. Any fix the agent was asked to make on
+  a WIP branch stays unstaged there for the user to review and amend; say so
+  explicitly, with the branch name.
+
+### 5. Resolving conflicts and overlaps
+
+- **Principle: feature parity -- no more, no less, and no duplication.** A conflict is resolved so
+  the result has exactly the behavior of both sides, no feature dropped and none
+  invented. This is checked with the equivalence methods above, not by eye. The
+  principle covers conflict resolution *and* the de-duplication below.
+- **Backports land in essence, not literally.** Functionality a branch added
+  may since have been reimplemented on `master` or on the parent branch under a
+  different name or shape. Build on what the parent already provides: switch the
+  branch's callers to the existing implementation and delete the branch's own
+  copy instead of keeping two. Search by behavior, not just by name (curl retry
+  flags, sudo keep-alive, step counters, notification text, brew wrappers, ...).
+- **Adopting the backported version must not change behavior.** The same
+  "no more, no less" parity applies when a branch's own copy is replaced by the
+  implementation that landed on `master` or the parent: the branch's callers
+  must end up behaving exactly as before. Do not take the opportunity to add
+  features, defaults, logging or error handling the branch never had, and do not
+  drop any the branch did have. Where the backported version differs in
+  behavior (different return value, stricter or looser failure handling,
+  different output, new side effects), either adapt the call site so the branch
+  behaves as before or, if the difference is clearly an improvement, record it
+  in the summary as an intentional change for the user to approve.
+- **Parity and no duplication hold together.** Neither may be traded for the
+  other: after adopting the backported implementation the branch must still
+  have exactly one implementation of that behavior (its own copy deleted, every
+  caller switched, nothing left behind as an unused or parallel version), and it
+  must behave exactly as before. A rebase is not finished while either "less than
+  before" or "two copies of the same thing" remains -- verify both explicitly
+  (a grep for the removed helper's name and for its behavior, plus the
+  equivalence checks above).
+- **Tie-breakers when two implementations compete:** prefer whichever is more
+  maintainable, faster, correct (bug-free) and better performing, in that
+  spirit; if equal, keep the one already on the parent. State the choice in the
+  summary so the user can overrule it.
+
+### 6. Conventions must hold on every branch
+
+A clean rebase says nothing about whether the branch's code follows the rules
+`master` has since adopted. For each rebased branch (not only the one that
+conflicted):
+
+1. Review the branch's own diff against the current `.ai/domains/` rules:
+   file naming and headers, syntax (Ruby 2.6 compatibility), formatting
+   (`rufo`/`shfmt`), idiomatic constructs (utility helpers instead of raw
+   `system`, `Core`/`EnvVars` instead of raw `ENV`/hardcoded paths), logging and
+   colorization standards, ASCII-only code, comment philosophy, dual-mode
+   structure.
+2. Run the syntax checks and the **full spec suite** on each rebased branch,
+   without disturbing the user's checkout (for example from a temporary
+   `git archive <branch>` export). The UTF-8 file-read spec and similar
+   repo-wide specs fail CI on branch-only code that `master` never contained.
+3. Report violations per branch. Fixes go on the branch's working tree,
+   unstaged, per Forward Rebase steps 7-8 -- the user amends.
+4. **If the rule being violated is not written down, it must be added to `master`
+   first** -- the `.ai` files are the single source of truth, and branches
+   receive them only by rebasing onto `master`. Add the rule to the relevant
+   `.ai/domains/*.md` and **amend it into `master`'s tip commit** rather than
+   creating a new commit. Leave that commit's message and its `CHANGELOG.md`
+   section as they are: they do not mention these documentation additions.
+   Then rebase every branch again (section 3, item 4).
+
 ## Backporting: Bringing Branch Improvements Back to Master
 
 **Purpose:** While a large incremental conversion (e.g., shell -> Ruby, file
@@ -915,6 +1050,8 @@ Created comprehensive comparison documents:
 4. ✅ **Duplication removal** after conflict resolution
 5. ✅ **Syntax checks** before force-push
 6. ✅ **Documentation** of decisions and gaps
+7. ✅ **Scope/order/handoff** per [Rebasing All Branches](#rebasing-all-branches-scope-order-and-handoff): every non-`master` branch, parent before child with `--onto`, whole chain rebased before any push, agent never pushes
+8. ✅ **Conventions and full spec suite** verified on every rebased branch; missing rules amended into `master`'s tip (message and CHANGELOG unchanged)
 
 ### Optional But Recommended
 
@@ -931,6 +1068,9 @@ Created comprehensive comparison documents:
 - ❌ Gaps rationalized as "close enough"
 - ❌ Three-way merges attempted simultaneously
 - ❌ Force-push without reverse comparison
+- ❌ The agent pushing, or starting the next task before the user has reviewed/pushed
+- ❌ Pushing a child branch before its parent's final commit exists (duplicate, red CI runs)
+- ❌ A plain `git rebase <parent>` after the parent's commit was rewritten (replays the stale commit)
 
 ---
 
@@ -941,5 +1081,5 @@ Created comprehensive comparison documents:
 
 ---
 
-**Last Updated:** September 13, 2026
+**Last Updated:** October 10, 2026
 **Status:** Living document (update as new patterns emerge)

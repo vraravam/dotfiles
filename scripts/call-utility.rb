@@ -23,7 +23,7 @@
 #
 # Examples:
 #   call-utility.rb Cron.create_crontab "${PERSONAL_CONFIGS_DIR}/crontab.txt"
-#   call-utility.rb GitWorkspace.setup_dev_environment --first_install=true
+#   call-utility.rb DevEnvironment.setup_dev_environment --first_install=true
 #   call-utility.rb --truthy Keybase.username
 
 # Modules callable from the command line, mapped to the utility file that defines each.
@@ -32,6 +32,7 @@
 UTILITIES = {
   'Antidote' => 'antidote',
   'Cron' => 'cron',
+  'DevEnvironment' => 'dev_environment',
   'GitWorkspace' => 'git_workspace',
   'Keybase' => 'keybase',
   'MacOS' => 'macos'

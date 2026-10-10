@@ -522,7 +522,7 @@ delete_caches() {
 # Installs any missing tool versions declared via mise config files (.mise.toml,
 # .tool-versions, etc.) across all git repos and their ancestor directories under
 # HOME, DOTFILES_DIR, and PROJECTS_BASE_DIR. Skips silently if mise is not in PATH.
-# Thin wrapper that delegates to Ruby GitWorkspace.install_mise_versions.
+# Thin wrapper that delegates to Ruby DevEnvironment.install_mise_versions.
 install_mise_versions() {
   if ! command_exists mise; then
     debug "Couldn't find 'mise' in the PATH; Skipping loading any mise configs"
@@ -530,14 +530,14 @@ install_mise_versions() {
   fi
   local first_install_flag="false"
   if is_first_install; then first_install_flag="true"; fi
-  call_utility GitWorkspace.install_mise_versions "--first_install=${first_install_flag}"
+  call_utility DevEnvironment.install_mise_versions "--first_install=${first_install_flag}"
 }
 
 # Runs 'direnv allow' and then 'direnv exec' (to evaluate the .envrc right away, rather
 # than waiting for the next interactive 'cd') for every directory that has an .envrc file
 # across all git repos and their ancestor directories under HOME, DOTFILES_DIR, and
 # PROJECTS_BASE_DIR. Skips silently if direnv is not in PATH.
-# Thin wrapper that delegates to Ruby GitWorkspace.activate_all_direnv_configs.
+# Thin wrapper that delegates to Ruby DevEnvironment.activate_all_direnv_configs.
 activate_all_direnv_configs() {
   if ! command_exists direnv; then
     debug "Couldn't find 'direnv' in the PATH; Skipping activating any direnv configs"
@@ -545,17 +545,17 @@ activate_all_direnv_configs() {
   fi
   local first_install_flag="false"
   if is_first_install; then first_install_flag="true"; fi
-  call_utility GitWorkspace.activate_all_direnv_configs "--first_install=${first_install_flag}"
+  call_utility DevEnvironment.activate_all_direnv_configs "--first_install=${first_install_flag}"
 }
 
 # Runs both direnv authorization and mise installation in a single optimized pass.
 # Collects git repos and ancestor directories once (instead of twice), saving
 # 200-500ms per run by avoiding redundant filesystem traversals.
-# Thin wrapper that delegates to Ruby GitWorkspace.setup_dev_environment.
+# Thin wrapper that delegates to Ruby DevEnvironment.setup_dev_environment.
 setup_dev_environment() {
   local first_install_flag="false"
   if is_first_install; then first_install_flag="true"; fi
-  call_utility GitWorkspace.setup_dev_environment "--first_install=${first_install_flag}"
+  call_utility DevEnvironment.setup_dev_environment "--first_install=${first_install_flag}"
 }
 
 # --------------------------------------------------------------------------

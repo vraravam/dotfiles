@@ -51,4 +51,21 @@ RSpec.describe Brew do
       expect(described_class.upgrade).to be true
     end
   end
+
+  describe '.outdated_greedy' do
+    it 'is empty when brew is not installed' do
+      allow(PathUtils).to receive(:command_exists?).with('brew').and_return(false)
+      expect(CommandUtils).not_to receive(:query)
+
+      expect(described_class.outdated_greedy).to eq([])
+    end
+
+    it 'returns one stripped entry per outdated package and drops blank lines and Homebrew noise' do
+      allow(PathUtils).to receive(:command_exists?).with('brew').and_return(true)
+      allow(CommandUtils).to receive(:query).with('brew', 'outdated', '--greedy')
+                                            .and_return("firefox (130) != 131\n\n  zoom (5) != 6  \nHomebrew is updating\nDownloading https://x\n")
+
+      expect(described_class.outdated_greedy).to eq(['firefox (130) != 131', 'zoom (5) != 6'])
+    end
+  end
 end
