@@ -77,7 +77,7 @@ established meaning:
 | `standup` | author name | `git -C <path> standup "<author>"` |
 | `new` | branch name | `git -C <path> new <branch>` |
 | `old` | remote name | `git -C <path> old <remote> <branch>` |
-| `recent-branch` / `oldest-branch` | reference branch | `git -C <path> recent-branch` |
+| `recent-branch` | `--oldest` flag or reference branch | `git -C <path> recent-branch [--oldest]` |
 | `f` / `se` | search pattern | `git -C <path> f <pattern>` |
 | `relative-path` | path argument | `git -C <path> relative-path` |
 
@@ -156,8 +156,8 @@ formatted (`shfmt`), syntax-checked (`sh -n`/`dash -n`) and commented normally.
 
 - **Alias** (in `git/config`): one- or two-line shortcuts (`br`, `st`, `pushf`).
 - **External script** (`${DOTFILES_DIR}/scripts/git-<name>`, `#!/bin/sh`, POSIX, no `.shellrc`):
-  `with-retry`, `kill-process-tree`, `fo`, `unshallow`, `backfill-blobs`, `maintain`,
-  `migrate-reftable`, `pull-safe`, `cc`, `upreb`. `${DOTFILES_DIR}/scripts` is on `PATH` for
+  `with-retry`, `fo`, `unshallow`, `maintain`,
+  `migrate-reftable`, `cc`, `upreb`. `${DOTFILES_DIR}/scripts` is on `PATH` for
   interactive shells, `fresh-install-of-osx.sh` and the generated crontab.
 - A script's default directory is `git rev-parse --show-toplevel` (git ran the former aliases
   from the work tree's top level; an external command runs from the caller's directory).
@@ -482,7 +482,7 @@ Used in: starship prompt (4 `when` conditions)
 is-clean = "!f() { git -C \"${1:-.}\" d --quiet && git -C \"${1:-.}\" dc --quiet; }; f"
 ```
 
-Used in: `pull-safe`, `upreb`
+Used in: `fo --rebase`, `upreb`
 
 **`git is-shallow [<dir>]`** - Returns 0 if repo is shallow clone:
 ```ini
@@ -524,17 +524,14 @@ my-cmd = "!f() { git -C \"${1:-.}\" command \"$@\"; }; f"
 - Simpler argument handling
 
 **Example with multi-step logic** (see § Shallow Clone Aliases below for the
-full explanation of what this one does and why it starts with a guard clause):
+full explanation of what `unshallow` does and why it starts with a guard clause --
+it is long enough to live as `scripts/git-unshallow`; this is the shape of an alias
+that fits in the config):
 ```ini
-unshallow = "!f() { \
+dlb = "!f() { \
   dir=\"${1:-.}\"; \
-  if [ \"$(git -C \"${dir}\" rev-parse --is-shallow-repository 2>/dev/null)\" != 'true' ] && \
-    [ \"$(git -C \"${dir}\" config --get remote.origin.promisor 2>/dev/null)\" != 'true' ]; then \
-    printf 'Already a full clone -- nothing to unshallow in %s\n' \"${dir}\"; \
-    exit 0; \
-  fi; \
-  git -C \"${dir}\" fo && git -C \"${dir}\" backfill-blobs; \
-}; f \"$@\""
+  git -C \"${dir}\" branch -vv | /usr/bin/grep ': gone]' | awk '{print $1}' | xargs -r git -C \"${dir}\" branch -D; \
+}; f"
 ```
 
 ### Legacy Pattern: `!sh -c '...' -`
@@ -567,21 +564,10 @@ co = checkout
 
 ## Shallow Clone Aliases
 
-**`git unshallow [<dir>]`** - Converts a shallow and/or partial (blobless) clone
-into a full clone. Delegates to two smaller aliases rather than reimplementing
-fetch/backfill logic itself:
-
-```ini
-unshallow = "!f() { \
-  dir=\"${1:-.}\"; \
-  if [ \"$(git -C \"${dir}\" rev-parse --is-shallow-repository 2>/dev/null)\" != 'true' ] && \
-    [ \"$(git -C \"${dir}\" config --get remote.origin.promisor 2>/dev/null)\" != 'true' ]; then \
-    printf 'Already a full clone -- nothing to unshallow in %s\n' \"${dir}\"; \
-    exit 0; \
-  fi; \
-  git -C \"${dir}\" fo && git -C \"${dir}\" backfill-blobs; \
-}; f \"$@\""
-```
+**`git unshallow [<dir>]`** (`scripts/git-unshallow`) - Converts a shallow and/or
+partial (blobless) clone into a full clone. One command, two steps: `git fo` for
+history, then an internal `backfill_blobs` function for blobs (there is no separate
+`backfill-blobs` command):
 
 - **No-op guard first**: if the repo is neither shallow (`is-shallow-repository`)
   nor a partial/blobless clone (`remote.origin.promisor`), there is nothing to
@@ -593,19 +579,18 @@ unshallow = "!f() { \
   shallow clone's default single-branch tracking to all branches, and (per
   remote) uses `fetch --unshallow` instead of a plain `fetch` when still
   shallow. This is the "routine sync" half -- also used standalone everywhere
-  else in this config (`pull-safe`, `upreb`, `pullsub`, cron, `antidote.rb`).
-- **`git backfill-blobs`** -- backfills any missing blob objects for a partial
-  (`--filter=blob:none`) clone, in up to 5 chunks (fewer for a repo with under
-  5 commits), newest history first, each chunk wrapped in `with-retry`. No-op
-  (self-guarded) if the repo isn't a partial clone or the installed git
-  predates 2.44 (`git backfill`). See the alias's own comment in
-  `${XDG_CONFIG_HOME}/git/config` for why chunking matters: `git backfill`
-  groups every historical blob at a given path into one batch regardless of
-  `--min-batch-size`, so a single path with many large historical versions
-  (e.g. a binary committed directly) can otherwise produce one multi-GB,
+  else in this config (`fo --rebase`, `upreb`, `pullsub`, cron, `antidote.rb`).
+- **`backfill_blobs`** (function inside `git-unshallow`) -- backfills any missing blob
+  objects for a partial (`--filter=blob:none`) clone, in up to 5 chunks (fewer for a
+  repo with under 5 commits), newest history first, each chunk wrapped in
+  `with-retry`. No-op (self-guarded) if the repo isn't a partial clone or the installed
+  git predates 2.44 (`git backfill`). See the script's own comment for why chunking
+  matters: `git backfill` groups every historical blob at a given path into one batch
+  regardless of `--min-batch-size`, so a single path with many large historical
+  versions (e.g. a binary committed directly) can otherwise produce one multi-GB,
   unsplittable transfer that a flaky connection can never complete.
 - Routine freshness for an already-full repo is **not** this alias's job --
-  callers that want that use `git fo` directly, or `git pull-safe`/`git upreb`
+  callers that want that use `git fo` directly, or `git fo --rebase`/`git upreb`
   for the fetch-and-rebase workflows. `unshallow` answers "does this repo need
   converting", not "is this repo up to date".
 
@@ -666,7 +651,7 @@ Three examples currently in `${XDG_CONFIG_HOME}/git/config`:
 
 | Alias | Guard condition | Cheap check used |
 |---|---|---|
-| `unshallow` | Repo is already a full, non-partial clone | `rev-parse --is-shallow-repository` + `config --get remote.origin.promisor` |
+| `unshallow` | Repo is already a full, non-partial clone | `is-shallow` + `config --get remote.origin.promisor` |
 | `siu` | Repo has no submodules | `[ -f "${dir}/.gitmodules" ]` |
 | `migrate-reftable` | Repo is already reftable format | `rev-parse --show-ref-format` |
 
@@ -743,7 +728,7 @@ sci = "!sh -c '\
 Both paths are non-interactive: `git amq` = `commit --amend --no-edit --quiet`;
 `git ci "<msg>"` = `commit -m "<msg>"`.
 
-## `git pull-safe` and `git upreb` -- Dirty-Tree Guard for Cron
+## `git fo --rebase` and `git upreb` -- Dirty-Tree Guard for Cron
 
 Aliases that rebase (or rebase + push) must check for a clean working tree
 **before** doing any destructive work. `rebase.autoStash = true` is not
@@ -753,53 +738,35 @@ state.
 
 The correct pattern is an **early exit**: check first, do nothing if dirty.
 
-**`git pull-safe`** -- fetch all remotes (via `fo`, for with-retry + promisor-
-first ordering), rebase onto `@{u}` only if clean, falling back to a hard
-reset onto `@{u}` if the histories have diverged with no common ancestor
-(e.g. after a remote force-squash -- see `KeybaseMigration.md`) **and** the
-repo has opted in with `git config --local pull.allowResetOnDivergedHistory
-true`:
-
-```ini
-pull-safe = "!f() { \
-  dir=\"${1:-.}\"; \
-  git -C \"${dir}\" fo; \
-  if ! git -C \"${dir}\" is-clean; then \
-    printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' \"${dir}\" >&2; \
-    exit 1; \
-  fi; \
-  branch=$(git -C \"${dir}\" br); \
-  if [ -z \"${branch}\" ]; then exit 1; fi; \
-  if git -C \"${dir}\" merge-base \"${branch}\" '@{u}' >/dev/null 2>&1; then \
-    git -C \"${dir}\" rebase '@{u}'; \
-    exit $?; \
-  fi; \
-  allow_reset=$(git -C \"${dir}\" config --type=bool --default false pull.allowResetOnDivergedHistory); \
-  if [ \"${allow_reset}\" != 'true' ]; then exit 1; fi; \
-  git -C \"${dir}\" reset --hard '@{u}'; \
-}; f \"$@\""
-```
+**`git fo --rebase [<dir>]`** (`scripts/git-fo`) -- fetch all remotes (the normal `fo`
+fetch: with-retry + promisor-first ordering), then rebase onto `@{u}` only if clean,
+falling back to a hard reset onto `@{u}` if the histories have diverged with no common
+ancestor (e.g. after a remote force-squash -- see `KeybaseMigration.md`) **and** the
+repo has opted in with `git config --local pull.allowResetOnDivergedHistory true`.
+Without `--rebase`, `fo` only fetches. A dirty tree or an un-opted-in diverged history
+makes it exit non-zero, which `run-all.rb` surfaces as a per-repo warning. There is no
+separate `pull-safe` command: it was folded into `fo` since it was `fo` plus this tail.
 
 This is the **single, canonical** implementation of "pull that tolerates a
 rewritten remote history" in this codebase -- both `GitCommands.pull` (the
 `pull` command, only as its fallback after a bare `git pull` fails; see below for
 why the *primary* interactive path stays on bare `git pull`) and
-`GitProcessor#pull` (Ruby) call into this one alias rather than each carrying
+`GitProcessor#pull` (Ruby) call `git fo --rebase` rather than each carrying
 their own copy of the fetch/clean-check/merge-base/rebase-or-reset logic. A
 previous, Ruby-only duplicate of this exact logic (`GitProcessor#pull_or_reset`)
 was removed once its logic moved here -- if you're tempted to add a diverged-
-history-aware pull anywhere else, extend or call this alias instead of writing
+history-aware pull anywhere else, extend or call this instead of writing
 a new implementation.
 
 **Why `GitCommands.pull`'s primary path is still a bare `git pull`, not
-`pull-safe`**: `pull-safe` is deliberately cron/automation-oriented -- it
+`fo --rebase`**: `fo --rebase` is deliberately cron/automation-oriented -- it
 **refuses** outright on a dirty tree rather than touching it. The interactive
 `pull` command benefits from this repo's `[merge]/[rebase] autoStash = true`
 (silently stash-pull-pop on a dirty tree), which is a real daily-use
 convenience. Routing the common (clean, no-diverged-history) case through
-`pull-safe` would silently regress that autostash behavior for every
+`fo --rebase` would silently regress that autostash behavior for every
 interactive pull, not just diverged ones -- so `GitCommands.pull` only reaches for
-`pull-safe` as its fallback, after a bare `git pull` has already failed and
+`fo --rebase` as its fallback, after a bare `git pull` has already failed and
 `pull.allowResetOnDivergedHistory` is set locally.
 
 **`git upreb`** -- abort before touching anything if dirty (a mid-workflow
@@ -853,30 +820,10 @@ must be excluded -- tags have no reflogs in any repo (git only maintains reflogs
 `HEAD` and branches), and passing them to `git reflog expire` always produces
 "reflog could not be found" errors for every tag.
 
-**`git compress [<dir>] [--expire=<when>] [<extra-reflog-flags>]`** -- combines
-`rfc && cc` into a single named operation, since the two are almost always run
-together (this section's own examples show `git rfc && git cc`). Mirrors how
-`unshallow` combines `fo`+`backfill-blobs`: when two aliases are routinely
-chained by every caller, add a third alias that does both rather than leaving
-every call site (interactively, or in Ruby via multiple `run_alias` calls) to
-chain them manually.
-
-```ini
-compress = "!f() { \
-  case \"${1:-}\" in \
-    -*|'') dir='.' ;; \
-    *) dir=\"${1:-}\" ;; \
-  esac; \
-  git -C \"${dir}\" rfc && git -C \"${dir}\" cc \"$@\"; \
-}; f \"$@\""
-```
-
-`rfc` only ever needs the `<dir>` argument (it has no flags of its own), so
-`compress` extracts just that for the `rfc` call -- the full, unmodified `"$@"`
-is still forwarded to `cc`, which already knows how to parse its own
-`<dir>`/`--expire=<when>`/`<extra-reflog-flags>` combination (reusing `cc`'s
-existing parsing rather than duplicating it a third time). `GitProcessor#compress`
-(Ruby) calls this one alias instead of two separate `run_alias` calls.
+**There is no `compress` alias.** `git cc --expire=now` already expires the whole reflog
+immediately and then does the full prune/repack/gc cleanup, i.e. exactly what
+`rfc && cc` would do. `GitProcessor#compress` (Ruby) runs `git cc --expire=now`. Use
+`rfc` on its own only when you want the reflog expiry without the repack.
 
 ## `[delta]` -- Diff Rendering
 

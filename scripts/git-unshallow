@@ -6,43 +6,146 @@
 # is a subcommand). Plain /bin/sh and dependency-free on purpose -- no .shellrc -- so it works
 # from cron and before the dotfiles shell environment exists.
 #
-# Converts a shallow and/or partial (blobless) clone into a full clone: fetches
-# complete history (via 'git fo', which also widens a shallow clone's default
-# single-branch tracking to all branches and repairs a promisor-first fetch order)
-# then backfills any missing blob objects (via 'git backfill-blobs'). Kept as a
-# separate command name for backward compatibility and because the combined operation
-# (history + blobs) is what callers converting a fresh shallow/partial clone
-# actually want -- 'git fo' alone is the lighter-weight, faster, routine-sync
-# operation used everywhere else (interactive use, cron via antidote.rb,
-# clone_repo_into's background job -- none of these call sites needed to change:
-# this command still does the same combined job under the same name).
+# Converts a shallow and/or partial (blobless) clone into a full clone in two steps:
+# complete history via 'git fo' (which also widens a shallow clone's default
+# single-branch tracking to all branches and repairs a promisor-first fetch order),
+# then any missing blob objects via backfill_blobs below. 'git fo' alone is the
+# lighter-weight, faster, routine-sync operation used everywhere else (interactive
+# use, cron via antidote.rb, 'git fo --rebase', 'git upreb'); this command is what
+# callers converting a fresh shallow/partial clone actually want.
 #
 # No-op guard: if the repo is already a full clone (not shallow) AND has no
 # promisor remote (not a partial/blobless clone either), there is nothing left
 # to convert -- returns immediately without even calling 'fo', rather than
 # paying for a full multi-remote fetch cycle for zero conversion benefit.
-# Routine freshness (keeping an already-full repo up to date) is handled
-# elsewhere by whichever call site actually wants it ('git fo' directly, or
-# 'git pull-safe'/'git upreb' for the fetch-and-rebase workflows) -- callers
-# that specifically invoke 'unshallow' are asking "convert this if needed",
-# not "sync this". Before this guard existed, callers that wanted to avoid a
-# redundant fetch against an already-full repo had to check this themselves
-# (see antidote.rb's own 'git.shallow?' check preceding its 'unshallow' call,
-# which is now redundant but harmless -- kept there as defense in depth).
+# Callers that specifically invoke 'unshallow' are asking "convert this if
+# needed", not "sync this".
+#
+# backfill_blobs: fetching full commit/tree history (via 'git fo') does NOT fetch
+# blob content in a partial clone (--filter=blob:none) -- these are two independent
+# axes. It is a no-op if the repo is not a partial clone, or if the installed git
+# version predates 'git backfill' (2.44+). It must run AFTER 'git fo' has fetched
+# from the promisor remote -- backfilling against stale/incomplete history would be
+# wasted work.
+#
+# No-op guard: checks for any object still missing from HEAD's own reachable
+# history (via 'rev-list --objects HEAD --missing=print', the same technique 'git
+# st' already uses with --all) before doing any of the work below, and returns
+# immediately if there's nothing left -- otherwise a repo that's already fully
+# backfilled would still pay for the full chunked walk-and-fetch dance below
+# (same commit-count math, same 5 retried remote round-trips) on every single
+# invocation, even though 'git backfill' itself has nothing left to transfer.
+#
+# Backfills in up to 5 chunks (fewer for a repo with under 5 commits), newest
+# history first, rather than one single 'git backfill' call across all of HEAD.
+# 'git backfill' groups every historical blob at a given path into one batch
+# regardless of --min-batch-size (per git-backfill(1): batch size "may be exceeded
+# by the last set of blobs seen at a given path") -- a single path with many large
+# historical versions (e.g. a binary committed directly) can therefore produce one
+# multi-GB, unsplittable transfer that a flaky connection can never complete, since
+# a failed 'index-pack' discards all progress and the next retry re-requests the
+# exact same oversized batch from scratch. Splitting the commit range into chunks
+# bounds how many historical versions of any one path fall into a single 'git
+# backfill' invocation, so the same oversized path's blobs are spread across
+# several smaller, actually-transferable batches instead of one unbatchable one.
+# Commit boundaries come from 'git rev-list --count'/'--reverse' against the LOCAL
+# repo, not the remote -- a blobless partial clone already has full commit/tree
+# history (only blobs are filtered), so this needs no extra network round-trip.
+# Each chunk is wrapped in 'with-retry'; if a chunk exhausts its retries, the loop
+# stops (older chunks are skipped) rather than pressing on -- the skipped history's
+# blobs simply lazy-fetch on demand later.
+#
+# The chunk loop only ever walks HEAD's own ancestry ('rev-list --reverse HEAD'),
+# so a blob reachable only from some other ref (a tag, a remote-tracking branch
+# never checked out locally, etc.) is invisible to it. After the HEAD-scoped chunks
+# finish (or are skipped by the no-op guard), a final unchunked 'git backfill --all'
+# pass mops up anything still missing across every ref -- itself skipped via the
+# same missing=print check if there's nothing left. Deliberately not chunked: by
+# then only the handful of blobs unique to non-HEAD refs remain, so the
+# oversized-single-batch risk the chunking exists to avoid doesn't apply.
 # Usage: git unshallow [<dir>]
 
 # Git ran the former alias from the work tree's top level; an external command runs from the
 # caller's directory, so the default directory is the top level (not '.') to keep
 # 'git unshallow' from a subdirectory working the same way.
 
+backfill_blobs() {
+  dir="${1:?backfill_blobs: dir required}"
+  if [ "$(git -C "${dir}" config --get remote.origin.promisor 2>/dev/null)" != 'true' ]; then
+    return 0
+  fi
+  if git backfill -h 2>&1 | grep -q 'is not a git command'; then
+    printf 'Skipping blob backfill -- installed git version predates git backfill (needs 2.44+)\n' >&2
+    return 0
+  fi
+  chunk_failed=0
+  if [ -z "$(git -C "${dir}" rev-list --objects HEAD --missing=print 2>/dev/null | grep '^?')" ]; then
+    printf 'No missing blob objects reachable from HEAD -- nothing to backfill.\n'
+  else
+    total=$(git -C "${dir}" rev-list --count HEAD 2>/dev/null)
+    if [ -z "${total}" ] || [ "${total}" -le 0 ]; then
+      printf 'Skipping blob backfill -- could not determine commit history\n' >&2
+    else
+      chunks=5
+      if [ "${total}" -lt "${chunks}" ]; then chunks="${total}"; fi
+      seg_size=$(((total + chunks - 1) / chunks))
+      commits_file="$(mktemp)"
+      git -C "${dir}" rev-list --reverse HEAD >"${commits_file}"
+      printf 'Backfilling missing blob objects in %s chunk(s) (partial clone, %s commits total, newest first)...\n' "${chunks}" "${total}"
+      i="${chunks}"
+      while [ "${i}" -ge 1 ]; do
+        end_line=$((i * seg_size))
+        if [ "${end_line}" -gt "${total}" ]; then end_line="${total}"; fi
+        start_line=$(((i - 1) * seg_size))
+        end_sha=$(sed -n "${end_line}p" "${commits_file}")
+        if [ "${start_line}" -gt 0 ]; then
+          start_sha=$(sed -n "${start_line}p" "${commits_file}")
+          range="${start_sha}..${end_sha}"
+        else
+          range="${end_sha}"
+        fi
+        printf 'Backfill chunk %s/%s (commits %s-%s of %s)...\n' "${i}" "${chunks}" "$((start_line + 1))" "${end_line}" "${total}" >&2
+        backfill_stderr="$(mktemp)"
+        if git with-retry 90 5 "${backfill_stderr}" "${dir}/.git/objects" git -C "${dir}" backfill --min-batch-size=500 "${range}"; then
+          printf 'Chunk %s/%s backfilled.\n' "${i}" "${chunks}"
+          rm -f "${backfill_stderr}"
+        else
+          printf 'Warning: could not backfill chunk %s/%s after retries -- stopping (remaining older history will lazy-fetch on demand). Last error:\n' "${i}" "${chunks}" >&2
+          cat "${backfill_stderr}" >&2
+          rm -f "${backfill_stderr}"
+          chunk_failed=1
+          break
+        fi
+        i=$((i - 1))
+      done
+      rm -f "${commits_file}"
+      if [ "${chunk_failed}" -eq 0 ]; then printf 'Backfill complete.\n'; fi
+    fi
+  fi
+  if [ "${chunk_failed}" -eq 0 ]; then
+    remaining=$(git -C "${dir}" rev-list --objects --all --missing=print 2>/dev/null | grep '^?')
+    if [ -n "${remaining}" ]; then
+      count=$(printf '%s\n' "${remaining}" | wc -l | xargs)
+      printf 'Backfilling %s remaining blob object(s) outside HEAD (other branches/tags)...\n' "${count}"
+      backfill_stderr2="$(mktemp)"
+      if git with-retry 90 5 "${backfill_stderr2}" "${dir}/.git/objects" git -C "${dir}" backfill --min-batch-size=500 --all; then
+        printf 'Remaining backfill complete.\n'
+      else
+        printf 'Warning: could not backfill remaining objects after retries. Last error:\n' >&2
+        cat "${backfill_stderr2}" >&2
+      fi
+      rm -f "${backfill_stderr2}"
+    fi
+  fi
+}
+
 main() {
   dir="${1:-$(git rev-parse --show-toplevel 2>/dev/null || printf .)}"
-  if [ "$(git -C "${dir}" rev-parse --is-shallow-repository 2>/dev/null)" != 'true' ] &&
-    [ "$(git -C "${dir}" config --get remote.origin.promisor 2>/dev/null)" != 'true' ]; then
+  if ! git -C "${dir}" is-shallow 2>/dev/null && [ "$(git -C "${dir}" config --get remote.origin.promisor 2>/dev/null)" != 'true' ]; then
     printf 'Already a full clone -- nothing to unshallow in %s\n' "${dir}"
     exit 0
   fi
-  git -C "${dir}" fo && git -C "${dir}" backfill-blobs
+  git -C "${dir}" fo && backfill_blobs "${dir}"
 }
 
 main "$@"

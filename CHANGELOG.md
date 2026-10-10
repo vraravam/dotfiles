@@ -4,6 +4,28 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.12
+
+#### Consolidate custom git commands: fold `backfill-blobs` into `unshallow`, `pull-safe` into `fo --rebase`, inline `kill-process-tree` into `with-retry`, merge `oldest-branch` into `recent-branch`, drop `compress`
+
+* *[scripts/git-unshallow]* Absorbed `git backfill-blobs` as an internal `backfill_blobs` function (chunked, `with-retry`-wrapped backfill, no-op guards unchanged). `unshallow` was its only caller, so the separate command is gone. The full-clone guard now uses the `is-shallow` alias instead of repeating the raw `rev-parse --is-shallow-repository` check.
+* *[scripts/git-backfill-blobs]* Deleted (see `git-unshallow`).
+* *[scripts/git-with-retry]* Absorbed `git kill-process-tree` as an internal `kill_tree` function (children first, then the process); `with-retry` was its only caller.
+* *[scripts/git-kill-process-tree]* Deleted (see `git-with-retry`).
+* *[scripts/git-fo]* Absorbed `git pull-safe` as `git fo --rebase [<dir>]`: after the normal fetch, rebases onto `@{u}` only if the tree is clean (non-zero exit otherwise), falling back to a hard reset when histories share no ancestor and `pull.allowResetOnDivergedHistory` is set locally. Plain `git fo` is unchanged (fetch only).
+* *[scripts/git-pull-safe]* Deleted (see `git-fo`).
+* *[scripts/software-updates-cron.rb, scripts/generate-bootstrap-repositories-yaml.rb, scripts/run-all.rb, scripts/utilities/git_commands.rb, spec/utilities/git_commands_spec.rb]* Callsites switched from `git pull-safe` to `git fo --rebase`.
+* *[files/--XDG_CONFIG_HOME--/git/config]* `oldest-branch` was a verbatim copy of `recent-branch` with the sort reversed; it is now `git recent-branch --oldest [<refbranch> [<count>]]` and the duplicate alias is removed. `compress` (`rfc && cc`) is removed: it was equivalent to `git cc --expire=now` (a second reflog expiry inside `cc` after `rfc` already expired everything is a no-op, so any `--expire` forwarded through `compress` could never take effect). The external-command list comment is updated.
+* *[scripts/utilities/git_processor.rb]* `GitProcessor#compress` runs `git cc --expire=now` instead of the removed `compress` alias; `GitProcessor#pull` runs `git fo --rebase` instead of `git pull-safe`; comments updated to match.
+* *[KeybaseMigration.md, Extras.md]* `pull-safe` references now point to `git fo --rebase`.
+* *[.ai/domains/git-config.md]* Updated the external-command list, the `recent-branch` argument table, the `unshallow` documentation (now one command with an internal backfill step), and replaced the `compress` section with a note that `git cc --expire=now` covers it.
+
+#### Adopting these changes
+
+* Use `git recent-branch --oldest` where you used `git oldest-branch`, `git cc --expire=now` where you used `git compress`, and `git fo --rebase` where you used `git pull-safe` (including any personal scripts or `repositories-*.yml` `post_clone` entries).
+
+---
+
 ### 4.0.11
 
 :white_check_mark: Tested on a vanilla macOS machine

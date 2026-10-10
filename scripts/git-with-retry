@@ -26,7 +26,7 @@
 # subcommand so any other script or git alias (e.g. 'unshallow') can call it as
 # 'git with-retry' without sourcing ~/.shellrc.
 #
-# 'disown' is called ONLY in the timeout/kill branch, right before 'kill-process-tree'
+# 'disown' is called ONLY in the timeout/kill branch, right before 'kill_tree'
 # -- never immediately after backgrounding. 'disown' stops the shell from printing a
 # leaked 'Killed: 9 <command>' job-control message when the process is later killed by
 # signal, but it ALSO breaks 'wait <pid>' -- once disowned, 'wait' unconditionally
@@ -37,7 +37,21 @@
 # path relies on 'wait's real exit status to detect failure. Disowning only in the
 # kill branch is safe because that branch already knows the attempt failed (timed out)
 # and discards the exit status of the post-kill 'wait' regardless.
+#
+# A stalled attempt is killed with kill_tree (below), which kills the process and all of
+# its descendants: a plain 'kill -9 $pid' only kills the direct process, so a stalled git
+# command's ssh/git-remote-https helper children would be orphaned and keep running
+# indefinitely.
 # Usage: git with-retry <timeout-secs> <max-attempts> <stderr-file|/dev/null> <progress-path|-> <command...>
+
+# Kills a process and all of its descendants (children first, depth-first).
+# Usage: kill_tree <pid>
+kill_tree() {
+  for child in $(pgrep -P "$1" 2>/dev/null); do
+    kill_tree "${child}"
+  done
+  kill -9 "$1" 2>/dev/null || true
+}
 
 main() {
   timeout_secs="${1:?with-retry: timeout_secs required}"
@@ -79,7 +93,7 @@ main() {
     done
     if kill -0 "${pid}" 2>/dev/null; then
       disown "${pid}" 2>/dev/null || true
-      git kill-process-tree "${pid}"
+      kill_tree "${pid}"
       wait "${pid}" 2>/dev/null
       printf 'No progress for %ss on attempt %s/%s -- retrying\n' "${timeout_secs}" "${attempt}" "${max_attempts}" >&2
     else

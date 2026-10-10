@@ -332,7 +332,7 @@ A set of git-workflow commands are available from `.aliases`:
 | Command | What it does | Implementation | Supports override? |
 |---------|-------------|----------------|:-----------------:|
 | `cc` | Compacts the git repo (`git cc` — garbage collection, pruning, etc.) | alias for `scripts/git-command.rb` | ✓ |
-| `pull` | Pulls (with hang protection); falls back to `pull-safe` for repos that opt in to reset-on-diverged-history | alias for `scripts/git-command.rb` | ✓ |
+| `pull` | Pulls (with hang protection); falls back to `git fo --rebase` for repos that opt in to reset-on-diverged-history | alias for `scripts/git-command.rb` | ✓ |
 | `push` | Pushes the current branch (with hang protection) | alias for `scripts/git-command.rb` | ✓ |
 | `upreb` | Fetches upstream, rebases every local branch onto it and pushes | alias for `scripts/git-command.rb` | ✓ |
 | `count` | Counts commits on the current branch | zsh autoload (`files/--XDG_CONFIG_HOME--/zsh/`) | ✓ |

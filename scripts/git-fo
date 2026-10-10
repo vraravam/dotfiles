@@ -34,14 +34,27 @@
 # source of truth. Note: --all/--tags/--prune flags on the fetches themselves are
 # omitted -- fetch.all, fetch.pruneTags, and fetch.prune=true in config make each
 # 'git fetch <remote>' below equivalent to 'git fetch <remote> --tags --prune'.
-# Usage: git fo [<dir>]
+#
+# With --rebase, after fetching, also brings the current branch up to date with its
+# upstream ('@{u}') -- the safe, cron-friendly replacement for a bare 'git pull'. Only
+# rebases if the working tree is clean (no uncommitted or staged changes). If the tree
+# is dirty, skips the rebase, prints a message to stderr, and exits non-zero -- callers
+# such as run-all.rb surface this as a per-repo warning so the user knows to pull
+# manually, rather than the skip being silently dropped.
+# If the rebase target has no common ancestor with the current branch (e.g. after a
+# remote force-squash -- see recreate-repository.rb/KeybaseMigration.md), a plain
+# rebase is meaningless (there is no shared base to replay onto). By default this is
+# treated as an error (unexpected -- refuses to silently discard local commits). Repos
+# that expect this can opt in with:
+#   git config --local pull.allowResetOnDivergedHistory true
+# in which case a diverged history instead falls back to a hard reset onto @{u}.
+# Usage: git fo [<dir>] [--rebase]
 
 # Git ran the former alias from the work tree's top level; an external command runs from the
 # caller's directory, so the default directory is the top level (not '.') to keep
 # 'git fo' from a subdirectory working the same way.
 
-main() {
-  dir="${1:-$(git rev-parse --show-toplevel 2>/dev/null || printf .)}"
+fetch_remotes() {
   find "${dir}/.git/objects/pack" -name 'tmp_*' -type f -mmin +15 -delete 2>/dev/null || true
   find "${dir}/.git/objects" -maxdepth 1 -name 'tmp_*' -type f -mmin +15 -delete 2>/dev/null || true
   git -C "${dir}" remote | while IFS= read -r remote; do
@@ -74,6 +87,47 @@ main() {
     rm -f "${fetch_stderr}"
   done
   git -C "${dir}" dlb
+}
+
+rebase_onto_upstream() {
+  if ! git -C "${dir}" is-clean; then
+    printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' "${dir}" >&2
+    return 1
+  fi
+  branch=$(git -C "${dir}" br)
+  if [ -z "${branch}" ]; then
+    printf 'Could not determine current branch in %s\n' "${dir}" >&2
+    return 1
+  fi
+  if git -C "${dir}" merge-base "${branch}" '@{u}' >/dev/null 2>&1; then
+    git -C "${dir}" rebase '@{u}'
+    return $?
+  fi
+  allow_reset=$(git -C "${dir}" config --type=bool --default false pull.allowResetOnDivergedHistory)
+  if [ "${allow_reset}" != 'true' ]; then
+    printf '%s and @{u} have no common ancestor in %s (unexpected -- was history rewritten upstream?) -- refusing to rebase blindly\n' "${branch}" "${dir}" >&2
+    return 1
+  fi
+  printf '%s and @{u} have no common ancestor in %s (expected after a force-squash) -- resetting %s to @{u} instead of rebasing\n' "${branch}" "${dir}" "${branch}" >&2
+  git -C "${dir}" reset --hard '@{u}'
+}
+
+main() {
+  dir="$(git rev-parse --show-toplevel 2>/dev/null || printf .)"
+  rebase=0
+  for a in "$@"; do
+    case "${a}" in
+    --rebase) rebase=1 ;;
+    *) dir="${a}" ;;
+    esac
+  done
+  fetch_remotes
+  status=$?
+  if [ "${rebase}" -eq 1 ]; then
+    rebase_onto_upstream
+    status=$?
+  fi
+  exit "${status}"
 }
 
 main "$@"

@@ -87,11 +87,11 @@ module GitCommands
 
   # Pulls the repo, with hang protection. If the pull still fails and the repo has opted in
   # with 'git config --local pull.allowResetOnDivergedHistory true' (e.g. a repo that is
-  # periodically force-squashed), falls back to 'git pull-safe', which resets onto the
+  # periodically force-squashed), falls back to 'git fo --rebase', which resets onto the
   # upstream when the histories share no common ancestor. Everywhere else a failed pull is
   # reported and left alone: retrying the same pull cannot fix diverged history.
   #
-  # Deliberately not 'pull-safe' for the common case: it refuses on a dirty tree, whereas
+  # Deliberately not 'fo --rebase' for the common case: it refuses on a dirty tree, whereas
   # this interactive path benefits from the repo's own autoStash setting.
   #
   # @param args [Array<String>] Optional folder plus '--switches'
@@ -105,7 +105,7 @@ module GitCommands
     return true unless GitProcessor.new(dir: folder).config_bool('pull.allowResetOnDivergedHistory')
 
     Logging.info "Pull failed -- '#{folder.cyan}' has 'pull.allowResetOnDivergedHistory' set; checking for diverged history"
-    Logging.record_warning("Failed to reconcile '#{folder.cyan}' -- see errors above") unless _git(folder, 'pull-safe')
+    Logging.record_warning("Failed to reconcile '#{folder.cyan}' -- see errors above") unless _git(folder, 'fo', '--rebase')
     true
   end
 

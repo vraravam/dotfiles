@@ -20,7 +20,7 @@
 #   run-all.rb ls -la                        # non-git command in each repo
 #   FOLDER=dev MINDEPTH=2 run-all.rb git status
 #   FILTER=oss run-all.rb find . -name "*.rb"
-#   FOLDER=/Users/me MAXDEPTH=5 run-all.rb git pull-safe
+#   FOLDER=/Users/me MAXDEPTH=5 run-all.rb git fo --rebase
 
 require 'open3'
 

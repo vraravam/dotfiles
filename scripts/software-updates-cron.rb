@@ -156,7 +156,7 @@ module SoftwareUpdatesCron
   def _update_home_repos
     _step('Update repos in home folder') do
       unless RunAll.run(
-        command: %w[git pull-safe],
+        command: %w[git fo --rebase],
         folder: EnvVars::HOME.to_s,
         filter: '.config|zsh|mise',
         maxdepth: 5

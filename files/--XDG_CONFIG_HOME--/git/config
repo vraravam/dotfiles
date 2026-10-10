@@ -109,28 +109,6 @@
   # Usage: git br
   br = branch --show-current
 
-  # Combines 'git rfc' (expire reflog now) and 'git cc' (repack/gc) into one
-  # named operation -- these two are almost always used together (see 'cc's own
-  # doc comment: "git rfc && git cc"), mirroring how 'unshallow' already
-  # combines 'fo'+'backfill-blobs' into a single alias rather than leaving
-  # every caller to chain them manually (GitProcessor#compress previously did
-  # exactly that: two separate run_alias calls). 'rfc' only ever needs the
-  # <dir> argument (it has no flags of its own), so this extracts just that
-  # from "$@" for the 'rfc' call -- the full, unmodified "$@" is still forwarded
-  # to 'cc', which already knows how to parse its own <dir>/--expire=<when>/
-  # <extra-reflog-flags> combination (see 'cc's own parsing above).
-  # Usage: git compress [<dir>] [--expire=<when>] [<extra-reflog-flags>]
-  # Example: git compress                       (expire reflog now + full cleanup)
-  # Example: git compress --expire=3.days.ago
-  # Example: git compress /path/to/repo --expire=now
-  compress = "!f() { \
-    case \"${1:-}\" in \
-      -*|'') dir='.' ;; \
-      *) dir=\"${1:-}\" ;; \
-    esac; \
-    git -C \"${dir}\" rfc && git -C \"${dir}\" cc \"$@\"; \
-  }; f \"$@\""
-
   # Shows dangling commits (unreachable objects).
   # Usage: git dangling
   dangling = fsck --no-reflog
@@ -235,31 +213,17 @@
     done; \
   }; f"
 
-  # Lists remote branches sorted by oldest commit date.
-  # Usage: git oldest-branch [<refbranch> [<count>]]
-  oldest-branch = "!f() { \
-    refbranch=\"${1:-origin/$(git default-branch)}\" count=\"${2:-20}\"; \
-    git for-each-ref --sort=committerdate refs/remotes \
-      --format='%(refname:short)|%(HEAD)%(color:yellow)%(refname:short)|%(color:bold green)%(committerdate:relative)|%(color:blue)%(subject)|%(color:magenta)%(authorname)%(color:reset)' \
-      --color=always --count=${count} | \
-    while IFS= read -r line; do \
-      branch=$(printf '%s' \"${line}\" | awk 'BEGIN { FS = \"|\" }; { print $1 }' | tr -d '*'); \
-      ahead=$(git rev-list --count \"${refbranch}..${branch}\"); \
-      behind=$(git rev-list --count \"${branch}..${refbranch}\"); \
-      colorline=$(printf '%s' \"${line}\" | sed 's/^[^|]*|//'); \
-      printf '%s' \"${ahead}|${behind}|${colorline}\" | awk -F'|' -vOFS='|' '{$5=substr($5,1,70)}1'; \
-    done | \
-    ( printf 'ahead|behind||branch|lastcommit|message|author\n\n' && cat ) | \
-    column -ts'|'; \
-  }; f"
-
   # Lists remote branches sorted by most-recently-committed, with ahead/behind counts vs the default branch.
-  # Optionally specify a different reference branch and/or a count.
-  # Usage: git recent-branch [<refbranch> [<count>]]
+  # Optionally specify a different reference branch and/or a count. Pass --oldest (first
+  # argument) to sort by oldest commit first instead -- the way to find stale branches.
+  # Usage: git recent-branch [--oldest] [<refbranch> [<count>]]
   # Example: git recent-branch origin/main 30
+  # Example: git recent-branch --oldest
   recent-branch = "!f() { \
+    sort='-committerdate'; \
+    if [ \"${1:-}\" = '--oldest' ]; then sort='committerdate'; shift; fi; \
     refbranch=\"${1:-origin/$(git default-branch)}\" count=\"${2:-20}\"; \
-    git for-each-ref --sort=-committerdate refs/remotes \
+    git for-each-ref --sort=\"${sort}\" refs/remotes \
       --format='%(refname:short)|%(HEAD)%(color:yellow)%(refname:short)|%(color:bold green)%(committerdate:relative)|%(color:blue)%(subject)|%(color:magenta)%(authorname)%(color:reset)' \
       --color=always --count=${count} | \
     while IFS= read -r line; do \
@@ -554,9 +518,8 @@
   # same name. ${DOTFILES_DIR}/scripts is on PATH for interactive shells and for the crontab
   # (see Cron.create_crontab), so these work everywhere the aliases did.
   #
-  #   git-backfill-blobs   git-fo                git-kill-process-tree  git-maintain
-  #   git-migrate-reftable git-pull-safe         git-unshallow          git-with-retry
-  #   git-cc               git-upreb
+  #   git-cc               git-fo                 git-maintain           git-migrate-reftable
+  #   git-unshallow        git-upreb              git-with-retry
   #
   # Keep new commands as aliases when they are a line or two; move them to scripts/git-<name>
   # when they need real control flow, comments or testing.

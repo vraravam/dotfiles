@@ -280,7 +280,7 @@ class GitProcessor
 
   # Returns true if the repository is a shallow clone (limited history depth).
   # Shallow clones are created with --depth flag and can be converted to full
-  # clones via 'git unshallow' (which includes fetch operation).
+  # clones via 'git unshallow' (which includes fetch and blob backfill).
   # Memoized -- shallow status doesn't change during instance lifetime.
   #
   # @return [Boolean] true if shallow clone, false if full clone
@@ -339,8 +339,8 @@ class GitProcessor
 
   # Checks whether two refs share a common ancestor (i.e. a rebase/merge between
   # them is even meaningful). False after e.g. a force-squash on one side rewrote
-  # history with no shared base -- mirrors the same check the 'pull-safe' git
-  # alias makes (via 'git merge-base') to decide between rebasing and falling
+  # history with no shared base -- mirrors the same check 'git fo --rebase'
+  # makes (via 'git merge-base') to decide between rebasing and falling
   # back to a hard reset.
   #
   # @param ref1 [String] First ref (e.g. a branch name).
@@ -525,7 +525,7 @@ class GitProcessor
   # changes. Deliberately destructive -- only for callers that have already decided
   # preserving local history is not meaningful (e.g. a squash-prone repo whose local
   # and remote histories have diverged with no common ancestor, so there is nothing
-  # sensible to rebase onto anyway -- see the 'pull-safe' git command's (scripts/git-pull-safe) own
+  # sensible to rebase onto anyway -- see 'git fo --rebase' (scripts/git-fo)'s own
   # 'pull.allowResetOnDivergedHistory' handling for the primary use of this).
   #
   # @param ref [String] Ref to reset to (e.g. a remote-tracking ref).
@@ -584,9 +584,9 @@ class GitProcessor
     _execute('tag', '-d', name)
   end
 
-  # Pulls changes from upstream via the 'pull-safe' git command (scripts/git-pull-safe) -- not a bare 'git pull',
-  # so this gets 'with-retry' hang protection (via the 'fo' fetch inside pull-safe) and
-  # a clean-working-tree guard for free (pull-safe skips the rebase and exits non-zero
+  # Pulls changes from upstream via 'git fo --rebase' (scripts/git-fo) -- not a bare 'git pull',
+  # so this gets 'with-retry' hang protection (via the fetch inside 'fo') and
+  # a clean-working-tree guard for free ('fo --rebase' skips the rebase and exits non-zero
   # if the tree is dirty, rather than risking a rebase failing mid-way on uncommitted
   # changes). Rebases onto '@{u}' -- or, for a repo with 'pull.allowResetOnDivergedHistory'
   # set locally (e.g. browser-profiles' chrome folders), falls back to a hard reset onto
@@ -594,7 +594,7 @@ class GitProcessor
   # force-squash) -- this codebase has no caller that wants a merge-pull (verified: the
   # only caller, ProfilesRepo.update_chrome_folders, already passed rebase: true), so no
   # rebase/quiet options are exposed.
-  # stream: true -- see fetch_all's matching comment: 'pull-safe' is a custom alias, not
+  # stream: true -- see fetch_all's matching comment: 'fo' is a custom command, not
   # a literal 'pull', so _execute's auto-detection would otherwise silently buffer all
   # of 'fo'/'with-retry's live progress output until the whole rebase completes.
   #
@@ -602,7 +602,7 @@ class GitProcessor
   def pull
     return _mock_status_response(false) unless repo?
 
-    run_alias('pull-safe', stream: true)
+    run_alias('fo', '--rebase', stream: true)
   end
 
   # Removes a file from the index (staging area) without deleting it from the working directory.
@@ -718,12 +718,9 @@ class GitProcessor
     end
   end
 
-  # Compresses the repository by expiring the reflog and running gc.
-  # Runs the 'compress' git alias, which combines 'rfc' (reflog expire) and
-  # 'cc' (repack/gc) into a single operation -- previously this method called
-  # both as two separate run_alias steps; the combo now lives in git/config
-  # itself (mirrors how 'unshallow' combines 'fo'+'backfill-blobs'), so any
-  # other caller that wants both steps together can use 'git compress' too.
+  # Compresses the repository by expiring the entire reflog immediately and running the
+  # full cleanup (prune, repack, gc). Runs 'git cc --expire=now', which does both in one
+  # operation -- 'cc' always enumerates refs/heads and refs/remotes only, so stashes survive.
   #
   # @return [Boolean] true on success, false on failure.
   def compress
@@ -735,7 +732,7 @@ class GitProcessor
     return false unless repo?
 
     Logging.debug "#{'Compressing'.yellow} '#{@dir.cyan}'"
-    run_alias('compress')
+    run_alias('cc', '--expire=now')
     true
   end
 
@@ -766,7 +763,7 @@ class GitProcessor
   # @param read_only [Boolean] Passed through to _execute -- true for query aliases
   #   (e.g. 'is-clean') that must run for real even under dry-run.
   # @param stream [Boolean, nil] Passed through to _execute -- pass true for any alias
-  #   that internally wraps push/pull/fetch/with-retry (e.g. 'fo', 'pull-safe',
+  #   that internally wraps push/pull/fetch/with-retry (e.g. 'fo',
   #   'unshallow'), since _execute's own auto-detection cannot see through an alias name
   #   to what it does internally. See _execute's doc for the full rationale.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
@@ -864,7 +861,7 @@ class GitProcessor
   # - Streams (system): push, pull, fetch (unless -q/--quiet flag present)
   # - Captures: all other commands
   # 'stream:' overrides this auto-detection -- see its own doc below for why this is
-  # needed for calls to custom git commands (run_alias('fo'), run_alias('pull-safe'), etc.).
+  # needed for calls to custom git commands (run_alias('fo'), run_alias('unshallow'), etc.).
   #
   # @param args [Array<String>] Git subcommand and arguments (e.g., 'status', '--short').
   # @param read_only [Boolean] When true, always actually runs the command even in dry-run
@@ -877,7 +874,7 @@ class GitProcessor
   # @param stream [Boolean, nil] Explicit override for the stream-vs-capture decision.
   #   nil (default) falls back to _should_stream_output?'s auto-detection based on the
   #   literal command name. Pass true/false to bypass auto-detection entirely -- required
-  #   for any call whose first arg is a *custom command name* (e.g. 'fo', 'pull-safe',
+  #   for any call whose first arg is a *custom command name* (e.g. 'fo',
   #   'unshallow') rather than a literal git subcommand: _should_stream_output? only
   #   recognizes literal 'push'/'pull'/'fetch' in args, so an alias that internally wraps
   #   one of those (and 'with-retry', which prints its own retry-attempt progress to

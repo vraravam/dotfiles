@@ -114,15 +114,15 @@ RSpec.describe GitCommands do
     it 'leaves a failed pull alone when the repo has not opted in to reset-on-diverged-history' do
       allow(CommandUtils).to receive(:run_interactive).and_return(false)
       stub_config_flag('false')
-      expect(described_class).not_to receive(:_git).with(folder, 'pull-safe')
+      expect(described_class).not_to receive(:_git).with(folder, 'fo', '--rebase')
 
       described_class.pull(args: [folder], header: false)
     end
 
-    it 'falls back to pull-safe for a repo that opted in, and warns if that fails too' do
+    it 'falls back to fo --rebase for a repo that opted in, and warns if that fails too' do
       allow(CommandUtils).to receive(:run_interactive).and_return(false)
       stub_config_flag('true')
-      expect(described_class).to receive(:_git).with(folder, 'pull-safe').and_return(false)
+      expect(described_class).to receive(:_git).with(folder, 'fo', '--rebase').and_return(false)
       expect(Logging).to receive(:record_warning).with(/Failed to reconcile/)
 
       described_class.pull(args: [folder], header: false)

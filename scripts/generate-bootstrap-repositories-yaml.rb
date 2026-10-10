@@ -75,7 +75,7 @@ module GenerateBootstrapRepositoriesYaml
       ],
       post_clone: [
         "if [ -f '#{hosts_backup}' ]; then sudo cp '#{hosts_backup}' /etc/hosts; fi",
-        'git pull-safe',
+        'git fo --rebase',
       ]
     )
   end
