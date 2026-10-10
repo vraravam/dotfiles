@@ -180,6 +180,7 @@ The config file for this script is a yaml file that is passed into this script a
     upstream1: <upstream remote url1>
     upstream2: <upstream remote url2>
   bundle: "${HOME}/Downloads/example-repo.bundle"
+  branch: dev
   active: true
   post_checkout:
     - set_ssh_folder_permissions
@@ -193,6 +194,7 @@ The config file for this script is a yaml file that is passed into this script a
 * `remote` (mandatory) specifies the remote url of the repository
 * `other_remotes` (optional) specifies a hash of the other remotes keyed by the name with the value of the remote url. If cloning from `remote` fails and `folder` isn't yet a git repo, each `other_remotes` entry is also tried, in order, as a fallback clone source -- whichever succeeds becomes `origin` (matching `git clone`'s own behavior); `remote` (if it failed) is then recorded under the fallback's former name so it can still be retried manually later.
 * `bundle` (optional) specifies the path to a local git bundle file for this repo -- see [Bundle support](#bundle-support) below. Also supports `${<env-key>}` expansion, same as `folder`.
+* `branch` (optional; default: the remote's default branch) specifies the branch to clone -- passed as `clone_repo_into`'s optional third argument. Only used for a fresh clone, never for a pre-existing repo.
 * `active` (optional; default: false) specifies whether to process this folder/repo or not on your local machine
 * `post_checkout` (optional; default: empty array) specifies shell commands, joined with ` && ` and run once immediately after a fresh clone/import checks out files -- strictly before origin/branch cleanup, the reftable-migrate/unshallow/maintain/submodule-update chain, and any `other_remotes` fallback-clone attempt or fetch. Runs in-process inside `clone_repo_into` itself, so any `.shellrc` function (e.g. `set_ssh_folder_permissions`) is already in scope -- no need to `source ~/.shellrc` first, unlike `post_clone` below. Only fires on an actual fresh clone, never for a pre-existing repo. Intended for repos with files needing permissions fixed before anything else tries to use them (e.g. `$HOME`'s `.ssh`/`.gnupg` keys) -- `git checkout` does not preserve the strict permission modes those need, and the reftable/unshallow/maintain/submodule-update chain (or a second remote's fetch) could need SSH auth using a key the checkout just wrote with the wrong (too-open) permissions.
 * `post_clone` (optional; default: empty array) specifies other `bash` commands (in sequence) to be run once the resurrection is done - for eg, symlink a '.envrc' file if one exists

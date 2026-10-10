@@ -132,12 +132,6 @@ class GitProcessor
   # @param branch [String, nil] Optional branch to clone (defaults to remote's HEAD).
   # @param bundle [String, Pathname, nil] Optional path to a local git bundle file --
   #   used instead of 'url' when the target isn't yet a git repo and this file exists.
-  # @param skip_maintenance [Boolean] When true, tells the shell function to skip its
-  #   post-clone migrate_git_repo_to_reftable/unshallow/maintain/siu chain (via the
-  #   SKIP_POST_CLONE_MAINTENANCE env var) -- see clone_repo_into's own comment in
-  #   .shellrc for the full rationale (ephemeral/disposable repos that gain nothing from
-  #   it, and where the chain's own duration can trip an *outer* with-retry's stall
-  #   detection wrapping this whole call).
   # @param post_checkout_hook [String, nil] Optional shell command 'eval'd immediately
   #   once files land on disk from a fresh clone/import -- strictly before the reftable/
   #   unshallow/maintain/siu chain and before this method returns to the caller (which
@@ -145,7 +139,7 @@ class GitProcessor
   #   .shellrc for the full rationale (e.g. fixing '.ssh'/'.gnupg' permissions on a
   #   freshly-checked-out $HOME before anything else tries to use them for SSH auth).
   # @return [Boolean] true on success, false on failure.
-  def self.clone_repo_into(url, dest, branch: nil, bundle: nil, skip_maintenance: false, post_checkout_hook: nil)
+  def self.clone_repo_into(url, dest, branch: nil, bundle: nil, post_checkout_hook: nil)
     dest = Pathname.new(dest) unless dest.is_a?(Pathname)
 
     # Build the shell command
@@ -170,8 +164,7 @@ class GitProcessor
     # Execute via zsh with shell function
     # The shell function handles all the logic: temp folders, traps, error handling,
     # HEAD fix, reftable migration, submodule updates, etc.
-    env = skip_maintenance ? { 'SKIP_POST_CLONE_MAINTENANCE' => 'true' } : {}
-    CommandUtils.run_interactive(env, 'zsh', '-c', cmd)
+    CommandUtils.run_interactive('zsh', '-c', cmd)
   end
 
   # ---------------------------------------------------------------------------
@@ -208,9 +201,9 @@ class GitProcessor
   def config_value(key)
     @_config_values ||= {}
     @_config_values[key] ||= begin
-      out, = _execute('config', '--get', key, read_only: true)
-      nil_or_empty?(out) ? nil : out.strip
-    end
+        out, = _execute('config', '--get', key, read_only: true)
+        nil_or_empty?(out) ? nil : out.strip
+      end
   end
 
   # Returns the URL for the specified remote, or nil.
@@ -273,9 +266,9 @@ class GitProcessor
   # @return [String, nil]
   def current_branch
     @current_branch ||= begin
-      out, = _execute('branch', '--show-current', read_only: true)
-      nil_or_empty?(out) ? nil : out.strip
-    end
+        out, = _execute('branch', '--show-current', read_only: true)
+        nil_or_empty?(out) ? nil : out.strip
+      end
   end
 
   # Returns true if the repository is a shallow clone (limited history depth).
@@ -286,9 +279,9 @@ class GitProcessor
   # @return [Boolean] true if shallow clone, false if full clone
   def shallow?
     @shallow ||= begin
-      out, = _execute('rev-parse', '--is-shallow-repository', read_only: true)
-      nil_or_empty?(out) ? false : out.strip == 'true'
-    end
+        out, = _execute('rev-parse', '--is-shallow-repository', read_only: true)
+        nil_or_empty?(out) ? false : out.strip == 'true'
+      end
   end
 
   # Returns the repository's reference storage format ('files' or 'reftable').
@@ -300,10 +293,10 @@ class GitProcessor
   # @return [String] 'files' or 'reftable'
   def ref_format
     @ref_format ||= begin
-      out, = _execute('rev-parse', '--show-ref-format', read_only: true)
-      format = nil_or_empty?(out) ? 'files' : out.strip
-      nil_or_empty?(format) ? 'files' : format
-    end
+        out, = _execute('rev-parse', '--show-ref-format', read_only: true)
+        format = nil_or_empty?(out) ? 'files' : out.strip
+        nil_or_empty?(format) ? 'files' : format
+      end
   end
 
   # Enumerates all remotes, yielding each remote name and URL.

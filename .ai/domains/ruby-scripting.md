@@ -710,7 +710,7 @@ See [`path-constants.md`](./path-constants.md) for complete rules on environment
 - Keep Pathname throughout: function params, return values, local variables
 - String interpolation auto-converts: `"#{EnvVars::HOME}"` works
 - Never hardcode derived paths: use `EnvVars::XDG_CONFIG_HOME` not `HOME.join('.config')`
-- Use `PathUtils::ROOT` for filesystem root
+- Use `Core::ROOT` for filesystem root
 
 ## Option Parsing -- Use `CliParser`
 
@@ -1714,6 +1714,24 @@ CommandUtils.run_silent('crontab', '-l', out: temp_file.path)  # redirect stdout
 - Commands where output is needed for debugging
 - Operations where stdout/stderr should be visible to user
 - Commands where you need to parse stdout/stderr in Ruby code (use `Open3.capture3` instead)
+
+### Interactive Execution with `CommandUtils.run_interactive`
+
+For commands whose output the user should watch live (installers, `git` with
+progress, nested Ruby scripts), use `CommandUtils.run_interactive` instead of a
+bare `system`. It streams stdout/stderr to the terminal, returns a boolean, and
+accepts an optional block that runs only on failure (the place to record a
+warning/error). Like `system`, it accepts a leading env hash:
+
+```ruby
+# BAD -- bare system with no failure handling
+system(RbConfig.ruby, script.to_s, '-s')
+
+# Good -- boolean result plus a failure hook
+CommandUtils.run_interactive({ 'COLUMNS' => EnvVars.columns.to_s }, RbConfig.ruby, script.to_s, '-s') do
+  Logging.record_warning("'#{script.to_s.cyan}' failed")
+end
+```
 
 ### Exception: User-controlled command strings
 

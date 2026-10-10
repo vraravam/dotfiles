@@ -21,6 +21,8 @@
 #     files -- strictly before origin/branch cleanup, the reftable-migrate/unshallow/
 #     maintain/siu chain, and any other_remotes fallback-clone attempt or fetch. Joined
 #     with ' && ' and 'eval'd as a single string, unlike 'post_clone' below.
+#   - 'branch' (string) is the branch to clone (clone_repo_into's optional 3rd argument);
+#     omit it to clone the remote's default branch.
 #   - 'post_clone' commands are run through a shell, so normal shell '$VAR'/'${VAR}'
 #     expansion applies there at execution time -- a different mechanism from the above.
 #   - '-g' (generate) does the reverse: absolute paths discovered on disk are rewritten
@@ -67,6 +69,7 @@ module ResurrectRepositories
   POST_CHECKOUT_KEY_NAME = 'post_checkout' # Key name for post-checkout commands
   POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
   BUNDLE_KEY_NAME = 'bundle' # Key name for an optional local git bundle file
+  BRANCH_KEY_NAME = 'branch' # Key name for an optional branch to clone
   # Glob (relative to PERSONAL_CONFIGS_DIR) matching every repository catalogue that
   # resurrect_all mode processes.
   CATALOGUE_GLOB = 'repositories-*.yml'
@@ -81,7 +84,7 @@ module ResurrectRepositories
     include Core
     extend Core
 
-    attr_reader :folder, :remote, :other_remotes, :post_checkout, :post_clone, :bundle
+    attr_reader :folder, :remote, :other_remotes, :post_checkout, :post_clone, :bundle, :branch
 
     # Creates a new repository configuration from a hash.
     #
@@ -136,13 +139,18 @@ module ResurrectRepositories
 
       expanded_bundle = ResurrectRepositories.expand_env_vars(bundle&.strip)
 
+      # branch: branch to clone instead of the remote's default (see clone_repo_into).
+      branch = hash[BRANCH_KEY_NAME]
+      return _invalid_field(remote, BRANCH_KEY_NAME, 'a non-empty string') if branch && (!branch.is_a?(String) || nil_or_empty?(branch.strip))
+
       new(
         folder: expanded_folder,
         remote: remote.strip,
         other_remotes: other_remotes || {},
         post_checkout: post_checkout || [],
         post_clone: post_clone || [],
-        bundle: expanded_bundle
+        bundle: expanded_bundle,
+        branch: branch&.strip
       )
     end
 
@@ -173,13 +181,15 @@ module ResurrectRepositories
     #   single 'eval'd string (unlike 'post_clone', each entry does not run independently).
     # @param post_clone [Array<String>] Shell commands to run once after cloning.
     # @param bundle [String, nil] Optional path to a local git bundle file to import from/export to.
-    def initialize(folder:, remote:, other_remotes:, post_checkout:, post_clone:, bundle: nil)
+    # @param branch [String, nil] Optional branch to clone instead of the remote's default.
+    def initialize(folder:, remote:, other_remotes:, post_checkout:, post_clone:, bundle: nil, branch: nil)
       @folder = folder
       @remote = remote
       @other_remotes = other_remotes
       @post_checkout = post_checkout
       @post_clone = post_clone
       @bundle = bundle
+      @branch = branch
     end
 
     # Returns true if this repository should be processed based on filter
@@ -188,6 +198,19 @@ module ResurrectRepositories
     # @return [Boolean]
     def matches_filter?(filter_re)
       nil_or_empty?(filter_re) || @folder.match?(filter_re)
+    end
+
+    # Keyword arguments for GitProcessor.clone_repo_into (everything except the url and
+    # destination, which differ per clone attempt). 'post_checkout' entries are joined with
+    # ' && ' into the single string clone_repo_into 'eval's.
+    #
+    # @return [Hash{Symbol => Object}]
+    def clone_options
+      {
+        branch: @branch,
+        bundle: @bundle,
+        post_checkout_hook: @post_checkout.join(' && ')
+      }
     end
 
     # Converts back to hash for YAML generation
@@ -201,7 +224,8 @@ module ResurrectRepositories
         OTHER_REMOTES_KEY_NAME => nil_or_empty?(@other_remotes) ? nil : @other_remotes,
         POST_CHECKOUT_KEY_NAME => nil_or_empty?(@post_checkout) ? nil : @post_checkout,
         POST_CLONE_KEY_NAME => nil_or_empty?(@post_clone) ? nil : @post_clone,
-        BUNDLE_KEY_NAME => @bundle
+        BUNDLE_KEY_NAME => @bundle,
+        BRANCH_KEY_NAME => @branch
       }.compact
     end
   end
@@ -672,12 +696,12 @@ module ResurrectRepositories
   #   its name is re-purposed for the original 'remote' value: that URL failed but should
   #   still be recorded as a remote so it can be retried manually later.
   def _clone_with_fallback(repo, dir)
-    post_checkout_hook = repo.post_checkout.join(' && ')
-    return [repo.remote, repo.other_remotes] if GitProcessor.clone_repo_into(repo.remote, dir, bundle: repo.bundle, post_checkout_hook: post_checkout_hook)
+    clone_options = repo.clone_options
+    return [repo.remote, repo.other_remotes] if GitProcessor.clone_repo_into(repo.remote, dir, **clone_options)
 
     repo.other_remotes.each do |name, url|
       Logging.info("Failed to clone primary remote -- trying '#{name.cyan}' ('#{url.cyan}') as a fallback clone source")
-      next unless GitProcessor.clone_repo_into(url, dir, bundle: repo.bundle, post_checkout_hook: post_checkout_hook)
+      next unless GitProcessor.clone_repo_into(url, dir, **clone_options)
 
       return [url, repo.other_remotes.merge(name => repo.remote)]
     end
@@ -735,7 +759,7 @@ module ResurrectRepositories
     return '' unless name
 
     " -- 'origin' matches 'other_remotes' entry '#{name.to_s.yellow}', which looks like an earlier fallback clone. " \
-      "Either set 'remote' in the config to '#{actual_url.cyan}', or point 'origin' back at '#{expected_url.cyan}'"
+    "Either set 'remote' in the config to '#{actual_url.cyan}', or point 'origin' back at '#{expected_url.cyan}'"
   end
 
   private_class_method :_fallback_clone_hint

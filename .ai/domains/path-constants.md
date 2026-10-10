@@ -205,19 +205,19 @@ path = EnvVars::HOME.join('file.txt')
 **Note on color methods**: Color methods now work on both String and Pathname (via `pathname_ext.rb`).
 When called on Pathname, they automatically convert to colored String. See `logging-conventions.md` for details.
 
-**Use `PathUtils::ROOT` for filesystem root**:
+**Use `Core::ROOT` for filesystem root**:
 
 ```ruby
-require 'path_utils'
+require 'core'
 
 # Good -- cross-platform filesystem root
-system_path = PathUtils::ROOT.join('etc', 'hosts')
+system_path = Core::ROOT.join('etc', 'hosts')
 
 # BAD -- hardcoded Unix root
 system_path = Pathname.new('/etc/hosts')
 ```
 
-`PathUtils::ROOT` uses `File::SEPARATOR` internally and works on Windows (`C:\`).
+`Core::ROOT` uses `File::SEPARATOR` internally and works on Windows (`C:\`).
 
 **Never hardcode derived paths**:
 

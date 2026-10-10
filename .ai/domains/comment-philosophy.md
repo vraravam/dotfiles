@@ -108,6 +108,18 @@ end
 - **Temporal language** (e.g., "currently does X" or "as of this session")
 - **What the code obviously does** (e.g., `count += 1  # increment count`)
 
+### Shell Script Being Replaced by Ruby
+
+A Ruby script that replaces a shell script must not describe itself relative to
+the script it replaces ("mirrors the shell version", "unlike the .sh", "matches the
+shell EXIT trap"). Once the shell original is gone those comments describe code that
+no longer exists, and while it is still present they go stale as soon as either side
+changes. State the behavior and the reason for it directly.
+
+A cross-reference to a shell function or file that **continues to exist** and must be
+kept in sync (e.g. `Mirrors: export FOO in .shellrc` on an `EnvVars` constant) is a
+legitimate pointer, not narration, and is kept.
+
 ## Examples
 
 ### Shell Script Examples

@@ -16,7 +16,7 @@ require_relative 'profiles_repo'
 
 # Git workspace discovery and developer environment setup. Shell functions in
 # .aliases delegate to these Ruby methods (install_mise_versions,
-# allow_all_direnv_configs, setup_dev_environment, regenerate_repo_aliases).
+# activate_all_direnv_configs, setup_dev_environment, regenerate_repo_aliases).
 #
 # Responsibilities:
 # - Finding git repositories within a directory tree
@@ -213,14 +213,14 @@ module GitWorkspace
     end
   end
 
-  # Runs 'direnv allow' for every directory that has an .envrc file across all
-  # git repos and their ancestor directories. Skips silently if direnv is not
-  # on PATH. Mirrors allow_all_direnv_configs in .aliases.
+  # Runs 'direnv allow' and then 'direnv exec' (to evaluate the .envrc right away) for every
+  # directory that has an .envrc file across all git repos and their ancestor directories.
+  # Skips silently if direnv is not on PATH. Mirrors activate_all_direnv_configs in .aliases.
   #
   # @param shared_dirs [Array<String>, nil] See install_mise_versions.
   # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
-  def allow_all_direnv_configs(shared_dirs: nil, first_install: false)
-    Logging.run_script('allow_all_direnv_configs', 'Allowing direnv configs in all git repos and ancestors') do
+  def activate_all_direnv_configs(shared_dirs: nil, first_install: false)
+    Logging.run_script('activate_all_direnv_configs', 'Activating direnv configs in all git repos and ancestors') do
       unless PathUtils.command_exists?('direnv')
         Logging.debug "Couldn't find 'direnv' in PATH -- skipping direnv config loading"
         return
@@ -236,9 +236,13 @@ module GitWorkspace
       # Use CollectionProcessor for unified progress logging and error tracking
       results = CollectionProcessor.process_items(
         dirs_with_envrc,
-        operation_desc: 'Allowing direnv in'
+        operation_desc: 'Activating direnv in'
       ) do |dir, _idx, _total|
-        CommandUtils.run_silent('direnv', 'allow', dir)
+        # 'direnv allow' only records trust -- it never evaluates the .envrc. The shell hook
+        # does that on the next interactive 'cd', so side effects of the .envrc (e.g. the
+        # profile symlinks created by the browser-profiles .envrc) would not exist until then.
+        # 'direnv exec' evaluates the .envrc immediately, with no TTY or hook required.
+        CommandUtils.run_silent('direnv', 'allow', dir) && CommandUtils.run_silent('direnv', 'exec', dir, 'true')
       end
 
       Logging.print_results_summary(results)
@@ -248,7 +252,7 @@ module GitWorkspace
   # Runs both mise installation and direnv authorization in a single pass,
   # collecting ancestor directories once and reusing for both operations.
   # This avoids redundant filesystem traversals -- saves 200-500ms per run
-  # compared to calling install_mise_versions and allow_all_direnv_configs
+  # compared to calling install_mise_versions and activate_all_direnv_configs
   # independently.
   #
   # Designed for callers that need both operations (e.g., software-updates-cron.rb).
@@ -261,7 +265,7 @@ module GitWorkspace
       shared_dirs = collect_ancestor_dirs(first_install: first_install)
 
       # Both methods receive shared_dirs and skip their own collection
-      allow_all_direnv_configs(shared_dirs: shared_dirs, first_install: first_install)
+      activate_all_direnv_configs(shared_dirs: shared_dirs, first_install: first_install)
       install_mise_versions(shared_dirs: shared_dirs, first_install: first_install)
     end
   end

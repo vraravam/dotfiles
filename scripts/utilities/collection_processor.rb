@@ -16,7 +16,7 @@ require_relative 'logging'
 # This is a domain-agnostic utility that provides consistent iteration patterns
 # for any collection. Scripts that process repositories, directories, or other
 # collections (run-all.rb, resurrect-repositories.rb, install_mise_versions,
-# allow_all_direnv_configs) delegate to this module for the processing loop
+# activate_all_direnv_configs) delegate to this module for the processing loop
 # mechanics while providing their own domain-specific logic via blocks.
 #
 # The module makes no assumptions about what is being processed -- it only

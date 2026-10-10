@@ -40,14 +40,23 @@ RSpec.describe ResurrectRepositories do
         expect(repo.post_checkout).to eq([])
         expect(repo.post_clone).to eq([])
         expect(repo.bundle).to be_nil
+        expect(repo.branch).to be_nil
+      end
+
+      it 'keeps branch and round-trips it through #to_h' do
+        repo = described_class.from_hash(valid.merge('branch' => ' dev '))
+
+        expect(repo.branch).to eq('dev')
+        expect(repo.to_h).to include('branch' => 'dev')
+        expect(described_class.from_hash(valid).to_h.keys).not_to include('branch')
       end
 
       it 'keeps valid optional fields and expands env vars in folder and bundle' do
         with_env('RR_SPEC_DIR' => '/base') do
           repo = described_class.from_hash(valid.merge(
-                                             'folder' => '${RR_SPEC_DIR}/repo', 'bundle' => '${RR_SPEC_DIR}/repo.bundle',
-                                             'other_remotes' => { 'mirror' => 'u' }, 'post_checkout' => ['a'], 'post_clone' => ['b']
-                                           ))
+            'folder' => '${RR_SPEC_DIR}/repo', 'bundle' => '${RR_SPEC_DIR}/repo.bundle',
+            'other_remotes' => { 'mirror' => 'u' }, 'post_checkout' => ['a'], 'post_clone' => ['b']
+          ))
 
           expect(repo.folder).to eq('/base/repo')
           expect(repo.bundle).to eq('/base/repo.bundle')
@@ -68,7 +77,8 @@ RSpec.describe ResurrectRepositories do
         'other_remotes' => [{ 'other_remotes' => 'x' }, /invalid 'other_remotes' \(must be a hash\)/],
         'post_checkout' => [{ 'post_checkout' => 'x' }, /invalid 'post_checkout' \(must be an array\)/],
         'post_clone' => [{ 'post_clone' => 'x' }, /invalid 'post_clone' \(must be an array\)/],
-        'bundle' => [{ 'bundle' => ' ' }, /invalid 'bundle' \(must be a non-empty string\)/]
+        'bundle' => [{ 'bundle' => ' ' }, /invalid 'bundle' \(must be a non-empty string\)/],
+        'branch' => [{ 'branch' => ' ' }, /invalid 'branch' \(must be a non-empty string\)/]
       }.each do |field, (extra, message)|
         it "rejects an invalid #{field} with a recorded warning" do
           hash = %w[folder remote].include?(field) ? extra : valid.merge(extra)
@@ -76,6 +86,18 @@ RSpec.describe ResurrectRepositories do
           expect { expect(described_class.from_hash(hash)).to be_nil }.to output.to_stdout
           expect(Logging.step_warnings.last).to match(message)
         end
+      end
+    end
+
+    describe '#clone_options' do
+      it 'maps the clone-related fields to clone_repo_into keyword arguments' do
+        repo = described_class.from_hash(valid.merge('branch' => 'dev', 'bundle' => '/b', 'post_checkout' => %w[a b]))
+
+        expect(repo.clone_options).to eq(branch: 'dev', bundle: '/b', post_checkout_hook: 'a && b')
+      end
+
+      it 'uses nil/false/empty defaults when the optional fields are absent' do
+        expect(described_class.from_hash(valid).clone_options).to eq(branch: nil, bundle: nil, post_checkout_hook: '')
       end
     end
 

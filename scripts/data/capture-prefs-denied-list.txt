@@ -136,3 +136,15 @@ com.apple.xpc.activity2
 # account- and device-bound (criterion 1 and 2).
 # No portable user preference data exists in this domain.
 com.apple.Music
+
+# ---------------------------------------------------------------------------
+# Handled by dedicated code, not by the per-domain defaults export/import
+# ---------------------------------------------------------------------------
+
+# Default-application handlers (default browser, mail client, URL schemes, file types).
+# 'default-app-handlers' is only the exported file's base name (not a defaults domain),
+# and the real domain is a path under ~/Library/Preferences whose LSHandlers array must be
+# merged entry-by-entry -- a plain 'defaults import' would replace every handler on the
+# machine. See scripts/utilities/launch_services.rb.
+default-app-handlers
+com.apple.launchservices.secure

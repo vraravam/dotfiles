@@ -24,6 +24,7 @@ require_relative 'utilities/command_utils'
 require_relative 'utilities/core'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
+require_relative 'utilities/launch_services'
 require_relative 'utilities/logging'
 require_relative 'utilities/macos'
 require_relative 'utilities/path_utils'
@@ -48,6 +49,12 @@ module CapturePrefs
   ALLOWED_LIST_FILE = DATA_DIR.join('capture-prefs-allowed-list.txt').freeze
   DENIED_LIST_FILE = DATA_DIR.join('capture-prefs-denied-list.txt').freeze
   EXCLUDED_KEYS_FILE = DATA_DIR.join('capture-prefs-excluded-keys.txt').freeze
+
+  # Default-application handlers (default browser, mail client, URL schemes, file types) are
+  # not an ordinary defaults domain -- see LaunchServices. Stored under their own file name,
+  # whose base name is on the denied list so the per-domain export/import loop (and
+  # 'capture-prefs.rb -f') never treats it as a domain to 'defaults import'.
+  LAUNCH_SERVICES_FILE_NAME = 'default-app-handlers.plist'
 
   # Public API method.
   #
@@ -149,6 +156,8 @@ module CapturePrefs
         temp_plist.unlink
       end
     end
+
+    _sync_default_app_handlers(target_dir.join(LAUNCH_SERVICES_FILE_NAME))
 
     # Post-processing
     if _exporting?
@@ -283,6 +292,24 @@ module CapturePrefs
   end
 
   private_class_method :_load_domains_list
+
+  # Exports (or imports) the default-application handlers to/from +file+. Importing them
+  # means a freshly installed browser (e.g. Zen) does not ask to become the default
+  # browser on first launch.
+  #
+  # @param file [Pathname] Handlers plist inside the defaults backup folder
+  # @return [void]
+  def _sync_default_app_handlers(file)
+    if _exporting?
+      Logging.record_warning('Failed to export default application handlers') unless LaunchServices.export_handlers(file)
+    elsif file?(file)
+      Logging.record_warning('Failed to import default application handlers') unless LaunchServices.import_handlers(file)
+    else
+      Logging.debug 'Skipping import of default application handlers -- no exported plist found'
+    end
+  end
+
+  private_class_method :_sync_default_app_handlers
 
   # Returns true if the current operation is 'export' (memoized).
   # Caches the result to avoid repeated string comparisons.

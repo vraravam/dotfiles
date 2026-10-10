@@ -533,18 +533,19 @@ install_mise_versions() {
   call_utility GitWorkspace.install_mise_versions "--first_install=${first_install_flag}"
 }
 
-# Runs 'direnv allow' for every directory that has an .envrc file across all
-# git repos and their ancestor directories under HOME, DOTFILES_DIR, and
+# Runs 'direnv allow' and then 'direnv exec' (to evaluate the .envrc right away, rather
+# than waiting for the next interactive 'cd') for every directory that has an .envrc file
+# across all git repos and their ancestor directories under HOME, DOTFILES_DIR, and
 # PROJECTS_BASE_DIR. Skips silently if direnv is not in PATH.
-# Thin wrapper that delegates to Ruby GitWorkspace.allow_all_direnv_configs.
-allow_all_direnv_configs() {
+# Thin wrapper that delegates to Ruby GitWorkspace.activate_all_direnv_configs.
+activate_all_direnv_configs() {
   if ! command_exists direnv; then
-    debug "Couldn't find 'direnv' in the PATH; Skipping allowing any direnv configs"
+    debug "Couldn't find 'direnv' in the PATH; Skipping activating any direnv configs"
     return 0
   fi
   local first_install_flag="false"
   if is_first_install; then first_install_flag="true"; fi
-  call_utility GitWorkspace.allow_all_direnv_configs "--first_install=${first_install_flag}"
+  call_utility GitWorkspace.activate_all_direnv_configs "--first_install=${first_install_flag}"
 }
 
 # Runs both direnv authorization and mise installation in a single optimized pass.

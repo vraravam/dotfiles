@@ -2264,23 +2264,7 @@ clone_repo_into() {
   # Checking one of each ('git-maintain' on PATH, the 'siu' alias) is a reliable proxy for all
   # of them -- skip this whole block until both exist; every subsequent call (this repo once
   # install-dotfiles.rb has run, or any other repo) runs it normally.
-  #
-  # SKIP_POST_CLONE_MAINTENANCE opts out of this entire block regardless of command
-  # availability -- for ephemeral/disposable repos that gain nothing from it (e.g. a
-  # throwaway mirror clone holding nothing but small, wholesale-replaced files). This is
-  # not just a wasted-cost optimization: 'unshallow' internally calls 'fo'
-  # (with-retry-wrapped fetch), and the full migrate+unshallow+maintain+siu chain can
-  # take longer than an *outer* with-retry call wrapping this whole clone_repo_into
-  # invocation is willing to wait for -- observed in practice as a false-positive
-  # stall-kill (SIGKILL) of an outer caller process well after the actual clone had
-  # already succeeded, because the outer with-retry's progress-path (the real target
-  # repo's OWN '.git/objects', not the throwaway mirror's) sees zero growth during this
-  # entire mirror-only maintenance phase. No current caller passes
-  # 'skip_maintenance: true' (see GitProcessor.clone_repo_into) -- kept available for any
-  # future ephemeral-clone use case with the same shape.
-  if is_non_zero_string "${SKIP_POST_CLONE_MAINTENANCE:-}"; then
-    debug "SKIP_POST_CLONE_MAINTENANCE set -- skipping post-clone maintenance for '$(yellow "${target_folder}")'"
-  elif command -v git-maintain &>/dev/null && git config --get alias.siu &>/dev/null; then
+  if command -v git-maintain &>/dev/null && git config --get alias.siu &>/dev/null; then
     # Migrate to reftable format BEFORE background unshallow to avoid race conditions.
     # Migrating refs while unshallow is fetching history could cause lock contention or
     # corrupted refs. Migration must complete before any background ref writes begin.

@@ -4,6 +4,25 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.13
+
+#### Evaluate `.envrc` files right after `direnv allow`, back up and restore default-app handlers, expose `branch` in the repositories YAML, remove the unused `SKIP_POST_CLONE_MAINTENANCE` opt-out
+
+* *[scripts/utilities/git_workspace.rb, files/--ZDOTDIR--/.aliases, scripts/utilities/collection_processor.rb]* `allow_all_direnv_configs` is renamed `activate_all_direnv_configs` (Ruby method, shell wrapper, `Logging.run_script` label, progress messages and comments) because it now does two things per directory: `direnv allow <dir>` followed (only if that succeeded) by `direnv exec <dir> true`. `direnv allow` merely records trust and never evaluates the `.envrc`; the shell hook does that on the next interactive `cd`, so side effects such as the profile symlinks the browser-profiles `.envrc` creates under `~/Library/Application Support` were missing after a fresh install until the user manually `cd`'d into `${PERSONAL_PROFILES_DIR}`. `direnv exec` evaluates the `.envrc` immediately, with no TTY or hook needed. Every caller (`setup_dev_environment`, the early safety-net call in `fresh-install-of-osx.sh`, `resurrect-repositories.rb -a`, `software-updates-cron.rb`) picks this up, so all `.envrc` files are re-evaluated on every run, including cron runs.
+* *[scripts/utilities/launch_services.rb]* New `LaunchServices` module that exports and imports the default-application handlers (default browser, mail client, URL schemes, file types) held in the `LSHandlers` array of `com.apple.LaunchServices/com.apple.launchservices.secure`. Export drops the volatile `LSHandlerModificationDate` so an unchanged setup produces no git diff. Import merges entry-by-entry (identity is the content type, content tag or URL scheme, compared case-insensitively) so unrelated handlers already on the machine are kept, writes the result with `defaults import`, and restarts `lsd`. Writing the preference directly avoids the interactive "make this your default browser?" confirmation (previously shown the first time Zen Twilight started on a vanilla OS).
+* *[scripts/capture-prefs.rb, scripts/data/capture-prefs-denied-list.txt]* Export and import now also sync the handlers to/from `default-app-handlers.plist` in the defaults backup folder via `LaunchServices`. `default-app-handlers` (the file's base name, not a defaults domain) and `com.apple.launchservices.secure` (the real domain, which must be merged rather than replaced) are on the denied list, so the per-domain loop and `capture-prefs.rb -f` can never `defaults import` them.
+* *[scripts/resurrect-repositories.rb, Extras.md]* The repositories YAML accepts an optional `branch` key (a non-empty string) -- the branch to clone, passed as `clone_repo_into`'s optional third argument. `RepositoryConfig#clone_options` returns the keyword arguments for `GitProcessor.clone_repo_into` (`branch`, `bundle`, `post_checkout_hook`); both the primary clone and every `other_remotes` fallback clone use it. The other `clone_repo_into` arguments (`bundle`, `post_checkout`) were already exposed. `-g` (generate) still does not emit `branch`, consistent with its existing handling of `post_checkout`/`post_clone`.
+* *[files/--HOME--/.shellrc, scripts/utilities/git_processor.rb, spec/utilities/git_processor_spec.rb]* Removed the `SKIP_POST_CLONE_MAINTENANCE` opt-out from `clone_repo_into` and the matching `skip_maintenance:` parameter of `GitProcessor.clone_repo_into`; no caller on either a vanilla or a pre-configured OS ever used it. The post-clone maintenance block now only checks that `git-maintain` and the `siu` alias are available.
+* *[spec/utilities/launch_services_spec.rb, spec/resurrect_repositories_spec.rb]* Specs for the handler merge logic, and for `branch` validation, `to_h` round-tripping and `clone_options`.
+
+#### Adopting these changes
+
+* Restart the Terminal/iTerm application to reload the zsh configuration, then reload the function definitions: `unfunction is_aliases_sourced; DEBUG=true load_file_if_exists ${ZDOTDIR}/.aliases;`
+* Run `activate_all_direnv_configs;` (previously `allow_all_direnv_configs`) to allow and evaluate every `.envrc` now.
+* Run `capture-prefs.rb -e;` once on the machine whose default apps you want to carry over, so `default-app-handlers.plist` is committed to your defaults backup; later `capture-prefs.rb -i;` runs apply it (the apps, e.g. Zen, must be installed first; a restart of the affected apps may be needed).
+
+---
+
 ### 4.0.12
 
 #### Consolidate custom git commands: fold `backfill-blobs` into `unshallow`, `pull-safe` into `fo --rebase`, inline `kill-process-tree` into `with-retry`, merge `oldest-branch` into `recent-branch`, drop `compress`
