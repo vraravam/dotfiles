@@ -4,6 +4,7 @@
 
 require 'open3'
 require 'pathname'
+require 'shellwords'
 
 require_relative 'command_utils'
 require_relative 'core'
@@ -116,6 +117,22 @@ module MacOS
     CommandUtils.run_silent('killall', 'Finder')
   end
 
+  # Prompts for sudo credentials once ('sudo -v'), then starts a background thread that
+  # refreshes them every 60 seconds for the remainder of the running script (same behavior
+  # as keep_sudo_alive in .shellrc). Standalone entry point for callers (e.g.
+  # fresh-install-of-osx.rb) that only need the keep-alive behavior, without the side effect
+  # of also disabling the software-update schedule that suspend_softwareupdate_schedule
+  # below carries. Shares the private _keep_sudo_alive helper with
+  # suspend_softwareupdate_schedule/resume_softwareupdate_schedule, guarded by
+  # @_sudo_alive_running so only one thread ever runs regardless of which caller started
+  # it first.
+  #
+  # @return [void]
+  def keep_sudo_alive
+    CommandUtils.run_interactive('sudo', '-v')
+    _keep_sudo_alive
+  end
+
   # Turns off the macOS automatic software update schedule and starts a
   # background thread to keep sudo credentials alive. The keep-alive thread
   # guards against duplicate launches -- it is a no-op if already running.
@@ -213,6 +230,142 @@ module MacOS
     @_notification_history.delete_if { |_k, timestamp| now - timestamp > 300 }
   end
 
+  # Variables a throwaway 'sh' changes on its own (not exported by 'brew shellenv'), so they
+  # are never copied back into this process.
+  SHELLENV_IGNORED_KEYS = %w[_ SHLVL PWD OLDPWD].freeze
+
+  # Evaluates `brew shellenv` and merges the variables it exports into the current process
+  # environment, ensuring Homebrew bins are on PATH for subsequent system()/backtick calls.
+  #
+  # @param brew_bin [Pathname, String] Path to brew binary.
+  # @return [void]
+  #
+  # @example
+  #   MacOS.load_brew_shellenv(Pathname.new('/opt/homebrew/bin/brew'))
+  # :reek:UtilityFunction -- Stateless wrapper for parsing/applying brew shellenv output (intentional)
+  # :reek:FeatureEnvy -- Stateless helper operating on its own parameter (intentional)
+  def load_brew_shellenv(brew_bin)
+    brew_bin = Pathname.new(brew_bin) unless brew_bin.is_a?(Pathname)
+    return unless brew_bin.executable?
+
+    # Evaluate brew shellenv's output in a real shell rather than hand-parsing arbitrary shell
+    # syntax -- far more robust than a regex-based parser, which cannot correctly handle
+    # constructs like 'export INFOPATH="...:${INFOPATH:-}"' (variable expansion),
+    # '[ -z "${MANPATH-}" ] || export ...' (conditional), or path_helper's own
+    # nested 'eval "$(...)"'. env -0 dumps the resulting environment NUL-separated
+    # (safe against values containing newlines).
+    env_output, = Open3.capture3('sh', '-c', %(eval "$(#{Shellwords.escape(brew_bin.to_s)} shellenv)" && env -0))
+    env_output.split("\0").each do |line|
+      key, value = line.split('=', 2)
+      next if nil_or_empty?(key) || SHELLENV_IGNORED_KEYS.include?(key)
+
+      ENV[key] = value
+    end
+    Logging.debug "Loaded brew shellenv from '#{brew_bin.cyan}'"
+  end
+
+  # Sets up Touch ID for sudo access in terminal shells by enabling pam_tid.so.
+  # Skips if Touch ID hardware not detected or if already configured.
+  #
+  # @return [void]
+  # :reek:FeatureEnvy -- Local Tempfile manages content through validation/copy steps (intentional)
+  def approve_fingerprint_sudo
+    Logging.section_header 'Setting up Touch ID for sudo access in terminal shells'
+
+    # AppleBiometricSensor = T1/T2 chip (Intel Macs); AppleBiometricServices = Apple Silicon
+    # Check for Touch ID hardware (single ioreg call for both classes)
+    biometric_output = CommandUtils.query('ioreg', '-c', 'AppleBiometricSensor', '-c', 'AppleBiometricServices')
+    if nil_or_empty?(biometric_output)
+      Logging.info 'Touch ID hardware not detected -- skipping configuration.'
+      return
+    end
+
+    template_file_pn = Core::ROOT.join('etc', 'pam.d', 'sudo_local.template')
+    unless template_file_pn.file?
+      Logging.warn "Template file '#{template_file_pn.cyan}' not found -- skipping."
+      return
+    end
+
+    target_file_pn = Core::ROOT.join('etc', 'pam.d', 'sudo_local')
+    target_file_str = target_file_pn.to_s
+    target_file_cyan = target_file_str.cyan
+    if target_file_pn.file?
+      Logging.info "'#{target_file_cyan}' already present -- skipping."
+    else
+      # Use explicit UTF-8 encoding to avoid "invalid byte sequence in US-ASCII".
+      content = template_file_pn.read(encoding: 'UTF-8').gsub(/^#auth/, 'auth')
+      require 'tempfile'
+      tmp = Tempfile.new('sudo_local')
+      tmp.write(content)
+      tmp.close
+      # 'install -m 0644' gives the file the same mode/owner a root shell redirect would
+      # (a plain 'sudo cp' of the 0600 tempfile would leave it 0600).
+      CommandUtils.run_interactive('sudo', 'install', '-m', '0644', '-o', 'root', '-g', 'wheel', tmp.path, target_file_str) do
+        Logging.record_error "Failed to create '#{target_file_cyan}'"
+        tmp.unlink
+        return
+      end
+      tmp.unlink
+      Logging.success "Created '#{target_file_cyan}'"
+    end
+  end
+
+  # Verifies FileVault disk encryption is active. Raises RuntimeError if not.
+  #
+  # @return [void]
+  # @raise [RuntimeError] if FileVault is not enabled
+  # :reek:UtilityFunction -- Stateless system check, no instance state needed (intentional)
+  def ensure_filevault_is_on
+    Logging.section_header 'Verifying FileVault status'
+    fv_out = CommandUtils.query('fdesetup', 'isactive')
+    return if fv_out.strip == 'true'
+
+    Logging.user_action 'Enable FileVault: System Settings → Privacy & Security → FileVault → Turn On FileVault'
+    # Logging.error raises RuntimeError; at_exit cleanup hooks still run.
+    Logging.error 'FileVault is not turned on. Please encrypt your hard disk!'
+  end
+
+  # Installs Xcode Command Line Tools via non-interactive softwareupdate.
+  # Skips if already installed. Raises RuntimeError if installation fails.
+  #
+  # @return [void]
+  # @raise [RuntimeError] if installation fails
+  # :reek:FeatureEnvy -- Local marker-file lifecycle (write/check/delete) is intentional
+  def install_xcode_command_line_tools
+    # List available software updates (filtered to just package names). Always runs,
+    # regardless of whether CLT is already installed. softwareupdate writes the
+    # '*'-prefixed lines we care about to stderr, not stdout -- capture2e merges both
+    # streams.
+    Logging.section_header 'Listing available software updates'
+    combined_output, = Open3.capture2e('softwareupdate', '--list')
+    combined_output.each_line do |line|
+      puts line if line.strip.start_with?('*')
+    end
+
+    Logging.section_header 'Installing Xcode command-line tools'
+    software_update_marker_file = Core::ROOT.join('tmp', '.com.apple.dt.CommandLineTools.installondemand.in-progress')
+
+    if CommandUtils.run_silent('xcode-select', '-p')
+      Logging.info 'Xcode command-line tools already present -- skipping.'
+    else
+      begin
+        software_update_marker_file.write('')
+        CommandUtils.run_interactive('sudo', 'softwareupdate', '-ia', '--agree-to-license', '--force') do
+          Logging.record_warning 'softwareupdate encountered errors during Xcode CLT install'
+        end
+      ensure
+        software_update_marker_file.delete if software_update_marker_file.exist?
+      end
+
+      Logging.error "Couldn't install Xcode command-line tools; aborting" unless CommandUtils.run_silent('xcode-select', '-p')
+      Logging.success 'Successfully installed Xcode command-line tools'
+    end
+
+    # Duplicate the cleanup if the installation was cancelled and continued via the GUI --
+    # runs regardless of which branch above was taken.
+    software_update_marker_file.delete if software_update_marker_file.exist?
+  end
+
   # ---------------------------------------------------------------------------
   # Private methods
   # ---------------------------------------------------------------------------
@@ -260,10 +413,13 @@ module MacOS
     return if @_sudo_alive_running
 
     @_sudo_alive_running = true
+    # 'sudo -n true' (never prompts, never gives up) refreshes cached credentials like the
+    # keep_sudo_alive in .shellrc; 'sudo -v' could prompt from this background thread and
+    # stopping at the first failure would silently end the keep-alive.
     Thread.new do
       loop do
         sleep 60
-        break unless CommandUtils.run_silent('sudo', '-v')
+        CommandUtils.run_silent('sudo', '-n', 'true')
       end
     end
   end

@@ -2401,16 +2401,6 @@ set_gnupg_folder_permissions() {
   _secure_folder_permissions "${HOME}/.gnupg" true
 }
 
-# Runs "$@" and evals its stdout into the current shell environment.
-# Silently skips if the command fails or produces no output (stderr suppressed).
-# Usage: eval_shellenv <command> [args...]  e.g. eval_shellenv brew shellenv
-eval_shellenv() {
-  local output
-  if output="$("$@" 2>/dev/null)"; then
-    eval "${output}"
-  fi
-}
-
 # --------------------------------------------------------------------------
 # 1h. Cron management - bootstrap layer
 #

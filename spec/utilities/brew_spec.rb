@@ -34,6 +34,32 @@ RSpec.describe Brew do
     end
   end
 
+  describe '.sync_bundle with a brew path and Brewfile content' do
+    let(:brew) { '/opt/homebrew/bin/brew' }
+
+    it 'uses the given brew binary instead of PATH' do
+      expect(CommandUtils).to receive(:run_interactive).with(brew, 'bundle', 'check', '-v').and_return(true)
+
+      expect(described_class.sync_bundle(brew_bin: brew)).to be true
+    end
+
+    it 'installs from the given content on stdin when the check fails, and reports its exit status' do
+      allow(CommandUtils).to receive(:run_interactive).with(brew, 'bundle', 'check', '-v').and_return(false)
+      expect(Core).to receive(:stream_command)
+          .with([brew, 'bundle', 'install', '-q', '--file=-'], stdin_data: "brew 'git'\n").and_return(0, 1)
+
+      expect(described_class.sync_bundle(brew_bin: brew, brewfile_content: "brew 'git'\n")).to be true
+      expect(described_class.sync_bundle(brew_bin: brew, brewfile_content: "brew 'git'\n")).to be false
+    end
+
+    it 'does not install from content when the check already passes' do
+      allow(CommandUtils).to receive(:run_interactive).with(brew, 'bundle', 'check', '-v').and_return(true)
+      expect(Core).not_to receive(:stream_command)
+
+      expect(described_class.sync_bundle(brew_bin: brew, brewfile_content: 'x')).to be true
+    end
+  end
+
   describe '.cleanup' do
     it 'runs every cleanup step even when an earlier one fails' do
       calls = []

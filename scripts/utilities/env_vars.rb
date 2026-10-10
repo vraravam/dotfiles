@@ -385,7 +385,7 @@ module EnvVars
   end
 
   # Returns current PATH environment variable.
-  # Used by PathUtils.prepend_to_path to check/modify PATH.
+  # Used by PathUtils.append_to_path to check/modify PATH.
   #
   # @return [String] Current PATH value (empty string if unset)
   def self.path

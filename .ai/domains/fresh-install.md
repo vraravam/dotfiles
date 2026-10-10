@@ -280,11 +280,11 @@ call time to compute the duration; a pre-formatted string breaks that arithmetic
 ## Brewfile Truncation on `FIRST_INSTALL`
 
 The Brewfile install lives in Ruby (`BrewBundle` in `scripts/utilities/brew_bundle.rb`, built on the
-pure command wrappers in `Brew`). `fresh-install-of-osx.sh` calls it once the dotfiles repository is
+pure command wrappers in `Brew`). `fresh-install-of-osx.rb` calls it once the dotfiles repository is
 cloned and `install-dotfiles.rb` has linked `~/Brewfile`:
 
-```zsh
-call_utility --truthy BrewBundle.run "--first_install=${first_install_flag}" || _record_warning '...';
+```ruby
+Logging.record_warning '...' unless BrewBundle.run(first_install: EnvVars.first_install?)
 ```
 
 On a vanilla OS run (`FIRST_INSTALL=1`), `brew bundle` is run only against the **base section** of the
@@ -292,7 +292,7 @@ Brewfile -- the lines above the sentinel. This keeps the initial install fast by
 heavy packages; the whole Brewfile is then installed in a detached background job (with
 `FIRST_INSTALL` emptied in the child; its output goes to `~/Downloads/brew-bundle-full-install.log`).
 On a pre-configured machine (no `FIRST_INSTALL`) the whole Brewfile is used, and the install is skipped
-when `brew bundle check` already passes. A failure makes `BrewBundle.run` return false; the shell records
+when `brew bundle check` already passes. A failure makes `BrewBundle.run` return false; the caller records
 it as a warning and carries on.
 
 The Brewfile must have exactly one sentinel **comment** line that starts with `# FIRST_INSTALL:` to mark

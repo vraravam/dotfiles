@@ -98,4 +98,35 @@ RSpec.describe PathUtils do
       expect(described_class.command_exists?('definitely-not-a-command-xyz')).to be false
     end
   end
+
+  describe '.set_ssh_folder_permissions' do
+    around do |example|
+      Dir.mktmpdir('path-utils-ssh-') do |dir|
+        @home = Pathname.new(dir)
+        example.run
+      end
+    end
+
+    before do
+      Logging.state.reset!
+      stub_const('EnvVars::HOME', @home)
+      ssh = @home.join('.ssh')
+      ssh.mkpath
+      %w[id_ed25519 id_rsa].each { |name| ssh.join(name).write('key') }
+    end
+
+    after { Logging.state.reset! }
+
+    it 'tries to add every key to the agent even when an earlier one fails' do
+      attempted = []
+      allow(CommandUtils).to receive(:run_silent) do |*args|
+        attempted << args.last if args.first == 'ssh-add'
+        args.first != 'ssh-add'
+      end
+
+      expect { described_class.set_ssh_folder_permissions }.to output.to_stdout.or output.to_stderr
+
+      expect(attempted.map { |path| File.basename(path) }.uniq).to contain_exactly('id_ed25519', 'id_rsa')
+    end
+  end
 end
