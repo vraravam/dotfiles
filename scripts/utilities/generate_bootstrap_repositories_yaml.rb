@@ -2,7 +2,7 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-# file location: ${DOTFILES_DIR}/scripts/generate-bootstrap-repositories-yaml.rb
+# file location: ${DOTFILES_DIR}/scripts/utilities/generate_bootstrap_repositories_yaml.rb
 #
 # Generates the YAML config consumed by 'resurrect-repositories.rb -r' to clone/update
 # the home and browser-profiles repos during fresh-install-of-osx.sh's bootstrap flow.
@@ -14,19 +14,19 @@
 # A repo with neither env var configured is omitted entirely (mirrors the "skip cloning
 # ... since neither env var has been set" behavior this script replaces).
 #
-# Usage:
-#   Standalone: generate-bootstrap-repositories-yaml.rb -o <output-file>
-#   Module:     GenerateBootstrapRepositoriesYaml.run(output_file: '...')
+# Only fresh-install-of-osx.sh needs it, so it is a plain module, called there through
+# call-utility.rb (there is no standalone CLI):
+#   call_utility --truthy GenerateBootstrapRepositoriesYaml.run --output_file=<file>
+# Ruby callers: GenerateBootstrapRepositoriesYaml.run(output_file: '...')
 
 require 'yaml'
 
-require_relative 'utilities/env_vars'
-require_relative 'utilities/gpg_encrypt'
-require_relative 'utilities/keybase'
-require_relative 'utilities/logging'
+require_relative 'env_vars'
+require_relative 'gpg_encrypt'
+require_relative 'keybase'
+require_relative 'logging'
 
-# Generates the bootstrap repositories YAML config. Returns true/false instead of
-# calling exit().
+# Generates the bootstrap repositories YAML config.
 module GenerateBootstrapRepositoriesYaml
   extend self
 
@@ -36,6 +36,20 @@ module GenerateBootstrapRepositoriesYaml
   # @return [Boolean] true on success, false if neither repo has a backup mechanism
   #   configured (nothing to generate).
   def run(output_file:)
+    ok = false
+    Logging.run_script('generate_bootstrap_repositories_yaml', 'Generating the bootstrap repositories config') do
+      ok = _write(output_file)
+    end
+    ok
+  end
+
+  # ---------------------------------------------------------------------------
+  # Private methods
+  # ---------------------------------------------------------------------------
+
+  # @param output_file [String, Pathname]
+  # @return [Boolean]
+  def _write(output_file)
     entries = [_home_entry, _profiles_entry].compact
 
     if entries.empty?
@@ -47,6 +61,8 @@ module GenerateBootstrapRepositoriesYaml
     Logging.success("Generated #{entries.length.to_s.purple} repo entries to '#{output_file.to_s.cyan}'")
     true
   end
+
+  private_class_method :_write
 
   # Builds the home repo entry. 'post_checkout' resets ssh/gnupg permissions
   # immediately once files are checked out -- git checkout does not preserve the
@@ -134,31 +150,4 @@ module GenerateBootstrapRepositoriesYaml
   end
 
   private_class_method :_backup_entry
-end
-
-# ---------------------------------------------------------------------------
-# Standalone CLI mode
-# ---------------------------------------------------------------------------
-
-if __FILE__ == $PROGRAM_NAME
-  require_relative 'utilities/cli_parser'
-
-  include Logging
-
-  options = {}
-  parser = CliParser.parse('-o <output-file>') do |opts|
-    opts.separator 'Generates the bootstrap repositories YAML config for the home and profiles repos.'
-    opts.separator ''
-    opts.separator 'Options:'.purple
-    opts.on('-o', '--output FILE', 'Output file to write the generated YAML to (mandatory)') { |v| options[:output_file] = v }
-    opts.separator ''
-    opts.separator "  eg: #{File.basename(__FILE__).cyan} -o ~/.bootstrap-repositories.yml"
-  end
-
-  parser.abort_with_usage('Missing required option: -o <output-file>') if nil_or_empty?(options[:output_file])
-
-  Logging.run_script do
-    success = GenerateBootstrapRepositoriesYaml.run(output_file: options[:output_file])
-    exit(success ? 0 : 1)
-  end
 end

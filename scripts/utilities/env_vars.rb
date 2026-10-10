@@ -376,6 +376,14 @@ module EnvVars
     !nil_or_empty?(ENV.fetch('CACHE_BUST_HEADERS', '').strip)
   end
 
+  # Returns true if CURL_RETRY_OPTS env var is set (used for bootstrap curl downloads).
+  # When true, curl requests should add retry/timeout flags even if ~/.curlrc exists.
+  #
+  # @return [Boolean] true if CURL_RETRY_OPTS is set to a non-empty (stripped) value
+  def self.curl_retry_opts?
+    !nil_or_empty?(ENV.fetch('CURL_RETRY_OPTS', '').strip)
+  end
+
   # Returns current PATH environment variable.
   # Used by PathUtils.prepend_to_path to check/modify PATH.
   #

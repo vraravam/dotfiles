@@ -4,6 +4,25 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.16
+
+#### Move the Keybase login step, the default-shell step, the bootstrap-repositories config generation, the Homebrew install and the stale-`.shellrc` check of `fresh-install-of-osx.sh` into Ruby (`Keybase.bootstrap_login`, `DefaultShell`, `GenerateBootstrapRepositoriesYaml`, `HomebrewInstall`, `ShellrcCheck`)
+
+* *[scripts/utilities/keybase.rb]* New `Keybase.configured?` and `Keybase.bootstrap_login(first_install:)` hold the whole 'Setup Keybase' decision tree (not configured, not installed, already logged in, pre-configured machine, first-time login) that was shell `if`/`elif` in the script. `Keybase.ensure_logged_in` gains `start_service:` and the new `ensure_service_running` (fix the ownership of `~/Library/Application Support/Google` if needed, launch the app hidden, poll for the service), replacing the shell `_ensure_keybase_logged_in` helper.
+* *[scripts/utilities/default_shell.rb]* New `DefaultShell.run`: `/etc/shells` registration and `chsh` to Homebrew zsh, with the checks re-run on every call and every failure recorded in the summary (replacing the shell `grep`/`tee`/`dscl | awk` pipeline).
+* *[scripts/generate-bootstrap-repositories-yaml.rb -> scripts/utilities/generate_bootstrap_repositories_yaml.rb]* Only `fresh-install-of-osx.sh` ever ran this script, so it is now a plain module (`GenerateBootstrapRepositoriesYaml.run(output_file:)`, no standalone CLI, wrapped in `Logging.run_script`) and the shell calls it with `call_utility --truthy GenerateBootstrapRepositoriesYaml.run --output_file=...`. References in `TechnicalDeepDive.md` and `custom.gitignore` updated; new spec covers the Keybase/encrypted precedence and omitted repos.
+* *[scripts/utilities/homebrew_install.rb]* New `HomebrewInstall.run`: skips when `${HOMEBREW_PREFIX}/bin/brew` exists, otherwise creates and takes ownership of the prefix directories, downloads the installer (cache-busting timestamp; `curl_opts` adds the retry flags while `~/.curlrc` is not linked or `CURL_RETRY_OPTS` is set, and the cache-bust headers when `CACHE_BUST_HEADERS` is set) and runs it with `NONINTERACTIVE=1`; the temp file is removed in an `ensure`. Every failure is recorded and returns false. `_install_homebrew` in the shell keeps only the fatal-on-failure check and `eval_shellenv` (a subprocess cannot export `brew shellenv` into the running script). `EnvVars.curl_retry_opts?` added.
+* *[scripts/utilities/shellrc_check.rb]* New `ShellrcCheck.matches_repo?`: on a first install, compares the curl-downloaded `~/.shellrc` with the repo copy and, when they differ (GitHub's raw cache is stale), prints the diff head and the recovery steps and returns false. The shell runs it through `scripts/call-utility.rb` directly rather than the `call_utility` function, because that function lives in the possibly stale `.shellrc`.
+* *[scripts/call-utility.rb]* `DefaultShell`, `GenerateBootstrapRepositoriesYaml`, `HomebrewInstall` and `ShellrcCheck` added to the allow-list.
+* *[scripts/fresh-install-of-osx.sh]* `_ensure_keybase_logged_in` is removed; the Keybase step is one `call_utility --truthy Keybase.bootstrap_login` call, the repository-resurrection step calls `Keybase.ensure_logged_in --start_service=true`, and `_set_default_shell` shrinks to the step header plus `call_utility --truthy DefaultShell.run`. The script stays a shell script; only these logical chunks moved.
+* *[spec/utilities/keybase_spec.rb, spec/utilities/default_shell_spec.rb, spec/utilities/homebrew_install_spec.rb, spec/utilities/shellrc_check_spec.rb, spec/call_utility_spec.rb]* Specs for every branch of the new methods.
+
+#### Adopting these changes
+
+* Nothing to do on a machine that is already set up: the new code only runs from `fresh-install-of-osx.sh`, so it takes effect the next time that script runs.
+
+---
+
 ### 4.0.15
 
 #### Fix the `FIRST_INSTALL` base-section cut of the Brewfile and move the Brewfile install (base section, background full install, Keybase symlink safety net) out of `fresh-install-of-osx.sh` into Ruby (`BrewBundle`); add `ToRevisit.md`

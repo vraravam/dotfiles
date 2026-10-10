@@ -33,10 +33,14 @@ UTILITIES = {
   'Antidote' => 'antidote',
   'BrewBundle' => 'brew_bundle',
   'Cron' => 'cron',
+  'DefaultShell' => 'default_shell',
   'DevEnvironment' => 'dev_environment',
+  'GenerateBootstrapRepositoriesYaml' => 'generate_bootstrap_repositories_yaml',
   'GitWorkspace' => 'git_workspace',
+  'HomebrewInstall' => 'homebrew_install',
   'Keybase' => 'keybase',
-  'MacOS' => 'macos'
+  'MacOS' => 'macos',
+  'ShellrcCheck' => 'shellrc_check'
 }.freeze
 
 # Module contains the business logic.

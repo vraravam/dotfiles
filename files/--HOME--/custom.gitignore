@@ -144,7 +144,7 @@ Thumbs.db
 /.config/git/config-*-enabled.inc
 
 # Bootstrap repositories config -- generated fresh on every fresh-install-of-osx.sh run
-# by generate-bootstrap-repositories-yaml.rb, consumed by resurrect-repositories.rb -r.
+# by GenerateBootstrapRepositoriesYaml, consumed by resurrect-repositories.rb -r.
 /.bootstrap-repositories.yml
 
 

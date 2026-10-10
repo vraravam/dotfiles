@@ -29,11 +29,11 @@ module BrewBundle
 
   # Public API method.
   #
-  # @param first_install [Boolean] True on a vanilla macOS: base section first, the rest in the
-  #   background.
   # Uses ${HOMEBREW_PREFIX}/bin/brew rather than 'brew' from PATH, since Homebrew may not be on
   # PATH yet during the bootstrap.
   #
+  # @param first_install [Boolean] True on a vanilla macOS: base section first, the rest in the
+  #   background.
   # @return [Boolean] false when Homebrew or the Brewfile could not be used, or when
   #   'brew bundle' reported errors; the caller decides how to record that.
   def run(first_install: false)

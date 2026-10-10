@@ -681,7 +681,7 @@ security add-generic-password -A -a "${USER}" -s 'git-remote-gpg-encrypt' -w;
 **Dotfiles-side integration points:**
 - `files/--HOME--/Brewfile` -- `brew 'vraravam/tap/git-remote-gpg-encrypt', trusted: true` (fully-qualified formula reference auto-taps `vraravam/tap`; pulls in `gnupg` + `git` transitively)
 - `files/--HOME--/.shellrc` -- `ENCRYPTED_HOME_REPO_URL`/`ENCRYPTED_PROFILES_REPO_URL` env vars (full URLs, not bare names -- see `KeybaseMigration.md` for why)
-- `scripts/generate-bootstrap-repositories-yaml.rb` -- builds the YAML `resurrect-repositories.rb -r` consumes for the vanilla-OS bootstrap path: Keybase as the primary `remote` when enabled, the encrypted backup under `other_remotes['origin2']` when both are enabled (or as `remote` directly if Keybase isn't); `resurrect-repositories.rb` tries `other_remotes` as a fallback clone source if the primary fails
+- `scripts/utilities/generate_bootstrap_repositories_yaml.rb` (`GenerateBootstrapRepositoriesYaml`, called through `call_utility`) -- builds the YAML `resurrect-repositories.rb -r` consumes for the vanilla-OS bootstrap path: Keybase as the primary `remote` when enabled, the encrypted backup under `other_remotes['origin2']` when both are enabled (or as `remote` directly if Keybase isn't); `resurrect-repositories.rb` tries `other_remotes` as a fallback clone source if the primary fails
 
 See `KeybaseMigration.md` for the step-by-step setup guide, including a section honestly comparing this mechanism's security against Keybase's (short version: comparable content confidentiality given a high-entropy passphrase, but weaker metadata privacy and no per-device key revocation -- not a like-for-like replacement).
 

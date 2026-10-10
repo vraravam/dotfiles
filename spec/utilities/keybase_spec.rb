@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'stringio'
 require 'tmpdir'
 require 'keybase'
 
@@ -142,6 +143,178 @@ RSpec.describe Keybase do
 
       expect(Logging).to receive(:record_error).with(/Could not log into keybase/)
       expect(described_class.ensure_logged_in).to be false
+    end
+  end
+
+  describe '.ensure_logged_in with start_service: true' do
+    before { stub_const('EnvVars::KEYBASE_USERNAME', nil) }
+
+    it 'starts the keybase service before checking the login status' do
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
+      expect(described_class).to receive(:ensure_service_running).ordered
+      expect(described_class).to receive(:_status).ordered.and_return('LoggedIn' => true, 'Username' => 'me')
+
+      expect(described_class.ensure_logged_in(start_service: true)).to be true
+    end
+
+    it 'does not start the service by default' do
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
+      expect(described_class).not_to receive(:ensure_service_running)
+      allow(described_class).to receive(:_status).and_return('LoggedIn' => true, 'Username' => 'me')
+
+      described_class.ensure_logged_in
+    end
+  end
+
+  describe '.ensure_service_running' do
+    before do
+      allow(described_class).to receive(:_fix_google_support_ownership)
+      allow(described_class).to receive(:sleep)
+    end
+
+    it 'does nothing when keybase is not installed' do
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(false)
+      expect(described_class).not_to receive(:_fix_google_support_ownership)
+      expect(CommandUtils).not_to receive(:run_silent)
+
+      described_class.ensure_service_running
+    end
+
+    it 'fixes the ownership but does not launch the app when the service already answers' do
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
+      allow(described_class).to receive(:_service_up?).and_return(true)
+      expect(described_class).to receive(:_fix_google_support_ownership)
+      expect(CommandUtils).not_to receive(:run_silent)
+
+      described_class.ensure_service_running
+    end
+
+    it 'launches the app hidden and polls until the service answers' do
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
+      allow(described_class).to receive(:_service_up?).and_return(false, false, true)
+      expect(CommandUtils).to receive(:run_silent).with('open', '-g', '-a', 'Keybase').and_return(true)
+
+      expect { described_class.ensure_service_running }.to output(/Starting Keybase service/).to_stdout
+      expect(described_class).to have_received(:sleep).once
+    end
+
+    it 'gives up after SERVICE_START_ATTEMPTS polls' do
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
+      allow(described_class).to receive(:_service_up?).and_return(false)
+      allow(CommandUtils).to receive(:run_silent).and_return(true)
+
+      expect { described_class.ensure_service_running }.to output(/Starting Keybase service/).to_stdout
+      expect(described_class).to have_received(:sleep).exactly(Keybase::SERVICE_START_ATTEMPTS).times
+    end
+  end
+
+  describe '._fix_google_support_ownership' do
+    around do |example|
+      Dir.mktmpdir('keybase-spec-') do |dir|
+        @tmp = Pathname.new(dir)
+        example.run
+      end
+    end
+
+    before do
+      stub_const('EnvVars::HOME', @tmp)
+      stub_const('EnvVars::USER', 'someuser')
+    end
+
+    def google_dir
+      @tmp.join('Library', 'Application Support', 'Google').tap(&:mkpath)
+    end
+
+    it 'does nothing when the directory does not exist' do
+      expect(CommandUtils).not_to receive(:run_silent)
+
+      described_class.send(:_fix_google_support_ownership)
+    end
+
+    it 'does nothing when the directory is owned by the current user' do
+      google_dir
+      expect(CommandUtils).not_to receive(:run_silent)
+
+      described_class.send(:_fix_google_support_ownership)
+    end
+
+    it 'takes ownership back when the directory belongs to someone else' do
+      dir = google_dir
+      allow(Process).to receive(:uid).and_return(dir.stat.uid + 1)
+      expect(CommandUtils).to receive(:run_silent).with('sudo', 'chown', '-R', 'someuser:staff', dir.to_s).and_return(true)
+
+      expect { described_class.send(:_fix_google_support_ownership) }.to output(/Fixing ownership/).to_stdout
+    end
+  end
+
+  describe '.configured?' do
+    it 'is false when neither repo name is set' do
+      stub_const('EnvVars::KEYBASE_HOME_REPO_NAME', nil)
+      stub_const('EnvVars::KEYBASE_PROFILES_REPO_NAME', nil)
+
+      expect(described_class.configured?).to be false
+    end
+
+    it 'is true when either repo name is set' do
+      stub_const('EnvVars::KEYBASE_HOME_REPO_NAME', nil)
+      stub_const('EnvVars::KEYBASE_PROFILES_REPO_NAME', 'profiles')
+
+      expect(described_class.configured?).to be true
+    end
+  end
+
+  describe '.bootstrap_login' do
+    def quietly
+      original = $stdout
+      $stdout = StringIO.new
+      yield
+    ensure
+      $stdout = original
+    end
+
+    before do
+      allow(described_class).to receive(:configured?).and_return(true)
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
+      allow(described_class).to receive(:username).and_return(nil)
+    end
+
+    it 'skips, successfully, when Keybase is not configured' do
+      allow(described_class).to receive(:configured?).and_return(false)
+      expect(described_class).not_to receive(:ensure_logged_in)
+
+      expect(quietly { described_class.bootstrap_login(first_install: true) }).to be true
+    end
+
+    it 'skips, successfully, when keybase is not installed' do
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(false)
+      expect(described_class).not_to receive(:ensure_logged_in)
+
+      expect(quietly { described_class.bootstrap_login(first_install: true) }).to be true
+    end
+
+    it 'accepts an existing login without asking again' do
+      allow(described_class).to receive(:username).and_return('someuser')
+      expect(described_class).not_to receive(:ensure_logged_in)
+
+      expect(quietly { described_class.bootstrap_login(first_install: true) }).to be true
+    end
+
+    it 'does not attempt a login on a pre-configured machine' do
+      expect(described_class).not_to receive(:ensure_logged_in)
+
+      expect(quietly { described_class.bootstrap_login(first_install: false) }).to be true
+    end
+
+    it 'logs in, starting the service, on a first install' do
+      expect(described_class).to receive(:ensure_logged_in).with(start_service: true).and_return(true)
+
+      expect(quietly { described_class.bootstrap_login(first_install: true) }).to be true
+    end
+
+    it 'is false when the first-install login fails' do
+      allow(described_class).to receive(:ensure_logged_in).with(start_service: true).and_return(false)
+
+      expect(quietly { described_class.bootstrap_login(first_install: true) }).to be false
     end
   end
 

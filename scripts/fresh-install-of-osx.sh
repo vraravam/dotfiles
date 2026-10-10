@@ -348,35 +348,12 @@ _install_homebrew() {
   _current_section='Install Homebrew'; _current_section_manual=1
   step_start
   _step_header "$(yellow 'Installing homebrew') into '$(cyan "${HOMEBREW_PREFIX}")'"
-  if is_zero_string "${HOMEBREW_PREFIX}"; then
-    error "'HOMEBREW_PREFIX' env var is not set; something is wrong. Please correct before retrying!"
+  # Installs Homebrew unless it is already there (see HomebrewInstall in
+  # scripts/utilities/homebrew_install.rb). Everything after depends on it, so a failure is fatal;
+  # the reason has already been recorded.
+  if ! call_utility --truthy HomebrewInstall.run; then
+    error 'Homebrew could not be installed'
     exit 1  # Irrecoverable failure
-  fi
-
-  if ! command_exists brew; then
-    # Prep for installing homebrew
-    sudo mkdir -p "${HOMEBREW_PREFIX}/tmp" "${HOMEBREW_PREFIX}/repository" "${HOMEBREW_PREFIX}/plugins" "${HOMEBREW_PREFIX}/bin"
-    sudo chown -fR "${USER}":admin "${HOMEBREW_PREFIX}"
-    chmod u+w "${HOMEBREW_PREFIX}"
-
-    local install_script_file
-    install_script_file="$(mktemp)"
-    # Cache-busting: add no-cache headers and timestamp to ensure we get the latest Homebrew installer
-    if curl "${_cache_bust_headers[@]}" "${_curl_retry_opts[@]}" -fsSL "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh?$(/bin/date +%s)" -o "${install_script_file}"; then
-      NONINTERACTIVE=1 bash "${install_script_file}" || {
-        rm -f "${install_script_file}"
-        error 'Homebrew installation failed'
-        exit 1
-      }
-      rm -f "${install_script_file}"
-      success 'Successfully installed homebrew'
-    else
-      rm -f "${install_script_file}"
-      error 'Failed to download Homebrew installation script'
-      exit 1
-    fi
-  else
-    info "Skipping installation of $(yellow 'homebrew') -- already installed."
   fi
 
   # Ensure homebrew's environment variables are set correctly for this session.
@@ -402,105 +379,19 @@ _install_homebrew() {
   step_end
 }
 
-# Set the default login shell to Homebrew's zsh.
-# macOS ships with /bin/zsh but Homebrew's zsh is newer and managed independently.
-# chsh requires the target shell to be listed in /etc/shells -- add it if absent.
-# Without this, iTerm2's "Login shell" setting uses /bin/zsh (system) even when
-# /opt/homebrew/bin/zsh is on PATH, and ${SHELL} stays /bin/zsh after a fresh install.
+# Set the default login shell to Homebrew's zsh (see DefaultShell in
+# scripts/utilities/default_shell.rb for the /etc/shells and chsh handling). Returns non-zero
+# when it could not be fully done; the failure is already recorded in the summary.
 _set_default_shell() {
   _current_section='Set default shell'; _current_section_manual=1
   step_start
   _step_header "$(yellow 'Setting default shell to Homebrew zsh')"
-
-  local _brew_zsh="${HOMEBREW_PREFIX}/bin/zsh"
-
-  if ! is_executable "${_brew_zsh}"; then
-    _record_error "Homebrew zsh not found at '$(cyan "${_brew_zsh}")' -- skipping default shell change."
-    step_end
-    return 1
-  fi
-
-  # /etc/shells must list the shell before chsh will accept it.
-  if ! /usr/bin/grep -qxF "${_brew_zsh}" /etc/shells; then
-    info "Adding '$(yellow "${_brew_zsh}")' to /etc/shells"
-    # A failure is recorded as an error (not fatal): the chsh below then fails and is recorded too.
-    if ! echo "${_brew_zsh}" | sudo tee -a /etc/shells >/dev/null; then
-      _record_error "Failed to add '$(cyan "${_brew_zsh}")' to /etc/shells"
-    fi
-  else
-    info "'$(yellow "${_brew_zsh}")' already in /etc/shells -- skipping."
-  fi
-
-  # Check the user's configured default shell (not the current ${SHELL} env var).
-  # ${SHELL} reflects the current terminal session; dscl shows what chsh configured.
-  # This ensures we only run chsh if the login shell for future sessions needs updating.
-  local configured_shell
-  configured_shell="$(dscl . -read ~ UserShell | awk '{print $NF}')"
-  if [[ "${configured_shell}" == "${_brew_zsh}" ]]; then
-    info "Default shell is already configured as '$(cyan "${_brew_zsh}")' -- skipping."
-  else
-    if chsh -s "${_brew_zsh}"; then
-      success "Default shell changed to '$(cyan "${_brew_zsh}")'."
-    else
-      _record_warning "Failed to change default shell to '$(cyan "${_brew_zsh}")'. You may need to run '$(cyan "chsh -s ${_brew_zsh}")' manually after the installation completes."
-    fi
-  fi
-
+  call_utility --truthy DefaultShell.run || { step_end; return 1; }
   step_end
 }
 
-# Ensures keybase is installed and the current user is logged in.
-# Thin wrapper that delegates to Ruby Keybase.ensure_logged_in.
-# Returns non-zero on failure so callers can check the exit code.
-#
-# IMPORTANT: This is called after load_zsh_configs, which re-sources .shellrc
-# after unfunctioning the guard. By that point, DOTFILES_DIR exists (cloned by
-# _clone_dot_files_repo), so call_utility can find scripts/call-utility.rb.
-_ensure_keybase_logged_in() {
-  if ! command_exists keybase; then
-    error "'keybase' command not found in the PATH. Aborting!!!"
-    return 1
-  fi
-
-  # Keybase.app's kbnm (native messaging) installer writes into each installed browser's
-  # Application Support directory on first launch (e.g. .../Google/Chrome) to register its
-  # browser-extension messaging host. Google's own auto-update tooling (Keystone/
-  # GoogleSoftwareUpdate) is known to sometimes leave '~/Library/Application Support/Google'
-  # owned by a different user (observed on a vanilla-OS run) -- if so, kbnm's mkdir fails
-  # with "operation not permitted" and Keybase.app pops up a blocking error dialog, which
-  # can stall this non-interactive bootstrap since there is nobody around to dismiss it.
-  # Fix ownership defensively before launching, using the exact fix the dialog itself
-  # suggests. sudo is already primed (keep_sudo_alive runs earlier in main()).
-  local google_support_dir="${HOME}/Library/Application Support/Google"
-  if is_directory "${google_support_dir}" && [[ "$(stat -f '%Su' "${google_support_dir}")" != "${USER}" ]]; then
-    info "Fixing ownership of '$(cyan "${google_support_dir}")' (was owned by a different user)"
-    sudo chown -R "${USER}:staff" "${google_support_dir}"
-  fi
-
-  # The keybase CLI talks to a background service (keybased) that is normally started
-  # when Keybase.app first launches -- e.g. via the login item registered by the
-  # Brewfile's postinstall hook, which only takes effect on the *next* login. On a
-  # single-session vanilla-OS run the user never logs out/in, so the service is never
-  # started, and 'keybase login' fails with "dial unix .../keybased.sock: no such file
-  # or directory". Launch the app hidden (no Dock/focus steal) and wait briefly for the
-  # service to come up before attempting login.
-  if ! keybase status &>/dev/null; then
-    info 'Starting Keybase service'
-    open -g -a Keybase
-    local i
-    for ((i = 0; i < 15; i++)); do
-      if keybase status &>/dev/null; then
-        break
-      fi
-      sleep 1
-    done
-  fi
-
-  call_utility --truthy Keybase.ensure_logged_in
-}
-
 # Resurrects the home and browser-profiles repos via resurrect-repositories.rb, using
-# a YAML config generated on the fly by generate-bootstrap-repositories-yaml.rb from
+# a YAML config generated on the fly by GenerateBootstrapRepositoriesYaml (scripts/utilities/generate_bootstrap_repositories_yaml.rb) from
 # whichever KEYBASE_*_REPO_NAME/ENCRYPTED_*_REPO_URL env vars are configured (see that
 # script's own header comment for how the primary vs fallback remote is chosen).
 # Replaces the old hand-rolled _clone_home_repo/_clone_profiles_repo/_clone_backup_repo/
@@ -519,12 +410,12 @@ _resurrect_bootstrap_repos() {
   # clone_repo_into itself does not ensure Keybase is logged in -- only needed here if
   # at least one of the two repos actually has Keybase enabled.
   if is_non_zero_string "${KEYBASE_HOME_REPO_NAME:-}" || is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME:-}"; then
-    _ensure_keybase_logged_in || _record_warning 'Keybase login failed -- continuing without Keybase-based backups'
+    call_utility --truthy Keybase.ensure_logged_in --start_service=true || _record_warning 'Keybase login failed -- continuing without Keybase-based backups'
   fi
 
   local bootstrap_repos_yaml="${HOME}/.bootstrap-repositories.yml"
   _step_header 'Generating bootstrap repositories config'
-  if COLUMNS="${COLUMNS}" generate-bootstrap-repositories-yaml.rb -o "${bootstrap_repos_yaml}"; then
+  if call_utility --truthy GenerateBootstrapRepositoriesYaml.run "--output_file=${bootstrap_repos_yaml}"; then
     _step_header 'Resurrecting home/profiles repos'
     if ! COLUMNS="${COLUMNS}" resurrect-repositories.rb -r "${bootstrap_repos_yaml}"; then
       _record_warning 'Failed to fully resurrect home/profiles repos -- see output above for details'
@@ -685,27 +576,12 @@ main() {
   # On FIRST_INSTALL: validate that the curl-downloaded ~/.shellrc matches the repo version
   # BEFORE install-dotfiles.rb runs (which would move the curl-downloaded version into the
   # repo, making them identical). If they differ, the GitHub-cached version is stale and
-  # will cause failures when .zshrc sources it (e.g., missing parameter guards).
-  # Abort early and instruct the user to wait for GitHub's cache to refresh.
-  # Note: This only runs on vanilla OS (FIRST_INSTALL set). On pre-configured machines,
-  # ~/.shellrc is already a symlink to the repo version, so this check is not needed.
-  # Note: Use raw zsh tests here -- utility functions may be from the stale curl-downloaded
-  # .shellrc, so we avoid depending on them for the validation logic itself.
-  if [[ -n "${FIRST_INSTALL:-}" && -n "${DOTFILES_DIR:-}" && -d "${DOTFILES_DIR}" ]]; then
-    if ! /usr/bin/diff -q "${HOME}/.shellrc" "${DOTFILES_DIR}/files/--HOME--/.shellrc" >/dev/null 2>&1; then
-      echo "ERROR: [FIRST_INSTALL] The curl-downloaded ~/.shellrc differs from the repo version." >&2
-      echo "This indicates GitHub's raw.githubusercontent.com cache is stale." >&2
-      echo "" >&2
-      echo "Diff output:" >&2
-      /usr/bin/diff -u "${HOME}/.shellrc" "${DOTFILES_DIR}/files/--HOME--/.shellrc" | head -50 >&2
-      echo "" >&2
-      echo "Wait 5-10 minutes for the cache to refresh, then re-run this script." >&2
-      echo "Alternatively, manually copy the repo version:" >&2
-      echo "  cp '${DOTFILES_DIR}/files/--HOME--/.shellrc' '${HOME}/.shellrc'" >&2
-      echo "  source '${HOME}/.shellrc'" >&2
-      echo "  ${0} \$@" >&2
-      exit 1
-    fi
+  # will cause failures when .zshrc sources it (e.g., missing parameter guards); ShellrcCheck
+  # explains what to do. Invoked via the script directly, not call_utility: that function is
+  # defined in the very .shellrc that may be stale. Skipped (returns success) when this is not
+  # a first install.
+  if ! "${DOTFILES_DIR}/scripts/call-utility.rb" --truthy 'ShellrcCheck.matches_repo?'; then
+    exit 1
   fi
 
   # run this outside of the clone function, since it needs to be run irrespective of whether the dotfiles repo was pre-existing or not
@@ -786,36 +662,16 @@ main() {
   # Log into Keybase if KEYBASE_HOME_REPO_NAME/KEYBASE_PROFILES_REPO_NAME (see
   # scripts/utilities/keybase.rb) enable it. Coexists with the encrypted-backup setup
   # below -- see KeybaseMigration.md. This is a readiness/login step only; the actual
-  # clone attempt (which also calls _ensure_keybase_logged_in defensively) happens in
+  # clone attempt (which also logs in defensively) happens in
   # _resurrect_bootstrap_repos below.
   _current_section='Setup Keybase'
   step_start
   section_header "$(yellow 'Setup Keybase')"
-  if is_zero_string "${KEYBASE_HOME_REPO_NAME:-}" && is_zero_string "${KEYBASE_PROFILES_REPO_NAME:-}"; then
-    debug "Neither 'KEYBASE_HOME_REPO_NAME' nor 'KEYBASE_PROFILES_REPO_NAME' env var is set -- skipping Keybase setup"
-  elif ! command_exists keybase; then
-    info "Skipping Keybase setup since '$(yellow 'keybase')' is not installed"
-  elif call_utility --truthy Keybase.username; then
-    # Already logged in (from a previous run, or 'keybase login' run manually) --
-    # sync silently every time, never re-ask. This is what makes re-running this
-    # idempotent script pleasant: once set up, it just stays set up.
-    success 'Already logged into Keybase'
-  elif is_first_install; then
-    # Not logged in yet -- attempt login only on the true first-time vanilla-OS
-    # bootstrap, non-interactively (no y/N gate). Re-runs on an already-configured
-    # machine must NOT re-litigate this every time (see the 'else' branch below) --
-    # that would turn a script designed to be safely re-run into one that blocks
-    # on a login attempt every single run.
-    if _ensure_keybase_logged_in; then
-      success 'Successfully logged into Keybase'
-    else
-      _record_warning 'Keybase login failed -- continuing without Keybase-based backups'
-    fi
-  else
-    # Pre-configured machine, not logged in, not FIRST_INSTALL: skip silently
-    # rather than prompting on every maintenance re-run.
-    info "Skipping Keybase login -- not logged in. Run 'keybase login' manually, then re-run this script, to enable it."
-  fi
+  # Logs in only on a vanilla macOS and only when Keybase is configured and installed; see
+  # Keybase.bootstrap_login for the skip rules on a pre-configured machine.
+  local keybase_first_install_flag="false"
+  if is_first_install; then keybase_first_install_flag="true"; fi
+  call_utility --truthy Keybase.bootstrap_login "--first_install=${keybase_first_install_flag}" || _record_warning 'Keybase login failed -- continuing without Keybase-based backups'
   step_end
 
   # Verify encrypted-backup mechanism is ready (gpg installed, Keychain passphrase set --

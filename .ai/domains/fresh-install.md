@@ -306,6 +306,17 @@ missing, duplicated, or no longer splits the file, and checks `Brew.base_brewfil
 real Brewfile. Do not remove or rename the sentinel line -- it is load-bearing for the vanilla OS
 install path.
 
+## Moving Steps of `fresh-install-of-osx.sh` Into Ruby
+
+The script stays a shell script (it must run before Ruby utilities or the dotfiles repository exist).
+Once the repository is cloned, self-contained steps move into Ruby modules under `scripts/utilities/`
+and are invoked with `call_utility [--truthy] <Module.method> [--key=value ...]` (allow-list in
+`scripts/call-utility.rb`). Pattern: the module's `run` wraps its work in `Logging.run_script`, returns a
+boolean, and records its own warnings/errors; the shell step keeps only the step header and
+`|| _record_warning '...'` for the boolean. Existing examples: `BrewBundle.run`, `Keybase.bootstrap_login`,
+`DefaultShell.run`, `HomebrewInstall.run`, `ShellrcCheck.matches_repo?`. Anything that must work with a possibly stale
+`.shellrc` (before the `call_utility` function can be trusted) invokes `scripts/call-utility.rb` directly.
+
 ## `capture-prefs.rb` Timestamp Check
 
 `capture-prefs.rb` validates that the backup preferences are not stale relative to
