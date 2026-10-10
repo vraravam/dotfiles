@@ -279,23 +279,32 @@ call time to compute the duration; a pre-formatted string breaks that arithmetic
 
 ## Brewfile Truncation on `FIRST_INSTALL`
 
-On a vanilla OS run (`FIRST_INSTALL=1`), `brew bundle` is run only against the
-**base section** of the Brewfile -- lines up to (but not including) the first
-line containing a `FIRST_INSTALL` guard. This keeps the initial install fast by
-skipping optional heavy packages.
-
-The Brewfile must have a sentinel comment line that contains the text
-`FIRST_INSTALL` to mark the end of the base section. The script truncates at
-that line using `sed`:
+The Brewfile install lives in Ruby (`BrewBundle` in `scripts/utilities/brew_bundle.rb`, built on the
+pure command wrappers in `Brew`). `fresh-install-of-osx.sh` calls it once the dotfiles repository is
+cloned and `install-dotfiles.rb` has linked `~/Brewfile`:
 
 ```zsh
-brewfile_content="$(sed "/^[^#].*FIRST_INSTALL/q" "${HOMEBREW_BUNDLE_FILE}")"
-brewfile_content="${brewfile_content%$'\n'*FIRST_INSTALL*}"  # strip the guard line itself
+call_utility --truthy BrewBundle.run "--first_install=${first_install_flag}" || _record_warning '...';
 ```
 
-On a pre-configured machine (no `FIRST_INSTALL`), the full Brewfile is used.
-Do not remove or rename the `FIRST_INSTALL` guard line in the Brewfile -- it is
-load-bearing for the vanilla OS install path.
+On a vanilla OS run (`FIRST_INSTALL=1`), `brew bundle` is run only against the **base section** of the
+Brewfile -- the lines above the sentinel. This keeps the initial install fast by skipping optional
+heavy packages; the whole Brewfile is then installed in a detached background job (with
+`FIRST_INSTALL` emptied in the child; its output goes to `~/Downloads/brew-bundle-full-install.log`).
+On a pre-configured machine (no `FIRST_INSTALL`) the whole Brewfile is used, and the install is skipped
+when `brew bundle check` already passes. A failure makes `BrewBundle.run` return false; the shell records
+it as a warning and carries on.
+
+The Brewfile must have exactly one sentinel **comment** line that starts with `# FIRST_INSTALL:` to mark
+the end of the base section. `Brew.base_brewfile_content` returns everything above it (nil when the
+sentinel is missing, in which case `BrewBundle` warns and installs the whole file as the base section).
+
+The sentinel is a comment, so the match must not exclude comment lines. (An earlier `sed` pattern,
+`/^[^#].*FIRST_INSTALL/q`, did exactly that: it never matched, so the whole Brewfile was installed as the
+"base section" and the split was a silent no-op.) `spec/brewfile_spec.rb` fails if the sentinel is
+missing, duplicated, or no longer splits the file, and checks `Brew.base_brewfile_content` against the
+real Brewfile. Do not remove or rename the sentinel line -- it is load-bearing for the vanilla OS
+install path.
 
 ## `capture-prefs.rb` Timestamp Check
 

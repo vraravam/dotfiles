@@ -461,7 +461,7 @@ Both `~/.ssh/config` and `templates/ssh-config.template` must have this comment 
   ```
 - If any new files have been added or existing files have been deleted/renamed in the `files` folder, then add instructions to run `install-dotfiles.rb`.
 - If any modifications touch the zsh boot‑up files (`.zshenv`, `.zshrc`, `.zlogin`, `.aliases`, `.shellrc`, etc.) or other scripts that are sourced during a terminal start‑up, add a note that the user should quit and restart the Terminal/iTerm application to reload the configuration.
-- If the staged changes involve fresh‑install logic (e.g., modifications to `fresh-install-of-osx.sh` or related scripts), advise running the fresh‑install script in an idempotent manner, e.g. `./fresh-install-of-osx.sh` (it will guard against already‑configured machines).
+- If the staged changes involve fresh‑install logic (e.g., modifications to `fresh-install-of-osx.sh` or related scripts), decide whether an already‑set‑up machine gains anything from a re‑run. Advise `./fresh-install-of-osx.sh;` (it is idempotent) only when a re‑run actually repairs or updates something there (e.g., it migrates existing state, or applies a new setting to a configured machine). When the change only affects what a vanilla install does, say so instead: "nothing to do on a machine that is already set up; applies the next time the script runs". Never list a re‑run as an adoption step just because the script was edited.
 
 ### Amending a Commit -- Eliminate Intermediate-State Cruft
 

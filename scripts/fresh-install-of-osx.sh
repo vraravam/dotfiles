@@ -382,63 +382,13 @@ _install_homebrew() {
   # Ensure homebrew's environment variables are set correctly for this session.
   eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
 
-  # Taps are no longer used in the FIRST_INSTALL base Brewfile section.
-  # The tap commands below are kept for reference in case a tap is needed again.
-  # /usr/bin/grep -E "^tap " "${HOMEBREW_BUNDLE_FILE}" | awk '{print $2}' | tr -d "'\"" | while read -r tap_name; do
-  #   brew tap "${tap_name}" || true
-  # done
-
-  # Note: Do not set the 'FIRST_INSTALL' in this script - since its supposed to run idempotently. Also, don't run the cleanup of pre-installed brews/casks (for the same reason)
-  # Run brew bundle install if check fails. Let brew handle idempotency. Continue script even if bundle fails.
-  # Note: Split into taps, formulae and casks separately so that curl doesnt timeout, and failures are isolated and reported clearly.
-  # Note: Each pass includes the Brewfile preamble (non tap/brew/cask lines) to preserve Ruby DSL context (e.g. cask_args, is_arm).
-  # Note: For FIRST_INSTALL, only process lines up to the first 'FIRST_INSTALL' guard in the Brewfile (which marks the end of the base install section).
-  local _brew_bundle_exit=0
-  if is_first_install; then
-    local brewfile_content
-    brewfile_content="$(sed "/^[^#].*FIRST_INSTALL/q" "${HOMEBREW_BUNDLE_FILE}")"
-    brewfile_content="${brewfile_content%$'\n'*FIRST_INSTALL*}"  # strip the FIRST_INSTALL guard line itself
-    # First pass: install taps and already-trusted formulae/casks
-    # Suppress stderr since untrusted-tap errors are expected and fixed by second pass
-    brew bundle check -v || brew bundle install -q --file=- <<<"${brewfile_content}" || _brew_bundle_exit=$?
-  else
-    # First pass: install taps and already-trusted formulae/casks
-    # Suppress stderr since untrusted-tap errors are expected and fixed by second pass
-    brew bundle check -v || brew bundle install -q || _brew_bundle_exit=$?
-  fi
-
-  if [[ "${_brew_bundle_exit}" -eq 0 ]]; then
-    success 'Successfully installed cmd-line and gui apps using homebrew'
-  else
-    _record_warning 'Homebrew bundle install encountered errors; continuing...'
-  fi
-
-  # Homebrew cask 'postinstall:' hooks only run when 'brew bundle install' actually
-  # (re)installs the cask -- if 'brew bundle check' above already reported success (e.g.
-  # Keybase.app was already present from an earlier partial run of this idempotent
-  # script), postinstall never fires, silently leaving the 'keybase' CLI symlink missing
-  # even though the app itself is installed and usable. The Brewfile's own postinstall
-  # for this cask already creates these symlinks too -- this is a redundant safety net
-  # for exactly that postinstall-skipped case. Both are safe to run every time since
-  # 'ln -sf' is idempotent. No KEYBASE_*_REPO_NAME gate needed here -- if the cask was
-  # never installed (Keybase disabled), the directory check below simply never matches.
-  if is_directory '/Applications/Keybase.app'; then
-    ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/keybase' "${HOMEBREW_PREFIX}/bin/keybase"
-    ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase' "${HOMEBREW_PREFIX}/bin/git-remote-keybase"
-  fi
-
-  if is_first_install; then
-    # The base section is done; fork the full Brewfile install in the background so
-    # optional/heavy packages install without blocking the rest of this run.
-    # FIRST_INSTALL is unset in the subshell so brew bundle runs the complete Brewfile.
-    local _full_bundle_log="${HOME}/Downloads/brew-bundle-full-install.log"
-    # Temporarily disable ERR trap: background job failures should not abort the main script.
-    # The background job logs to _full_bundle_log; users can check that file for issues.
-    trap - ERR
-    FIRST_INSTALL= brew bundle >>"${_full_bundle_log}"  2>&1 &|
-    trap '_cleanup_and_exit "${LINENO}"' ERR
-    info "Full Brewfile install running in background (log: '$(cyan "${_full_bundle_log}")')"
-  fi
+  # Install everything in the Brewfile (see BrewBundle in scripts/utilities/brew_bundle.rb): on FIRST_INSTALL only
+  # the base section above the Brewfile's '# FIRST_INSTALL:' line first and the rest in a background job, otherwise
+  # the whole Brewfile. Deliberately never sets FIRST_INSTALL itself (this script runs idempotently) and never
+  # cleans up pre-installed brews/casks. A failure is recorded and the script carries on.
+  local first_install_flag="false"
+  if is_first_install; then first_install_flag="true"; fi
+  call_utility --truthy BrewBundle.run "--first_install=${first_install_flag}" || _record_warning 'Homebrew bundle install encountered errors; continuing...'
 
   # Note: load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)
   DEBUG=true load_zsh_configs

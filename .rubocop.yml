@@ -74,6 +74,18 @@ Style/SlicingWithRange:
 Style/TrailingCommaInArrayLiteral:
   EnforcedStyleForMultiline: comma
 
+# The following layout cops are owned by rufo: its output for chained calls, multi-line
+# 'x ||= begin ... end' blocks and multi-line first arguments is not something rubocop's
+# alignment styles can express, so enforcing them here would make rufo and rubocop fight.
+Layout/MultilineMethodCallIndentation:
+  Enabled: false
+
+Layout/BeginEndAlignment:
+  Enabled: false
+
+Layout/FirstArgumentIndentation:
+  Enabled: false
+
 # Brewfile uses shell variable interpolation (${VAR}), not Ruby interpolation
 Style/StringLiterals:
   Exclude:

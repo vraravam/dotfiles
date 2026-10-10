@@ -46,6 +46,7 @@ Setup is split into two guides:
 - **[Advanced.md](Advanced.md)** — Ongoing maintenance, encrypted preference backups (Keybase and/or `gpg` + `git bundle`), per-repo customizations, and staying up-to-date with upstream
 - **[Extras.md](Extras.md)** — Reference documentation for every utility script
 - **[TechnicalDeepDive.md](TechnicalDeepDive.md)** — Internal architecture, design decisions, and implementation details
+- **[ToRevisit.md](ToRevisit.md)** — Evaluations and experiments that were parked (zerobrew, stout, deja, postponed decisions), with the findings and what would make them worth another look
 - **[CONTRIBUTING.md](CONTRIBUTING.md)** — Guidelines for contributing code, documentation, and reporting issues
 - **[CHANGELOG.md](CHANGELOG.md)** — Version history and upgrade notes
 

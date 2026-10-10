@@ -100,7 +100,7 @@ brew 'zsh-patina',  # Rust-based syntax highlighter for cli
 # casks pulled in for base configs (if these are absent, you will get errors and things won't work)
 cask 'iterm2@beta'
 
-# FIRST_INSTALL: While re-imaging the OS or setting up for the first time, install only the bare minimum apps/utilities above this line so that the rest of the backup restoration can proceed faster.
+# FIRST_INSTALL: While re-imaging the OS or setting up for the first time, install only the bare minimum apps/utilities above this line so that the rest of the backup restoration can proceed faster. (The install scripts cut this file at this exact line -- keep the '# FIRST_INSTALL:' prefix.)
 
 # formulae pulled in for advanced configs (these are optional, but still recommended)
 brew 'bat'

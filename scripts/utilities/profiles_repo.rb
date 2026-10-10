@@ -132,7 +132,6 @@ module ProfilesRepo
     end
 
     cutoff = (Time.now - days * 24 * 3600).strftime('%Y-%m-%d')
-    pruned_count = 0
 
     git = _profiles_git
     tracked = git.ls_files('*/zen-sessions-backup/zen-sessions-*.jsonlz4')

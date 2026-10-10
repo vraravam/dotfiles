@@ -40,12 +40,9 @@ RSpec.describe LaunchServices do
     end
 
     let(:tmp) { @tmp }
-    let(:live) do
-      [
-        { 'LSHandlerURLScheme' => 'https', 'LSHandlerRoleAll' => 'com.apple.safari', 'LSHandlerModificationDate' => 1 },
-        { 'LSHandlerContentType' => 'public.plain-text', 'LSHandlerRoleAll' => 'com.vscodium' }
-      ]
-    end
+    let(:safari_https) { { 'LSHandlerURLScheme' => 'https', 'LSHandlerRoleAll' => 'com.apple.safari', 'LSHandlerModificationDate' => 1 } }
+    let(:vscodium_text) { { 'LSHandlerContentType' => 'public.plain-text', 'LSHandlerRoleAll' => 'com.vscodium' } }
+    let(:live) { [safari_https, vscodium_text] }
 
     def write_xml(hash, path)
       json = tmp.join('in.json')
