@@ -68,13 +68,13 @@ module Keybase
   end
 
   # The 'Setup Keybase' step of the bootstrap: a readiness/login step only, the clone itself is
-  # done later by the repository resurrection. Logging in is attempted only on the first-time
-  # vanilla-OS install, non-interactively (no y/N gate); re-runs on an already-configured machine
-  # must not block on a login attempt every time, so they just report and carry on.
+  # done later by the repository resurrection. Self-contained: it first asks Keybase ('keybase
+  # status --json') whether an account is already logged in and, if so, just carries on, which
+  # keeps re-runs quiet. Only when nobody is logged in (or the status cannot be read) does it
+  # attempt the login, starting the Keybase service first if it is not running.
   #
-  # @param first_install [Boolean] True on a vanilla macOS.
-  # @return [Boolean] false only when a login was attempted and failed.
-  def bootstrap_login(first_install: false)
+  # @return [Boolean] false only when a login was attempted and failed (recorded as a warning).
+  def bootstrap_login
     unless configured?
       Logging.debug "Neither 'KEYBASE_HOME_REPO_NAME' nor 'KEYBASE_PROFILES_REPO_NAME' env var is set -- skipping Keybase setup"
       return true
@@ -85,19 +85,15 @@ module Keybase
       return true
     end
 
-    # Already logged in (from a previous run, or 'keybase login' run manually): never re-ask,
-    # which is what keeps the idempotent re-run pleasant.
-    if username
+    if _logged_in?
       Logging.success 'Already logged into Keybase'
       return true
     end
 
-    unless first_install
-      Logging.info "Skipping Keybase login -- not logged in. Run 'keybase login' manually, then re-run this script, to enable it."
-      return true
+    unless ensure_logged_in(start_service: true)
+      Logging.record_warning 'Keybase login failed -- continuing without Keybase-based backups'
+      return false
     end
-
-    return false unless ensure_logged_in(start_service: true)
 
     Logging.success 'Successfully logged into Keybase'
     true
@@ -306,6 +302,21 @@ module Keybase
   end
 
   private_class_method :_fix_google_support_ownership
+
+  # Whether keybase already has a logged-in account. Any error while asking (service not
+  # running, command failure, unexpected output) is trapped and counts as "not logged in", so the
+  # caller falls through to the login prompt instead of aborting.
+  #
+  # @return [Boolean]
+  def _logged_in?
+    status = _status
+    status.is_a?(Hash) && status['LoggedIn'] == true
+  rescue StandardError => e
+    Logging.debug "Could not determine the keybase login status (#{e.message}) -- treating as not logged in"
+    false
+  end
+
+  private_class_method :_logged_in?
 
   # Parses 'keybase status --json'. Not memoized -- must reflect login state
   # freshly after ensure_logged_in performs an interactive login.

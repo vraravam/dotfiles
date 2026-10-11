@@ -273,48 +273,73 @@ RSpec.describe Keybase do
     end
 
     before do
+      stub_const('EnvVars::KEYBASE_USERNAME', nil)
       allow(described_class).to receive(:configured?).and_return(true)
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
-      allow(described_class).to receive(:username).and_return(nil)
+      allow(described_class).to receive(:_status).and_return('LoggedIn' => false, 'Username' => '')
     end
 
     it 'skips, successfully, when Keybase is not configured' do
       allow(described_class).to receive(:configured?).and_return(false)
       expect(described_class).not_to receive(:ensure_logged_in)
 
-      expect(quietly { described_class.bootstrap_login(first_install: true) }).to be true
+      expect(quietly { described_class.bootstrap_login }).to be true
     end
 
     it 'skips, successfully, when keybase is not installed' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(false)
       expect(described_class).not_to receive(:ensure_logged_in)
 
-      expect(quietly { described_class.bootstrap_login(first_install: true) }).to be true
+      expect(quietly { described_class.bootstrap_login }).to be true
     end
 
-    it 'accepts an existing login without asking again' do
-      allow(described_class).to receive(:username).and_return('someuser')
+    it 'carries on without prompting when an account is already logged in' do
+      allow(described_class).to receive(:_status).and_return('LoggedIn' => true, 'Username' => 'someuser')
       expect(described_class).not_to receive(:ensure_logged_in)
 
-      expect(quietly { described_class.bootstrap_login(first_install: true) }).to be true
+      expect(quietly { described_class.bootstrap_login }).to be true
     end
 
-    it 'does not attempt a login on a pre-configured machine' do
+    it 'does not require the logged-in account to be KEYBASE_USERNAME' do
+      stub_const('EnvVars::KEYBASE_USERNAME', 'someuser')
+      allow(described_class).to receive(:_status).and_return('LoggedIn' => true, 'Username' => 'other')
       expect(described_class).not_to receive(:ensure_logged_in)
 
-      expect(quietly { described_class.bootstrap_login(first_install: false) }).to be true
+      expect(quietly { described_class.bootstrap_login }).to be true
     end
 
-    it 'logs in, starting the service, on a first install' do
+    it 'logs in, starting the service, when nobody is logged in' do
       expect(described_class).to receive(:ensure_logged_in).with(start_service: true).and_return(true)
 
-      expect(quietly { described_class.bootstrap_login(first_install: true) }).to be true
+      expect(quietly { described_class.bootstrap_login }).to be true
     end
 
-    it 'is false when the first-install login fails' do
-      allow(described_class).to receive(:ensure_logged_in).with(start_service: true).and_return(false)
+    it 'treats an unreadable status (service not running) as not logged in' do
+      allow(described_class).to receive(:_status).and_return(nil)
+      expect(described_class).to receive(:ensure_logged_in).with(start_service: true).and_return(true)
 
-      expect(quietly { described_class.bootstrap_login(first_install: true) }).to be false
+      expect(quietly { described_class.bootstrap_login }).to be true
+    end
+
+    it 'traps an error while reading the status and falls through to the login' do
+      allow(described_class).to receive(:_status).and_raise(Errno::ENOENT, 'keybase')
+      expect(described_class).to receive(:ensure_logged_in).with(start_service: true).and_return(true)
+
+      expect(quietly { described_class.bootstrap_login }).to be true
+    end
+
+    it 'treats status output that is not a hash as not logged in' do
+      allow(described_class).to receive(:_status).and_return([])
+      expect(described_class).to receive(:ensure_logged_in).with(start_service: true).and_return(true)
+
+      expect(quietly { described_class.bootstrap_login }).to be true
+    end
+
+    it 'is false, recording a warning, when the login fails' do
+      allow(described_class).to receive(:ensure_logged_in).with(start_service: true).and_return(false)
+      expect(Logging).to receive(:record_warning).with(/Keybase login failed/)
+
+      expect(quietly { described_class.bootstrap_login }).to be false
     end
   end
 

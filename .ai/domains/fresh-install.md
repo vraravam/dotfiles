@@ -284,7 +284,7 @@ pure command wrappers in `Brew`). `fresh-install-of-osx.sh` calls it once the do
 cloned and `install-dotfiles.rb` has linked `~/Brewfile`:
 
 ```zsh
-call_utility --truthy BrewBundle.run "--first_install=${first_install_flag}" || _record_warning '...';
+call_utility --truthy BrewBundle.run || true;
 ```
 
 On a vanilla OS run (`FIRST_INSTALL=1`), `brew bundle` is run only against the **base section** of the
@@ -292,8 +292,7 @@ Brewfile -- the lines above the sentinel. This keeps the initial install fast by
 heavy packages; the whole Brewfile is then installed in a detached background job (with
 `FIRST_INSTALL` emptied in the child; its output goes to `~/Downloads/brew-bundle-full-install.log`).
 On a pre-configured machine (no `FIRST_INSTALL`) the whole Brewfile is used, and the install is skipped
-when `brew bundle check` already passes. A failure makes `BrewBundle.run` return false; the shell records
-it as a warning and carries on.
+when `brew bundle check` already passes. A failure makes `BrewBundle.run` return false after recording its own warning, and the script carries on.
 
 The Brewfile must have exactly one sentinel **comment** line that starts with `# FIRST_INSTALL:` to mark
 the end of the base section. `Brew.base_brewfile_content` returns everything above it (nil when the
@@ -308,14 +307,39 @@ install path.
 
 ## Moving Steps of `fresh-install-of-osx.sh` Into Ruby
 
+See [TechnicalDeepDive.md § 13](../../TechnicalDeepDive.md#13-why-fresh-install-of-osxsh-and-osx-defaultssh-remain-shell-scripts) for the rationale and the table of which step is which module (kept there only, to avoid two copies).
+
 The script stays a shell script (it must run before Ruby utilities or the dotfiles repository exist).
 Once the repository is cloned, self-contained steps move into Ruby modules under `scripts/utilities/`
 and are invoked with `call_utility [--truthy] <Module.method> [--key=value ...]` (allow-list in
 `scripts/call-utility.rb`). Pattern: the module's `run` wraps its work in `Logging.run_script`, returns a
 boolean, and records its own warnings/errors; the shell step keeps only the step header and
-`|| _record_warning '...'` for the boolean. Existing examples: `BrewBundle.run`, `Keybase.bootstrap_login`,
-`DefaultShell.run`, `HomebrewInstall.run`, `ShellrcCheck.matches_repo?`. Anything that must work with a possibly stale
+`|| _record_warning '...'` for the boolean. A module that genuinely needs to know about a vanilla install (`BrewBundle`, `PreferencesRestore`) defaults `first_install:` to `EnvVars.first_install?`
+(the `FIRST_INSTALL` env var the script's caller exports and children inherit), so the shell computes and
+passes no flag. Existing examples: `BrewBundle.run`, `Keybase.bootstrap_login`,
+`DefaultShell.run`, `HomebrewInstall.run`, `ShellrcCheck.matches_repo?`, `BootstrapRepos.run`,
+`GpgEncrypt.bootstrap_setup`, `PreferencesRestore.run`. Anything that must work with a possibly stale
 `.shellrc` (before the `call_utility` function can be trusted) invokes `scripts/call-utility.rb` directly.
+
+## Hand-Off of Recorded Issues From Ruby to the Install Script
+
+`fresh-install-of-osx.sh` keeps its own warnings/errors summary (the `_step_warnings` / `_step_errors`
+arrays) and builds its closing notification from it. Because steps call Ruby (`call_utility`, or a script
+such as `capture-prefs.rb`) and then return to the shell, a Ruby process can neither write into those
+arrays nor can the shell read a child's in-memory `Logging` state. **This file-based hand-off exists only
+because of that shell -> Ruby -> shell jump**; a script that is Ruby end to end needs none of it (it reads
+`Logging.step_warnings`/`step_errors` directly).
+
+- `main()` exports `_DOTFILES_ISSUES_FILE` (`${TMPDIR}/dotfiles_fresh_install_issues`) and empties the file.
+- Every `Logging.record_warning`/`record_error` in any child process appends one
+  `<warning|error><TAB><entry>` line the moment it is recorded (`EnvVars.issues_file`, memoized, is nil when
+  the variable is unset, so nothing else is affected).
+- Steps never read it. `_merge_ruby_issues` folds it into the shell arrays just before the summary is
+  printed (normal end, and the fatal-failure path in `_cleanup_and_exit`) and deletes it, so the existing
+  colored summary and the notification show everything in one place.
+- Consequence for module design: a module that is called from the script records its own failures
+  (`Logging.record_*`) and the shell step ignores the return code (`|| true`) rather than adding a second,
+  generic warning for the same problem.
 
 ## `capture-prefs.rb` Timestamp Check
 

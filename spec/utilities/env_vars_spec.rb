@@ -204,4 +204,27 @@ RSpec.describe EnvVars do
       end
     end
   end
+
+  describe '.issues_file' do
+    before { described_class.remove_instance_variable(:@_issues_file) if described_class.instance_variable_defined?(:@_issues_file) }
+    after { described_class.remove_instance_variable(:@_issues_file) if described_class.instance_variable_defined?(:@_issues_file) }
+
+    it 'is nil when _DOTFILES_ISSUES_FILE is unset or blank' do
+      with_env('_DOTFILES_ISSUES_FILE' => nil) { expect(described_class.issues_file).to be_nil }
+      described_class.remove_instance_variable(:@_issues_file)
+      with_env('_DOTFILES_ISSUES_FILE' => '  ') { expect(described_class.issues_file).to be_nil }
+    end
+
+    it 'is a Pathname wrapping the env var when set' do
+      with_env('_DOTFILES_ISSUES_FILE' => '/tmp/issues') do
+        expect(described_class.issues_file).to eq(Pathname.new('/tmp/issues'))
+      end
+    end
+
+    it 'memoizes the result, including the unset case' do
+      with_env('_DOTFILES_ISSUES_FILE' => nil) { expect(described_class.issues_file).to be_nil }
+
+      with_env('_DOTFILES_ISSUES_FILE' => '/tmp/later') { expect(described_class.issues_file).to be_nil }
+    end
+  end
 end

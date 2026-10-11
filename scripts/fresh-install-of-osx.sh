@@ -36,12 +36,39 @@ _SCRIPT_NAME="${0:t}"
 _has_step_warnings() { (( ${#_step_warnings[@]:-0} > 0 )); }
 _has_step_errors() { (( ${#_step_errors[@]:-0} > 0 )); }
 
+# Folds the warnings and errors that Ruby modules and scripts recorded during this run into the
+# shell's own summary, then deletes the issues file.
+#
+# This file-based hand-off exists only because the control flow here jumps shell -> Ruby -> shell:
+# a Ruby process cannot write into this script's _step_warnings/_step_errors arrays, nor can the
+# shell read a child's in-memory Logging state. main() exports _DOTFILES_ISSUES_FILE and empties
+# the file at start; every Ruby process appends one "<warning|error><TAB><entry>" line per
+# recorded issue (see Logging::Summary#_append_to_issues_file); nothing reads the file until here.
+# Called right before the summary is printed, on both the normal and the fatal-failure path.
+# Zsh dynamic scoping: _step_warnings and _step_errors (local in main) are visible here.
+_merge_ruby_issues() {
+  local _mri_file="${_DOTFILES_ISSUES_FILE:-}"
+  if [[ -z "${_mri_file}" ]]; then return 0; fi
+
+  if [[ -s "${_mri_file}" ]]; then
+    local _mri_kind _mri_entry
+    while IFS=$'\t' read -r _mri_kind _mri_entry; do
+      case "${_mri_kind}" in
+        error) _step_errors+=("${_mri_entry}") ;;
+        warning) _step_warnings+=("${_mri_entry}") ;;
+      esac
+    done <"${_mri_file}"
+  fi
+  rm -f "${_mri_file}"
+}
+
 _cleanup_and_exit() {
   local failed_line="${1:-}"
 
   # Print any non-fatal warnings and errors already collected before this fatal failure,
   # so the full context is visible alongside the crash message.
   # Uses print_script_summary when shellrc is loaded; falls back to plain echo for early failures.
+  _merge_ruby_issues
   # Zsh dynamic scoping: _step_warnings and _step_errors (local in main) are visible here.
   if (($+functions[print_script_summary])); then
     print_script_summary
@@ -363,9 +390,8 @@ _install_homebrew() {
   # the base section above the Brewfile's '# FIRST_INSTALL:' line first and the rest in a background job, otherwise
   # the whole Brewfile. Deliberately never sets FIRST_INSTALL itself (this script runs idempotently) and never
   # cleans up pre-installed brews/casks. A failure is recorded and the script carries on.
-  local first_install_flag="false"
-  if is_first_install; then first_install_flag="true"; fi
-  call_utility --truthy BrewBundle.run "--first_install=${first_install_flag}" || _record_warning 'Homebrew bundle install encountered errors; continuing...'
+  # The module records its own failures in the issues file; '|| true' only keeps the ERR trap quiet.
+  call_utility --truthy BrewBundle.run || true
 
   # Note: load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)
   DEBUG=true load_zsh_configs
@@ -390,51 +416,16 @@ _set_default_shell() {
   step_end
 }
 
-# Resurrects the home and browser-profiles repos via resurrect-repositories.rb, using
-# a YAML config generated on the fly by GenerateBootstrapRepositoriesYaml (scripts/utilities/generate_bootstrap_repositories_yaml.rb) from
-# whichever KEYBASE_*_REPO_NAME/ENCRYPTED_*_REPO_URL env vars are configured (see that
-# script's own header comment for how the primary vs fallback remote is chosen).
-# Replaces the old hand-rolled _clone_home_repo/_clone_profiles_repo/_clone_backup_repo/
-# _configure_backup_remote/_build_keybase_repo_url functions -- resurrect-repositories.rb
-# already owns clone/verify/remote-configuration/fetch/post-clone logic generically,
-# including trying a repo's 'other_remotes' as a fallback clone source if the primary
-# remote fails.
-#
-# The generated YAML lives directly in $HOME (not '${PERSONAL_CONFIGS_DIR}', which is
-# itself inside the home repo and doesn't exist until after this function clones it) --
-# see files/--HOME--/custom.gitignore for why it's safe to leave there permanently.
+# Clones/updates the home and browser-profiles repos from whichever backup mechanism(s) are
+# configured (see BootstrapRepos in scripts/utilities/bootstrap_repos.rb: Keybase login, the
+# generated bootstrap config, ResurrectRepositories and the early developer-environment setup).
+# A failure is recorded by the module itself (see _merge_ruby_issues).
 _resurrect_bootstrap_repos() {
   _current_section='Clone home/profiles repos'; _current_section_manual=1
   step_start
-
-  # clone_repo_into itself does not ensure Keybase is logged in -- only needed here if
-  # at least one of the two repos actually has Keybase enabled.
-  if is_non_zero_string "${KEYBASE_HOME_REPO_NAME:-}" || is_non_zero_string "${KEYBASE_PROFILES_REPO_NAME:-}"; then
-    call_utility --truthy Keybase.ensure_logged_in --start_service=true || _record_warning 'Keybase login failed -- continuing without Keybase-based backups'
-  fi
-
-  local bootstrap_repos_yaml="${HOME}/.bootstrap-repositories.yml"
-  _step_header 'Generating bootstrap repositories config'
-  if call_utility --truthy GenerateBootstrapRepositoriesYaml.run "--output_file=${bootstrap_repos_yaml}"; then
-    _step_header 'Resurrecting home/profiles repos'
-    if ! COLUMNS="${COLUMNS}" resurrect-repositories.rb -r "${bootstrap_repos_yaml}"; then
-      _record_warning 'Failed to fully resurrect home/profiles repos -- see output above for details'
-    fi
-  else
-    _record_error 'Failed to generate bootstrap repositories config -- skipping home/profiles repo resurrection'
-  fi
-
-  # Run setup_dev_environment once now, as a safety net, immediately after the
-  # home/profiles repos are cloned -- covers mise tool-version installation and
-  # direnv allow for these two repos even if a later step in main() aborts before
-  # reaching 'resurrect-repositories.rb -a', which also runs setup_dev_environment at
-  # the very end (for all tracked repos, including these two again -- idempotent).
-  if command_exists setup_dev_environment; then
-    setup_dev_environment
-  else
-    _record_warning "Skipping early 'setup_dev_environment' safety-net call since it couldn't be found in the PATH"
-  fi
-
+  _step_header "$(yellow 'Cloning home/profiles repos')"
+  # The module records its own failures in the issues file; '|| true' only keeps the ERR trap quiet.
+  call_utility --truthy BootstrapRepos.run || true
   step_end
 }
 
@@ -449,6 +440,11 @@ main() {
   export _DOTFILES_CRON_BACKUP_FILE="${TMPDIR:-/tmp}/crontab_backup"
   crontab -l >"${_DOTFILES_CRON_BACKUP_FILE}"  2>/dev/null || : >"${_DOTFILES_CRON_BACKUP_FILE}"
   crontab -r &>/dev/null || true
+
+  # Ruby modules and scripts append the issues they record to this file (see _merge_ruby_issues);
+  # it starts empty on every run.
+  export _DOTFILES_ISSUES_FILE="${TMPDIR:-/tmp}/dotfiles_fresh_install_issues"
+  : >"${_DOTFILES_ISSUES_FILE}"
 
   # Set ZDOTDIR before sourcing .shellrc so the value is available immediately.
   # Must match the default in .shellrc line 40 and env_vars.rb ZDOTDIR constant.
@@ -669,9 +665,8 @@ main() {
   section_header "$(yellow 'Setup Keybase')"
   # Logs in only on a vanilla macOS and only when Keybase is configured and installed; see
   # Keybase.bootstrap_login for the skip rules on a pre-configured machine.
-  local keybase_first_install_flag="false"
-  if is_first_install; then keybase_first_install_flag="true"; fi
-  call_utility --truthy Keybase.bootstrap_login "--first_install=${keybase_first_install_flag}" || _record_warning 'Keybase login failed -- continuing without Keybase-based backups'
+  # The module records its own failures in the issues file; '|| true' only keeps the ERR trap quiet.
+  call_utility --truthy Keybase.bootstrap_login || true
   step_end
 
   # Verify encrypted-backup mechanism is ready (gpg installed, Keychain passphrase set --
@@ -682,17 +677,8 @@ main() {
   _current_section='Setup encrypted backup'
   step_start
   section_header "$(yellow 'Setup encrypted backup')"
-  if is_zero_string "${ENCRYPTED_HOME_REPO_URL:-}" && is_zero_string "${ENCRYPTED_PROFILES_REPO_URL:-}"; then
-    debug "Neither 'ENCRYPTED_HOME_REPO_URL' nor 'ENCRYPTED_PROFILES_REPO_URL' env var is set -- skipping encrypted-backup setup"
-  elif command_exists 'git-gpg-encrypt-setup'; then
-    if git-gpg-encrypt-setup; then
-      success 'Encrypted backup is ready to use'
-    else
-      _record_warning 'Encrypted backup is not configured -- see instructions above'
-    fi
-  else
-    debug "git-gpg-encrypt-setup not found in PATH -- skipping encrypted backup setup"
-  fi
+  # The module records its own failures in the issues file; '|| true' only keeps the ERR trap quiet.
+  call_utility --truthy GpgEncrypt.bootstrap_setup || true
   step_end
 
   # Clone/update repos from whichever backup mechanism(s) are enabled (home and
@@ -720,38 +706,10 @@ main() {
   # Restore the preferences from the older machine into the new one.
   step_start
   _step_header "$(yellow 'Restore preferences')"
-  if command_exists 'osx-defaults.sh'; then
-    # A failure is recorded as an error and the install carries on with the remaining steps.
-    if osx-defaults.sh -s; then
-      success 'Successfully baselines preferences'
-    else
-      _record_error "osx-defaults.sh exited non-zero -- baseline preferences manually: $(cyan "$(command -v osx-defaults.sh)")"
-    fi
-  else
-    _record_error "Skipping baselining of preferences since '$(purple 'osx-defaults.sh')' couldn't be found in the PATH; Please baseline manually and follow it up with re-import of the backed-up preferences"
-  fi
-
-  if command_exists 'capture-prefs.rb'; then
-    # On pre-configured machines, refresh backup before import if stale
-    # Export auto-commits inside capture-prefs.rb (uses smart_commit)
-    if ! is_first_install; then
-      info "Pre-configured machine detected -- refreshing preferences backup first"
-      if COLUMNS="${COLUMNS}" capture-prefs.rb -e; then
-        success 'Successfully refreshed and committed preferences backup'
-      else
-        _record_warning 'Failed to refresh backup -- will attempt import with existing backup'
-      fi
-    fi
-
-    # A failure is recorded as an error and the install carries on with the remaining steps.
-    if COLUMNS="${COLUMNS}" capture-prefs.rb -i; then
-      success 'Successfully restored preferences from backup'
-    else
-      _record_error "capture-prefs.rb -i exited non-zero -- import preferences manually: $(cyan "$(command -v capture-prefs.rb)")"
-    fi
-  else
-    _record_error "Skipping importing of preferences since '$(purple 'capture-prefs.rb')' couldn't be found in the PATH; Please set it up manually"
-  fi
+  # Baselines the macOS defaults, refreshes the preferences backup on a pre-configured machine and
+  # imports it (see PreferencesRestore in scripts/utilities/preferences_restore.rb). The module records
+  # its own failures in the issues file, and a failure never stops the rest of the setup.
+  call_utility --truthy PreferencesRestore.run || true
   step_end
 
   # Recreate the zsh completions.
@@ -833,6 +791,7 @@ main() {
   # Print grouped summary of all collected warnings and errors, print duration,
   # then send exactly one notification. Exit code is unchanged (0) -- the summary
   # is informational only.
+  _merge_ruby_issues
   print_script_summary "${script_start_time}" '** Finished auto installation process **'
 
   # Remind user of manual steps that cannot be automated

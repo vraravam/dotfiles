@@ -33,10 +33,11 @@ module BrewBundle
   # PATH yet during the bootstrap.
   #
   # @param first_install [Boolean] True on a vanilla macOS: base section first, the rest in the
-  #   background.
+  #   background. Defaults to FIRST_INSTALL from the environment, which the install script exports,
+  #   so it passes nothing.
   # @return [Boolean] false when Homebrew or the Brewfile could not be used, or when
-  #   'brew bundle' reported errors; the caller decides how to record that.
-  def run(first_install: false)
+  #   'brew bundle' reported errors; each of those is already recorded as a warning.
+  def run(first_install: EnvVars.first_install?)
     ok = false
     Logging.run_script('brew_bundle', 'Installing the Brewfile with Homebrew') do
       ok = _install(first_install: first_install, brew_bin: EnvVars::HOMEBREW_PREFIX.join('bin', 'brew'))
@@ -53,7 +54,7 @@ module BrewBundle
   # @return [Boolean]
   def _install(first_install:, brew_bin:)
     unless brew_bin.executable?
-      Logging.warn "Brew binary '#{brew_bin.cyan}' is not executable -- skipping the bundle install"
+      Logging.record_warning "Brew binary '#{brew_bin.cyan}' is not executable -- skipping the bundle install"
       return false
     end
 
@@ -61,7 +62,11 @@ module BrewBundle
     return false if first_install && base_content.nil?
 
     bundled = Brew.sync_bundle(brew_bin: brew_bin.to_s, brewfile_content: base_content)
-    Logging.success 'Successfully installed cmd-line and gui apps using homebrew' if bundled
+    if bundled
+      Logging.success 'Successfully installed cmd-line and gui apps using homebrew'
+    else
+      Logging.record_warning 'Homebrew bundle install encountered errors; continuing...'
+    end
 
     Keybase.link_cli_into(brew_bin.dirname)
 
@@ -78,12 +83,12 @@ module BrewBundle
   def _first_install_content
     brewfile = EnvVars::HOMEBREW_BUNDLE_FILE
     unless brewfile.file?
-      Logging.warn "Brewfile not found at '#{brewfile.cyan}' -- skipping the bundle install"
+      Logging.record_warning "Brewfile not found at '#{brewfile.cyan}' -- skipping the bundle install"
       return nil
     end
 
     Brew.base_brewfile_content(brewfile) || begin
-      Logging.warn "No '#{Brew::FIRST_INSTALL_SENTINEL}' sentinel found in '#{brewfile.cyan}' -- the whole Brewfile is treated as the base section"
+      Logging.record_warning "No '#{Brew::FIRST_INSTALL_SENTINEL}' sentinel found in '#{brewfile.cyan}' -- the whole Brewfile is treated as the base section"
       Core.read_lines_utf8(brewfile).join
     end
   end
@@ -96,7 +101,7 @@ module BrewBundle
     if Brew.bundle_in_background(brew_bin: brew_bin.to_s, log: FULL_INSTALL_LOG)
       Logging.info "Full Brewfile install running in background (log: '#{FULL_INSTALL_LOG.cyan}')"
     else
-      Logging.warn "Could not start the background Brewfile install -- run 'brew bundle' once the setup is done"
+      Logging.record_warning "Could not start the background Brewfile install -- run 'brew bundle' once the setup is done"
     end
   end
 

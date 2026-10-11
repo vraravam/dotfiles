@@ -355,6 +355,22 @@ module EnvVars
     _fetch_pathname('_DOTFILES_CRON_BACKUP_FILE') { TMPDIR.join('crontab_backup') }
   end
 
+  # File that Ruby processes append their recorded warnings and errors to while they run under a
+  # shell script that keeps its own summary (see Logging::Summary#_append_to_issues_file). Unset
+  # everywhere except inside fresh-install-of-osx.sh.
+  # Mirrors: _DOTFILES_ISSUES_FILE (exported by fresh-install-of-osx.sh)
+  #
+  # Memoized because it is consulted on every recorded issue and cannot change during a process;
+  # the unset case (nil) is memoized too, hence the defined? guard instead of ||=.
+  #
+  # @return [Pathname, nil] the file, or nil when no shell is collecting issues
+  def self.issues_file
+    return @_issues_file if defined?(@_issues_file)
+
+    path = ENV.fetch('_DOTFILES_ISSUES_FILE', '').strip
+    @_issues_file = path.empty? ? nil : Pathname.new(path)
+  end
+
   # Returns true if logging output should be suppressed.
   # Currently checks if running inside a direnv subshell, where most logging
   # is unwanted noise. Future extensions: CI environment checks, log level filtering.

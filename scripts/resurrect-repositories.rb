@@ -355,7 +355,7 @@ module ResurrectRepositories
 
       # Post-clone operations for installing system dependencies. Both are idempotent and
       # safe to run even when no catalogue was found (e.g. only the bootstrap repos exist).
-      DevEnvironment.setup_dev_environment(first_install: EnvVars.first_install?)
+      DevEnvironment.setup_dev_environment
       GitWorkspace.regenerate_repo_aliases
     end
   end

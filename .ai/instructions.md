@@ -451,16 +451,17 @@ Both `~/.ssh/config` and `templates/ssh-config.template` must have this comment 
 - **Never include line number references** - line numbers become stale as files are edited and add no value to users adopting changes
 - When generating a changelog, first examine the list of staged changes
 - For changes that affect the zwc cache (e.g., edits to autoloaded function files), prepend a call to `delete_caches` before any `unfunction` or re‑compile instructions so the cache is regenerated correctly.
-- If any function definitions in `~/.shellrc` have been added, renamed, or removed, include a run‑time instruction to reload the function definitions:
+- **Restarting and reloading are alternatives, never both.** A restarted Terminal/iTerm starts new shells that source every startup file from scratch, so a separate reload instruction after a restart is redundant. The reload commands below are only for picking up the change in the *current* shell without restarting. When a change needs either, write one adoption step: the restart note, with the matching reload command offered as the no-restart alternative (e.g. "Restart the Terminal/iTerm application (or, to avoid a restart, run: `unfunction ...`)"). Never write "restart, then reload".
+- If any function definitions in `~/.shellrc` have been added, renamed, or removed, offer this reload command (the no-restart alternative above):
   ```zsh
   unfunction is_shellrc_sourced; DEBUG=true load_file_if_exists ~/.shellrc
   ```
-- If any function definitions in `${ZDOTDIR}/.aliases` have been added, renamed, or removed, include a run‑time instruction to reload the function definitions:
+- If any function definitions in `${ZDOTDIR}/.aliases` have been added, renamed, or removed, offer this reload command (the no-restart alternative above):
   ```zsh
   unfunction is_aliases_sourced; DEBUG=true load_file_if_exists ${ZDOTDIR}/.aliases
   ```
 - If any new files have been added or existing files have been deleted/renamed in the `files` folder, then add instructions to run `install-dotfiles.rb`.
-- If any modifications touch the zsh boot‑up files (`.zshenv`, `.zshrc`, `.zlogin`, `.aliases`, `.shellrc`, etc.) or other scripts that are sourced during a terminal start‑up, add a note that the user should quit and restart the Terminal/iTerm application to reload the configuration.
+- If any modifications touch the zsh boot‑up files (`.zshenv`, `.zshrc`, `.zlogin`, `.aliases`, `.shellrc`, etc.) or other scripts that are sourced during a terminal start‑up, add a note that the user should quit and restart the Terminal/iTerm application to reload the configuration (combined with any reload command into a single step, see above).
 - If the staged changes involve fresh‑install logic (e.g., modifications to `fresh-install-of-osx.sh` or related scripts), decide whether an already‑set‑up machine gains anything from a re‑run. Advise `./fresh-install-of-osx.sh;` (it is idempotent) only when a re‑run actually repairs or updates something there (e.g., it migrates existing state, or applies a new setting to a configured machine). When the change only affects what a vanilla install does, say so instead: "nothing to do on a machine that is already set up; applies the next time the script runs". Never list a re‑run as an adoption step just because the script was edited.
 
 ### Amending a Commit -- Eliminate Intermediate-State Cruft

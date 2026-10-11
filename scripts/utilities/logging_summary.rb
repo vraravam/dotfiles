@@ -90,7 +90,7 @@ module Logging
     #
     # @param message [String] The warning message to record
     def record_warning(message)
-      _record_message(step_warnings, message)
+      _record_message(step_warnings, message, :warning)
     end
 
     # Appends a significant non-fatal failure to the errors collection and emits
@@ -98,7 +98,7 @@ module Logging
     #
     # @param message [String] The error message to record
     def record_error(message)
-      _record_message(step_errors, message)
+      _record_message(step_errors, message, :error)
     end
 
     # Prints a grouped summary of all collected warnings and errors, prefixing
@@ -276,14 +276,44 @@ module Logging
       increment_script_depth
     end
 
-    # Appends a message to a collection with script/section prefix and emits inline warning.
+    # Appends a message to a collection with script/section prefix and emits inline warning. When a
+    # shell script is collecting issues (EnvVars.issues_file), the entry is also appended there.
     #
     # @param collection [Array<String>] Target collection (step_warnings or step_errors)
     # @param message [String] The message to record
+    # @param severity [Symbol] :warning or :error
     # @return [void]
-    def _record_message(collection, message)
-      collection << "[#{script_name || 'unknown'}][#{state.current_section || 'unknown'}] #{message}"
+    def _record_message(collection, message, severity)
+      entry = "[#{script_name || 'unknown'}][#{state.current_section || 'unknown'}] #{message}"
+      collection << entry
       warn(message)
+      _append_to_issues_file(severity, entry)
+    end
+
+    # Hands an issue over to the shell script that started this process.
+    #
+    # fresh-install-of-osx.sh keeps its own summary (and builds its closing notification from it)
+    # in shell variables, and the control flow there goes shell -> Ruby -> shell: a Ruby process
+    # cannot write into the calling shell's variables, and the shell cannot read a child's
+    # in-memory Logging state. A file is the simplest channel that crosses that boundary, so each
+    # issue is appended as one line, "<warning|error><TAB><entry>", the moment it is recorded
+    # (nothing is lost if the process dies later, and nested run_script calls cannot record an
+    # issue twice). The shell empties the file when it starts, never reads it in between, and at
+    # the very end merges it into its own summary and deletes it. Not needed -- and not used -- by
+    # scripts that are Ruby from top to bottom: they just read step_warnings/step_errors.
+    #
+    # Reporting must never break the real work, so write errors are ignored.
+    #
+    # @param severity [Symbol] :warning or :error
+    # @param entry [String] The prefixed message; newlines are flattened to keep one issue per line
+    # @return [void]
+    def _append_to_issues_file(severity, entry)
+      file = EnvVars.issues_file
+      return unless file
+
+      File.open(file.to_s, 'a:UTF-8') { |f| f.puts("#{severity}\t#{entry.gsub(/\s*\n\s*/, ' ')}") }
+    rescue SystemCallError
+      nil
     end
   end
 end

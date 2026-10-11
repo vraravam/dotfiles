@@ -1,11 +1,15 @@
 # frozen_string_literal: true
 
+require 'bootstrap_repos'
 require 'brew_bundle'
 require 'cron'
 require 'default_shell'
+require 'gpg_encrypt'
 require 'dev_environment'
 require 'generate_bootstrap_repositories_yaml'
 require 'homebrew_install'
+require 'keybase'
+require 'preferences_restore'
 require 'shellrc_check'
 require_relative '../scripts/call-utility'
 
@@ -24,9 +28,9 @@ RSpec.describe CallUtility do
     end
 
     it 'passes keyword arguments through, coercing booleans' do
-      expect(DevEnvironment).to receive(:setup_dev_environment).with(first_install: true)
+      expect(Keybase).to receive(:ensure_logged_in).with(start_service: true, dry_run: false)
 
-      expect(described_class.run(target: 'DevEnvironment.setup_dev_environment', args: ['--first_install=true'])).to be true
+      expect(described_class.run(target: 'Keybase.ensure_logged_in', args: ['--start_service=true', '--dry_run=false'])).to be true
     end
 
     it 'lets the shell install the Brewfile and see a failure through --truthy' do
@@ -57,6 +61,24 @@ RSpec.describe CallUtility do
       expect(ShellrcCheck).to receive(:matches_repo?).and_return(false)
 
       expect(described_class.run(target: 'ShellrcCheck.matches_repo?', truthy: true)).to be false
+    end
+
+    it 'lets the shell clone the bootstrap repos and see a failure through --truthy' do
+      expect(BootstrapRepos).to receive(:run).and_return(false)
+
+      expect(described_class.run(target: 'BootstrapRepos.run', truthy: true)).to be false
+    end
+
+    it 'lets the shell check the encrypted-backup setup and see a failure through --truthy' do
+      expect(GpgEncrypt).to receive(:bootstrap_setup).and_return(false)
+
+      expect(described_class.run(target: 'GpgEncrypt.bootstrap_setup', truthy: true)).to be false
+    end
+
+    it 'lets the shell restore the preferences and see a failure through --truthy' do
+      expect(PreferencesRestore).to receive(:run).with(first_install: false).and_return(false)
+
+      expect(described_class.run(target: 'PreferencesRestore.run', args: ['--first_install=false'], truthy: true)).to be false
     end
 
     it 'does not pass an empty keyword hash to methods that take none' do

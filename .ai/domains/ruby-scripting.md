@@ -1255,7 +1255,7 @@ Shell functions invoke Ruby utilities via the `call_utility` helper defined in `
 ```zsh
 # Shell function in .shellrc or .aliases
 my_function() {
-  call_utility DevEnvironment.install_mise_versions "--first_install=${flag}"
+  call_utility DevEnvironment.setup_dev_environment "--maxdepth=3"
   call_utility Cron.create_crontab -- "${file}"      # '--' makes the rest positional
   call_utility --truthy Keybase.username              # exit 1 if the method returns nil/false
 }

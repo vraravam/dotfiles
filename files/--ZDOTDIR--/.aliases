@@ -528,9 +528,7 @@ install_mise_versions() {
     debug "Couldn't find 'mise' in the PATH; Skipping loading any mise configs"
     return 0
   fi
-  local first_install_flag="false"
-  if is_first_install; then first_install_flag="true"; fi
-  call_utility DevEnvironment.install_mise_versions "--first_install=${first_install_flag}"
+  call_utility DevEnvironment.install_mise_versions
 }
 
 # Runs 'direnv allow' and then 'direnv exec' (to evaluate the .envrc right away, rather
@@ -543,9 +541,7 @@ activate_all_direnv_configs() {
     debug "Couldn't find 'direnv' in the PATH; Skipping activating any direnv configs"
     return 0
   fi
-  local first_install_flag="false"
-  if is_first_install; then first_install_flag="true"; fi
-  call_utility DevEnvironment.activate_all_direnv_configs "--first_install=${first_install_flag}"
+  call_utility DevEnvironment.activate_all_direnv_configs
 }
 
 # Runs both direnv authorization and mise installation in a single optimized pass.
@@ -553,9 +549,7 @@ activate_all_direnv_configs() {
 # 200-500ms per run by avoiding redundant filesystem traversals.
 # Thin wrapper that delegates to Ruby DevEnvironment.setup_dev_environment.
 setup_dev_environment() {
-  local first_install_flag="false"
-  if is_first_install; then first_install_flag="true"; fi
-  call_utility DevEnvironment.setup_dev_environment "--first_install=${first_install_flag}"
+  call_utility DevEnvironment.setup_dev_environment
 }
 
 # --------------------------------------------------------------------------

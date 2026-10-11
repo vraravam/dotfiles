@@ -23,7 +23,7 @@
 #
 # Examples:
 #   call-utility.rb Cron.create_crontab "${PERSONAL_CONFIGS_DIR}/crontab.txt"
-#   call-utility.rb DevEnvironment.setup_dev_environment --first_install=true
+#   call-utility.rb DevEnvironment.setup_dev_environment --maxdepth=3
 #   call-utility.rb --truthy Keybase.username
 
 # Modules callable from the command line, mapped to the utility file that defines each.
@@ -31,15 +31,18 @@
 # to load or invoke anything else.
 UTILITIES = {
   'Antidote' => 'antidote',
+  'BootstrapRepos' => 'bootstrap_repos',
   'BrewBundle' => 'brew_bundle',
   'Cron' => 'cron',
   'DefaultShell' => 'default_shell',
   'DevEnvironment' => 'dev_environment',
   'GenerateBootstrapRepositoriesYaml' => 'generate_bootstrap_repositories_yaml',
   'GitWorkspace' => 'git_workspace',
+  'GpgEncrypt' => 'gpg_encrypt',
   'HomebrewInstall' => 'homebrew_install',
   'Keybase' => 'keybase',
   'MacOS' => 'macos',
+  'PreferencesRestore' => 'preferences_restore',
   'ShellrcCheck' => 'shellrc_check'
 }.freeze
 

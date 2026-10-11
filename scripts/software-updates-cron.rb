@@ -320,7 +320,7 @@ module SoftwareUpdatesCron
     # of git forks/hour.
 
     _step('setup dev env', 'Setup dev environment'.yellow) do
-      DevEnvironment.setup_dev_environment(first_install: EnvVars.first_install?)
+      DevEnvironment.setup_dev_environment
     end
 
     _step('capture preferences', 'Capture app preferences'.yellow) do

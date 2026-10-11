@@ -58,6 +58,60 @@ RSpec.describe Logging do
     end
   end
 
+  describe 'handing issues to a collecting shell script' do
+    around do |example|
+      Dir.mktmpdir('issues-spec-') do |dir|
+        @issues = Pathname.new(dir).join('issues')
+        example.run
+      end
+    end
+
+    before { EnvVars.remove_instance_variable(:@_issues_file) if EnvVars.instance_variable_defined?(:@_issues_file) }
+    after { EnvVars.remove_instance_variable(:@_issues_file) if EnvVars.instance_variable_defined?(:@_issues_file) }
+
+    it 'appends one tab-separated line per recorded issue, in order, keeping earlier content' do
+      @issues.write("warning\told\n")
+      described_class.script_name = 'demo.rb'
+      described_class.current_section = 'Step A'
+
+      with_env('_DOTFILES_ISSUES_FILE' => @issues.to_s) do
+        expect do
+          described_class.record_warning('w1')
+          described_class.record_error('e1')
+        end.to output.to_stdout
+      end
+
+      expect(@issues.read).to eq("warning\told\nwarning\t[demo.rb][Step A] w1\nerror\t[demo.rb][Step A] e1\n")
+    end
+
+    it 'flattens multi-line messages so each issue stays on one line' do
+      described_class.script_name = 'demo.rb'
+
+      with_env('_DOTFILES_ISSUES_FILE' => @issues.to_s) do
+        expect { described_class.record_error("first\n  second") }.to output.to_stdout
+      end
+
+      expect(@issues.readlines.length).to eq(1)
+      expect(@issues.read).to include('first second')
+    end
+
+    it 'writes nothing, and does not fail, when no file is configured' do
+      with_env('_DOTFILES_ISSUES_FILE' => nil) do
+        expect { described_class.record_warning('w') }.to output.to_stdout
+      end
+
+      expect(@issues).not_to exist
+    end
+
+    it 'ignores an unwritable file instead of breaking the run' do
+      with_env('_DOTFILES_ISSUES_FILE' => @issues.join('missing-dir', 'f').to_s) do
+        expect { described_class.record_warning('w') }.to output.to_stdout
+      end
+
+      expect(described_class.step_warnings.length).to eq(1)
+    end
+  end
+
   describe '.issue_summary_parts' do
     it 'is empty when nothing was recorded' do
       expect(described_class.issue_summary_parts).to eq([])

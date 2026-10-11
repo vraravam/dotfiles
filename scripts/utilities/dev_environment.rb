@@ -25,21 +25,28 @@ module DevEnvironment
   include Core  # For instance methods (in blocks)
   extend Core   # For module methods
 
+  # How deep below HOME, DOTFILES_DIR and PROJECTS_BASE_DIR git repos are searched for.
+  DEFAULT_MAXDEPTH = 6
+
+  # A shallower search for callers that only need the repos near the top and want it fast, e.g.
+  # the machine setup right after cloning just the home and browser-profiles repos.
+  SHALLOW_MAXDEPTH = 3
+
   # Installs any missing tool versions declared via mise config files across all git repos
   # and their ancestor directories. Skips silently if mise is not on PATH.
   #
   # @param shared_dirs [Array<String>, nil] Pre-collected ancestor dirs (avoids
   #   a second find traversal when collect_ancestor_dirs was already called by
   #   the same script). Pass nil to trigger collection internally.
-  # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
-  def install_mise_versions(shared_dirs: nil, first_install: false)
+  # @param maxdepth [Integer] How deep to search for git repos (ignored when shared_dirs is given).
+  def install_mise_versions(shared_dirs: nil, maxdepth: DEFAULT_MAXDEPTH)
     Logging.run_script('install_mise_versions', 'Installing mise in all git repos and ancestors') do
       unless Mise.available?
         Logging.debug "Couldn't find 'mise' in PATH -- skipping mise config loading"
         return
       end
 
-      all_dirs = shared_dirs || collect_ancestor_dirs(first_install: first_install)
+      all_dirs = shared_dirs || collect_ancestor_dirs(maxdepth: maxdepth)
 
       # Filter to dirs that actually have a mise config, then sort by depth so
       # parents come before children (shallower paths have fewer separators).
@@ -73,15 +80,15 @@ module DevEnvironment
   # git repos and their ancestor directories. Skips silently if direnv is not on PATH.
   #
   # @param shared_dirs [Array<String>, nil] See install_mise_versions.
-  # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
-  def activate_all_direnv_configs(shared_dirs: nil, first_install: false)
+  # @param maxdepth [Integer] See install_mise_versions.
+  def activate_all_direnv_configs(shared_dirs: nil, maxdepth: DEFAULT_MAXDEPTH)
     Logging.run_script('activate_all_direnv_configs', 'Activating direnv configs in all git repos and ancestors') do
       unless Direnv.available?
         Logging.debug "Couldn't find 'direnv' in PATH -- skipping direnv config loading"
         return
       end
 
-      all_dirs = shared_dirs || collect_ancestor_dirs(first_install: first_install)
+      all_dirs = shared_dirs || collect_ancestor_dirs(maxdepth: maxdepth)
 
       # Filter to dirs with .envrc, sort parents before children.
       dirs_with_envrc = all_dirs
@@ -108,29 +115,27 @@ module DevEnvironment
   # Designed for callers that need both operations (e.g., software-updates-cron.rb).
   # Single-operation callers should continue using the individual methods.
   #
-  # @param first_install [Boolean] When true, uses shallow search depth (3 vs 6).
-  def setup_dev_environment(first_install: false)
+  # @param maxdepth [Integer] How deep to search for git repos.
+  def setup_dev_environment(maxdepth: DEFAULT_MAXDEPTH)
     Logging.run_script('setup_dev_environment') do
       # Collect ancestor dirs once, reuse for both operations
-      shared_dirs = collect_ancestor_dirs(first_install: first_install)
+      shared_dirs = collect_ancestor_dirs(maxdepth: maxdepth)
 
       # Both methods receive shared_dirs and skip their own collection
-      activate_all_direnv_configs(shared_dirs: shared_dirs, first_install: first_install)
-      install_mise_versions(shared_dirs: shared_dirs, first_install: first_install)
+      activate_all_direnv_configs(shared_dirs: shared_dirs, maxdepth: maxdepth)
+      install_mise_versions(shared_dirs: shared_dirs, maxdepth: maxdepth)
     end
   end
 
   # Finds all git repos under HOME, DOTFILES_DIR, and PROJECTS_BASE_DIR (up to a
-  # first-install-dependent depth) and returns a deduplicated array of every ancestor
+  # given depth) and returns a deduplicated array of every ancestor
   # directory from each repo root up to (and including) HOME.
   #
-  # @param first_install [Boolean] When true, uses a shallower search depth (3
-  #   instead of 6) to keep vanilla-OS boot time low.
+  # @param maxdepth [Integer] How deep to search for git repos.
   # @return [Array<String>] Unique ancestor directory paths.
-  def collect_ancestor_dirs(first_install: false)
+  def collect_ancestor_dirs(maxdepth: DEFAULT_MAXDEPTH)
     home = EnvVars::HOME
 
-    maxdepth = first_install ? 3 : 6
     dirs = [home, EnvVars::DOTFILES_DIR, EnvVars::PROJECTS_BASE_DIR]
 
     repo_roots = GitWorkspace.find_git_repos(

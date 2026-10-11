@@ -47,19 +47,22 @@ encrypted_backup_enabled = shellrc_content.match?(/^\s*export\s+ENCRYPTED_(?:HOM
 setup_login_items_script = "${HOME}/.config/dotfiles/scripts/setup-login-item.rb"
 
 # These casks must come first -- required for manual login during a vanilla OS installation.
-cask 'font-meslo-lg-nerd-font'
+# Keybase goes before the (large, slow) font so the login is not held up by the font download.
 # postinstall only runs when this cask is actually (re)installed, not when 'brew bundle
 # check' already reports it satisfied (e.g. Keybase.app present from an earlier partial
 # run) -- which would silently leave the CLI symlinks missing from PATH even though this
-# postinstall never ran. fresh-install-of-osx.sh also creates/repairs these same symlinks
-# unconditionally and idempotently after every 'brew bundle install' as a safety net (see
-# _install_homebrew) -- both are safe to run redundantly since 'ln -sf' is idempotent.
+# postinstall never ran. BrewBundle (called by fresh-install-of-osx.sh) also creates/repairs
+# these same symlinks unconditionally and idempotently after every 'brew bundle install' as a
+# safety net (see Keybase.link_cli_into) -- both are safe to run redundantly since 'ln -sf' is
+# idempotent.
 if keybase_enabled
   cask 'keybase',
     postinstall: "\"#{setup_login_items_script}\" -a 'Keybase' && " \
                  "ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/keybase' \"${HOMEBREW_PREFIX}/bin/keybase\" && " \
                  "ln -sf '/Applications/Keybase.app/Contents/SharedSupport/bin/git-remote-keybase' \"${HOMEBREW_PREFIX}/bin/git-remote-keybase\""
 end
+
+cask 'font-meslo-lg-nerd-font'
 
 # formulae pulled in from homebrew to replace system equivalents to fix any security issues since the OS was released
 # This list is enhanced from https://macgnu.codewithshin.com/?id=gnu-programs-existing-in-macos-which-are-outdated
@@ -110,6 +113,7 @@ brew 'git-sizer'
 brew 'jaq'
 brew 'mole'
 brew 'ncdu'
+brew 'nikgrbn/tap/finder-menu', trusted: true, postinstall: 'finder-menu enable'
 brew 'pandoc'
 brew 'prettyping'
 brew 'ripgrep'

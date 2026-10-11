@@ -53,6 +53,7 @@ RSpec.describe BrewBundle do
 
     it 'reports failure when brew bundle fails, but still runs the Keybase safety net' do
       allow(Brew).to receive(:sync_bundle).and_return(false)
+      expect(Logging).to receive(:record_warning).with(/bundle install encountered errors/)
       expect(Keybase).to receive(:link_cli_into).with(brew.dirname)
 
       expect(run_quietly).to be false

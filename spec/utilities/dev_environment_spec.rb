@@ -66,11 +66,28 @@ RSpec.describe DevEnvironment do
 
   describe '.setup_dev_environment' do
     it 'collects the ancestor dirs once and shares them with both operations' do
-      expect(described_class).to receive(:collect_ancestor_dirs).once.with(first_install: true).and_return(['/x'])
-      expect(described_class).to receive(:activate_all_direnv_configs).with(shared_dirs: ['/x'], first_install: true)
-      expect(described_class).to receive(:install_mise_versions).with(shared_dirs: ['/x'], first_install: true)
+      expect(described_class).to receive(:collect_ancestor_dirs).once.with(maxdepth: 3).and_return(['/x'])
+      expect(described_class).to receive(:activate_all_direnv_configs).with(shared_dirs: ['/x'], maxdepth: 3)
+      expect(described_class).to receive(:install_mise_versions).with(shared_dirs: ['/x'], maxdepth: 3)
 
-      described_class.setup_dev_environment(first_install: true)
+      described_class.setup_dev_environment(maxdepth: 3)
+    end
+
+    it 'searches DEFAULT_MAXDEPTH deep unless told otherwise' do
+      expect(described_class).to receive(:collect_ancestor_dirs).with(maxdepth: DevEnvironment::DEFAULT_MAXDEPTH).and_return([])
+      allow(described_class).to receive(:activate_all_direnv_configs)
+      allow(described_class).to receive(:install_mise_versions)
+
+      described_class.setup_dev_environment
+    end
+  end
+
+  describe '.collect_ancestor_dirs' do
+    it 'passes the depth to the repo search' do
+      expect(GitWorkspace).to receive(:find_git_repos).with(hash_including(maxdepth: 2)).and_return([])
+      allow(GitWorkspace).to receive(:collect_ancestors).and_return([])
+
+      described_class.collect_ancestor_dirs(maxdepth: 2)
     end
   end
 end

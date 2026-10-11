@@ -347,7 +347,7 @@ module Logging
   #   end
   #
   # @example Utility module method (script_name auto-detected from caller)
-  #   def install_mise_versions(shared_dirs: nil, first_install: false)
+  #   def install_mise_versions(shared_dirs: nil, maxdepth: DEFAULT_MAXDEPTH)
   #     Logging.run_script do
   #       # ... implementation ...
   #     end
