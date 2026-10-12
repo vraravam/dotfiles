@@ -1,0 +1,1 @@
+../../../.ai/domains/shell-functions-autoload.md

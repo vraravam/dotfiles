@@ -28,7 +28,7 @@ module AddUpstreamGitConfig
   # @param upstream_owner [String] Upstream repo owner username
   # @return [Boolean] true if upstream was added or already exists, false on error
   # :reek:UtilityFunction -- Module method pattern for dual-mode script (see ruby-scripting.md)
-  # :reek:FeatureEnvy -- GitProcessor block pattern is intentional (see ruby-scripting.md GitProcessor Usage Patterns)
+  # :reek:FeatureEnvy -- GitProcessor block pattern is intentional (see ruby-shell-git-io.md GitProcessor Usage Patterns)
   def run(dir:, upstream_owner:)
     target_dir = dir.to_s
     target_dir_colored = target_dir.cyan

@@ -191,7 +191,7 @@ After completing verification, document your findings:
 
 ## Reference: Rebase Quality Rules
 
-From `.ai/instructions.md` § Git State Management Rules:
+From `.ai/domains/git-workflow.md` § Git State Management Rules:
 
 1. **No functional loss**: All functionality from both branches must be preserved
 2. **No duplication**: Avoid duplicate implementations of the same logic
@@ -203,5 +203,5 @@ From `.ai/instructions.md` § Git State Management Rules:
 
 ## Related Documents
 
-- `.ai/instructions.md` - Full git workflow rules
+- `.ai/domains/git-workflow.md` - Full git workflow rules
 - `.ai/REBASE-AND-REFACTORING-METHODOLOGY.md` - Workflow for maintaining feature branches

@@ -43,8 +43,6 @@
   "instructions": [
     ".ai/instructions.md",
     ".ai/domains/whitespace-rules.md",
-    ".ai/domains/edit-checklist.md",
-    ".ai/domains/character-encoding.md",
-    ".ai/domains/comment-philosophy.md"
+    ".ai/domains/edit-checklist.md"
   ]
 }

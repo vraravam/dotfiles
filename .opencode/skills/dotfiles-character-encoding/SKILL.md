@@ -1,0 +1,1 @@
+../../../.ai/domains/character-encoding.md

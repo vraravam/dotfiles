@@ -1,5 +1,7 @@
 ---
 applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**/*.{sh,rb}"
+name: dotfiles-comment-philosophy
+description: Use when writing, editing, or reviewing code comments in shell or Ruby scripts in this dotfiles repo -- comments must be timeless reference documentation (explain WHY and tradeoffs), never a changelog or commit message.
 ---
 
 # Comment Philosophy

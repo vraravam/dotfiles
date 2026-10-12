@@ -1,50 +1,62 @@
 # Dotfiles Repository — Tool-Agnostic AI Instructions
 
-## Quick Reference to Detailed Rules
+Main entry point for all AI coding assistants working on this repository. Tool-specific configs
+(`AGENTS.md`, `CLAUDE.md`, `.github/copilot-instructions.md`, `.cursorrules`, `.windsurfrules`)
+are minimal redirects that point here or to `AGENTS.md`.
+
+**Tool-agnostic design**: these files are plain markdown with YAML frontmatter (`applyTo`, `name`,
+`description`). Any assistant can parse them. They assume only generic capabilities -- read a file,
+edit a file, run a shell command, search -- and do not depend on any particular model or harness.
+See [`README.md`](./README.md) for the folder layout.
+
+## Loading Strategy
+
+1. **Always loaded**: this file, [`whitespace-rules.md`](./domains/whitespace-rules.md), and
+   [`edit-checklist.md`](./domains/edit-checklist.md).
+2. **Load on demand**: the domain file(s) matching the files being edited (table below). Large domains
+   are split into a *core* file (read first) plus *topic* files (read only when the task touches the topic).
+3. **Do not preload everything.** Reading every file wastes context and buries the rules that matter.
+
+## Domain Files
 
 All domain-specific rules are in [`domains/`](./domains/):
 
-| Domain | File | Coverage |
-|--------|------|----------|
-| Character encoding | [`character-encoding.md`](./domains/character-encoding.md) | All cross-language scripts and configuration files (ASCII-only requirements) |
-| Custom gitignore maintenance | [`custom-gitignore-maintenance.md`](./domains/custom-gitignore-maintenance.md) | `files/` directory, `install-dotfiles.rb`, `files/--HOME--/custom.gitignore` |
-| Edit checklist | [`edit-checklist.md`](./domains/edit-checklist.md) | All cross-language scripts and configuration files (edit workflow) |
+| Domain | File | Read when editing / doing |
+|--------|------|---------------------------|
+| Ruby (core) | [`ruby-scripting.md`](./domains/ruby-scripting.md) | Any `.rb` file: dual-mode, parameters, exit points, Ruby 2.6 compatibility |
+| Ruby infrastructure | [`ruby-infrastructure.md`](./domains/ruby-infrastructure.md) | `Logging`, `CliParser`, `EnvVars`, colors, `require` ordering, module/class structure |
+| Ruby shell/git/IO | [`ruby-shell-git-io.md`](./domains/ruby-shell-git-io.md) | `system()`/escaping, `GitProcessor`, UTF-8 file reading, `nil_or_empty?` |
+| Ruby performance | [`ruby-performance-idioms.md`](./domains/ruby-performance-idioms.md) | Memoization, frozen constants, hoisting, collection/string performance, idioms |
+| Shell (core) | [`shell-scripting.md`](./domains/shell-scripting.md) | Any `.sh`/`.zsh`/`.bash`, `.shellrc`, `.aliases`: utilities, template, logging, `&&` safety |
+| Shell functions | [`shell-functions-autoload.md`](./domains/shell-functions-autoload.md) | Autoload functions, `local`/`unset`, positional parameters, expansion operators |
+| Shell portability | [`shell-portability-cron.md`](./domains/shell-portability-cron.md) | bash/direnv compatibility, `.envrc`, cron, globs, caches, shebangs |
+| Zsh startup | [`zsh-startup.md`](./domains/zsh-startup.md) | `.shellrc`, `.aliases`, `.zshenv`, `.zshrc`, `.zprofile`, `.zlogin` (includes the mandatory startup-impact verification) |
+| Git config | [`git-config.md`](./domains/git-config.md) | `.gitconfig`, git aliases, `scripts/git-*`, `.gitattributes` |
+| Git overrides/hooks | [`git-overrides.md`](./domains/git-overrides.md) | Per-repo override scripts, folder-context dispatch, global git hooks |
+| Git workflow | [`git-workflow.md`](./domains/git-workflow.md) | Staging, committing, branching, rebasing, pre-commit verification |
+| Changelog | [`changelog.md`](./domains/changelog.md) | Changelog entries, commit messages, amending commits |
 | Fresh install | [`fresh-install.md`](./domains/fresh-install.md) | `fresh-install-of-osx.sh`, `install-dotfiles.rb`, `osx-defaults.sh`, `setup-login-item.rb`, `capture-prefs.rb`, `resurrect-repositories.rb` |
-| Git config | [`git-config.md`](./domains/git-config.md) | `.gitconfig`, git aliases, `.gitattributes` |
-| Logging conventions | [`logging-conventions.md`](./domains/logging-conventions.md) | All cross-language scripts (logging/color rules) |
-| Path constants | [`path-constants.md`](./domains/path-constants.md) | All cross-language scripts (path/env var rules) |
-| Ruby scripting | [`ruby-scripting.md`](./domains/ruby-scripting.md) | All `.rb` files |
-| Script depth tracking | [`script-depth-tracking.md`](./domains/script-depth-tracking.md) | All cross-language scripts using deferred error collection |
-| Shell scripting | [`shell-scripting.md`](./domains/shell-scripting.md) | All `.sh`, `.zsh`, `.bash`, `.shellrc`, `.aliases`, `.envrc`, zsh autoload functions |
-| Zsh startup | [`zsh-startup.md`](./domains/zsh-startup.md) | `.shellrc`, `.aliases`, `.zshenv`, `.zshrc`, `.zprofile`, `.zlogin`, zsh config directory (includes the mandatory startup-impact verification) |
+| Logging conventions | [`logging-conventions.md`](./domains/logging-conventions.md) | Logging/color output in any script |
+| Script depth tracking | [`script-depth-tracking.md`](./domains/script-depth-tracking.md) | Nested-script indentation, deferred error collection |
+| Path constants | [`path-constants.md`](./domains/path-constants.md) | Any path/env-var reference |
+| Custom gitignore | [`custom-gitignore-maintenance.md`](./domains/custom-gitignore-maintenance.md) | Files under `files/`, `install-dotfiles.rb`, `custom.gitignore` |
+| SSH config | [`ssh-config.md`](./domains/ssh-config.md) | SSH config files (no variable expansion) |
+| Markdown blocks | [`markdown-blocks.md`](./domains/markdown-blocks.md) | Markdown with copy-paste command blocks |
+| Comments | [`comment-philosophy.md`](./domains/comment-philosophy.md) | Writing or changing code comments |
+| Character encoding | [`character-encoding.md`](./domains/character-encoding.md) | ASCII-only requirement for scripts and config |
+| Edit checklist | [`edit-checklist.md`](./domains/edit-checklist.md) | Post-edit workflow (always) |
+| Whitespace | [`whitespace-rules.md`](./domains/whitespace-rules.md) | Post-edit whitespace checks (always) |
 
-**Tool-agnostic design**: These files use standard markdown with YAML frontmatter (`applyTo` patterns).
-Any AI assistant can parse them. See [`README.md`](./README.md) for details on the `.ai/` folder convention.
-
----
-
-## About This File
-
-This is the main entry point for all AI coding assistants working on this repository.
-Tool-specific configs (`.github/copilot-instructions.md`, `.cursorrules`, `.windsurfrules`, etc.)
-are minimal redirects that point here.
-
----
-
-## General Mapping
-
-| Copilot Tool | GPT Tool | Notes |
-|--------------|----------|-------|
-| `apply_patch` | `apply_patch` | Both editors use the same Git‑style patch tool. The GPT
-| `read` / `write` | `read` / `write` | `write` replaces any direct file manipulation such as `cat
-| `edit` | `edit` | `edit` is the primary file‑edit tool for GPT. When a change is
-| `glob` / `grep` | `glob` / `grep` | The same command set is used for searching.
+Also: [`context.md`](./context.md) (navigation, debugging, testing, related repos),
+[`REBASE-AND-REFACTORING-METHODOLOGY.md`](./REBASE-AND-REFACTORING-METHODOLOGY.md) and
+[`FEATURE-PARITY-CHECKLIST.md`](./FEATURE-PARITY-CHECKLIST.md) (long-running branch work).
 
 ## Editing Rules
 
-- Use **`apply_patch`** for line‑based changes that you want to be part of a Git commit.  The GPT model can also use **`write`** for creating new files or performing wholesale rewrites, but it must read the file first with `read`.
-- When you need to **read** a file for inspection or for building a patch, call the `read` tool.  GPT must **not** edit files it hasn't read.
-- For **small, incremental edits** that do not require a patch (e.g., adding a comment), `edit` is sufficient.
+- Read a file before editing it. Prefer targeted edits over whole-file rewrites; a rewrite must not
+  lose the executable bit (see [Executable Permission](#executable-permission-rule--mandatory-for-scripts)).
+- Ruby scripts must stay compatible with **Ruby 2.6** (system Ruby on vanilla macOS).
+- After every edit, run the [edit checklist](./domains/edit-checklist.md).
 
 ### Whitespace Rules — Mandatory for All Edits
 
@@ -52,548 +64,26 @@ are minimal redirects that point here.
 
 See [`domains/whitespace-rules.md`](./domains/whitespace-rules.md) for the complete rules, verification commands, fix commands, and exceptions -- this is the single source of truth; do not duplicate it here.
 
-## Ruby and Shell Tool Differences
+### Executable Permission Rule — Mandatory for Scripts
 
-### Markdown Copy-Paste Command Blocks — Every Command Ends With `;`
+After creating or editing a shell script (`.sh`, `.zsh`, `.bash`) or Ruby script (`.rb`) that is executed directly, ensure it has executable permission (`chmod +x`). This covers scripts in `${DOTFILES_DIR}/scripts/`, `${PERSONAL_BIN_DIR}/`, and autoload functions in `${XDG_CONFIG_HOME}/zsh/`. Library files that are only `source`d or `require`d do not need it (but it does no harm).
 
-**In any fenced code block in a markdown file that a reader is expected to copy-paste and run** (setup instructions, troubleshooting steps, bootstrap commands, etc.), every command line must end with a semicolon `;` — including a lone single command in an otherwise one-line block, and the last command in a multi-line block. Only comment lines (`# ...`) are exempt.
-
-```zsh
-# BAD -- relies purely on newlines to separate commands
-security delete-generic-password -a "${USER}" -s 'some-service'
-security add-generic-password -A -a "${USER}" -s 'some-service' -w
-
-# Good -- every command explicitly terminated
-security delete-generic-password -a "${USER}" -s 'some-service';
-security add-generic-password -A -a "${USER}" -s 'some-service' -w;
-```
+Check before editing; restore after if the editing method rewrote the file:
 
 ```zsh
-# BAD -- lone command with no trailing terminator
-brew bundle install
-
-# Good -- terminated even though it's the only command in the block
-brew bundle install;
+[[ -x path/to/script.sh ]] && echo "executable" || echo "NOT executable"
+find <dir> \( -name "*.sh" -o -name "*.rb" \) ! -perm +111 -type f   # list scripts missing +x
 ```
 
-**Why:** some terminal emulators, paste mechanisms, or automation (e.g. "bracketed paste" edge cases, or a block being flattened into one line by some intermediary) can lose or merge the newlines between commands. Without an explicit `;` after each command, two merged lines run together as one malformed command instead of failing loudly or behaving as two separate commands. A trailing `;` makes every command boundary explicit and immune to newline loss, regardless of how the block is pasted or by what mechanism.
-
-**Applies to**: any fenced code block (` ```bash `, ` ```zsh `, ` ```sh `, or unlabeled ` ``` `) in a markdown file, when its content is a command or sequence of commands meant to be executed by the reader (setup guides, `KeybaseMigration.md`, `Adoption.md`, `Advanced.md`, `TechnicalDeepDive.md`, `Extras.md`, `CONTRIBUTING.md`, etc.). Does **not** apply to code blocks illustrating something other than "run these commands verbatim" (e.g. a bare filename, a config-file snippet not meant for a shell, or a diff).
-
-### Markdown Copy-Paste Command Blocks — Prefer `git -C <dir>` Over `cd`-ing
-
-**In the same fenced code blocks described above, never show the reader `cd`-ing into a target directory before running a git command or one of this repo's own scripts.** Use `git -C <dir> <command>` for git operations, and pass the target directory as an explicit argument for this repo's own scripts (they all accept a directory/file argument for exactly this reason -- see `ruby-scripting.md` and `shell-scripting.md`'s script-argument conventions). This matches how the scripts themselves are designed to be called (with fully-qualified, non-relative-path arguments) rather than relying on the reader's current working directory.
-
-```zsh
-# BAD -- relies on the reader's shell staying in this directory for every
-# subsequent command in the block (and in any later block that assumes it)
-cd "${DOTFILES_DIR}";
-git log --oneline -20;
-git commit -m "message";
-
-# Good -- each command is self-contained; works regardless of cwd
-git -C "${DOTFILES_DIR}" log --oneline -20;
-git -C "${DOTFILES_DIR}" commit -m "message";
-```
-
-```zsh
-# BAD -- cd + relative invocation of one of this repo's own scripts
-cd /tmp/dotfiles-master;
-./scripts/capture-prefs.rb -e;
-
-# Good -- invoke via its full path, no cd needed
-/tmp/dotfiles-master/scripts/capture-prefs.rb -e;
-```
-
-**Why:** `cd`-based examples silently depend on shell state carried over from an earlier command or fenced block -- state that is invisible in the rendered documentation and easy to lose (a reader may only copy one block, may have `cd`'d elsewhere in between reading sections, or may run the blocks out of order). `git -C <dir>` and full-path script invocation make every command block independently correct no matter what directory the reader's shell is currently in, exactly mirroring how the underlying scripts are written to be called.
-
-**Exception:** a `cd` (or a script invoked without an explicit directory argument) is acceptable when the command has no `-C`-style affordance and genuinely cannot take a directory as an argument (e.g. `curl -o <file>` writing into the current directory, or a generic third-party tool with no path-argument support) -- prefer redirecting/parameterizing the output path instead of `cd`-ing where possible (e.g. `curl -o /tmp/dotfiles.zip ...` rather than `cd /tmp; curl -o dotfiles.zip ...`).
-
-- Ruby scripts are still required to be compatible with **Ruby 2.6**; no changes are needed.
-
-- The shell‑editing conventions (such as using `apply_patch` instead of direct `sed` or `echo > file`) remain the same.
-
-## Git Rules
-
-The Git‑related rules in `git-config.instructions.md` are unchanged.  Both editors honour the same commit and push restrictions.
-
-### Git State Management Rules — Mandatory
+## Git State Management — Mandatory Summary
 
 **DO NOT modify Git state (staging area, commits, branches, remotes) without explicit permission from the user.**
 
-**DEFAULT WORKFLOW: The user reviews and stages changes manually.**
-
-After making edits:
-1. ✅ Make the requested edits to files
-2. ✅ Show `git status` or `git diff` to display what changed
-3. ❌ **STOP** - Do NOT stage, commit, or modify git state
-4. ✅ Let the user review changes and stage manually
-
-#### Staging Rules
-
-**DO NOT stage, unstage, add, reset, or restore files without explicit permission.**
-
-**Prohibited without permission:**
-- `git add <file>` — stages a file
-- `git add -A` — stages all changes
-- `git add .` — stages all changes in current directory
-- `git reset <file>` — unstages a file
-- `git restore --staged <file>` — unstages a file
-- `git restore <file>` — discards unstaged changes
-- `git checkout -- <file>` — discards unstaged changes
-- `git rm <file>` — stages a deletion
-- `git stash` — stashes changes
-- `git stash pop` — applies stashed changes
-- Any other command that modifies the index/staging area
-
-**Why this matters:**
-- Users manually review all changes before staging
-- Users may stage specific hunks or files for different commits
-- Automatically staging destroys the user's deliberate staging intent
-- Mixing unrelated changes into a single commit breaks atomic commit principles
-- The staging area reflects the user's workflow decisions
-
-**Correct workflow:**
-1. Make edits to files as requested
-2. Verify syntax (if applicable)
-3. Show `git status` or `git diff` to display what changed
-4. **STOP** - User will stage manually
-
-**Exception:** When the user explicitly says "stage these files", "stage everything", "commit all changes", or similar clear intent to modify staging state, then staging commands are permitted.
-
-#### Commit Rules
-
-**DO NOT create, amend, or modify commits without explicit permission.**
-
-**Prohibited without permission:**
-- `git commit` — creates a new commit
-- `git commit -a` — stages and commits all tracked changes
-- `git commit --amend` — modifies the last commit
-- `git rebase` — rewrites commit history
-- `git reset --soft/--mixed/--hard` — moves HEAD and potentially discards commits
-- `git cherry-pick` — applies commits from other branches
-- Any other command that creates or modifies commits
-
-**Why this matters:**
-- Commits are permanent snapshots in the repository history
-- Commit messages must be authored by the user, not generated automatically
-- Users may want to review staged changes before committing
-- The timing of commits is part of the user's workflow
-
-**Correct workflow:**
-1. Make edits and stage files (with explicit permission)
-2. Show `git diff --cached` to display what will be committed
-3. Ask the user if they want to commit and what message to use
-4. Only after explicit permission: run `git commit` with user-provided message
-
-**Verifying an amend:** This check only applies once an amend has already been explicitly
-authorized and performed -- it is a post-amend verification step, not something to run
-speculatively beforehand. After running `git commit --amend`, diff the pre-amend commit
-against the new one using the reflog: `git diff HEAD@{1} HEAD` (the reflog entry
-immediately before an amend is always `HEAD@{1}`). This confirms the amend contains
-exactly the intended staged changes -- nothing more, nothing less -- and is more reliable
-than eyeballing `git status`/`git log` alone, since it directly compares the resulting
-tree rather than the commit metadata. Prefer this over `git diff @{u}` (diff against the
-upstream tracking branch): `@{u}` only equals "the state before the amend" when the local
-branch and its upstream have not diverged. If the local branch has any unpushed commits,
-or the remote has commits the local branch doesn't (e.g. `ahead 1, behind 1`),
-`git diff @{u}` conflates that divergence with the amend's own effect, making it an
-unreliable signal -- `git diff HEAD@{1} HEAD` is correct regardless of upstream state.
-This check is narrow and mechanical: it only confirms the git *operation* did what was
-asked (folded in exactly the staged changes). It does NOT verify that the *content* of
-those changes is functionally correct -- e.g. that a conflict resolution preserved both
-branches' logic. For that, see the separate checklist under Rebase Rules below.
-
-**Exception:** When the user explicitly says "commit with message X", "create a commit", or similar clear intent, then `git commit` is permitted.
-
-#### Branch Management Rules
-
-**DO NOT switch branches, create branches, or modify branch state without explicit permission.**
-
-**Prohibited without permission:**
-- `git checkout <branch>` — switches branches
-- `git switch <branch>` — switches branches
-- `git checkout -b <branch>` — creates and switches to new branch
-- `git branch -d <branch>` — deletes a branch
-- `git branch -D <branch>` — force-deletes a branch
-- `git merge <branch>` — merges branches
-- `git rebase <branch>` — rebases current branch
-- Any other command that changes the current branch or branch state
-
-**Why this matters:**
-- Users may be working on a specific branch intentionally
-- Switching branches can lose uncommitted work
-- Creating branches should be a deliberate decision
-- Branch operations affect the entire repository state
-
-**Correct workflow:**
-1. Work on the current branch the user has checked out
-2. If a different branch is needed, inform the user and ask permission
-3. Only after explicit permission: run branch commands
-
-**Exception:** When the user explicitly says "switch to branch X", "checkout branch X", or similar clear intent, then branch commands are permitted.
-
-#### Rebase Rules
-
-**When rebasing branches, ensure code quality is maintained or improved.**
-
-After completing any rebase (whether manual conflict resolution or automated):
-
-1. **No functional loss**: All functionality from both branches must be preserved
-2. **No duplication**: Avoid duplicate implementations of the same logic
-3. **No loss in modularity**: Keep extracted modules separate; don't inline them back
-4. **No degradation in maintainability**: Code should be clearer after rebase, not harder to understand
-5. **Documentation must be updated**: All references to renamed/moved files must be updated in docs, configs, and scripts
-
-**Conflict resolution guidelines:**
-- When both branches add the same file with different implementations:
-  - Choose the more modular/maintainable version
-  - If both have unique improvements, merge the best of both
-- When both branches modify the same file:
-  - Preserve all new functionality from both sides
-  - Remove any duplicated code introduced by the merge
-  - Ensure naming and structure remain consistent
-- When file references change (e.g., `.sh` → `.rb`):
-  - Update all references to use the newest file name
-  - Verify documentation, configs, and scripts are all updated
-
-**Verification after rebase:**
-- Check for duplicate functions/methods (same logic in multiple places)
-- Verify all file references point to correct files
-- Ensure no functionality was lost in conflict resolution
-- Run syntax checks on all modified files
-
-**See also:** [FEATURE-PARITY-CHECKLIST.md](.ai/FEATURE-PARITY-CHECKLIST.md) for comprehensive post-rebase verification workflow. This checklist verifies *content* correctness (no lost functionality, no duplication); it is separate from the mechanical `git diff HEAD@{1} HEAD` amend-verification check above, which only confirms a `git commit --amend` folded in exactly the intended staged changes.
-
-**For this repo's branch-chain conversion workflows specifically**, see
-[REBASE-AND-REFACTORING-METHODOLOGY.md](.ai/REBASE-AND-REFACTORING-METHODOLOGY.md):
-- § Forward Rebase: Catching Up a Branch Chain from Its Parent -- when a branch
-  needs to catch up with its parent branch (not necessarily `master`)
-- § Backporting: Bringing Branch Improvements Back to Master -- when
-  general-purpose improvements on a WIP branch should land on `master` now,
-  without merging that branch's incomplete conversion work
-- § Rebasing All Branches: Scope, Order and Handoff -- what "rebase all
-  branches" covers, the order of work (master change, user review and push,
-  rebase, user force-push, next task), parent-before-child `--onto`, and why the
-  agent never pushes
-
-#### Pre-Commit Verification — Functional Completeness Check
-
-**Before creating or amending any commit, verify functional completeness of the changed code.**
-
-This applies to:
-- New branches with conversion work (shell → Ruby, refactoring, etc.)
-- Branches being rebased or merged
-- Any commit that modifies executable scripts or modules
-
-**Required verification steps:**
-
-1. **Syntax check all modified files**
-   ```bash
-   # Ruby files
-   find scripts -name "*.rb" -type f -exec /usr/bin/ruby -c {} \;
-
-   # Shell files
-   find scripts -name "*.sh" -type f -exec zsh -n {} \;
-   ```
-
-2. **Verify all dependencies exist**
-   ```ruby
-   # Check all require_relative statements resolve to existing files
-   ruby -e "
-   Dir['scripts/**/*.rb'].each do |script|
-     File.readlines(script).each do |line|
-       if line =~ /^require_relative ['\"](.*)['\"]$/
-         required = \$1
-         path = required.start_with?('utilities/') ? \"scripts/#{required}.rb\" : \"scripts/#{required}.rb\"
-         unless File.exist?(path)
-           puts \"❌ MISSING: #{script} requires #{required}\"
-         end
-       end
-     end
-   end
-   "
-   ```
-
-3. **Verify method calls match definitions**
-   - Extract all module method calls: `Module.method_name`
-   - Verify each method exists in the target module
-   - Check class vs instance method usage (don't call instance methods as class methods)
-
-4. **Test script invocation**
-   ```bash
-   # Verify main scripts run without errors (at least --help)
-   /usr/bin/ruby scripts/script-name.rb --help
-   ```
-
-5. **Check cross-script references**
-   - Verify any `system(RUBY_BIN, script.to_s, ...)` calls reference existing scripts
-   - Verify dual-mode modules (module + `if __FILE__ == $PROGRAM_NAME`) are correctly structured
-
-**Why this matters:**
-- Prevents broken commits that fail at runtime
-- Catches method signature mismatches (class vs instance)
-- Ensures all dependencies are tracked in the branch
-- Reduces debugging time after merge/rebase
-
-**When to run:**
-- Before `git commit` or `git commit --amend` on WIP branches
-- After completing a rebase or merge
-- When switching between branches with different conversion states
-
-**Checklist for WIP conversion branches:**
-```bash
-# Example: fresh-install-ruby branch
-cd ${HOME}/.config/dotfiles
-git checkout fresh-install-ruby
-
-# 1. Syntax check all Ruby files
-for file in $(find scripts -name "*.rb" -type f); do
-  /usr/bin/ruby -c "${file}" || echo "❌ FAILED: ${file}"
-done
-
-# 2. Check dependencies
-ruby -e "..." # (see step 2 above)
-
-# 3. Verify method calls (manual or scripted)
-# 4. Test main script
-/usr/bin/ruby scripts/fresh-install-of-osx.rb --help
-
-# 5. Verify external script references exist
-grep -E "system.*\.rb|RUBY_BIN.*\.rb" scripts/fresh-install-of-osx.rb
-# Check that each referenced script exists
-```
-
-**Exception:** This verification is not required for documentation-only changes (`.md` files, comments).
-
-## SSH Config Rules — Variable Expansion Limitations
-
-**SSH config files (`~/.ssh/config`, `templates/ssh-config.template`) have strict limitations on variable expansion.**
-
-### What SSH Config Supports
-
-SSH config only supports:
-- **Simple variable expansion**: `${VAR}` — requires the variable to be set in the environment
-- **Tilde expansion**: `~` or `~/path` — expands to home directory
-- **Tokens**: `%d` (home directory), `%h` (remote hostname), `%r` (remote username)
-
-### What SSH Config Does NOT Support
-
-SSH config does **NOT** support:
-- **Bash-style default values**: `${VAR:-default}` — causes `vdollar_percent_expand` errors
-- **Nested expansion**: `${VAR:-${OTHER_VAR}}` — fails to parse
-- **Command substitution**: `$(command)` — not evaluated
-- **Arithmetic expansion**: `$((expr))` — not evaluated
-
-### The Rule
-
-**ALL paths in SSH config files MUST use hardcoded `~/.ssh/` paths or simple `~` expansion.**
-
-```ssh-config
-# BAD — causes "vdollar_percent_expand: env var has no value" errors
-IdentityFile "${SSH_CONFIGS_DIR:-${HOME}/.ssh}/id_rsa-personal"
-Include "${SSH_CONFIGS_DIR:-${HOME}/.ssh}/global_config"
-
-# Good — hardcoded path with tilde expansion
-IdentityFile ~/.ssh/id_rsa-personal
-Include ~/.ssh/global_config
-```
-
-### Why Hardcoded Paths
-
-1. **SSH runs without shell environment** — many tools invoke SSH without loading `.zshrc` or `.shellrc`, so `SSH_CONFIGS_DIR` and other custom env vars are not available
-2. **Syntax errors break git operations** — invalid variable expansion in `~/.ssh/config` causes all git operations over SSH to fail
-3. **Cron jobs fail silently** — scripts running via cron don't have the interactive shell environment
-
-### Files This Rule Applies To
-
-- `~/.ssh/config` — active SSH client configuration
-- `templates/ssh-config.template` — template for new installs
-- Any file referenced by SSH (global_config, etc.)
-
-### Required Warning Comment
-
-Both `~/.ssh/config` and `templates/ssh-config.template` must have this comment near the top:
-
-```
-# **IMPORTANT:** SSH config does NOT support bash-style variable expansion like ${VAR:-default}.
-# SSH only understands simple ${VAR} or ~ (home directory). Since many tools invoke ssh
-# commands without the zsh environment loaded, this
-# file MUST use hardcoded paths like ~/.ssh/id_rsa-personal instead of variable references.
-```
-
-### Enforcement
-
-**When editing any SSH config file:**
-1. **NEVER** introduce `${VAR:-default}` syntax
-2. **NEVER** use `${SSH_CONFIGS_DIR}` or other custom env vars
-3. **ALWAYS** use `~/.ssh/` hardcoded paths
-4. **VERIFY** the config parses correctly: `ssh -G github.com`
-
-## Changelog Generation Rules
-
-**MANDATORY: Every commit in `${DOTFILES_DIR}` MUST include a new CHANGELOG.md section.**
-
-### Workflow for Creating Commits
-
-1. Make all code/documentation changes
-2. Run `git next-version` to get the next version number
-3. Add a new section to CHANGELOG.md with that version number
-4. Document ALL changes in the commit (not just the "main" change)
-5. Stage all changes including CHANGELOG.md
-6. Create ONE atomic commit containing both the changes and the CHANGELOG entry
-
-### Rules
-
-- The CHANGELOG entry must document ALL changes in the commit (not just the "main" change)
-- Include changes to `.ai/` instructions when they're part of the same logical change (e.g., adding a feature + documenting the pattern in instructions)
-- Never create separate commits for CHANGELOG updates - include CHANGELOG in the same commit as the changes it documents
-- **Never include line number references** - line numbers become stale as files are edited and add no value to users adopting changes
-- When generating a changelog, first examine the list of staged changes
-- For changes that affect the zwc cache (e.g., edits to autoloaded function files), prepend a call to `delete_caches` before any `unfunction` or re‑compile instructions so the cache is regenerated correctly.
-- **Restarting and reloading are alternatives, never both.** A restarted Terminal/iTerm starts new shells that source every startup file from scratch, so a separate reload instruction after a restart is redundant. The reload commands below are only for picking up the change in the *current* shell without restarting. When a change needs either, write one adoption step: the restart note, with the matching reload command offered as the no-restart alternative (e.g. "Restart the Terminal/iTerm application (or, to avoid a restart, run: `unfunction ...`)"). Never write "restart, then reload".
-- If any function definitions in `~/.shellrc` have been added, renamed, or removed, offer this reload command (the no-restart alternative above):
-  ```zsh
-  unfunction is_shellrc_sourced; DEBUG=true load_file_if_exists ~/.shellrc
-  ```
-- If any function definitions in `${ZDOTDIR}/.aliases` have been added, renamed, or removed, offer this reload command (the no-restart alternative above):
-  ```zsh
-  unfunction is_aliases_sourced; DEBUG=true load_file_if_exists ${ZDOTDIR}/.aliases
-  ```
-- If any new files have been added or existing files have been deleted/renamed in the `files` folder, then add instructions to run `install-dotfiles.rb`.
-- If any modifications touch the zsh boot‑up files (`.zshenv`, `.zshrc`, `.zlogin`, `.aliases`, `.shellrc`, etc.) or other scripts that are sourced during a terminal start‑up, add a note that the user should quit and restart the Terminal/iTerm application to reload the configuration (combined with any reload command into a single step, see above).
-- If the staged changes involve fresh‑install logic (e.g., modifications to `fresh-install-of-osx.sh` or related scripts), decide whether an already‑set‑up machine gains anything from a re‑run. Advise `./fresh-install-of-osx.sh;` (it is idempotent) only when a re‑run actually repairs or updates something there (e.g., it migrates existing state, or applies a new setting to a configured machine). When the change only affects what a vanilla install does, say so instead: "nothing to do on a machine that is already set up; applies the next time the script runs". Never list a re‑run as an adoption step just because the script was edited.
-
-### Amending a Commit -- Eliminate Intermediate-State Cruft
-
-**MANDATORY: When amending (or squashing) a commit that already has an existing CHANGELOG.md section and/or commit message, both must be rewritten to describe only the final, squashed state -- never left as a chronological narrative of intermediate edits.**
-
-This applies whenever a commit is amended with new changes, or multiple commits are squashed together (e.g. `git reset --soft <base>` followed by a single new commit). Do not simply append new bullets/paragraphs describing the newest edit on top of what was already there -- both artifacts must be re-derived from the final squashed diff.
-
-**Workflow:**
-
-1. After finalizing the squash/amend's staged content (working tree and index in their final state), get the full diff for the amended commit's overall range: `git diff <original-base> <final-staged-tree>` (or per-file: `git diff <original-base> -- <file>`).
-2. Cross-check **every existing CHANGELOG bullet** (and every paragraph of the existing commit message) against that final diff, file by file:
-   - If a bullet describes something that does not appear at all in the final diff (e.g. a feature added in one intermediate commit and fully reverted/replaced in a later one within the same squash) -- it is pure intermediate-state cruft. **Delete the bullet entirely.**
-   - If a bullet's specific claim (e.g. "does not call into X at all", "now calls Y directly") was true of an intermediate commit but has since been further changed by a later edit in the same squash -- **rewrite the bullet to describe only the final, accurate behavior.** Never leave a claim that contradicts the actual staged/committed diff.
-   - If two bullets (originally written for two separate, now-squashed commits) both describe the same file/behavior, and the second supersedes/extends the first -- **merge them into one bullet** describing the final state, rather than presenting it as "first we did X, then we changed it to Y."
-3. Apply the same cross-check to the **commit message** -- it must read as a single, coherent description of the final change, not a stitched-together history of "first this happened, then this fix, then this other fix." Remove or rewrite any paragraph that only made sense as a description of an intermediate, now-superseded state.
-4. Verify the rewritten CHANGELOG section and commit message pass a final read-through: every claim should be independently verifiable against `git diff <original-base> <final-state>` for the specific file/behavior it describes.
-
-**Why this matters:** once commits are squashed, the intermediate commits never existed from the reader's perspective -- a CHANGELOG or commit message that still narrates them (e.g. "removed the X we added earlier in this same entry", or "now calls Y directly" when the final code doesn't) is actively misleading, not just imprecise. This is distinct from the § Rebase Rules content-correctness checklist above -- that verifies no functionality was lost during a rebase; this specifically targets stale narrative/documentation left over from the squash mechanics.
-
-### Changelog Entry Structure
-
-When creating or editing CHANGELOG.md sections, follow these rules:
-
-1. **Group related changes by category** rather than listing individual files when multiple files share similar changes.
-   - Use `*[all ruby scripts]*` or `*[all zsh autoload scripts in files/--XDG_CONFIG_HOME--/zsh/]*` for changes that apply across multiple files with the same pattern.
-   - Example: Instead of separate bullets for `antidote.rb`, `cron.rb`, and `keybase.rb` when they all adopt the same pattern, write one bullet covering all affected files.
-
-2. **Keep essential technical details** while removing redundant specifics:
-   - Include: method names, key implementation details, specific behavior changes
-   - Remove: line numbers (they become stale as files are edited); repetitive file-by-file descriptions when a category description suffices
-   - Example: Keep "`update_repo(dir)` - fetch all remotes and rebase onto upstream" but consolidate "uses `GitProcessor.repo?(path)` for validation" once rather than per file
-
-3. **Use concise, high-level summaries** in the adoption section:
-   - Focus on user-visible actions (restart terminal, run a script).
-   - Remove implementation details that are already covered in the bullet points above.
-   - Combine related adoption steps into single bullets when possible.
-
-4. **Structure each version section consistently**:
-   - Version number header (e.g., `### 3.1.23`)
-   - Descriptive subheading summarizing the theme (e.g., `#### Backport utility enhancements and convert zsh autoload functions to Ruby`)
-   - Bullet points with specific changes (technical details without line numbers)
-   - `#### Adopting these changes` section with user action items (optional - omit if no user actions required)
-
-5. **Version section spacing and visual separation**:
-   - Each version section (starting with `### X.Y.Z`) must be separated by **exactly one blank line, followed by a horizontal rule (`---`), followed by one blank line**
-   - Pattern: `[end of previous section]\n\n---\n\n### X.Y.Z`
-   - The horizontal rule provides clear visual separation between sections when rendered in markdown viewers
-   - The horizontal rule is a *separator* between version sections, not a header decoration
-   - **Horizontal rule before the first version section** (one blank line after introductory text, then `---`, then one blank line before `### 3.1.27`)
-   - **Horizontal rule after the last version section** (one blank line after last content, then `---` as the final line of the file)
-
-**Example of good structure:**
-```markdown
-### 3.1.23
-
-#### Backport utility enhancements and convert zsh autoload functions to Ruby
-
-* *[scripts/utilities/git_workspace.rb]* Added four new public methods for git operations: `update_repo(dir)` - fetch all remotes and rebase onto upstream; `update_all_repos` - update key repos (home, dotfiles, profiles) plus Chrome profile directories; `status_repo(dir)` - show status with custom formatting; `status_all_repos` - status check all repos. All methods use `GitProcessor.repo?(path)` for validation and return boolean success.
-
-* *[all ruby scripts]* Ensures consistency with single source of truth for git repo detection across all utility modules. Also found and fixed premature conversion of `Pathname` instances to `String` (maintain rich object as much as possible only convert to String at interpolation boundaries).
-
-* *[all zsh autoload scripts in files/--XDG_CONFIG_HOME--/zsh/]* Converted from shell script to a thin Ruby wrapper.
-
-#### Adopting these changes
-
-* Restart terminal to reload zsh autoload functions.
-* New Ruby methods are immediately available to shell scripts via `ruby -e` pattern.
-```
-
----
-
-### Executable Permission Rule — Mandatory for Scripts
-
-**After creating or editing shell scripts (`.sh`, `.zsh`, `.bash`) or Ruby scripts (`.rb`), ensure they have executable permission (`chmod +x`).**
-
-This applies to:
-- All scripts in `${DOTFILES_DIR}/scripts/`
-- All scripts in `${PERSONAL_BIN_DIR}/`
-- Autoload functions in `${XDG_CONFIG_HOME}/zsh/` (`.zsh` files)
-- Any standalone scripts intended to be executed directly
-
-**When creating a new script:**
-```zsh
-chmod +x path/to/script.sh
-chmod +x path/to/script.rb
-```
-
-**When editing an existing script:**
-If the file had executable permission before editing, ensure it retains it after the edit. Most editing tools preserve permissions, but if you're using a method that rewrites the file (like Python's `open(file, 'w')`), you must restore the permission:
-
-```python
-import os
-import stat
-
-# Before editing, check if executable
-was_executable = os.access(filepath, os.X_OK)
-
-# ... edit file ...
-
-# After editing, restore executable permission if it had it
-if was_executable:
-    st = os.stat(filepath)
-    os.chmod(filepath, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-```
-
-**Bulk fix command (apply to all scripts):**
-```zsh
-# Fix all shell scripts in a directory
-find <dir> -name "*.sh" -o -name "*.zsh" -o -name "*.bash" | xargs chmod +x
-
-# Fix all Ruby scripts in a directory
-find <dir> -name "*.rb" | xargs chmod +x
-```
-
-**Verification:**
-```zsh
-# Check if a file is executable
-[[ -x path/to/script.sh ]] && echo "✅ Executable" || echo "❌ Not executable"
-
-# List files missing executable permission
-find <dir> \( -name "*.sh" -o -name "*.rb" \) ! -perm +111 -type f
-```
-
-**Why this matters:**
-- Scripts in `${PERSONAL_BIN_DIR}` are intended to be executed directly from PATH
-- Scripts in `${DOTFILES_DIR}/scripts/` are invoked by other scripts and must be executable
-- Autoload functions must be executable for zsh to load them
-- Without executable permission, scripts fail with "Permission denied" errors
-
-**Exception:** Library files that are only `source`d or `require`d (not executed directly) don't need executable permission, but it doesn't hurt to have it.
-
----
-
-**End of Unified Model Instructions**
+The user reviews and stages changes manually. After making edits: show `git status` / `git diff`,
+then **STOP**. Prohibited without explicit permission: `git add`, `commit`, `reset`,
+`restore --staged`, `checkout`, `switch`, `push`, `rebase`, `merge`, `stash`, `rm`, `branch -d/-D`,
+`tag`, `cherry-pick`, `revert`, `clean`, `mv`. Permission is one-time for the single instruction
+given -- never blanket, never carried over to later requests or sessions.
+
+Full staging/commit/branch/rebase rules and the pre-commit verification: [`git-workflow.md`](./domains/git-workflow.md).
+Commit messages and changelog entries: [`changelog.md`](./domains/changelog.md).

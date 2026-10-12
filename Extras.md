@@ -408,7 +408,7 @@ all push;
 
 will, for every repo in the loop, suspend cron only while it is inside the `my-project` repo, run the override script there, restore cron, and then move on to the next repo — for every other repo (no matching override script) it just runs `git push` as normal.
 
-See `.ai/domains/git-config.md` § "`run-all.rb`'s Own Override Dispatch" for the full internal mechanics, including the cyclical-dispatch safety net.
+See `.ai/domains/git-overrides.md` § "`run-all.rb`'s Own Override Dispatch" for the full internal mechanics, including the cyclical-dispatch safety net.
 
 ### Git hook customizations
 
@@ -428,7 +428,7 @@ for the complete pattern with worked examples of both approaches:
   runs the whole operation (before + the actual git command + after), used
   whenever you need something to happen *after* a successful push/pull.
 
-See `.ai/domains/git-config.md` for complete documentation on git hook architecture.
+See `.ai/domains/git-overrides.md` for complete documentation on git hook architecture.
 
 
 ## delete_caches

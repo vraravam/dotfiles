@@ -90,7 +90,7 @@ git rebase upstream/master
 - Use `${var}` brace notation, never bare `$var`
 - Prefer zsh built-ins over external commands in startup hot path
 - Follow logging conventions: `info`, `success`, `warn`, `error`, `debug`
-- See [.ai/domains/shell-scripting.md](.ai/domains/shell-scripting.md) for complete rules
+- See [.ai/domains/shell-scripting.md](.ai/domains/shell-scripting.md) (core) and its topic files `shell-functions-autoload.md` / `shell-portability-cron.md` for complete rules
 
 ### Ruby Scripts
 
@@ -99,7 +99,7 @@ git rebase upstream/master
 - Use `EnvVars` module for all environment variable access
 - Follow dual-mode pattern (module + CLI) for all standalone scripts
 - Prefer `Pathname` over `String` for all path operations
-- See [.ai/domains/ruby-scripting.md](.ai/domains/ruby-scripting.md) for complete rules
+- See [.ai/domains/ruby-scripting.md](.ai/domains/ruby-scripting.md) (core) and its topic files `ruby-infrastructure.md` / `ruby-shell-git-io.md` / `ruby-performance-idioms.md` for complete rules
 
 ### Formatting
 

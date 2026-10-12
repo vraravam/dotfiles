@@ -27,7 +27,7 @@ recommendations for the calling agent (or the user) to apply.
 Before reviewing, read these files in order:
 
 1. `.ai/instructions.md` - Main philosophy and decision-making priority
-2. `.ai/domains/shell-scripting.md` - Shell-specific rules and patterns
+2. `.ai/domains/shell-scripting.md` (core) plus topic files `shell-functions-autoload.md`, `shell-portability-cron.md` in the same folder - Shell-specific rules and patterns
 3. `.ai/domains/logging-conventions.md` - Logging and color standards
 4. `.ai/domains/path-constants.md` - Path variable conventions
 

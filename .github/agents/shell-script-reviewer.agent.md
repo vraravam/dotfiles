@@ -21,7 +21,7 @@ You do NOT edit files directly. You provide a review report with specific line n
 Before reviewing, you MUST read these files in order:
 
 1. `.ai/instructions.md` - Main philosophy and decision-making priority
-2. `.ai/domains/shell-scripting.md` - Shell-specific rules and patterns
+2. `.ai/domains/shell-scripting.md` (core) plus topic files `shell-functions-autoload.md`, `shell-portability-cron.md` in the same folder - Shell-specific rules and patterns
 3. `.ai/domains/logging-conventions.md` - Logging and color standards
 4. `.ai/domains/path-constants.md` - Path variable conventions
 

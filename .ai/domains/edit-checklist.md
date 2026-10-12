@@ -42,7 +42,7 @@ Apply this checklist after every edit to any script or configuration file in thi
 ### Step 1 -- Verify Decision-Making Philosophy
 
 Verify every new or changed line upholds the four priorities defined in
-`copilot-instructions.md` § **Decision-Making Philosophy**:
+[`AGENTS.md`](../../AGENTS.md) § **Decision-Making Priority Order**:
 
 1. **Startup speed** (for zsh startup paths)
 2. **Maintainability** (readability, DRY, clear intent)

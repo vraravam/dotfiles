@@ -22,7 +22,7 @@ You do NOT edit files directly. You provide a review report with specific line n
 Before reviewing, you MUST read these files in order:
 
 1. `.ai/instructions.md` - Main philosophy and decision-making priority
-2. `.ai/domains/ruby-scripting.md` - Ruby-specific rules and patterns
+2. `.ai/domains/ruby-scripting.md` (core) plus topic files `ruby-infrastructure.md`, `ruby-shell-git-io.md`, `ruby-performance-idioms.md` in the same folder - Ruby-specific rules and patterns
 3. `.ai/domains/logging-conventions.md` - Logging and color standards
 4. `.ai/domains/path-constants.md` - Path variable conventions
 
@@ -189,8 +189,8 @@ Script follows dual-mode pattern correctly and is Ruby 2.6 compatible. Found 1 c
 None found. Script is Ruby 2.6 compatible.
 
 ### Style Issues (Should Fix)
-- [ ] **Line 34**: Using `ENV['HOME']` — Per .ai/domains/ruby-scripting.md § Environment Variables — Change to `EnvVars::HOME`
-- [ ] **Line 127**: Mutating method `.strip!` — Per .ai/domains/ruby-scripting.md § Mutating Methods — Change to `.strip` (non-mutating)
+- [ ] **Line 34**: Using `ENV['HOME']` — Per .ai/domains/ruby-infrastructure.md § Environment Variables — Change to `EnvVars::HOME`
+- [ ] **Line 127**: Mutating method `.strip!` — Per .ai/domains/ruby-performance-idioms.md § Mutating Methods — Change to `.strip` (non-mutating)
 - [ ] **Line 203**: Private method without `_` prefix — Per .ai/domains/ruby-scripting.md § Internal Helpers — Rename `helper_method` to `_helper_method`
 
 ### Performance Concerns (Review)
@@ -200,7 +200,7 @@ None found. Script is Ruby 2.6 compatible.
 None beyond critical issue at line 89.
 
 ### Positive Patterns (Keep These)
-- **Line 12**: Proper use of `require_relative` for internal files — Follows .ai/domains/ruby-scripting.md § `require` vs `require_relative`
+- **Line 12**: Proper use of `require_relative` for internal files — Follows .ai/domains/ruby-infrastructure.md § `require` vs `require_relative`
 - **Line 45**: Pathname objects throughout, `.to_s` at boundary — Follows .ai/domains/path-constants.md pattern
 - **Line 156**: Single exit point at end — Follows .ai/domains/ruby-scripting.md § Single Exit at End of Script
 

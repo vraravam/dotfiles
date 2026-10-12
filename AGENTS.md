@@ -1,92 +1,67 @@
 # Agent Quick Reference
 
-This dotfiles repository uses a comprehensive instruction system in `.ai/`. This file highlights the non-obvious patterns agents commonly miss.
+Entry point for any AI coding agent. This file is deliberately short: it holds the hard rules
+and a routing table. Detailed rules live in `.ai/` and are loaded on demand -- read only the
+files that match the task.
 
 ## Instruction Architecture
 
-**Primary source of truth**: `.ai/instructions.md` → domain-specific files in `.ai/domains/`
+- **Always read**: this file, [`.ai/instructions.md`](.ai/instructions.md), and
+  [`.ai/domains/whitespace-rules.md`](.ai/domains/whitespace-rules.md) /
+  [`.ai/domains/edit-checklist.md`](.ai/domains/edit-checklist.md) before editing code or config.
+- **Read on demand**: the domain file(s) matching the files you are touching (table below).
+  Each domain file starts with its scope and a list of related files; the big ones (Ruby, shell,
+  git) have a core file plus topic files -- read the core first, then only the topic you need.
+- **Reference**: [`.ai/context.md`](.ai/context.md) (navigation, debugging, testing, related repos),
+  [`.ai/README.md`](.ai/README.md) (layout and tool entry points).
+- Rules apply to code in `${DOTFILES_DIR}`, `${PERSONAL_BIN_DIR}`, and `${PERSONAL_CONFIGS_DIR}`.
+- **Maintenance**: when adding or moving rules, or on the periodic cadence, follow
+  [`.ai/README.md`](.ai/README.md) § Periodic Review (size thresholds, dedupe, cross-reference checks).
 
-Tool-specific configs (`.cursorrules`, `.windsurfrules`, `.github/copilot-instructions.md`) are minimal redirects. Load `.ai/instructions.md` first.
+### Routing Table
 
-Key instruction files (apply to code in `${DOTFILES_DIR}`, `${PERSONAL_BIN_DIR}`, and `${PERSONAL_CONFIGS_DIR}`):
-- `shell-scripting.md` — Shell patterns, utilities, startup optimization
-- `ruby-scripting.md` — Ruby patterns, dual-mode scripts, GitProcessor
-- `zsh-startup.md` — Performance optimization, caching, plugin loading
-- `fresh-install.md` — Bootstrap idempotency, vanilla OS mode
-- `git-config.md` — Git aliases, hooks, per-repo customization
-- `edit-checklist.md` — Post-edit verification workflow (syntax, format, whitespace)
+| If the task touches... | Read (under `.ai/domains/`) |
+|------------------------|-----------------------------|
+| Any Ruby script | `ruby-scripting.md`, then as needed `ruby-infrastructure.md` (Logging/CliParser/EnvVars/requires), `ruby-shell-git-io.md` (system/GitProcessor/UTF-8), `ruby-performance-idioms.md` |
+| Any shell script, `.shellrc`, `.aliases`, `.envrc` | `shell-scripting.md`, then as needed `shell-functions-autoload.md`, `shell-portability-cron.md` |
+| Zsh startup files (`.zshenv`, `.zshrc`, `.zlogin`, autoload functions) | `zsh-startup.md` (startup-impact check is mandatory) |
+| Logging/color output, depth tracking, path constants | `logging-conventions.md`, `script-depth-tracking.md`, `path-constants.md` |
+| `.gitconfig`, git aliases, `scripts/git-*`, `.gitattributes` | `git-config.md` |
+| Per-repo overrides (`upreb-<basename>.*`), git hooks | `git-overrides.md` |
+| Staging, committing, branching, rebasing | `git-workflow.md`, `changelog.md` (commit messages), `../REBASE-AND-REFACTORING-METHODOLOGY.md` |
+| `fresh-install-of-osx.sh`, `install-dotfiles.rb`, bootstrap scripts | `fresh-install.md` |
+| Adding/removing files under `files/` | `custom-gitignore-maintenance.md` |
+| SSH config | `ssh-config.md` |
+| Markdown with copy-paste command blocks | `markdown-blocks.md` |
+| Comments, non-ASCII characters | `comment-philosophy.md`, `character-encoding.md` |
 
-**CRITICAL**: Any refactoring, formatting, or pattern fixes identified in one location MUST be applied to **all matching files** across all three directories. For example:
-- If you fix a `&&` pattern in `${DOTFILES_DIR}/scripts/file.sh`, scan and fix the same pattern in `${PERSONAL_BIN_DIR}/*.sh`
-- If you update UTF-8 file reading in a Ruby script, search for all instances of `File.readlines` / `.each_line` across all three locations
-- Use grep/glob to find all matching files before starting edits: `grep -r "pattern" ${DOTFILES_DIR} ${PERSONAL_BIN_DIR} ${PERSONAL_CONFIGS_DIR}`
+**CRITICAL -- apply fixes everywhere**: any refactoring, formatting, or pattern fix identified in one
+location MUST be applied to **all matching files** across the three directories above. Search first
+(`grep -r "pattern" ${DOTFILES_DIR} ${PERSONAL_BIN_DIR} ${PERSONAL_CONFIGS_DIR}`), then edit.
 
-**Known related repo -- `git-remote-gpg-encrypt`** (`${PROJECTS_BASE_DIR}/oss/git-remote-gpg-encrypt`,
-standalone, its own git history, not managed by `install-dotfiles.rb`): a Ruby tool
-extracted from this repo's `EncryptedBackup` module, with its own trimmed/adapted copy
-of `ruby-scripting.md` and friends under its own `.ai/domains/` (see that repo's
-`AGENTS.md` for specifics on what was dropped: `Logging`/`EnvVars`/`GitProcessor`/
-`CliParser`). It is NOT a fourth directory to blindly propagate identical fixes into --
-its rules were deliberately trimmed to that project's own, much smaller, dependency-free
-shape. When a Ruby-related refactoring/pattern fix/rule change is made here, check
-whether the *equivalent, adapted* version of that fix should also be back-ported to
-`git-remote-gpg-encrypt`'s own code and its own `.ai/domains/ruby-scripting.md` -- the
-same way a fix might get backported to any other sibling project that forked this
-repo's conventions.
+**Related repos**: `git-remote-gpg-encrypt` carries its own trimmed copy of the Ruby rules, and
+`homebrew-tap` pins its release tag. When a Ruby rule or tool-release change is made here, check
+whether an adapted version belongs there -- see `.ai/context.md` § Related Repositories.
 
-**Known related repo -- `homebrew-tap`** (`${PROJECTS_BASE_DIR}/oss/homebrew-tap`,
-standalone, its own git history, not managed by `install-dotfiles.rb`): a personal
-Homebrew tap (deliberately generic-named, not `homebrew-git-remote-gpg-encrypt` --
-intended to hold formulae for any number of future personal tools, not just this one),
-currently containing only `Formula/git-remote-gpg-encrypt.rb`. This is how
-`git-remote-gpg-encrypt` is installed from `files/--HOME--/Brewfile` (`tap
-'vraravam/tap'` + `brew 'vraravam/tap/git-remote-gpg-encrypt'`). Its only Ruby files are
-Homebrew Formula DSL files, which follow Homebrew's own established style (enforced by
-`brew style`/`brew audit`, see that repo's own `.rubocop.yml`) rather than this repo's
-`ruby-scripting.md` conventions -- there is nothing to back-port here the way there is
-for `git-remote-gpg-encrypt` above. When `git-remote-gpg-encrypt` cuts a new tagged
-release, this tap's `Formula/git-remote-gpg-encrypt.rb` needs its `tag:`/`revision:`
-updated to match (see that repo's own `README.md` for the exact steps).
+## Git State Management -- NEVER Modify Without Permission
 
-## Git State Management — NEVER Modify Without Permission
+**DEFAULT WORKFLOW: the user reviews and stages changes manually.**
 
-**DEFAULT WORKFLOW: The user reviews and stages changes manually.**
+1. Make the requested edits.
+2. Show `git status` / `git diff`.
+3. **STOP.** Do not stage, commit, or otherwise change git state.
 
-After making edits:
-1. ✅ Make the requested edits to files
-2. ✅ Show `git status` or `git diff` to display what changed
-3. ❌ **STOP** - Do NOT stage, commit, or modify git state
-4. ✅ Let the user review changes and stage manually
-
-**Prohibited without explicit permission:**
-- `git add` / `git add -A` / `git add .` — staging files
-- `git commit` / `git commit -a` / `git commit --amend` — creating/modifying commits
-- `git reset` / `git restore --staged` — unstaging files
-- `git checkout` / `git switch` — changing branches
-- `git push` / `git push --force` — pushing to remote
-- `git rebase` / `git merge` — modifying history
-- `git stash` / `git rm` — any other state-modifying command
-
-**If the user explicitly grants permission for ONE operation:**
-- Permission is ONE-TIME ONLY for that specific instruction
-- NOT a blanket approval for the rest of the session
-- NOT carried over to future sessions
-- Each git state change requires fresh explicit permission
-
-**Why this matters:**
-- Users manually review all changes before staging
-- Users may stage specific hunks or files for different commits
-- Automatically staging destroys the user's deliberate staging intent
-- The staging area reflects the user's workflow decisions
-
-See: `.ai/instructions.md` § Git State Management Rules
+Prohibited without explicit permission: `git add`, `commit`, `reset`, `restore --staged`,
+`checkout`, `switch`, `push`, `rebase`, `merge`, `stash`, `rm`, and similar state-changing
+commands. Permission is **one-time, for that one instruction only** -- never blanket, never carried
+into later requests or sessions. Details: `domains/git-workflow.md`.
 
 ## Critical Commands (Run After Every Edit)
 
 **Shell scripts**:
 ```zsh
 zsh -n file.sh                    # Syntax check
-shfmt -w file.sh                  # Format
+shfmt -w file.sh                  # Format (check .shfmtignore first)
 rm -f file.sh.zwc                 # Delete bytecode cache
 chmod +x file.sh                  # Ensure executable
 ```
@@ -97,244 +72,56 @@ chmod +x file.sh                  # Ensure executable
 rufo file.rb                      # Format
 ```
 
-**All files** (except `.md`):
-```zsh
-# Verify whitespace rules (see .ai/instructions.md § Whitespace Rules)
-tail -c 1 file | od -An -tx1 | grep -q '0a' || echo "Missing final newline"
-tail -n 1 file | grep -q '^$' && echo "Has trailing blank lines"
-grep -q '[[:space:]]$' file && echo "Has trailing whitespace"
-```
+**All files** (except `.md`): ends with exactly one newline, no trailing blank lines, no trailing
+whitespace -- verification and fix commands in `domains/whitespace-rules.md`.
 
 ## Startup-Time Check -- Mandatory for Zsh Startup Files
 
-Whenever you suggest or make any change to `.shellrc`, `.aliases`, `.zshenv`, `.zshrc`,
-`.zlogin`, autoload functions, or other code run during shell startup, verify it has no
-detrimental effect on shell startup time and report the old-vs-new numbers. Starting Ruby
-on the startup path costs ~100ms -- guard it with a pure-shell freshness check. See
-`zsh-startup.md` § Startup-Impact Verification (Mandatory).
+For any change to `.shellrc`, `.aliases`, `.zshenv`, `.zshrc`, `.zlogin`, autoload functions, or other
+code run during shell startup: verify there is no startup-time regression and report old-vs-new
+numbers. Starting Ruby on the startup path costs ~100ms -- guard it with a pure-shell freshness
+check. See `domains/zsh-startup.md` § Startup-Impact Verification (Mandatory).
 
 ## Decision-Making Priority Order
 
 When choices conflict, this order wins:
 
-1. **Startup speed** (for zsh hot path)
+1. **Startup speed** (for the zsh hot path)
 2. **Maintainability** (readability, DRY, clear intent)
 3. **POSIX compatibility** (when scripts run in bash/direnv)
 4. **Zsh built-ins** (when they don't conflict with #1-3)
 
-Document tradeoffs in comments when priorities conflict.
+Document the tradeoff in a comment when priorities conflict.
 
-## Common Agent Mistakes
+## Common Agent Mistakes (one-liners; follow the link for the full rule)
 
-### 1. `&&` Under `set -e` Triggers ERR Traps
-
-**Problem**: Standalone `A && B` where A returning false is *expected* propagates exit code 1, triggering ERR trap or aborting the script.
-
-```zsh
-# BAD -- file not existing is normal, but fires ERR trap
-is_file "${optional}" && process_file
-
-# Good -- explicit if/then never propagates predicate exit code
-if is_file "${optional}"; then process_file; fi
-```
-
-**Safe exception**: `A && B || C` where C returns 0 (overall expression = 0, no trap).
-
-See: `shell-scripting.md` § `&&` as Conditional
-
-### 2. Dual-Mode Ruby Scripts (Module + CLI)
-
-**ALL standalone Ruby scripts MUST follow this pattern** to enable both CLI usage and direct module calls (no subprocess overhead):
-
-```ruby
-module MyScript
-  extend self
-  def run(param:)
-    # ... logic ...
-    true  # Return boolean, NEVER call exit()
-  end
-end
-
-if __FILE__ == $PROGRAM_NAME
-  include Logging  # Only in CLI block
-  # ... option parsing ...
-  success = MyScript.run(param: value)
-  exit(success ? 0 : 1)
-end
-```
-
-**When calling from another Ruby script**:
-```ruby
-require_relative 'my-script'
-success = MyScript.run(param: value)  # Direct call, no subprocess
-```
-
-See: `ruby-scripting.md` § Dual-Mode Ruby Scripts
-
-### 3. Path Constants — Never Hardcode
-
-**Shell**:
-```zsh
-# BAD
-source "${HOME}/.config/dotfiles/scripts/utilities/file.sh"
-
-# Good
-source "${DOTFILES_DIR}/scripts/utilities/file.sh"
-```
-
-**Ruby**:
-```ruby
-# BAD
-config = Pathname.new(ENV['HOME']).join('.config/file')
-
-# Good
-config = EnvVars::XDG_CONFIG_HOME.join('file')
-```
-
-All path env vars are defined in:
-- Shell: `files/--HOME--/.shellrc` (lines 40-113)
-- Ruby: `scripts/utilities/env_vars.rb`
-
-See: `path-constants.md`
-
-### 4. Startup Hot Path — No Subshell Forks
-
-```zsh
-# BAD -- forks subprocess on every shell start
-ARCH=$(uname -m)
-basename=$(basename "$(pwd)")
-
-# Good -- use cached value or zsh parameter expansion
-is_arm  # Checks cached ARCH (see .shellrc architecture cache)
-basename="${PWD:t}"  # Zsh :t modifier (no fork)
-```
-
-See: `zsh-startup.md` § No Subshell Forks, `shell-scripting.md` § Zsh Parameter Expansion
-
-### 5. Git Command Overrides -- Folder-Context Pattern
-
-`push`, `pull`, `cc` and `upreb` (aliases for `scripts/git-command.rb`) and the `git cc`/`git upreb` commands (`scripts/git-cc`, `scripts/git-upreb`) support per-repository overrides via `${PERSONAL_BIN_DIR}/<command>-<basename>.rb` (or `.sh`; `.rb` wins). The lookup lives in `GitOverrides.script_for` (`scripts/utilities/git_overrides.rb`); those two scripts mirror it in shell (and `dispatch_or_fallback` in `.aliases` for `st`/`count`):
-
-```sh
-dir="${1:-$(git rev-parse --show-toplevel 2>/dev/null || printf .)}"
-basename="$(basename "$(cd "${dir}" && pwd)")"
-for ext in rb sh; do override="${PERSONAL_BIN_DIR}/upreb-${basename}.${ext}"; ...; done
-# ... default implementation ...
-```
-
-Override script pattern (Ruby; `${PERSONAL_BIN_DIR}` is on `RUBYLIB` so `require` finds the utilities):
-```ruby
-#!/usr/bin/env ruby
-require 'git_commands'
-require 'git_processor'
-require 'logging'
-
-Logging.run_script do
-  # Custom pre-logic
-  git = GitProcessor.new(dir: Dir.pwd)
-  git.run_alias('delete-tag', 'twilight') if git.tag_exists?('twilight')
-
-  # Call common implementation (header: false -- run_script already printed a banner)
-  GitCommands.upreb(args: ARGV, header: false)
-
-  # Custom post-logic (if needed)
-end
-```
-
-To suspend cron around the default: `Cron.with_cron_suspended { GitCommands.push(args: ARGV, header: false) }`.
-
-See: `git-config.md` § Folder-Context-Aware Override Pattern
-
-### 6. Shell Functions Before Ruby Available
-
-Functions needed during **bootstrap** (before Ruby installed, before dotfiles cloned) MUST live in `.shellrc`, not `.aliases`:
-
-- `clone_repo_into` — Clones dotfiles repo on vanilla OS
-- `suspend_cron`/`resume_cron` — Used before repo exists
-- Logging functions (`info`, `success`, `warn`, `error`)
-- Validation functions (`is_file`, `is_directory`, `nil_or_empty`)
-
-**Ruby delegates to shell** for bootstrap functions:
-```ruby
-# GitProcessor delegates to shell clone_repo_into
-system('zsh', '-c', "source #{EnvVars::HOME.join('.shellrc')} && clone_repo_into '#{url}' '#{target}'")
-```
-
-See: `shell-scripting.md` § `.shellrc` vs `.aliases` Split, `context.md` § clone_repo_into Delegation Pattern
-
-### 7. UTF-8 File Reading in Ruby
-
-**CRITICAL**: Ruby file reading defaults to system encoding (US-ASCII in cron jobs). Files with UTF-8 content (em dashes, curly quotes) cause `ArgumentError: invalid byte sequence in US-ASCII`.
-
-```ruby
-# BAD -- encoding depends on environment
-lines = file.readlines
-File.foreach(file) { |line| process(line) }
-
-# Good -- explicit UTF-8 encoding
-lines = Core.read_lines_utf8(file)
-Core.each_line_utf8(file) { |line| process(line) }
-```
-
-**Affected files**: Config files in `scripts/data/`, SSH config, plist files.
-
-**Exception**: `String#each_line` on in-memory strings is fine (strings already UTF-8 in memory).
-
-See: `ruby-scripting.md` § UTF-8 File Reading
-
-### 8. Whitespace Rules — Mandatory Checks
-
-**After every edit** (except `.md`), files MUST pass three checks:
-
-1. **File ends with newline**: `tail -c 1 file | od -An -tx1 | grep -q '0a'`
-2. **No trailing blank lines**: `! tail -n 1 file | grep -q '^$'`
-3. **No trailing whitespace**: `! grep -q '[[:space:]]$' file`
-
-**Fix command**:
-```zsh
-# Remove trailing blank lines (preserves final newline)
-sed -i '' -e :a -e '/^\s*$/d;N;ba' file
-
-# Remove trailing whitespace from all lines
-sed -i '' 's/[[:space:]]*$//' file
-```
-
-See: `.ai/instructions.md` § Whitespace Rules
-
-### 9. Fresh Install Idempotency
-
-Every section in `fresh-install-of-osx.sh` MUST have a guard that pre-empts execution when work is already done:
-
-```zsh
-# Good -- skip if tool already installed
-if is_executable "brew"; then
-  info "Homebrew already installed -- skipping."
-else
-  # ... install homebrew ...
-fi
-```
-
-Script runs in two modes:
-- **Vanilla OS** (`FIRST_INSTALL=1`) — Fresh macOS, nothing installed
-- **Pre-configured** — Already set up, running updates
-
-See: `fresh-install.md` § Idempotency Contract
-
-### 10. Logging Auto-Indents — Never Manual Spaces
-
-All logging methods auto-indent based on `_DOTFILES_SCRIPT_DEPTH` (2 spaces per depth):
-
-```ruby
-# Good -- Logging.info auto-indents
-Logging.info "Processing '#{file.cyan}'"
-
-# BAD -- manual indentation breaks nested calls
-puts "  Processing '#{file.cyan}'"
-```
-
-**Exception**: External tool output intentionally unindented (user expects original format).
-
-See: `script-depth-tracking.md`
+1. **`&&` under `set -e`** -- a standalone `A && B` whose `A` is *expected* to be false triggers the
+   ERR trap. Use `if A; then B; fi`. Safe exception: `A && B || C` where `C` returns 0.
+   See `shell-scripting.md` § `&&` as Conditional.
+2. **Ruby scripts are dual-mode** -- `module X; extend self; def run(...)` returning a boolean (never
+   `exit`), plus an `if __FILE__ == $PROGRAM_NAME` CLI block. Call other scripts via
+   `require_relative` + `Mod.run`, not a subprocess. See `ruby-scripting.md` § Dual-Mode.
+3. **Never hardcode paths** -- shell `${DOTFILES_DIR}`, `${PERSONAL_BIN_DIR}`, `${XDG_CONFIG_HOME}`;
+   Ruby `EnvVars::XDG_CONFIG_HOME.join(...)`. Defined in `files/--HOME--/.shellrc` and
+   `scripts/utilities/env_vars.rb`. See `path-constants.md`.
+4. **No subshell forks on the startup hot path** -- use `${PWD:t}` not `$(basename ...)`, the cached
+   `is_arm`, the `zsh/stat` module. See `zsh-startup.md` § No Subshell Forks.
+5. **Per-repo git overrides** -- `push`/`pull`/`cc`/`upreb` dispatch to
+   `${PERSONAL_BIN_DIR}/<command>-<basename>.rb` (or `.sh`; `.rb` wins) via
+   `GitOverrides.script_for`. Override scripts use `Logging.run_script` and
+   `GitCommands.<cmd>(args: ARGV, header: false)`. See `git-overrides.md`.
+6. **Bootstrap functions live in `.shellrc`, not `.aliases`** -- anything needed before Ruby or the
+   dotfiles repo exists: `clone_repo_into`, `suspend_cron`/`resume_cron`, logging functions,
+   `is_file`/`is_directory`/`nil_or_empty`. Ruby delegates to them via
+   `zsh -c "source ~/.shellrc && clone_repo_into ..."`.
+7. **UTF-8 file reading in Ruby** -- use `Core.read_lines_utf8` / `Core.each_line_utf8`, never bare
+   `File.readlines` / `File.foreach` (US-ASCII under cron breaks on em dashes). See
+   `ruby-shell-git-io.md` § UTF-8 File Reading.
+8. **Whitespace rules after every non-`.md` edit** -- `domains/whitespace-rules.md`.
+9. **Fresh install must be idempotent** -- every section has a guard that skips finished work;
+   supports vanilla-OS (`FIRST_INSTALL=1`) and pre-configured modes. See `fresh-install.md`.
+10. **Logging auto-indents** -- never add manual leading spaces to `info`/`Logging.info` output;
+    indentation follows `_DOTFILES_SCRIPT_DEPTH`. See `script-depth-tracking.md`.
 
 ## Repository Structure (Quick Map)
 
@@ -345,11 +132,11 @@ See: `script-depth-tracking.md`
 │   ├── --ZDOTDIR--/       # Zsh config (.zshenv, .zshrc, .zlogin)
 │   └── --XDG_CONFIG_HOME--/zsh/  # Autoload functions
 ├── scripts/
-│   ├── utilities/         # Shared Ruby modules (logging*.rb, env_vars.rb, env_lite.rb, git_processor.rb, git_recreate.rb, git_maintenance.rb)
+│   ├── utilities/         # Shared Ruby modules (logging*.rb, env_vars.rb, env_lite.rb, git_processor.rb, ...)
 │   ├── fresh-install-of-osx.sh    # Bootstrap entry point
 │   ├── install-dotfiles.rb        # Symlink/copy manager
 │   └── capture-prefs.rb           # Preferences export/import
-└── .ai/                   # AI instruction files (READ THIS FIRST)
+└── .ai/                   # AI instruction files (tool-agnostic)
 ```
 
 **Key paths**:
@@ -359,86 +146,10 @@ See: `script-depth-tracking.md`
 - `${XDG_CONFIG_HOME}` = `~/.config`
 - `${ZDOTDIR}` = `~/.config/zsh`
 
-## Testing Patterns
-
-**Shell scripts**:
-```zsh
-# Syntax check
-zsh -n script.sh
-
-# Profile startup (for .zshrc edits)
-ZSH_PROFILE=true zsh -i -c exit
-zprof
-
-# Debug load order
-DEBUG=true zsh
-```
-
-**Ruby scripts**:
-```zsh
-# Ruby 2.6 compatibility check (system Ruby on vanilla macOS)
-/usr/bin/ruby -c script.rb
-
-# Test dual-mode scripts
-ruby script.rb --help               # CLI mode
-ruby -e "require_relative 'script'; MyModule.run"  # Module mode
-```
-
-**Fresh install** (idempotency test):
-```zsh
-# First run (vanilla OS simulation)
-FIRST_INSTALL=1 "${DOTFILES_DIR}/scripts/fresh-install-of-osx.sh"
-
-# Second run (pre-configured mode)
-"${DOTFILES_DIR}/scripts/fresh-install-of-osx.sh"
-```
-
-## Performance Optimization Notes
-
-**Current startup**: ~30ms average (Apple Silicon, verified via 20-run `time zsh -i -c exit`; re-verify before citing -- see `.ai/context.md` § Bottleneck Analysis for the June 2026 snapshot this superseded)
-
-**Bottlenecks** (from `zprof`):
-- 81% (21ms): Antidote plugin bundle loading — already optimized
-- 9% (2.6ms): Syntax highlighting
-- 5% (1.4ms): Starship prompt (cached)
-- 4% (1.2ms): Mise activation (cached)
-
-**Optimization patterns that work**:
-- Mtime-based caching (brew shellenv, starship init, mise activate)
-- Zsh parameter expansion over subshells (`${PWD:t}` not `$(basename ...)`)
-- `zsh-defer` for non-critical operations (runs after first prompt, before first keypress)
-- `zsh/stat` module over `$(stat ...)` forks
-
-See: `zsh-startup.md`, `context.md` § Historical Optimization Milestones
+Testing patterns, debugging commands and performance numbers: `.ai/context.md`.
 
 ## When to Ask Questions
 
-Ask ONLY if the repo cannot answer:
-- Undocumented team conventions
-- Branch/PR/release expectations
-- Missing setup prerequisites known but not written
-
-Do NOT ask about:
-- Anything in `.ai/` instruction files
-- Standard shell/Ruby/git conventions
-- Information in README/Adoption/TechnicalDeepDive docs
-
-## Quick Debugging Reference
-
-```zsh
-# Check if function loaded
-type function_name
-
-# Check PATH/FPATH
-echo ${PATH} | tr ':' '\n'
-echo ${FPATH} | tr ':' '\n'
-
-# Find where function defined
-whence -v function_name
-
-# Trace shell startup
-DEBUG=true zsh
-
-# Profile Ruby script
-ruby-prof script.rb
-```
+Ask ONLY if the repo cannot answer: undocumented team conventions, branch/PR/release expectations,
+or missing setup prerequisites. Do NOT ask about anything covered in `.ai/`, standard shell/Ruby/git
+conventions, or the README/Adoption/TechnicalDeepDive docs.

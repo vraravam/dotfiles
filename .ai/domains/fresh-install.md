@@ -145,8 +145,8 @@ On a vanilla OS, the order of availability is:
 Functions needed **before step 4** must live in `.shellrc`, not `.aliases`.
 `.shellrc` is curl-downloaded and must stay lean -- only put functions in it
 that are genuinely required before the dotfiles repo is cloned. See the
-`.shellrc` vs `.aliases` split section in `copilot-instructions.md` for the
-full rationale and decision rule.
+[`AGENTS.md`](../../AGENTS.md) § **Common Agent Mistakes** #6 for the
+decision rule.
 
 Functions needed **before step 3** (Homebrew install) cannot use brew-installed tools.
 
@@ -165,7 +165,7 @@ Add comment about retry behavior in error scenarios.
 ## `load_file_if_exists` / `recompile_zsh_script` Safety Before Homebrew Is Installed
 
 `load_file_if_exists` calls `recompile_zsh_script` on its target file before
-sourcing it (see `shell-scripting.md` § `source` vs `load_file_if_exists`).
+sourcing it (see `shell-portability-cron.md` § `source` vs `load_file_if_exists`).
 This is safe to call anywhere in `fresh-install-of-osx.sh`, including points
 where Homebrew has not been installed yet (e.g. the `load_zsh_configs` +
 `load_file_if_exists "${ZDOTDIR}/.aliases"` call that runs right after
@@ -267,7 +267,7 @@ commit to home repo, and run `recron` to install.
 
 ## Keybase Functions
 
-See `copilot-instructions.md` -- Keybase / SSH section. Summary: both functions
+Summary: both functions
 live in `.aliases`, not `.shellrc`. Do not move them to `.shellrc`.
 
 ## `install_mise_versions` Duration

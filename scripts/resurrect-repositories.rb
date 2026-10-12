@@ -583,7 +583,7 @@ module ResurrectRepositories
     return repos if nil_or_empty?(filter)
 
     # Compile once here rather than once per repo_item -- avoids recompiling the same
-    # Regexp on every element of repos.select (see ruby-scripting.md's hot-path guidance).
+    # Regexp on every element of repos.select (see ruby-performance-idioms.md's hot-path guidance).
     filter_re = Regexp.new(filter, Regexp::IGNORECASE)
 
     repos.select do |repo_item|

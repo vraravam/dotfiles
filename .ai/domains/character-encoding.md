@@ -1,5 +1,7 @@
 ---
 applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**/*.{sh,rb},**/*.{yml,yaml,json,xml,toml,ini,conf,rc},**/.gitconfig,**/.gitattributes,**/.gitignore"
+name: dotfiles-character-encoding
+description: Use when writing scripts, comments, or config files in this dotfiles repo that might contain non-ASCII characters -- em/en dashes, curly quotes and other typographic punctuation are forbidden; use ASCII dashes and quotes only.
 ---
 
 # Character Encoding and Punctuation

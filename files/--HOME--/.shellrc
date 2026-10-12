@@ -19,7 +19,7 @@
 # ${(P)name}, arr[-1], typeset -A) -- safe to guard with 'if is_zsh; then ...
 # fi'; (3) breaks bash's own parser even inside a never-called function (e.g.
 # '[[ -v "arr[key]" ]]') -- an is_zsh guard does NOT help here; the construct
-# must be avoided entirely in this file. See shell-scripting.md's "Bash
+# must be avoided entirely in this file. See shell-portability-cron.md's "Bash
 # Compatibility Gotchas Discovered in .shellrc" section for the full catalog
 # and the portable replacement used for each one.
 #
@@ -294,7 +294,7 @@ is_non_zero_string() {
 # bash fallback uses eval to build the same indirect array-length lookup --
 # portable back to bash 3.2 (macOS's default -- no namerefs, no associative
 # arrays). Confirmed empirically: bash's parser tokenizes ${(P)1} fine (unlike
-# '-v "arr[key]"', which fails at parse time -- see shell-scripting.md), it only
+# '-v "arr[key]"', which fails at parse time -- see shell-portability-cron.md), it only
 # fails with 'bad substitution' when actually expanded at runtime, so a plain
 # runtime is_zsh guard (not a separate never-called function) is sufficient here.
 is_empty_array() {
@@ -583,7 +583,7 @@ _log_indent() {
   # never called, does not help: bash must still tokenize a function's body
   # to find its closing brace when *defining* it, so a parse-time error
   # inside an unreached branch still breaks sourcing the whole file. See
-  # shell-scripting.md's 'is_zsh guards are for parse-time zsh-only syntax
+  # shell-portability-cron.md's 'is_zsh guards are for parse-time zsh-only syntax
   # only' section for the general rule this is an instance of.
   if is_zsh; then
     if [[ -z "${_INDENT_CACHE[${depth}]:-}" ]]; then

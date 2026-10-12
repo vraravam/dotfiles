@@ -29,8 +29,8 @@ risk levels, and remediation steps.
 Before reviewing, read these files:
 
 1. `.ai/instructions.md` - Repository overview
-2. `.ai/domains/shell-scripting.md` - Shell patterns (security sections)
-3. `.ai/domains/ruby-scripting.md` - Ruby patterns (security sections)
+2. `.ai/domains/shell-scripting.md` (core) and `shell-portability-cron.md` - Shell patterns (security sections)
+3. `.ai/domains/ruby-scripting.md` (core) and `ruby-shell-git-io.md` - Ruby patterns (security sections)
 
 If any of these files appear truncated, say so and request the full content
 before proceeding rather than reviewing against a partial rule set.

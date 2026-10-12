@@ -29,7 +29,7 @@ actionable recommendations for the calling agent (or the user) to apply.
 Before reviewing, read these files in order:
 
 1. `.ai/instructions.md` - Main philosophy and decision-making priority
-2. `.ai/domains/ruby-scripting.md` - Ruby-specific rules and patterns
+2. `.ai/domains/ruby-scripting.md` (core) plus topic files `ruby-infrastructure.md`, `ruby-shell-git-io.md`, `ruby-performance-idioms.md` in the same folder - Ruby-specific rules and patterns
 3. `.ai/domains/logging-conventions.md` - Logging and color standards
 4. `.ai/domains/path-constants.md` - Path variable conventions
 

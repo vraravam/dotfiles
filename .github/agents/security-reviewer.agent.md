@@ -22,8 +22,8 @@ You do NOT edit files directly. You provide a security review report with specif
 Before reviewing, you MUST read these files:
 
 1. `.ai/instructions.md` - Repository overview
-2. `.ai/domains/shell-scripting.md` - Shell patterns (security sections)
-3. `.ai/domains/ruby-scripting.md` - Ruby patterns (security sections)
+2. `.ai/domains/shell-scripting.md` (core) and `shell-portability-cron.md` - Shell patterns (security sections)
+3. `.ai/domains/ruby-scripting.md` (core) and `ruby-shell-git-io.md` - Ruby patterns (security sections)
 
 If any of these files are truncated during reading, STOP and request the full file content before proceeding.
 

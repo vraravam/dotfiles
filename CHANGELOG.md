@@ -4,6 +4,32 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.18
+
+:white_check_mark: Tested on a vanilla macOS machine
+
+#### Restructure the `.ai/` instruction set for on-demand loading: a short `AGENTS.md` entry point, core-plus-topic splits of the Ruby, shell and git domain files, and a periodic-review rule
+
+* *[AGENTS.md]* Reduced to the hard rules, a task-to-domain routing table, the post-edit commands and one-line pointers for the common mistakes (the long-form examples now live in the domain files). The related-repositories notes, testing patterns and startup-performance snapshot moved to `.ai/context.md`.
+* *[.ai/domains/ruby-scripting.md]* Split into a core file (dual-mode, parameters, validation, exit points, private methods, Ruby 2.6 compatibility, common mistakes) plus topic files `ruby-infrastructure.md` (Logging, `CliParser`, `EnvVars`, colors, `require` ordering, module/class structure), `ruby-shell-git-io.md` (`system()` and escaping, `GitProcessor`, UTF-8 reading, `nil_or_empty?`) and `ruby-performance-idioms.md` (memoization, frozen constants, hoisting, collection and string performance, idioms).
+* *[.ai/domains/shell-scripting.md]* Split into a core file plus `shell-functions-autoload.md` (function entry points, autoload structure, `local`/`unset`, positional parameters, expansion operators) and `shell-portability-cron.md` (bash/direnv compatibility, `.envrc`, cron, `is_zsh` guards, globs, caches, shebangs, `exec` wrappers).
+* *[.ai/domains/git-config.md]* Per-repo overrides, the folder-context dispatch pattern, native hooks and lifecycle management moved to the new `git-overrides.md`.
+* *[.ai/instructions.md]* Reduced to the domain index (with "read when" guidance), a loading strategy, the editing rules and a condensed git-state summary. The git workflow, changelog, SSH config and markdown copy-paste rules moved to the new `git-workflow.md`, `changelog.md`, `ssh-config.md` and `markdown-blocks.md`. The Copilot/GPT tool-mapping text was removed so the instructions stay model-agnostic.
+* *[.ai/README.md]* New "Context Budget" and "Periodic Review" sections: size thresholds (always-loaded total, any single domain file, `AGENTS.md`), a measuring command and a checklist for dedupe, promote/demote, cross-reference, skill-symlink and frontmatter checks, and mirroring into sibling projects.
+* *[.ai/domains/comment-philosophy.md, .ai/domains/character-encoding.md]* Gained `name`/`description` frontmatter and are now loaded on demand instead of being always-on.
+* *[.opencode/opencode.json, .opencode/skills/, .claude/skills, CLAUDE.md]* The always-on instruction list is `instructions.md`, `whitespace-rules.md` and `edit-checklist.md` only; every new domain file has a skill symlink; `.claude/skills` points at the same skills; `CLAUDE.md` imports `AGENTS.md`.
+* *[.github/copilot-instructions.md]* The read-every-instruction-file protocol is replaced by loading only the domain files that match the task.
+* *[.github/agents/, .opencode/agents/]* The reviewer agents list the core and topic files they need, and section references that moved now name their new file.
+* *[.ai/context.md, .ai/REBASE-AND-REFACTORING-METHODOLOGY.md, .ai/FEATURE-PARITY-CHECKLIST.md, .ai/domains/edit-checklist.md, .ai/domains/fresh-install.md, CONTRIBUTING.md, Extras.md]* Cross-references updated to the files that now hold the referenced sections; stale `copilot-instructions.md` pointers fixed.
+* *[files/--HOME--/.shellrc, scripts/add-upstream-git-config.rb, scripts/resurrect-repositories.rb]* Comment-only updates so the referenced rule files and sections are correct.
+
+#### Adopting these changes
+
+* No action needed for the shell configuration: the `.shellrc` change is comment-only.
+* If you keep your own copy of these instruction files (for example in a fork or a sibling project such as `git-remote-gpg-encrypt`), mirror the split there, and add a `.claude/skills` symlink to `.opencode/skills` if you use Claude Code.
+
+---
+
 ### 4.0.17
 
 :white_check_mark: Tested on a vanilla macOS machine

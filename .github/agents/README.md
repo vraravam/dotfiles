@@ -165,8 +165,8 @@ For comprehensive review, use multiple agents in sequence:
 All agents require these files to be available and not truncated:
 
 1. `.ai/instructions.md` - Main entry point, decision-making philosophy
-2. `.ai/domains/shell-scripting.md` - Shell-specific patterns
-3. `.ai/domains/ruby-scripting.md` - Ruby-specific patterns
+2. `.ai/domains/shell-scripting.md` (core) plus topic files `shell-functions-autoload.md`, `shell-portability-cron.md` in the same folder - Shell-specific patterns
+3. `.ai/domains/ruby-scripting.md` (core) plus topic files `ruby-infrastructure.md`, `ruby-shell-git-io.md`, `ruby-performance-idioms.md` in the same folder - Ruby-specific patterns
 4. `.ai/domains/logging-conventions.md` - Logging and color standards
 5. `.ai/domains/path-constants.md` - Path variable conventions
 
@@ -266,8 +266,8 @@ If you create a new agent for this repository:
 
 For detailed coding standards these agents check against:
 - `.ai/instructions.md` - Main entry point and philosophy
-- `.ai/domains/shell-scripting.md` - Complete shell scripting rules
-- `.ai/domains/ruby-scripting.md` - Complete Ruby scripting rules
+- `.ai/domains/shell-scripting.md` (core) plus topic files `shell-functions-autoload.md`, `shell-portability-cron.md` in the same folder - Complete shell scripting rules
+- `.ai/domains/ruby-scripting.md` (core) plus topic files `ruby-infrastructure.md`, `ruby-shell-git-io.md`, `ruby-performance-idioms.md` in the same folder - Complete Ruby scripting rules
 - `.ai/domains/logging-conventions.md` - Logging standards
 - `.ai/context.md` - Navigation aid and operational reference
 

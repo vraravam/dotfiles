@@ -409,7 +409,7 @@ prettier --write src/**/*.ts              # TypeScript
 #### 9. Force Push (The User's Step -- Never the Agent's)
 
 A rebase rewrites history, so every rebased branch that already exists on the
-remote needs a force-push. **The agent never pushes** (see `.ai/instructions.md`
+remote needs a force-push. **The agent never pushes** (see `.ai/domains/git-workflow.md`
 § Git State Management Rules): after verifying, it tells the user which
 branches changed and the exact command, and the user pushes.
 
@@ -720,7 +720,7 @@ chain, and only the final branch eventually merges to `master`.
 8. **Do not stage or commit**
    Make the changes but do not `git add`/`git commit`/amend anything -- the
    user reviews, stages, and amends the branch's single WIP commit manually
-   (see `.ai/instructions.md` § Git State Management Rules).
+   (see `.ai/domains/git-workflow.md` § Git State Management Rules).
 
 9. **Flag the pending rename for the user's commit message**
    Since staging/committing is the user's job, surface this as a note in your

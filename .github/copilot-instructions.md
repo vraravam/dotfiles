@@ -13,32 +13,20 @@ Personal macOS configuration management system using shell scripts (zsh/bash), R
 
 ---
 
-## PRE-TASK CHECKLIST — MANDATORY FILE READING PROTOCOL
+## PRE-TASK PROTOCOL -- LOAD ONLY WHAT THE TASK NEEDS
 
-Before ANY code changes, verify:
-- [ ] All applicable instruction files read COMPLETELY
-- [ ] Report line counts to user
-- [ ] Last line of every file confirmed present in tool output
+Read these before any code change:
 
-**NOT OPTIONAL. BLOCKING REQUIREMENT.**
+1. [`AGENTS.md`](../AGENTS.md) -- hard rules and the task-to-domain routing table
+2. [`.ai/instructions.md`](../.ai/instructions.md), [`.ai/domains/whitespace-rules.md`](../.ai/domains/whitespace-rules.md), [`.ai/domains/edit-checklist.md`](../.ai/domains/edit-checklist.md)
 
-### How to read instruction files
+Then read **only** the domain file(s) matching the files you will edit (see the routing table in
+`AGENTS.md`). Large domains have a core file (read first) plus topic files (read only when the task
+touches that topic). Do NOT read every file under `.ai/` -- that wastes context and buries the
+rules that matter.
 
-**Problem**: Large files (500+ lines) are silently truncated when using high endLine values.
-
-**Solution**: Read in manageable chunks and verify completeness.
-
-1. Run `wc -l <file>` in the terminal to get the EXACT line count.
-2. Read in chunks of 200 lines max:
-   - `read_file(startLine=1, endLine=200)`
-   - `read_file(startLine=201, endLine=400)`
-   - Continue until all lines read
-3. After all chunks, verify the LAST LINE of the file appeared in tool output.
-4. Report to user: "Read `<filename>`: `<N>` lines in `<K>` chunks. Last line confirmed."
-
-**NEVER use endLine=99999 — it silently truncates and you will miss rules.**
-
-**If the last line is NOT in tool output, the read is INCOMPLETE. Keep reading.**
+When reading a long file, read it in sections and make sure you reach the end; if a read was cut
+off, continue from where it stopped before relying on it.
 
 ---
 
@@ -46,11 +34,11 @@ Before ANY code changes, verify:
 
 - **Not following instructions = task failure**
 - **Existing code may not follow current standards** — never use existing code as template; always follow instruction files
-- **Before editing any file**, check if it matches an instruction file's `applyTo` pattern:
-  - `**/*.sh`, `**/.shellrc`, `**/.aliases` → MUST read `shell-scripting.md` first
-  - `**/*.rb` → MUST read `ruby-scripting.md` first
-  - `**/zsh/**` → MUST read `zsh-startup.md` first
-  - `**/.gitconfig`, `**/git/**` → MUST read `git-config.md` first
+- **Before editing any file**, load the matching domain file(s) (all under `.ai/domains/`):
+  - `**/*.sh`, `**/.shellrc`, `**/.aliases` -> `shell-scripting.md` (core); topic files `shell-functions-autoload.md` / `shell-portability-cron.md` as needed
+  - `**/*.rb` -> `ruby-scripting.md` (core); topic files `ruby-infrastructure.md` / `ruby-shell-git-io.md` / `ruby-performance-idioms.md` as needed
+  - `**/zsh/**`, zsh startup files -> `zsh-startup.md`
+  - `**/.gitconfig`, `**/git/**` -> `git-config.md`; per-repo overrides and hooks -> `git-overrides.md`
 - **Before editing any file**, check for uncommitted changes with `git status`. Never overwrite uncommitted changes without asking for confirmation.
 
 ---
@@ -68,7 +56,7 @@ Every task that modifies shell/Ruby code MUST include syntax validation before t
 
 ## Comments
 
-- Follow comment philosophy in `comment-philosophy.md`
+- Follow comment philosophy in `.ai/domains/comment-philosophy.md`
 - Explain WHY, not WHAT (code is self-documenting)
 - Document tradeoffs and non-obvious decisions
 - Never add unnecessary comments to generated code
@@ -97,7 +85,7 @@ After making edits:
 3. ❌ **STOP** - Do NOT stage, commit, or modify git state
 4. ✅ Let the user review changes and stage manually
 
-See `git-config.md` § Git State Management Rules for complete details.
+See `.ai/domains/git-workflow.md` § Git State Management Rules for complete details.
 
 ---
 
