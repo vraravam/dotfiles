@@ -4,6 +4,20 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.21
+
+#### Remove the unused `eval_shellenv` and retire the `fresh-install-ruby` and `osx-defaults-ruby` branches
+
+* *[files/--HOME--/.shellrc]* Removed `eval_shellenv`: since the Homebrew install and `brew shellenv` export moved into Ruby (`HomebrewInstall`, `MacOS.load_brew_shellenv`) nothing calls it. Anything of your own that calls it must define its own equivalent (`eval "$("$@" 2>/dev/null)"`).
+* *[scripts/utilities/env_vars.rb]* A comment named `PathUtils.prepend_to_path`, which does not exist; it is `append_to_path`.
+* *[TechnicalDeepDive.md, ToRevisit.md, .ai/context.md, .ai/domains/git-workflow.md, .ai/REBASE-AND-REFACTORING-METHODOLOGY.md]* The `fresh-install-ruby` branch (a full Ruby entry point) cannot work, because its `require_relative` targets only exist after the clone, so the install script stays shell up to the clone and everything after it is Ruby; the `osx-defaults-ruby` branch (a Ruby port of `osx-defaults.sh`) is dropped because `osx-defaults.sh` stays shell (its copy-paste `defaults write` catalogue is its value) and its ~640 settings cannot be verified without a real macOS. Both branches were deleted (no archive is kept) and the docs no longer treat either as live.
+
+#### Adopting these changes
+
+* Restart the Terminal/iTerm application to reload the zsh configuration (or, to avoid a restart, reload the function definitions in the current shell: `unfunction is_shellrc_sourced; DEBUG=true load_file_if_exists ~/.shellrc;`).
+
+---
+
 ### 4.0.20
 
 :white_check_mark: Tested on a vanilla macOS machine

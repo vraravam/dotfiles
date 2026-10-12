@@ -54,18 +54,17 @@ directly actionable when that work is picked up:
   `.aliases` for why bootstrap-time functions must stay in `.shellrc`).
 
 - **When rebasing all WIP branches onto an updated `master`**: as of this
-  writing the full set is `nix-migration`, `test-gpg`, `stout-migration`,
-  `deja`, `fresh-install-ruby`, `osx-defaults-ruby` -- `nix-migration`/
-  `test-gpg`/`stout-migration`/`deja` are each independently based on `master`
-  (any order); `osx-defaults-ruby` is chained on top of `fresh-install-ruby`
-  (not `master` directly), so `fresh-install-ruby` must be rebased first and
-  `osx-defaults-ruby` rebased onto the *updated* `fresh-install-ruby`, never
-  onto `master`. See `REBASE-AND-REFACTORING-METHODOLOGY.md` § Forward Rebase
-  for the chain mechanics, its § Rebase Workflow step 3 for the `rebase --onto
-  <new-base> <old-base> <branch>` form required when `master`'s tip commit was
-  itself amended (a plain `git rebase master` will conflict in that case), and
-  its § 3a for the mandatory post-rebase no-functionality-lost checklist --
-  applies to every branch in the set, not just the chain.
+  writing the only long-lived WIP branch is `nix-migration`, based directly on
+  `master`. See `REBASE-AND-REFACTORING-METHODOLOGY.md` § Forward Rebase for the
+  chain mechanics (used if a branch is ever stacked on another), its § Rebase
+  Workflow step 3 for the `rebase --onto <new-base> <old-base> <branch>` form
+  required when `master`'s tip commit was itself amended (a plain `git rebase
+  master` will conflict in that case), and its § 3a for the mandatory
+  post-rebase no-functionality-lost checklist -- applies to every branch.
+  The former experiment branches (`fresh-install-ruby`, `osx-defaults-ruby`, `deja`,
+  `stout-migration`, `test-gpg`) were deleted without an archive: the first two are
+  explained in `TechnicalDeepDive.md` § 13, the others are recorded in `ToRevisit.md`
+  or can be recreated (e.g. `test-gpg` is just toggling the KEYBASE_/ENCRYPTED_ env vars).
 
 ## Known Issues
 

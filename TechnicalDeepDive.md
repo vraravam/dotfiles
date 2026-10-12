@@ -640,20 +640,20 @@ Converting `osx-defaults.sh` to Ruby would eliminate a key usability feature:
 
 These two scripts anchor the shell ecosystem: `.shellrc` must remain because `fresh-install-of-osx.sh` sources it during bootstrap. Other scripts (`software-updates-cron.sh` evolved to Ruby, `setup-login-item.sh` evolved to Ruby) were converted because they don't have the same constraints. The decision to keep these two as shell is about respecting the constraints of the problem domain, not lack of effort or willingness to modernize.
 
-### Experimental Validation: `fresh-install-ruby` and `osx-defaults-ruby` Branches
+### Experimental Validation: the `fresh-install-ruby` and `osx-defaults-ruby` Experiments
 
-Between 2025-2026, two experimental branches validated this reasoning by attempting full Ruby conversions:
+Between 2025-2026, two experimental branches (both since deleted) validated this reasoning by attempting full Ruby conversions:
 
-- **`fresh-install-ruby`**: Complete Ruby port of `fresh-install-of-osx.sh` — ~750 lines, fully functional (its post-clone part has since been backported to `master` as `FreshInstallPostClone`; what remains unmerged is the Ruby port of the pre-clone part)
-- **`osx-defaults-ruby`**: Complete Ruby port of `osx-defaults.sh` — ~1800 lines, idiomatic Ruby with elegant hash-based batch writes
+- **`fresh-install-ruby`**: Complete Ruby port of `fresh-install-of-osx.sh` — ~750 lines, fully functional (its post-clone part was backported to `master` as `FreshInstallPostClone`; the Ruby port of the pre-clone part was never merged and the branch was deleted)
+- **`osx-defaults-ruby`**: Complete Ruby port of `osx-defaults.sh` — ~1800 lines, idiomatic Ruby with elegant hash-based batch writes (about 640 `defaults write` calls that can only be verified on a real macOS, so the port had little test coverage and every change to the shell original would have needed a double edit)
 
 Both branches proved the conversions were **technically feasible** but **architecturally wrong**:
 
-1. **`fresh-install-ruby`**: The bootstrap command grew from a single `curl` pipe to a multi-line tarball download + extract + execute sequence. This increased complexity and reduced adopter trust — exactly the problem § 13 predicted.
+1. **`fresh-install-ruby`**: A Ruby entry point cannot run before the repository is cloned, because it loads its shared modules with `require_relative` and those files only exist after the clone. The bootstrap command would grow from a single `curl` pipe to a multi-line tarball download + extract + execute sequence, which increases complexity and reduces adopter trust, exactly the problem § 13 predicted. The decision is final: the entry point stays shell, and everything after the clone is Ruby (see above).
 
 2. **`osx-defaults-ruby`**: The Ruby version was elegant and maintainable, but lost the copy-paste UX that makes the shell version valuable as a reference catalog. Users could no longer `cmd+c` a single setting and test it in terminal.
 
-These branches are preserved in git history for future reference but will not be merged. They serve as proof that the decision to keep these scripts as shell was based on real constraints, not lack of effort. If requirements change dramatically in the future, they provide a starting point.
+Both branches were deleted rather than kept: their conclusions (the entry point stays shell; `osx-defaults.sh` stays shell) are recorded here, and a long-lived branch that deletes a script `master` still runs is a standing rebase risk. They serve as proof that the decision to keep these scripts as shell was based on real constraints, not lack of effort. If requirements change dramatically, the approach is described above and can be redone.
 
 ---
 

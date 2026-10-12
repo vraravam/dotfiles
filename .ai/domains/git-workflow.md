@@ -240,9 +240,9 @@ This applies to:
 
 **Checklist for WIP conversion branches:**
 ```bash
-# Example: fresh-install-ruby branch
+# Example: nix-migration branch
 cd ${HOME}/.config/dotfiles
-git checkout fresh-install-ruby
+git checkout nix-migration
 
 # 1. Syntax check all Ruby files
 for file in $(find scripts -name "*.rb" -type f); do

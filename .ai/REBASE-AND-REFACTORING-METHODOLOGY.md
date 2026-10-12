@@ -661,8 +661,8 @@ shell to Ruby, each branch built directly on top of the previous one in the
 chain, and only the final branch eventually merges to `master`.
 
 **Terminology used below:**
-- **Target branch** -- the branch you're bringing up to date (e.g., `osx-defaults-ruby`)
-- **Parent branch** -- the branch it's built on top of (e.g., `fresh-install-ruby`) -- may or may not be `master`
+- **Target branch** -- the branch you're bringing up to date (e.g., `nix-migration`)
+- **Parent branch** -- the branch it's built on top of (e.g., a conversion branch it is stacked on) -- may or may not be `master`
 
 ### Process
 
