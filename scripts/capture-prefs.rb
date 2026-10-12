@@ -35,6 +35,11 @@ require_relative 'utilities/string_ext'
 # Returns true/false instead of calling exit().
 module CapturePrefs
   extend self
+  # nil_or_empty? and file? come from Core. Without this the module works only as a script (the CLI
+  # block's top-level 'include Logging' makes them global) and raises NoMethodError when it is
+  # required as a library, e.g. by PreferencesRestore.
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Process names (pgrep -x matches) -> display names for restart notification.
   # Only user-specified apps; login-item apps handled by kill/restart_login_item_apps.
@@ -80,20 +85,37 @@ module CapturePrefs
 
     # Suspend the automatic software update schedule so background update
     # activity cannot interfere with plist reads/writes during export or import.
-    # Resume on exit (both clean and error exits).
+    # Resumed in the 'ensure' below on every exit path (normal, error, exception). Deliberately not
+    # 'at_exit': that fires only when the whole process ends, which is far too late when this runs
+    # in-process (see PreferencesRestore) and would stack a new hook on every call.
     MacOS.suspend_softwareupdate_schedule
-    at_exit { MacOS.resume_softwareupdate_schedule }
+    restart_apps = false
+    begin
+      # Kill/restart login-item apps on import only, and only when running interactively.
+      # On import, apps must be stopped before writing so they cannot overwrite imported
+      # values when they quit. Cron skips this -- killall would disrupt the user's running
+      # session, and 'open -a' would re-launch apps mid-session. On export, macOS cfprefsd
+      # has already flushed current prefs to disk; killing apps is unnecessary.
+      if _importing? && Core.running_in_tty?
+        MacOS.kill_login_item_apps
+        restart_apps = true
+      end
 
-    # Kill/restart login-item apps on import only, and only when running interactively.
-    # On import, apps must be stopped before writing so they cannot overwrite imported
-    # values when they quit. Cron skips this -- killall would disrupt the user's running
-    # session, and 'open -a' would re-launch apps mid-session. On export, macOS cfprefsd
-    # has already flushed current prefs to disk; killing apps is unnecessary.
-    if _importing? && Core.running_in_tty?
-      MacOS.kill_login_item_apps
-      at_exit { MacOS.restart_login_item_apps }
+      _process(target_dir)
+    ensure
+      # Reverse order of the set-up: the apps first, then the schedule.
+      MacOS.restart_login_item_apps if restart_apps
+      MacOS.resume_softwareupdate_schedule
     end
+  end
 
+  # The work of #run between its set-up and its clean-up: clears the old backup on an export, then
+  # exports or imports every allowed domain and the default-application handlers, and commits the
+  # export or reloads the imported preferences.
+  #
+  # @param target_dir [Pathname] The 'defaults' folder inside the personal configs backup
+  # @return [Boolean] true on success
+  def _process(target_dir)
     if _exporting?
       # Clean up old files before exporting new ones (also handles removed domains)
       # .defaults files are from a past version of this script -- delete them too
@@ -311,22 +333,21 @@ module CapturePrefs
 
   private_class_method :_sync_default_app_handlers
 
-  # Returns true if the current operation is 'export' (memoized).
-  # Caches the result to avoid repeated string comparisons.
+  # Returns true if the current operation is 'export'. Not memoized: #run can be called more than
+  # once in one process (an export, then an import), and a cached true would carry over.
   #
   # @return [Boolean] true if @operation is 'export'
   def _exporting?
-    @_exporting ||= @operation == 'export'
+    @operation == 'export'
   end
 
-  private_class_method :_exporting?
+  private_class_method :_exporting?, :_process
 
-  # Returns true if the current operation is 'import' (memoized).
-  # Caches the result to avoid repeated string comparisons.
+  # Returns true if the current operation is 'import'. Not memoized, see _exporting?.
   #
   # @return [Boolean] true if @operation is 'import'
   def _importing?
-    @_importing ||= @operation == 'import'
+    @operation == 'import'
   end
 
   private_class_method :_importing?

@@ -2,8 +2,7 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-require 'rbconfig'
-
+require_relative '../capture-prefs'
 require_relative 'command_utils'
 require_relative 'env_vars'
 require_relative 'logging'
@@ -14,10 +13,10 @@ require_relative 'logging'
 # import's git-timestamp check passes. fresh-install-of-osx.sh calls it through call-utility.rb
 # once the dotfiles repository is cloned; Ruby callers can use it directly.
 #
-# Both scripts run as subprocesses on purpose: each registers at_exit hooks (resume the
-# softwareupdate schedule, restart login-item apps) that must fire right after its own
-# operation, not at the end of the whole setup, and the export and the import each need an
-# independent cleanup lifecycle.
+# capture-prefs runs in-process (CapturePrefs.run): it suspends the software-update schedule and
+# stops the login-item apps for an import, and restores both itself in an 'ensure' right after each
+# operation, so the export and the import each get an independent clean-up. osx-defaults.sh stays a
+# subprocess, being a shell script.
 module PreferencesRestore
   extend self
 
@@ -27,7 +26,7 @@ module PreferencesRestore
   #
   # @param first_install [Boolean] True on a vanilla macOS, where there is no backup to refresh.
   #   Defaults to FIRST_INSTALL from the environment.
-  # @return [Boolean] false when any sub-step failed or its script was missing; each is recorded.
+  # @return [Boolean] false when any sub-step failed or osx-defaults.sh was missing; each is recorded.
   def run(first_install: EnvVars.first_install?)
     ok = false
     Logging.run_script('preferences_restore', 'Restoring preferences') do
@@ -63,16 +62,10 @@ module PreferencesRestore
   # @param first_install [Boolean]
   # @return [Boolean]
   def _restore(first_install)
-    script = _script('capture-prefs.rb')
-    unless script.file?
-      Logging.record_error "capture-prefs.rb not found at '#{script.to_s.cyan}' -- import preferences manually"
-      return false
-    end
+    refreshed = first_install ? true : _refresh_backup
 
-    refreshed = first_install ? true : _refresh_backup(script)
-
-    unless _capture_prefs(script, '-i')
-      Logging.record_error "capture-prefs.rb exited non-zero -- import preferences manually: #{script.to_s.cyan}"
+    unless _capture_prefs('import')
+      Logging.record_error "Importing the preferences failed -- import them manually: #{'capture-prefs.rb -i'.cyan}"
       return false
     end
 
@@ -82,13 +75,12 @@ module PreferencesRestore
 
   # Exports and commits the current preferences on a pre-configured machine, so the import that
   # follows is not rejected as older than what is on disk. The export auto-commits inside
-  # capture-prefs.rb, so no separate commit is needed here.
+  # CapturePrefs, so no separate commit is needed here.
   #
-  # @param script [Pathname]
   # @return [Boolean] false when the refresh failed (the import still runs, from the existing backup)
-  def _refresh_backup(script)
+  def _refresh_backup
     Logging.info 'Pre-configured machine detected -- refreshing preferences backup first'
-    if _capture_prefs(script, '-e')
+    if _capture_prefs('export')
       Logging.success 'Successfully refreshed and committed preferences backup'
       return true
     end
@@ -97,11 +89,16 @@ module PreferencesRestore
     false
   end
 
-  # @param script [Pathname]
-  # @param flag [String] '-e' (export) or '-i' (import)
+  # Runs CapturePrefs in-process. An error it raises (Logging.error raises) is trapped and printed
+  # here, because a failing preferences step must not stop the rest of the setup.
+  #
+  # @param operation [String] 'export' or 'import'
   # @return [Boolean]
-  def _capture_prefs(script, flag)
-    CommandUtils.run_interactive({ 'COLUMNS' => EnvVars.columns.to_s }, RbConfig.ruby, script.to_s, flag)
+  def _capture_prefs(operation)
+    CapturePrefs.run(operation: operation)
+  rescue StandardError => e
+    Logging.warn "capture-prefs #{operation} failed: #{e.message}"
+    false
   end
 
   # @param name [String]

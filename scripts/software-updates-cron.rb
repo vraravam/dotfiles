@@ -324,10 +324,10 @@ module SoftwareUpdatesCron
     end
 
     _step('capture preferences', 'Capture app preferences'.yellow) do
-      # capture-prefs.rb must run as subprocess (not direct module call) because it has
-      # at_exit hooks that manage system state (suspend/resume softwareupdate, kill/restart
-      # apps). If called as module, hooks would register in parent process and fire at wrong
-      # time (end of software-updates-cron instead of after export completes).
+      # Still a subprocess from when capture-prefs.rb registered at_exit hooks that would have fired
+      # at the end of this script instead of after the export. CapturePrefs.run now restores system
+      # state in an 'ensure' right after each operation (see PreferencesRestore, which calls it
+      # in-process), so a direct CapturePrefs.run(operation: 'export') would work here too.
       # Export auto-commits inside capture-prefs.rb (uses smart_commit)
       # Set COLUMNS for terminal width detection (cron has no TTY, defaults to 80)
       if CommandUtils.run_interactive({ 'COLUMNS' => EnvVars.columns.to_s }, RbConfig.ruby, Pathname.new(__dir__).join('capture-prefs.rb').to_s, '-e')

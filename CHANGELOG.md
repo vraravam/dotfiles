@@ -4,6 +4,21 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.19
+
+#### Run `capture-prefs` in-process from `PreferencesRestore`, and fix the latent bugs that made that unsafe
+
+* *[scripts/capture-prefs.rb]* `CapturePrefs.run` restores the software-update schedule and the login-item apps in an `ensure` right after each operation, instead of registering `at_exit` hooks that only fire when the whole process ends (too late in-process, and a new hook stacked on every call). The processing moved into a private `_process`; behavior from the command line is unchanged. Two bugs only an in-process caller could hit are fixed: `_exporting?`/`_importing?` cached their result with `||=`, so an import following an export in the same process was treated as an export again (it would have deleted the backup's `.plist` files and re-exported instead of importing); and the module called `nil_or_empty?`/`file?` without including `Core`, working as a script only because the CLI block's top-level `include Logging` makes them global, so as a library it raised `NoMethodError`.
+* *[scripts/utilities/preferences_restore.rb]* Calls `CapturePrefs.run(operation: 'export'|'import')` directly instead of starting `capture-prefs.rb` in a subprocess. An error it raises (`Logging.error` raises) is trapped and printed, so a failing preferences step is recorded and the rest of the setup carries on; the "capture-prefs.rb not found" case is gone, the module is required. `osx-defaults.sh` stays a subprocess (it is a shell script).
+* *[scripts/utilities/macos.rb, scripts/software-updates-cron.rb, .ai/domains/fresh-install.md]* Comments and docs no longer say that `capture-prefs.rb` needs a subprocess for its `at_exit` hooks; cron keeps its subprocess call, which could now be a direct `CapturePrefs.run`.
+* *[spec/capture_prefs_spec.rb, spec/utilities/preferences_restore_spec.rb]* New specs for `CapturePrefs` (an import after an export in one process, no `at_exit`, restoring on every exit path including a raised error, apps handled only for an interactive import) and `PreferencesRestore` rewritten around the in-process call, including a raised error from either operation.
+
+#### Adopting these changes
+
+* Nothing to do on a machine that is already set up: the new code only runs from `fresh-install-of-osx.sh` and from `capture-prefs.rb` itself, so it takes effect the next time they run.
+
+---
+
 ### 4.0.18
 
 :white_check_mark: Tested on a vanilla macOS machine

@@ -325,7 +325,7 @@ passes no flag. Existing examples: `BrewBundle.run`, `Keybase.bootstrap_login`,
 
 `fresh-install-of-osx.sh` keeps its own warnings/errors summary (the `_step_warnings` / `_step_errors`
 arrays) and builds its closing notification from it. Because steps call Ruby (`call_utility`, or a script
-such as `capture-prefs.rb`) and then return to the shell, a Ruby process can neither write into those
+such as `resurrect-repositories.rb`) and then return to the shell, a Ruby process can neither write into those
 arrays nor can the shell read a child's in-memory `Logging` state. **This file-based hand-off exists only
 because of that shell -> Ruby -> shell jump**; a script that is Ruby end to end needs none of it (it reads
 `Logging.step_warnings`/`step_errors` directly).

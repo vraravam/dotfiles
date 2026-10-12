@@ -126,8 +126,8 @@ module MacOS
   end
 
   # Turns the macOS automatic software update schedule back on. Called from the
-  # EXIT trap in osx-defaults.sh and capture-prefs.rb so it runs on both normal
-  # and error exits. Guards with sudo check so it is safe to call from cron --
+  # EXIT trap in osx-defaults.sh and from the 'ensure' in CapturePrefs.run so it runs on both
+  # normal and error exits. Guards with sudo check so it is safe to call from cron --
   # if sudo credentials are not cached (no terminal), warns and skips rather than
   # hanging. keep_sudo_alive's duplicate-loop guard makes it a no-op when the
   # background loop is already running.
