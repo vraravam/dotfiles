@@ -4,6 +4,7 @@
 
 require 'open3'
 require 'pathname'
+require 'shellwords'
 
 require_relative 'command_utils'
 require_relative 'core'
@@ -211,6 +212,40 @@ module MacOS
 
     # Cleanup old entries (older than 5 minutes)
     @_notification_history.delete_if { |_k, timestamp| now - timestamp > 300 }
+  end
+
+  # Variables a throwaway 'sh' changes on its own (not exported by 'brew shellenv'), so they
+  # are never copied back into this process.
+  SHELLENV_IGNORED_KEYS = %w[_ SHLVL PWD OLDPWD].freeze
+
+  # Evaluates `brew shellenv` and merges the variables it exports into the current process
+  # environment, ensuring Homebrew bins are on PATH for subsequent system()/backtick calls.
+  #
+  # @param brew_bin [Pathname, String] Path to brew binary.
+  # @return [void]
+  #
+  # @example
+  #   MacOS.load_brew_shellenv(Pathname.new('/opt/homebrew/bin/brew'))
+  # :reek:UtilityFunction -- Stateless wrapper for parsing/applying brew shellenv output (intentional)
+  # :reek:FeatureEnvy -- Stateless helper operating on its own parameter (intentional)
+  def load_brew_shellenv(brew_bin)
+    brew_bin = Pathname.new(brew_bin) unless brew_bin.is_a?(Pathname)
+    return unless brew_bin.executable?
+
+    # Evaluate brew shellenv's output in a real shell rather than hand-parsing arbitrary shell
+    # syntax -- far more robust than a regex-based parser, which cannot correctly handle
+    # constructs like 'export INFOPATH="...:${INFOPATH:-}"' (variable expansion),
+    # '[ -z "${MANPATH-}" ] || export ...' (conditional), or path_helper's own
+    # nested 'eval "$(...)"'. env -0 dumps the resulting environment NUL-separated
+    # (safe against values containing newlines).
+    env_output, = Open3.capture3('sh', '-c', %(eval "$(#{Shellwords.escape(brew_bin.to_s)} shellenv)" && env -0))
+    env_output.split("\0").each do |line|
+      key, value = line.split('=', 2)
+      next if nil_or_empty?(key) || SHELLENV_IGNORED_KEYS.include?(key)
+
+      ENV[key] = value
+    end
+    Logging.debug "Loaded brew shellenv from '#{brew_bin.cyan}'"
   end
 
   # ---------------------------------------------------------------------------

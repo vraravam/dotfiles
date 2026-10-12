@@ -569,7 +569,7 @@ See [Extras.md — osx-defaults.sh](Extras.md#osx-defaultssh) for the adopter-fa
 
 ## 13. Why `fresh-install-of-osx.sh` and `osx-defaults.sh` Remain Shell Scripts
 
-While much of this codebase has migrated from shell to Ruby for maintainability and testability, two core scripts **will never be converted as a whole**: `fresh-install-of-osx.sh` and `osx-defaults.sh`. (For `fresh-install-of-osx.sh` this means the script itself stays shell; the self-contained steps it runs *after* the dotfiles repo is cloned are Ruby modules, see [below](#what-moved-to-ruby-after-the-clone).) This is an intentional architectural decision based on practical constraints.
+While much of this codebase has migrated from shell to Ruby for maintainability and testability, two core scripts **will never be converted as a whole**: `fresh-install-of-osx.sh` and `osx-defaults.sh`. (For `fresh-install-of-osx.sh` this means the script itself stays shell up to and including the clone; everything it does *after* the dotfiles repo is cloned is one Ruby process, see [below](#what-moved-to-ruby-after-the-clone).) This is an intentional architectural decision based on practical constraints.
 
 ### `fresh-install-of-osx.sh` — Bootstrap Complexity
 
@@ -598,22 +598,29 @@ Converting `fresh-install-of-osx.sh` to Ruby would introduce unacceptable comple
 
 #### What moved to Ruby after the clone
 
-The constraints above apply to the window *before* the dotfiles repository exists on disk. Cloning the whole repository onto a vanilla macOS just so a Ruby script could be the entry point is the wrong trade, so the script stays shell. Once the clone is done, though, system Ruby and `scripts/call-utility.rb` are available, and steps that are self-contained command orchestration (decision trees, error handling, multi-step sequences) are Ruby modules under `scripts/utilities/` that the shell calls with `call_utility [--truthy] <Module.method>`. The module owns the logic and the specs; the shell step keeps only its header and `|| true`.
+The constraints above apply to the window *before* the dotfiles repository exists on disk. Cloning the whole repository onto a vanilla macOS just so a Ruby script could be the entry point is the wrong trade, so the script stays shell up to and including its own clone step (which needs only the OS and the Xcode command-line tools). Right after the clone, system Ruby and the repository's modules are available, and the script hands the rest of the run to `FreshInstallPostClone.run` (`scripts/utilities/fresh_install_post_clone.rb`), run as a child process through `scripts/call-utility.rb`. The module owns the step order, which failures are fatal, the closing summary and the notification, and it is specced; the shell passes only the number of steps it already numbered, its start time and `COLUMNS`.
 
-| Step | Module |
+| Step after the clone | Implemented by |
 |---|---|
-| Stale curl-downloaded `.shellrc` check (invoked via `call-utility.rb` directly, since the `call_utility` function lives in that very file) | `ShellrcCheck.matches_repo?` |
-| Install Homebrew | `HomebrewInstall.run` |
+| Stale curl-downloaded `.shellrc` check (first; the shell runs `call-utility.rb` by path since the `call_utility` function lives in that very file) | `ShellrcCheck.matches_repo?` |
+| Scripts on `PATH`, upstream remote of the dotfiles repo | `PathUtils.append_to_path`, `AddUpstreamGitConfig.run` |
+| Symlink the dotfiles | `InstallDotfiles.run` |
+| Recompile the zsh startup files, restore `.shellrc`, load the zsh configs | `zsh -c "source ~/.shellrc; ..."` |
+| Install Homebrew, export its environment into the process | `HomebrewInstall.run`, `MacOS.load_brew_shellenv` |
 | Install the Brewfile (base section, then a background full install) | `BrewBundle.run` |
-| Keybase login | `Keybase.bootstrap_login` |
-| Encrypted-backup readiness | `GpgEncrypt.bootstrap_setup` |
+| Reftable migration of the dotfiles repo | the `git migrate-reftable` alias through `GitProcessor` |
+| Keybase login, encrypted-backup readiness | `Keybase.bootstrap_login`, `GpgEncrypt.bootstrap_setup` |
 | Clone the home/profiles repos | `BootstrapRepos.run` (with `GenerateBootstrapRepositoriesYaml`) |
 | Baseline and restore preferences | `PreferencesRestore.run` |
+| Completions cache, cron, tracked repos, zsh caches | `compinit` via zsh, `Cron.recron`, `ResurrectRepositories.run(resurrect_all: true)`, `delete_caches` via zsh |
 | Default login shell | `DefaultShell.run` |
+| Summary, manual-step reminders, notification | `Logging.print_script_summary`, `MacOS.notify` |
 
-What stays shell after the clone, and why: steps that change the *running* shell (exporting Homebrew's environment, re-sourcing `.shellrc`, the `unset`s), the calls to zsh functions that have no Ruby equivalent (`recompile_zsh_script`, `delete_caches`, the completions rebuild), the one-line wrappers around existing scripts (`install-dotfiles.rb`, `recron`, `resurrect-repositories.rb -a`) and the ERR/EXIT trap plumbing.
+Why one process rather than a `call_utility` per step: with nothing left in the shell after the hand-off, the shell-only chores (exporting Homebrew's environment, re-sourcing `.shellrc`, the `unset`s) are just changes to the Ruby process's `ENV`, and the shell/Ruby/shell jumps that caused most of the boundary bugs (argument quoting, flag plumbing, duplicated warnings, a second summary protocol) disappear. Speed was not a factor (measured on one machine with system Ruby 2.6: about 0.1 s to start a `call_utility` call, 0.01 s to source `.shellrc` in a `zsh -c`, against an install that takes minutes).
 
-Because control goes shell, then Ruby, then back to shell, a Ruby process cannot add to the shell's warnings/errors summary. Ruby processes therefore append each issue they record to a file named by `_DOTFILES_ISSUES_FILE`; the script empties it at the start and merges it into its summary and closing notification at the end (see `.ai/domains/fresh-install.md`). A script that is Ruby end to end would need none of this, which is the main thing a full port would gain; it is not judged worth the bootstrap cost.
+What remains shell, and why: everything before and including the clone (Ruby and the repository do not exist yet), the hand-off itself, and the ERR/EXIT trap plumbing that restores cron when something dies.
+
+One cross-process channel is still needed: an issues file named by `_DOTFILES_ISSUES_FILE`. The shell writes the issues it recorded before the hand-off into it, the Ruby process adopts them, and Ruby child processes that steps start (for example the `post_clone` commands `ResurrectRepositories` runs, such as `git fo --rebase`) append theirs, merged into the one closing summary (see `.ai/domains/fresh-install.md`). A single Ruby process for the *whole* script would need none of this, but is not judged worth the bootstrap cost.
 
 ### `osx-defaults.sh` — Copy-Paste Ergonomics
 
@@ -637,7 +644,7 @@ These two scripts anchor the shell ecosystem: `.shellrc` must remain because `fr
 
 Between 2025-2026, two experimental branches validated this reasoning by attempting full Ruby conversions:
 
-- **`fresh-install-ruby`**: Complete Ruby port of `fresh-install-of-osx.sh` — ~750 lines, fully functional (its post-clone steps have since been backported to `master` as the modules above; what remains unmerged is the Ruby entry point itself)
+- **`fresh-install-ruby`**: Complete Ruby port of `fresh-install-of-osx.sh` — ~750 lines, fully functional (its post-clone part has since been backported to `master` as `FreshInstallPostClone`; what remains unmerged is the Ruby port of the pre-clone part)
 - **`osx-defaults-ruby`**: Complete Ruby port of `osx-defaults.sh` — ~1800 lines, idiomatic Ruby with elegant hash-based batch writes
 
 Both branches proved the conversions were **technically feasible** but **architecturally wrong**:

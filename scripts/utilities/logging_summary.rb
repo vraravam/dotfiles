@@ -101,6 +101,40 @@ module Logging
       _record_message(step_errors, message, :error)
     end
 
+    # For the one process that owns the final summary of a run whose earlier steps were recorded by
+    # a shell script and whose later steps are run by child processes (see
+    # _append_to_issues_file): loads what the shell recorded so far into this process's
+    # collections, empties the file, and from then on keeps this process's own issues in memory only
+    # so merge_issues_file does not count them twice. Children keep appending to the file.
+    # Does nothing when no issues file is configured.
+    #
+    # @return [void]
+    def adopt_issues_file
+      file = EnvVars.issues_file
+      return unless file
+
+      state.issues_file_owner = true
+      _load_issues_file(file)
+      File.write(file.to_s, '')
+    rescue SystemCallError
+      nil
+    end
+
+    # Merges the issues that child processes appended since adopt_issues_file into this process's
+    # collections (so the summary and notification list them; they were already printed inline by
+    # the children) and deletes the file.
+    #
+    # @return [void]
+    def merge_issues_file
+      file = EnvVars.issues_file
+      return unless file
+
+      _load_issues_file(file)
+      file.delete if file.file?
+    rescue SystemCallError
+      nil
+    end
+
     # Prints a grouped summary of all collected warnings and errors, prefixing
     # each section header with the script name, then prints the total duration.
     # Mirrors print_script_summary in .shellrc. No macOS notification -- callers
@@ -290,6 +324,25 @@ module Logging
       _append_to_issues_file(severity, entry)
     end
 
+    # Appends the issues recorded in +file+ ("<warning|error><TAB><entry>" lines) to the
+    # collections without printing them again.
+    #
+    # @param file [Pathname]
+    # @return [void]
+    def _load_issues_file(file)
+      return unless file.file?
+
+      Core.each_line_utf8(file) do |line|
+        severity, entry = line.chomp.split("\t", 2)
+        next if nil_or_empty?(entry)
+
+        case severity
+        when 'warning' then step_warnings << entry
+        when 'error' then step_errors << entry
+        end
+      end
+    end
+
     # Hands an issue over to the shell script that started this process.
     #
     # fresh-install-of-osx.sh keeps its own summary (and builds its closing notification from it)
@@ -309,7 +362,7 @@ module Logging
     # @return [void]
     def _append_to_issues_file(severity, entry)
       file = EnvVars.issues_file
-      return unless file
+      return if file.nil? || state.issues_file_owner
 
       File.open(file.to_s, 'a:UTF-8') { |f| f.puts("#{severity}\t#{entry.gsub(/\s*\n\s*/, ' ')}") }
     rescue SystemCallError

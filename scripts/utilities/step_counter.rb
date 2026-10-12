@@ -12,10 +12,12 @@ require_relative 'string_ext'
 # The total is declared up front and has to be kept in sync with the number of numbered steps;
 # steps that print their own headers can be left unnumbered.
 class StepCounter
-  # @param total [Integer] Number of numbered steps the script runs.
-  def initialize(total)
+  # @param total [Integer] Number of numbered steps the script runs, including any already done.
+  # @param start_at [Integer] How many steps were already numbered before this counter took over
+  #   (e.g. by a shell script that hands the rest of its steps to a Ruby module).
+  def initialize(total, start_at: 0)
     @total = total
-    @current = 0
+    @current = start_at
   end
 
   # Advances the counter and returns the progress prefix, e.g. "[Step 3 of 20] " (the label is

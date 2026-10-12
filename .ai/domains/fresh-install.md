@@ -167,9 +167,9 @@ Add comment about retry behavior in error scenarios.
 `load_file_if_exists` calls `recompile_zsh_script` on its target file before
 sourcing it (see `shell-portability-cron.md` § `source` vs `load_file_if_exists`).
 This is safe to call anywhere in `fresh-install-of-osx.sh`, including points
-where Homebrew has not been installed yet (e.g. the `load_zsh_configs` +
-`load_file_if_exists "${ZDOTDIR}/.aliases"` call that runs right after
-`install-dotfiles.rb` but before `_install_homebrew`):
+where Homebrew has not been installed yet (e.g. the `load_zsh_configs` call that
+`FreshInstallPostClone` makes right after install-dotfiles but before it installs
+Homebrew):
 
 - `recompile_zsh_script` only uses `autoload`/`zrecompile`, both zsh shell
   builtins with no dependency on Homebrew or any installed binary.
@@ -280,11 +280,11 @@ call time to compute the duration; a pre-formatted string breaks that arithmetic
 ## Brewfile Truncation on `FIRST_INSTALL`
 
 The Brewfile install lives in Ruby (`BrewBundle` in `scripts/utilities/brew_bundle.rb`, built on the
-pure command wrappers in `Brew`). `fresh-install-of-osx.sh` calls it once the dotfiles repository is
-cloned and `install-dotfiles.rb` has linked `~/Brewfile`:
+pure command wrappers in `Brew`). `FreshInstallPostClone` calls it once the dotfiles repository is
+cloned and install-dotfiles has linked `~/Brewfile`:
 
-```zsh
-call_utility --truthy BrewBundle.run || true;
+```ruby
+BrewBundle.run
 ```
 
 On a vanilla OS run (`FIRST_INSTALL=1`), `brew bundle` is run only against the **base section** of the
@@ -305,41 +305,65 @@ missing, duplicated, or no longer splits the file, and checks `Brew.base_brewfil
 real Brewfile. Do not remove or rename the sentinel line -- it is load-bearing for the vanilla OS
 install path.
 
-## Moving Steps of `fresh-install-of-osx.sh` Into Ruby
+## The Post-Clone Part of `fresh-install-of-osx.sh` Is One Ruby Process
 
 See [TechnicalDeepDive.md § 13](../../TechnicalDeepDive.md#13-why-fresh-install-of-osxsh-and-osx-defaultssh-remain-shell-scripts) for the rationale and the table of which step is which module (kept there only, to avoid two copies).
 
-The script stays a shell script (it must run before Ruby utilities or the dotfiles repository exist).
-Once the repository is cloned, self-contained steps move into Ruby modules under `scripts/utilities/`
-and are invoked with `call_utility [--truthy] <Module.method> [--key=value ...]` (allow-list in
-`scripts/call-utility.rb`). Pattern: the module's `run` wraps its work in `Logging.run_script`, returns a
-boolean, and records its own warnings/errors; the shell step keeps only the step header and
-`|| _record_warning '...'` for the boolean. A module that genuinely needs to know about a vanilla install (`BrewBundle`, `PreferencesRestore`) defaults `first_install:` to `EnvVars.first_install?`
-(the `FIRST_INSTALL` env var the script's caller exports and children inherit), so the shell computes and
-passes no flag. Existing examples: `BrewBundle.run`, `Keybase.bootstrap_login`,
-`DefaultShell.run`, `HomebrewInstall.run`, `ShellrcCheck.matches_repo?`, `BootstrapRepos.run`,
-`GpgEncrypt.bootstrap_setup`, `PreferencesRestore.run`. Anything that must work with a possibly stale
-`.shellrc` (before the `call_utility` function can be trusted) invokes `scripts/call-utility.rb` directly.
+The script stays shell up to and including the dotfiles clone: that part must run on a vanilla macOS
+with nothing but the OS, before Ruby utilities or the repository exist. Right after the clone,
+`_run_post_clone_steps` runs everything else as one Ruby process:
 
-## Hand-Off of Recorded Issues From Ruby to the Install Script
+```zsh
+COLUMNS="${COLUMNS}" "${DOTFILES_DIR}/scripts/call-utility.rb" --truthy FreshInstallPostClone.run \
+  "--steps_done=${steps_done}" "--start_time=${script_start_time}"
+```
 
-`fresh-install-of-osx.sh` keeps its own warnings/errors summary (the `_step_warnings` / `_step_errors`
-arrays) and builds its closing notification from it. Because steps call Ruby (`call_utility`, or a script
-such as `resurrect-repositories.rb`) and then return to the shell, a Ruby process can neither write into those
-arrays nor can the shell read a child's in-memory `Logging` state. **This file-based hand-off exists only
-because of that shell -> Ruby -> shell jump**; a script that is Ruby end to end needs none of it (it reads
-`Logging.step_warnings`/`step_errors` directly).
+- It runs `call-utility.rb` by path, **not** through the `call_utility` shell function: that function
+  lives in the `~/.shellrc` that `ShellrcCheck`, the module's first step, verifies.
+- The shell passes the number of steps it already numbered (the module continues `[Step N of TOTAL]`
+  from there), the epoch the whole run started at (closing duration line) and `COLUMNS` (not exported).
+  Everything else travels as exported environment variables (`FIRST_INSTALL`, the cron backup file,
+  `_DOTFILES_SCRIPT_DEPTH`, `_DOTFILES_ISSUES_FILE`, ...).
+- The module is a child process, never `exec`ed, so the shell's EXIT trap still runs. The module prints
+  the closing summary, the manual-step reminders and the one notification, and restores cron when it
+  fails; the shell then just exits with its status (and restores cron itself only if the backup file
+  is still there, i.e. the Ruby process died before it could).
+- Nothing runs in the shell after the hand-off, so the shell-only chores of the old flow became
+  changes to the Ruby process's `ENV` (`MacOS.load_brew_shellenv`, `ENV.delete('GIT_SSH_COMMAND')`,
+  `PathUtils.append_to_path`). Steps that need zsh functions (`recompile_zsh_script`,
+  `load_zsh_configs`, `delete_caches`, `compinit`) run through `zsh -c "source ~/.shellrc; ..."`.
+
+Adding a step: put the logic in a module under `scripts/utilities/` with a spec (the existing ones --
+`HomebrewInstall`, `BrewBundle`, `Keybase.bootstrap_login`, `GpgEncrypt.bootstrap_setup`,
+`BootstrapRepos`, `PreferencesRestore`, `DefaultShell` -- are the pattern), call it from
+`FreshInstallPostClone._install`, wrap it in `_step` if it is numbered (and bump `POST_CLONE_STEPS`),
+let the module record its own failures with `Logging.record_warning`/`record_error`, and `raise Aborted`
+only for a failure that must stop the run. A module that genuinely needs to know about a vanilla install
+(`BrewBundle`, `PreferencesRestore`) defaults `first_install:` to `EnvVars.first_install?`.
+
+## Hand-Off of Recorded Issues Between the Shell and Ruby
+
+`fresh-install-of-osx.sh` records its own warnings/errors in the `_step_warnings` / `_step_errors` arrays
+(only the steps before the clone are left in the shell), while `FreshInstallPostClone` owns the closing
+summary and notification of the whole run. Neither process can see the other's in-memory state, and a
+step can also start further Ruby processes whose issues live in yet another process (for example the
+`post_clone` commands `ResurrectRepositories` runs, such as `git fo --rebase`). **A file is the simplest
+channel across those process boundaries**; a script that is Ruby end to end in one process needs none of it
+(it reads `Logging.step_warnings`/`step_errors` directly). Most steps need no channel at all because they
+run in-process: `PreferencesRestore` calls `CapturePrefs.run` directly (it restores system state in an
+`ensure`, not `at_exit`), while `osx-defaults.sh` stays a shell subprocess.
 
 - `main()` exports `_DOTFILES_ISSUES_FILE` (`${TMPDIR}/dotfiles_fresh_install_issues`) and empties the file.
-- Every `Logging.record_warning`/`record_error` in any child process appends one
+- Every `Logging.record_warning`/`record_error` in a process that has the variable set appends one
   `<warning|error><TAB><entry>` line the moment it is recorded (`EnvVars.issues_file`, memoized, is nil when
   the variable is unset, so nothing else is affected).
-- Steps never read it. `_merge_ruby_issues` folds it into the shell arrays just before the summary is
-  printed (normal end, and the fatal-failure path in `_cleanup_and_exit`) and deletes it, so the existing
-  colored summary and the notification show everything in one place.
-- Consequence for module design: a module that is called from the script records its own failures
-  (`Logging.record_*`) and the shell step ignores the return code (`|| true`) rather than adding a second,
-  generic warning for the same problem.
+- Before the hand-off, `_hand_over_shell_issues` appends what the shell recorded to the same file.
+- `FreshInstallPostClone` calls `Logging.adopt_issues_file`: it loads what the shell wrote into its own
+  collections, empties the file and becomes the owner, whose own issues stay in memory only (so they are not
+  counted twice). Its children keep appending. At the end `Logging.merge_issues_file` merges what the
+  children wrote, before the summary prints, and deletes the file.
+- Consequence for module design: a module called from the install flow records its own failures
+  (`Logging.record_*`) and the caller does not add a second, generic warning for the same problem.
 
 ## `capture-prefs.rb` Timestamp Check
 

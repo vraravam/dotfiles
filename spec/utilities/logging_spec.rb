@@ -95,6 +95,59 @@ RSpec.describe Logging do
       expect(@issues.read).to include('first second')
     end
 
+    describe 'in the process that owns the summary' do
+      before { described_class.script_name = 'owner.sh' }
+
+      def child_records(message)
+        env = { '_DOTFILES_ISSUES_FILE' => @issues.to_s }
+        code = %(require 'logging'; Logging.script_name = 'child.rb'; Logging.record_warning(#{message.inspect}))
+        system(env, RbConfig.ruby, '-I', UTILITIES_DIR, '-e', code, out: File::NULL, err: File::NULL)
+      end
+
+      it 'adopts what the shell recorded, empties the file and then keeps its own issues in memory only' do
+        @issues.write("warning\t[fresh.sh][Xcode] softwareupdate failed\nerror\t[fresh.sh][Xcode] boom\n")
+
+        with_env('_DOTFILES_ISSUES_FILE' => @issues.to_s) do
+          described_class.adopt_issues_file
+          expect { described_class.record_warning('own') }.to output.to_stdout
+        end
+
+        expect(described_class.step_warnings).to eq(['[fresh.sh][Xcode] softwareupdate failed', '[owner.sh][unknown] own'])
+        expect(described_class.step_errors).to eq(['[fresh.sh][Xcode] boom'])
+        expect(@issues.read).to eq('')
+      end
+
+      it 'merges what child processes appended, once, and deletes the file' do
+        with_env('_DOTFILES_ISSUES_FILE' => @issues.to_s) do
+          described_class.adopt_issues_file
+          expect { described_class.record_warning('own') }.to output.to_stdout
+          expect(child_records('from child')).to be true
+          described_class.merge_issues_file
+        end
+
+        expect(described_class.step_warnings).to eq(['[owner.sh][unknown] own', '[child.rb][unknown] from child'])
+        expect(@issues).not_to exist
+      end
+
+      it 'ignores malformed lines' do
+        @issues.write("nonsense\nwarning\n\nwarning\tok\n")
+
+        with_env('_DOTFILES_ISSUES_FILE' => @issues.to_s) { described_class.merge_issues_file }
+
+        expect(described_class.step_warnings).to eq(['ok'])
+      end
+
+      it 'does nothing when no issues file is configured' do
+        with_env('_DOTFILES_ISSUES_FILE' => nil) do
+          described_class.adopt_issues_file
+          described_class.merge_issues_file
+        end
+
+        expect(described_class.step_warnings).to be_empty
+        expect(described_class.state.issues_file_owner).to be false
+      end
+    end
+
     it 'writes nothing, and does not fail, when no file is configured' do
       with_env('_DOTFILES_ISSUES_FILE' => nil) do
         expect { described_class.record_warning('w') }.to output.to_stdout

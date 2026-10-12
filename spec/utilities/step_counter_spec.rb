@@ -12,6 +12,14 @@ RSpec.describe StepCounter do
     end
   end
 
+  describe 'start_at:' do
+    it 'continues the numbering after steps that were already numbered elsewhere' do
+      counter = described_class.new(14, start_at: 6)
+
+      expect(counter.next_prefix).to eq("[#{'Step 7 of 14'.purple}] ")
+    end
+  end
+
   describe '#step' do
     it 'prefixes the title with the progress label, passes the header through and returns the block value' do
       expect(Logging).to receive(:with_step).with("#{"[#{'Step 1 of 3'.purple}] "}Install thing", 'Installing').and_yield.and_return(:done)

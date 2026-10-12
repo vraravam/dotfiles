@@ -20,6 +20,9 @@ module Logging
     attr_accessor :current_section_manual
     # @return [Integer, nil] Unix epoch recorded by print_script_start
     attr_accessor :script_start_time
+    # @return [Boolean] true in the process that owns the issues file (see
+    #   Logging::Summary#adopt_issues_file): it keeps its own issues in memory only
+    attr_accessor :issues_file_owner
     # @return [Integer, nil] cached terminal width
     attr_accessor :terminal_width
     # @return [Integer, nil] cached minimum log level priority
@@ -45,6 +48,7 @@ module Logging
       @current_section = nil
       @current_section_manual = false
       @script_start_time = nil
+      @issues_file_owner = false
       @terminal_width = nil
       @min_log_level = nil
       @warnings = []

@@ -6,6 +6,7 @@ require 'cron'
 require 'default_shell'
 require 'gpg_encrypt'
 require 'dev_environment'
+require 'fresh_install_post_clone'
 require 'generate_bootstrap_repositories_yaml'
 require 'homebrew_install'
 require 'keybase'
@@ -79,6 +80,12 @@ RSpec.describe CallUtility do
       expect(PreferencesRestore).to receive(:run).with(first_install: false).and_return(false)
 
       expect(described_class.run(target: 'PreferencesRestore.run', args: ['--first_install=false'], truthy: true)).to be false
+    end
+
+    it 'lets the shell hand the post-clone steps over and see a failure through --truthy' do
+      expect(FreshInstallPostClone).to receive(:run).with(steps_done: '6', start_time: '1700000000').and_return(false)
+
+      expect(described_class.run(target: 'FreshInstallPostClone.run', args: ['--steps_done=6', '--start_time=1700000000'], truthy: true)).to be false
     end
 
     it 'does not pass an empty keyword hash to methods that take none' do

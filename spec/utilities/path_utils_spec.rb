@@ -98,4 +98,51 @@ RSpec.describe PathUtils do
       expect(described_class.command_exists?('definitely-not-a-command-xyz')).to be false
     end
   end
+
+  describe '.append_to_path' do
+    it 'appends an existing directory to the end of PATH' do
+      with_env('PATH' => '/usr/bin:/bin') do
+        described_class.append_to_path(tmp)
+
+        expect(ENV['PATH']).to eq("/usr/bin:/bin:#{tmp}")
+      end
+    end
+
+    it 'accepts the directory as a String as well as a Pathname' do
+      with_env('PATH' => '/usr/bin') do
+        described_class.append_to_path(tmp.to_s)
+
+        expect(ENV['PATH']).to eq("/usr/bin:#{tmp}")
+      end
+    end
+
+    it 'appends an existing empty directory (Pathname#empty? is about the directory contents)' do
+      empty_dir = tmp.join('empty')
+      empty_dir.mkpath
+
+      with_env('PATH' => '/usr/bin') do
+        described_class.append_to_path(empty_dir)
+
+        expect(ENV['PATH']).to eq("/usr/bin:#{empty_dir}")
+      end
+    end
+
+    it 'does nothing when the directory is already in PATH' do
+      with_env('PATH' => "/usr/bin:#{tmp}") do
+        described_class.append_to_path(tmp)
+
+        expect(ENV['PATH']).to eq("/usr/bin:#{tmp}")
+      end
+    end
+
+    it 'does nothing for a missing directory or a blank argument' do
+      with_env('PATH' => '/usr/bin') do
+        described_class.append_to_path(tmp.join('missing'))
+        described_class.append_to_path('')
+        described_class.append_to_path(nil)
+
+        expect(ENV['PATH']).to eq('/usr/bin')
+      end
+    end
+  end
 end

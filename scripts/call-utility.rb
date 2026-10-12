@@ -36,6 +36,7 @@ UTILITIES = {
   'Cron' => 'cron',
   'DefaultShell' => 'default_shell',
   'DevEnvironment' => 'dev_environment',
+  'FreshInstallPostClone' => 'fresh_install_post_clone',
   'GenerateBootstrapRepositoriesYaml' => 'generate_bootstrap_repositories_yaml',
   'GitWorkspace' => 'git_workspace',
   'GpgEncrypt' => 'gpg_encrypt',

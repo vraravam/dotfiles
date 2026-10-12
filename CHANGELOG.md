@@ -4,6 +4,27 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.20
+
+:white_check_mark: Tested on a vanilla macOS machine
+
+#### Run everything `fresh-install-of-osx.sh` does after the dotfiles clone as one Ruby process (`FreshInstallPostClone`), with the shell handing over the issues it recorded
+
+* *[scripts/utilities/fresh_install_post_clone.rb]* New `FreshInstallPostClone.run(steps_done:, start_time:)`, ported from the post-clone part of the `fresh-install-ruby` branch and wired to the modules that already exist here. In order: the stale-`.shellrc` check, scripts on `PATH` and the upstream remote of the dotfiles repo (moved here from the shell's clone step), `InstallDotfiles.run`, recompiling the zsh startup files, restoring `.shellrc` on a first install, loading the zsh configs, `HomebrewInstall.run`, `MacOS.load_brew_shellenv` and `BrewBundle.run`, the reftable migration, `Keybase.bootstrap_login`, `GpgEncrypt.bootstrap_setup`, `BootstrapRepos.run`, `PreferencesRestore.run`, the completions cache, `Cron.recron` (the cron backup is deleted only when it worked; if the run is aborted or `recron` fails the original schedule is restored), `ResurrectRepositories.run(resurrect_all: true)`, `delete_caches` and `DefaultShell.run`. The functions that exist only in zsh run through `zsh -c "source ~/.shellrc; ..."`. A failing `ShellrcCheck`, `install-dotfiles` or Homebrew install aborts; everything else is recorded and the run carries on. Two behaviors are softer than the shell was: a failing reftable migration is now recorded as an error instead of tripping the ERR trap, and a failing recompile or `.shellrc` restore is recorded as a warning. It also prints the closing summary, the manual-step reminders and exactly one notification for the whole run.
+* *[scripts/fresh-install-of-osx.sh]* Shrinks from 816 to 528 lines. The script stays shell up to and including the clone; `_run_post_clone_steps` then runs `scripts/call-utility.rb --truthy FreshInstallPostClone.run --steps_done=N --start_time=EPOCH` by path (not through the `call_utility` function, which lives in the `.shellrc` that the module's first step verifies) as a child process, so the EXIT trap still runs, passing `COLUMNS` explicitly. On failure it exits with the module's status and restores cron itself only if the backup file is still there. Removed: `_install_homebrew`, `_set_default_shell`, `_resurrect_bootstrap_repos`, `_merge_ruby_issues`, the shell calls to the `.shellrc` check, `install-dotfiles.rb`, `add-upstream-git-config.rb`, recompile, cron and cache steps, and the closing summary, reminders and notification code. New `_hand_over_shell_issues` appends the warnings and errors the shell recorded before the hand-off to the issues file.
+* *[scripts/utilities/logging_summary.rb, scripts/utilities/logging_state.rb]* New `Logging.adopt_issues_file` (loads what the shell wrote into the process's own collections, empties the file and makes this process the owner, whose own issues then stay in memory only) and `Logging.merge_issues_file` (merges what Ruby child processes started by a step, such as the `post_clone` commands of the tracked repos, appended and deletes the file). The file-based hand-off still exists because issues cross a process boundary in both directions (shell to Ruby, Ruby to its subprocesses); it is no longer needed for the Ruby to shell direction.
+* *[scripts/utilities/step_counter.rb]* `StepCounter.new(total, start_at:)` continues numbering after steps numbered elsewhere.
+* *[scripts/utilities/path_utils.rb, scripts/utilities/macos.rb]* `PathUtils.append_to_path` (appends an existing directory, given as a `Pathname` or a `String`, to the end of `PATH` so it can never shadow a command) and `MacOS.load_brew_shellenv` (evaluates `brew shellenv` in a throwaway `sh` and merges the variables into `ENV`).
+* *[scripts/call-utility.rb]* `FreshInstallPostClone` added to the allow-list.
+* *[.ai/domains/fresh-install.md, TechnicalDeepDive.md]* Describe the hand-off, how to add a step, the table of which step is which module, why one process rather than a `call_utility` per step, and why the issues file is still needed.
+* *[spec/]* Specs for the module (order, step numbering, every fatal and non-fatal path, cron, the issues hand-off, the closing notification), `Logging.adopt_issues_file`/`merge_issues_file` including a real child process, `StepCounter`, `PathUtils.append_to_path`, `MacOS.load_brew_shellenv` and the `call_utility` path.
+
+#### Adopting these changes
+
+* Nothing to do on a machine that is already set up: the new code only runs from `fresh-install-of-osx.sh`, so it takes effect the next time that script runs.
+
+---
+
 ### 4.0.19
 
 #### Run `capture-prefs` in-process from `PreferencesRestore`, and fix the latent bugs that made that unsafe
@@ -16,6 +37,7 @@ For those who follow this repo, here's the changelog for ease of adoption:
 #### Adopting these changes
 
 * Nothing to do on a machine that is already set up: the new code only runs from `fresh-install-of-osx.sh` and from `capture-prefs.rb` itself, so it takes effect the next time they run.
+
 
 ---
 

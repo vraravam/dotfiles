@@ -36,30 +36,29 @@ _SCRIPT_NAME="${0:t}"
 _has_step_warnings() { (( ${#_step_warnings[@]:-0} > 0 )); }
 _has_step_errors() { (( ${#_step_errors[@]:-0} > 0 )); }
 
-# Folds the warnings and errors that Ruby modules and scripts recorded during this run into the
-# shell's own summary, then deletes the issues file.
+# Appends the warnings and errors this script recorded before the hand-off to the issues file, in
+# the "<warning|error><TAB><entry>" format the Ruby side writes (see
+# Logging::Summary#_append_to_issues_file), so that the closing summary and notification printed by
+# FreshInstallPostClone cover the whole run.
 #
-# This file-based hand-off exists only because the control flow here jumps shell -> Ruby -> shell:
-# a Ruby process cannot write into this script's _step_warnings/_step_errors arrays, nor can the
-# shell read a child's in-memory Logging state. main() exports _DOTFILES_ISSUES_FILE and empties
-# the file at start; every Ruby process appends one "<warning|error><TAB><entry>" line per
-# recorded issue (see Logging::Summary#_append_to_issues_file); nothing reads the file until here.
-# Called right before the summary is printed, on both the normal and the fatal-failure path.
+# This file-based hand-off exists only because the control flow jumps between shell and Ruby: the
+# shell cannot read a Ruby process's in-memory Logging state, nor can a Ruby process write into this
+# script's _step_warnings/_step_errors arrays. main() exports _DOTFILES_ISSUES_FILE and empties it at
+# start; the Ruby side adopts what is written here, and its child processes (capture-prefs.rb, ...)
+# keep appending to it.
 # Zsh dynamic scoping: _step_warnings and _step_errors (local in main) are visible here.
-_merge_ruby_issues() {
-  local _mri_file="${_DOTFILES_ISSUES_FILE:-}"
-  if [[ -z "${_mri_file}" ]]; then return 0; fi
-
-  if [[ -s "${_mri_file}" ]]; then
-    local _mri_kind _mri_entry
-    while IFS=$'\t' read -r _mri_kind _mri_entry; do
-      case "${_mri_kind}" in
-        error) _step_errors+=("${_mri_entry}") ;;
-        warning) _step_warnings+=("${_mri_entry}") ;;
-      esac
-    done <"${_mri_file}"
+_hand_over_shell_issues() {
+  local _hsi_issue
+  if _has_step_errors; then
+    for _hsi_issue in "${_step_errors[@]}"; do
+      print -r -- "error"$'\t'"${_hsi_issue//$'\n'/ }" >>"${_DOTFILES_ISSUES_FILE}"
+    done
   fi
-  rm -f "${_mri_file}"
+  if _has_step_warnings; then
+    for _hsi_issue in "${_step_warnings[@]}"; do
+      print -r -- "warning"$'\t'"${_hsi_issue//$'\n'/ }" >>"${_DOTFILES_ISSUES_FILE}"
+    done
+  fi
 }
 
 _cleanup_and_exit() {
@@ -68,7 +67,6 @@ _cleanup_and_exit() {
   # Print any non-fatal warnings and errors already collected before this fatal failure,
   # so the full context is visible alongside the crash message.
   # Uses print_script_summary when shellrc is loaded; falls back to plain echo for early failures.
-  _merge_ruby_issues
   # Zsh dynamic scoping: _step_warnings and _step_errors (local in main) are visible here.
   if (($+functions[print_script_summary])); then
     print_script_summary
@@ -351,82 +349,35 @@ _clone_dot_files_repo() {
     info "Skipping cloning the dotfiles repo since '$(cyan "${DOTFILES_DIR}")' already exists and is a git repo"
   fi
 
-  # Unconditional: needed in both branches above, not just the freshly-cloned one --
-  # re-running this script against an already-cloned repo (e.g. testing without a
-  # full re-image) hit the 'else' branch and skipped this entirely, leaving
-  # 'add-upstream-git-config.rb' below (and anything else under DOTFILES_DIR/scripts)
-  # unresolvable via bare command name. (A second, later call before install-dotfiles.rb
-  # already existed for the same reason -- see that call site's own comment -- but it
-  # runs too late to help add-upstream-git-config.rb here.)
-  append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
-
-  # Setup the DOTFILES_DIR repo's upstream remote (points at the repo this fork was
-  # derived from). This runs regardless of whether the repo was just cloned or
-  # already existed. add-upstream-git-config.rb is idempotent and no-ops cleanly
-  # both when 'upstream' already exists and when origin's own owner already
-  # matches UPSTREAM_GH_USERNAME (e.g. running this on the upstream owner's own
-  # machine) -- so no GH_USERNAME comparison is needed here.
-  COLUMNS="${COLUMNS}" add-upstream-git-config.rb -d "${DOTFILES_DIR}" -u "${UPSTREAM_GH_USERNAME}" || _record_warning 'Failed to add upstream git config for dotfiles repo'
+  # The scripts folder is put on PATH and the upstream remote is set up by the first step of the Ruby
+  # part (FreshInstallPostClone), which runs regardless of whether the repo was just cloned.
   step_end
 }
 
-# Install homebrew, tap repos, and run brew bundle
-_install_homebrew() {
-  _current_section='Install Homebrew'; _current_section_manual=1
-  step_start
-  _step_header "$(yellow 'Installing homebrew') into '$(cyan "${HOMEBREW_PREFIX}")'"
-  # Installs Homebrew unless it is already there (see HomebrewInstall in
-  # scripts/utilities/homebrew_install.rb). Everything after depends on it, so a failure is fatal;
-  # the reason has already been recorded.
-  if ! call_utility --truthy HomebrewInstall.run; then
-    error 'Homebrew could not be installed'
-    exit 1  # Irrecoverable failure
+# Runs everything that comes after the clone as one Ruby process (see FreshInstallPostClone in
+# scripts/utilities/fresh_install_post_clone.rb), which owns the rest of the run: its steps, the
+# closing summary and notification, and restoring cron if it fails. It is run by path, not through
+# the call_utility function, because that function lives in the ~/.shellrc that the first Ruby step
+# verifies. COLUMNS is not exported by the shell, so it is passed explicitly; everything else the
+# Ruby side needs (FIRST_INSTALL, the cron backup file, the issues file, the script depth) is
+# exported. The script cannot be `exec`ed: the EXIT trap here must still run.
+# $1 = epoch the whole run started at (for the duration line), $2 = number of steps already numbered
+_run_post_clone_steps() {
+  local script_start_time="${1}"
+  local steps_done="${2}"
+
+  _hand_over_shell_issues
+
+  local post_clone_status=0
+  COLUMNS="${COLUMNS}" "${DOTFILES_DIR}/scripts/call-utility.rb" --truthy FreshInstallPostClone.run "--steps_done=${steps_done}" "--start_time=${script_start_time}" || post_clone_status=$?
+
+  if (( post_clone_status != 0 )); then
+    # What failed was already reported by the Ruby side, which also restores cron. This is only a
+    # safety net for a Ruby process that died without getting to do that: the EXIT trap deletes the
+    # backup, so restore it first if it is still there.
+    if is_file "${_DOTFILES_CRON_BACKUP_FILE:-}"; then resume_cron || true; fi
+    exit "${post_clone_status}"
   fi
-
-  # Ensure homebrew's environment variables are set correctly for this session.
-  eval_shellenv "${HOMEBREW_PREFIX}/bin/brew" shellenv
-
-  # Install everything in the Brewfile (see BrewBundle in scripts/utilities/brew_bundle.rb): on FIRST_INSTALL only
-  # the base section above the Brewfile's '# FIRST_INSTALL:' line first and the rest in a background job, otherwise
-  # the whole Brewfile. Deliberately never sets FIRST_INSTALL itself (this script runs idempotently) and never
-  # cleans up pre-installed brews/casks. A failure is recorded and the script carries on.
-  # The module records its own failures in the issues file; '|| true' only keeps the ERR trap quiet.
-  call_utility --truthy BrewBundle.run || true
-
-  # Note: load all zsh config files for the 2nd time for PATH and other env vars to take effect (due to defensive programming)
-  DEBUG=true load_zsh_configs
-
-  if is_first_install; then
-    trap '_cleanup_and_exit "${LINENO}"' ERR
-  fi
-
-  # TODO: Commented out to avoid the second touchId popup. Need to investigate how to solve this.
-  # is_arm && sudo rm -rf /usr/local/bin/keybase /usr/local/bin/git-remote-keybase || true
-  step_end
-}
-
-# Set the default login shell to Homebrew's zsh (see DefaultShell in
-# scripts/utilities/default_shell.rb for the /etc/shells and chsh handling). Returns non-zero
-# when it could not be fully done; the failure is already recorded in the summary.
-_set_default_shell() {
-  _current_section='Set default shell'; _current_section_manual=1
-  step_start
-  _step_header "$(yellow 'Setting default shell to Homebrew zsh')"
-  call_utility --truthy DefaultShell.run || { step_end; return 1; }
-  step_end
-}
-
-# Clones/updates the home and browser-profiles repos from whichever backup mechanism(s) are
-# configured (see BootstrapRepos in scripts/utilities/bootstrap_repos.rb: Keybase login, the
-# generated bootstrap config, ResurrectRepositories and the early developer-environment setup).
-# A failure is recorded by the module itself (see _merge_ruby_issues).
-_resurrect_bootstrap_repos() {
-  _current_section='Clone home/profiles repos'; _current_section_manual=1
-  step_start
-  _step_header "$(yellow 'Cloning home/profiles repos')"
-  # The module records its own failures in the issues file; '|| true' only keeps the ERR trap quiet.
-  call_utility --truthy BootstrapRepos.run || true
-  step_end
 }
 
 main() {
@@ -441,8 +392,8 @@ main() {
   crontab -l >"${_DOTFILES_CRON_BACKUP_FILE}"  2>/dev/null || : >"${_DOTFILES_CRON_BACKUP_FILE}"
   crontab -r &>/dev/null || true
 
-  # Ruby modules and scripts append the issues they record to this file (see _merge_ruby_issues);
-  # it starts empty on every run.
+  # Ruby modules and scripts append the issues they record to this file (see
+  # _hand_over_shell_issues); it starts empty on every run.
   export _DOTFILES_ISSUES_FILE="${TMPDIR:-/tmp}/dotfiles_fresh_install_issues"
   : >"${_DOTFILES_ISSUES_FILE}"
 
@@ -569,248 +520,9 @@ main() {
   _ensure_directories_exist
   _clone_dot_files_repo
 
-  # On FIRST_INSTALL: validate that the curl-downloaded ~/.shellrc matches the repo version
-  # BEFORE install-dotfiles.rb runs (which would move the curl-downloaded version into the
-  # repo, making them identical). If they differ, the GitHub-cached version is stale and
-  # will cause failures when .zshrc sources it (e.g., missing parameter guards); ShellrcCheck
-  # explains what to do. Invoked via the script directly, not call_utility: that function is
-  # defined in the very .shellrc that may be stale. Skipped (returns success) when this is not
-  # a first install.
-  if ! "${DOTFILES_DIR}/scripts/call-utility.rb" --truthy 'ShellrcCheck.matches_repo?'; then
-    exit 1
-  fi
-
-  # run this outside of the clone function, since it needs to be run irrespective of whether the dotfiles repo was pre-existing or not
-  append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
-  COLUMNS="${COLUMNS}" install-dotfiles.rb
-
-  # Force-check and recompile-if-needed the core startup files right now, as
-  # their own explicit step -- deliberately not deferred to load_zsh_configs a
-  # few lines below (which would also recompile .zshenv/.zshrc/.zlogin/.aliases
-  # as a side effect of sourcing them). Later steps in this script (e.g.
-  # 'resurrect-repositories.rb -a') can run for tens of minutes; establishing correct
-  # bytecode this early -- immediately after install-dotfiles.rb (re-)creates
-  # these symlinks -- means it does not depend on reaching (or the timing of)
-  # any later step. recompile_zsh_script no-ops when the .zwc is already
-  # current, so this costs a handful of stat calls when nothing changed.
-  # This does NOT remove the need for the unconditional delete_caches call at
-  # the end of this script: that call exists because a stale .zwc left over
-  # from an earlier partial fresh-install attempt can have a mtime that
-  # defeats this same is_file_older_than check entirely (see the comment on
-  # the delete_caches step below).
-  recompile_zsh_script "${ZDOTDIR}/.zshenv"
-  recompile_zsh_script "${ZDOTDIR}/.zshrc"
-  recompile_zsh_script "${ZDOTDIR}/.zlogin"
-  recompile_zsh_script "${HOME}/.shellrc"
-  recompile_zsh_script "${ZDOTDIR}/.aliases"
-
-  # On FIRST_INSTALL: install-dotfiles.rb moves the curl-downloaded ~/.shellrc into the repo,
-  # overwriting the committed version. Even though we validated they matched before install-dotfiles.rb,
-  # we need to restore the committed version so the symlink points to the correct content.
-  # Then force re-source so the functions in the current process are from the restored version.
-  if is_first_install; then
-    if ! git -C "${DOTFILES_DIR}" diff --quiet -- 'files/--HOME--/.shellrc'; then
-      git -C "${DOTFILES_DIR}" checkout -- 'files/--HOME--/.shellrc'
-      # Force re-source the restored version by unfunctioning the guard immediately before sourcing
-      if (($+functions[is_shellrc_sourced])); then unfunction is_shellrc_sourced; fi
-      # Recompile again: this checkout can change .shellrc's content/mtime after
-      # the bulk recompile above already ran, making that earlier pass stale
-      # relative to this specific restore. Plain 'source' (unlike
-      # load_file_if_exists) does not check .zwc staleness itself, so without
-      # this the re-source below could silently load bytecode compiled before
-      # this checkout, defeating the restore above entirely.
-      recompile_zsh_script "${HOME}/.shellrc"
-      DEBUG=true source "${HOME}/.shellrc"
-    fi
-  fi
-
-  # ${XDG_CONFIG_HOME}/git/config is now symlinked by install-dotfiles.rb -- core.sshCommand is in effect.
-  # Unset GIT_SSH_COMMAND immediately so it no longer overrides core.sshCommand.
-  # Must happen before any subsequent git operations.
-  unset GIT_SSH_COMMAND
-
-  # Load all zsh config files for PATH and other env vars to take effect
-  # load_zsh_configs internally calls unfunction for both is_shellrc_sourced and
-  # is_aliases_sourced, so no need to do it here.
-  DEBUG=true load_zsh_configs
-  # ${XDG_CONFIG_HOME}/zsh/plugins.zsh (the antidote bundle) is checked into the home git repo and was
-  # symlinked by install-dotfiles.rb above, so it is present on both vanilla OS and
-  # pre-configured machines. .zshrc sources the bundle, which defines zsh-defer, and
-  # then defers .aliases loading to the next ZLE idle event. In a non-interactive
-  # script context there is no ZLE idle event, so the deferred callback never fires.
-  # Source .aliases directly to make its functions (setup_dev_environment, etc.)
-  # available in this process.
-  # The is_aliases_sourced guard inside .aliases prevents double-loading.
-  load_file_if_exists "${ZDOTDIR}/.aliases"
-
-  _install_homebrew
-
-  # Migrate repos cloned before Homebrew's git (2.45+) was on PATH. The system
-  # git on a vanilla macOS ignores -c init.defaultRefFormat=reftable and does not
-  # support 'git refs migrate', so clone_repo_into's migration call was a no-op
-  # for those early clones. Now that Homebrew's git is available, migrate them.
-  _current_section='Migrate repos to reftable'; _current_section_manual=1
-  step_start
-  _step_header "$(yellow 'Migrating repos to reftable format')"
-  migrate_git_repo_to_reftable "${DOTFILES_DIR}"
-  step_end
-
-  # Log into Keybase if KEYBASE_HOME_REPO_NAME/KEYBASE_PROFILES_REPO_NAME (see
-  # scripts/utilities/keybase.rb) enable it. Coexists with the encrypted-backup setup
-  # below -- see KeybaseMigration.md. This is a readiness/login step only; the actual
-  # clone attempt (which also logs in defensively) happens in
-  # _resurrect_bootstrap_repos below.
-  _current_section='Setup Keybase'
-  step_start
-  section_header "$(yellow 'Setup Keybase')"
-  # Logs in only on a vanilla macOS and only when Keybase is configured and installed; see
-  # Keybase.bootstrap_login for the skip rules on a pre-configured machine.
-  # The module records its own failures in the issues file; '|| true' only keeps the ERR trap quiet.
-  call_utility --truthy Keybase.bootstrap_login || true
-  step_end
-
-  # Verify encrypted-backup mechanism is ready (gpg installed, Keychain passphrase set --
-  # see the external 'git-remote-gpg-encrypt' tool, installed via the 'vraravam/tap'
-  # Homebrew tap). Coexists with Keybase above -- see KeybaseMigration.md. gnupg
-  # homedir permissions were already fixed earlier in main() (mirroring
-  # set_ssh_folder_permissions) -- no need to repeat that here.
-  _current_section='Setup encrypted backup'
-  step_start
-  section_header "$(yellow 'Setup encrypted backup')"
-  # The module records its own failures in the issues file; '|| true' only keeps the ERR trap quiet.
-  call_utility --truthy GpgEncrypt.bootstrap_setup || true
-  step_end
-
-  # Clone/update repos from whichever backup mechanism(s) are enabled (home and
-  # browser-profiles) -- _resurrect_bootstrap_repos manages its own step timing and
-  # section header internally, so no outer step_start/step_end wrapper is needed here.
-  _resurrect_bootstrap_repos
-
-  # Reload zsh config now that the home repo may have just brought in new state
-  # this session hasn't seen yet -- most notably '~/.config/zsh/plugins.zsh'
-  # (the antidote plugin bundle, tracked in the home repo, not this one -- see
-  # .zshrc's own comment above the "Source the pre-generated antidote static
-  # bundle" block). Two benefits: (1) the rest of THIS script's own run picks up
-  # newly-available aliases/functions/PATH immediately, same rationale as the
-  # 'DEBUG=true load_zsh_configs' call inside _install_homebrew above; (2) if
-  # the cloned 'plugins.txt' is newer than 'plugins.zsh' (bundle needs
-  # regenerating), triggering that now means it's already done by the time the
-  # user opens their next terminal, rather than that terminal being the one to
-  # lazily trigger (and wait out) the regeneration itself.
-  DEBUG=true load_zsh_configs
-
-  step_end
-
-  if is_file "${HOME}/.ssh/known_hosts.old"; then rm -f "${HOME}/.ssh/known_hosts.old"; fi
-
-  # Restore the preferences from the older machine into the new one.
-  step_start
-  _step_header "$(yellow 'Restore preferences')"
-  # Baselines the macOS defaults, refreshes the preferences backup on a pre-configured machine and
-  # imports it (see PreferencesRestore in scripts/utilities/preferences_restore.rb). The module records
-  # its own failures in the issues file, and a failure never stops the rest of the setup.
-  call_utility --truthy PreferencesRestore.run || true
-  step_end
-
-  # Recreate the zsh completions.
-  step_start
-  _step_header "$(yellow 'Recreate zsh completions')"
-  rm -rf "${XDG_CACHE_HOME}/zcompdump"* &>/dev/null  || true
-  autoload -Uz compinit && compinit -C -d "${XDG_CACHE_HOME}/zcompdump" &>/dev/null  || true
-  step_end
-
-  # Setup cron jobs.
-  step_start
-  _step_header "$(yellow 'Setup cron jobs')"
-  if command_exists recron; then
-    # Call recron first; only delete backup after successful execution.
-    # This ensures the EXIT trap can still restore the original schedule if recron fails.
-    if recron; then
-      rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
-    else
-      _record_error "recron failed -- original cron schedule preserved in backup"
-    fi
-  else
-    _record_error "Skipping setting up of cron jobs since '$(purple 'recron')' couldn't be found; Please set it up manually"
-  fi
-  step_end
-
-  # Resurrect tracked repos. With shallow cloning (FIRST_INSTALL), large repos
-  # download much faster, making this call non-blocking enough to run in-line.
-  # 'resurrect-repositories.rb -a' runs setup_dev_environment itself at the very end
-  # (_resurrect_bootstrap_repos above already ran it once as an early safety net
-  # right after the home/profiles repos were cloned; idempotent either way).
-  _current_section='Resurrect tracked repos'; _current_section_manual=1
-  if ! COLUMNS="${COLUMNS}" resurrect-repositories.rb -a; then
-    _record_warning 'Failed to fully resurrect tracked repos -- see output above for details; re-run '"'$(cyan 'resurrect-repositories.rb -a')'"' manually'
-  fi
-
-  # To install the latest versions of the hex, rebar and phoenix packages
-  # mix local.hex --force && mix local.rebar --force
-  # mix archive.install hex phx_new 1.4.1
-
-  # To install the native-image tool after graalvm is installed
-  # gu install native-image
-
-  # vagrant plugin install vagrant-vbguest
-
-  # Default tooling for dotnet projects
-  # dotnet tool install -g dotnet-sonarscanner
-  # dotnet tool install -g dotnet-format
-
-  # Force-refresh all zsh bytecode (*.zwc) and cache files. install-dotfiles.rb
-  # symlinks .zshrc/.shellrc/.aliases repeatedly across re-runs, and a stale .zwc
-  # left over from an earlier partial fresh-install attempt (or a manually
-  # opened terminal during debugging) can have a mtime that defeats
-  # recompile_zsh_script's -nt staleness check, causing new terminals to load
-  # bytecode compiled from stale source indefinitely (e.g. missing PATH entries
-  # added by a later commit). delete_caches wipes every *.zwc* unconditionally
-  # rather than trusting mtime comparisons, then rebuilds from current source.
-  # Run this as the last content-affecting step so nothing later in the script
-  # writes a cache file after the wipe.
-  step_start
-  _step_header "$(yellow 'Refresh zsh bytecode caches')"
-  if command_exists delete_caches; then
-    delete_caches
-  else
-    _record_warning "Skipping zsh bytecode cache refresh since '$(purple 'delete_caches')' couldn't be found; new terminals may load stale .zwc files until 'delete_caches' is run manually"
-  fi
-  step_end
-
-  # Set default shell to Homebrew zsh - done at the end to avoid blocking the
-  # automated flow with password prompts. On vanilla OS without cached sudo
-  # credentials, chsh requires password entry. '|| true': _set_default_shell
-  # legitimately 'return 1's (after already recording the failure itself via
-  # _record_error) whenever Homebrew's zsh isn't present -- e.g. if
-  # _install_homebrew above hit its own recorded warning instead of succeeding.
-  # A bare call here would let that 'return 1' trip 'set -e' and abort the whole
-  # script, skipping print_script_summary and every reminder below -- exactly the
-  # failure mode this guards against.
-  _set_default_shell || true
-
-  # Print grouped summary of all collected warnings and errors, print duration,
-  # then send exactly one notification. Exit code is unchanged (0) -- the summary
-  # is informational only.
-  _merge_ruby_issues
-  print_script_summary "${script_start_time}" '** Finished auto installation process **'
-
-  # Remind user of manual steps that cannot be automated
-  user_action "Review System Settings manually: some settings (FileVault, accessibility permissions, notification preferences) require GUI interaction and cannot be automated due to TCC restrictions."
-
-  # On FIRST_INSTALL, remind user to unshallow repos to get full history.
-  if is_non_zero_string "${FIRST_INSTALL:-}"; then
-    user_action "Repositories were cloned shallow (--depth=1) to save time. In a NEW terminal (this one predates the updated PATH and aliases), run '$(yellow 'all unshallow')' to fetch complete history, then '$(yellow 'git rebase @{u}')' or '$(yellow 'git merge @{u}')' in each repo to update working trees."
-  fi
-
-  local -a _notification_parts=()
-  _build_notification_parts _notification_parts 'long'
-  if is_non_empty_array _notification_parts; then
-    local _notification_body
-    _notification_body="${(j: | :)_notification_parts}"
-    _dotfiles_notify "Install done -- ${_notification_body}" "⚠️ Fresh Install" || true
-  else
-    _dotfiles_notify "Fresh install completed successfully." "✅ Fresh Install Done" || true
-  fi
+  # Everything from here on is Ruby: the .shellrc check, install-dotfiles, Homebrew, the repos,
+  # preferences, cron, the default shell, the closing summary and the notification.
+  _run_post_clone_steps "${script_start_time}" "${current_step}"
 }
 
 main "$@"

@@ -194,4 +194,32 @@ module PathUtils
       Logging.debug "Ensured directory exists: '#{dir.cyan}'"
     end
   end
+
+  # Appends a directory to PATH (lowest priority, so it can never shadow a system or Homebrew
+  # command) if it exists and is not already in PATH. Mirrors append_to_path_if_dir_exists in
+  # .shellrc.
+  #
+  # @param dir [Pathname, String] Directory path to append to PATH
+  # @return [void]
+  #
+  # @example
+  #   PathUtils.append_to_path(EnvVars::DOTFILES_DIR.join('scripts'))
+  # :reek:FeatureEnvy -- Stateless PATH manipulation on the given dir (intentional)
+  def append_to_path(dir)
+    # Checked on the string: Pathname#empty? asks whether a *directory is empty*, not whether the
+    # path is blank, so nil_or_empty?(dir) would wrongly skip an existing empty directory.
+    return if nil_or_empty?(dir.to_s)
+
+    # Pathname() returns a Pathname argument as is and wraps a String, so both are handled without
+    # a round trip through a string.
+    path = Pathname(dir)
+    return unless path.directory?
+
+    dir_str = path.to_s
+    current_path = EnvVars.path
+    return if current_path.split(':').include?(dir_str)
+
+    ENV['PATH'] = "#{current_path}:#{dir_str}"
+    Logging.debug "Appended to PATH: '#{dir_str.cyan}'"
+  end
 end
