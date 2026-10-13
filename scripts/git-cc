@@ -15,44 +15,51 @@
 # The first argument is treated as <dir> if it does not start with '-'; flags follow.
 # Cleanup operations:
 #   - Delete stale prefetch refs (created by git maintenance, may reference old commits after rebase)
-#   - Expire reflog entries older than --expire (default: 1 week)
 #   - Prune deleted worktrees
-#   - Remove stale commit-graph files
 #   - Repack all objects with optimal compression
+#   - Expire reflog entries older than --expire (default: 1 week)
 #   - Run garbage collection (NOTE: git gc includes rerere gc automatically - respects gc.rerereResolved/gc.rerereUnresolved)
+#     (gc also packs the refs, so there is no separate 'pack-refs' step)
+#   - Rewrite the commit graph with changed-path Bloom filters. gc is run with
+#     gc.writeCommitGraph=false for this: gc's own graph write has no Bloom filters when none
+#     exist yet (measured), so it would only duplicate this write.
+# Stale remote-tracking branches are NOT pruned here ('git remote prune <remote>' talks to the
+# network, with no timeout): fetch.prune=true already prunes them on every 'git fo'/fetch.
+# The refs handed to 'reflog expire' are streamed through xargs (NUL-separated), not placed on one
+# command line, so a repo with very many branches cannot exceed ARG_MAX.
 # Supports folder-specific overrides: if ${PERSONAL_BIN_DIR}/cc-<basename>.rb (or .sh) exists, runs it
-# instead of running the default implementation. Override scripts can customize behavior.
+# instead of running the default implementation (extra arguments are forwarded to it). Override
+# scripts can customize behavior.
 # Usage: git cc [<dir>] [--expire=<when>] [<extra-reflog-flags>]
 # Example: git cc --expire=now          (expire entire reflog immediately - aggressive)
 # Example: git cc --expire=1.hour.ago   (expire reflog older than 1 hour - very aggressive)
 # Example: git cc --expire=3.days.ago   (expire entries older than 3 days)
 # Example: git cc /path/to/repo --expire=now
 
+# Locate the shared helpers next to this script's real path (following symlinks on PATH).
+_self="${0}"
+case "${_self}" in */*) ;; *) _self="$(command -v "${_self}")" ;; esac
+while [ -h "${_self}" ]; do
+  _target="$(readlink "${_self}")"
+  case "${_target}" in /*) _self="${_target}" ;; *) _self="${_self%/*}/${_target}" ;; esac
+done
+# shellcheck source=shared/git-common.sh
+. "${_self%/*}/shared/git-common.sh"
+
 # Git ran the former alias from the work tree's top level; an external command runs from the
-# caller's directory, so the default directory is the top level (not '.') to keep
+# caller's directory, so resolve_dir defaults to the top level (not '.') to keep
 # 'git cc' from a subdirectory working the same way.
 
+# Prints the pack size the way 'git size' does, without the alias's extra rev-parse and shell.
+report_size() {
+  pack_size="$(git -C "${dir}" count-objects -vH | awk '/size-pack:/ {print $2, $3}')"
+  printf '==> Size of repository at %s: %s\n' "${root}" "${pack_size}"
+}
+
 main() {
-  case "${1:-}" in
-  -* | '') dir="$(git rev-parse --show-toplevel 2>/dev/null || printf .)" ;;
-  *)
-    dir="${1:-}"
-    shift
-    ;;
-  esac
-  if [ -n "${PERSONAL_BIN_DIR:-}" ] && [ -z "${_GIT_OVERRIDE_SKIP:-}" ]; then
-    basename="$(basename "$(cd "${dir}" && pwd)")"
-    for ext in rb sh; do
-      override="${PERSONAL_BIN_DIR}/cc-${basename}.${ext}"
-      [ -x "${override}" ] || continue
-      if [ "${ext}" = rb ]; then
-        (cd "${dir}" && _GIT_OVERRIDE_SKIP=1 "${override}" "$@")
-      else
-        (cd "${dir}" && _GIT_OVERRIDE_SKIP=1 /bin/zsh -l "${override}" "$@")
-      fi
-      return $?
-    done
-  fi
+  resolve_dir "$@"
+  shift "${dir_shift}"
+  if dispatch_override cc "${dir}" "$@"; then exit "${override_status}"; fi
   # Pull --expire=<when> out of the arguments; whatever else is left in "$@" is forwarded
   # to 'git reflog expire'. (Positional parameters stand in for an array -- plain sh has none.)
   expire=''
@@ -67,21 +74,16 @@ main() {
     esac
   done
   [ -n "${expire}" ] || expire=1.week.ago
-  git -C "${dir}" size
+  root="$(git -C "${dir}" rev-parse --show-toplevel)"
+  report_size
   git -C "${dir}" for-each-ref --format='delete %(refname)' refs/prefetch/ | git -C "${dir}" update-ref --stdin 2>/dev/null || true
-  git -C "${dir}" remote | while IFS= read -r r; do git -C "${dir}" remote prune "${r}"; done
   git -C "${dir}" worktree prune
-  git -C "${dir}" pack-refs --all
   git -C "${dir}" repack -a -d -F --depth=250 --window=250
-  # Intentionally unquoted below: 'all-refs' prints one ref per line, to be passed as separate arguments.
-  refs="$(git -C "${dir}" all-refs)"
-  if [ -n "${refs}" ]; then
-    # shellcheck disable=SC2086
-    git -C "${dir}" reflog expire --expire="${expire}" --expire-unreachable="${expire}" --stale-fix "$@" ${refs}
-  fi
+  git -C "${dir}" for-each-ref --format='%(refname)' refs/heads refs/remotes | tr '\n' '\0' |
+    xargs -0 -r git -C "${dir}" reflog expire --expire="${expire}" --expire-unreachable="${expire}" --stale-fix "$@"
+  git -C "${dir}" -c gc.writeCommitGraph=false maintenance run --task=gc
   git -C "${dir}" commit-graph write --reachable --changed-paths
-  git -C "${dir}" maintenance run --task=gc
-  git -C "${dir}" size
+  report_size
 }
 
 main "$@"

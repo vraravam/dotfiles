@@ -28,13 +28,11 @@ module PreferencesRestore
   #   Defaults to FIRST_INSTALL from the environment.
   # @return [Boolean] false when any sub-step failed or osx-defaults.sh was missing; each is recorded.
   def run(first_install: EnvVars.first_install?)
-    ok = false
-    Logging.run_script('preferences_restore', 'Restoring preferences') do
+    Logging.run_script_result('preferences_restore', 'Restoring preferences') do
       baselined = _baseline
       restored = _restore(first_install)
-      ok = baselined && restored
+      baselined && restored
     end
-    ok
   end
 
   # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ require 'shellrc_check'
 RSpec.describe ShellrcCheck do
   around do |example|
     Dir.mktmpdir('shellrc-check-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       example.run
     end
   end

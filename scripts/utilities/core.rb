@@ -49,7 +49,7 @@ module Core
   #
   # @example
   #   Core::ROOT.join('usr', 'bin', 'defaults')  # => Pathname('/usr/bin/defaults')
-  ROOT = Pathname.new(File::SEPARATOR).freeze
+  ROOT = Pathname(File::SEPARATOR).freeze
 
   # Returns the current wall-clock time formatted as 'YYYY-MM-DD HH:MM:SS'.
   # Used for git commit messages, user-facing timestamps, and logging.
@@ -123,7 +123,7 @@ module Core
   #   ran = Core.due_for_periodic_update(cache_file, 6 * 3600) { do_the_update }
   #   Logging.debug 'skipped -- not due yet' unless ran
   def due_for_periodic_update(cache_file, interval_secs)
-    cache_file = Pathname.new(cache_file) unless cache_file.is_a?(Pathname)
+    cache_file = Pathname(cache_file)
     return false if cache_file.file? && !elapsed?(File.mtime(cache_file).to_i, interval_secs)
 
     yield
@@ -155,28 +155,6 @@ module Core
   def running_in_tty?
     # EnvLite (not EnvVars): EnvVars requires Core, so Core cannot require EnvVars.
     $stdout.tty? || EnvLite.force_color?
-  end
-
-  # Checks if a real controlling terminal is available for interactive input, via
-  # '/dev/tty' -- distinct from running_in_tty? (which checks $stdout.tty?). A pipeline
-  # like 'curl ... | zsh 2>&1 | tee log.txt' (the documented fresh-install-of-osx.sh
-  # bootstrap one-liner, see Adoption.md Phase 3.2) redirects stdout through 'tee', so
-  # $stdout.tty? is false even though a human is watching the terminal live and could
-  # answer a prompt -- '/dev/tty' still refers to that same terminal regardless of
-  # stdout/stderr redirection, since it is the process's actual controlling terminal
-  # device, not a file descriptor inherited through the pipe.
-  #
-  # Use this (not running_in_tty?) specifically to decide whether an interactive prompt
-  # is possible. The prompt itself must still genuinely use /dev/tty for its own I/O --
-  # most system prompt tools (getpass(3), 'security', sudo, ssh-add) already do this by
-  # design, which is exactly why gating on /dev/tty availability (not $stdout.tty?)
-  # correctly predicts whether such a prompt will actually work.
-  #
-  # @return [Boolean] true if a controlling terminal is available for interactive I/O
-  def tty_available?
-    File.open('/dev/tty', 'r+') { true }
-  rescue Errno::ENXIO, Errno::ENODEV, Errno::ENOENT, Errno::EACCES
-    false
   end
 
   # Checks if a value is nil or empty.
@@ -218,8 +196,8 @@ module Core
   #   Core.file?(nil)                              # => false
   #   Core.file?('')                               # => false
   #   Core.file?('  ')                             # => false (whitespace-only)
-  #   Core.file?(Pathname.new('/nonexistent'))     # => false
-  #   Core.file?(Pathname.new('/etc/hosts'))       # => true
+  #   Core.file?(Pathname('/nonexistent'))     # => false
+  #   Core.file?(Pathname('/etc/hosts'))       # => true
   #   Core.file?('/etc')                           # => false (directory, not file)
   # :reek:FeatureEnvy -- Delegates to path object's file? method (intentional delegation)
   def file?(path)

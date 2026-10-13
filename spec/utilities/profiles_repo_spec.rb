@@ -6,7 +6,7 @@ require 'profiles_repo'
 RSpec.describe ProfilesRepo do
   around do |example|
     Dir.mktmpdir('profiles-repo-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       GitProcessor.repo_cache = {}
       example.run
     end
@@ -16,12 +16,11 @@ RSpec.describe ProfilesRepo do
 
   before do
     Logging.state.reset!
-    described_class.instance_variable_set(:@_profiles_dir, tmp)
+    stub_const('EnvVars::PERSONAL_PROFILES_DIR', tmp)
     described_class.instance_variable_set(:@_profiles_git, nil)
   end
 
   after do
-    described_class.instance_variable_set(:@_profiles_dir, nil)
     described_class.instance_variable_set(:@_profiles_git, nil)
     Logging.state.reset!
   end
@@ -85,6 +84,62 @@ RSpec.describe ProfilesRepo do
 
       expect(described_class.capture_and_commit).to be true
       expect(git).to have_received(:commit_all)
+    end
+  end
+
+  describe '.prune_old_session_backups' do
+    let(:backup_dir) { tmp.join('ZenProfile', 'Profiles', 'p', 'zen-sessions-backup') }
+
+    def git(*args)
+      system('git', '-C', tmp.to_s, *args, out: File::NULL, err: File::NULL) || raise("git #{args.join(' ')} failed")
+    end
+
+    def tracked
+      `git -C #{tmp} ls-files`.lines.map(&:strip)
+    end
+
+    before do
+      backup_dir.mkpath
+      git('init', '--quiet')
+      git('config', 'user.email', 'spec@example.com')
+      git('config', 'user.name', 'spec')
+      GitProcessor.repo_cache = {}
+    end
+
+    it 'unpins only the backups older than the cutoff, in one git call, and keeps the files on disk' do
+      today = Time.now.strftime('%Y-%m-%d')
+      old = %w[2020-01-01-00 2020-01-02-13 2020-01-03-23].map { |stamp| "zen-sessions-#{stamp}.jsonlz4" }
+      fresh = "zen-sessions-#{today}-10.jsonlz4"
+      (old + [fresh, 'clean.jsonlz4']).each { |name| backup_dir.join(name).write('x') }
+      git('add', '-A')
+
+      expect_any_instance_of(GitProcessor).to receive(:rm_cached).once.and_call_original
+      expect { described_class.prune_old_session_backups }.to output(/Pruned .*3.* session backup/).to_stdout
+
+      names = tracked.map { |path| File.basename(path) }
+      expect(names).to contain_exactly(fresh, 'clean.jsonlz4')
+      old.each { |name| expect(backup_dir.join(name)).to exist }
+    end
+
+    it 'sends large sets in batches' do
+      stub_const('ProfilesRepo::RM_BATCH_SIZE', 2)
+      5.times { |i| backup_dir.join("zen-sessions-2020-01-0#{i + 1}-00.jsonlz4").write('x') }
+      git('add', '-A')
+
+      expect_any_instance_of(GitProcessor).to receive(:rm_cached).exactly(3).times.and_call_original
+      expect { described_class.prune_old_session_backups }.to output.to_stdout
+
+      expect(tracked).to be_empty
+    end
+
+    it 'leaves files whose name carries no date alone' do
+      backup_dir.join('zen-sessions-latest.jsonlz4').write('x')
+      git('add', '-A')
+
+      expect_any_instance_of(GitProcessor).not_to receive(:rm_cached)
+      described_class.prune_old_session_backups
+
+      expect(tracked.size).to eq(1)
     end
   end
 end

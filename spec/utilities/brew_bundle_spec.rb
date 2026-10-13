@@ -7,7 +7,7 @@ require 'brew_bundle'
 RSpec.describe BrewBundle do
   around do |example|
     Dir.mktmpdir('brew-bundle-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       example.run
     end
   end

@@ -27,8 +27,6 @@
 #   Standalone: setup-login-item.rb [-h] -a <app-name> [-b]
 #   Module:     SetupLoginItem.run(app_name: 'App', background: false)
 
-require 'open3'
-
 require_relative 'utilities/command_utils'
 require_relative 'utilities/logging'
 require_relative 'utilities/macos'
@@ -97,7 +95,6 @@ module SetupLoginItem
   # Registers +app_path+ via SMAppService.loginItem(url:) -- macOS 14-25 only.
   # APP_PATH is passed via the environment rather than heredoc interpolation so
   # that paths containing spaces or special characters are handled safely.
-  # Mirrors _register_smappservice in the shell version.
   #
   # @param app_path [String] Absolute path to the .app bundle to register.
   # @return [Boolean] true if already registered or registration succeeded, false on failure.
@@ -148,7 +145,6 @@ module SetupLoginItem
   # Registers +app_path+ via the legacy System Events AppleScript.
   # +hidden+ controls whether the app launches without a Dock icon.
   # Skips silently when already registered.
-  # Mirrors _register_legacy in the shell version.
   #
   # @param app_name [String] Name of the application (used to check existing login items).
   # @param app_path [String] Absolute path to the .app bundle to register.

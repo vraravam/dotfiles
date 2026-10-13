@@ -186,7 +186,7 @@ Mutating methods are only appropriate when:
 
 Use memoization (`||=`) to cache expensive or repeated operations. Common candidates:
 - Methods called multiple times with the same result per script execution
-- Shell command existence checks (`command_exists?`)
+- Command existence checks (`command_exists?` scans `PATH` in-process and memoizes only hits, so a command installed later is still found)
 - Boolean flag queries that compare strings (`operation == 'export'`)
 - Expensive computations that don't change during script lifetime
 
@@ -618,20 +618,20 @@ end
 ```ruby
 # BAD -- unnecessary intermediate variable (only used once)
 bat_config_dir, = Open3.capture3('bat', '--config-dir')
-bat_config_dir_pn = Pathname.new(bat_config_dir.strip)
+bat_config_dir_pn = Pathname(bat_config_dir.strip)
 bat_syntax_dir_pn = bat_config_dir_pn.join('syntaxes')
 
 # Good -- inline single-use intermediate
 bat_config_dir, = Open3.capture3('bat', '--config-dir')
-bat_syntax_dir_pn = Pathname.new(bat_config_dir.strip).join('syntaxes')
+bat_syntax_dir_pn = Pathname(bat_config_dir.strip).join('syntaxes')
 
 # BAD -- inlining hurts readability (complex expression)
 GitProcessor.new(
-  dir: Pathname.new(ENV.fetch('PERSONAL_PROFILES_DIR')).expand_path.join('Chrome')
+  dir: Pathname(ENV.fetch('PERSONAL_PROFILES_DIR')).expand_path.join('Chrome')
 ) { |git| git.pull }
 
 # Good -- keep variable for complex multi-step construction
-chrome_profiles = Pathname.new(ENV.fetch('PERSONAL_PROFILES_DIR')).expand_path.join('Chrome')
+chrome_profiles = Pathname(ENV.fetch('PERSONAL_PROFILES_DIR')).expand_path.join('Chrome')
 GitProcessor.new(dir: chrome_profiles) { |git| git.pull }
 ```
 

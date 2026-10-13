@@ -118,6 +118,12 @@ formatted (`shfmt`), syntax-checked (`sh -n`/`dash -n`) and commented normally.
   interactive shells, `fresh-install-of-osx.sh` and the generated crontab.
 - A script's default directory is `git rev-parse --show-toplevel` (git ran the former aliases
   from the work tree's top level; an external command runs from the caller's directory).
+- Shared helpers: `cc`, `fo`, `maintain`, `migrate-reftable`, `unshallow` and `upreb` source
+  `scripts/shared/git-common.sh` (POSIX sh, found relative to the script's real path so a
+  symlink on `PATH` works): `resolve_dir` (one consistent directory-or-flag argument rule),
+  `git_common_dir` (use it instead of `<dir>/.git/...`, which is wrong when `.git` is a file in a
+  submodule or linked worktree), `is_shallow`, `is_partial`, `dispatch_override` and `make_tmp`.
+  The folder is `shared/`, not `lib/`, because the global gitignore ignores `lib/`.
 - Bootstrap: before the repo is cloned these commands are not on `PATH`; `clone_repo_into`
   tests `command -v git-with-retry` / `git-maintain` (plus the `siu` alias) and falls back to a
   plain clone / skips post-clone maintenance.
@@ -184,7 +190,7 @@ Used in: `rfc`, `cc`
 
 **`git has-upstream [<dir>]`** - Returns 0 if upstream remote exists:
 ```ini
-has-upstream = "!f() { git -C \"${1:-.}\" remote | /usr/bin/grep -x upstream &>/dev/null; }; f"
+has-upstream = "!f() { git -C \"${1:-.}\" config --get remote.upstream.url >/dev/null 2>&1; }; f"
 ```
 
 Used in: `upreb`
@@ -214,7 +220,9 @@ that fits in the config):
 ```ini
 dlb = "!f() { \
   dir=\"${1:-.}\"; \
-  git -C \"${dir}\" branch -vv | /usr/bin/grep ': gone]' | awk '{print $1}' | xargs -r git -C \"${dir}\" branch -D; \
+  git -C \"${dir}\" for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads | while read -r b t; do \
+    if [ \"${t}\" = '[gone]' ]; then git -C \"${dir}\" branch -D \"${b}\"; fi; \
+  done; \
 }; f"
 ```
 
@@ -260,16 +268,33 @@ history, then an internal `backfill_blobs` function for blobs (there is no separ
   copy for any new alias whose purpose is "convert/fix X if needed" -- see
   § No-Op Guards below for the general principle.
 - **`git fo`** -- fetches all remotes (promisor-first ordering), widens a
-  shallow clone's default single-branch tracking to all branches, and (per
-  remote) uses `fetch --unshallow` instead of a plain `fetch` when still
-  shallow. This is the "routine sync" half -- also used standalone everywhere
+  shallow clone's default single-branch tracking to all branches, and makes a
+  shallow clone complete with ONE single-branch, no-tags `fetch --unshallow`
+  (branch picked from the current branch's upstream, then `refs/remotes/<remote>/HEAD`,
+  then `ls-remote`) with a 900s inactivity allowance (`GIT_FO_UNSHALLOW_TIMEOUT_SECS`),
+  followed by the ordinary fetch of everything else. Do not "simplify" this back to
+  `fetch --unshallow <remote>`: every ref a shallow fetch wants multiplies the work
+  the server does **before sending a byte** (measured on a 488k-commit blobless repo:
+  one branch ~50-80s, five branches plus 239 tags never within minutes), so the old
+  60s no-growth timeout killed every attempt just before data would have flowed and each
+  retry restarted that work. Chunked `--deepen` is no help either (~240KB per commit for a
+  100-commit slice against ~0.26KB per commit for the whole history in one request). In a
+  partial clone the other remotes are first registered as promisors with the promisor
+  remote's filter, because a non-promisor remote sends thin deltas against blobs the clone
+  does not have (`did not receive expected object`). This is the "routine sync" half -- also used standalone everywhere
   else in this config (`fo --rebase`, `upreb`, `pullsub`, cron, `antidote.rb`).
+  It exits **non-zero when any remote still fails after retries and a local repair**
+  (every other remote is still fetched and `dlb` still runs, so one bad remote never
+  blocks the rest); callers -- `git upreb`, `git unshallow`, `fo --rebase`, `GitProcessor`,
+  `run-all.rb` -- treat that as a failure instead of rebasing or pushing on stale refs.
 - **`backfill_blobs`** (function inside `git-unshallow`) -- backfills any missing blob
   objects for a partial (`--filter=blob:none`) clone, in up to 5 chunks (fewer for a
   repo with under 5 commits), newest history first, each chunk wrapped in
   `with-retry`. No-op (self-guarded) if the repo isn't a partial clone or the installed
-  git predates 2.44 (`git backfill`). See the script's own comment for why chunking
-  matters: `git backfill` groups every historical blob at a given path into one batch
+  git predates 2.44 (`git backfill`). Batches are 10000 blobs per request
+  (`GIT_UNSHALLOW_BATCH_SIZE`): each request costs a fixed ~3-5s, so the old 500 moved ~23
+  blobs/s (hours for a 367k-blob repo) where 10000 takes minutes. See the script's own
+  comment for why chunking matters: `git backfill` groups every historical blob at a given path into one batch
   regardless of `--min-batch-size`, so a single path with many large historical
   versions (e.g. a binary committed directly) can otherwise produce one multi-GB,
   unsplittable transfer that a flaky connection can never complete.
@@ -335,7 +360,8 @@ Three examples currently in `${XDG_CONFIG_HOME}/git/config`:
 
 | Alias | Guard condition | Cheap check used |
 |---|---|---|
-| `unshallow` | Repo is already a full, non-partial clone | `is-shallow` + `config --get remote.origin.promisor` |
+| `unshallow` | Repo is already a full, non-partial clone | `rev-parse --is-shallow-repository` + `config --get-regexp '^remote\..*\.promisor$'` (any promisor remote) |
+| `unshallow` (becomes a normal clone) | A blobless clone that is fully backfilled: it keeps its promisor settings on its own, so the guard above stays false | not shallow + every remote's fetch refspec is `+refs/heads/*:...` (`has_wide_refspecs`) + `rev-list --objects --all --reflog --indexed-objects --missing=print` shows no `?`, and any `rev-list` failure counts as missing (`has_missing_objects`) -- all local, no network (milliseconds for ordinary repos, 25-50s for a 488k-commit one). When it passes, `drop_promisor_config` removes `remote.<name>.promisor`/`partialclonefilter` and the repo is an ordinary clone from then on |
 | `siu` | Repo has no submodules | `[ -f "${dir}/.gitmodules" ]` |
 | `migrate-reftable` | Repo is already reftable format | `rev-parse --show-ref-format` |
 
@@ -428,7 +454,15 @@ falling back to a hard reset onto `@{u}` if the histories have diverged with no 
 ancestor (e.g. after a remote force-squash -- see `KeybaseMigration.md`) **and** the
 repo has opted in with `git config --local pull.allowResetOnDivergedHistory true`.
 Without `--rebase`, `fo` only fetches. A dirty tree or an un-opted-in diverged history
-makes it exit non-zero, which `run-all.rb` surfaces as a per-repo warning. There is no
+makes it exit non-zero, which `run-all.rb` surfaces as a per-repo warning. A rebase that
+**conflicts** is aborted on the spot (`git rebase --abort`), so the repository is left exactly as
+it was and the exit status is non-zero -- never half-done, because nobody is there to resolve it
+under cron and the working tree would be full of conflict markers. This matters most for
+`${DOTFILES_DIR}` itself, which contains the scripts cron runs: an unpushed amended commit made
+the hourly run rebase onto the stale remote commit, conflict, and leave `git-fo` and
+`git-common.sh` unparseable (`syntax error near unexpected token '<<<'`). A rebase that is
+**already in progress** is never touched (`fo` skips with a message), so the abort can only ever
+undo a rebase that `fo` started. There is no
 separate `pull-safe` command: it was folded into `fo` since it was `fo` plus this tail.
 
 This is the **single, canonical** implementation of "pull that tolerates a
@@ -508,6 +542,16 @@ must be excluded -- tags have no reflogs in any repo (git only maintains reflogs
 immediately and then does the full prune/repack/gc cleanup, i.e. exactly what
 `rfc && cc` would do. `GitProcessor#compress` (Ruby) runs `git cc --expire=now`. Use
 `rfc` on its own only when you want the reflog expiry without the repack.
+
+## `core.fsMonitor` -- Off By Default
+
+The global config sets `core.fsMonitor = false`. The built-in fsmonitor daemon adds a round trip
+to every `git status` (~12ms), which costs more than it saves below roughly 10-20k files (the
+largest repo here has about 2.5k); it also leaves one `git fsmonitor--daemon` process running per
+repo ever visited, and it makes starship fall back from gitoxide to forking `git status` on every
+prompt. `feature.manyFiles` does **not** enable it (it sets `index.skipHash`, `index.version=4`
+and `core.untrackedCache`). For a genuinely huge repo opt in locally with
+`git config --local core.fsmonitor true`.
 
 ## `[delta]` -- Diff Rendering
 

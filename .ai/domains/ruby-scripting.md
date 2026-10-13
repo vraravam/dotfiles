@@ -581,7 +581,7 @@ a clear message:
 
 ```ruby
 # BAD -- dir: nil is not a genuine "no-op" default; a nil here breaks
-# Pathname.new/system() downstream with a confusing error, not a clear one
+# Pathname()/system() downstream with a confusing error, not a clear one
 def clone_repo(dir: nil)
   system('git', 'clone', dir.to_s)  # dir.to_s == "" if nil -- silently wrong
 end
@@ -900,6 +900,27 @@ After editing any Ruby file, verify it parses with Ruby 2.6:
 
 This command must succeed with no syntax errors. Run it before formatting.
 
+## RubyGems -- Off on Hot Entry Points
+
+Loading RubyGems costs ~70ms per Ruby start (measured on the macOS system Ruby 2.6). Short-lived entry points that run on every `push`/`pull`/
+`cc`/`upreb`/`rug` (`scripts/git-command.rb`, `scripts/run-all.rb`) therefore use
+`#!/usr/bin/env -S ruby --disable-gems` (`env -S` splits the arguments; works with macOS `env`), and
+`call_utility` / `GitOverrides.command_for` start Ruby with `--disable-gems` too. Every other script
+keeps `#!/usr/bin/env ruby`.
+
+Rules for code that can run on those paths (everything reachable from `GitCommands`, `RunAll`,
+`GitWorkspace`, `CollectionProcessor`, `GitProcessor`, `EnvVars`, `Core`, `Logging`):
+
+- Use the standard library only. Default stdlib (`pathname`, `set`, `open3`, `json`, `yaml`, ...) loads
+  fine; a **gem** (including bundled gems such as `rexml`, which Ruby 3.0+ no longer loads without
+  RubyGems) does not. `utilities/plist.rb` requires `rexml/document`, so it (and anything that loads it,
+  e.g. `capture-prefs.rb`, `PreferencesRestore`) must not be put behind `--disable-gems` on Ruby 3+.
+- Do not `require 'rbconfig'` at the top of a file: RubyGems loads it for free, but under
+  `--disable-gems` it is a real load (~30ms on the macOS system Ruby). Read the platform from the core constant `RUBY_PLATFORM`
+  (`RUBY_PLATFORM.match?(/arm|aarch64/)`) and `require 'rbconfig'` lazily inside the one method that
+  needs `RbConfig.ruby`.
+- Check a new entry point with `/usr/bin/ruby --disable-gems -I scripts/utilities -e "require 'the_module'"`.
+
 ## Common Mistakes (Code Review Findings)
 
 Based on code review patterns and debugging sessions, here are the most common mistakes to avoid:
@@ -920,7 +941,7 @@ Based on code review patterns and debugging sessions, here are the most common m
 2. **Hardcoding paths** → Use `EnvVars::HOME` and other constants
    ```ruby
    # BAD
-   config = Pathname.new("~/.config/file")
+   config = Pathname("~/.config/file")
    # Good
    config = EnvVars::XDG_CONFIG_HOME.join('file')
    ```

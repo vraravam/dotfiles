@@ -8,7 +8,7 @@ require 'generate_bootstrap_repositories_yaml'
 RSpec.describe GenerateBootstrapRepositoriesYaml do
   around do |example|
     Dir.mktmpdir('bootstrap-yaml-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       example.run
     end
   end

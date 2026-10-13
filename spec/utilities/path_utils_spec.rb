@@ -6,7 +6,7 @@ require 'tmpdir'
 RSpec.describe PathUtils do
   around do |example|
     Dir.mktmpdir('path-utils-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       example.run
     end
   end
@@ -96,6 +96,57 @@ RSpec.describe PathUtils do
     it 'is true for a command on PATH and false otherwise' do
       expect(described_class.command_exists?('sh')).to be true
       expect(described_class.command_exists?('definitely-not-a-command-xyz')).to be false
+    end
+
+    context 'with a controlled PATH' do
+      let(:bin_dir) { tmp.join('bin').tap(&:mkpath) }
+
+      def install_command(name, mode: 0o755)
+        bin_dir.join(name).tap do |file|
+          file.write("#!/bin/sh\n")
+          file.chmod(mode)
+        end
+      end
+
+      it 'finds an executable file and does not fork a subprocess' do
+        install_command('spec-cmd-found')
+        expect(CommandUtils).not_to receive(:run_silent)
+
+        with_env('PATH' => "/nonexistent:#{bin_dir}") do
+          expect(described_class.command_exists?('spec-cmd-found')).to be true
+        end
+      end
+
+      it 'rejects a non-executable file and a directory of the same name' do
+        install_command('spec-cmd-noexec', mode: 0o644)
+        bin_dir.join('spec-cmd-dir').mkpath
+
+        with_env('PATH' => bin_dir.to_s) do
+          expect(described_class.command_exists?('spec-cmd-noexec')).to be false
+          expect(described_class.command_exists?('spec-cmd-dir')).to be false
+        end
+      end
+
+      it 'does not cache a miss, so a command installed later is found' do
+        with_env('PATH' => bin_dir.to_s) do
+          expect(described_class.command_exists?('spec-cmd-late')).to be false
+          install_command('spec-cmd-late')
+          expect(described_class.command_exists?('spec-cmd-late')).to be true
+        end
+      end
+
+      it 'checks a command containing a slash as a path, ignoring PATH' do
+        script = install_command('spec-cmd-path')
+
+        with_env('PATH' => '/nonexistent') do
+          expect(described_class.command_exists?(script.to_s)).to be true
+          expect(described_class.command_exists?(tmp.join('missing').to_s)).to be false
+        end
+      end
+
+      it 'is false for an empty command' do
+        expect(described_class.command_exists?('')).to be false
+      end
     end
   end
 

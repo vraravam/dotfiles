@@ -8,7 +8,7 @@ require 'brew'
 # sentinel and the rest in the background. These specs keep that split from silently
 # breaking again (an earlier cut pattern skipped comment lines and so selected the whole file).
 RSpec.describe 'files/--HOME--/Brewfile FIRST_INSTALL sentinel' do
-  let(:brewfile) { Pathname.new(File.expand_path('../files/--HOME--/Brewfile', __dir__)) }
+  let(:brewfile) { Pathname(File.expand_path('../files/--HOME--/Brewfile', __dir__)) }
   let(:lines) { brewfile.read(encoding: 'UTF-8').lines.map(&:chomp) }
   let(:sentinel_indexes) { lines.each_index.select { |i| lines[i].start_with?('# FIRST_INSTALL:') } }
 

@@ -6,7 +6,7 @@ require 'git_workspace'
 RSpec.describe GitWorkspace do
   around do |example|
     Dir.mktmpdir('git-workspace-spec-') do |dir|
-      @tmp = Pathname.new(File.realpath(dir))
+      @tmp = Pathname(File.realpath(dir))
       GitProcessor.repo_cache = {}
       example.run
     end
@@ -82,7 +82,7 @@ RSpec.describe GitWorkspace do
 
   describe '.status_all_repos' do
     it 'checks HOME, the dotfiles dir, the profiles dir and every chrome folder' do
-      chrome = Pathname.new('/chrome')
+      chrome = Pathname('/chrome')
       allow(ProfilesRepo).to receive(:find_chrome_folders).and_return([chrome])
       checked = []
       allow(described_class).to receive(:status_repo) { |dir| checked << dir && true }
@@ -138,6 +138,8 @@ RSpec.describe GitWorkspace do
       stub_const('EnvVars::PROJECTS_BASE_DIR', tmp.join('oss'))
       stub_const('EnvVars::XDG_CACHE_HOME', cache_home)
       GitProcessor.repo_cache = {}
+
+      expect(Logging).to receive(:success).with(/regenerated \(.*1.* aliases\)/)
 
       described_class.regenerate_repo_aliases(force: true)
 

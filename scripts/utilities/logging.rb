@@ -411,6 +411,27 @@ module Logging
     state.script_name = previous_script_name
   end
 
+  # Like run_script, but returns the block's value. run_script itself returns nil when it runs
+  # nested (the early return above), so a caller that needs the block's outcome -- typically a
+  # Boolean success flag -- would otherwise have to capture it in an outer local variable.
+  #
+  # @param script_name [String, nil] See run_script (auto-detected from the caller if omitted)
+  # @param message [String, nil] See run_script
+  # @yield The script's main logic
+  # @return [Object] whatever the block returned
+  #
+  # @example
+  #   def run
+  #     Logging.run_script_result('brew_bundle', 'Installing the Brewfile') { _install }
+  #   end
+  def run_script_result(script_name = nil, message = nil)
+    script_name = File.basename(caller_locations(1, 1).first.path, '.rb') if nil_or_empty?(script_name)
+
+    result = nil
+    run_script(script_name, message) { result = yield }
+    result
+  end
+
   # ---------------------------------------------------------------------------
   # Script depth tracking -- public query method
   # ---------------------------------------------------------------------------

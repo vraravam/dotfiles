@@ -2,7 +2,6 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-require 'fileutils'
 require 'open3'
 require 'pathname'
 
@@ -11,13 +10,11 @@ require_relative 'env_vars'
 require_relative 'logging'
 require_relative 'path_utils'
 
-# Cron management helpers that replicate the shell functions split across
-# .shellrc (suspend_cron, resume_cron, restore_cron) and .aliases
-# (create_crontab, recron, with_cron_suspended).
-#
-# The split between .shellrc and .aliases exists for bootstrap reasons: shell
-# needs suspend_cron before the dotfiles repo is cloned. Ruby scripts never
-# have that constraint -- the full interface lives here.
+# Cron management helpers. The shell functions in .shellrc (suspend_cron, resume_cron,
+# restore_cron) and .aliases (create_crontab, recron) are thin wrappers that call these
+# methods through call_utility; the .shellrc ones keep a pure-shell fallback because shell
+# needs suspend_cron before the dotfiles repo is cloned. Ruby scripts never have that
+# constraint -- the full interface lives here, and with_cron_suspended exists only here.
 # :reek:UtilityFunction -- Intentional stateless utility module design
 module Cron
   extend self
@@ -33,20 +30,20 @@ module Cron
   CRONTAB_FILE = EnvVars::PERSONAL_CONFIGS_DIR.join('crontab.txt')
 
   # ---------------------------------------------------------------------------
-  # Core primitives (mirror .shellrc # 1h)
+  # Core primitives (called by the .shellrc wrappers of the same names)
   # ---------------------------------------------------------------------------
 
   # Loads +cron_file+ into the system crontab via `crontab <file>`.
   # Warns and returns early if the file does not exist.
   # Validates crontab syntax before installation.
-  # Mirrors restore_cron in .shellrc.
+  # Called by the restore_cron shell wrapper in .shellrc.
   # Returns true on success, false on failure (logs error but does not raise).
   #
   # @param cron_file [String, Pathname] Path to crontab file
   # @return [Boolean] true on success, false on failure
   # :reek:FeatureEnvy -- Local variable tracks file path through validation steps
   def restore_cron(cron_file)
-    cron_file = Pathname.new(cron_file) unless cron_file.is_a?(Pathname)
+    cron_file = Pathname(cron_file)
     cron_file_str = cron_file.to_s
     cron_file_colored = cron_file_str.cyan
 
@@ -73,7 +70,7 @@ module Cron
   # and removes all cron jobs. On a first-install where no crontab exists yet,
   # seeds the backup from crontab.txt (if present) so resume_cron can restore a
   # known-good state. Cleans up old backups (keeps last 5).
-  # Mirrors suspend_cron in .shellrc.
+  # Called by the suspend_cron shell wrapper in .shellrc.
   #
   # @return [Boolean] true on success, false on failure
   # :reek:FeatureEnvy -- Local variable tracks backup file through multi-step workflow
@@ -92,7 +89,7 @@ module Cron
       Logging.debug "Backed up existing crontab to '#{backup_file.cyan}'"
     elsif src_file.file?
       # No active crontab (e.g. FIRST_INSTALL) but a known-good crontab.txt exists.
-      FileUtils.cp(src_file.to_s, backup_file.to_s)
+      IO.copy_stream(src_file.to_s, backup_file.to_s)
       Logging.debug "Seeded cron backup from '#{src_file.cyan}'"
     else
       backup_file.write('')
@@ -107,7 +104,7 @@ module Cron
 
   # Restores the crontab from the backup written by suspend_cron and deletes
   # the backup file. If the backup is empty (genuine first-install with no prior
-  # crontab.txt), does nothing. Mirrors resume_cron in .shellrc.
+  # crontab.txt), does nothing. Called by the resume_cron shell wrapper in .shellrc.
   # :reek:FeatureEnvy -- Local variable tracks backup file through restoration steps
   def resume_cron
     Logging.debug 'Resuming cron jobs...'
@@ -128,7 +125,7 @@ module Cron
   end
 
   # ---------------------------------------------------------------------------
-  # Higher-level helpers (mirror .aliases # 3j)
+  # Higher-level helpers (called by the .aliases wrappers of the same names)
   # ---------------------------------------------------------------------------
 
   # Seeds +file+ with the standard crontab header and the software-updates-cron
@@ -136,7 +133,7 @@ module Cron
   # No longer called by recron (which now preserves existing crontabs and falls back
   # to tracked crontab.txt). Users who need a template can run:
   #   create_crontab ${PERSONAL_CONFIGS_DIR}/crontab.txt
-  # Mirrors create_crontab in .aliases.
+  # Called by the create_crontab shell wrapper in .aliases.
   #
   # @param file [String, Pathname] Path to write the crontab template to
   def create_crontab(file)
@@ -152,7 +149,7 @@ module Cron
     projects_base = EnvVars::PROJECTS_BASE_DIR
     homebrew_bundle = EnvVars::HOMEBREW_BUNDLE_FILE
 
-    file = Pathname.new(file) unless file.is_a?(Pathname)
+    file = Pathname(file)
 
     file.open(mode: 'w') do |f|
       f.puts '# Reference: https://crontab.guru/'
@@ -204,17 +201,14 @@ module Cron
   # - Tracked crontab.txt is used as fallback on vanilla OS
   # - No default schedule imposed if user has neither
   #
-  # Mirrors recron in .aliases.
-  #
-  # The result is tracked in a local rather than taken from Logging.run_script's return value,
-  # which is nil when this is called from another script (nested mode).
+  # Called by the recron shell wrapper in .aliases.
   #
   # @return [Boolean] false only when a schedule was found but could not be loaded into the
   #   system crontab; true when it was loaded or there was nothing to load.
   # :reek:FeatureEnvy -- Local variable manages temp file lifecycle through validation
   def recron
-    loaded = true
-    Logging.run_script('recron') do
+    Logging.run_script_result('recron') do
+      loaded = true
       Logging.debug 'Setting up crontab'
 
       # Step 1: Capture existing system crontab to temp file
@@ -230,7 +224,7 @@ module Cron
         schedule_source = nil
         if temp_crontab.size.positive?
           Logging.debug "Found existing crontab with #{temp_crontab.size.to_s.purple} bytes"
-          schedule_source = Pathname.new(temp_crontab.path)
+          schedule_source = Pathname(temp_crontab.path)
         elsif file?(CRONTAB_FILE)
           # Step 2b: Fallback to tracked crontab.txt if it exists and is non-empty
           Logging.debug "No existing crontab; falling back to '#{crontab_file_colored}'"
@@ -249,13 +243,13 @@ module Cron
       ensure
         temp_crontab.unlink
       end
+      loaded
     end
-    loaded
   end
 
   # Wraps a block in the cron bracket: suspend cron, yield, call recron to
   # restore it, then clear the backup (only if recron succeeded) so any at_exit hook is a no-op.
-  # Mirrors with_cron_suspended in .aliases. Restores cron via an ensure clause so it
+  # Restores cron via an ensure clause so it
   # always runs, regardless of how the block exits: a normal return, an exception, OR a
   # non-local 'return' from inside the block (e.g. 'return false unless x' in a caller
   # like recreate-repository.rb) -- confirmed empirically that a bare 'begin/rescue
@@ -362,7 +356,7 @@ module Cron
   def _cleanup_old_backups
     backup_dir = EnvVars::TMPDIR
     pattern = backup_dir.join('crontab_backup*')
-    backups = Dir.glob(pattern.to_s).map { |f| Pathname.new(f) }
+    backups = Dir.glob(pattern.to_s).map { |f| Pathname(f) }
                  .select(&:file?)
                  .sort_by(&:mtime)
                  .reverse

@@ -1191,13 +1191,17 @@ main() {
       # Special handling for noWarnProcesses array: must delete and recreate because Set doesn't work on arrays.
       # This is inherently non-atomic but unavoidable -- PlistBuddy cannot atomically update array contents.
       /usr/libexec/PlistBuddy -c "Delete :'Window Settings':'${profile}':noWarnProcesses" "${plist}" 2>/dev/null || true
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses array" "${plist}"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:0:ProcessName string screen" "${plist}"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:1:ProcessName string tmux" "${plist}"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:2:ProcessName string rlogin" "${plist}"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:3:ProcessName string ssh" "${plist}"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:4:ProcessName string slogin" "${plist}"
-      /usr/libexec/PlistBuddy -c "Add :'Window Settings':'${profile}':noWarnProcesses:5:ProcessName string telnet" "${plist}"
+      # One PlistBuddy process (multiple -c, run in order; a failing command does not stop the rest and
+      # the exit status is non-zero, exactly as with separate calls) instead of one per entry.
+      /usr/libexec/PlistBuddy \
+        -c "Add :'Window Settings':'${profile}':noWarnProcesses array" \
+        -c "Add :'Window Settings':'${profile}':noWarnProcesses:0:ProcessName string screen" \
+        -c "Add :'Window Settings':'${profile}':noWarnProcesses:1:ProcessName string tmux" \
+        -c "Add :'Window Settings':'${profile}':noWarnProcesses:2:ProcessName string rlogin" \
+        -c "Add :'Window Settings':'${profile}':noWarnProcesses:3:ProcessName string ssh" \
+        -c "Add :'Window Settings':'${profile}':noWarnProcesses:4:ProcessName string slogin" \
+        -c "Add :'Window Settings':'${profile}':noWarnProcesses:5:ProcessName string telnet" \
+        "${plist}"
     done
   fi
 

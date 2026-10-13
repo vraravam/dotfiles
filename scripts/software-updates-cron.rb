@@ -23,9 +23,6 @@
 #   Standalone: software-updates-cron.rb
 #   Module:     SoftwareUpdatesCron.run
 
-require 'rbconfig'
-require 'shellwords'
-
 require_relative 'run-all'
 require_relative 'utilities/antidote'
 require_relative 'utilities/brew'
@@ -232,17 +229,19 @@ module SoftwareUpdatesCron
 
     _step('bat cache update', "#{'Updating'.yellow} #{'bat'.purple} cache") do
       if PathUtils.command_exists?('bat')
-        bat_config_dir = CommandUtils.query('bat', '--config-dir')
-        bat_syntax_dir_pn = Pathname.new(bat_config_dir).join('syntaxes')
-        PathUtils.ensure_directories_exist(bat_syntax_dir_pn)
+        # The antidote syntax file rarely changes and the cache rebuild is slow: do both at most once a day.
+        _run_if_due(EnvVars::XDG_CACHE_HOME.join('bat-cache-last-update'), 24 * 3600, 'bat cache') do
+          bat_config_dir = CommandUtils.query('bat', '--config-dir')
+          bat_syntax_dir_pn = Pathname(bat_config_dir).join('syntaxes')
+          PathUtils.ensure_directories_exist(bat_syntax_dir_pn)
 
-        CommandUtils.run_silent(
-          'curl', '--retry', '3', '--retry-delay', '5', '-fsSL',
-          'https://raw.githubusercontent.com/mattmc3/antidote/main/misc/zsh_plugins.sublime-syntax',
-          '-o', bat_syntax_dir_pn.join('zsh_plugins.sublime-syntax').to_s
-        )
-        # Redirect stdout to suppress 'Writing theme/syntax set' messages
-        CommandUtils.run_silent('bat', 'cache', '--build', err: :err)
+          CommandUtils.curl_download(
+            'https://raw.githubusercontent.com/mattmc3/antidote/main/misc/zsh_plugins.sublime-syntax',
+            bat_syntax_dir_pn.join('zsh_plugins.sublime-syntax')
+          )
+          # Redirect stdout to suppress 'Writing theme/syntax set' messages
+          CommandUtils.run_silent('bat', 'cache', '--build', err: :err)
+        end
       end
     end
 
@@ -330,7 +329,8 @@ module SoftwareUpdatesCron
       # in-process), so a direct CapturePrefs.run(operation: 'export') would work here too.
       # Export auto-commits inside capture-prefs.rb (uses smart_commit)
       # Set COLUMNS for terminal width detection (cron has no TTY, defaults to 80)
-      if CommandUtils.run_interactive({ 'COLUMNS' => EnvVars.columns.to_s }, RbConfig.ruby, Pathname.new(__dir__).join('capture-prefs.rb').to_s, '-e')
+      require 'rbconfig' # only needed for RbConfig.ruby here
+      if CommandUtils.run_interactive({ 'COLUMNS' => EnvVars.columns.to_s }, RbConfig.ruby, Pathname(__dir__).join('capture-prefs.rb').to_s, '-e')
         Logging.success 'Finished capturing and committing app preferences'
       else
         Logging.record_error('Failed to capture app preferences')

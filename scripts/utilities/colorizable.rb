@@ -46,7 +46,8 @@ module Colorizable
   private :colorize
 
   # Replaces the expanded HOME path with '~' to produce a shorter, human-readable path.
-  # Returns the string unchanged if it does not contain the home directory path.
+  # Returns the string unchanged if it does not contain the home directory path (or if HOME is
+  # unset/empty, where there is nothing to replace).
   #
   # Design: color methods (.yellow, .cyan, etc.) call this automatically, so any
   # path passed through a color method is display-ready without an explicit call here.
@@ -63,6 +64,9 @@ module Colorizable
   def replace_home_path_with_tilde
     str = is_a?(String) ? self : to_s
     home_dir = EnvLite.home
+    # String#sub with an empty pattern matches at index 0, which would prefix '~' to every string.
+    return str if home_dir.empty?
+
     # sub (not gsub) -- a path contains HOME at most once (at the start); this runs on
     # nearly every logged path in the codebase, so avoiding the full-string gsub scan matters.
     str.sub(home_dir, '~')

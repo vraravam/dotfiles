@@ -66,6 +66,28 @@ RSpec.describe GitHooks do
       expect(failures).to eq(['Ruby syntax error in bad file.rb'])
     end
 
+    it 'checks all Ruby files in one child process and keeps the reports in file order' do
+      File.write('a.rb', "puts 1\n")
+      File.write('b.rb', "def x(\n")
+      File.write('c.sh', "if then\n")
+      File.write('d.rb', "class Y\n")
+      expect(Open3).to receive(:capture2).once.and_call_original
+
+      ruby_files, failures = described_class.send(:_syntax_check, %w[a.rb b.rb c.sh d.rb])
+
+      expect(ruby_files).to eq(['a.rb'])
+      expect(failures).to eq(['Ruby syntax error in b.rb', 'Shell syntax error in c.sh', 'Ruby syntax error in d.rb'])
+    end
+
+    it 'treats every Ruby file as failed when the checker itself cannot run' do
+      File.write('a.rb', "puts 1\n")
+      allow(Open3).to receive(:capture2).and_return(['', instance_double(Process::Status, success?: false)])
+
+      _ruby_files, failures = described_class.send(:_syntax_check, ['a.rb'])
+
+      expect(failures).to eq(['Ruby syntax error in a.rb'])
+    end
+
     it 'reports a shell syntax error' do
       File.write('bad.sh', "if then\n")
 
@@ -91,6 +113,12 @@ RSpec.describe GitHooks do
       expect(described_class.send(:_run_local_hooks, 'pre-push', [])).to be true
     end
 
+    it 'does not load tempfile when there is no hook to run' do
+      expect(described_class).not_to receive(:require).with('tempfile')
+
+      described_class.send(:_run_local_hooks, 'pre-push', [])
+    end
+
     it 'passes the arguments and replays stdin to the hook' do
       write_hook('.git/hooks.local/pre-push', 'echo "$@ $(cat)" > out.txt')
 
@@ -101,7 +129,7 @@ RSpec.describe GitHooks do
 
     it 'fails, and runs no further hooks, when a hook exits non-zero' do
       write_hook('.git/hooks.local/pre-push', 'exit 3')
-      override = Pathname.new(File.expand_path('override.sh'))
+      override = Pathname(File.expand_path('override.sh'))
       write_hook(override.to_s, 'touch ran-override')
       allow(GitOverrides).to receive(:script_for).and_return(override)
 

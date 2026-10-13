@@ -121,7 +121,9 @@ _setup_jio_dns() {
   # Capture curl output into a variable first; then test with a glob match.
   # Previously: curl ... | /usr/bin/grep -qi 'jio' -- two processes + pipe.
   # Now: single curl fork, pure-zsh lowercase expansion (:l) + glob match.
-  _org=$(curl -fsS https://ipinfo.io/org 2>/dev/null)
+  # --connect-timeout/--max-time: on a flaky or captive network this best-effort lookup must not
+  # stall the whole bootstrap; a timeout leaves _org empty, which is handled like any other failure.
+  _org=$(curl -fsS --connect-timeout 5 --max-time 10 https://ipinfo.io/org 2>/dev/null)
   if [[ "${_org:l}" == *jio* ]]; then
     echo '==> Setting DNS for WiFi from Jio ISP'
     networksetup -setdnsservers Wi-Fi 1.1.1.2 9.9.9.9 || echo 'Warning: Failed to set DNS for Wi-Fi'
@@ -369,7 +371,7 @@ _run_post_clone_steps() {
   _hand_over_shell_issues
 
   local post_clone_status=0
-  COLUMNS="${COLUMNS}" "${DOTFILES_DIR}/scripts/call-utility.rb" --truthy FreshInstallPostClone.run "--steps_done=${steps_done}" "--start_time=${script_start_time}" || post_clone_status=$?
+  COLUMNS="${COLUMNS}" "${CALL_UTILITY_SCRIPT}" --truthy FreshInstallPostClone.run "--steps_done=${steps_done}" "--start_time=${script_start_time}" || post_clone_status=$?
 
   if (( post_clone_status != 0 )); then
     # What failed was already reported by the Ruby side, which also restores cron. This is only a

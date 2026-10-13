@@ -2,9 +2,6 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-require 'fileutils'
-require 'tempfile'
-
 require_relative 'command_utils'
 require_relative 'core'
 require_relative 'env_vars'
@@ -23,36 +20,13 @@ module HomebrewInstall
 
   INSTALL_URL = 'https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh'
 
-  # Curl flags that make bootstrap downloads resilient. --retry-all-errors is deliberately
-  # absent: it makes the terminal app close.
-  RETRY_OPTS = %w[--retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused].freeze
-
-  # Headers that bypass GitHub's CDN and intermediate proxies.
-  CACHE_BUST_OPTS = ['-H', 'Cache-Control: no-cache, no-store, must-revalidate', '-H', 'Pragma: no-cache', '-H', 'Expires: 0'].freeze
-
   # Public API method.
   #
   # @return [Boolean] true when Homebrew is installed (already, or now); false when it could
   #   not be installed -- the reason is recorded as an error and the caller should stop, since
   #   every later step depends on Homebrew.
   def run
-    ok = false
-    Logging.run_script('homebrew_install', 'Installing Homebrew') do
-      ok = _install(EnvVars::HOMEBREW_PREFIX)
-    end
-    ok
-  end
-
-  # Curl arguments for a bootstrap download: the retry flags when CURL_RETRY_OPTS is set or
-  # ~/.curlrc (which carries equivalent defaults) is not linked yet, and the cache-busting
-  # headers when CACHE_BUST_HEADERS is set.
-  #
-  # @return [Array<String>]
-  def curl_opts
-    opts = []
-    opts.concat(CACHE_BUST_OPTS) if EnvVars.cache_bust_headers?
-    opts.concat(RETRY_OPTS) if EnvVars.curl_retry_opts? || !EnvVars::HOME.join('.curlrc').file?
-    opts
+    Logging.run_script_result('homebrew_install', 'Installing Homebrew') { _install(EnvVars::HOMEBREW_PREFIX) }
   end
 
   # ---------------------------------------------------------------------------
@@ -93,18 +67,19 @@ module HomebrewInstall
       return false
     end
 
-    FileUtils.chmod('u+w', prefix.to_s)
+    File.chmod(File.stat(prefix.to_s).mode | 0o200, prefix.to_s) # u+w
     true
   end
 
   # @return [Boolean]
   def _download_and_run_installer
+    require 'tempfile' # only needed when Homebrew is actually being installed
     script = Tempfile.new(['brew-install', '.sh'])
     script.close
     begin
       # The timestamp query parameter is part of the cache-busting.
       url = "#{INSTALL_URL}?#{Time.now.to_i}"
-      unless CommandUtils.run_interactive('curl', *curl_opts, '-fsSL', url, '-o', script.path)
+      unless CommandUtils.curl_download(url, script.path, bootstrap: true, interactive: true)
         Logging.record_error 'Failed to download Homebrew installation script'
         return false
       end

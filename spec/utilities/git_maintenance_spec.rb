@@ -6,7 +6,7 @@ require 'tmpdir'
 RSpec.describe GitProcessor::Maintenance do
   around do |example|
     Dir.mktmpdir('git-maintenance-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       GitProcessor.repo_cache = {}
       example.run
     end

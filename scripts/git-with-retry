@@ -14,9 +14,13 @@
 # making progress (e.g. a large blob backfill on a modest connection) -- a plain fixed
 # wall-clock timeout cannot tell those two cases apart. macOS has no 'timeout'/
 # 'gtimeout' by default, so this implements a manual background-job + poll + kill
-# loop. If <progress-path> is not '-', its on-disk size (via 'du -sk', works for both
-# files and directories -- e.g. pass a repo's '.git/objects' dir to track fetch/
-# backfill progress) is polled every 5s; growth resets the inactivity clock, so
+# loop. The child's liveness is polled on a short tick (0.2s for the first 2s, then 1s)
+# so a command that finishes instantly returns instantly instead of after a fixed
+# sleep; every 5s the tick-counted clocks are re-synced against the wall clock ('date +%s'),
+# so time spent in 'du' or a loaded machine cannot stretch the timeouts. If <progress-path> is not '-',
+# its on-disk size (via 'du -sk', works for both files and directories -- e.g. pass a
+# repo's '.git/objects' dir to track fetch/backfill progress) is sampled every 5s (du
+# is the expensive part, so it is not run on every tick); growth resets the inactivity clock, so
 # <timeout-secs> only fires after that many seconds of NO observed growth. Bounded
 # overall by a hard cap of 10x <timeout-secs> regardless of trickling progress, so a
 # command that technically inches forward forever cannot run unbounded. Pass '-' for
@@ -38,19 +42,163 @@
 # kill branch is safe because that branch already knows the attempt failed (timed out)
 # and discards the exit status of the post-kill 'wait' regardless.
 #
-# A stalled attempt is killed with kill_tree (below), which kills the process and all of
-# its descendants: a plain 'kill -9 $pid' only kills the direct process, so a stalled git
-# command's ssh/git-remote-https helper children would be orphaned and keep running
-# indefinitely.
+# A stalled attempt is stopped with kill_tree (above), which signals the process and all of
+# its descendants -- SIGTERM first so git can remove its own lock files, SIGKILL only for what
+# survives a short grace period. A plain 'kill $pid' would orphan a stalled git command's
+# ssh/git-remote-https helper children, and an immediate 'kill -9' would leave
+# '.git/shallow.lock' (or index.lock, a pack's tmp file...) behind to fail every later attempt.
+#
+# <stderr-file>: the child's stderr is redirected into that file for each attempt and
+# replayed to this command's own stderr when the attempt ends (success, failure or
+# kill), so the caller sees the output and the file afterwards holds the LAST attempt's
+# stderr -- e.g. for a 'Last error:' report after the final failure. Pass /dev/null
+# to skip the capture entirely: the child then writes to this command's stderr live
+# (progress meters, tty detection) and nothing is stored. With -q/--quiet among the
+# command's own arguments, the child's stdout is discarded and its stderr is only
+# captured to the file, not replayed. An interrupt (INT/TERM/HUP) kills the running
+# child tree before exiting -- a background job of a non-interactive sh ignores SIGINT,
+# so without this a Ctrl-C would leave the stalled command running.
 # Usage: git with-retry <timeout-secs> <max-attempts> <stderr-file|/dev/null> <progress-path|-> <command...>
 
-# Kills a process and all of its descendants (children first, depth-first).
+# Prints a process and all of its descendants, one pid per line, parents first.
+# Usage: tree_pids <pid>
+tree_pids() {
+  printf '%s\n' "$1"
+  for child in $(pgrep -P "$1" 2>/dev/null); do
+    tree_pids "${child}"
+  done
+}
+
+# Succeeds if the process exists and is not a zombie. 'kill -0' alone cannot be used: it also
+# succeeds for a terminated child that this shell has not reaped yet.
+# Usage: is_running <pid>
+is_running() {
+  _ir_state="$(ps -o stat= -p "$1" 2>/dev/null)"
+  case "${_ir_state}" in
+  '' | Z*) return 1 ;;
+  esac
+  return 0
+}
+
+# Stops a process and all of its descendants: SIGTERM first, then SIGKILL for whatever is still
+# running after the grace period. The TERM matters: git removes its own lock files (e.g.
+# '.git/shallow.lock', held for the whole pack download of a 'fetch --unshallow') in a signal
+# handler, and an immediate 'kill -9' leaves them behind -- every later attempt then fails at
+# once with "Unable to create '...shallow.lock': File exists", so the retries cannot succeed.
+# The whole tree is signalled, not just $1: a plain 'kill $pid' would orphan a stalled git
+# command's ssh/git-remote-https helper children, which would keep running indefinitely.
+# The grace period is WITH_RETRY_KILL_GRACE_SECS (default 5).
 # Usage: kill_tree <pid>
 kill_tree() {
-  for child in $(pgrep -P "$1" 2>/dev/null); do
-    kill_tree "${child}"
+  _kt_pids="$(tree_pids "$1")"
+  for _kt_pid in ${_kt_pids}; do
+    kill -TERM "${_kt_pid}" 2>/dev/null || true
   done
-  kill -9 "$1" 2>/dev/null || true
+  _kt_ticks=$((${WITH_RETRY_KILL_GRACE_SECS:-5} * 5))
+  while [ "${_kt_ticks}" -gt 0 ]; do
+    _kt_alive=0
+    for _kt_pid in ${_kt_pids}; do
+      if is_running "${_kt_pid}"; then _kt_alive=1; fi
+    done
+    if [ "${_kt_alive}" -eq 0 ]; then return 0; fi
+    sleep 0.2 2>/dev/null || sleep 1
+    _kt_ticks=$((_kt_ticks - 1))
+  done
+  for _kt_pid in ${_kt_pids}; do
+    kill -9 "${_kt_pid}" 2>/dev/null || true
+  done
+}
+
+# Sets 'size' to the on-disk size in KiB of ${progress_path}. Word splitting of the du output
+# (instead of a 'cut' pipe) avoids two extra forks per sample.
+sample_size() {
+  # shellcheck disable=SC2046
+  set -- $(du -sk "${progress_path}" 2>/dev/null)
+  size="${1:-}"
+}
+
+# Adds any wall-clock time the tick counting missed (slow 'du', a busy machine) to both clocks.
+resync_clock() {
+  now_s=$(date +%s)
+  real_t=$(((now_s - start_s) * 10))
+  if [ "${real_t}" -gt "${elapsed_t}" ]; then
+    waited_t=$((waited_t + real_t - elapsed_t))
+    elapsed_t="${real_t}"
+  fi
+}
+
+# Sleeps one polling tick and adds its length (in tenths of a second) to the clocks. Fractional
+# sleep is probed lazily: if the platform's sleep rejects it, fall back to whole seconds.
+nap() {
+  if [ "${elapsed_t}" -lt 20 ] && [ "${fractional_sleep}" -eq 1 ]; then
+    if sleep 0.2 2>/dev/null; then
+      tick_t=2
+    else
+      fractional_sleep=0
+      sleep 1
+      tick_t=10
+    fi
+  else
+    sleep 1
+    tick_t=10
+  fi
+  elapsed_t=$((elapsed_t + tick_t))
+  waited_t=$((waited_t + tick_t))
+  since_sample_t=$((since_sample_t + tick_t))
+}
+
+# Runs one attempt of the command; waits for it, enforcing the inactivity timeout and hard cap.
+# Sets 'attempt_result' to 0 (succeeded), 1 (failed) or 2 (killed after stalling).
+run_attempt() {
+  if [ "${quiet}" -eq 1 ]; then
+    "$@" >/dev/null 2>"${stderr_file}" &
+  elif [ "${capture}" -eq 1 ]; then
+    "$@" 2>"${stderr_file}" &
+  else
+    "$@" &
+  fi
+  pid=$!
+  waited_t=0
+  elapsed_t=0
+  since_sample_t=0
+  start_s=$(date +%s)
+  last_size=''
+  if [ -n "${progress_path}" ]; then
+    sample_size
+    last_size="${size}"
+  fi
+  while kill -0 "${pid}" 2>/dev/null && [ "${waited_t}" -lt "${timeout_t}" ] && [ "${elapsed_t}" -lt "${hard_cap_t}" ]; do
+    nap
+    if [ "${since_sample_t}" -ge 50 ] || [ "${waited_t}" -ge "${timeout_t}" ]; then
+      since_sample_t=0
+      resync_clock
+      if [ -n "${progress_path}" ]; then
+        sample_size
+        if [ "${size}" != "${last_size}" ]; then
+          waited_t=0
+          last_size="${size}"
+        fi
+      fi
+    fi
+  done
+  if kill -0 "${pid}" 2>/dev/null; then
+    disown "${pid}" 2>/dev/null || true
+    kill_tree "${pid}"
+    wait "${pid}" 2>/dev/null
+    attempt_result=2
+  else
+    wait "${pid}"
+    cmd_status=$?
+    attempt_result=1
+    if [ "${cmd_status}" -eq 0 ]; then attempt_result=0; fi
+  fi
+  pid=''
+  if [ "${capture}" -eq 1 ] && [ "${quiet}" -eq 0 ]; then cat "${stderr_file}" >&2; fi
+}
+
+on_interrupt() {
+  if [ -n "${pid:-}" ]; then kill_tree "${pid}"; fi
+  exit "$1"
 }
 
 main() {
@@ -59,51 +207,27 @@ main() {
   stderr_file="${3:?with-retry: stderr_file required}"
   progress_path="${4:?with-retry: progress_path required (pass '-' for none)}"
   if [ "${progress_path}" = '-' ]; then progress_path=''; fi
-  hard_cap_secs=$((timeout_secs * 10))
+  timeout_t=$((timeout_secs * 10))
+  hard_cap_t=$((timeout_t * 10))
   shift 4
   quiet=0
   for arg in "$@"; do case "${arg}" in -q | --quiet) quiet=1 ;; esac done
+  capture=1
+  if [ "${stderr_file}" = /dev/null ]; then capture=0; fi
+  fractional_sleep=1
+  pid=''
+  trap 'on_interrupt 130' INT
+  trap 'on_interrupt 143' TERM
+  trap 'on_interrupt 129' HUP
   attempt=1
   while [ "${attempt}" -le "${max_attempts}" ]; do
     printf 'Attempt %s/%s (timeout %ss): %s\n' "${attempt}" "${max_attempts}" "${timeout_secs}" "$*" >&2
-    if [ "${quiet}" -eq 1 ]; then
-      "$@" >/dev/null 2>"${stderr_file}" &
-    else
-      "$@" &
-    fi
-    pid=$!
-    waited=0
-    elapsed=0
-    last_size=''
-    if [ -n "${progress_path}" ]; then last_size=$(du -sk "${progress_path}" 2>/dev/null | cut -f1); fi
-    while kill -0 "${pid}" 2>/dev/null && [ "${waited}" -lt "${timeout_secs}" ] && [ "${elapsed}" -lt "${hard_cap_secs}" ]; do
-      sleep 5
-      elapsed=$((elapsed + 5))
-      if [ -n "${progress_path}" ]; then
-        cur_size=$(du -sk "${progress_path}" 2>/dev/null | cut -f1)
-        if [ "${cur_size}" != "${last_size}" ]; then
-          waited=0
-          last_size="${cur_size}"
-        else
-          waited=$((waited + 5))
-        fi
-      else
-        waited=$((waited + 5))
-      fi
-    done
-    if kill -0 "${pid}" 2>/dev/null; then
-      disown "${pid}" 2>/dev/null || true
-      kill_tree "${pid}"
-      wait "${pid}" 2>/dev/null
-      printf 'No progress for %ss on attempt %s/%s -- retrying\n' "${timeout_secs}" "${attempt}" "${max_attempts}" >&2
-    else
-      wait "${pid}"
-      cmd_status=$?
-      if [ "${cmd_status}" -eq 0 ]; then
-        exit 0
-      fi
-      printf 'Failed (exit %s) on attempt %s/%s -- retrying\n' "${cmd_status}" "${attempt}" "${max_attempts}" >&2
-    fi
+    run_attempt "$@"
+    case "${attempt_result}" in
+    0) exit 0 ;;
+    2) printf 'No progress for %ss on attempt %s/%s -- retrying\n' "${timeout_secs}" "${attempt}" "${max_attempts}" >&2 ;;
+    *) printf 'Failed (exit %s) on attempt %s/%s -- retrying\n' "${cmd_status}" "${attempt}" "${max_attempts}" >&2 ;;
+    esac
     attempt=$((attempt + 1))
   done
   exit 1

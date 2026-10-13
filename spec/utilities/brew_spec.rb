@@ -99,7 +99,7 @@ RSpec.describe Brew do
   describe '.base_brewfile_content' do
     around do |example|
       Dir.mktmpdir('brew-spec-') do |dir|
-        @tmp = Pathname.new(dir)
+        @tmp = Pathname(dir)
         example.run
       end
     end
@@ -140,7 +140,7 @@ RSpec.describe Brew do
   describe '.bundle_in_background' do
     around do |example|
       Dir.mktmpdir('brew-spec-') do |dir|
-        @tmp = Pathname.new(dir)
+        @tmp = Pathname(dir)
         example.run
       end
     end

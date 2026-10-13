@@ -32,6 +32,10 @@ RSpec.describe EnvLite do
       with_env('FORCE_COLOR' => '1') { expect(described_class.force_color?).to be true }
       with_env('FORCE_COLOR' => nil) { expect(described_class.force_color?).to be false }
     end
+
+    it 'is false when FORCE_COLOR is set but whitespace-only' do
+      with_env('FORCE_COLOR' => '   ') { expect(described_class.force_color?).to be false }
+    end
   end
 
   it 'has no dependencies beyond the Ruby core (so Core/Colorizable can use it)' do

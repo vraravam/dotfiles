@@ -35,11 +35,11 @@ RSpec.describe GitCommands do
     end
 
     it 'hands over to the override script (with only the switches) when one exists' do
-      override = Pathname.new('/bin/cc-repo.rb')
+      override = Pathname('/bin/cc-repo.rb')
       allow(GitOverrides).to receive(:skip?).and_return(false)
       allow(GitOverrides).to receive(:script_for).with('cc', folder).and_return(override)
       expect(described_class).to receive(:exec_override).with(override, folder, ['--expire=now'])
-      allow(described_class).to receive(:cc)
+      allow(described_class).to receive(:_cc)
 
       described_class.run(command: 'cc', args: [folder, '--expire=now'])
     end
@@ -47,15 +47,30 @@ RSpec.describe GitCommands do
     it 'runs the default implementation, with a header, when there is no override' do
       allow(GitOverrides).to receive(:skip?).and_return(false)
       allow(GitOverrides).to receive(:script_for).and_return(nil)
-      expect(described_class).to receive(:push).with(args: [folder], header: true)
+      expect(described_class).to receive(:_push).with(folder, [], true)
 
       expect(described_class.run(command: 'push', args: [folder])).to be true
+    end
+
+    it 'parses the arguments exactly once' do
+      allow(GitOverrides).to receive(:skip?).and_return(false)
+      allow(GitOverrides).to receive(:script_for).and_return(nil)
+      allow(described_class).to receive(:_cc)
+      expect(described_class).to receive(:parse_args).once.and_call_original
+
+      described_class.run(command: 'cc', args: [folder, '--expire=now'])
+    end
+
+    it 'keeps the public args: wrappers working for override scripts' do
+      expect(described_class).to receive(:_push).with(folder, ['--force'], false)
+
+      described_class.push(args: [folder, '--force'], header: false)
     end
 
     it 'never looks for an override when override detection is switched off' do
       allow(GitOverrides).to receive(:skip?).and_return(true)
       expect(GitOverrides).not_to receive(:script_for)
-      allow(described_class).to receive(:pull)
+      allow(described_class).to receive(:_pull)
 
       described_class.run(command: 'pull', args: [folder])
     end
@@ -141,8 +156,8 @@ RSpec.describe GitCommands do
 
   describe '.upreb' do
     it 'rebases every other branch first and finishes on the branch that was checked out' do
-      git = instance_double(GitProcessor, current_branch: 'main', local_branches: %w[main feature fix])
-      allow(GitProcessor).to receive(:new).with(dir: folder).and_yield(git)
+      git = instance_double(GitProcessor, current_and_local_branches: ['main', %w[main feature fix]])
+      allow(GitProcessor).to receive(:new).with(dir: folder).and_return(git)
       switched = []
       allow(described_class).to receive(:_git) do |_dir, *args, **_opts|
         switched << args.last if args.first == 'switch'
@@ -153,6 +168,21 @@ RSpec.describe GitCommands do
       described_class.upreb(args: [folder], header: false)
 
       expect(switched).to eq(%w[feature fix main])
+    end
+
+    it 'processes every branch (and finishes nowhere in particular) on a detached HEAD' do
+      git = instance_double(GitProcessor, current_and_local_branches: [nil, %w[main feature]])
+      allow(GitProcessor).to receive(:new).with(dir: folder).and_return(git)
+      switched = []
+      allow(described_class).to receive(:_git) do |_dir, *args, **_opts|
+        switched << args.last if args.first == 'switch'
+        true
+      end
+      allow(described_class).to receive(:_rebase_if_symmetric_divergence)
+
+      described_class.upreb(args: [folder], header: false)
+
+      expect(switched).to eq(%w[main feature])
     end
   end
 end

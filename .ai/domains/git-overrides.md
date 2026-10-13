@@ -245,7 +245,7 @@ Logging.run_script do
 end
 ```
 
-A `.rb` override is launched with the running interpreter (`RbConfig.ruby`, via `GitOverrides.command_for`) rather than through its `#!/usr/bin/env ruby` shebang: a mise shim started from a process that was itself started through the shim, in a directory with no pinned Ruby, trips mise's recursion guard and aborts.
+A `.rb` override is launched with the running interpreter and `--disable-gems` (`[RbConfig.ruby, '--disable-gems', script]`, via `GitOverrides.command_for`) rather than through its `#!/usr/bin/env ruby` shebang (an override that needs a gem must `require 'rubygems'` itself): a mise shim started from a process that was itself started through the shim, in a directory with no pinned Ruby, trips mise's recursion guard and aborts.
 
 ### Commands with Override Support
 

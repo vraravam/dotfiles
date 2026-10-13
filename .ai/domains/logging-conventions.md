@@ -214,7 +214,7 @@ Both Ruby and shell strip ANSI escape codes before:
 **Why shell uses parameter expansion** (not sed/grep):
 - No subshell fork (critical for ERR trap contexts where subshells can hide failures)
 - Native zsh syntax, fast and reliable
-- `_dotfiles_notify` reuses `_strip_ansi` to ensure macOS notifications never contain escape codes
+- `_dotfiles_notify` reuses `_strip_ansi_into` to ensure macOS notifications never contain escape codes
 
 **Where applied:**
 - `section_header`: Strips color codes from header text before calculating visual length for padding

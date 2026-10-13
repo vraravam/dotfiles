@@ -53,7 +53,9 @@ module GitCommands
     # No Logging.run_script here: a bare 'push'/'pull'/'cc'/'upreb' prints just its section
     # header (as the shell functions it replaced did), not a script start/finish banner.
     # Overrides are separate processes and bring their own banner via run_script.
-    public_send(command, args: args, header: true)
+    # The private implementations take the already-parsed folder and switches, so the
+    # arguments are parsed once here rather than again inside the public wrapper.
+    __send__("_#{command}", folder, switches, true)
     true
   end
 
@@ -78,11 +80,7 @@ module GitCommands
   # @param header [Boolean] Print a section header first
   # @return [Boolean] true
   def push(args: [], header: true)
-    folder, switches = parse_args(args)
-    return true unless _ready?(folder, 'Pushing', 'pushing of', header)
-
-    _with_retry(folder, '-', 'push', *switches) || Logging.record_warning("Failed to push '#{folder.cyan}'")
-    true
+    _push(*parse_args(args), header)
   end
 
   # Pulls the repo, with hang protection. If the pull still fails and the repo has opted in
@@ -98,15 +96,7 @@ module GitCommands
   # @param header [Boolean] Print a section header first
   # @return [Boolean] true
   def pull(args: [], header: true)
-    folder, switches = parse_args(args)
-    return true unless _ready?(folder, 'Pulling', 'pulling of', header)
-    return true if _with_retry(folder, Pathname.new(folder).join('.git', 'objects').to_s, 'pull', *switches)
-
-    return true unless GitProcessor.new(dir: folder).config_bool('pull.allowResetOnDivergedHistory')
-
-    Logging.info "Pull failed -- '#{folder.cyan}' has 'pull.allowResetOnDivergedHistory' set; checking for diverged history"
-    Logging.record_warning("Failed to reconcile '#{folder.cyan}' -- see errors above") unless _git(folder, 'fo', '--rebase')
-    true
+    _pull(*parse_args(args), header)
   end
 
   # Compresses the repo and reclaims disk space via the 'git cc' alias (prune, repack,
@@ -116,11 +106,7 @@ module GitCommands
   # @param header [Boolean] Print a section header first
   # @return [Boolean] true
   def cc(args: [], header: true)
-    folder, switches = parse_args(args)
-    return true unless _ready?(folder, 'Compressing', 'finding size of the', header)
-
-    _git(folder, 'cc', *switches) || Logging.record_warning("'#{'git cc'.cyan}' failed in '#{folder.cyan}'")
-    true
+    _cc(*parse_args(args), header)
   end
 
   # Rebases every local branch onto its upstream and pushes it (via the 'git upreb'
@@ -132,14 +118,48 @@ module GitCommands
   # @param header [Boolean] Print a section header first
   # @return [Boolean] true
   def upreb(args: [], header: true)
-    folder, = parse_args(args)
+    _upreb(*parse_args(args), header)
+  end
+
+  private
+
+  # The command implementations behind the public wrappers above. They take the folder and
+  # switches already split by parse_args, so GitCommands.run (which needs the folder to look
+  # for an override) parses the arguments only once.
+
+  # @return [Boolean] true
+  def _push(folder, switches, header)
+    return true unless _ready?(folder, 'Pushing', 'pushing of', header)
+
+    _with_retry(folder, '-', 'push', *switches) || Logging.record_warning("Failed to push '#{folder.cyan}'")
+    true
+  end
+
+  # @return [Boolean] true
+  def _pull(folder, switches, header)
+    return true unless _ready?(folder, 'Pulling', 'pulling of', header)
+    return true if _with_retry(folder, Pathname(folder).join('.git', 'objects').to_s, 'pull', *switches)
+
+    return true unless GitProcessor.new(dir: folder).config_bool('pull.allowResetOnDivergedHistory')
+
+    Logging.info "Pull failed -- '#{folder.cyan}' has 'pull.allowResetOnDivergedHistory' set; checking for diverged history"
+    Logging.record_warning("Failed to reconcile '#{folder.cyan}' -- see errors above") unless _git(folder, 'fo', '--rebase')
+    true
+  end
+
+  # @return [Boolean] true
+  def _cc(folder, switches, header)
+    return true unless _ready?(folder, 'Compressing', 'finding size of the', header)
+
+    _git(folder, 'cc', *switches) || Logging.record_warning("'#{'git cc'.cyan}' failed in '#{folder.cyan}'")
+    true
+  end
+
+  # @return [Boolean] true
+  def _upreb(folder, _switches, header)
     Logging.section_header("#{'Upreb-ing'.yellow} '#{folder.cyan}'") if header
 
-    current = branches = nil
-    GitProcessor.new(dir: folder) do |git|
-      current = git.current_branch
-      branches = git.local_branches
-    end
+    current, branches = GitProcessor.new(dir: folder).current_and_local_branches
     Logging.info "current branch: #{current.to_s.yellow}"
     # The checked-out branch goes last so the repo ends up where it started.
     ordered = branches.reject { |branch| branch == current } + [current].compact
@@ -153,8 +173,6 @@ module GitCommands
     true
   end
 
-  private
-
   # Replaces this process with the override script, run from inside the folder with
   # override detection switched off for anything it calls, and with RUBYLIB pointing at
   # the shared utilities so a Ruby override can 'require' them even under cron.
@@ -167,8 +185,8 @@ module GitCommands
   # @return [void] never returns
   def exec_override(override, folder, args)
     Logging.info "Delegating to override '#{override.cyan}' for '#{folder.cyan}'"
-    env = { GitOverrides::SKIP_ENV_VAR => '1', 'RUBYLIB' => GitOverrides.rubylib }
-    Dir.chdir(folder) { exec(env, *GitOverrides.command_for(override), *args) }
+    argv = GitOverrides.argv_for(override, args)
+    Dir.chdir(folder) { exec(*argv) }
   end
 
   # Common preamble: optional header, then the git-repo guard.
@@ -187,7 +205,7 @@ module GitCommands
   #
   # @return [Boolean] whether git exited 0
   def _git(folder, *args, skip_override: true)
-    env = skip_override ? { GitOverrides::SKIP_ENV_VAR => '1' } : {}
+    env = skip_override ? GitOverrides::SKIP_ENV : {}
     CommandUtils.run_interactive(env, 'git', '-C', folder, *args)
   end
 
@@ -197,7 +215,7 @@ module GitCommands
   # @return [Boolean] whether it eventually succeeded
   def _with_retry(folder, progress_path, *args)
     retry_prefix = ['git', 'with-retry', WITH_RETRY_TIMEOUT_SECS, WITH_RETRY_ATTEMPTS, File::NULL, progress_path]
-    CommandUtils.run_interactive({ GitOverrides::SKIP_ENV_VAR => '1' }, *retry_prefix, 'git', '-C', folder, *args)
+    CommandUtils.run_interactive(GitOverrides::SKIP_ENV, *retry_prefix, 'git', '-C', folder, *args)
   end
 
   # After 'git upreb', a branch that is still both ahead of and behind its upstream by the
@@ -205,8 +223,7 @@ module GitCommands
   # remote was force-pushed or rebased). Rebasing onto the upstream is then lossless.
   def _rebase_if_symmetric_divergence(folder, branch)
     git = GitProcessor.new(dir: folder)
-    incoming = git.commit_count(range: 'HEAD..@{u}')
-    outgoing = git.commit_count(range: '@{u}..HEAD')
+    outgoing, incoming = git.ahead_behind(left: 'HEAD', right: '@{u}')
     return unless incoming.positive? && incoming == outgoing
     return unless git.same_content_as?('@{u}')
 

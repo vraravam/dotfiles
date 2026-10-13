@@ -16,6 +16,10 @@
 # - First run: installs the missing gems (~2 min), logging progress
 # - Subsequent runs: every tool is already installed, so it returns immediately and silently
 #
+# Every successful run touches STAMP_FILE. The .envrc only starts this script (a ~100ms Ruby
+# start-up on every directory entry) when the stamp is missing or older than the script, a
+# pure-shell check; editing this file (e.g. changing GEM_SPECS) therefore re-runs it once.
+#
 # Usage:
 #   Standalone: install-ruby26-gems.rb [--debug]
 #   Module:     InstallRuby26Gems.run(debug: false)
@@ -23,6 +27,7 @@
 require 'open3'
 
 require_relative 'utilities/command_utils'
+require_relative 'utilities/core'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/logging'
 require_relative 'utilities/path_utils'
@@ -37,6 +42,10 @@ module InstallRuby26Gems
   GEM_DIR = EnvVars::HOME.join('.gem', 'ruby', '2.6.0')
   GEM_BIN_DIR = GEM_DIR.join('bin')
   FIRST_UNSUPPORTED_VERSION = '2.7'
+
+  # Freshness marker compared against this script by the repo's .envrc, which spells out the
+  # same path in shell (${XDG_CACHE_HOME:-${HOME}/.cache}/install-ruby26-gems-stamp).
+  STAMP_FILE = EnvVars::XDG_CACHE_HOME.join('install-ruby26-gems-stamp')
 
   # Tool gem => the exact version to install and its dependency gems ('name:version'),
   # which are installed first. The single source of truth for which gems this repo needs.
@@ -57,6 +66,13 @@ module InstallRuby26Gems
   # @param debug [Boolean] Log diagnostic information for troubleshooting
   # @return [Boolean] true on success (including "nothing to do"), false if any install failed
   def run(debug: false)
+    success = _run(debug)
+    _touch_stamp if success
+    success
+  end
+
+  # @return [Boolean] see #run
+  def _run(debug)
     missing = GEM_SPECS.keys.reject { |tool| GEM_BIN_DIR.join(tool).executable? }
     if missing.empty?
       Logging.info 'All gems already installed' if debug
@@ -84,6 +100,18 @@ module InstallRuby26Gems
     Logging.success "Installed #{installed.to_s.purple} gem(s) successfully!" if installed.positive?
     !failed
   end
+
+  private_class_method :_run
+
+  # Records a successful run (see STAMP_FILE).
+  #
+  # @return [void]
+  def _touch_stamp
+    PathUtils.ensure_directories_exist(STAMP_FILE.dirname)
+    Core.mark_updated!(STAMP_FILE)
+  end
+
+  private_class_method :_touch_stamp
 
   # Whether the system Ruby is one these pinned gem versions target. A newer system Ruby
   # (possible on a future macOS) can use current gem versions instead, so it is skipped.

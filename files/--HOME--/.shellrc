@@ -74,7 +74,7 @@ if [[ -n "${ZSH_VERSION-}" ]]; then
   zmodload zsh/datetime 2>/dev/null || true
 fi
 
-# Memoization cache for _log_indent: associative array depth -> indent string.
+# Memoization cache for _set_log_indent: associative array depth -> indent string.
 # Avoids repeated printf calls for the same depth. Zsh associative arrays are
 # only available in zsh; guard with ZSH_VERSION check for bash compatibility
 # (direnv sources this file in bash subshell).
@@ -169,10 +169,11 @@ export LESSCHARSET='utf-8'
 # Note: XDG_CACHE_HOME is defined earlier in this file, but the directory may not exist
 # yet during .zshenv (first source on vanilla OS). Cache write is guarded; cache read
 # works regardless. Saves ~2-3ms per shell startup.
+# The cache path is spelled out (no temporary variable): 'local' is invalid at file
+# scope in bash, and a plain variable would leak into the sourcing shell.
 if [[ -z "${ARCH:-}" ]]; then
-  local arch_cache="${XDG_CACHE_HOME}/arch-cache.zsh"
-  if [[ -f "${arch_cache}" ]]; then
-    source "${arch_cache}"
+  if [[ -f "${XDG_CACHE_HOME}/arch-cache.zsh" ]]; then
+    source "${XDG_CACHE_HOME}/arch-cache.zsh"
   else
     ARCH="$(uname -m)"
     # Guard cache write: XDG_CACHE_HOME dir may not exist yet during .zshenv on vanilla OS
@@ -180,7 +181,7 @@ if [[ -z "${ARCH:-}" ]]; then
       {
         echo "export ARCH='${ARCH}'"
         echo "# Generated: $(uname -r)"
-      } >|"${arch_cache}" 2>/dev/null
+      } >|"${XDG_CACHE_HOME}/arch-cache.zsh" 2>/dev/null
     fi
     export ARCH
   fi
@@ -260,6 +261,11 @@ export ANTIDOTE_ZSH="${HOMEBREW_PREFIX}/opt/antidote/share/antidote/antidote.zsh
 export ANTIDOTE_PLUGIN_ZSH="${XDG_CONFIG_HOME}/zsh/plugins.zsh"
 export ANTIDOTE_PLUGIN_TXT="${XDG_CONFIG_HOME}/zsh/plugins.txt"
 
+# Ruby bridge script used by call_utility. It only exists once the dotfiles repo has been
+# cloned, so everything needed during the vanilla-OS bootstrap must have a pure-shell path.
+# Derived from DOTFILES_DIR -- not meant to be changed independently.
+export CALL_UTILITY_SCRIPT="${DOTFILES_DIR}/scripts/call-utility.rb"
+
 # --------------------------------------------------------------------------
 # GROUP 1: Bootstrap Utilities
 # Available immediately after .shellrc is sourced on a vanilla OS.
@@ -273,20 +279,12 @@ export ANTIDOTE_PLUGIN_TXT="${XDG_CONFIG_HOME}/zsh/plugins.txt"
 
 # Returns true if $1 is empty or unset.
 is_zero_string() {
-  if [[ -z "${1:-}" ]]; then
-    return 0
-  else
-    return 1
-  fi
+  [[ -z "${1:-}" ]]
 }
 
 # Returns true if $1 is non-empty.
 is_non_zero_string() {
-  if [[ -n "${1:-}" ]]; then
-    return 0
-  else
-    return 1
-  fi
+  [[ -n "${1:-}" ]]
 }
 
 # Returns true if the array named $1 has no elements.
@@ -328,17 +326,19 @@ is_non_empty_array() {
   fi
 }
 
-# Prints (via stdout) the last element of the array named $1. Empty output if
-# the array is empty. Zsh arrays are 1-indexed with native negative-index
-# support ('[-1]'); bash's default /bin/bash (3.2, macOS) predates negative
-# indices (added in bash 4.3) and is 0-indexed, so 'last index' is computed as
-# count-1 instead. Used by step_end below as a portable stack "peek".
-_array_last() {
-  local _array_name="${1:?_array_last: array name required}"
+# Writes the last element of the array named $2 into the variable named $1 (empty if
+# the array is empty) -- no subshell, unlike a '$(...)' wrapper. Zsh arrays are 1-indexed
+# with native negative-index support ('[-1]'); bash's default /bin/bash (3.2, macOS)
+# predates negative indices (added in bash 4.3) and is 0-indexed, so 'last index' is
+# computed as count-1 instead. Used by step_end below as a portable stack "peek".
+# Usage: _array_last_into <varname> <array_name>
+_array_last_into() {
+  local _al_varname="${1:?_array_last_into: variable name required}"
+  local _al_array_name="${2:?_array_last_into: array name required}"
   if is_zsh; then
-    print -r -- "${${(P)_array_name}[-1]}"
+    eval "${_al_varname}=\${${_al_array_name}[-1]}"
   else
-    eval "printf '%s' \"\${${_array_name}[\$((\${#${_array_name}[@]} - 1))]}\""
+    eval "${_al_varname}=\${${_al_array_name}[\$((\${#${_al_array_name}[@]} - 1))]}"
   fi
 }
 
@@ -360,55 +360,7 @@ _array_pop_last() {
 # Returns true if stdin is a TTY, or if FORCE_COLOR is set (used to enable color
 # output in non-TTY subshells such as direnv or CI pipelines).
 is_running_in_tty() {
-  if [[ -t 0 ]] || is_non_zero_string "${FORCE_COLOR:-}"; then
-    return 0
-  else
-    return 1
-  fi
-}
-
-# Joins array elements into a bulleted list string, each on a new line with
-# depth-aware indent + N levels, '- ' prefix, and single quotes around each item.
-# Usage: join_array <array_name> [level]
-# Example: join_array my_arr     # defaults to level 1
-#          join_array my_arr 2   # level 2 (extra indentation)
-#
-# The indent is depth-aware (current script depth) + level subordination, matching
-# Ruby's join_array behavior. Level defaults to 1 for standard label + list pattern.
-#
-# Output at depth 1, level 1: "  - 'item1'\n  - 'item2'"
-# Output at depth 2, level 1: "    - 'item1'\n    - 'item2'"
-# Output at depth 1, level 2: "    - 'item1'\n    - 'item2'"
-join_array() {
-  local _array_name="${1:?join_array: array name required}"
-  local -a arr
-  if is_zsh; then
-    arr=("${(@P)_array_name}")
-  else
-    # Bash (even old 3.2, no namerefs): indirect array copy via eval. Standard
-    # array building/iteration below (+=, "${arr[@]}") is portable as-is --
-    # only the indirect *reference by name* needs a bash-specific path.
-    eval "arr=(\"\${${_array_name}[@]}\")"
-  fi
-  if is_empty_array arr; then return; fi
-
-  local level="${2:-1}"
-  # Compute indentation: base depth + level subordination.
-  # Base depth is captured at construction time, ensuring the list indents
-  # correctly even if parent message is printed at a different depth later
-  # (e.g., deferred warnings). All lines in multi-line messages must have their
-  # own indentation baked in since logging functions only indent the first line.
-  local base_indent="$(_log_indent)$(printf '%*s' $((level * 2)) '')"
-
-  # Build formatted array with indent prefix, quotes, then join with newlines
-  local -a formatted=()
-  local item
-  for item in "${arr[@]}"; do
-    formatted+=("${base_indent}- '${item}'")
-  done
-  # printf (not zsh's '${(j:\n:)formatted}') -- confirmed byte-for-byte identical
-  # output in both shells, so no is_zsh branch needed here.
-  printf '%s\n' "${formatted[@]}"
+  [[ -t 0 || -n "${FORCE_COLOR:-}" ]]
 }
 
 # Returns true if the current shell is zsh.
@@ -417,11 +369,7 @@ join_array() {
 # is true only when ZSH_VERSION is set AND non-empty -- which is always the case
 # when running inside zsh, since zsh unconditionally sets it to a version string.
 is_zsh() {
-  if [[ -n "${ZSH_VERSION-}" ]]; then
-    return 0
-  else
-    return 1
-  fi
+  [[ -n "${ZSH_VERSION-}" ]]
 }
 
 # Replaces the value of HOME with '~' to shorten displayed paths.
@@ -437,7 +385,10 @@ is_zsh() {
 # it centralises the inline expansion ${2//${HOME}/~} (see comment there for why
 # it is inlined rather than calling this function).
 replace_home_with_tilde() {
-  echo "${1:-//${HOME}/~}"
+  # Replacement held in a variable: a literal '~' in the replacement is itself
+  # tilde-expanded by bash (a no-op substitution), but not by zsh.
+  local _tilde='~'
+  printf '%s\n' "${1//${HOME}/${_tilde}}"
 }
 
 # --------------------------------------------------------------------------
@@ -493,7 +444,9 @@ fi
 #
 # Tilde substitution is performed by top-level logging functions to avoid
 # redundant substitutions across multiple colored segments in a single message.
-_colorize() { printf "${1:-}${2:-}${NC}"; }
+# The text is passed to printf as an argument (never as the format string) so '%'
+# and backslashes in messages are printed literally.
+_colorize() { printf '%s%s%s' "${1:-}" "${2:-}" "${NC}"; }
 
 # Color functions -- ordered by ANSI SGR code (matches variable declarations above).
 black()        { _colorize "${BLACK}"        "${1:-}"; }
@@ -530,8 +483,9 @@ _dotfiles_notify() {
   local _msg="${1:-}"
   local _title="${2:-Dotfiles}"
 
-  # Strip ANSI codes using shared helper (avoids subshell fork that would trigger ERR trap)
-  _msg="$(_strip_ansi "${_msg}")"
+  # Strip ANSI codes using the shared fork-free helper (a command substitution here would
+  # fork and could trigger the ERR trap in cron scripts).
+  _strip_ansi_into _msg "${_msg}"
 
   # Prefer Ruby implementation (single source of truth) if available (post-bootstrap).
   # Fall back to shell implementation for vanilla OS / bootstrap phase.
@@ -557,10 +511,13 @@ _should_suppress_log() {
   is_non_zero_string "${DIRENV_IN_ENVRC:-}"
 }
 
-# Returns the depth-based indent string (2 spaces per depth level).
-# Used by all logging functions to auto-indent output based on script nesting.
-# Memoized to avoid repeated printf calls for the same depth.
-_log_indent() {
+# Computes the depth-based indent string (2 spaces per depth level) into the
+# global _LOG_INDENT without forking a subshell. Used by all logging functions
+# to auto-indent output based on script nesting; calling this directly (instead
+# of "$(_log_indent)") saves ~2-4ms per log line since zsh forks even for
+# function command substitution.
+# Memoized in _INDENT_CACHE (zsh) to avoid repeated printf calls per depth.
+_set_log_indent() {
   local depth="${_DOTFILES_SCRIPT_DEPTH:-1}"
   # Guard against depth 0 (called before increment_script_depth) - treat as depth 1
   # to prevent negative multiplication. This can happen when print_script_summary
@@ -588,36 +545,45 @@ _log_indent() {
   if is_zsh; then
     if [[ -z "${_INDENT_CACHE[${depth}]:-}" ]]; then
       # Outermost script (depth 1) has 0 indentation, depth 2 has 2 spaces, etc.
-      _INDENT_CACHE[${depth}]="$(printf '%*s' $(((depth - 1) * 2)) '')"
+      printf -v "_INDENT_CACHE[${depth}]" '%*s' $(((depth - 1) * 2)) ''
     fi
-    printf '%s' "${_INDENT_CACHE[${depth}]}"
+    _LOG_INDENT="${_INDENT_CACHE[${depth}]}"
   else
-    printf '%*s' $(((depth - 1) * 2)) ''
+    printf -v _LOG_INDENT '%*s' $(((depth - 1) * 2)) ''
   fi
+}
+
+# Shared skeleton for the public logging functions below: prefix + colored label +
+# message, with tilde substitution applied to the message. Each public function is a
+# thin wrapper that owns its own suppression/guard logic and passes its emoji, ANSI
+# color value, and label here. error() is intentionally NOT built on this: it ignores
+# suppression, appends a suffix, and forwards the plain message to _dotfiles_notify.
+# Usage: _log_line <emoji> <ansi-color-value> <label> <message>
+_log_line() {
+  local msg="${4//${HOME}/~}"
+  _set_log_indent
+  echo "${_LOG_INDENT}${1} ${2}**${3}**${NC} ${msg}"
 }
 
 success() {
   # Suppressed when running inside a direnv subshell (see _should_suppress_log).
   # Use error for messages that must always be visible regardless of context.
   if _should_suppress_log; then return 0; fi
-  local msg="${1//${HOME}/~}"
-  echo "$(_log_indent)✅ $(green '**SUCCESS**') ${msg}"
+  _log_line "✅" "${GREEN}" SUCCESS "${1:-}"
 }
 
 info() {
   # Suppressed when running inside a direnv subshell (see _should_suppress_log).
   # Use error for messages that must always be visible regardless of context.
   if _should_suppress_log; then return 0; fi
-  local msg="${1//${HOME}/~}"
-  echo "$(_log_indent)ℹ️ $(cyan '**INFO**') ${msg}"
+  _log_line "ℹ️" "${CYAN}" INFO "${1:-}"
 }
 
 warn() {
   # Suppressed when running inside a direnv subshell (see _should_suppress_log).
   # Use error for messages that must always be visible regardless of context.
   if _should_suppress_log; then return 0; fi
-  local msg="${1//${HOME}/~}"
-  echo "$(_log_indent)⚠️ $(light_red '**WARN**') ${msg}"
+  _log_line "⚠️" "${LIGHT_RED}" WARN "${1:-}"
 }
 
 user_action() {
@@ -626,8 +592,7 @@ user_action() {
   # unexpected problem) and info (which is purely informational). Suppressed
   # in direnv subshells -- direnv runs headlessly and cannot act on prompts.
   if _should_suppress_log; then return 0; fi
-  local msg="${1//${HOME}/~}"
-  echo "$(_log_indent)➡️ $(yellow '**ACTION**') ${msg}"
+  _log_line "➡️" "${YELLOW}" ACTION "${1:-}"
 }
 
 debug() {
@@ -636,8 +601,7 @@ debug() {
   # Use error for messages that must always be visible regardless of context.
   if [[ -z "${DEBUG:-}" ]]; then return 0; fi
   if _should_suppress_log; then return 0; fi
-  local msg="${1//${HOME}/~}"
-  echo "$(_log_indent)⚙️ $(light_purple '**DEBUG**') ${msg}"
+  _log_line "⚙️" "${LIGHT_PURPLE}" DEBUG "${1:-}"
 }
 
 error() {
@@ -645,7 +609,8 @@ error() {
   # as plain text (no color wrapper) and also passed to _dotfiles_notify, which receives
   # a raw string -- ANSI codes would appear as literal escape characters there.
   local _msg="${1//${HOME}/~}"
-  echo "$(_log_indent)❌ $(red '**ERROR**') ${_msg} 🤓"
+  _set_log_indent
+  echo "${_LOG_INDENT}❌ ${RED}**ERROR**${NC} ${_msg} 🤓"
   _dotfiles_notify "${_msg} 🤓" "❌ Error" || true
   return 1
 }
@@ -677,57 +642,33 @@ if is_zsh; then
 fi
 
 # --------------------------------------------------------------------------
-# 1c-1. iTerm2 shell integration marks
-# --------------------------------------------------------------------------
-
-# Outputs iTerm2 shell integration mark A (prompt start).
-# Called manually once in .zshrc to inject a mark into the initial prompt that's
-# already on screen before the first precmd cycle runs (see .zshrc's iTerm2 shell
-# integration section). Starship's [env_var.ITERM2_MARK_A] segment emits the same escape
-# sequence from an exported variable (see .zshrc), so no subprocess is needed per render.
-# Returns: escape sequence \033]133;A\007
-iterm2_mark_prompt_start() {
-  printf '\033]133;A\007'
-}
-
-# Outputs iTerm2 shell integration mark C (command start).
-# Called by preexec hook in .zshrc (before command execution).
-# Returns: escape sequence \033]133;C\007
-iterm2_mark_command_start() {
-  printf '\033]133;C\007'
-}
-
-# Outputs iTerm2 shell integration mark D (command end with exit code).
-# Called by precmd hook in .zshrc (after command execution).
-# Arguments: $1 = exit code of last command
-# Returns: escape sequence \033]133;D;$?\007
-iterm2_mark_command_end() {
-  printf '\033]133;D;%s\007' "${1:-0}"
-}
-
-# --------------------------------------------------------------------------
 # 1d. Section header helpers
 # --------------------------------------------------------------------------
 
-# Prints <char> repeated <length> times to stdout. Used by section header
-# helpers to generate padding lines. Defaults to '-' for the char and a
-# quarter of the terminal width for the length.
-# Internal helper shared by section_header and print_script_summary.
-# Repeats a character N times using printf.
-# Usage: _repeat_char <char> <length>
-_repeat_char() {
-  local char="${1:-}"
-  local length="${2:-0}"
-  printf "${char}%.0s" {1..${length}}
+# Writes <char> repeated <length> times into the caller-supplied variable name
+# without forking a subshell. Used by section header helpers to generate
+# padding. Zsh uses the (l) padding flag; bash (direnv context) falls back to
+# a printf loop.
+# Usage: _repeat_char_into <varname> <char> <length>
+_repeat_char_into() {
+  local _rc_varname="${1:-}" _rc_char="${2:-}" _rc_length="${3:-0}"
+  if is_zsh; then
+    local _rc_empty=''
+    printf -v "${_rc_varname}" '%s' "${(pl:$_rc_length::$_rc_char:)_rc_empty}"
+  else
+    local _rc_out='' _rc_i
+    for ((_rc_i = 0; _rc_i < _rc_length; _rc_i++)); do _rc_out+="${_rc_char}"; done
+    printf -v "${_rc_varname}" '%s' "${_rc_out}"
+  fi
 }
 
-# Strips ANSI escape codes from a string to get visual length.
+# Strips ANSI escape codes from a string to get visual length, writing the
+# result into the caller-supplied variable name (no subshell in zsh).
 # Uses zsh parameter expansion to avoid subshell fork (critical for ERR trap contexts).
 # Falls back to sed in bash (direnv sources this file in bash subshell).
-# Returns the stripped string via stdout.
-# Usage: result="$(_strip_ansi "${colored_string}")"
-_strip_ansi() {
-  local _stripped="${1:-}"
+# Usage: _strip_ansi_into <varname> <colored_string>
+_strip_ansi_into() {
+  local _sa_varname="${1:-}" _sa_stripped="${2:-}"
   if [[ -n "${ZSH_VERSION-}" ]]; then
     # Zsh: Use parameter expansion with extendedglob to avoid subshell fork.
     # (S) = shortest match; ## = one-or-more (requires extendedglob); replaces all globally.
@@ -735,13 +676,13 @@ _strip_ansi() {
     # local_options scopes extendedglob to this function only.
     setopt local_options extendedglob
     local _esc=$'\e'
-    _stripped="${(S)_stripped//${_esc}\[[0-9;]##[a-zA-Z]/}"
+    _sa_stripped="${(S)_sa_stripped//${_esc}\[[0-9;]##[a-zA-Z]/}"
   else
     # Bash: Use sed (forks subprocess, but bash context is rare - only direnv .envrc).
     # Pattern matches ESC + '[' + any chars + letter (ANSI escape sequences).
-    _stripped="$(echo "${_stripped}" | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g')"
+    _sa_stripped="$(echo "${_sa_stripped}" | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g')"
   fi
-  echo "${_stripped}"
+  printf -v "${_sa_varname}" '%s' "${_sa_stripped}"
 }
 
 # Prints a section header with visual hierarchy based on current script depth.
@@ -769,7 +710,7 @@ section_header() {
   # declared local in the calling script's main().
   if [[ "${_current_section_manual:-0}" != "1" ]]; then
     # Strip ANSI codes before setting (header may contain color codes from caller)
-    _current_section="$(_strip_ansi "${header}")"
+    _strip_ansi_into _current_section "${header}"
   fi
 
   # _SECTION_STYLES is a zsh-only associative array (see its declaration above) --
@@ -809,7 +750,8 @@ section_header() {
 
   # Section headers use only base depth indentation (no subordinate levels).
   # The level variable selects the visual style (char/glyph/color), not indentation.
-  local indent="$(_log_indent)"
+  _set_log_indent
+  local indent="${_LOG_INDENT}"
   local indent_len=${#indent}
 
   # ${COLUMNS} is a zsh special variable -- no tput subprocess fork needed.
@@ -817,7 +759,8 @@ section_header() {
   local viewport_length=${COLUMNS:-${_FALLBACK_TERMINAL_WIDTH}}
 
   # Strip ANSI codes to get visual length (header may contain color codes from caller)
-  local header_visual="$(_strip_ansi "${header}")"
+  local header_visual
+  _strip_ansi_into header_visual "${header}"
   local header_length=${#header_visual}
 
   # Left-aligned headers: text starts at fixed position for vertical scanability
@@ -829,9 +772,13 @@ section_header() {
   if [[ ${right_padding_len} -lt 1 ]]; then right_padding_len=1; fi
 
   local left_padding right_padding
-  left_padding="$(_repeat_char "${char}" "${left_padding_len}")"
-  right_padding="$(_repeat_char "${char}" "${right_padding_len}")"
-  echo "${indent}$(${color_fn} "${left_padding}") ${glyph} ${header} $(${color_fn} "${right_padding}")"
+  _repeat_char_into left_padding "${char}" "${left_padding_len}"
+  _repeat_char_into right_padding "${char}" "${right_padding_len}"
+  # Resolve the color function name (e.g. light_blue) to its ANSI variable (LIGHT_BLUE)
+  # so no color-function subshell is needed.
+  local color_var="${(U)color_fn}"
+  local color="${(P)color_var}"
+  echo "${indent}${color}${left_padding}${NC} ${glyph} ${header} ${color}${right_padding}${NC}"
 }
 
 # Formats a duration given in seconds into a human-readable string "HH:MM:SS".
@@ -908,7 +855,7 @@ print_script_start() {
   _should_suppress_log && return 0
   local start_time_human
   current_timestamp start_time_human
-  echo "$(cyan "${_SCRIPT_NAME:-}") $(purple '==>') $(yellow 'Script started at:') $(light_blue "${start_time_human}")"
+  echo "${CYAN}${_SCRIPT_NAME:-}${NC} ${PURPLE}==>${NC} ${YELLOW}Script started at:${NC} ${LIGHT_BLUE}${start_time_human}${NC}"
 }
 
 # Prints a "Script finished at / Total duration" banner.
@@ -931,7 +878,7 @@ print_script_duration() {
   local duration_human
   format_duration "${duration}" duration_human
 
-  echo "$(cyan "${_SCRIPT_NAME:-}") $(purple '==>') $(yellow 'Script finished at:') $(light_blue "${end_time_human}") ($(yellow 'Total duration:') $(light_blue "${duration_human}") $(yellow 'seconds'))."
+  echo "${CYAN}${_SCRIPT_NAME:-}${NC} ${PURPLE}==>${NC} ${YELLOW}Script finished at:${NC} ${LIGHT_BLUE}${end_time_human}${NC} (${YELLOW}Total duration:${NC} ${LIGHT_BLUE}${duration_human}${NC} ${YELLOW}seconds${NC})."
 }
 
 # --------------------------------------------------------------------------
@@ -1081,14 +1028,14 @@ step_end() {
   local step_start_time
   if is_empty_array _step_start_times; then
     if is_non_empty_array _script_start_times; then
-      step_start_time="$(_array_last _script_start_times)"
+      _array_last_into step_start_time _script_start_times
       warn "step_end called without matching step_start; using current epoch start time as fallback"
     else
       step_start_time="${now}"
       warn "step_end called without any timing stack initialised; using current time as fallback"
     fi
   else
-    step_start_time="$(_array_last _step_start_times)"
+    _array_last_into step_start_time _step_start_times
     _array_pop_last _step_start_times
   fi
 
@@ -1099,7 +1046,7 @@ step_end() {
   # Use the most recently pushed script-start epoch for total elapsed.
   local script_start_time
   if is_non_empty_array _script_start_times; then
-    script_start_time="$(_array_last _script_start_times)"
+    _array_last_into script_start_time _script_start_times
   else
     script_start_time="${now}"
     warn "step_end: _script_start_times is empty; total elapsed will be 0"
@@ -1108,7 +1055,20 @@ step_end() {
   local total_human
   format_duration "${delta_total}" total_human
 
-  echo "$(purple "$(_log_indent)⏱") $(yellow 'step:') $(light_blue "${step_human}") $(yellow '| elapsed:') $(light_blue "${total_human}")"
+  _set_log_indent
+  echo "${PURPLE}${_LOG_INDENT}⏱${NC} ${YELLOW}step:${NC} ${LIGHT_BLUE}${step_human}${NC} ${YELLOW}| elapsed:${NC} ${LIGHT_BLUE}${total_human}${NC}"
+}
+
+# Shared by _record_warning/_record_error: appends "[<script>][<section>] <message>" to the
+# array named $1. The array is addressed by name through eval (zsh dynamic scoping makes the
+# calling main()'s local array visible here, and eval keeps the by-name '+=' parseable by
+# bash, which direnv uses to source this file). The message is expanded when the eval runs
+# (not spliced into the eval string), so quotes or '$' inside it are never re-parsed.
+# Usage: _record_step_issue <array-name> <message>
+_record_step_issue() {
+  local _rsi_array="${1:?_record_step_issue: array name required}"
+  local _rsi_msg="${2:-}"
+  eval "${_rsi_array}+=(\"[\${_SCRIPT_NAME:-unknown}][\${_current_section:-unknown}] \${_rsi_msg}\")"
 }
 
 # Append a non-critical issue to _step_warnings (declared local in the calling script's main).
@@ -1119,7 +1079,7 @@ step_end() {
 # Each entry is prefixed with [_SCRIPT_NAME][_current_section] for traceability in nested calls.
 _record_warning() {
   local msg="${1:-unknown warning}"
-  _step_warnings+=("[${_SCRIPT_NAME:-unknown}][${_current_section:-unknown}] ${msg}")
+  _record_step_issue _step_warnings "${msg}"
   warn "${msg}"
 }
 
@@ -1131,12 +1091,22 @@ _record_warning() {
 # Each entry is prefixed with [_SCRIPT_NAME][_current_section] for traceability in nested calls.
 _record_error() {
   local msg="${1:-unknown error}"
-  _step_errors+=("[${_SCRIPT_NAME:-unknown}][${_current_section:-unknown}] ${msg}")
+  _record_step_issue _step_errors "${msg}"
   warn "${msg}"
 }
 
-# Returns true if _step_errors array exists and is non-empty.
-# Combines existence check (( ${+_step_errors} )) with is_non_empty_array.
+# Returns true if the array named $1 exists in the calling scope and is non-empty. The
+# existence check (a plain '${+name}' lookup, done through eval so the name can be a
+# variable) keeps this safe under 'set -u' when a script never declared the array.
+# Zsh-only: returns false under bash. Relies on zsh dynamic scoping.
+_has_step_array() {
+  local _hsa_name="${1:?_has_step_array: array name required}"
+  if ! is_zsh; then return 1; fi
+  eval "((\${+${_hsa_name}}))" || return 1
+  is_non_empty_array "${_hsa_name}"
+}
+
+# Returns true if _step_errors exists in the calling scope and is non-empty.
 # Relies on zsh dynamic scoping: _step_errors must be declared in the calling scope.
 #
 # Usage:
@@ -1144,15 +1114,10 @@ _record_error() {
 #     echo "Found ${#_step_errors[@]} error(s)"
 #   fi
 _has_step_errors() {
-  if is_zsh && ((${+_step_errors})); then
-    is_non_empty_array _step_errors
-  else
-    return 1
-  fi
+  _has_step_array _step_errors
 }
 
-# Returns true if _step_warnings array exists and is non-empty.
-# Combines existence check (( ${+_step_warnings} )) with is_non_empty_array.
+# Returns true if _step_warnings exists in the calling scope and is non-empty.
 # Relies on zsh dynamic scoping: _step_warnings must be declared in the calling scope.
 #
 # Usage:
@@ -1160,10 +1125,24 @@ _has_step_errors() {
 #     echo "Found ${#_step_warnings[@]} warning(s)"
 #   fi
 _has_step_warnings() {
-  if is_zsh && ((${+_step_warnings})); then
-    is_non_empty_array _step_warnings
+  _has_step_array _step_warnings
+}
+
+# Appends one "<count> <label>[: <details>]" entry for the step array named $2 to the array
+# named $1, or does nothing when that step array is absent/empty. 'long' format adds the
+# entries joined with '; ' after the count. Helper for _build_notification_parts; all
+# zsh-only expansions live inside eval strings so bash can still parse this file.
+# Usage: _append_notification_part <target-array> <step-array> <label> <short|long>
+_append_notification_part() {
+  local _anp_target="${1:?}" _anp_source="${2:?}" _anp_label="${3:?}" _anp_format="${4:-long}"
+  if ! _has_step_array "${_anp_source}"; then return 0; fi
+  local _anp_count _anp_details
+  eval "_anp_count=\${#${_anp_source}[@]}"
+  if [[ "${_anp_format}" == 'short' ]]; then
+    eval "${_anp_target}+=(\"\${_anp_count} \${_anp_label}\")"
   else
-    return 1
+    eval "_anp_details=\"\${(j:; :)${_anp_source}}\""
+    eval "${_anp_target}+=(\"\${_anp_count} \${_anp_label}: \${_anp_details}\")"
   fi
 }
 
@@ -1185,45 +1164,34 @@ _has_step_warnings() {
 #     _dotfiles_notify "Message: ${body}" "Title"
 #   fi
 #
-# POSIX compliance note: Uses eval to populate the target array by name. The
-# array values are double-quoted during eval to prevent word splitting. The
-# function assumes zsh; POSIX shells lack associative arrays and the (j::)
-# join operator, so full POSIX compliance is not achievable. The parameter
-# validation uses ${1:?} which is POSIX-compliant. Uses is_zsh utility to
-# guard zsh-only syntax.
+# Zsh-only in practice (see _has_step_array): under bash the target array is just cleared.
 _build_notification_parts() {
   local _bnp_array_name="${1:?_build_notification_parts: missing array name argument}"
   local _bnp_format="${2:-long}"
 
-  # Clear the target array first (zsh syntax: arrayname=())
+  # Clear the target array first
   eval "${_bnp_array_name}=()"
+  _append_notification_part "${_bnp_array_name}" _step_errors 'error(s)' "${_bnp_format}"
+  _append_notification_part "${_bnp_array_name}" _step_warnings 'warning(s)' "${_bnp_format}"
+}
 
-  # Build errors part
-  if _has_step_errors; then
-    if [[ "${_bnp_format}" == 'short' ]]; then
-      # Short format: just the count
-      eval "${_bnp_array_name}+=(\"${#_step_errors[@]} error(s)\")"
-    else
-      # Long format: count + details joined with '; '
-      # Use zsh array join: ${(j:; :)array}
-      local _bnp_errors_summary
-      _bnp_errors_summary="${(j:; :)_step_errors}"
-      eval "${_bnp_array_name}+=(\"${#_step_errors[@]} error(s): ${_bnp_errors_summary}\")"
-    fi
-  fi
-
-  # Build warnings part
-  if _has_step_warnings; then
-    if [[ "${_bnp_format}" == 'short' ]]; then
-      # Short format: just the count
-      eval "${_bnp_array_name}+=(\"${#_step_warnings[@]} warning(s)\")"
-    else
-      # Long format: count + details joined with '; '
-      local _bnp_warnings_summary
-      _bnp_warnings_summary="${(j:; :)_step_warnings}"
-      eval "${_bnp_array_name}+=(\"${#_step_warnings[@]} warning(s): ${_bnp_warnings_summary}\")"
-    fi
-  fi
+# Prints a section header ("<script> <count> <label>", count and label in the given color)
+# followed by one warn line per entry of the step array named $1; does nothing when that
+# array is absent/empty. Helper for print_script_summary.
+# Usage: _print_step_issues <array-name> <ansi-color-value> <label> <script-title>
+_print_step_issues() {
+  local _psi_array="${1:?}" _psi_color="${2:-}" _psi_label="${3:?}" _psi_title="${4:-}"
+  if ! _has_step_array "${_psi_array}"; then return 0; fi
+  local -a _psi_items
+  eval "_psi_items=(\"\${${_psi_array}[@]}\")"
+  # Temporarily decrement depth so both header and entries print one level less indented
+  _decrement_script_depth
+  section_header "${CYAN}${_psi_title}${NC} ${_psi_color}${#_psi_items[@]} ${_psi_label}${NC}"
+  local _psi_item
+  for _psi_item in "${_psi_items[@]}"; do
+    warn "${_psi_item}"
+  done
+  _increment_script_depth
 }
 
 # Print a grouped summary of all warnings and errors collected via _record_warning/_record_error.
@@ -1255,8 +1223,8 @@ print_script_summary() {
   local final_length="${viewport_length}"
   # Print separator line
   local padding
-  padding="$(_repeat_char '*' "${final_length}")"
-  echo $(dark_gray "${padding}")
+  _repeat_char_into padding '*' "${final_length}"
+  echo "${DARK_GRAY}${padding}${NC}"
 
   if is_non_zero_string "${_pss_msg}"; then
     if _has_step_warnings || _has_step_errors; then
@@ -1265,26 +1233,8 @@ print_script_summary() {
       success "✅ ${_pss_msg}"
     fi
   fi
-  if _has_step_warnings; then
-    # Temporarily decrement depth so both header and warnings print one level less indented
-    _decrement_script_depth
-    section_header "$(cyan "${_pss_title}") $(yellow "${#_step_warnings[@]} warning(s)")"
-    local _psw
-    for _psw in "${_step_warnings[@]}"; do
-      warn "${_psw}"
-    done
-    _increment_script_depth
-  fi
-  if _has_step_errors; then
-    # Temporarily decrement depth so both header and errors print one level less indented
-    _decrement_script_depth
-    section_header "$(cyan "${_pss_title}") $(red "${#_step_errors[@]} error(s) -- manual attention needed")"
-    local _pse
-    for _pse in "${_step_errors[@]}"; do
-      warn "${_pse}"
-    done
-    _increment_script_depth
-  fi
+  _print_step_issues _step_warnings "${YELLOW}" 'warning(s)' "${_pss_title}"
+  _print_step_issues _step_errors "${RED}" 'error(s) -- manual attention needed' "${_pss_title}"
   # Send exactly one notification when there are issues to report, gated solely
   # on whether errors/warnings were collected -- independent of the title source.
   # Success notifications are intentionally omitted -- the user can see success in
@@ -1305,20 +1255,14 @@ print_script_summary() {
 
 # Returns true if $1 is a non-empty path pointing to an executable file or command.
 is_executable() {
-  if is_non_zero_string "${1:-}" && [[ -x "${1:-}" ]]; then
-    return 0
-  else
-    return 1
-  fi
+  # '-x ""' is already false, so no separate empty-string guard is needed.
+  [[ -x "${1:-}" ]]
 }
 
 # Returns true if $1 is a non-empty path pointing to a regular file.
 is_file() {
-  if is_non_zero_string "${1:-}" && [[ -f "${1:-}" ]]; then
-    return 0
-  else
-    return 1
-  fi
+  # '-f ""' is already false, so no separate empty-string guard is needed.
+  [[ -f "${1:-}" ]]
 }
 
 # Resolves $2 to its canonical absolute path (following symlinks), writing the
@@ -1364,7 +1308,7 @@ _resolve_absolute_path() {
 }
 
 # Returns true if target file ($1) is missing or older than source file ($2).
-# Resolves symlinks before comparison to ensure edits/upgrades to symlink targets
+# Symlinks are followed by the -nt test itself, so edits/upgrades to symlink targets
 # are detected (e.g., Homebrew binaries, dotfiles symlinked from the repo).
 # Uses the shell's built-in -nt (newer-than) test which compares modification times.
 # Common pattern: if is_file_older_than "$cache" "$source"; then regenerate_cache; fi
@@ -1381,61 +1325,39 @@ _resolve_absolute_path() {
 #   if is_file_older_than "$cache" "$binary"; then "$binary" --generate-cache; fi
 #   if is_file_older_than "${git_version_cache}" "${git_bin}"; then cache_git_version; fi
 is_file_older_than() {
-  # Return true (needs regeneration) if either argument is missing/empty
-  if [[ -z "${1:-}" || -z "${2:-}" ]]; then return 0; fi
-  local target source
-  _resolve_absolute_path target "${1}"
-  _resolve_absolute_path source "${2}"
-  if ! is_file "${target}" || [[ "${source}" -nt "${target}" ]]; then
-    return 0
-  else
-    return 1
-  fi
-}
-
-# Returns true if target epoch time is older than source epoch time.
-# Used for comparing timestamps when -nt file comparison isn't applicable
-# (e.g., comparing file mtime against process start time from ps output).
-# Matches is_file_older_than naming pattern for consistency.
-#
-# Arguments:
-#   $1 - target epoch (what you're checking, e.g., daemon start time)
-#   $2 - source epoch (what you're comparing against, e.g., config file mtime)
-#
-# Returns:
-#   0 (true) if target is older than source (target < source)
-#   1 (false) if target is newer or equal, or if either argument is empty
-#
-# Example:
-#   if is_epoch_older_than "${daemon_epoch}" "${config_epoch}"; then
-#     restart_daemon  # daemon started before config was modified
-#   fi
-is_epoch_older_than() {
-  [[ -n "${1:-}" && -n "${2:-}" ]] && [[ ${1} -lt ${2} ]]
+  # True (needs regeneration) if either argument is missing/empty, the target is not
+  # a regular file, or the source is newer. No explicit symlink resolution: -nt and -f
+  # stat() through symlinks, so the comparison already uses the real files' mtimes.
+  # Resolving first cost ~20us per argument and ~26 calls per shell startup for no
+  # behavioral difference.
+  [[ -z "${1:-}" || -z "${2:-}" || ! -f "${1}" || "${2}" -nt "${1}" ]]
 }
 
 # Returns true if $1 is a non-empty path pointing to a directory (excluding root '/').
 is_directory() {
-  if is_non_zero_string "${1:-}" && ! is_root_dir "${1}" && [[ -d "${1:-}" ]]; then
-    return 0
-  else
-    return 1
-  fi
+  # '-d ""' is already false; the root directory is excluded explicitly (see is_root_dir).
+  [[ "${1:-}" != "/" && -d "${1:-}" ]]
 }
 
 # Returns true if $1 is the root directory '/'.
-# Used to prevent write operations on paths in root directory.
 is_root_dir() {
   [[ "${1:-}" == "/" ]]
 }
 
+# Returns true if $1 is '/' or a direct child of the root directory (e.g. '/foo'). Used to
+# refuse write/delete operations that would land in the root directory. ${1%/*} is empty
+# (not '/') for '/foo' because the only slash is the leading one, so is_root_dir
+# "${1%/*}" alone never matches such a path. Uses ${var%/*} rather than zsh's ${var:h}
+# for bash compatibility (direnv sources this file in bash). False for an empty argument.
+_is_direct_child_of_root() {
+  local _parent="${1%/*}"
+  [[ -n "${1:-}" && ( -z "${_parent}" || "${_parent}" == "/" ) ]]
+}
+
 # Returns true if $1 is a regular file with non-zero size.
 is_non_empty_file() {
-  if is_file "${1:-}" && [[ -s "${1:-}" ]]; then
-    return 0
-  else
-    return 1
-  fi
+  # -f is needed in addition to -s: -s is also true for a non-empty directory.
+  [[ -f "${1:-}" && -s "${1:-}" ]]
 }
 
 is_directory_empty() {
@@ -1461,15 +1383,16 @@ ensure_dir_exists() {
     warn "Skipping creation of the directory since '$(cyan "${target_dir}")' is not defined"
     return 1
   fi
-  # Prevent operations on paths in root directory
-  # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
-  if is_root_dir "${target_dir%/*}"; then
+  # Nothing to do when it already exists; only a directory that would have to be created
+  # in the root directory is refused.
+  if is_directory "${target_dir}"; then
+    return 0
+  fi
+  if _is_direct_child_of_root "${target_dir}"; then
     error "Refusing to create directory in root: '$(cyan "${target_dir}")'"
     return 1
   fi
-  if ! is_directory "${target_dir}"; then
-    mkdir -pv "${target_dir}"
-  fi
+  mkdir -pv "${target_dir}"
 }
 
 # Ruby load path for shared utilities -- add both dotfiles and personal bin to RUBYLIB
@@ -1546,25 +1469,28 @@ call_utility() {
   fi
 
   if ! _call_utility_script_available; then
-    debug "'$(cyan "$(_call_utility_script)")' not available yet -- skipping Ruby call"
+    debug "'${CYAN}${CALL_UTILITY_SCRIPT}${NC}' not available yet -- skipping Ruby call"
     return 1
   fi
 
-  COLUMNS="${COLUMNS}" "$(_call_utility_script)" "$@"
+  # Run through the system Ruby rather than the script's '#!/usr/bin/env ruby' shebang:
+  # when mise is active, 'ruby' resolves to a shim that costs ~100ms extra per launch
+  # before falling back to the same interpreter. Scripts must stay Ruby 2.6-compatible,
+  # so the system Ruby is always sufficient. Falls back to PATH ruby if absent.
+  local _cu_ruby='/usr/bin/ruby'
+  if ! is_executable "${_cu_ruby}"; then _cu_ruby='ruby'; fi
+  # --disable-gems skips loading RubyGems (~80ms per call); the bridge script and the utility
+  # modules use only the standard library, loaded via explicit require/require_relative.
+  COLUMNS="${COLUMNS}" "${_cu_ruby}" --disable-gems "${CALL_UTILITY_SCRIPT}" "$@"
 }
 
-# Path of the Ruby bridge script. It only exists once the dotfiles repo has been cloned,
-# so everything needed during the vanilla-OS bootstrap must have a pure-shell path that is
-# taken when _call_utility_script_available is false.
-_call_utility_script() {
-  echo "${DOTFILES_DIR}/scripts/call-utility.rb"
-}
-
-# Returns true if Ruby and the bridge script are both present (i.e. the dotfiles repo has
-# been cloned). Callers that must also work before the clone use this to choose between
+# Returns true if Ruby and the bridge script (${CALL_UTILITY_SCRIPT}) are
+# both present (i.e. the dotfiles repo has been cloned). The script only exists after the
+# clone, so everything needed during the vanilla-OS bootstrap must have a pure-shell path
+# that is taken when this returns false. Callers that must also work before the clone use this to choose between
 # call_utility and an inline shell implementation.
 _call_utility_script_available() {
-  command -v ruby &>/dev/null && is_executable "$(_call_utility_script)"
+  command -v ruby &>/dev/null && is_executable "${CALL_UTILITY_SCRIPT}"
 }
 
 # Returns true if $1 is a non-empty path whose direct child .git directory exists.
@@ -1583,48 +1509,48 @@ is_git_repo() {
 # Used by .zlogin for bulk recompilation, by .zshrc when regenerating cache files, and by
 # load_file_if_exists below (defined here, before its caller, so a top-to-bottom reader
 # sees the dependency before its use).
-# Resolves symlinks explicitly so the .zwc is written next to the symlink, not the target.
-# Handles cleanup of stale .zwc.old files left by failed zrecompile runs.
+# zrecompile is given ${file} itself (not a resolved target), so the .zwc is written next to
+# a symlink rather than next to what it points at. Handles cleanup of stale .zwc.old files
+# left by failed zrecompile runs.
 # Usage: recompile_zsh_script <file-path>
 recompile_zsh_script() {
   local file="${1:-}"
-  # Return early if no file path provided (defensive under set -u)
-  if is_zero_string "${file}"; then
+  # Fast path (hit on nearly every call): nothing to do when the .zwc is already current,
+  # or when the file is missing/empty (an empty path included). Raw tests rather than the
+  # utility predicates keep this to a few stat() calls with no nested function calls (~6x
+  # cheaper); -f, -s and -nt all follow symlinks, so no explicit symlink resolution is
+  # needed. The common "current .zwc" case is tested first so it costs the fewest stat()s
+  # (a missing source with a leftover .zwc also lands here: nothing newer than the .zwc).
+  if [[ -f "${file}.zwc" && ! "${file}" -nt "${file}.zwc" ]]; then
     return 0
   fi
-  # Prevent operations on paths in root directory
-  # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
-  if is_root_dir "${file%/*}"; then
+  if [[ ! -f "${file}" || ! -s "${file}" ]]; then
+    return 0
+  fi
+  if _is_direct_child_of_root "${file}"; then
     warn "Refusing to recompile file in root directory: '$(cyan "${file}")'"
     return 1
   fi
-  # Resolve symlinks explicitly: is_file_older_than handles this internally, but we need
-  # the real path here for the is_non_empty_file check and because the .zwc file lives
-  # next to the symlink (${file}.zwc), not next to the target file.
-  local real
-  _resolve_absolute_path real "${file}"
-  if is_non_empty_file "${real}" && is_file_older_than "${file}.zwc" "${real}"; then
-    debug "recompiling '$(cyan "${file}")'"
-    # zrecompile is only autoloaded by .zshrc (interactive shells). Any caller
-    # that reaches this point without .zshrc having run yet (cron jobs,
-    # scripts, load_file_if_exists's safeguard from a non-interactive context)
-    # would otherwise call an undefined function, silently swallowed by the
-    # '|| true' below -- recompilation would appear to succeed (exit 0) but
-    # never actually write a fresh .zwc. autoload -Uz is idempotent and cheap
-    # (no fork) -- safe to call unconditionally every time. Guarded on
-    # is_zsh since .shellrc must remain bash-parseable for direnv's bash
-    # subshell, and autoload is a zsh-only builtin.
-    if is_zsh; then
-      autoload -Uz zrecompile
-    fi
-    # Remove any stale .zwc.old left by a previously failed zrecompile run before
-    # attempting recompilation. zrecompile writes .zwc files read-only; if zcompile
-    # fails mid-write the .zwc.old backup is left behind -- clean it up unconditionally.
-    rm -f "${file}.zwc.old" || true
-    zrecompile -pq "${file}" &>/dev/null || true
-    # Remove .zwc.old again in case this run moved the old file there before failing.
-    rm -f "${file}.zwc.old" || true
+  debug "recompiling '${CYAN}${file}${NC}'"
+  # zrecompile is only autoloaded by .zshrc (interactive shells). Any caller
+  # that reaches this point without .zshrc having run yet (cron jobs,
+  # scripts, load_file_if_exists's safeguard from a non-interactive context)
+  # would otherwise call an undefined function, silently swallowed by the
+  # '|| true' below -- recompilation would appear to succeed (exit 0) but
+  # never actually write a fresh .zwc. autoload -Uz is idempotent and cheap
+  # (no fork) -- safe to call unconditionally every time. Guarded on
+  # is_zsh since .shellrc must remain bash-parseable for direnv's bash
+  # subshell, and autoload is a zsh-only builtin.
+  if is_zsh; then
+    autoload -Uz zrecompile
   fi
+  # Remove any stale .zwc.old left by a previously failed zrecompile run before
+  # attempting recompilation. zrecompile writes .zwc files read-only; if zcompile
+  # fails mid-write the .zwc.old backup is left behind -- clean it up unconditionally.
+  rm -f "${file}.zwc.old" || true
+  zrecompile -pq "${file}" &>/dev/null || true
+  # Remove .zwc.old again in case this run moved the old file there before failing.
+  rm -f "${file}.zwc.old" || true
 }
 
 # Sources $1 if it is a non-empty path pointing to a regular file; warns otherwise.
@@ -1647,55 +1573,51 @@ load_file_if_exists() {
 }
 
 # Regenerates $1 (a cache file) by capturing $2's stdout whenever $3 (a binary path
-# used as the staleness reference) is newer than the cache, then always sources the
-# cache. $2 must be a callable function name (not a raw command string) so it can
-# perform pipes/multi-command generation internally (e.g. filtering a tool's init
-# output) -- see callers in .zshrc for examples. Writes atomically via a '.tmp'
-# suffix + mv so an interrupted regeneration (e.g. Ctrl-C mid-generation) never
-# leaves a partially-written cache behind.
-# Extracted from 4 nearly-identical inline blocks in .zshrc (brew shellenv,
-# zsh-patina activate, mise activate, starship init) that all followed this same
-# is_file_older_than -> regenerate -> recompile_zsh_script -> load_file_if_exists
-# sequence, differing only in the command run and its post-processing.
-# Usage: cache_and_source_command_output <cache-file> <generator-function> <mtime-source-binary>
-# Example: cache_and_source_command_output "${cache}" _generate_foo_cache "${commands[foo]}"
-cache_and_source_command_output() {
-  local cache_file="${1:?cache_and_source_command_output: cache_file argument required}" generator="${2:?cache_and_source_command_output: generator argument required}" mtime_source="${3:?cache_and_source_command_output: mtime_source argument required}"
+# used as the staleness reference) is newer than the cache, then recompiles it to .zwc
+# bytecode. Does NOT source the cache -- callers that must source it at file scope (e.g.
+# starship's init, whose 'setopt promptsubst' must not be scoped to a function) call this
+# and then load_file_if_exists themselves; everyone else uses
+# cache_and_source_command_output below. $2 must be a callable function name (not a raw
+# command string) so it can perform pipes/multi-command generation internally (e.g.
+# filtering a tool's init output) -- see callers in .zshrc for examples. Writes atomically
+# via a '.tmp' suffix + mv so an interrupted regeneration (e.g. Ctrl-C mid-generation)
+# never leaves a partially-written cache behind.
+# Usage: regenerate_cache_if_stale <cache-file> <generator-function> <mtime-source-binary>
+regenerate_cache_if_stale() {
+  local cache_file="${1:?regenerate_cache_if_stale: cache_file argument required}" generator="${2:?regenerate_cache_if_stale: generator argument required}" mtime_source="${3:?regenerate_cache_if_stale: mtime_source argument required}"
   if is_file_older_than "${cache_file}" "${mtime_source}"; then
     "${generator}" >|"${cache_file}.tmp"
     mv "${cache_file}.tmp" "${cache_file}"
     recompile_zsh_script "${cache_file}"
   fi
-  load_file_if_exists "${cache_file}"
+}
+
+# regenerate_cache_if_stale, then always sources the cache. Extracted from nearly-identical
+# inline blocks in .zshrc (brew shellenv, zsh-patina activate, mise activate, ...) that all
+# followed this same is_file_older_than -> regenerate -> recompile_zsh_script ->
+# load_file_if_exists sequence, differing only in the command run and its post-processing.
+# Usage: cache_and_source_command_output <cache-file> <generator-function> <mtime-source-binary>
+# Example: cache_and_source_command_output "${cache}" _generate_foo_cache "${commands[foo]}"
+cache_and_source_command_output() {
+  regenerate_cache_if_stale "${1:?cache_and_source_command_output: cache_file argument required}" "${2:?cache_and_source_command_output: generator argument required}" "${3:?cache_and_source_command_output: mtime_source argument required}"
+  load_file_if_exists "${1}"
 }
 
 # Returns true if $1 names a known command, function, alias, or shell builtin.
 command_exists() {
-  if (($+commands[${1:-}] || $+functions[${1:-}] || $+aliases[${1:-}] || $+builtins[${1:-}])); then
-    return 0
-  else
-    return 1
-  fi
+  (($+commands[${1:-}] || $+functions[${1:-}] || $+aliases[${1:-}] || $+builtins[${1:-}]))
 }
 
 # Returns true if the current OS is macOS.
 is_macos() {
   # == glob is faster than =~ (no regex engine); valid in both bash [[ ]] and zsh.
-  if [[ "${OSTYPE}" == *darwin* ]]; then
-    return 0
-  else
-    return 1
-  fi
+  [[ "${OSTYPE}" == *darwin* ]]
 }
 
 # Returns true if the current OS is Linux.
 is_linux() {
   # == glob is faster than =~ (no regex engine); valid in both bash [[ ]] and zsh.
-  if [[ "${OSTYPE}" == *Linux* ]]; then
-    return 0
-  else
-    return 1
-  fi
+  [[ "${OSTYPE}" == *Linux* ]]
 }
 
 # Returns true if FIRST_INSTALL is set to a non-empty value.
@@ -1707,21 +1629,13 @@ is_linux() {
 # Note: two occurrences in fresh-install-of-osx.sh use the raw form because
 # they run before _download_and_source_shellrc has sourced .shellrc.
 is_first_install() {
-  if [[ -n "${FIRST_INSTALL:-}" ]]; then
-    return 0
-  else
-    return 1
-  fi
+  [[ -n "${FIRST_INSTALL:-}" ]]
 }
 
 # Returns true if the current OS is Windows (MSYS/MinGW environment).
 is_windows() {
   # == glob is faster than =~ (no regex engine); consistent with is_macos/is_linux.
-  if [[ "${OSTYPE}" == *MINGW* ]]; then
-    return 0
-  else
-    return 1
-  fi
+  [[ "${OSTYPE}" == *MINGW* ]]
 }
 
 # Returns true if this is the outermost script in a nested call chain.
@@ -1731,11 +1645,7 @@ is_windows() {
 # standalone scripts (which never set the counter) are treated as outermost --
 # consistent with the ':-0' used in the increment expression in each main().
 is_outermost_script() {
-  if [[ ${_DOTFILES_SCRIPT_DEPTH:-0} -eq 1 ]]; then
-    return 0
-  else
-    return 1
-  fi
+  [[ ${_DOTFILES_SCRIPT_DEPTH:-0} -eq 1 ]]
 }
 
 # Increments _DOTFILES_SCRIPT_DEPTH by 1. Does not guard against overflow since
@@ -1759,11 +1669,7 @@ _decrement_script_depth() {
 # sudo and may be invoked from cron or other non-interactive contexts where a
 # prompt would hang indefinitely.
 has_sudo_credentials() {
-  if sudo -n true 2>/dev/null; then
-    return 0
-  else
-    return 1
-  fi
+  sudo -n true 2>/dev/null
 }
 
 # --------------------------------------------------------------------------
@@ -1837,14 +1743,6 @@ migrate_git_repo_to_reftable() {
   git migrate-reftable "${folder}"
 }
 
-# Clones a git repo into a temp folder, moves the .git dir into the real target
-# location, and does an initial checkout there. Works around git's refusal to
-# clone into a non-empty directory (e.g. HOME). If the target is already a git
-# repo, runs fetch to pull updates. New clones always use --depth=1 --filter=blob:none
-# --single-branch for fast initial clone. All repos (new and existing) are converted
-# to full clones asynchronously via background 'git unshallow' job after the main
-# operation completes. Always updates submodules afterwards.
-#
 # Ensures the current branch tracks 'origin', setting it directly via 'git config'
 # (not 'git branch --set-upstream-to', which requires a prior fetch). No-op if
 # already configured. Usage: configure_branch_tracking_for_origin <target-folder>
@@ -1862,408 +1760,305 @@ configure_branch_tracking_for_origin() {
   git -C "${target_folder}" config "branch.${branch}.merge" "refs/heads/${branch}"
 }
 
-# No encryption/decryption logic lives here for the network-clone/bundle-import path --
-# that path only knows how to clone a plaintext git repo (or import a plaintext bundle)
-# into a possibly-non-empty target directory, and is reused as-is by Keybase's bootstrap
-# clone and by resurrect-repositories.rb's unrelated plain-bundle-import feature. A
-# 'gpg-encrypt::<clone-url>' first argument is a third, mutually-exclusive alternative
-# (mirroring the 'keybase://' special-case further down) that delegates entirely to the
-# external 'git-remote-gpg-encrypt' tool's own standalone restore path (`git
-# gpg-encrypt-restore`, installed via the 'vraravam/tap' Homebrew tap -- see
-# files/--HOME--/Brewfile) instead of a plain 'git clone'.
-#
-# The optional branch/bundle-file arguments (see Usage below) apply uniformly no matter
-# which of the three alternatives (network clone, keybase://, gpg-encrypt::) ends up
-# populating target_folder: a local bundle_file, if given and it exists, always wins
-# over ANY network transport (gpg-encrypt:: included, same as keybase:// already did);
-# target_branch is enforced (checked out via 'git switch', erroring out if not found)
-# after ANY of the three completes, not just a plain network clone.
-#
-# <clone-url> (first argument) must be a fully-qualified clone URL: any scheme 'git
-# clone' itself accepts (https://, http://, ssh://, git://, git+ssh://, file://),
-# scp-style SSH (user@host:path, e.g. 'git@github.com:vraravam/dotfiles.git' -- see
-# GitProcessor::GitUrlParser, which documents this as the most common format
-# 'git remote get-url origin' returns, and which resurrect-repositories.rb feeds
-# straight back into this function), 'keybase://...', or 'gpg-encrypt::<url>'.
-#
-# <post-checkout-hook> (fifth, optional argument), if given, is 'eval'd immediately
-# once files land on disk from a fresh clone/import (any of the three mechanisms) --
-# strictly before origin/branch cleanup below, the reftable-migrate/unshallow/maintain/
-# siu chain further down, and (back in the caller, e.g. resurrect-repositories.rb) any
-# second-remote configuration/fetch. Runs in-process (this function's own shell), so
-# any other .shellrc function is already in scope -- no 'source ~/.shellrc &&' prefix
-# needed, unlike a caller invoking this whole function from a fresh subshell. Exists
-# for repos like $HOME that check out files needing permissions fixed before anything
-# else tries to use them (e.g. '.ssh'/'.gnupg' keys) -- git checkout does not preserve
-# the strict permission modes those need, and unshallow/maintain/submodule-update/a
-# second remote's fetch could all need SSH auth using a key this checkout just wrote
-# with the wrong (too-open) permissions. Only fires on an actual fresh clone/import --
-# never for a pre-existing repo (the 'else' branch below), matching the assumption that
-# a repo which already exists had its permissions fixed on a prior run.
-#
-# Usage: clone_repo_into <clone-url> <target-folder> [branch] [bundle-file] [post-checkout-hook]
-clone_repo_into() {
-  local start_time
-  _epoch_seconds start_time  # zsh: $EPOCHSECONDS (no fork); bash: 'date +%s' fork
-  local clone_url="${1:-}"
-  local target_folder="${2:-}"
+# --------------------------------------------------------------------------
+# clone_repo_into helpers. Each one is private to clone_repo_into (below) and none of
+# them sets a trap: clone_repo_into runs with 'local_traps' under zsh, so a trap set inside
+# a helper (an EXIT one in particular) would fire/expire when the helper returns -- not when
+# the whole clone is done. All temp-file cleanup traps therefore live in clone_repo_into.
+# --------------------------------------------------------------------------
 
-  if is_zero_string "${clone_url}"; then
-    error "clone_repo_into: missing required <clone-url> (first argument)"
+# Imports a local git bundle into <tmp-folder>. The bundle already contains full history for
+# every ref (branches, remote-tracking refs, tags), so none of the network-clone optimizations
+# apply: no shallow/blob-filter/single-branch args (nothing to save -- it's a local file read),
+# no 'with-retry' wrapping (no network flakiness to guard against for a local file).
+# Usage: _clone_via_bundle <bundle-file> <target-folder> <tmp-folder>
+_clone_via_bundle() {
+  local bundle_file="${1:?}" target_folder="${2:?}" tmp_folder="${3:?}"
+  info "Importing bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")' (this may take a while for large bundles)..."
+  if ! git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${bundle_file}" .; then
+    warn "Failed to import bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")'"
     return 1
   fi
-  case "${clone_url}" in
-    https://* | http://* | ssh://* | git://* | git+ssh://* | file://* | keybase://* | gpg-encrypt::*) ;;
-    *@*:*) ;; # scp-style SSH, e.g. 'git@github.com:owner/repo.git' -- see the comment above
-    *)
-      error "clone_repo_into: '$(cyan "${clone_url}")' has no recognizable clone-url scheme -- expected https://, http://, ssh://, git://, git+ssh://, file://, keybase://, gpg-encrypt::, or scp-style user@host:path"
-      return 1
-      ;;
-  esac
+}
 
-  ensure_dir_exists "${target_folder}"
-  if ! is_git_repo "${target_folder}"; then
-    # Since git does not allow cloning into a non-empty folder (like the home folder), clone into a temp folder, then copy the .git folder into the real target location, and do a checkout
-    local tmp_folder
-    tmp_folder="$(mktemp -d)"
+# 'git gpg-encrypt-restore' (from the external 'git-remote-gpg-encrypt' tool) is a
+# self-contained clone+decrypt+checkout command, not a standard git transport -- it
+# writes directly into target_folder (safely handling a non-empty directory like
+# $HOME itself), so none of the tmp_folder-then-move machinery in clone_repo_into applies
+# to it. <encrypted-repo-url> is the underlying https/ssh URL (the 'gpg-encrypt::'
+# pseudo-scheme prefix already stripped -- mirrors the URL format used for the real
+# remote-helper when pushing/pulling day-to-day, see git-remote-gpg-encrypt's README).
+# Invoked directly (not via 'git gpg-encrypt-restore') -- functionally identical (git's own
+# subcommand dispatch just execs 'git-<verb>' off PATH anyway) except that git intercepts
+# '-h'/'--help' for any 'git <verb>' invocation and tries to open a man page instead of
+# forwarding it to the subcommand -- direct invocation avoids that entirely and matches the
+# 'command_exists git-gpg-encrypt-restore' check callers use before ever reaching this path.
+# Usage: _clone_via_gpg_encrypt <encrypted-repo-url> <target-folder>
+_clone_via_gpg_encrypt() {
+  local encrypted_repo_url="${1:?}" target_folder="${2:?}"
+  if ! git-gpg-encrypt-restore "${encrypted_repo_url}" "${target_folder}"; then
+    warn "Failed to restore encrypted backup '$(cyan "${encrypted_repo_url}")' into '$(cyan "${target_folder}")'"
+    return 1
+  fi
+}
 
-    # Set trap to clean up temp folder on exit (normal or error)
-    trap "rm -rf '${tmp_folder}'" EXIT INT TERM
-
-    local target_branch="${3:-}"
-    local bundle_file="${4:-}"
-    local post_checkout_hook="${5:-}"
-    local using_bundle=false
-    if is_non_zero_string "${bundle_file}" && is_file "${bundle_file}"; then
-      using_bundle=true
-    fi
-
-    # 'gpg-encrypt::' is handled as a third, mutually-exclusive alternative alongside
-    # bundle-import and network-clone below -- like keybase:// alongside a plain URL, it
-    # is just a different way to populate the SAME target_folder; branch/bundle handling
-    # is unified further down, after all three alternatives converge. A local
-    # bundle_file, if given and it exists, still wins over ANY network transport
-    # (gpg-encrypt:: included) -- exactly as it already did for keybase://.
-    local restored_via_gpg_encrypt=false
-    local encrypted_repo_url=''
-    if [[ "${using_bundle}" == true ]]; then
-      # Import from a local git bundle file instead of the network. The bundle already
-      # contains full history for every ref (branches, remote-tracking refs, tags), so
-      # none of the network-clone optimizations below apply: no shallow/blob-filter/
-      # single-branch args (nothing to save -- it's a local file read), no 'with-retry'
-      # wrapping (no network flakiness to guard against for a local file).
-      info "Importing bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")' (this may take a while for large bundles)..."
-      if ! git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${bundle_file}" .; then
-        warn "Failed to import bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")'"
-        return 1
-      fi
-    elif [[ "${clone_url}" == gpg-encrypt::* ]]; then
-      # 'git gpg-encrypt-restore' (from the external 'git-remote-gpg-encrypt' tool) is a
-      # self-contained clone+decrypt+checkout command, not a standard git transport -- it
-      # writes directly into target_folder (safely handling a non-empty directory like
-      # $HOME itself), so none of the tmp_folder-then-move machinery further down applies
-      # to it; it is skipped wherever it's specific to that pipeline (search for
-      # 'restored_via_gpg_encrypt' below).
-      restored_via_gpg_encrypt=true
-      # Strip the 'gpg-encrypt::' pseudo-scheme prefix (mirrors the URL format used for
-      # the real remote-helper when pushing/pulling day-to-day -- see
-      # git-remote-gpg-encrypt's README) to recover the underlying https/ssh URL that
-      # 'git gpg-encrypt-restore' itself expects. Invoked directly (not via
-      # 'git gpg-encrypt-restore') -- functionally identical (git's own subcommand
-      # dispatch just execs 'git-<verb>' off PATH anyway) except that git intercepts
-      # '-h'/'--help' for any 'git <verb>' invocation and tries to open a man page
-      # instead of forwarding it to the subcommand -- direct invocation avoids that
-      # entirely and matches the 'command_exists git-gpg-encrypt-restore' check callers
-      # use before ever reaching this branch.
-      encrypted_repo_url="${clone_url#gpg-encrypt::}"
-      if ! git-gpg-encrypt-restore "${encrypted_repo_url}" "${target_folder}"; then
-        warn "Failed to restore encrypted backup '$(cyan "${encrypted_repo_url}")' into '$(cyan "${target_folder}")'"
-        return 1
-      fi
-    else
-      local -a clone_args=()
-      if [[ "${clone_url}" == keybase://* ]]; then
-        # Keybase's git-remote-keybase helper is a custom remote (not a standard smart-
-        # HTTP/SSH transport) and does not reliably support the protocol-v2 capabilities
-        # that --depth/--filter=blob:none/--single-branch depend on -- observed failing
-        # outright (exit 128) once the keybase daemon/KBFS mount becomes ready. Use a
-        # plain full clone instead; these are small personal config repos, so there is no
-        # real cost to skipping the shallow/partial-clone optimization here.
-        :
-      else
-        clone_args=('--depth=1' '--filter=blob:none' '--single-branch')
-      fi
-      # If a target branch is specified, clone that branch directly to avoid the
-      # "branch not found" error when switching after a shallow clone (which only
-      # fetches the default branch). Without --branch, git switch would fail.
-      if is_non_zero_string "${target_branch}"; then
-        clone_args+=('--branch' "${target_branch}")
-      fi
-      debug "Using clone args: '$(cyan "${clone_args[*]:-(none -- plain full clone)}")'"
-
-      # Capture stderr to display on failure
-      local stderr_file
-      stderr_file="$(mktemp)"
-      trap "rm -rf '${tmp_folder}' '${stderr_file}'" EXIT INT TERM
-
-      # -n (--no-checkout): Skip checkout in tmp (only .git needed; we restore in target).
-      # SSH: Uses core.sshCommand from ${XDG_CONFIG_HOME}/git/config (pre-configured) or inherits GIT_SSH_COMMAND
-      # from parent environment (FIRST_INSTALL - exported by fresh-install-of-osx.sh, propagates
-      # through shell-> Ruby-> shell chain). No inline override needed.
-      # Wrapped with 'git with-retry': flaky networks (VPN/MTU black-holes) can cause this
-      # clone to stall indefinitely rather than fail fast. Implemented as a git alias (not a
-      # shell function) so the retry/timeout/process-tree-kill logic lives in one place and
-      # is reusable by any other git alias or script (e.g. 'unshallow') without sourcing ~/.shellrc.
-      # Passes tmp_folder as the progress-path so with-retry only kills on genuine inactivity
-      # (no growth in the folder being cloned into) rather than a fixed wall-clock timeout --
-      # a large repo that is transferring slowly but steadily is not killed prematurely.
-      local clone_timeout_secs=25
-      local clone_max_attempts=5
-      local clone_progress_path="${tmp_folder}"
-      local clone_unwrapped=false
-      if [[ "${clone_url}" == keybase://* ]]; then
-        # git-remote-keybase does not incrementally write pack data into the destination
-        # directory the way a normal smart-HTTP/SSH clone does, so 'du -sk'-based
-        # inactivity tracking never observes growth -- with-retry's timeout would fire on
-        # every single attempt regardless of whether the clone is actually progressing.
-        # Fall back to a longer fixed wall-clock timeout instead (progress_path '-').
-        clone_timeout_secs=60
-        clone_progress_path='-'
-
-        if is_first_install; then
-          # On a freshly-provisioned device, a keybase:// clone can genuinely take far
-          # longer than any reasonable timeout to complete (KBFS sync, key negotiation,
-          # large object transfer over Keybase's own encrypted transport) -- with-retry's
-          # inactivity-kill mechanism cannot tell "still working, just slow" apart from
-          # "genuinely stuck" for this transport (observed: stalls with zero visible
-          # progress past 60s, then gets killed, even though the clone may have still been
-          # progressing internally). Skip the retry/timeout wrapper entirely here and run a
-          # single, completely unwrapped attempt -- no artificial kill, no retry count --
-          # letting it succeed or fail on its own. Re-run this script later if it fails.
-          clone_unwrapped=true
-          info 'First install: running an unwrapped keybase:// clone (no retry/timeout wrapper) -- re-run this script later if this fails'
-        fi
-
-        # KBFS can still be syncing team/device keys shortly after keybase login,
-        # especially on a freshly-provisioned device -- attempting a git clone before it's
-        # ready can fail with "git-remote-keybase error: (1) Server: block does not exist"
-        # even though the daemon itself is already up and logged in. Poll for basic KBFS
-        # readiness (the containing folder becoming listable) before attempting the clone
-        # at all -- this only confirms the generic FUSE mount is up, not that the
-        # git-specific backend for this repo is actually ready, so it does not reliably
-        # prevent the failure above, but it is a cheap, harmless best-effort pre-check.
-        # Derived entirely from the URL argument (no hardcoded username/repo name) so this
-        # applies identically to home, profiles, or any other keybase:// repo:
-        # "keybase://private/user/repo" -> "/keybase/private/user".
-        local kbfs_check_path="${clone_url#keybase://}"
-        kbfs_check_path="/keybase/${kbfs_check_path%/*}"
-        info "Waiting for KBFS to be ready at '$(cyan "${kbfs_check_path}")'"
-        local kbfs_stderr_file
-        kbfs_stderr_file="$(mktemp)"
-        if command -v git-with-retry &>/dev/null; then
-          # Reuses the same hang-protected retry mechanism as the clone itself below --
-          # 'keybase fs ls' can itself hang while KBFS is still coming up, not just fail fast.
-          git with-retry 10 6 "${kbfs_stderr_file}" '-' keybase fs ls "${kbfs_check_path}" &>/dev/null || warn "KBFS did not become ready within 60s -- attempting clone anyway"
-        else
-          keybase fs ls "${kbfs_check_path}" &>/dev/null || warn "KBFS does not appear ready -- attempting clone anyway"
-        fi
-        rm -f "${kbfs_stderr_file}"
-      fi
-      local clone_status
-      if [[ "${clone_unwrapped}" == true ]]; then
-        # No with-retry wrapper at all here -- see the FIRST_INSTALL comment above. Still
-        # wipes/recreates tmp_folder first for consistency with the with-retry-wrapped path
-        # (a stray leftover '.git' here would otherwise fail with "destination path '.'
-        # already exists and is not an empty directory").
-        rm -rf "${tmp_folder:?}"
-        mkdir -p "${tmp_folder}"
-        git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${clone_url}" . 2>"${stderr_file}"
-        clone_status=$?
-      elif command -v git-with-retry &>/dev/null; then
-        # Wrapped in 'zsh -c' so the temp folder is wiped and recreated fresh before every
-        # attempt -- 'with-retry' itself just re-runs the same command on failure/stall
-        # without cleaning up. If attempt 1 gets killed (or fails) mid-clone, it can leave a
-        # partial '.git' behind; without this wipe, every subsequent attempt fails
-        # immediately with "destination path '.' already exists and is not an empty
-        # directory", masking the original (possibly transient) failure.
-        #
-        # No '-q': git's progress reporting goes to stderr, which 'with-retry' already
-        # captures to stderr_file and only ever surfaces on failure (see below) -- dropping
-        # '-q' costs nothing on success but gives real diagnostic detail (e.g. exactly which
-        # negotiation/transfer phase stalled) instead of just the remote helper's own
-        # one-line status message.
-        git with-retry "${clone_timeout_secs}" "${clone_max_attempts}" "${stderr_file}" "${clone_progress_path}" \
-          zsh -c 'rm -rf "${1:?}"; mkdir -p "${1}"; exec git -C "${1}" clone -n -c init.defaultRefFormat=reftable "${@:2}"' -- "${tmp_folder}" "${clone_args[@]}" "${clone_url}" .
-        clone_status=$?
-      else
-        # Bootstrap edge case: 'git-with-retry' is an executable in ${DOTFILES_DIR}/scripts, which
-        # is part of the dotfiles repo -- not on PATH on a vanilla OS when this function is used
-        # to clone the dotfiles repo itself (the very first clone_repo_into call in
-        # fresh-install-of-osx.sh). Falling back silently here would be wrong: 'git with-retry
-        # ...' with no such command on PATH fails at the command-resolution step itself ("git:
-        # 'with-retry' is not a git command"), so the wrapped clone would never run at all --
-        # not merely lose retry protection. Fall back to a plain clone (no retry/hang
-        # protection) only for this one bootstrap window; every subsequent call automatically
-        # regains with-retry once the scripts directory is on PATH.
-        debug "'git-with-retry' not yet on PATH (expected before the dotfiles repo is cloned) -- using plain clone without retry protection"
-        git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${clone_url}" . 2>"${stderr_file}"
-        clone_status=$?
-      fi
-
-      if [[ ${clone_status} -ne 0 ]]; then
-        local error_msg="Failed to clone '$(cyan "${clone_url}")' into '$(cyan "${target_folder}")'"
-        local stderr_content
-        stderr_content="$(cat "${stderr_file}" 2>/dev/null)"
-        if is_non_zero_string "${stderr_content}"; then
-          error_msg="${error_msg}"$'\n'"Clone command STDERR:"$'\n'"${stderr_content}"
-        fi
-        warn "${error_msg}"
-        return 1
-      fi
-      rm -f "${stderr_file}"
-    fi
-
-    if [[ "${restored_via_gpg_encrypt}" == true ]]; then
-      # 'git gpg-encrypt-restore' already performed its own equivalent of the
-      # tmp-folder-then-move-then-checkout dance below (it writes straight into
-      # target_folder, safely handling a non-empty directory on its own) -- tmp_folder
-      # was never populated for this path, so just clean it up.
-      rm -rf "${tmp_folder}"
-      trap - EXIT INT TERM  # Clear trap now that tmp_folder is already gone
-    else
-      # Remove existing .git directory if present (cleanup from failed previous clone attempt).
-      # We're in the "not a git repo" branch (outer if), but .git directory might exist as
-      # leftover debris. Check directory existence directly, not is_git_repo (which would
-      # return false since we're already in the ! is_git_repo branch).
-      if is_directory "${target_folder}/.git"; then
-        # Prevent operations on paths in root directory
-        # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
-        if is_root_dir "${target_folder%/*}"; then
-          error "Refusing to remove .git directory from path in root: '$(cyan "${target_folder}")'"
-          return 1
-        fi
-        rm -rf "${target_folder}/.git"
-      fi
-
-      mv "${tmp_folder}/.git" "${target_folder}"
-      rm -rf "${tmp_folder}"
-      trap - EXIT INT TERM  # Clear trap after successful move
-
-      # Populate index from HEAD, then checkout files.
-      # For home directory clones: use 'git checkout --force' to overwrite existing files
-      # (e.g., ~/.ssh/config might exist as an empty stub on vanilla macOS). For other repos:
-      # use 'checkout-index -a' which refuses to overwrite (safer for repos in dev directories).
-      git -C "${target_folder}" read-tree HEAD
-      if [[ "${target_folder}" == "${HOME}" ]]; then
-        # Force overwrite existing files when cloning home repo
-        git -C "${target_folder}" checkout --force HEAD 2>/dev/null || true
-      else
-        # Don't overwrite existing files for non-home repos
-        git -C "${target_folder}" checkout-index -a 2>/dev/null || true
-      fi
-
-      # Correct HEAD file after reftable clone-via-mv: reftable's own .git/HEAD legitimately
-      # (by design, not a bug) reads 'ref: refs/heads/.invalid' -- git itself resolves the
-      # real branch fine via its reftable database (symbolic-ref/status/branch all work
-      # correctly), but shell prompts that read .git/HEAD directly (bypassing a git
-      # subprocess for speed) would otherwise display '.invalid' as the branch name. The
-      # 'git migrate-reftable' command (scripts/git-migrate-reftable) applies this same fixup for repos
-      # migrated to reftable after the fact rather than cloned directly into it.
-      local real_ref
-      real_ref="$(git -C "${target_folder}" symbolic-ref HEAD 2>/dev/null)"
-      if is_non_zero_string "${real_ref}"; then
-        echo "ref: ${real_ref}" >"${target_folder}/.git/HEAD"
-      fi
-    fi
-
-    # Run the caller-supplied post-checkout hook (if any) now, before anything else --
-    # see this function's own header comment (search 'post-checkout-hook') for why.
-    if is_non_zero_string "${post_checkout_hook}"; then
-      eval "${post_checkout_hook}"
-    fi
-
-    # ---- Origin cleanup, uniform across bundle-import and gpg-encrypt-restore -- both
-    # internally do the equivalent of 'git clone <bundle-file> ...' against a scratch/
-    # temp bundle under the hood, leaving 'origin' pointing at a since-deleted path
-    # rather than a real remote. Neither applies to a normal network clone (including
-    # keybase://), which already has a real 'origin' pointing at clone_url itself.
-    if [[ "${using_bundle}" == true ]]; then
-      # 'git clone <bundle-file>' sets 'origin' to the literal bundle path -- strip it
-      # only if it still matches (defensive: a caller-supplied bundle_file could in
-      # theory coincide with a legitimately-configured real remote URL).
-      local bundle_origin
-      bundle_origin="$(git -C "${target_folder}" remote get-url origin 2>/dev/null)"
-      if [[ "${bundle_origin}" == "${bundle_file}" ]]; then
-        git -C "${target_folder}" remote remove origin
-      fi
-      # Callers always re-add a real 'origin' afterward (e.g. resurrect-repositories.rb
-      # detects the missing 'origin' and reconfigures it from its own config) -- branch
-      # tracking is configured uniformly for every path (this one included) after the
-      # if/else below, once it's settled whether a clone even happened.
-    elif [[ "${restored_via_gpg_encrypt}" == true ]]; then
-      # Unlike the bundle_file case above, we don't have the scratch bundle path to
-      # compare against here (the restore tool manages its own tmpdir internally and
-      # never reports it back to us) -- strip 'origin' unconditionally instead. Callers
-      # are expected to (re-)configure the real remote(s) afterward, same as they
-      # already do for the bundle-import case above (e.g. resurrect-repositories.rb's
-      # 'other_remotes' handling).
-      git -C "${target_folder}" remote remove origin 2>/dev/null || true
-    fi
-
-    # ---- Branch enforcement, uniform across all three alternatives (network clone,
-    # bundle-import, gpg-encrypt-restore) -- a network clone already lands on
-    # target_branch via '--branch' at clone time above, so this is normally a no-op
-    # there; bundle-import and gpg-encrypt-restore both check out whatever the source's
-    # default branch was (full history, every ref), so this is what actually switches
-    # those two onto the requested branch.
-    if is_non_zero_string "${target_branch}"; then
-      local current_branch
-      current_branch="$(git -C "${target_folder}" branch --show-current)"
-      if [[ "${current_branch}" != "${target_branch}" ]]; then
-        if ! git -C "${target_folder}" switch "${target_branch}" 2>/dev/null; then
-          error "Branch mismatch: expected '$(cyan "${target_branch}")' but got '$(cyan "${current_branch}")', and switching to it failed too - something is wrong. Please correct before retrying!"
-          return 1
-        fi
-      fi
-    fi
-
-    if [[ "${restored_via_gpg_encrypt}" == true ]]; then
-      success "Successfully restored encrypted backup '$(cyan "${encrypted_repo_url}")' into '$(cyan "${target_folder}")'"
-    elif [[ "${using_bundle}" == true ]]; then
-      success "Successfully imported bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")'"
-    else
-      success "Successfully cloned '$(cyan "${clone_url}")' into '$(cyan "${target_folder}")'"
-    fi
+# Clones <clone-url> (any transport 'git clone' understands, plus keybase://) into
+# <tmp-folder> with '-n' (no checkout: only .git is needed there; files are restored in the
+# real target afterwards). stderr is captured to <stderr-file> and shown only on failure.
+# Usage: _clone_via_network <clone-url> <target-folder> <target-branch> <tmp-folder> <stderr-file>
+_clone_via_network() {
+  local clone_url="${1:?}" target_folder="${2:?}" target_branch="${3:-}" tmp_folder="${4:?}" stderr_file="${5:?}"
+  local -a clone_args=()
+  if [[ "${clone_url}" == keybase://* ]]; then
+    # Keybase's git-remote-keybase helper is a custom remote (not a standard smart-
+    # HTTP/SSH transport) and does not reliably support the protocol-v2 capabilities
+    # that --depth/--filter=blob:none/--single-branch depend on -- observed failing
+    # outright (exit 128) once the keybase daemon/KBFS mount becomes ready. Use a
+    # plain full clone instead; these are small personal config repos, so there is no
+    # real cost to skipping the shallow/partial-clone optimization here.
+    :
   else
-    # Reached whenever "${target_folder}" is already a git repo (regardless of which
-    # clone-url scheme was passed in).
-    debug "Repo already exists at '$(yellow "${target_folder}")' -- will unshallow and fetch in background"
+    clone_args=('--depth=1' '--filter=blob:none' '--single-branch')
+  fi
+  # If a target branch is specified, clone that branch directly to avoid the
+  # "branch not found" error when switching after a shallow clone (which only
+  # fetches the default branch). Without --branch, git switch would fail.
+  if is_non_zero_string "${target_branch}"; then
+    clone_args+=('--branch' "${target_branch}")
+  fi
+  debug "Using clone args: '${CYAN}${clone_args[*]:-(none -- plain full clone)}${NC}'"
+
+  # SSH: Uses core.sshCommand from ${XDG_CONFIG_HOME}/git/config (pre-configured) or inherits GIT_SSH_COMMAND
+  # from parent environment (FIRST_INSTALL - exported by fresh-install-of-osx.sh, propagates
+  # through shell-> Ruby-> shell chain). No inline override needed.
+  # Wrapped with 'git with-retry': flaky networks (VPN/MTU black-holes) can cause this
+  # clone to stall indefinitely rather than fail fast. Implemented as a git alias (not a
+  # shell function) so the retry/timeout/process-tree-kill logic lives in one place and
+  # is reusable by any other git alias or script (e.g. 'unshallow') without sourcing ~/.shellrc.
+  # Passes tmp_folder as the progress-path so with-retry only kills on genuine inactivity
+  # (no growth in the folder being cloned into) rather than a fixed wall-clock timeout --
+  # a large repo that is transferring slowly but steadily is not killed prematurely.
+  local clone_timeout_secs=25
+  local clone_max_attempts=5
+  local clone_progress_path="${tmp_folder}"
+  local clone_unwrapped=false
+  if [[ "${clone_url}" == keybase://* ]]; then
+    # git-remote-keybase does not incrementally write pack data into the destination
+    # directory the way a normal smart-HTTP/SSH clone does, so 'du -sk'-based
+    # inactivity tracking never observes growth -- with-retry's timeout would fire on
+    # every single attempt regardless of whether the clone is actually progressing.
+    # Fall back to a longer fixed wall-clock timeout instead (progress_path '-').
+    clone_timeout_secs=60
+    clone_progress_path='-'
+
+    if is_first_install; then
+      # On a freshly-provisioned device, a keybase:// clone can genuinely take far
+      # longer than any reasonable timeout to complete (KBFS sync, key negotiation,
+      # large object transfer over Keybase's own encrypted transport) -- with-retry's
+      # inactivity-kill mechanism cannot tell "still working, just slow" apart from
+      # "genuinely stuck" for this transport (observed: stalls with zero visible
+      # progress past 60s, then gets killed, even though the clone may have still been
+      # progressing internally). Skip the retry/timeout wrapper entirely here and run a
+      # single, completely unwrapped attempt -- no artificial kill, no retry count --
+      # letting it succeed or fail on its own. Re-run this script later if it fails.
+      clone_unwrapped=true
+      info 'First install: running an unwrapped keybase:// clone (no retry/timeout wrapper) -- re-run this script later if this fails'
+    fi
+
+    # KBFS can still be syncing team/device keys shortly after keybase login,
+    # especially on a freshly-provisioned device -- attempting a git clone before it's
+    # ready can fail with "git-remote-keybase error: (1) Server: block does not exist"
+    # even though the daemon itself is already up and logged in. Poll for basic KBFS
+    # readiness (the containing folder becoming listable) before attempting the clone
+    # at all -- this only confirms the generic FUSE mount is up, not that the
+    # git-specific backend for this repo is actually ready, so it does not reliably
+    # prevent the failure above, but it is a cheap, harmless best-effort pre-check.
+    # Derived entirely from the URL argument (no hardcoded username/repo name) so this
+    # applies identically to home, profiles, or any other keybase:// repo:
+    # "keybase://private/user/repo" -> "/keybase/private/user".
+    local kbfs_check_path="${clone_url#keybase://}"
+    kbfs_check_path="/keybase/${kbfs_check_path%/*}"
+    info "Waiting for KBFS to be ready at '$(cyan "${kbfs_check_path}")'"
+    local kbfs_stderr_file
+    kbfs_stderr_file="$(mktemp)"
+    if command -v git-with-retry &>/dev/null; then
+      # Reuses the same hang-protected retry mechanism as the clone itself below --
+      # 'keybase fs ls' can itself hang while KBFS is still coming up, not just fail fast.
+      git with-retry 10 6 "${kbfs_stderr_file}" '-' keybase fs ls "${kbfs_check_path}" &>/dev/null || warn "KBFS did not become ready within 60s -- attempting clone anyway"
+    else
+      keybase fs ls "${kbfs_check_path}" &>/dev/null || warn "KBFS does not appear ready -- attempting clone anyway"
+    fi
+    rm -f "${kbfs_stderr_file}"
+  fi
+  local clone_status
+  if [[ "${clone_unwrapped}" == true ]]; then
+    # No with-retry wrapper at all here -- see the FIRST_INSTALL comment above. Still
+    # wipes/recreates tmp_folder first for consistency with the with-retry-wrapped path
+    # (a stray leftover '.git' here would otherwise fail with "destination path '.'
+    # already exists and is not an empty directory").
+    rm -rf "${tmp_folder:?}"
+    mkdir -p "${tmp_folder}"
+    git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${clone_url}" . 2>"${stderr_file}"
+    clone_status=$?
+  elif command -v git-with-retry &>/dev/null; then
+    # Wrapped in 'zsh -c' so the temp folder is wiped and recreated fresh before every
+    # attempt -- 'with-retry' itself just re-runs the same command on failure/stall
+    # without cleaning up. If attempt 1 gets killed (or fails) mid-clone, it can leave a
+    # partial '.git' behind; without this wipe, every subsequent attempt fails
+    # immediately with "destination path '.' already exists and is not an empty
+    # directory", masking the original (possibly transient) failure.
+    #
+    # No '-q': git's progress reporting goes to stderr, which 'with-retry' already
+    # captures to stderr_file and only ever surfaces on failure (see below) -- dropping
+    # '-q' costs nothing on success but gives real diagnostic detail (e.g. exactly which
+    # negotiation/transfer phase stalled) instead of just the remote helper's own
+    # one-line status message.
+    git with-retry "${clone_timeout_secs}" "${clone_max_attempts}" "${stderr_file}" "${clone_progress_path}" \
+      zsh -c 'rm -rf "${1:?}"; mkdir -p "${1}"; exec git -C "${1}" clone -n -c init.defaultRefFormat=reftable "${@:2}"' -- "${tmp_folder}" "${clone_args[@]}" "${clone_url}" .
+    clone_status=$?
+  else
+    # Bootstrap edge case: 'git-with-retry' is an executable in ${DOTFILES_DIR}/scripts, which
+    # is part of the dotfiles repo -- not on PATH on a vanilla OS when this function is used
+    # to clone the dotfiles repo itself (the very first clone_repo_into call in
+    # fresh-install-of-osx.sh). Falling back silently here would be wrong: 'git with-retry
+    # ...' with no such command on PATH fails at the command-resolution step itself ("git:
+    # 'with-retry' is not a git command"), so the wrapped clone would never run at all --
+    # not merely lose retry protection. Fall back to a plain clone (no retry/hang
+    # protection) only for this one bootstrap window; every subsequent call automatically
+    # regains with-retry once the scripts directory is on PATH.
+    debug "'git-with-retry' not yet on PATH (expected before the dotfiles repo is cloned) -- using plain clone without retry protection"
+    git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${clone_url}" . 2>"${stderr_file}"
+    clone_status=$?
   fi
 
-  # Ensure branch tracking is configured regardless of path. A plain network clone
-  # (including keybase://) already sets this up natively via 'git clone' itself, and the
-  # bundle-import/gpg-encrypt-restore branches above strip a bogus 'origin' that would
-  # otherwise leave tracking pointing nowhere useful -- but a repo that was ALREADY a
-  # git repo before this call (the 'else' branch just above) never goes through any of
-  # that, e.g. one created by an older version of this function, or by some other means
-  # entirely. Idempotent -- returns early once tracking is already correct, so calling
-  # it unconditionally here is cheap and makes it a hard guarantee for every caller
-  # rather than something each branch has to remember to do individually. Tracking only
-  # references the remote NAME, not its URL, so this is safe to set up even before
-  # 'origin' itself is (re-)configured -- without it, a bare 'git pull' fails with "no
-  # tracking information".
-  configure_branch_tracking_for_origin "${target_folder}"
+  if [[ ${clone_status} -ne 0 ]]; then
+    local error_msg="Failed to clone '$(cyan "${clone_url}")' into '$(cyan "${target_folder}")'"
+    local stderr_content
+    stderr_content="$(cat "${stderr_file}" 2>/dev/null)"
+    if is_non_zero_string "${stderr_content}"; then
+      error_msg="${error_msg}"$'\n'"Clone command STDERR:"$'\n'"${stderr_content}"
+    fi
+    warn "${error_msg}"
+    return 1
+  fi
+}
 
-  # migrate_git_repo_to_reftable/unshallow/maintain/siu depend on two things that are not both
-  # present on a vanilla OS when this function clones the dotfiles repo itself (the very first
-  # clone_repo_into call in fresh-install-of-osx.sh, which runs before install-dotfiles.rb):
-  #   - the 'git-migrate-reftable'/'git-unshallow'/'git-maintain' executables in
-  #     ${DOTFILES_DIR}/scripts (on PATH only once the repo is cloned), and
-  #   - the small aliases they call (is-shallow, dlb, is-clean, ..., 'siu') from
-  #     ${XDG_CONFIG_HOME}/git/config (symlinked into place by install-dotfiles.rb).
-  # Checking one of each ('git-maintain' on PATH, the 'siu' alias) is a reliable proxy for all
-  # of them -- skip this whole block until both exist; every subsequent call (this repo once
-  # install-dotfiles.rb has run, or any other repo) runs it normally.
+# Moves the .git directory cloned into <tmp-folder> into <target-folder> and removes
+# <tmp-folder>. Any existing .git directory in the target is removed first (cleanup from a
+# failed previous clone attempt): the caller is in the "not a git repo" branch, but a .git
+# directory might still exist as leftover debris, so directory existence is checked
+# directly rather than via is_git_repo (which would return false here).
+# Usage: _install_git_dir_from_tmp <tmp-folder> <target-folder>
+_install_git_dir_from_tmp() {
+  local tmp_folder="${1:?}" target_folder="${2:?}"
+  if is_directory "${target_folder}/.git"; then
+    if _is_direct_child_of_root "${target_folder}"; then
+      error "Refusing to remove .git directory from path in root: '$(cyan "${target_folder}")'"
+      return 1
+    fi
+    rm -rf "${target_folder}/.git"
+  fi
+
+  mv "${tmp_folder}/.git" "${target_folder}"
+  rm -rf "${tmp_folder}"
+}
+
+# Populates the index from HEAD, then checks files out into <target-folder>.
+# For home directory clones: use 'git checkout --force' to overwrite existing files
+# (e.g., ~/.ssh/config might exist as an empty stub on vanilla macOS). For other repos:
+# use 'checkout-index -a' which refuses to overwrite (safer for repos in dev directories).
+# Usage: _checkout_after_git_dir_install <target-folder>
+_checkout_after_git_dir_install() {
+  local target_folder="${1:?}"
+  git -C "${target_folder}" read-tree HEAD
+  if [[ "${target_folder}" == "${HOME}" ]]; then
+    # Force overwrite existing files when cloning home repo
+    git -C "${target_folder}" checkout --force HEAD 2>/dev/null || true
+  else
+    # Don't overwrite existing files for non-home repos
+    git -C "${target_folder}" checkout-index -a 2>/dev/null || true
+  fi
+
+  # Correct HEAD file after reftable clone-via-mv: reftable's own .git/HEAD legitimately
+  # (by design, not a bug) reads 'ref: refs/heads/.invalid' -- git itself resolves the
+  # real branch fine via its reftable database (symbolic-ref/status/branch all work
+  # correctly), but shell prompts that read .git/HEAD directly (bypassing a git
+  # subprocess for speed) would otherwise display '.invalid' as the branch name. The
+  # 'git migrate-reftable' command (scripts/git-migrate-reftable) applies this same fixup for repos
+  # migrated to reftable after the fact rather than cloned directly into it.
+  local real_ref
+  real_ref="$(git -C "${target_folder}" symbolic-ref HEAD 2>/dev/null)"
+  if is_non_zero_string "${real_ref}"; then
+    echo "ref: ${real_ref}" >"${target_folder}/.git/HEAD"
+  fi
+}
+
+# Origin cleanup after a bundle import or a gpg-encrypt restore -- both internally do the
+# equivalent of 'git clone <bundle-file> ...' against a scratch/temp bundle under the hood,
+# leaving 'origin' pointing at a since-deleted path rather than a real remote. Neither
+# applies to a normal network clone (including keybase://), which already has a real
+# 'origin' pointing at the clone URL itself. Callers always re-add a real 'origin'
+# afterward (e.g. resurrect-repositories.rb detects the missing 'origin' and reconfigures
+# it from its own config); branch tracking is configured for every path afterward by
+# clone_repo_into itself.
+# Usage: _remove_scratch_origin <bundle|gpg> <target-folder> <bundle-file>
+_remove_scratch_origin() {
+  local source_kind="${1:?}" target_folder="${2:?}" bundle_file="${3:-}"
+  if [[ "${source_kind}" == bundle ]]; then
+    # 'git clone <bundle-file>' sets 'origin' to the literal bundle path -- strip it
+    # only if it still matches (defensive: a caller-supplied bundle_file could in
+    # theory coincide with a legitimately-configured real remote URL).
+    local bundle_origin
+    bundle_origin="$(git -C "${target_folder}" remote get-url origin 2>/dev/null)"
+    if [[ "${bundle_origin}" == "${bundle_file}" ]]; then
+      git -C "${target_folder}" remote remove origin
+    fi
+  else
+    # Unlike the bundle_file case above, we don't have the scratch bundle path to
+    # compare against here (the restore tool manages its own tmpdir internally and
+    # never reports it back to us) -- strip 'origin' unconditionally instead. Callers
+    # are expected to (re-)configure the real remote(s) afterward, same as they
+    # already do for the bundle-import case above (e.g. resurrect-repositories.rb's
+    # 'other_remotes' handling).
+    git -C "${target_folder}" remote remove origin 2>/dev/null || true
+  fi
+}
+
+# Branch enforcement, uniform across all three alternatives (network clone, bundle-import,
+# gpg-encrypt-restore) -- a network clone already lands on target_branch via '--branch' at
+# clone time, so this is normally a no-op there; bundle-import and gpg-encrypt-restore both
+# check out whatever the source's default branch was (full history, every ref), so this is
+# what actually switches those two onto the requested branch. No-op when <target-branch> is
+# empty.
+# Usage: _enforce_target_branch <target-folder> <target-branch>
+_enforce_target_branch() {
+  local target_folder="${1:?}" target_branch="${2:-}"
+  if is_zero_string "${target_branch}"; then
+    return 0
+  fi
+  local current_branch
+  current_branch="$(git -C "${target_folder}" branch --show-current)"
+  if [[ "${current_branch}" != "${target_branch}" ]]; then
+    if ! git -C "${target_folder}" switch "${target_branch}" 2>/dev/null; then
+      error "Branch mismatch: expected '$(cyan "${target_branch}")' but got '$(cyan "${current_branch}")', and switching to it failed too - something is wrong. Please correct before retrying!"
+      return 1
+    fi
+  fi
+}
+
+# migrate_git_repo_to_reftable/unshallow/maintain/siu depend on two things that are not both
+# present on a vanilla OS when clone_repo_into clones the dotfiles repo itself (the very first
+# clone_repo_into call in fresh-install-of-osx.sh, which runs before install-dotfiles.rb):
+#   - the 'git-migrate-reftable'/'git-unshallow'/'git-maintain' executables in
+#     ${DOTFILES_DIR}/scripts (on PATH only once the repo is cloned), and
+#   - the small aliases they call (is-shallow, dlb, is-clean, ..., 'siu') from
+#     ${XDG_CONFIG_HOME}/git/config (symlinked into place by install-dotfiles.rb).
+# Checking one of each ('git-maintain' on PATH, the 'siu' alias) is a reliable proxy for all
+# of them -- skip this whole block until both exist; every subsequent call (this repo once
+# install-dotfiles.rb has run, or any other repo) runs it normally.
+# Usage: _post_clone_maintenance <target-folder>
+_post_clone_maintenance() {
+  local target_folder="${1:?}"
   if command -v git-maintain &>/dev/null && git config --get alias.siu &>/dev/null; then
     # Migrate to reftable format BEFORE background unshallow to avoid race conditions.
     # Migrating refs while unshallow is fetching history could cause lock contention or
@@ -2299,7 +2094,7 @@ clone_repo_into() {
     # If all attempts fail, the next clone_repo_into call will retry.
     git -C "${target_folder}" unshallow
     git -C "${target_folder}" maintain
-    debug "Completed unshallow + maintain for '$(yellow "${target_folder}")'"
+    debug "Completed unshallow + maintain for '${YELLOW}${target_folder}${NC}'"
 
     # Always update submodules after clone or pull -- new commits may introduce submodule changes.
     # Uses the 'siu' git alias (not a bare 'submodule update') for 'with-retry' hang protection --
@@ -2308,10 +2103,177 @@ clone_repo_into() {
   else
     debug "Git commands (git-migrate-reftable/git-unshallow/git-maintain on PATH, and the 'siu' alias) not yet available (expected before the dotfiles repo is cloned) -- skipping post-clone maintenance for this one bootstrap call"
   fi
+}
+
+# Clones a git repo into a temp folder, moves the .git dir into the real target
+# location, and does an initial checkout there. Works around git's refusal to
+# clone into a non-empty directory (e.g. HOME). If the target is already a git
+# repo, runs fetch to pull updates. New clones always use --depth=1 --filter=blob:none
+# --single-branch for fast initial clone. All repos (new and existing) are converted
+# to full clones asynchronously via background 'git unshallow' job after the main
+# operation completes. Always updates submodules afterwards.
+#
+# No encryption/decryption logic lives here for the network-clone/bundle-import path --
+# that path only knows how to clone a plaintext git repo (or import a plaintext bundle)
+# into a possibly-non-empty target directory, and is reused as-is by Keybase's bootstrap
+# clone and by resurrect-repositories.rb's unrelated plain-bundle-import feature. A
+# 'gpg-encrypt::<clone-url>' first argument is a third, mutually-exclusive alternative
+# (mirroring the 'keybase://' special-case in _clone_via_network) that delegates entirely to the
+# external 'git-remote-gpg-encrypt' tool's own standalone restore path (`git
+# gpg-encrypt-restore`, installed via the 'vraravam/tap' Homebrew tap -- see
+# files/--HOME--/Brewfile) instead of a plain 'git clone'.
+#
+# The optional branch/bundle-file arguments (see Usage below) apply uniformly no matter
+# which of the three alternatives (network clone, keybase://, gpg-encrypt::) ends up
+# populating target_folder: a local bundle_file, if given and it exists, always wins
+# over ANY network transport (gpg-encrypt:: included, same as keybase:// already did);
+# target_branch is enforced (checked out via 'git switch', erroring out if not found)
+# after ANY of the three completes, not just a plain network clone.
+#
+# <clone-url> (first argument) must be a fully-qualified clone URL: any scheme 'git
+# clone' itself accepts (https://, http://, ssh://, git://, git+ssh://, file://),
+# scp-style SSH (user@host:path, e.g. 'git@github.com:vraravam/dotfiles.git' -- see
+# GitProcessor::GitUrlParser, which documents this as the most common format
+# 'git remote get-url origin' returns, and which resurrect-repositories.rb feeds
+# straight back into this function), 'keybase://...', or 'gpg-encrypt::<url>'.
+#
+# <post-checkout-hook> (fifth, optional argument), if given, is 'eval'd immediately
+# once files land on disk from a fresh clone/import (any of the three mechanisms) --
+# strictly before origin/branch cleanup below, the reftable-migrate/unshallow/maintain/
+# siu chain further down, and (back in the caller, e.g. resurrect-repositories.rb) any
+# second-remote configuration/fetch. Runs in-process (this function's own shell), so
+# any other .shellrc function is already in scope -- no 'source ~/.shellrc &&' prefix
+# needed, unlike a caller invoking this whole function from a fresh subshell. Exists
+# for repos like $HOME that check out files needing permissions fixed before anything
+# else tries to use them (e.g. '.ssh'/'.gnupg' keys) -- git checkout does not preserve
+# the strict permission modes those need, and unshallow/maintain/submodule-update/a
+# second remote's fetch could all need SSH auth using a key this checkout just wrote
+# with the wrong (too-open) permissions. Only fires on an actual fresh clone/import --
+# never for a pre-existing repo (the 'else' branch below), matching the assumption that
+# a repo which already exists had its permissions fixed on a prior run.
+#
+# Under zsh the caller's traps (EXIT/INT/TERM) are preserved: 'local_traps' makes every
+# trap set here function-local, so e.g. fresh-install-of-osx.sh's own EXIT trap survives.
+#
+# Usage: clone_repo_into <clone-url> <target-folder> [branch] [bundle-file] [post-checkout-hook]
+clone_repo_into() {
+  # Restore the caller's traps on return (zsh-only option; a plain runtime command, so it
+  # does not affect bash parsing). Must run before any 'trap' below.
+  if is_zsh; then setopt local_traps; fi
+  local start_time
+  _epoch_seconds start_time  # zsh: $EPOCHSECONDS (no fork); bash: 'date +%s' fork
+  local clone_url="${1:-}"
+  local target_folder="${2:-}"
+
+  if is_zero_string "${clone_url}"; then
+    error "clone_repo_into: missing required <clone-url> (first argument)"
+    return 1
+  fi
+  case "${clone_url}" in
+    https://* | http://* | ssh://* | git://* | git+ssh://* | file://* | keybase://* | gpg-encrypt::*) ;;
+    *@*:*) ;; # scp-style SSH, e.g. 'git@github.com:owner/repo.git' -- see the comment above
+    *)
+      error "clone_repo_into: '$(cyan "${clone_url}")' has no recognizable clone-url scheme -- expected https://, http://, ssh://, git://, git+ssh://, file://, keybase://, gpg-encrypt::, or scp-style user@host:path"
+      return 1
+      ;;
+  esac
+
+  ensure_dir_exists "${target_folder}"
+  if ! is_git_repo "${target_folder}"; then
+    # Since git does not allow cloning into a non-empty folder (like the home folder), clone into a temp folder, then copy the .git folder into the real target location, and do a checkout
+    local tmp_folder
+    tmp_folder="$(mktemp -d)"
+
+    # Set trap to clean up temp folder on exit (normal or error)
+    trap "rm -rf '${tmp_folder}'" EXIT INT TERM
+
+    local target_branch="${3:-}"
+    local bundle_file="${4:-}"
+    local post_checkout_hook="${5:-}"
+
+    # Three mutually-exclusive ways to populate target_folder; branch/bundle handling is
+    # unified further down, after all three converge. A local bundle_file, if given and it
+    # exists, wins over ANY network transport (gpg-encrypt:: and keybase:// included).
+    local source_kind='network'
+    if is_file "${bundle_file}"; then
+      source_kind='bundle'
+    elif [[ "${clone_url}" == gpg-encrypt::* ]]; then
+      source_kind='gpg'
+    fi
+    # Strip the 'gpg-encrypt::' pseudo-scheme prefix to recover the underlying https/ssh URL.
+    local encrypted_repo_url="${clone_url#gpg-encrypt::}"
+
+    case "${source_kind}" in
+      bundle)
+        _clone_via_bundle "${bundle_file}" "${target_folder}" "${tmp_folder}" || return 1
+        ;;
+      gpg)
+        _clone_via_gpg_encrypt "${encrypted_repo_url}" "${target_folder}" || return 1
+        ;;
+      network)
+        # Capture stderr to display on failure (removed by the trap on any early return).
+        local stderr_file
+        stderr_file="$(mktemp)"
+        trap "rm -rf '${tmp_folder}' '${stderr_file}'" EXIT INT TERM
+        _clone_via_network "${clone_url}" "${target_folder}" "${target_branch}" "${tmp_folder}" "${stderr_file}" || return 1
+        rm -f "${stderr_file}"
+        ;;
+    esac
+
+    if [[ "${source_kind}" == gpg ]]; then
+      # 'git gpg-encrypt-restore' already performed its own equivalent of the
+      # tmp-folder-then-move-then-checkout dance (it writes straight into target_folder,
+      # safely handling a non-empty directory on its own) -- tmp_folder was never
+      # populated for this path, so just clean it up.
+      rm -rf "${tmp_folder}"
+      trap - EXIT INT TERM  # Clear trap now that tmp_folder is already gone
+    else
+      _install_git_dir_from_tmp "${tmp_folder}" "${target_folder}" || return 1
+      trap - EXIT INT TERM  # Clear trap after successful move
+      _checkout_after_git_dir_install "${target_folder}"
+    fi
+
+    # Run the caller-supplied post-checkout hook (if any) now, before anything else --
+    # see this function's own header comment (search 'post-checkout-hook') for why.
+    if is_non_zero_string "${post_checkout_hook}"; then
+      eval "${post_checkout_hook}"
+    fi
+
+    if [[ "${source_kind}" != network ]]; then
+      _remove_scratch_origin "${source_kind}" "${target_folder}" "${bundle_file}"
+    fi
+    _enforce_target_branch "${target_folder}" "${target_branch}" || return 1
+
+    case "${source_kind}" in
+      gpg) success "Successfully restored encrypted backup '$(cyan "${encrypted_repo_url}")' into '$(cyan "${target_folder}")'" ;;
+      bundle) success "Successfully imported bundle '$(cyan "${bundle_file}")' into '$(cyan "${target_folder}")'" ;;
+      *) success "Successfully cloned '$(cyan "${clone_url}")' into '$(cyan "${target_folder}")'" ;;
+    esac
+  else
+    # Reached whenever "${target_folder}" is already a git repo (regardless of which
+    # clone-url scheme was passed in).
+    debug "Repo already exists at '${YELLOW}${target_folder}${NC}' -- will unshallow and fetch in background"
+  fi
+
+  # Ensure branch tracking is configured regardless of path. A plain network clone
+  # (including keybase://) already sets this up natively via 'git clone' itself, and the
+  # bundle-import/gpg-encrypt-restore branches above strip a bogus 'origin' that would
+  # otherwise leave tracking pointing nowhere useful -- but a repo that was ALREADY a
+  # git repo before this call (the 'else' branch just above) never goes through any of
+  # that, e.g. one created by an older version of this function, or by some other means
+  # entirely. Idempotent -- returns early once tracking is already correct, so calling
+  # it unconditionally here is cheap and makes it a hard guarantee for every caller
+  # rather than something each branch has to remember to do individually. Tracking only
+  # references the remote NAME, not its URL, so this is safe to set up even before
+  # 'origin' itself is (re-)configured -- without it, a bare 'git pull' fails with "no
+  # tracking information".
+  configure_branch_tracking_for_origin "${target_folder}"
+
+  _post_clone_maintenance "${target_folder}"
   local end_time
   _epoch_seconds end_time
   local duration=$((end_time - start_time))
-  debug "Process took $(purple "${duration}") seconds"
+  debug "Process took ${PURPLE}${duration}${NC} seconds"
 }
 
 # Shared "secure a folder" skeleton for set_ssh_folder_permissions and
@@ -2423,11 +2385,6 @@ set_gnupg_folder_permissions() {
 # pure-shell implementation, so cron is suspended and restored correctly throughout the
 # vanilla-OS bootstrap.
 
-# Backup location shared with fresh-install-of-osx.sh and Ruby's EnvVars.cron_backup_file.
-_cron_backup_file() {
-  echo "${_DOTFILES_CRON_BACKUP_FILE:-${TMPDIR:-/tmp}/crontab_backup}"
-}
-
 # Loads a cron file into the system crontab. Shared by suspend_cron/resume_cron
 # (bootstrap layer, here) and recron (.aliases layer) so neither duplicates logic.
 # Usage: restore_cron <cron-file-path>
@@ -2450,10 +2407,8 @@ suspend_cron() {
     call_utility Cron.suspend_cron
     return
   fi
-  local backup_file
-  backup_file="$(_cron_backup_file)"
   # 'crontab -l' exits non-zero when no crontab exists yet; the backup is then left empty.
-  crontab -l >"${backup_file}" 2>/dev/null || : >"${backup_file}"
+  crontab -l >"${_DOTFILES_CRON_BACKUP_FILE}" 2>/dev/null || : >"${_DOTFILES_CRON_BACKUP_FILE}"
   crontab -r &>/dev/null || true
 }
 
@@ -2463,17 +2418,13 @@ resume_cron() {
     call_utility Cron.resume_cron
     return
   fi
-  local backup_file
-  backup_file="$(_cron_backup_file)"
-  if is_non_empty_file "${backup_file}"; then
-    crontab "${backup_file}" && success 'Cron jobs resumed from backup'
+  if is_non_empty_file "${_DOTFILES_CRON_BACKUP_FILE}"; then
+    crontab "${_DOTFILES_CRON_BACKUP_FILE}" && success 'Cron jobs resumed from backup'
   else
     info 'No cron backup to restore; skipping'
   fi
-  # Prevent operations on paths in root directory
-  # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
-  if is_file "${backup_file}" && ! is_root_dir "${backup_file%/*}"; then
-    rm -f "${backup_file}"
+  if is_file "${_DOTFILES_CRON_BACKUP_FILE}" && ! _is_direct_child_of_root "${_DOTFILES_CRON_BACKUP_FILE}"; then
+    rm -f "${_DOTFILES_CRON_BACKUP_FILE}"
   fi
 }
 
@@ -2490,17 +2441,17 @@ load_zsh_configs() {
   if (($+functions[is_aliases_sourced])); then unfunction is_aliases_sourced; fi
   # _SCRIPT_NAME is set as a script-scoped global in each script; unset in
   # interactive shells. The fallback makes the caller visible in both contexts.
-  debug "load_zsh_configs called from '$(yellow "${_SCRIPT_NAME:-<interactive>}")'"
+  debug "load_zsh_configs called from '${YELLOW}${_SCRIPT_NAME:-<interactive>}${NC}'"
   local file
-  local file_list=('.zshenv' '.zshrc' '.zlogin')
+  # .zshenv lives in ${HOME} (zsh always reads it from there and it is what sets ZDOTDIR);
+  # .zshrc and .zlogin live in ${ZDOTDIR}. ${ZDOTDIR} is safe to use here: this function is
+  # defined inside .shellrc, which initialises ZDOTDIR before the function is ever defined,
+  # so it is set correctly even in cron or fresh-install subshell contexts where .zshenv has
+  # not been sourced.
+  local file_list=("${HOME}/.zshenv" "${ZDOTDIR}/.zshrc" "${ZDOTDIR}/.zlogin")
   for file in "${file_list[@]}"; do
-    # ${ZDOTDIR} is safe to use here: this function is defined inside .shellrc,
-    # so .shellrc must have already run -- and .shellrc initialises ZDOTDIR at
-    # line 38 (export ZDOTDIR="${ZDOTDIR:-"${HOME}"}") before this function is
-    # ever defined. ZDOTDIR is therefore always set correctly, even in cron or
-    # fresh-install subshell contexts where .zshenv has not been sourced.
-    debug "load_zsh_configs: loading '$(cyan "${ZDOTDIR}/${file}")'"
-    load_file_if_exists "${ZDOTDIR}/${file}"
+    debug "load_zsh_configs: loading '${CYAN}${file}${NC}'"
+    load_file_if_exists "${file}"
   done
 }
 
@@ -2516,7 +2467,7 @@ load_zsh_configs() {
 print_usage() {
   local script_name="${1:?print_usage: script_name argument required}"
   shift
-  echo "$(red 'Usage'): $(cyan "${script_name}") $(yellow "${1:+"[options]"}")"
+  echo "${RED}Usage${NC}: ${CYAN}${script_name}${NC} ${YELLOW}${1:+[options]}${NC}"
   while [[ $# -gt 0 ]]; do
     echo "  ${1:-}"
     shift

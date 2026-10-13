@@ -34,7 +34,7 @@ RSpec.describe LaunchServices do
 
     around do |example|
       Dir.mktmpdir('launch-services-spec-') do |dir|
-        @tmp = Pathname.new(dir)
+        @tmp = Pathname(dir)
         example.run
       end
     end
@@ -45,25 +45,40 @@ RSpec.describe LaunchServices do
     let(:live) { [safari_https, vscodium_text] }
 
     def write_xml(hash, path)
-      json = tmp.join('in.json')
-      json.write(JSON.generate(hash))
-      system(MacOS::PLUTIL_CMD, '-convert', 'xml1', '-o', path.to_s, json.to_s)
+      File.write(path.to_s, xml_for(hash))
     end
 
     def read_handlers(path)
       JSON.parse(`#{MacOS::PLUTIL_CMD} -convert json -o - #{path}`)['LSHandlers']
     end
 
-    # 'defaults export <domain> <file>' writes the live handlers; 'defaults import' is captured;
-    # plutil (and anything else) runs for real.
+    def success(succeeded: true)
+      instance_double(Process::Status, success?: succeeded)
+    end
+
+    def plutil(stdin_data, *args)
+      Open3.capture2(MacOS::PLUTIL_CMD, *args, '-o', '-', '-', stdin_data: stdin_data).first
+    end
+
+    def xml_for(hash)
+      plutil(JSON.generate(hash), '-convert', 'xml1')
+    end
+
+    # 'defaults export <domain> -' returns the live handlers as XML and 'defaults import <domain> -'
+    # is captured from stdin; plutil (and anything else) runs for real.
     def stub_defaults(imported:)
-      allow(CommandUtils).to receive(:run_silent) do |*args|
-        case args[1]
-        when 'export' then write_xml({ 'LSHandlers' => live }, args[3]) && true
-        when 'import' then imported << read_handlers(args[3]) && true
-        else system(*args, out: File::NULL, err: File::NULL)
+      allow(Open3).to receive(:capture3).and_wrap_original do |original, *args, **opts|
+        if args.first == MacOS::DEFAULTS_CMD && args[1] == 'export'
+          [xml_for({ 'LSHandlers' => live }), '', success]
+        elsif args.first == MacOS::DEFAULTS_CMD && args[1] == 'import'
+          expect(args.last).to eq('-')
+          imported << JSON.parse(plutil(opts[:stdin_data], '-convert', 'json'))['LSHandlers']
+          ['', '', success]
+        else
+          original.call(*args, **opts)
         end
       end
+      allow(CommandUtils).to receive(:run_silent).and_return(true)
     end
 
     it 'exports the live handlers without the volatile modification date' do
@@ -98,7 +113,7 @@ RSpec.describe LaunchServices do
     end
 
     it 'treats a machine with no handlers plist as having none' do
-      allow(CommandUtils).to receive(:run_silent).and_return(false)
+      allow(Open3).to receive(:capture3).and_return(['', '', success(succeeded: false)])
 
       expect(described_class.send(:_current_handlers)).to eq([])
     end

@@ -67,5 +67,15 @@ RSpec.describe String do
         expect('/opt/homebrew/bin/git'.replace_home_path_with_tilde).to eq('/opt/homebrew/bin/git')
       end
     end
+
+    it 'leaves the string unchanged (no stray ~ prefix) when HOME is empty or unset' do
+      with_env('HOME' => '') do
+        expect('/opt/homebrew/bin/git'.replace_home_path_with_tilde).to eq('/opt/homebrew/bin/git')
+        expect(Pathname('/opt/x').replace_home_path_with_tilde).to eq('/opt/x')
+      end
+      with_env('HOME' => nil) do
+        expect('plain'.replace_home_path_with_tilde).to eq('plain')
+      end
+    end
   end
 end

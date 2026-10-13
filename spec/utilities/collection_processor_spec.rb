@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require 'tmpdir'
 require 'collection_processor'
 
 RSpec.describe CollectionProcessor do
@@ -71,6 +72,62 @@ RSpec.describe CollectionProcessor do
 
     it 'right-aligns the progress counter to the width of the total' do
       expect { described_class.process_items((1..10).to_a) { true } }.to output(/\[ 1 of 10\]/).to_stdout
+    end
+  end
+
+  describe '._build_find_cmd' do
+    def build(*roots, **opts)
+      described_class.send(:_build_find_cmd, roots, name_pattern: '.git', mindepth: 1, maxdepth: 4, **opts)
+    end
+
+    it 'searches every root for the named directory without descending into matches' do
+      expect(build('/a', '/b')).to eq(
+        %w[find /a /b -mindepth 1 -maxdepth 4 -type d -name .git -prune -print0]
+      )
+    end
+
+    it 'adds the prune expression for excluded directory names' do
+      expect(build('/a', prune_dirs: %w[node_modules .cache])).to eq(
+        ['find', '/a', '-mindepth', '1', '-maxdepth', '4',
+         '(', '-name', 'node_modules', '-o', '-name', '.cache', ')', '-prune', '-o',
+         '-type', 'd', '-name', '.git', '-prune', '-print0']
+      )
+    end
+
+    it 'adds -not -regex after the prune expression when given' do
+      cmd = build('/a', prune_dirs: ['x'], exclude_regex: '.*/\\..*/\\.git')
+
+      expect(cmd.each_cons(3).to_a).to include(['-prune', '-o', '-not'])
+      expect(cmd).to include('-regex', '.*/\\..*/\\.git')
+    end
+  end
+
+  describe '._collect_matches' do
+    def collect(output, **opts)
+      described_class.send(:_collect_matches, output, filter: nil, skip_symlinks: true, transform_result: nil, **opts)
+    end
+
+    it 'splits NUL-separated output, de-duplicates and sorts' do
+      expect(collect("/b\0/a\0/b\0")).to eq(%w[/a /b])
+    end
+
+    it 'filters by a String or Regexp, on the full path' do
+      expect(collect("/x/oss/a\0/x/work/b\0", filter: 'oss')).to eq(['/x/oss/a'])
+      expect(collect("/x/oss/a\0/x/work/b\0", filter: /work/)).to eq(['/x/work/b'])
+    end
+
+    it 'applies the transform before de-duplicating' do
+      expect(collect("/r/a/.git\0/r/a/.git\0/r/b/.git\0", transform_result: ->(path) { File.dirname(path) })).to eq(%w[/r/a /r/b])
+    end
+  end
+
+  describe '._existing_dirs' do
+    it 'keeps existing directories (as Strings) and drops blank, nil and missing entries' do
+      Dir.mktmpdir('collection-processor-') do |dir|
+        allow(Logging).to receive(:debug)
+
+        expect(described_class.send(:_existing_dirs, [Pathname(dir), nil, '', '/nonexistent-xyz'])).to eq([dir])
+      end
     end
   end
 end

@@ -1,4 +1,4 @@
-#!/usr/bin/env ruby
+#!/usr/bin/env -S ruby --disable-gems
 # encoding: utf-8
 # frozen_string_literal: true
 
@@ -22,10 +22,9 @@
 #   FILTER=oss run-all.rb find . -name "*.rb"
 #   FOLDER=/Users/me MAXDEPTH=5 run-all.rb git fo --rebase
 
-require 'open3'
-
 require_relative 'utilities/collection_processor'
 require_relative 'utilities/command_utils'
+require_relative 'utilities/core'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_overrides'
 require_relative 'utilities/git_workspace'
@@ -35,6 +34,8 @@ require_relative 'utilities/logging'
 # Returns true/false instead of calling exit().
 module RunAll
   extend self
+  include Core  # For instance methods (in blocks)
+  extend Core   # For module methods
 
   # Public API method.
   #
@@ -82,14 +83,11 @@ module RunAll
       exec_command = _resolve_exec_command(command: command, dir: dir)
 
       # Use CommandUtils.run_interactive to execute the command, allowing stdout/stderr
-      # to flow through to the terminal (so users see git log output, etc.). Dir.chdir
-      # with a block automatically restores the original directory when the block exits,
-      # even if an exception is raised.
-      Dir.chdir(dir) do
-        CommandUtils.run_interactive(*exec_command) do
-          Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{$CHILD_STATUS&.exitstatus || 'unknown'})")
-          has_failures = true
-        end
+      # to flow through to the terminal (so users see git log output, etc.). The chdir: option
+      # runs the child in the repo directory without changing this process's working directory.
+      CommandUtils.run_interactive(*exec_command, chdir: dir) do
+        Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{$CHILD_STATUS&.exitstatus || 'unknown'})")
+        has_failures = true
       end
 
       # Always return true -- failures are recorded as warnings above, not as failed items.
@@ -144,12 +142,9 @@ module RunAll
     is_git = command[0] == 'git'
     extra_args = is_git ? command[2..-1] : command[1..-1]
 
-    # The skip env var also stops the 'git cc'/'git upreb' commands and GitCommands from
-    # re-dispatching to this same override if it shells out to them. RUBYLIB lets a Ruby
-    # override 'require' the shared utilities even under cron, where it is unset.
-    env = { GitOverrides::SKIP_ENV_VAR => '1', 'RUBYLIB' => GitOverrides.rubylib }
-
-    [env, *GitOverrides.command_for(override), *Array(extra_args)]
+    # argv_for's env hash also stops the 'git cc'/'git upreb' commands and GitCommands from
+    # re-dispatching to this same override if it shells out to them.
+    GitOverrides.argv_for(override, extra_args)
   end
 
   private_class_method :_resolve_exec_command

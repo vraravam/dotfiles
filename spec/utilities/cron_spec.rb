@@ -6,7 +6,7 @@ require 'tmpdir'
 RSpec.describe Cron do
   around do |example|
     Dir.mktmpdir('cron-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       example.run
     end
   end

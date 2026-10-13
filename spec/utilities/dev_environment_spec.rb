@@ -65,6 +65,25 @@ RSpec.describe DevEnvironment do
   end
 
   describe '.setup_dev_environment' do
+    around do |example|
+      Dir.mktmpdir('devenv-spec-') do |dir|
+        @tmp = Pathname(dir)
+        with_env('FORCE_DEV_ENV_SETUP' => nil) { example.run }
+      end
+    end
+
+    before { stub_const('EnvVars::XDG_CACHE_HOME', @tmp.join('cache')) }
+
+    let(:stamp) { @tmp.join('cache', DevEnvironment::SETUP_STAMP_NAME) }
+    let(:ok_results) { { total: 1, successful: ['x'], failed: [], skipped: 0 } }
+
+    def project_dir
+      dir = @tmp.join('proj')
+      dir.mkpath
+      dir.join('.mise.toml').write("\n")
+      dir
+    end
+
     it 'collects the ancestor dirs once and shares them with both operations' do
       expect(described_class).to receive(:collect_ancestor_dirs).once.with(maxdepth: 3).and_return(['/x'])
       expect(described_class).to receive(:activate_all_direnv_configs).with(shared_dirs: ['/x'], maxdepth: 3)
@@ -79,6 +98,66 @@ RSpec.describe DevEnvironment do
       allow(described_class).to receive(:install_mise_versions)
 
       described_class.setup_dev_environment
+    end
+
+    it 'skips the per-directory work while the config files are unchanged and the stamp is fresh' do
+      allow(described_class).to receive(:collect_ancestor_dirs).and_return([project_dir.to_s])
+      allow(described_class).to receive(:activate_all_direnv_configs).and_return(ok_results)
+      allow(described_class).to receive(:install_mise_versions).and_return(ok_results)
+      described_class.setup_dev_environment
+      expect(stamp).to exist
+
+      expect(described_class).not_to receive(:activate_all_direnv_configs)
+      expect(described_class).not_to receive(:install_mise_versions)
+      expect { described_class.setup_dev_environment }.not_to raise_error
+    end
+
+    it 'runs again when a config file changed' do
+      dir = project_dir
+      allow(described_class).to receive(:collect_ancestor_dirs).and_return([dir.to_s])
+      allow(described_class).to receive(:activate_all_direnv_configs).and_return(ok_results)
+      allow(described_class).to receive(:install_mise_versions).and_return(ok_results)
+      described_class.setup_dev_environment
+
+      File.utime(Time.now, Time.now + 5, dir.join('.mise.toml'))
+      dir.join('.envrc').write("\n")
+
+      expect(described_class).to receive(:activate_all_direnv_configs).and_return(ok_results)
+      expect(described_class).to receive(:install_mise_versions).and_return(ok_results)
+      described_class.setup_dev_environment
+    end
+
+    it 'runs again once the stamp is older than a day' do
+      allow(described_class).to receive(:collect_ancestor_dirs).and_return([project_dir.to_s])
+      allow(described_class).to receive(:activate_all_direnv_configs).and_return(ok_results)
+      allow(described_class).to receive(:install_mise_versions).and_return(ok_results)
+      described_class.setup_dev_environment
+      old = Time.now - (DevEnvironment::SETUP_STAMP_MAX_AGE + 60)
+      File.utime(old, old, stamp)
+
+      expect(described_class).to receive(:install_mise_versions).and_return(ok_results)
+      described_class.setup_dev_environment
+    end
+
+    it 'can be forced by argument or environment variable' do
+      allow(described_class).to receive(:collect_ancestor_dirs).and_return([project_dir.to_s])
+      allow(described_class).to receive(:activate_all_direnv_configs).and_return(ok_results)
+      allow(described_class).to receive(:install_mise_versions).and_return(ok_results)
+      described_class.setup_dev_environment
+
+      expect(described_class).to receive(:install_mise_versions).twice.and_return(ok_results)
+      described_class.setup_dev_environment(force: true)
+      with_env('FORCE_DEV_ENV_SETUP' => '1') { described_class.setup_dev_environment }
+    end
+
+    it 'does not record the stamp when a directory failed, so the next call retries' do
+      allow(described_class).to receive(:collect_ancestor_dirs).and_return([project_dir.to_s])
+      allow(described_class).to receive(:activate_all_direnv_configs).and_return(ok_results)
+      allow(described_class).to receive(:install_mise_versions).and_return(ok_results.merge(failed: ['/proj']))
+
+      described_class.setup_dev_environment
+
+      expect(stamp).not_to exist
     end
   end
 

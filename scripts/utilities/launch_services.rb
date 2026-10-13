@@ -3,8 +3,9 @@
 # frozen_string_literal: true
 
 require 'json'
+require 'open3'
 require 'pathname'
-require 'tempfile'
+require 'set'
 
 require_relative 'command_utils'
 require_relative 'core'
@@ -61,11 +62,11 @@ module LaunchServices
     current = _current_handlers
     return false if current.nil?
 
-    merged = merge_handlers(current, wanted)
-    Tempfile.create(['launch-services-', '.plist']) do |tmp|
-      return false unless _write_xml_plist({ HANDLERS_KEY => merged }, tmp.path)
-      return false unless CommandUtils.run_silent(MacOS::DEFAULTS_CMD, 'import', DOMAIN, tmp.path)
-    end
+    xml = _xml_plist({ HANDLERS_KEY => merge_handlers(current, wanted) })
+    return false if xml.nil?
+
+    _stdout, _stderr, status = Open3.capture3(MacOS::DEFAULTS_CMD, 'import', DOMAIN, '-', stdin_data: xml)
+    return false unless status.success?
 
     # lsd caches the handler table; it relaunches on demand after being killed.
     CommandUtils.run_silent('killall', 'lsd')
@@ -81,7 +82,7 @@ module LaunchServices
   # @return [Array<Hash>]
   # :reek:UtilityFunction -- Pure function over its arguments
   def merge_handlers(current, wanted)
-    wanted_ids = wanted.map { |entry| _identity(entry) }
+    wanted_ids = wanted.to_set { |entry| _identity(entry) }
     kept = current.reject { |entry| wanted_ids.include?(_identity(entry)) }
     kept + wanted
   end
@@ -102,15 +103,25 @@ module LaunchServices
   # Handlers currently registered, or nil when the domain cannot be read.
   # A machine that has never changed a default has no such plist -- treated as empty.
   def _current_handlers
-    Tempfile.create(['launch-services-current-', '.plist']) do |tmp|
-      return [] unless CommandUtils.run_silent(MacOS::DEFAULTS_CMD, 'export', DOMAIN, tmp.path)
+    xml, _stderr, status = Open3.capture3(MacOS::DEFAULTS_CMD, 'export', DOMAIN, '-')
+    return [] unless status.success?
 
-      _read_handlers(tmp.path)
-    end
+    _handlers_from_json(_plutil_json('-', stdin_data: xml))
   end
 
   def _read_handlers(file)
-    json = CommandUtils.query(MacOS::PLUTIL_CMD, '-convert', 'json', '-o', '-', file.to_s)
+    _handlers_from_json(_plutil_json(file.to_s))
+  end
+
+  # @param source [String] Path of a plist, or '-' to read it from +stdin_data+
+  # @return [String] The plist converted to JSON (empty when plutil cannot read it)
+  def _plutil_json(source, stdin_data: nil)
+    json, = Open3.capture3(MacOS::PLUTIL_CMD, '-convert', 'json', '-o', '-', source, stdin_data: stdin_data.to_s)
+    json
+  end
+
+  # @return [Array<Hash>, nil] The LSHandlers array, or nil when +json+ is empty or not a dict
+  def _handlers_from_json(json)
     return nil if json.empty?
 
     parsed = JSON.parse(json)
@@ -121,11 +132,18 @@ module LaunchServices
 
   # JSON is safe here: handler entries only hold strings, integers and nested dicts of strings
   # (plutil's JSON conversion is lossy only for <data>/<date>, which they never contain).
+  #
+  # @return [String, nil] The hash as an XML plist, or nil if plutil rejects it
+  def _xml_plist(hash)
+    xml, _stderr, status = Open3.capture3(MacOS::PLUTIL_CMD, '-convert', 'xml1', '-o', '-', '-', stdin_data: JSON.generate(hash))
+    status.success? ? xml : nil
+  end
+
   def _write_xml_plist(hash, file)
-    Tempfile.create(['launch-services-', '.json']) do |tmp|
-      tmp.write(JSON.generate(hash))
-      tmp.flush
-      CommandUtils.run_silent(MacOS::PLUTIL_CMD, '-convert', 'xml1', '-o', file.to_s, tmp.path)
-    end
+    xml = _xml_plist(hash)
+    return false if xml.nil?
+
+    File.write(file.to_s, xml)
+    true
   end
 end

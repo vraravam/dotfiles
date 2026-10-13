@@ -102,7 +102,7 @@ For executable scripts (not utility modules):
 ### 8. Structure
 
 **For executable scripts**:
-- [ ] Shebang: `#!/usr/bin/env ruby`
+- [ ] Shebang: `#!/usr/bin/env ruby` (hot entry points such as `git-command.rb`/`run-all.rb` use `#!/usr/bin/env -S ruby --disable-gems` -- see `ruby-scripting.md` § RubyGems -- Off on Hot Entry Points)
 - [ ] Frozen string literal: `# frozen_string_literal: true`
 - [ ] File location comment
 - [ ] Description and usage

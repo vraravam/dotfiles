@@ -110,8 +110,14 @@ if [[ -o interactive && -o zle && -t 1 ]] && (( $+commands[starship] )); then
   _prompt_git_size
 
   # Draw instant prompt (loads starship theme, captures output during startup)
-  # Only call if ftl-prompt function was successfully loaded
-  (( $+functions[ftl-prompt] )) && ftl-prompt starship
+  # Only call if ftl-prompt function was successfully loaded.
+  #
+  # GIT_CONFIG_NOSYSTEM=1 is set for this call (and, below, for starship's PROMPT command)
+  # only -- never exported: starship's gitoxide forks 'git config -l --show-origin' on every
+  # run just to locate the system gitconfig (~12ms per prompt), and the only system config
+  # here is 'credential.helper=osxkeychain', which a prompt never needs but real git does.
+  # A prefix assignment on a function call is restored when it returns, so nothing leaks.
+  (( $+functions[ftl-prompt] )) && GIT_CONFIG_NOSYSTEM=1 ftl-prompt starship
 fi
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -122,17 +128,25 @@ fi
 # available for 'antidote update' and 'antidote bundle' commands.
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Source antidote itself so the 'antidote' function is available (for update/bundle).
-# Guarded so a vanilla OS (before brew installs antidote) still works fine.
+# Define a lazy 'antidote' stub: antidote.zsh is sourced on first use only (for update/bundle).
+# The static bundle (sourced below) does not need the function, and antidote.rb runs antidote
+# in its own 'zsh -fc' process, so sourcing it on every shell start only costs ~2-5ms.
+# load_file_if_exists is a no-op on a vanilla OS (before brew installs antidote).
+# Tradeoff: antidote's own fpath/MANPATH additions (its completion and man page) only
+# appear after the first 'antidote' invocation.
 #
-# Unset ${ZSH} and ${ZSH_CUSTOM} before sourcing so that the OMZ lib files loaded
+# Unset ${ZSH} and ${ZSH_CUSTOM} before the bundle is sourced so that the OMZ lib files loaded
 # via antidote can self-initialise them to their actual locations in the antidote
 # cache.
 # Without this, stale values left over from a prior OMZ install (e.g.
 # ${ZSH}=~/.oh-my-zsh, ${ZSH_CUSTOM}=~/.oh-my-zsh/custom) would be kept and OMZ
 # internals would silently break.
 unset ZSH ZSH_CUSTOM
-load_file_if_exists "${ANTIDOTE_ZSH}"
+antidote() {
+  unfunction antidote
+  load_file_if_exists "${ANTIDOTE_ZSH}"
+  antidote "$@"
+}
 
 # Plugin option variables must be set before the bundle is sourced.
 # Pre-set iterm2_hostname to zsh's native ${HOST} (set from uname -n at shell init -- no subprocess).
@@ -225,6 +239,20 @@ autoload -Uz zrecompile
   fi
 }
 
+# Runs the given command after the first idle ZLE event via zsh-defer, or immediately when
+# zsh-defer is not (yet) defined -- e.g. before the antidote bundle that provides it has
+# loaded, or on a vanilla OS before antidote is installed. The check is made at call time,
+# so a call placed before the bundle loads runs synchronously. The deferred command must be
+# a function (or other command word) -- zsh-defer cannot defer a bare compound statement.
+# Usage: _defer_or_run <command> [args...]
+_defer_or_run() {
+  if (($+functions[zsh-defer])); then
+    zsh-defer "$@"
+  else
+    "$@"
+  fi
+}
+
 # Defer git-extras completion to after first prompt (large file - 482 lines, 16KB).
 # git-extras commands (git-effort, git-summary, git-changelog, etc.) are rarely
 # used immediately after shell start, so completion definitions can load after
@@ -235,11 +263,7 @@ _deferred_git_extras_completion() {
   unfunction _deferred_git_extras_completion
 }
 
-if (($+functions[zsh-defer])); then
-  zsh-defer _deferred_git_extras_completion
-else
-  _deferred_git_extras_completion
-fi
+_defer_or_run _deferred_git_extras_completion
 
 # compinit is deferred to after the antidote bundle and .aliases load (see
 # _deferred_compinit below). Deferring achieves two things:
@@ -360,11 +384,7 @@ if (($+commands[zsh-patina])); then
   }
 
   # Defer the restart check to first idle ZLE event (non-blocking)
-  if (($+functions[zsh-defer])); then
-    zsh-defer _check_patina_restart
-  else
-    _check_patina_restart
-  fi
+  _defer_or_run _check_patina_restart
 fi
 
 # Defer mise activation to after first prompt. mise sets up shims for version-managed
@@ -400,11 +420,7 @@ _deferred_mise_activation() {
   unfunction _deferred_mise_activation
 }
 
-if (($+functions[zsh-defer])); then
-  zsh-defer _deferred_mise_activation
-else
-  _deferred_mise_activation
-fi
+_defer_or_run _deferred_mise_activation
 
 # Initialize starship prompt (must be after plugins so it wins the PROMPT setup).
 #
@@ -413,12 +429,12 @@ fi
 # starship binary mtime and regenerated only when starship itself is updated
 # (e.g. after `brew upgrade`).
 #
-# NOT refactored to use cache_and_source_command_output (see that helper in
-# .shellrc, used by the brew/zsh-patina/mise caches above) -- this site is
-# deliberately excluded because of the function-wrapping hazard documented
-# immediately below: any function call boundary around the final 'source' risks
-# losing 'setopt promptsubst', and this exact failure mode was already hit and
-# fixed once (see NOTE). Not worth re-risking for the sake of uniformity.
+# Uses regenerate_cache_if_stale (see that helper in .shellrc) rather than
+# cache_and_source_command_output (used by the brew/zsh-patina/mise caches above):
+# the final 'source' must stay at file scope because of the function-wrapping
+# hazard documented immediately below -- any anonymous-function boundary around it
+# risks losing 'setopt promptsubst', and this exact failure mode was already hit
+# and fixed once (see NOTE).
 #
 # NOTE: Deferring the source of the cache (via zsh-defer or a precmd hook) was
 # attempted but left PROMPT as a literal unexpanded string after the first
@@ -435,21 +451,29 @@ if (($+commands[starship])); then
   # '$commands[]' is an O(1) zsh hash lookup - no subprocess fork needed.
   _starship_bin="${commands[starship]}"
   _starship_init_cache="${XDG_CACHE_HOME}/starship-init-cache.zsh"
-  # Regenerate the cache only when the starship binary is newer than the cache file.
-  if is_file_older_than "${_starship_init_cache}" "${_starship_bin}"; then
+  _generate_starship_init_cache() {
     # Strip the eager PROMPT2="$(...)" line that starship emits (double-quoted, forks
     # the binary at source time, ~9-15ms). Replace it with a lazy single-quoted form
     # so the fork only happens when the continuation prompt is actually displayed.
     # PROMPT and RPROMPT are already lazy in starship's output; PROMPT2 is the only
     # outlier. The single-quoted form uses the same pattern as PROMPT/RPROMPT.
-    starship init zsh 2>/dev/null | /usr/bin/grep -v '^PROMPT2=' >|"${_starship_init_cache}"
-    printf "PROMPT2='\$(%s prompt --continuation)'\n" "${_starship_bin}" >>"${_starship_init_cache}"
-    recompile_zsh_script "${_starship_init_cache}"
-  fi
+    starship init zsh 2>/dev/null | /usr/bin/grep -v '^PROMPT2='
+    printf "PROMPT2='\$(%s prompt --continuation)'\n" "${_starship_bin}"
+  }
+  # Regenerate the cache only when the starship binary is newer than the cache file.
+  regenerate_cache_if_stale "${_starship_init_cache}" _generate_starship_init_cache "${_starship_bin}"
+  unfunction _generate_starship_init_cache
   # Source directly at the top level (not deferred) so that 'setopt promptsubst'
   # emitted by the cache takes effect globally and is not scoped to a function.
   load_file_if_exists "${_starship_init_cache}"
   unset _starship_bin _starship_init_cache
+  # Same system-gitconfig skip as the instant prompt above, for every later prompt. Done on the
+  # loaded string rather than in the cached init so an existing cache stays valid (the cache is
+  # only regenerated when the starship binary changes). The loaded value starts with '$(' (the
+  # quotes in the cache file are shell quoting and are gone once it is sourced); if starship
+  # ever changes that shape the anchored pattern simply stops matching and the prompt is
+  # unchanged. The right prompt (RPROMPT) has no git segments, so it needs nothing.
+  PROMPT=${PROMPT/#\$\(/\$\(GIT_CONFIG_NOSYSTEM=1 }
   if (($+functions[_prompt_git_size])); then precmd_functions+=(_prompt_git_size); fi
 
   # First real prompt reuses the instant prompt's rendered PS1 (see the _ftl_prompt_expand
@@ -470,8 +494,8 @@ if (($+commands[starship])); then
 fi
 
 # setup paths in the beginning so that all other conditions work correctly
+# (${DOTFILES_DIR}/scripts is already appended to PATH unconditionally by .shellrc.)
 append_to_path_if_dir_exists "${PERSONAL_BIN_DIR}"
-append_to_path_if_dir_exists "${DOTFILES_DIR}/scripts"
 # append_to_path_if_dir_exists '/usr/local/bin'
 append_to_path_if_dir_exists "${HOME}/.rd/bin"
 append_to_path_if_dir_exists "${HOME}/.cargo/bin"
@@ -487,18 +511,17 @@ append_to_path_if_dir_exists "${PROJECTS_BASE_DIR}/oss/zsh-bench"
 # Caveat: autoload functions in ${XDG_CONFIG_HOME}/zsh/ call dispatch_or_fallback
 # (defined in .aliases). In practice zsh-defer fires well before any keypress;
 # the risk only exists for scripted terminals that send input before ZLE is idle.
-if (($+functions[zsh-defer])); then
-  zsh-defer load_file_if_exists "${ZDOTDIR}/.aliases"
-else
-  load_file_if_exists "${ZDOTDIR}/.aliases"
-fi
+_defer_or_run load_file_if_exists "${ZDOTDIR}/.aliases"
 
 # Git version cache: placed AFTER .aliases loads so ${commands[git]} reflects final PATH
 # (including Homebrew keg-only paths). Cache key must match the git binary OMZ actually uses.
 # DEFERRED to first idle ZLE event since git version rarely changes (only on brew upgrade git).
 # Named function required (not anonymous ()) -- zsh-defer needs a function name.
-if (($+commands[git])); then
-  _deferred_git_version_cache() {
+# The '$+commands[git]' presence check lives inside the deferred body: evaluated here at file
+# scope it would force a rebuild of zsh's command hash (the PATH was just modified above) on
+# the first-prompt path (~3.6ms).
+_deferred_git_version_cache() {
+  if (($+commands[git])); then
     local git_bin="${commands[git]}"
     local git_version_cache="${XDG_CACHE_HOME}/git-version-cache.zsh"
     if is_file_older_than "${git_version_cache}" "${git_bin}"; then
@@ -510,15 +533,10 @@ if (($+commands[git])); then
       recompile_zsh_script "${git_version_cache}"
     fi
     load_file_if_exists "${git_version_cache}"
-    unfunction _deferred_git_version_cache
-  }
-
-  if (($+functions[zsh-defer])); then
-    zsh-defer _deferred_git_version_cache
-  else
-    _deferred_git_version_cache
   fi
-fi
+  unfunction _deferred_git_version_cache
+}
+_defer_or_run _deferred_git_version_cache
 
 # Run compinit after all plugins and .aliases have loaded so the fpath staleness
 # check sees the full fpath (including zsh-completions/src and plugin dirs added
@@ -531,16 +549,23 @@ _deferred_compinit() {
   unfunction compdef 2>/dev/null
   autoload -Uz compinit
   # Staleness check: dump missing OR any fpath dir newer than dump.
+  # No early return on the stale path: the compdef replay, the autosuggestions rebind and the
+  # unfunction below must run after either compinit variant.
   local dir
+  local stale=0
   if ! is_file "${ZSH_COMPDUMP}"; then
-    compinit -d "${ZSH_COMPDUMP}"
+    stale=1
   else
     for dir in "${fpath[@]}"; do
       if is_file_older_than "${ZSH_COMPDUMP}" "${dir}"; then
-        compinit -d "${ZSH_COMPDUMP}"
-        return
+        stale=1
+        break
       fi
     done
+  fi
+  if ((stale)); then
+    compinit -d "${ZSH_COMPDUMP}"
+  else
     compinit -C -d "${ZSH_COMPDUMP}"
   fi
   # Replay compdef calls captured by the stub (e.g. from the deferred git plugin).
@@ -562,11 +587,7 @@ _deferred_compinit() {
   fi
   unfunction _deferred_compinit
 }
-if (($+functions[zsh-defer])); then
-  zsh-defer _deferred_compinit
-else
-  _deferred_compinit
-fi
+_defer_or_run _deferred_compinit
 
 # erlang history in iex
 # export ERL_AFLAGS="-kernel shell_history enabled -kernel shell_history_file_bytes 1024000"
@@ -712,8 +733,8 @@ if is_directory "${XDG_CONFIG_HOME}/zsh"; then
   # :t extracts the basename -- autoload expects the function name, not the full
   # path; passing the full path would define a function named e.g.
   # '~/.config/zsh/myfunc' which can never be invoked by short name.
-  # Only extensionless files are registered -- .zwc bytecode files share the same
-  # glob but are not function names; autoloading them would create useless entries
+  # Only extensionless regular files are registered -- .zwc bytecode files share the same
+  # glob but are not function names, and subdirectories (e.g. 'lib') are not functions; autoloading them would create useless entries
   # named 'cc.zwc' etc. in the function table.
   # DEFERRED to first idle ZLE event since autoload functions aren't needed until
   # first command is typed. The autoload mechanism itself is lazy -- functions are
@@ -724,40 +745,34 @@ if is_directory "${XDG_CONFIG_HOME}/zsh"; then
     setopt localoptions NULL_GLOB
     local func_file
     for func_file in "${XDG_CONFIG_HOME}"/zsh/*; do
-      if is_zero_string "${func_file:e}"; then
+      # is_file skips directories (e.g. 'lib', which would otherwise be registered as a
+      # function named 'lib' because a directory has no extension either).
+      if is_file "${func_file}" && is_zero_string "${func_file:e}"; then
         autoload -Uz "${func_file:t}"
       fi
     done
     unfunction _deferred_autoload_functions
   }
 
-  if (($+functions[zsh-defer])); then
-    zsh-defer _deferred_autoload_functions
-  else
-    _deferred_autoload_functions
-  fi
+  _defer_or_run _deferred_autoload_functions
 fi
 
 # Mole shell completion - deferred to avoid startup slowdown. Also cached (same
 # pattern as brew/zsh-patina/mise above) to avoid forking the mole binary on every
 # shell start; the cache is keyed on the mole binary mtime and regenerated only
 # when mole is upgraded.
-if (($+commands[mole])); then
-  _deferred_mole_completion() {
+# As with _deferred_git_version_cache, the '$+commands[mole]' check lives in the deferred body.
+_deferred_mole_completion() {
+  if (($+commands[mole])); then
     local mole_bin="${commands[mole]}"
     local mole_completion_cache="${XDG_CACHE_HOME}/mole-completion-cache.zsh"
     _generate_mole_completion_cache() { mole completion zsh; }
     cache_and_source_command_output "${mole_completion_cache}" _generate_mole_completion_cache "${mole_bin}"
     unfunction _generate_mole_completion_cache
-    unfunction _deferred_mole_completion
-  }
-
-  if (($+functions[zsh-defer])); then
-    zsh-defer _deferred_mole_completion
-  else
-    _deferred_mole_completion
   fi
-fi
+  unfunction _deferred_mole_completion
+}
+_defer_or_run _deferred_mole_completion
 
 # remove empty components to avoid '::' ending up + resulting in './' being in ${PATH}, etc
 path=("${path[@]:#}")
@@ -797,7 +812,8 @@ if [[ -n "${ZSH_PROFILE:-}" ]]; then zprof; fi
 #   1. Timing: Must register AFTER starship init (which happens late in .zshrc)
 #   2. Scope: precmd_functions/preexec_functions are zsh-specific (.shellrc is bash-compatible)
 #   3. Ordering: Our hooks must run before/after starship's hooks for correct mark placement
-# The helper functions (iterm2_mark_*) live in .shellrc as reusable utilities.
+# The mark escape sequences are emitted inline (OSC 133: A = prompt start, C = command start,
+# D;<exit-code> = command end).
 #
 # MARK PLACEMENT STRATEGY:
 #   Mark A: output by starship at start of prompt (always fresh, even after ⌘K)
@@ -821,13 +837,13 @@ if [[ -n "${ITERM_SESSION_ID:-}" ]]; then
 
   # precmd that runs AFTER command completes: outputs mark D
   _iterm2_precmd_after() {
-    iterm2_mark_command_end "$?"
+    printf '\033]133;D;%s\007' "$?"
   }
 
   # preexec runs RIGHT BEFORE a command executes (after user presses Enter).
   # Output mark C to tell iTerm2 "command execution starting now".
   _iterm2_preexec() {
-    iterm2_mark_command_start
+    printf '\033]133;C\007'
   }
 
   # Register hooks: prepend _before to run before starship, append _after to run after
@@ -848,7 +864,7 @@ if [[ -n "${ITERM_SESSION_ID:-}" ]]; then
   # Note: This doesn't trigger a new prompt render, it just injects mark A into the
   # current prompt that's already on screen. The next prompt render (after first command)
   # will have marks via the starship env_var segments.
-  iterm2_mark_prompt_start
+  printf '\033]133;A\007'
 fi
 
 # Reset script depth counter for every new shell session.

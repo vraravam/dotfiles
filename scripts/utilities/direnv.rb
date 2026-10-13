@@ -21,7 +21,7 @@ module Direnv
   # @param dir [String, Pathname] Directory to inspect
   # @return [Boolean] true if +dir+ contains an .envrc
   def envrc?(dir)
-    Pathname.new(dir).join('.envrc').file?
+    Pathname(dir).join('.envrc').file?
   end
 
   # Trusts and then evaluates the .envrc in +dir+.

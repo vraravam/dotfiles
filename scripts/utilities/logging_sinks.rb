@@ -82,7 +82,7 @@ module Logging
       log_file = EnvVars.log_file
       return if nil_or_empty?(log_file)
 
-      log_path = Pathname.new(log_file)
+      log_path = Pathname(log_file)
       _rotate_log_if_needed(log_path)
 
       # Determine format
@@ -144,8 +144,8 @@ module Logging
 
       # Rotate existing backups (log.4 -> log.5, log.3 -> log.4, etc.)
       (LOG_BACKUPS - 1).downto(1) do |i|
-        old_file = Pathname.new("#{log_path}.#{i}")
-        new_file = Pathname.new("#{log_path}.#{i + 1}")
+        old_file = Pathname("#{log_path}.#{i}")
+        new_file = Pathname("#{log_path}.#{i + 1}")
         FileUtils.mv(old_file.to_s, new_file.to_s) if old_file.exist?
       end
 
@@ -153,7 +153,7 @@ module Logging
       FileUtils.mv(log_path.to_s, "#{log_path}.1")
 
       # Delete the backup that would exceed LOG_BACKUPS, if a previous run left one.
-      oldest = Pathname.new("#{log_path}.#{LOG_BACKUPS + 1}")
+      oldest = Pathname("#{log_path}.#{LOG_BACKUPS + 1}")
       oldest.delete if oldest.exist?
     end
   end

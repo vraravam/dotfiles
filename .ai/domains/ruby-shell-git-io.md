@@ -62,6 +62,16 @@ Open3.capture3('/bin/zsh', '-lc', "clone_repo_into #{url.shellescape} #{folder.s
 | Pipeline or redirection | Shell execution with `shellescape` |
 | User-authored command string from config | Shell execution (no escaping -- user controls the command) |
 
+### Downloads with `CommandUtils.curl_download`
+
+Never hand-write curl retry flags in Ruby. `CommandUtils.curl_download(url, dest)` runs
+`curl -fsSL` with the short retry set (`CURL_LIGHT_RETRY_OPTS`) -- right for maintenance jobs.
+Fresh-install downloads pass `bootstrap: true` (long retry window, plus cache-busting headers
+when `CACHE_BUST_HEADERS` is set; skipped once `~/.curlrc` is linked) and usually
+`interactive: true` to stream curl's stderr. `CommandUtils.curl_opts(bootstrap:)` returns the
+flags alone for callers that need to build their own command. The shell bootstrap in
+`fresh-install-of-osx.sh` keeps its own copy of the bootstrap flags -- no Ruby exists yet there.
+
 ### Silent Execution with `CommandUtils.run_silent`
 
 For commands where output needs to be suppressed or redirected, use `CommandUtils.run_silent`:
@@ -162,7 +172,7 @@ system(RbConfig.ruby, script_path, '-e')
 ```ruby
 # software-updates-cron.rb calling capture-prefs.rb
 # capture-prefs.rb is a complete CLI script with its own lifecycle
-capture_prefs_script = Pathname.new(__dir__).join('capture-prefs.rb')
+capture_prefs_script = Pathname(__dir__).join('capture-prefs.rb')
 system(RbConfig.ruby, capture_prefs_script.to_s, '-e')
 ```
 

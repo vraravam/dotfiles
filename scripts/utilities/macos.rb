@@ -33,7 +33,6 @@ module MacOS
   DU_CMD = Core::ROOT.join('usr', 'bin', 'du').to_s.freeze
   OSASCRIPT_CMD = Core::ROOT.join('usr', 'bin', 'osascript').to_s.freeze
   PLUTIL_CMD = Core::ROOT.join('usr', 'bin', 'plutil').to_s.freeze
-  ZSH_CMD = Core::ROOT.join('bin', 'zsh').to_s.freeze
 
   # Login-item apps that are killed before defaults writes and restarted after.
   # This is the single source of truth for the login-item app list.
@@ -62,33 +61,32 @@ module MacOS
   # Mutation methods (modify state)
   # ---------------------------------------------------------------------------
 
-  # Sends SIGTERM to every app in LOGIN_ITEM_APPS. Called before writing
+  # Sends SIGTERM to every running app in LOGIN_ITEM_APPS. Called before writing
   # defaults so in-memory state is flushed to disk first.
-  # Verifies each app is running before attempting to kill it.
-  # Retries with SIGKILL (-9) if SIGTERM fails after 2 seconds.
+  # Verifies which apps are running (one pgrep for all of them) before attempting to kill.
+  # Retries with SIGKILL (-9) for apps still alive 2 seconds after SIGTERM; the wait and the
+  # re-check happen once for the whole batch, not once per app.
   #
   # Sleeps 1 second after sending signals to ensure apps have fully terminated
   # before the caller proceeds with defaults writes. This prevents race conditions
   # where an app's shutdown handler might flush preferences to disk after we've
-  # already started writing new values.
+  # already started writing new values. Nothing to wait for when no app was running.
   #
   # @return [void]
   def kill_login_item_apps
-    LOGIN_ITEM_APPS.each do |app|
-      next unless _process_running?(app)
+    running = running_processes(LOGIN_ITEM_APPS)
+    running.each { |app| Logging.debug "Terminating '#{app.cyan}'..." }
+    signalled = _send_term(running)
 
-      Logging.debug "Terminating '#{app.cyan}'..."
-      if CommandUtils.run_silent('killall', '-TERM', app)
-        # Wait for graceful shutdown
-        sleep 2
-        # Verify termination succeeded
-        if _process_running?(app)
-          Logging.warn "#{app.yellow} did not terminate gracefully, forcing kill..."
-          CommandUtils.run_silent('killall', '-9', app)
-          sleep 1
-        end
-      else
-        Logging.warn "Failed to terminate '#{app.yellow}'"
+    unless signalled.empty?
+      # Wait for graceful shutdown
+      sleep 2
+      # Verify termination succeeded
+      survivors = running_processes(signalled)
+      unless survivors.empty?
+        survivors.each { |app| Logging.warn "#{app.yellow} did not terminate gracefully, forcing kill..." }
+        CommandUtils.run_silent('killall', '-9', *survivors)
+        sleep 1
       end
     end
 
@@ -96,7 +94,27 @@ module MacOS
     CommandUtils.run_silent('killall', 'Finder')
 
     # Give apps time to fully terminate before defaults writes begin
-    sleep 1
+    sleep 1 unless running.empty?
+  end
+
+  # Returns the subset of +names+ that are running, in the order given, using one
+  # `pgrep -lx` for the whole list instead of one fork per name. Names are matched exactly
+  # against the process name (the executable's file name, which can differ from the app's
+  # display name, e.g. 'Brave Browser' or 'zen').
+  #
+  # @param names [Array<String>] Exact process names to look for.
+  # @return [Array<String>] The names that have a running process.
+  #
+  # @example
+  #   MacOS.running_processes(%w[Finder Dock NoSuchApp])  #=> ["Finder", "Dock"]
+  def running_processes(names)
+    return [] if names.empty?
+
+    # pgrep patterns are regular expressions: escape the metacharacters in app names.
+    pattern = names.map { |name| name.gsub(/[.^$*+?()\[\]{}|\\]/) { |char| "\\#{char}" } }.join('|')
+    # Each line is '<pid> <process name>'.
+    listed = CommandUtils.query('pgrep', '-lx', pattern).each_line.map { |line| line.strip.split(' ', 2)[1].to_s.strip }
+    names.select { |name| listed.include?(name) }
   end
 
   # Re-opens every app in LOGIN_ITEM_APPS. Called from an EXIT trap
@@ -169,7 +187,6 @@ module MacOS
 
   # Sends a macOS notification using terminal-notifier (preferred) or osascript (fallback).
   # Visible to the user even when the script is running in a non-interactive context (cron, etc.).
-  # Rate-limits duplicate notifications within 60 seconds to prevent spam.
   #
   # Prefers terminal-notifier for richer notification control (sound, subtitle, actions).
   # Falls back to osascript (always available on macOS) if terminal-notifier not installed.
@@ -178,19 +195,6 @@ module MacOS
   # @param title [String] The notification title (default: 'Dotfiles')
   # @return [void]
   def notify(message, title = 'Dotfiles')
-    key = "#{title}:#{message}"
-    now = Time.now.to_i
-
-    # Check if we've sent this notification recently
-    @_notification_history ||= {}
-    if @_notification_history.key?(key)
-      last_sent = @_notification_history[key]
-      if now - last_sent < 60
-        Logging.debug "Skipping duplicate notification (sent #{(now - last_sent).to_s.purple}s ago): #{message}"
-        return
-      end
-    end
-
     # Strip ANSI color codes (message may contain color methods like .cyan, .purple)
     # ANSI escape sequences match pattern: ESC [ ... m
     clean_message = message.to_s.gsub(/\e\[[0-9;]*m/, '')
@@ -206,12 +210,6 @@ module MacOS
       # osascript fallback: simpler, no sound, but always available (single-line AppleScript)
       CommandUtils.run_silent('osascript', '-e', "display notification \"#{clean_message}\" with title \"#{clean_title}\"")
     end
-
-    # Record this notification
-    @_notification_history[key] = now
-
-    # Cleanup old entries (older than 5 minutes)
-    @_notification_history.delete_if { |_k, timestamp| now - timestamp > 300 }
   end
 
   # Variables a throwaway 'sh' changes on its own (not exported by 'brew shellenv'), so they
@@ -225,11 +223,11 @@ module MacOS
   # @return [void]
   #
   # @example
-  #   MacOS.load_brew_shellenv(Pathname.new('/opt/homebrew/bin/brew'))
+  #   MacOS.load_brew_shellenv(Pathname('/opt/homebrew/bin/brew'))
   # :reek:UtilityFunction -- Stateless wrapper for parsing/applying brew shellenv output (intentional)
   # :reek:FeatureEnvy -- Stateless helper operating on its own parameter (intentional)
   def load_brew_shellenv(brew_bin)
-    brew_bin = Pathname.new(brew_bin) unless brew_bin.is_a?(Pathname)
+    brew_bin = Pathname(brew_bin)
     return unless brew_bin.executable?
 
     # Evaluate brew shellenv's output in a real shell rather than hand-parsing arbitrary shell
@@ -254,13 +252,21 @@ module MacOS
 
   private
 
-  # Checks if a process with the given name is running.
-  # Uses pgrep to search for exact process name match.
+  # Sends SIGTERM to every app in +apps+ with one killall. If that fails (e.g. one of them
+  # exited in the meantime) each app is signalled on its own so the ones that really could not
+  # be terminated are reported individually.
   #
-  # @param process_name [String] Name of the process to check
-  # @return [Boolean] true if process is running, false otherwise
-  def _process_running?(process_name)
-    CommandUtils.run_silent('pgrep', '-x', process_name)
+  # @param apps [Array<String>] Names of running processes.
+  # @return [Array<String>] The apps that were signalled.
+  def _send_term(apps)
+    return apps if apps.empty? || CommandUtils.run_silent('killall', '-TERM', *apps)
+
+    apps.select do |app|
+      next true if CommandUtils.run_silent('killall', '-TERM', app)
+
+      Logging.warn "Failed to terminate '#{app.yellow}'" unless running_processes([app]).empty?
+      false
+    end
   end
 
   # Sets the macOS automatic software update schedule to ON or OFF.
@@ -303,6 +309,6 @@ module MacOS
     end
   end
 
-  private_class_method :_process_running?, :_set_softwareupdate_schedule,
+  private_class_method :_send_term, :_set_softwareupdate_schedule,
                        :_has_sudo_credentials?, :_keep_sudo_alive
 end

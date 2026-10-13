@@ -6,7 +6,7 @@ require 'tmpdir'
 RSpec.describe GitProcessor do
   around do |example|
     Dir.mktmpdir('git-processor-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       # Each example gets a brand new tmpdir, but GitProcessor.repo? caches by
       # absolute path at the class level -- reset it so a path reused across
       # examples (unlikely, but not guaranteed impossible) never returns a
@@ -126,6 +126,35 @@ RSpec.describe GitProcessor do
       end
     end
 
+    describe '#rm_cached' do
+      before do
+        %w[a.txt b.txt c.txt].each { |name| File.write(tmp.join(name), name) }
+        git.add('.')
+        git.commit('files')
+      end
+
+      def tracked
+        git.ls_files('*.txt')
+      end
+
+      it 'unstages a single path, leaving the file on disk' do
+        git.rm_cached('a.txt')
+
+        expect(tracked).to contain_exactly('b.txt', 'c.txt')
+        expect(tmp.join('a.txt')).to exist
+      end
+
+      it 'unstages several paths (Strings and Pathnames mixed) in one git invocation' do
+        expect(git).to receive(:_execute_in_repo).once.and_call_original
+
+        _stdout, _stderr, status = git.rm_cached(['a.txt', Pathname('b.txt')], quiet: true)
+
+        expect(status.success?).to be true
+        expect(tracked).to eq(['c.txt'])
+        expect(tmp.join('b.txt')).to exist
+      end
+    end
+
     describe '#commit_count with a range' do
       it 'counts only the commits in the range, and is 0 when it cannot be resolved' do
         File.write(tmp.join('a.txt'), 'a')
@@ -155,14 +184,76 @@ RSpec.describe GitProcessor do
       end
     end
 
-    describe '#local_branches' do
-      it 'lists every local branch by short name' do
+    describe '#current_and_local_branches' do
+      before do
         File.write(tmp.join('a.txt'), 'a')
         git.add('a.txt')
         git.commit('one')
         system('git', '-C', tmp.to_s, 'branch', 'feature')
+      end
 
-        expect(git.local_branches).to contain_exactly('main', 'feature')
+      it 'returns the checked-out branch and every local branch by short name' do
+        current, branches = git.current_and_local_branches
+
+        expect(current).to eq('main')
+        expect(branches).to contain_exactly('main', 'feature')
+      end
+
+      it 'follows a switch of the checked-out branch' do
+        system('git', '-C', tmp.to_s, 'switch', '--quiet', 'feature')
+
+        expect(described_class.new(dir: tmp).current_and_local_branches.first).to eq('feature')
+      end
+
+      it 'reports no current branch and no pseudo entry for a detached HEAD' do
+        system('git', '-C', tmp.to_s, 'checkout', '--quiet', '--detach')
+
+        current, branches = described_class.new(dir: tmp).current_and_local_branches
+
+        expect(current).to be_nil
+        expect(branches).to contain_exactly('main', 'feature')
+      end
+
+      it 'is [nil, []] outside a repository' do
+        Dir.mktmpdir('git-processor-not-a-repo-') do |dir|
+          expect(described_class.new(dir: dir).current_and_local_branches).to eq([nil, []])
+        end
+      end
+
+      it 'seeds the current_branch memo' do
+        git.current_and_local_branches
+
+        expect(git).not_to receive(:_execute)
+        expect(git.current_branch).to eq('main')
+      end
+    end
+
+    describe '#default_commit_message' do
+      it 'is an "Initial" commit message for a repo without commits, "Incremental" afterwards' do
+        expect(git.default_commit_message).to match(/\AInitial commit: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\z/)
+
+        File.write(tmp.join('a.txt'), 'a')
+        git.add('a.txt')
+        git.commit('one')
+
+        expect(git.default_commit_message).to start_with('Incremental commit: ')
+      end
+    end
+
+    describe '#each_remote' do
+      it 'yields the full remote name even when it contains dots' do
+        system('git', '-C', tmp.to_s, 'remote', 'add', 'origin', 'https://example.com/a.git')
+        system('git', '-C', tmp.to_s, 'remote', 'add', 'my.fork', 'https://example.com/b.git')
+        system('git', '-C', tmp.to_s, 'remote', 'add', 'a.b.c', 'https://example.com/c.git')
+
+        remotes = {}
+        git.each_remote { |name, url| remotes[name] = url }
+
+        expect(remotes).to eq(
+          'origin' => 'https://example.com/a.git',
+          'my.fork' => 'https://example.com/b.git',
+          'a.b.c' => 'https://example.com/c.git'
+        )
       end
     end
 
@@ -188,6 +279,58 @@ RSpec.describe GitProcessor do
 
         expect(status.success?).to be true
         expect(git.config_value('some.key')).to eq('some-value')
+      end
+    end
+
+    describe 'memoized reads after a mutation' do
+      it 'config_set is visible to a config_value that already cached the old (absent) value' do
+        expect(git.config_value('some.key')).to be_nil
+
+        git.config_set('some.key', 'v1')
+        expect(git.config_value('some.key')).to eq('v1')
+
+        git.config_set('some.key', 'v2')
+        expect(git.config_value('some.key')).to eq('v2')
+      end
+
+      it 'add_remote and set_remote_url are visible to remote_url and remote_repo_name' do
+        expect(git.remote_url).to be_nil
+        expect(git.remote_repo_name).to be_nil
+
+        git.add_remote('origin', 'https://example.com/one/first')
+        expect(git.remote_url).to eq('https://example.com/one/first')
+        expect(git.remote_repo_name).to eq('first')
+
+        git.set_remote_url('origin', 'https://example.com/one/second')
+        expect(git.remote_url).to eq('https://example.com/one/second')
+        expect(git.remote_repo_name).to eq('second')
+      end
+
+      it 'keeps the cached value when the mutation fails' do
+        git.config_set('some.key', 'v1')
+        expect(git.config_value('some.key')).to eq('v1')
+
+        _stdout, _stderr, status = git.add_remote('origin', 'u1')
+        expect(status.success?).to be true
+        _stdout, _stderr, status = git.add_remote('origin', 'u2') # already exists: fails
+        expect(status.success?).to be false
+
+        expect(git.remote_url).to eq('u1')
+      end
+
+      it 'init forgets the memoized branch, shallow and ref-format reads' do
+        fresh = Pathname(Dir.mktmpdir('git-processor-init-'))
+        begin
+          repo = described_class.new(dir: fresh)
+          expect(repo.current_branch).to be_nil
+          expect(repo.shallow?).to be false
+
+          repo.init(initial_branch: 'trunk')
+
+          expect(repo.current_branch).to eq('trunk')
+        ensure
+          FileUtils.remove_entry(fresh)
+        end
       end
     end
 

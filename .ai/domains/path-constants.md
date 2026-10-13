@@ -38,6 +38,7 @@ Never hardcode user-specific or machine-specific paths. Always use environment v
 |---------|-------|------|-------------|
 | Home directory | `${HOME}` | `EnvVars::HOME` | User home directory |
 | Dotfiles | `${DOTFILES_DIR}` | `EnvVars::DOTFILES_DIR` | `~/.config/dotfiles` |
+| Ruby bridge script | `${CALL_UTILITY_SCRIPT}` | (N/A -- shell-only, used by `call_utility`) | `${DOTFILES_DIR}/scripts/call-utility.rb` |
 | Personal bin | `${PERSONAL_BIN_DIR}` | `EnvVars::PERSONAL_BIN_DIR` | `~/personal/dev/bin` |
 | Personal configs | `${PERSONAL_CONFIGS_DIR}` | `EnvVars::PERSONAL_CONFIGS_DIR` | `~/personal/dev/configs` |
 | Personal browser profiles | (N/A in shell) | `EnvVars::PERSONAL_PROFILES_DIR` | `~/personal/<local-user-name>/browser-profiles` |
@@ -113,7 +114,7 @@ config_file = EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup.txt')
 nested = EnvVars::HOME.join('.config', 'zsh', 'completions')
 
 # BAD -- hardcoded
-config_file = Pathname.new("#{ENV['HOME']}/.config/dotfiles/scripts/data/cleanup.txt")
+config_file = Pathname("#{ENV['HOME']}/.config/dotfiles/scripts/data/cleanup.txt")
 ```
 
 **Always use `Pathname#join()` to build paths** (maintains type consistency):
@@ -214,7 +215,7 @@ require 'core'
 system_path = Core::ROOT.join('etc', 'hosts')
 
 # BAD -- hardcoded Unix root
-system_path = Pathname.new('/etc/hosts')
+system_path = Pathname('/etc/hosts')
 ```
 
 `Core::ROOT` uses `File::SEPARATOR` internally and works on Windows (`C:\`).
@@ -223,12 +224,26 @@ system_path = Pathname.new('/etc/hosts')
 
 ```ruby
 # BAD -- hardcoded
-config_dir = Pathname.new(ENV['HOME']).join('.config')
-dotfiles = Pathname.new("#{ENV['HOME']}/.config/dotfiles")
+config_dir = Pathname(ENV['HOME']).join('.config')
+dotfiles = Pathname("#{ENV['HOME']}/.config/dotfiles")
 
 # Good -- use EnvVars
 config_dir = EnvVars::XDG_CONFIG_HOME
 dotfiles = EnvVars::DOTFILES_DIR  # already includes .config/dotfiles
+```
+
+**Build a `Pathname` with `Pathname(x)`, not `Pathname.new(x)`**: the `Kernel#Pathname` conversion
+accepts a String or a Pathname (a Pathname input needs no `is_a?` guard) and raises `TypeError` on
+`nil`, exactly like `.new`. Use it everywhere in `scripts/` and `spec/` for consistency:
+
+```ruby
+# BAD
+path = Pathname.new(path) unless path.is_a?(Pathname)
+dir = Pathname.new(__dir__)
+
+# Good
+path = Pathname(path)
+dir = Pathname(__dir__)
 ```
 
 ## Scan Rule

@@ -23,7 +23,33 @@ RSpec.describe Keybase do
     end
   end
 
+  # username is memoized on the module itself, so start every example from a clean slate.
+  before { described_class.send(:_forget_username) }
+  after { described_class.send(:_forget_username) }
+
   describe '.username' do
+    it 'asks keybase only once, and remembers a nil result too' do
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
+      expect(CommandUtils).to receive(:query).with('keybase', 'status', '--json').once
+                                             .and_return('{"Username":"","LoggedIn":false}')
+
+      2.times { expect(described_class.username).to be_nil }
+    end
+
+    it 'forgets the remembered name after an interactive login' do
+      stub_const('EnvVars::KEYBASE_USERNAME', nil)
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
+      logged_out = '{"Username":"","LoggedIn":false}'
+      responses = [logged_out, logged_out, '{"Username":"me","LoggedIn":true}']
+      allow(CommandUtils).to receive(:query).with('keybase', 'status', '--json') { responses.shift || responses.last }
+      allow(CommandUtils).to receive(:run_interactive).with('keybase', 'login').and_return(true)
+      allow(described_class).to receive(:_status).and_call_original
+
+      expect(described_class.username).to be_nil
+      described_class.ensure_logged_in
+      expect(described_class.username).to eq('me')
+    end
+
     it 'is nil when keybase is not installed' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(false)
 
@@ -211,7 +237,7 @@ RSpec.describe Keybase do
   describe '._fix_google_support_ownership' do
     around do |example|
       Dir.mktmpdir('keybase-spec-') do |dir|
-        @tmp = Pathname.new(dir)
+        @tmp = Pathname(dir)
         example.run
       end
     end
@@ -413,7 +439,7 @@ RSpec.describe Keybase do
   describe '.link_cli_into' do
     around do |example|
       Dir.mktmpdir('keybase-spec-') do |dir|
-        @tmp = Pathname.new(dir)
+        @tmp = Pathname(dir)
         example.run
       end
     end

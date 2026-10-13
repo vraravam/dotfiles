@@ -3,17 +3,15 @@
 # frozen_string_literal: true
 
 require 'open3'
-require 'ostruct'
 require 'pathname'
-require 'shellwords'
 
 require_relative 'core'
+require_relative 'enumerable_ext' # filter_map on Ruby 2.6
 require_relative 'env_vars'
 require_relative 'git_maintenance'
 require_relative 'git_recreate'
 require_relative 'git_url_parser'
 require_relative 'logging'
-require_relative 'path_utils'
 
 # Instance-based git operations for a specific repository directory.
 # Eliminates repetitive dir: parameters when performing multiple operations
@@ -57,6 +55,16 @@ class GitProcessor
   # Flags that indicate quiet mode (suppress streaming output)
   QUIET_FLAGS = %w[-q --quiet].freeze
 
+  # Memoized reads derived from git config / remotes; dropped by every mutation that can change them.
+  CONFIG_MEMOS = %i[@_config_values @_remote_urls @_remote_repo_names].freeze
+
+  # Memoized reads about the repository itself; dropped when it is (re)initialized.
+  REPO_STATE_MEMOS = %i[@current_branch @shallow @ref_format].freeze
+
+  # Lightweight stand-in for Process::Status, returned by dry-run/streaming operations.
+  # A Struct avoids loading 'ostruct' (several ms) on every GitProcessor consumer.
+  MockStatus = Struct.new(:success?, :exitstatus)
+
   # URL path separator. URLs always use '/' per RFC 3986, regardless of OS.
   # This is distinct from File::SEPARATOR which is OS-specific ('/' on Unix, '\' on Windows).
   URL_PATH_SEPARATOR = '/'
@@ -84,10 +92,13 @@ class GitProcessor
     return false if nil_or_empty?(path)
 
     # Normalize to absolute path for cache key (handles relative paths, symlinks)
-    path = Pathname.new(path) unless path.is_a?(Pathname)
+    path = Pathname(path)
 
     # .git can be a directory (normal clone) or a file (worktree / submodule).
-    repo_cache[path.expand_path.to_s] ||= path.join('.git').exist?
+    key = path.expand_path.to_s
+    # key? rather than ||= so a negative (false) result is cached too.
+    repo_cache[key] = path.join('.git').exist? unless repo_cache.key?(key)
+    repo_cache[key]
   end
 
   # Clones a git repo into a temp folder, moves the .git dir into the target location,
@@ -142,7 +153,9 @@ class GitProcessor
   #   freshly-checked-out $HOME before anything else tries to use them for SSH auth).
   # @return [Boolean] true on success, false on failure.
   def self.clone_repo_into(url, dest, branch: nil, bundle: nil, post_checkout_hook: nil)
-    dest = Pathname.new(dest) unless dest.is_a?(Pathname)
+    require 'shellwords' # lazily: only this one method needs it
+
+    dest = Pathname(dest)
 
     # Build the shell command
     # clone_repo_into accepts: url (arg 1), dest (arg 2), branch (optional arg 3),
@@ -176,7 +189,7 @@ class GitProcessor
   # @param dir [String, Pathname] Repository directory
   # @param dry_run [Boolean] When true, log operations instead of executing
   def initialize(dir:, dry_run: false)
-    @dir = dir.is_a?(Pathname) ? dir : Pathname.new(dir)
+    @dir = Pathname(dir)
     @dry_run = dry_run
     yield self if block_given?
   end
@@ -191,7 +204,7 @@ class GitProcessor
   #
   # @return [Boolean]
   def repo?
-    @dir.join('.git').exist?
+    _git_path.exist?
   end
 
   # Returns the value of a git config key, or nil if absent.
@@ -202,10 +215,12 @@ class GitProcessor
   # @return [String, nil]
   def config_value(key)
     @_config_values ||= {}
-    @_config_values[key] ||= begin
-        out, = _execute('config', '--get', key, read_only: true)
-        nil_or_empty?(out) ? nil : out.strip
-      end
+    # key? rather than ||= so an absent key (nil) is cached too instead of re-forking git.
+    unless @_config_values.key?(key)
+      out, = _execute('config', '--get', key, read_only: true)
+      @_config_values[key] = nil_or_empty?(out) ? nil : out.strip
+    end
+    @_config_values[key]
   end
 
   # Returns the URL for the specified remote, or nil.
@@ -267,10 +282,12 @@ class GitProcessor
   #
   # @return [String, nil]
   def current_branch
-    @current_branch ||= begin
-        out, = _execute('branch', '--show-current', read_only: true)
-        nil_or_empty?(out) ? nil : out.strip
-      end
+    # defined? rather than ||= so a detached HEAD (nil) is cached too.
+    unless defined?(@current_branch)
+      out, = _execute('branch', '--show-current', read_only: true)
+      @current_branch = nil_or_empty?(out) ? nil : out.strip
+    end
+    @current_branch
   end
 
   # Returns true if the repository is a shallow clone (limited history depth).
@@ -280,10 +297,12 @@ class GitProcessor
   #
   # @return [Boolean] true if shallow clone, false if full clone
   def shallow?
-    @shallow ||= begin
-        out, = _execute('rev-parse', '--is-shallow-repository', read_only: true)
-        nil_or_empty?(out) ? false : out.strip == 'true'
-      end
+    # defined? rather than ||= so the common full-clone result (false) is cached too.
+    unless defined?(@shallow)
+      out, = _execute('rev-parse', '--is-shallow-repository', read_only: true)
+      @shallow = nil_or_empty?(out) ? false : out.strip == 'true'
+    end
+    @shallow
   end
 
   # Returns the repository's reference storage format ('files' or 'reftable').
@@ -296,8 +315,7 @@ class GitProcessor
   def ref_format
     @ref_format ||= begin
         out, = _execute('rev-parse', '--show-ref-format', read_only: true)
-        format = nil_or_empty?(out) ? 'files' : out.strip
-        nil_or_empty?(format) ? 'files' : format
+        nil_or_empty?(out) ? 'files' : out.strip
       end
   end
 
@@ -318,7 +336,8 @@ class GitProcessor
       next if nil_or_empty?(line)
 
       key, url = line.strip.split(' ', 2) # key is like 'remote.origin.url'
-      remote_name = key.split('.')[1]
+      # Not split('.'): a remote name may itself contain dots (e.g. 'my.fork').
+      remote_name = key.delete_prefix('remote.').delete_suffix('.url')
       yield remote_name, url
     end
   end
@@ -329,20 +348,6 @@ class GitProcessor
   # @return [Boolean] true if tag exists, false otherwise.
   def tag_exists?(name)
     _stdout, _stderr, status = _execute('rev-parse', '-q', '--verify', "refs/tags/#{name}", read_only: true)
-    status.success?
-  end
-
-  # Checks whether two refs share a common ancestor (i.e. a rebase/merge between
-  # them is even meaningful). False after e.g. a force-squash on one side rewrote
-  # history with no shared base -- mirrors the same check 'git fo --rebase'
-  # makes (via 'git merge-base') to decide between rebasing and falling
-  # back to a hard reset.
-  #
-  # @param ref1 [String] First ref (e.g. a branch name).
-  # @param ref2 [String] Second ref (e.g. 'origin/main', a remote-tracking ref).
-  # @return [Boolean] true if a common ancestor exists, false if histories are unrelated.
-  def common_ancestor?(ref1, ref2)
-    _stdout, _stderr, status = _execute('merge-base', ref1, ref2, read_only: true)
     status.success?
   end
 
@@ -400,6 +405,20 @@ class GitProcessor
     nil_or_empty?(stdout) ? 0 : stdout.strip.to_i
   end
 
+  # Returns how many commits +left+ is ahead of and behind +right+ using a single
+  # 'git rev-list --left-right --count' call (one fork instead of two commit_count calls).
+  #
+  # @param left [String] Left ref, e.g. 'HEAD'.
+  # @param right [String] Right ref, e.g. '@{u}'.
+  # @return [Array<Integer>] [commits only in left, commits only in right].
+  def ahead_behind(left:, right:)
+    stdout, = _execute('rev-list', '--left-right', '--count', "#{left}...#{right}", read_only: true)
+    return [0, 0] if nil_or_empty?(stdout)
+
+    ahead, behind = stdout.split.map(&:to_i)
+    [ahead || 0, behind || 0]
+  end
+
   # Reads a boolean git config key, normalising git's spellings (true/yes/on/1) and
   # applying +default+ when the key is unset.
   #
@@ -411,10 +430,26 @@ class GitProcessor
     stdout.strip == 'true'
   end
 
-  # @return [Array<String>] Short names of all local branches
-  def local_branches
-    stdout, = _execute('branch', '--format=%(refname:short)', read_only: true)
-    stdout.split("\n")
+  # The checked-out branch and every local branch, from one 'git for-each-ref' call. Lists only
+  # refs/heads, so (unlike 'git branch') a detached HEAD does not appear as a pseudo branch
+  # named '(HEAD detached at ...)'. Also seeds the current_branch memo.
+  #
+  # @return [Array(String, Array<String>)] [current branch or nil when HEAD is detached/unborn,
+  #   short names of all local branches]
+  def current_and_local_branches
+    stdout, = _execute('for-each-ref', '--format=%(HEAD)%(refname:short)', 'refs/heads', read_only: true)
+    current = nil
+    branches = stdout.each_line.filter_map do |line|
+      line = line.chomp
+      next if line.empty?
+
+      # %(HEAD) is '*' for the checked-out branch and ' ' for every other one.
+      name = line[1..-1]
+      current = name if line.start_with?('*')
+      name
+    end
+    @current_branch = current
+    [current, branches]
   end
 
   # @param ref [String] Any ref, e.g. '@{u}'
@@ -435,12 +470,10 @@ class GitProcessor
   # @param local [Boolean] When true (default), sets --local scope.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def config_set(key, value, local: true)
-    return _mock_status_response(false) unless repo?
-
     args = ['config']
     args << '--local' if local
     args << key << value
-    _execute(*args)
+    _invalidating(*CONFIG_MEMOS) { _execute_in_repo(*args) }
   end
 
   # Adds a new remote.
@@ -449,9 +482,7 @@ class GitProcessor
   # @param url [String] The remote URL.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def add_remote(name, url)
-    return _mock_status_response(false) unless repo?
-
-    _execute('remote', 'add', name, url)
+    _invalidating(*CONFIG_MEMOS) { _execute_in_repo('remote', 'add', name, url) }
   end
 
   # Updates the URL of an existing remote.
@@ -460,19 +491,7 @@ class GitProcessor
   # @param url [String] The new remote URL.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def set_remote_url(name, url)
-    return _mock_status_response(false) unless repo?
-
-    _execute('remote', 'set-url', name, url)
-  end
-
-  # Removes an existing remote.
-  #
-  # @param name [String] The remote name (e.g., 'origin').
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def remove_remote(name)
-    return _mock_status_response(false) unless repo?
-
-    _execute('remote', 'remove', name)
+    _invalidating(*CONFIG_MEMOS) { _execute_in_repo('remote', 'set-url', name, url) }
   end
 
   # Fetches from all remotes and all tags via the 'fo' git command (scripts/git-fo) -- not a bare
@@ -488,9 +507,7 @@ class GitProcessor
   #
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def fetch_all
-    return _mock_status_response(false) unless repo?
-
-    run_alias('fo', stream: true)
+    _execute_in_repo('fo', stream: true)
   end
 
   # Fetches from a single named remote -- unlike fetch_all, does not go through the
@@ -501,9 +518,7 @@ class GitProcessor
   # @param remote [String] Remote name to fetch from.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def fetch(remote)
-    return _mock_status_response(false) unless repo?
-
-    _execute('fetch', remote)
+    _execute_in_repo('fetch', remote)
   end
 
   # Rebases the current branch onto upstream.
@@ -511,24 +526,7 @@ class GitProcessor
   # @param upstream [String] Ref to rebase onto (e.g. 'origin/main', a remote-tracking ref).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def rebase(upstream)
-    return _mock_status_response(false) unless repo?
-
-    _execute('rebase', upstream)
-  end
-
-  # Hard-resets the current branch to ref, discarding local commits and working-tree
-  # changes. Deliberately destructive -- only for callers that have already decided
-  # preserving local history is not meaningful (e.g. a squash-prone repo whose local
-  # and remote histories have diverged with no common ancestor, so there is nothing
-  # sensible to rebase onto anyway -- see 'git fo --rebase' (scripts/git-fo)'s own
-  # 'pull.allowResetOnDivergedHistory' handling for the primary use of this).
-  #
-  # @param ref [String] Ref to reset to (e.g. a remote-tracking ref).
-  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def reset_hard(ref)
-    return _mock_status_response(false) unless repo?
-
-    _execute('reset', '--hard', ref)
+    _execute_in_repo('rebase', upstream)
   end
 
   # Initializes a new git repository in the directory.
@@ -540,7 +538,7 @@ class GitProcessor
   def init(ref_format: 'reftable', initial_branch: nil)
     args = ['init', "--ref-format=#{ref_format}"]
     args << "--initial-branch=#{initial_branch}" unless nil_or_empty?(initial_branch)
-    _execute(*args, '.')
+    _invalidating(*CONFIG_MEMOS, *REPO_STATE_MEMOS) { _execute(*args, '.') }
   end
 
   # Stages all changes (equivalent to `git add -A .`).
@@ -564,9 +562,7 @@ class GitProcessor
   # @param path [String, Pathname] Path to stage (relative to repo root).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def add(path)
-    return _mock_status_response(false) unless repo?
-
-    _execute('add', path.to_s)
+    _execute_in_repo('add', path.to_s)
   end
 
   # Deletes a tag from the repository (local only, does not affect remote).
@@ -574,9 +570,7 @@ class GitProcessor
   # @param name [String] Tag name to delete.
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def delete_tag(name)
-    return _mock_status_response(false) unless repo?
-
-    _execute('tag', '-d', name)
+    _execute_in_repo('tag', '-d', name)
   end
 
   # Pulls changes from upstream via 'git fo --rebase' (scripts/git-fo) -- not a bare 'git pull',
@@ -595,24 +589,22 @@ class GitProcessor
   #
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def pull
-    return _mock_status_response(false) unless repo?
-
-    run_alias('fo', '--rebase', stream: true)
+    _execute_in_repo('fo', '--rebase', stream: true)
   end
 
-  # Removes a file from the index (staging area) without deleting it from the working directory.
-  # Equivalent to `git rm --cached <path>`.
+  # Removes files from the index (staging area) without deleting them from the working directory.
+  # Equivalent to `git rm --cached -- <path>...`. Several paths go in a single git invocation;
+  # callers with very many paths should slice them (argv has a length limit).
   #
-  # @param path [String, Pathname] Path to remove from index.
+  # @param paths [String, Pathname, Array<String, Pathname>] One path or several.
   # @param quiet [Boolean] Whether to suppress git output (defaults to false).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
-  def rm_cached(path, quiet: false)
-    return _mock_status_response(false) unless repo?
-
+  def rm_cached(paths, quiet: false)
     args = ['rm', '--cached']
     args << '-q' if quiet
-    args << '--' << path.to_s
-    _execute(*args)
+    args << '--'
+    args.concat(Array(paths).map(&:to_s))
+    _execute_in_repo(*args)
   end
 
   # Restores working tree files.
@@ -621,9 +613,7 @@ class GitProcessor
   # @param pathspec [String] Path or pathspec to restore (e.g., '.' for all files).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def restore(pathspec)
-    return _mock_status_response(false) unless repo?
-
-    _execute('restore', pathspec)
+    _execute_in_repo('restore', pathspec)
   end
 
   # Creates a commit with the given message.
@@ -633,33 +623,34 @@ class GitProcessor
   # @param no_verify [Boolean] Whether to skip pre-commit/commit-msg hooks (defaults to false).
   # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
   def commit(message, quiet: false, no_verify: false)
-    return _mock_status_response(false) unless repo?
-
     args = ['commit']
     args << '-q' if quiet
     args << '-n' if no_verify
     args << '-m' << message
-    _execute(*args)
+    _execute_in_repo(*args)
+  end
+
+  # A commit message for automated commits, based on repository state:
+  # - "Initial commit: <timestamp>" if no commits exist (commit_count == 0)
+  # - "Incremental commit: <timestamp>" otherwise (commit_count > 0)
+  #
+  # @return [String]
+  def default_commit_message
+    "#{commit_count.zero? ? 'Initial' : 'Incremental'} commit: #{Core.current_timestamp}"
   end
 
   # Smart commit: amends if ahead of remote and not diverged, otherwise creates new commit.
   # Equivalent to `git sci "<message>"` alias.
   # Aborts if nothing is staged.
   #
-  # When called without a message, auto-generates one based on repository state:
-  # - "Initial commit: <timestamp>" if no commits exist (commit_count == 0)
-  # - "Incremental commit: <timestamp>" otherwise (commit_count > 0)
+  # When called without a message, uses default_commit_message.
   #
   # @param message [String, nil] Optional commit message. If nil, auto-generates based on repo state.
   # @return [Boolean] true if commit succeeded, false if nothing staged or commit failed.
   def smart_commit(message = nil)
     return false unless repo?
 
-    # Auto-generate message if not provided
-    if nil_or_empty?(message)
-      prefix = commit_count.zero? ? 'Initial' : 'Incremental'
-      message = "#{prefix} commit: #{Core.current_timestamp}"
-    end
+    message = default_commit_message if nil_or_empty?(message)
 
     stdout, stderr, status = run_alias('sci', message)
     unless status.success?
@@ -756,6 +747,34 @@ class GitProcessor
 
   private
 
+  # The '.git' entry (directory, or file for a worktree/submodule) of this repo (memoized).
+  #
+  # @return [Pathname]
+  def _git_path
+    @_git_path ||= @dir.join('.git')
+  end
+
+  # _execute guarded by repo?: outside a git repository nothing is run and a failed mock
+  # response is returned instead. Takes the same arguments as _execute.
+  #
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object.
+  def _execute_in_repo(*args, **opts, &blk)
+    return _mock_status_response(false) unless repo?
+
+    _execute(*args, **opts, &blk)
+  end
+
+  # Runs a mutation (a block returning [stdout, stderr, status]) and, when it succeeded,
+  # forgets the memoized reads in +memos+ so the next read sees the new state.
+  #
+  # @param memos [Array<Symbol>] Instance variable names, e.g. CONFIG_MEMOS
+  # @return [Array<(String, String, Process::Status)>] the block's result
+  def _invalidating(*memos)
+    result = yield
+    memos.each { |memo| remove_instance_variable(memo) if instance_variable_defined?(memo) } if result.last.success?
+    result
+  end
+
   # Builds the base git command array with the -C flag (memoized).
   #
   # @return [Array<String>] The git command prefix array.
@@ -841,8 +860,8 @@ class GitProcessor
   # Used for dry-run and streaming operations to maintain consistent return format.
   #
   # @param success [Boolean] Whether the operation succeeded.
-  # @return [Array<(String, String, OpenStruct)>] Empty stdout/stderr and status object.
+  # @return [Array<(String, String, MockStatus)>] Empty stdout/stderr and status object.
   def _mock_status_response(success)
-    ['', '', OpenStruct.new(success?: success, exitstatus: success ? 0 : 1)]
+    ['', '', MockStatus.new(success, success ? 0 : 1)]
   end
 end

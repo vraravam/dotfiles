@@ -53,7 +53,7 @@ module RecreateRepository
   # :reek:UtilityFunction -- Module method pattern for dual-mode script (see ruby-scripting.md)
   def run(dir:, force: false, dry_run: false)
     dir = dir.to_s.chomp(File::SEPARATOR)
-    dir_pn = Pathname.new(dir)
+    dir_pn = Pathname(dir)
 
     Logging.info '🔍 DRY RUN MODE -- No changes will be made'.red if dry_run
 

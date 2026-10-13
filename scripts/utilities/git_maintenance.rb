@@ -53,40 +53,22 @@ class GitProcessor
     end
 
     # Deletes .git/index.lock if it exists. This is a recovery operation for
-    # stale lock files that can block git operations. Rescue nil because the
-    # file may not exist (which is fine -- that's the desired end state).
+    # stale lock files that can block git operations; an absent file is the
+    # desired end state, not an error.
     #
     # @return [void]
     def delete_index_lock
-      if @dry_run
-        Logging.info "Would delete: '#{@dir.join('.git', 'index.lock').cyan}' (if it exists)"
-      else
-        begin
-          @dir.join('.git', 'index.lock').delete
-        rescue StandardError
-          nil
-        end
-      end
+      _delete_path(_git_path.join('index.lock'))
     end
 
     # Deletes .git/objects/info/commit-graphs/commit-graph-chain.lock if it exists.
     # A stale commit-graph lock (left behind by an interrupted 'git commit-graph write'
     # or a killed process) can block subsequent commit-graph writes; deleting it is
-    # safe since git regenerates the commit-graph on next use. Same rescue-nil pattern
-    # as delete_index_lock -- the file may not exist, which is the desired end state.
+    # safe since git regenerates the commit-graph on next use.
     #
     # @return [void]
     def delete_commit_graph_lock
-      path = @dir.join('.git', 'objects', 'info', 'commit-graphs', 'commit-graph-chain.lock')
-      if @dry_run
-        Logging.info "Would delete: '#{path.cyan}' (if it exists)"
-      else
-        begin
-          path.delete
-        rescue StandardError
-          nil
-        end
-      end
+      _delete_path(_git_path.join('objects', 'info', 'commit-graphs', 'commit-graph-chain.lock'))
     end
 
     # Removes .git/hooks entirely if it exists. Used before automated operations on
@@ -95,12 +77,7 @@ class GitProcessor
     #
     # @return [void]
     def delete_hooks_dir
-      path = @dir.join('.git', 'hooks')
-      if @dry_run
-        Logging.info "Would remove: '#{path.cyan}' (if it exists)"
-      elsif path.directory?
-        path.rmtree
-      end
+      _delete_path(_git_path.join('hooks'), verb: 'remove')
     end
 
     # Creates a git bundle file capturing all refs reachable in this repo
@@ -117,7 +94,7 @@ class GitProcessor
 
       return false unless repo?
 
-      Pathname.new(file).dirname.mkpath
+      Pathname(file).dirname.mkpath
       CommandUtils.run_interactive(*_git_command, 'bundle', 'create', file.to_s, '--all')
     end
 
@@ -145,6 +122,28 @@ class GitProcessor
       when 'bytes' then value.to_f / 1024.0 / 1024.0
       else 0.0
       end
+    end
+
+    private
+
+    # Deletes a file or directory tree under .git, or only logs what it would do in dry-run
+    # mode. A path that does not exist (including one removed by a concurrent git process
+    # between the check and the delete) is fine; any other failure propagates.
+    #
+    # @param path [Pathname] What to delete
+    # @param verb [String] Wording for the dry-run message ('delete' or 'remove')
+    # @return [void]
+    def _delete_path(path, verb: 'delete')
+      if @dry_run
+        Logging.info "Would #{verb}: '#{path.cyan}' (if it exists)"
+        return
+      end
+
+      return unless path.exist?
+
+      path.directory? ? path.rmtree : path.delete
+    rescue Errno::ENOENT
+      nil
     end
   end
 end

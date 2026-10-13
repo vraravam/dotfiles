@@ -76,12 +76,21 @@ find_in_folder_and_recompile() {
     return
   fi
 
-  find "${dir_to_scan}" -maxdepth 5 \
+  # Collect the paths with command substitution rather than piping 'find' into a
+  # 'while read' loop. This function runs inside a backgrounded '{ ... } &|' block in an
+  # interactive login shell, where job control is still on: a pipeline there makes the
+  # subshell try to take over the terminal, which the kernel answers with SIGTTOU -- the
+  # subshell and its 'find' are left stopped (state 'T') forever, and iTerm2 then warns
+  # about running jobs on quit. Command substitution creates no job, so it never stops.
+  # (0) splits on NUL, matching -print0; the unquoted ${(0)...} drops the empty trailing
+  # element.
+  local -a scripts
+  scripts=(${(0)"$(find "${dir_to_scan}" -maxdepth 5 \
     \( \( -name 'node_modules' -o -name '.pnpm' \) -type d -prune \) -o \
-    \( \( -name '*.sh' -o -name '*.zsh' \) \( -type f -o -type l \) -print0 \) |
-    while IFS= read -r -d $'\0' f; do
-      recompile_zsh_script "${f}"
-    done
+    \( \( -name '*.sh' -o -name '*.zsh' \) \( -type f -o -type l \) -print0 \))"})
+  for f in "${scripts[@]}"; do
+    recompile_zsh_script "${f}"
+  done
 
   # Ensure XDG_CACHE_HOME exists before touching the sentinel file.
   # On vanilla OS during fresh-install, the directory may not exist yet when
@@ -97,7 +106,8 @@ find_in_folder_and_recompile() {
 # Core startup files -- grouped together regardless of whether they live in
 # ZDOTDIR or HOME; all are sourced on every shell start and benefit equally
 # from bytecode compilation.
-recompile_zsh_script "${ZDOTDIR}/.zshenv"
+# .zshenv lives in HOME (not ZDOTDIR): zsh reads it from there to learn where ZDOTDIR is.
+recompile_zsh_script "${HOME}/.zshenv"
 recompile_zsh_script "${ZDOTDIR}/.zshrc"
 recompile_zsh_script "${ZDOTDIR}/.zlogin"
 recompile_zsh_script "${HOME}/.shellrc"

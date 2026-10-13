@@ -7,7 +7,7 @@ require 'bootstrap_repos'
 RSpec.describe BootstrapRepos do
   around do |example|
     Dir.mktmpdir('bootstrap-repos-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       example.run
     end
   end

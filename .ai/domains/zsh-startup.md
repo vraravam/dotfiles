@@ -295,23 +295,21 @@ _check_updates() {
   unfunction _check_updates
 }
 
-# Defer if available, run synchronously otherwise
-if (($+functions[zsh-defer])); then
-  zsh-defer _check_updates
-else
-  _check_updates
-fi
+# Defer if available, run synchronously otherwise (.zshrc's _defer_or_run helper does the
+# '(($+functions[zsh-defer]))' check at call time -- do not repeat the if/else at call sites)
+_defer_or_run _check_updates
 ```
+
+**Presence checks belong inside the deferred body**: a file-scope `(($+commands[tool]))` gate
+forces zsh to rebuild its command hash on the first-prompt path whenever PATH changed since
+the last lookup (~3.6ms). Define the function unconditionally and test `$+commands[tool]`
+inside it (`unfunction` self and return when the tool is absent).
 
 **Pattern: Defer file loading**
 ```zsh
 # .aliases contains 1000+ lines of function definitions
 # Defer to after first prompt (saves ~15-20ms on startup)
-if (($+functions[zsh-defer])); then
-  zsh-defer load_file_if_exists "${ZDOTDIR}/.aliases"
-else
-  load_file_if_exists "${ZDOTDIR}/.aliases"
-fi
+_defer_or_run load_file_if_exists "${ZDOTDIR}/.aliases"
 ```
 
 **Pattern: Defer completion initialization**
@@ -323,11 +321,7 @@ _deferred_compinit() {
   unfunction _deferred_compinit  # Clean up after running
 }
 
-if (($+functions[zsh-defer])); then
-  zsh-defer _deferred_compinit
-else
-  _deferred_compinit
-fi
+_defer_or_run _deferred_compinit
 ```
 
 **When to defer:**
@@ -406,6 +400,13 @@ zprof
 - Syntax highlighting (2-3ms) - minimize patterns, use fast plugin
 - Homebrew shellenv (15ms without cache) - cache based on binary mtime
 - Starship prompt (1-2ms) - cache init script
+- Starship prompt in a git repo (~35ms of the ~50ms per prompt is git): run it with
+  `GIT_CONFIG_NOSYSTEM=1` scoped to the instant-prompt call and to the loaded `PROMPT` command
+  (never exported -- real git needs the system `credential.helper`). Without it starship forks
+  `git config -l --show-origin` on every run (~12ms). Keep `core.fsMonitor` off in the global git
+  config (see `git-config.md`): with it on, starship cannot use gitoxide and forks `git status`.
+  Measure prompt changes with `zsh-bench` (`bench_zsh`), which scrubs `GIT_*` from the
+  environment, so test config changes in files, not with env overrides.
 - Mise activation (1-2ms) - cache activation script
 
 ## Startup-Impact Verification (Mandatory)

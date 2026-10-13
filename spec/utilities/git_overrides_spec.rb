@@ -4,7 +4,7 @@ require 'tmpdir'
 require 'git_overrides'
 
 RSpec.describe GitOverrides do
-  let(:bin_dir) { Pathname.new(Dir.mktmpdir) }
+  let(:bin_dir) { Pathname(Dir.mktmpdir) }
 
   before { stub_const('EnvVars::PERSONAL_BIN_DIR', bin_dir) }
   after { FileUtils.remove_entry(bin_dir) }
@@ -51,12 +51,30 @@ RSpec.describe GitOverrides do
   end
 
   describe '.command_for' do
-    it 'runs a .rb script with the current interpreter rather than its shebang' do
-      expect(described_class.command_for('/bin/x.rb')).to eq([RbConfig.ruby, '/bin/x.rb'])
+    it 'runs a .rb script with the current interpreter (without RubyGems) rather than its shebang' do
+      expect(described_class.command_for('/bin/x.rb')).to eq([RbConfig.ruby, '--disable-gems', '/bin/x.rb'])
     end
 
     it 'runs any other script directly' do
-      expect(described_class.command_for(Pathname.new('/bin/x.sh'))).to eq(['/bin/x.sh'])
+      expect(described_class.command_for(Pathname('/bin/x.sh'))).to eq(['/bin/x.sh'])
+    end
+  end
+
+  describe '.argv_for' do
+    it 'leads with the env hash (skip flag and RUBYLIB), then the command, then the args' do
+      with_env('RUBYLIB' => nil) do
+        env, *rest = described_class.argv_for('/bin/x.sh', %w[--force a])
+
+        expect(env).to eq(described_class::SKIP_ENV_VAR => '1', 'RUBYLIB' => described_class.rubylib)
+        expect(rest).to eq(['/bin/x.sh', '--force', 'a'])
+      end
+    end
+
+    it 'does not mutate the shared SKIP_ENV constant' do
+      described_class.argv_for('/bin/x.sh', [])
+
+      expect(described_class::SKIP_ENV).to eq(described_class::SKIP_ENV_VAR => '1')
+      expect(described_class::SKIP_ENV).to be_frozen
     end
   end
 
@@ -85,6 +103,7 @@ RSpec.describe GitOverrides do
     it 'is false when the variable is unset or empty' do
       with_env(described_class::SKIP_ENV_VAR => nil) { expect(described_class.skip?).to be false }
       with_env(described_class::SKIP_ENV_VAR => '') { expect(described_class.skip?).to be false }
+      with_env(described_class::SKIP_ENV_VAR => '  ') { expect(described_class.skip?).to be false }
     end
   end
 end

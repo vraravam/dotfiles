@@ -18,7 +18,9 @@
 # It assumes the following:
 #   1. Ruby language is present in the system prior to this script being run.
 
-require 'fileutils'
+# Loaded on first use: fileutils pulls in rbconfig (~30ms under --disable-gems), and this file is
+# also required by FreshInstallPostClone, which would otherwise pay that on every load.
+autoload :FileUtils, 'fileutils'
 require 'find'
 require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
 
@@ -60,9 +62,11 @@ module InstallDotfiles
     Logging.info 'Starting to install dotfiles'
     Logging.info 'Running in DRY-RUN mode -- no changes will be made' if dry_run
 
+    files_root = EnvVars::DOTFILES_DIR.join('files')
+
     # NOTE: cannot use Dir.glob since that doesn't handle hidden files
-    Find.find(EnvVars::DOTFILES_DIR.join('files').to_s) do |source_path_str|
-      source_pn = Pathname.new(source_path_str)
+    Find.find(files_root.to_s) do |source_path_str|
+      source_pn = Pathname(source_path_str)
 
       # Skip directories and ignored files/suffixes
       next if source_pn.directory?
@@ -70,7 +74,7 @@ module InstallDotfiles
       next if IGNORED_SUFFIXES.any? { |suffix| source_pn.to_s.end_with?(suffix) }
 
       # git doesn't handle symlinks well for its core config, handle separately
-      relative_path_str = source_pn.relative_path_from(EnvVars::DOTFILES_DIR.join('files')).to_s
+      relative_path_str = source_pn.relative_path_from(files_root).to_s
       # sub (not gsub) -- CUSTOM_GIT_PREFIX occurs at most once per filename (custom.gitignore,
       # custom.gitattributes); runs once per file in the entire files/ tree walk (hot path).
       transformed_relative_path_str = relative_path_str.sub(CUSTOM_GIT_PREFIX, DOT_GIT_REPLACEMENT_TARGET)
@@ -95,11 +99,11 @@ module InstallDotfiles
     Logging.emit("Skipped:   #{stats.skipped.to_s.purple}", level: 1)
     Logging.emit("Errors:    #{error_count.positive? ? error_count.to_s.red : error_count}", level: 1)
 
-    _ensure_ssh_include_line
-    _ensure_gitconfig_tool_symlink('delta')
-    _ensure_gitconfig_tool_symlink('pandoc')
-    _ensure_gitconfig_tool_symlink('plist', command_name: 'plutil')
-    _ensure_gitconfig_tool_symlink('sqlite3')
+    _ensure_ssh_include_line(dry_run: dry_run)
+    _ensure_gitconfig_tool_symlink('delta', dry_run: dry_run)
+    _ensure_gitconfig_tool_symlink('pandoc', dry_run: dry_run)
+    _ensure_gitconfig_tool_symlink('plist', command_name: 'plutil', dry_run: dry_run)
+    _ensure_gitconfig_tool_symlink('sqlite3', dry_run: dry_run)
 
     Logging.warn("Since 'custom.git*' files are COPIED (not symlinked), always edit the repo source first. When re-running without FIRST_INSTALL set, the newer file wins -- so a stale home-dir copy can silently overwrite repo changes if its mtime is newer.")
 
@@ -241,9 +245,10 @@ module InstallDotfiles
   # Ensures the SSH global_config Include line is present in the default SSH config.
   # Extracted from top-level code so it is testable and has a clear failure boundary.
   #
+  # @param dry_run [Boolean] Report what would be written instead of writing it.
   # @return [void]
   # :reek:UtilityFunction -- Stateless SSH config validation (correct design)
-  def _ensure_ssh_include_line
+  def _ensure_ssh_include_line(dry_run: false)
     ssh_dir = EnvVars::HOME.join('.ssh').expand_path.freeze
     global_config_link = ssh_dir.join('global_config')
 
@@ -253,19 +258,27 @@ module InstallDotfiles
     end
 
     default_ssh_config = ssh_dir.join('config')
-    default_ssh_config.write('') unless default_ssh_config.exist?
-
     include_line = 'Include ~/.ssh/global_config'
+    default_ssh_config_colored = default_ssh_config.cyan
+
+    unless default_ssh_config.exist?
+      if dry_run
+        Logging.info("Would create '#{default_ssh_config_colored}' with '#{include_line.cyan}'")
+        return
+      end
+
+      default_ssh_config.write('')
+    end
+
     begin
-      default_ssh_config_colored = default_ssh_config.cyan
       # Use Core.each_line_utf8 to avoid encoding issues in non-UTF-8 environments.
       found = false
       Core.each_line_utf8(default_ssh_config) { |l| found = true if l.strip == include_line }
       if found
         Logging.success("'#{include_line.cyan}' already present in '#{default_ssh_config_colored}'")
       else
-        Logging.info("Adding '#{include_line.cyan}' to '#{default_ssh_config_colored}'")
-        default_ssh_config.write("\n#{include_line}\n", mode: 'a')
+        Logging.info("#{dry_run ? 'Would add' : 'Adding'} '#{include_line.cyan}' to '#{default_ssh_config_colored}'")
+        default_ssh_config.write("\n#{include_line}\n", mode: 'a') unless dry_run
       end
     rescue StandardError => e
       Logging.warn("Failed processing SSH config '#{default_ssh_config_colored}': #{e.message}")
@@ -280,8 +293,9 @@ module InstallDotfiles
   #
   # @param tool_name [String] Name of the tool (e.g., 'delta', 'pandoc')
   # @param command_name [String] Command to check in PATH (defaults to tool_name)
+  # @param dry_run [Boolean] Report what would be created/removed instead of doing it.
   # @return [void]
-  def self._ensure_gitconfig_tool_symlink(tool_name, command_name: nil)
+  def self._ensure_gitconfig_tool_symlink(tool_name, command_name: nil, dry_run: false)
     command_name ||= tool_name
     git_config_dir = EnvVars::XDG_CONFIG_HOME.join('git')
 
@@ -308,15 +322,19 @@ module InstallDotfiles
       if config_symlink.exist?
         Logging.debug("#{display_name.yellow} config symlink already exists at '#{config_symlink_colored}'")
       else
-        Logging.info("Creating #{tool_name.yellow} config symlink: '#{config_symlink_colored}' -> '#{config_target_str.cyan}'")
-        FileUtils.ln_sf(config_target_str, config_symlink_str)
-        Logging.success("Created #{tool_name.yellow} config symlink")
+        Logging.info("#{dry_run ? 'Would create' : 'Creating'} #{tool_name.yellow} config symlink: '#{config_symlink_colored}' -> '#{config_target_str.cyan}'")
+        unless dry_run
+          FileUtils.ln_sf(config_target_str, config_symlink_str)
+          Logging.success("Created #{tool_name.yellow} config symlink")
+        end
       end
     elsif config_symlink.exist?
       # Tool is not installed -- remove symlink if it exists
-      Logging.info("Removing #{tool_name.yellow} config symlink (#{command_name.yellow} not in PATH): '#{config_symlink_colored}'")
-      FileUtils.rm_f(config_symlink_str)
-      Logging.success("Removed #{tool_name.yellow} config symlink")
+      Logging.info("#{dry_run ? 'Would remove' : 'Removing'} #{tool_name.yellow} config symlink (#{command_name.yellow} not in PATH): '#{config_symlink_colored}'")
+      unless dry_run
+        FileUtils.rm_f(config_symlink_str)
+        Logging.success("Removed #{tool_name.yellow} config symlink")
+      end
     else
       Logging.debug("#{command_name.yellow} not in PATH and symlink doesn't exist -- nothing to do")
     end

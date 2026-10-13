@@ -163,7 +163,7 @@ system('child-script.sh')     # Child logs at 4-space indent (depth 2)
 info "Back to parent"         # 2-space indent
 ```
 
-All logging functions (`info`, `warn`, `success`, `error`, `debug`, `user_action`) and section headers call `$(_log_indent)` internally, which returns `2 * depth` spaces.
+All logging functions (`info`, `warn`, `success`, `error`, `debug`, `user_action`) and section headers call `_set_log_indent` internally, which stores `2 * depth` spaces in `${_LOG_INDENT}` (no subshell fork).
 
 ### Ruby Example
 
@@ -192,16 +192,15 @@ info "  -> Processed ${count} items"
 info "-> Processed ${count} items"
 ```
 
-The indent helpers (`$(_log_indent)` in shell, `log_indent` in Ruby) are internal utilities and should not be called directly from scripts.
+The indent helpers (`_set_log_indent` in shell, `log_indent` in Ruby) are internal utilities and should not be called directly from scripts.
 
-## Bulleted Lists (Shell Only)
+## Bulleted Lists (Ruby Only)
 
-In shell scripts, `join_array` automatically indents list items one level deeper than the current depth, creating subordinate structure:
+In Ruby scripts, `Logging.join_array` automatically indents list items one level deeper than the current depth, creating subordinate structure. Shell scripts have no such helper -- build the lines explicitly (`msg+=$'\n'"  - '${item}'"`).
 
-```zsh
+```ruby
 # At depth 1 (2 spaces)
-info "Failed items:"
-join_array failed_items  # Items at depth 2 (4 spaces)
+Logging.info("Failed items:\n#{Logging.join_array(failed_items, :red)}")  # Items at depth 2 (4 spaces)
 ```
 
 ## External Tool Output
@@ -305,5 +304,5 @@ CommandUtils.run_interactive(env, 'git', '-C', folder, *args)
 | Decrement | `trap '_decrement_script_depth' EXIT` | Automatic via `at_exit` hook |
 | Check if outermost | `is_outermost_script` | `outermost_script?` |
 | Check if direct call | `[[ "${_DOTFILES_SCRIPT_DEPTH:-0}" -le 0 ]]` | `ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i <= 0` |
-| Indent calculation | `$(_log_indent)` returns `2 * depth` spaces | `log_indent` returns `'  ' * depth` |
+| Indent calculation | `_set_log_indent` sets `${_LOG_INDENT}` to `2 * depth` spaces | `log_indent` returns `'  ' * depth` |
 | Used by | All logging functions + section headers | All logging methods + section headers |

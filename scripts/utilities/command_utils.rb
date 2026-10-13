@@ -7,6 +7,7 @@
 require 'open3'
 require_relative 'core'
 require_relative 'enumerable_ext'
+require_relative 'env_vars'
 require_relative 'logging'
 require_relative 'string_ext'
 
@@ -14,6 +15,18 @@ module CommandUtils
   extend self
   include Core  # For instance methods (in blocks)
   extend Core   # For module methods
+
+  # Curl flags for bootstrap downloads (Homebrew's installer, before ~/.curlrc is linked). A
+  # long retry window rides out a flaky network during a fresh install. --retry-all-errors is
+  # deliberately absent: it makes the terminal app close. The shell bootstrap in
+  # fresh-install-of-osx.sh must keep its own copy -- no Ruby exists yet when it runs.
+  CURL_BOOTSTRAP_RETRY_OPTS = %w[--retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused].freeze
+
+  # Curl flags for routine downloads in maintenance jobs: a short retry only.
+  CURL_LIGHT_RETRY_OPTS = %w[--retry 3 --retry-delay 5].freeze
+
+  # Headers that bypass GitHub's CDN and intermediate proxies.
+  CURL_CACHE_BUST_OPTS = ['-H', 'Cache-Control: no-cache, no-store, must-revalidate', '-H', 'Pragma: no-cache', '-H', 'Expires: 0'].freeze
 
   # ---------------------------------------------------------------------------
   # Class methods
@@ -166,7 +179,10 @@ module CommandUtils
   # Use this for interactive commands where users expect to see output in real-time
   # (e.g., git log, ls, etc.). Unlike capture_output, this does not buffer output.
   #
-  # @param command [Array<String>] Command and arguments to execute
+  # @param command [Array<String, Hash>] Command and arguments to execute. As with Kernel#system,
+  #   a leading Hash is an env for the child and a trailing options Hash (e.g. +chdir: dir+, which
+  #   runs the child in that directory without changing this process's working directory) is
+  #   forwarded as is.
   # @yield Block receives no arguments; called on failure (can record warning/error)
   # @return [Boolean] true if command succeeded, false otherwise
   #
@@ -178,6 +194,38 @@ module CommandUtils
     success = system(*command)
     yield if block_given? && !success
     success
+  end
+
+  # Curl arguments (besides -fsSL and the URL) for a download.
+  #
+  # With +bootstrap+: the long retry flags when CURL_RETRY_OPTS is set or ~/.curlrc (which
+  # carries equivalent defaults) is not linked yet, and the cache-busting headers when
+  # CACHE_BUST_HEADERS is set. Without it: the short retry flags.
+  #
+  # @param bootstrap [Boolean] Whether this is a fresh-install download
+  # @return [Array<String>]
+  def curl_opts(bootstrap: false)
+    return CURL_LIGHT_RETRY_OPTS unless bootstrap
+
+    opts = []
+    opts.concat(CURL_CACHE_BUST_OPTS) if EnvVars.cache_bust_headers?
+    opts.concat(CURL_BOOTSTRAP_RETRY_OPTS) if EnvVars.curl_retry_opts? || !EnvVars::HOME.join('.curlrc').file?
+    opts
+  end
+
+  # Downloads +url+ to +dest+ with curl (-fsSL: fail on HTTP errors, follow redirects).
+  #
+  # @param url [String]
+  # @param dest [String, Pathname] File to write
+  # @param bootstrap [Boolean] Use the bootstrap flags (see curl_opts)
+  # @param interactive [Boolean] Stream curl's own stderr to the terminal; otherwise silent
+  # @return [Boolean] true if curl succeeded
+  #
+  # @example
+  #   CommandUtils.curl_download(url, syntax_dir.join('file.sublime-syntax'))
+  def curl_download(url, dest, bootstrap: false, interactive: false)
+    command = ['curl', *curl_opts(bootstrap: bootstrap), '-fsSL', url.to_s, '-o', dest.to_s]
+    interactive ? run_interactive(*command) : run_silent(*command)
   end
 
   # ---------------------------------------------------------------------------

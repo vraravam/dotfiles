@@ -8,7 +8,9 @@
 #
 # Migrates repository from legacy files format to reftable format (git 2.45+).
 # Reftable is the modern reference storage format that replaces the traditional
-# .git/refs/* file hierarchy with a single packed file, improving performance.
+# .git/refs/* file hierarchy with a single packed file, improving performance. The git
+# directory is looked up through git (not assumed to be '<dir>/.git'), so a repo whose
+# '.git' is a file (a submodule) is handled too.
 # No-op if already reftable or if git version doesn't support migration.
 # Cleans up legacy loose refs after successful migration. Also rewrites .git/HEAD
 # with the real branch name: reftable's own .git/HEAD legitimately (by design, not
@@ -18,22 +20,39 @@
 # subprocess for speed) would otherwise display '.invalid' as the branch name.
 # Usage: git migrate-reftable [<dir>]
 
+# Locate the shared helpers next to this script's real path (following symlinks on PATH).
+_self="${0}"
+case "${_self}" in */*) ;; *) _self="$(command -v "${_self}")" ;; esac
+while [ -h "${_self}" ]; do
+  _target="$(readlink "${_self}")"
+  case "${_target}" in /*) _self="${_target}" ;; *) _self="${_self%/*}/${_target}" ;; esac
+done
+# shellcheck source=shared/git-common.sh
+. "${_self%/*}/shared/git-common.sh"
+
 # Git ran the former alias from the work tree's top level; an external command runs from the
-# caller's directory, so the default directory is the top level (not '.') to keep
+# caller's directory, so resolve_dir defaults to the top level (not '.') to keep
 # 'git migrate-reftable' from a subdirectory working the same way.
 
 main() {
-  dir="${1:-$(git rev-parse --show-toplevel 2>/dev/null || printf .)}"
+  resolve_dir "$@"
+  shift "${dir_shift}"
+  if [ "$#" -gt 0 ]; then
+    printf 'git migrate-reftable: unknown argument: %s\nUsage: git migrate-reftable [<dir>]\n' "${1}" >&2
+    exit 2
+  fi
   format=$(git -C "${dir}" rev-parse --show-ref-format 2>/dev/null || echo 'files')
   if [ "${format}" = 'reftable' ]; then
     printf 'Already reftable format in %s -- skipping\n' "${dir}"
     return 0
   fi
+  git_common_dir "${dir}"
+  git_dir="$(git -C "${dir}" rev-parse --absolute-git-dir 2>/dev/null || printf '%s' "${git_common}")"
   if git -C "${dir}" refs migrate --ref-format=reftable 2>/dev/null; then
-    rm -rf "${dir}/.git/refs/heads"/* "${dir}/.git/refs/tags"/* "${dir}/.git/refs/remotes"/* 2>/dev/null || true
+    rm -rf "${git_common}/refs/heads"/* "${git_common}/refs/tags"/* "${git_common}/refs/remotes"/* 2>/dev/null || true
     real_ref=$(git -C "${dir}" symbolic-ref HEAD 2>/dev/null)
     if [ -n "${real_ref}" ]; then
-      printf 'ref: %s\n' "${real_ref}" >"${dir}/.git/HEAD"
+      printf 'ref: %s\n' "${real_ref}" >"${git_dir}/HEAD"
     fi
     printf 'Migrated %s to reftable format\n' "${dir}"
   else

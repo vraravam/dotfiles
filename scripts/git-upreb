@@ -7,14 +7,21 @@
 # from cron and before the dotfiles shell environment exists.
 #
 # Full upstream rebase workflow: fetches unconditionally, then rebases from upstream (if present),
-# sets tracking, pushes, updates submodules, and prunes gone branches — but only if the working
+# sets tracking, pushes, updates submodules, and prunes gone branches -- but only if the working
 # tree is clean. A dirty tree skips everything after the fetch to avoid a mid-workflow failure
 # (after rebase but before push) that would leave the repo in an inconsistent state.
 # If no upstream remote exists, rebases from origin instead (gracefully falls back for non-fork repos).
 # Callers (e.g. run-all.rb in cron) receive a non-zero exit and surface a warning on dirty tree.
+# If the initial 'git fo' fails (a remote could not be fetched even after retries and repair),
+# this stops there with a message on stderr and a non-zero exit: rebasing and pushing against
+# stale remote refs could push the wrong thing or silently skip upstream changes. A detached
+# HEAD is likewise refused (there is no branch to rebase or push). The clean-tree and branch
+# checks share a single 'git status --porcelain=v2 -b -uno' call (tracked changes only, as
+# before).
 # Supports folder-specific overrides: if ${PERSONAL_BIN_DIR}/upreb-<basename>.rb (or .sh) exists, runs it
-# instead of running the default implementation. Override scripts can customize pre/post behavior
-# while calling the common implementation via GitCommands.upreb (scripts/utilities/git_commands.rb).
+# instead of running the default implementation (extra arguments are forwarded to it). Override
+# scripts can customize pre/post behavior while calling the common implementation via
+# GitCommands.upreb (scripts/utilities/git_commands.rb).
 # Uses 'git fo' (not a bare 'git fetch --all') for the initial fetch: hang protection via
 # 'with-retry' and promisor-first remote ordering matter here just as much as anywhere else --
 # 'fo' already prunes gone branches ('dlb'), so no separate 'dlb' call is needed at the end. The
@@ -23,41 +30,59 @@
 # again, since only that one remote/ref needs re-checking at that point.
 # Usage: git upreb [<dir>]
 
+# Locate the shared helpers next to this script's real path (following symlinks on PATH).
+_self="${0}"
+case "${_self}" in */*) ;; *) _self="$(command -v "${_self}")" ;; esac
+while [ -h "${_self}" ]; do
+  _target="$(readlink "${_self}")"
+  case "${_target}" in /*) _self="${_target}" ;; *) _self="${_self%/*}/${_target}" ;; esac
+done
+# shellcheck source=shared/git-common.sh
+. "${_self%/*}/shared/git-common.sh"
+
 # Git ran the former alias from the work tree's top level; an external command runs from the
-# caller's directory, so the default directory is the top level (not '.') to keep
+# caller's directory, so resolve_dir defaults to the top level (not '.') to keep
 # 'git upreb' from a subdirectory working the same way.
 
 main() {
-  dir="${1:-$(git rev-parse --show-toplevel 2>/dev/null || printf .)}"
-  if [ -n "${PERSONAL_BIN_DIR:-}" ] && [ -z "${_GIT_OVERRIDE_SKIP:-}" ]; then
-    basename="$(basename "$(cd "${dir}" && pwd)")"
-    for ext in rb sh; do
-      override="${PERSONAL_BIN_DIR}/upreb-${basename}.${ext}"
-      [ -x "${override}" ] || continue
-      if [ "${ext}" = rb ]; then
-        (cd "${dir}" && _GIT_OVERRIDE_SKIP=1 "${override}")
-      else
-        (cd "${dir}" && _GIT_OVERRIDE_SKIP=1 /bin/zsh -l "${override}")
-      fi
-      return $?
-    done
+  resolve_dir "$@"
+  shift "${dir_shift}"
+  if dispatch_override upreb "${dir}" "$@"; then exit "${override_status}"; fi
+  if [ "$#" -gt 0 ]; then
+    printf 'git upreb: unknown argument: %s\nUsage: git upreb [<dir>]\n' "${1}" >&2
+    exit 2
   fi
-  git -C "${dir}" fo
-  if git -C "${dir}" is-clean; then
-    git -C "${dir}" branch -u "origin/$(git -C "${dir}" br)"
-    if git -C "${dir}" has-upstream; then
-      git -C "${dir}" rebase "upstream/$(git -C "${dir}" br)" --no-verify &&
-        git with-retry 60 3 /dev/null "${dir}/.git/objects" git -C "${dir}" fetch upstream --tags &&
-        git -C "${dir}" push --no-verify &&
-        git -C "${dir}" push --tags --no-verify
-    else
-      git -C "${dir}" rebase "origin/$(git -C "${dir}" br)" --no-verify
-    fi &&
-      git -C "${dir}" siu
-  else
-    printf 'Skipping rebase/push in %s: working tree has uncommitted changes. Run manually.\n' "${dir}" >&2
+  git_common_dir "${dir}"
+  if ! git -C "${dir}" fo; then
+    printf 'git upreb: fetch failed in %s -- not rebasing or pushing on stale refs\n' "${dir}" >&2
     exit 1
   fi
+  nl='
+'
+  status_out="$(git -C "${dir}" status --porcelain=v2 -b -uno)"
+  # Header lines all start with '#'; any other line is a changed tracked file.
+  case "${status_out}" in
+  *"${nl}"[!#]*)
+    printf 'Skipping rebase/push in %s: working tree has uncommitted changes. Run manually.\n' "${dir}" >&2
+    exit 1
+    ;;
+  esac
+  branch="${status_out#*"# branch.head "}"
+  branch="${branch%%"${nl}"*}"
+  if [ -z "${branch}" ] || [ "${branch}" = '(detached)' ]; then
+    printf 'Skipping rebase/push in %s: HEAD is detached, there is no branch to rebase.\n' "${dir}" >&2
+    exit 1
+  fi
+  git -C "${dir}" branch -u "origin/${branch}"
+  if git -C "${dir}" config --get remote.upstream.url >/dev/null 2>&1; then
+    git -C "${dir}" rebase "upstream/${branch}" --no-verify &&
+      git with-retry 60 3 /dev/null "${git_common}/objects" git -C "${dir}" fetch upstream --tags &&
+      git -C "${dir}" push --no-verify &&
+      git -C "${dir}" push --tags --no-verify
+  else
+    git -C "${dir}" rebase "origin/${branch}" --no-verify
+  fi &&
+    git -C "${dir}" siu
 }
 
 main "$@"

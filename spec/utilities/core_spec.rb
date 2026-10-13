@@ -63,15 +63,15 @@ RSpec.describe Core do
     end
 
     it 'is false for a directory' do
-      expect(described_class.file?(Pathname.new(__dir__))).to be false
+      expect(described_class.file?(Pathname(__dir__))).to be false
     end
 
     it 'is true for an existing regular file' do
-      expect(described_class.file?(Pathname.new(__FILE__))).to be true
+      expect(described_class.file?(Pathname(__FILE__))).to be true
     end
 
     it 'is false for a non-existent path' do
-      expect(described_class.file?(Pathname.new('/nonexistent/path/should/not/exist'))).to be false
+      expect(described_class.file?(Pathname('/nonexistent/path/should/not/exist'))).to be false
     end
   end
 

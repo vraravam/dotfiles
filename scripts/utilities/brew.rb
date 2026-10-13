@@ -81,7 +81,7 @@ module Brew
   # @param log [Pathname, String] File the job's stdout and stderr are appended to.
   # @return [Boolean] true if the job was started (its own success is only visible in +log+).
   def bundle_in_background(log:, brew_bin: 'brew')
-    log_path = Pathname.new(log)
+    log_path = Pathname(log)
     log_path.dirname.mkpath
     pid = Process.spawn(ENV.to_h.merge('FIRST_INSTALL' => ''), brew_bin.to_s, 'bundle',
                         out: [log_path.to_s, 'a'], err: [log_path.to_s, 'a'])

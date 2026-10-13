@@ -144,7 +144,7 @@ Higher levels use additional styles defined in `_SECTION_STYLES`.
 
 The function automatically:
 - Derives level from `_DOTFILES_SCRIPT_DEPTH` (depth 1 → level 0, depth 2 → level 1, etc.)
-- Applies automatic indentation via `_log_indent` (2 spaces per depth)
+- Applies automatic indentation via `_set_log_indent` (2 spaces per depth; the result is read from `${_LOG_INDENT}`, no subshell)
 - Updates `_current_section` for error tracking (unless manually set)
 
 The padding width is computed from `${COLUMNS:-80}` (the terminal width) minus the header text length, split evenly on both sides. The fallback to `80` is deliberate: cron jobs run with no terminal attached, so zsh sets `COLUMNS` to `0` — without the fallback, the arithmetic yields zero or negative lengths and `printf` produces no output.
@@ -281,12 +281,11 @@ info "-> Processed ${count} items"  # Depth adds the indent
 
 #### Bulleted lists: depth + 1
 
-The `join_array` helper (shell) automatically indents list items one level deeper than the current depth, creating subordinate visual structure:
+The Ruby `Logging.join_array` helper automatically indents list items one level deeper than the current depth, creating subordinate visual structure. Shell scripts build such lists explicitly (one `  - '<item>'` line per item).
 
-```zsh
+```ruby
 # At depth 1 (2 spaces)
-info "Failed items:"
-join_array failed_items  # Items indented 4 spaces (depth + 1)
+Logging.info("Failed items:\n#{Logging.join_array(failed_items, :red)}")  # Items indented 4 spaces (depth + 1)
 ```
 
 #### External tool output — intentionally not indented
@@ -479,7 +478,7 @@ After symlinking, `install-dotfiles.rb` ensures the line `Include "./global_conf
 
 ### Git workflow commands (`git-command.rb` + `GitOverrides`)
 
-`push`, `pull`, `cc` and `upreb` are aliases for `scripts/git-command.rb`, which calls `GitCommands.run` (`scripts/utilities/git_commands.rb`). Before running the default implementation it asks `GitOverrides.script_for(<command>, <folder>)` (`scripts/utilities/git_overrides.rb`) for `${PERSONAL_BIN_DIR}/<command>-<folder-basename>.rb` (then `.sh`). If one exists and is executable, the process is **replaced** (`exec`) by it, with the repo as the working directory, only the `--switches` as arguments, `_GIT_OVERRIDE_SKIP=1` (so the `git cc`/`git upreb` commands and `GitCommands` itself skip override detection instead of recursing) and `RUBYLIB` pointing at `scripts/utilities/` so a Ruby override can `require` the shared modules. A `.rb` override is launched with the interpreter already running (`RbConfig.ruby`) rather than via its `#!/usr/bin/env ruby` shebang: when that resolves to a mise shim in a directory with no pinned Ruby, a shim started from a process that was itself started through the shim trips mise's recursion guard.
+`push`, `pull`, `cc` and `upreb` are aliases for `scripts/git-command.rb`, which calls `GitCommands.run` (`scripts/utilities/git_commands.rb`). Before running the default implementation it asks `GitOverrides.script_for(<command>, <folder>)` (`scripts/utilities/git_overrides.rb`) for `${PERSONAL_BIN_DIR}/<command>-<folder-basename>.rb` (then `.sh`). If one exists and is executable, the process is **replaced** (`exec`) by it, with the repo as the working directory, only the `--switches` as arguments, `_GIT_OVERRIDE_SKIP=1` (so the `git cc`/`git upreb` commands and `GitCommands` itself skip override detection instead of recursing) and `RUBYLIB` pointing at `scripts/utilities/` so a Ruby override can `require` the shared modules. A `.rb` override is launched with the interpreter already running, without RubyGems (`RbConfig.ruby --disable-gems`), rather than via its `#!/usr/bin/env ruby` shebang: when that resolves to a mise shim in a directory with no pinned Ruby, a shim started from a process that was itself started through the shim trips mise's recursion guard.
 
 `count` and `st` remain zsh autoload functions whose public wrapper is `count() { dispatch_or_fallback count _count "$@"; }`. `dispatch_or_fallback` looks for `${PERSONAL_BIN_DIR}/<cmd>-<cwd-basename>.rb` (then `.sh`) and **runs** it as a separate script if present; otherwise the default `_count` implementation is called.
 

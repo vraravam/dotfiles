@@ -236,11 +236,9 @@ export EDITOR='wait-editor'
 # so --wait is passed correctly to tools that exec() EDITOR directly (crontab, visudo, etc.).
 # GIT_EDITOR carries the full invocation with flags (e.g. 'zed --wait').
 if command_exists "${EDITOR:-}"; then
-  if is_zsh; then
-    # associate file extensions with applications for the 'open' command
-    alias -s txt="${EDITOR}"
-    alias -s log="${EDITOR}"
-  fi
+  # associate file extensions with applications for the 'open' command
+  alias -s txt="${EDITOR}"
+  alias -s log="${EDITOR}"
 
   # add a generic alias for editing files and folders -- non-blocking (bare binary,
   # no --wait) so the shell prompt returns immediately after launching the editor.
@@ -267,14 +265,8 @@ if (($+commands[bat])); then
   export MANPAGER="sh -c 'col -bx | bat -l man -p'"
 fi
 
-# Defines word-boundaries for editing: ensures that deleting word on /path/to/file
-# deletes only 'file' and not the directory. This removes '/' and '.' from $WORDCHARS.
-export WORDCHARS="${WORDCHARS:s#/#}"
-export WORDCHARS="${WORDCHARS:s#.#}"
-
-# --------------------------------------------------------------------------
-# String utilities (zsh-only; not needed in direnv/bash so lives here not .shellrc)
-# --------------------------------------------------------------------------
+# Word boundaries for editing (so that deleting a word on /path/to/file deletes only 'file')
+# are set by WORDCHARS='' in lib/omz-completion.zsh (loaded via the antidote bundle).
 
 # --------------------------------------------------------------------------
 # Script utilities (zsh-only; not needed before dotfiles repo is cloned)
@@ -481,9 +473,7 @@ delete_caches() {
   # start or login shell.  .zshrc recreates XDG_CACHE_HOME with mkdir -p before
   # any cache write, so the missing directory is safe.
   if is_directory "${XDG_CACHE_HOME}"; then
-    # Prevent operations on paths in root directory
-    # Use ${var%/*} instead of ${var:h} for bash compatibility (direnv sources this in bash)
-    if is_root_dir "${XDG_CACHE_HOME%/*}"; then
+    if _is_direct_child_of_root "${XDG_CACHE_HOME}"; then
       error "Refusing to delete cache directory in root: '$(cyan "${XDG_CACHE_HOME}")'"
       return 1
     fi

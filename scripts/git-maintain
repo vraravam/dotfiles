@@ -10,9 +10,8 @@
 # Automatically detects and fixes common git issues:
 # - Cleans up stale lock files (index.lock, commit-graph-chain.lock)
 # - Runs fsck to detect corrupted objects
-# - Prunes unreachable objects
-# - Runs garbage collection
-# - Rebuilds commit graph
+# - Runs garbage collection (which also prunes unreachable objects)
+# - Rebuilds commit graph (with changed-path Bloom filters)
 # - Restores mtimes from git history
 # Idempotent -- safe to run multiple times. Gracefully handles missing tools.
 # Used by: clone_repo_into() in .shellrc and GitProcessor.clone_repo_into().
@@ -20,8 +19,21 @@
 # Note: Background maintenance is now handled automatically via global maintenance.auto=true
 # (see git-config maintenance.* settings). No manual registration needed.
 #
-# Throttled to at most once per 3h per repo (tracked via a stamp file under
-# '.git/') -- unlike 'unshallow'/'siu', there is no single boolean that means
+# Lock files are only removed when older than 10 minutes: a younger lock may belong to a
+# live git process (an editor's background 'git status', a running fetch), and deleting
+# it would corrupt that process's write. The locks are looked up through git
+# ('rev-parse --absolute-git-dir' for the index, '--git-common-dir' for the object store),
+# so this also works where '.git' is a file (submodules, linked worktrees).
+#
+# There is no separate 'git prune': gc already prunes unreachable objects honouring
+# gc.pruneExpire's grace period, whereas a bare prune ignores that setting and can delete
+# objects a concurrent writer has just created. gc is run with gc.writeCommitGraph=false
+# because the explicit 'commit-graph write --changed-paths' after it writes the graph
+# anyway; gc's own write has no changed-path Bloom filters when none exist yet (measured),
+# so it would only be a redundant first write.
+#
+# Throttled to at most once per 3h per repo (tracked via a stamp file in the common git
+# directory) -- unlike 'unshallow'/'siu', there is no single boolean that means
 # "nothing to do" here (a repo always has some loose objects/reflog entries
 # that gc *could* touch), so this uses the same time-based no-op pattern as
 # the mise-plugin/ollama-model update throttles in software-updates-cron.rb
@@ -34,30 +46,46 @@
 # use case this command exists for should never be silently throttled away).
 # Usage: git maintain [<dir>] [--force]
 
+# Locate the shared helpers next to this script's real path (following symlinks on PATH).
+_self="${0}"
+case "${_self}" in */*) ;; *) _self="$(command -v "${_self}")" ;; esac
+while [ -h "${_self}" ]; do
+  _target="$(readlink "${_self}")"
+  case "${_target}" in /*) _self="${_target}" ;; *) _self="${_self%/*}/${_target}" ;; esac
+done
+# shellcheck source=shared/git-common.sh
+. "${_self%/*}/shared/git-common.sh"
+
 # Git ran the former alias from the work tree's top level; an external command runs from the
-# caller's directory, so the default directory is the top level (not '.') to keep
+# caller's directory, so resolve_dir defaults to the top level (not '.') to keep
 # 'git maintain' from a subdirectory working the same way.
 
 main() {
-  dir="$(git rev-parse --show-toplevel 2>/dev/null || printf .)"
+  resolve_dir "$@"
+  shift "${dir_shift}"
   force=0
   for a in "$@"; do
     case "${a}" in
     --force) force=1 ;;
-    *) dir="${a}" ;;
+    *)
+      printf 'git maintain: unknown argument: %s\nUsage: git maintain [<dir>] [--force]\n' "${a}" >&2
+      exit 2
+      ;;
     esac
   done
-  stamp="${dir}/.git/dotfiles-last-maintain"
+  git_common_dir "${dir}"
+  stamp="${git_common}/dotfiles-last-maintain"
   if [ "${force}" -eq 0 ] && [ -f "${stamp}" ] && [ -z "$(find "${stamp}" -mmin +180 2>/dev/null)" ]; then
     printf 'Repository maintenance already ran within the last 3h in %s -- skipping (use --force to override)\n' "${dir}"
     exit 0
   fi
   fullpath="$(cd "${dir}" && pwd)"
   printf 'Running repository maintenance in %s...\n' "${fullpath}"
-  rm -f "${dir}/.git/index.lock" "${dir}/.git/objects/info/commit-graphs/commit-graph-chain.lock" 2>/dev/null || true
+  git_dir="$(git -C "${dir}" rev-parse --absolute-git-dir 2>/dev/null || printf '%s' "${git_common}")"
+  find "${git_dir}" -maxdepth 1 -name index.lock -type f -mmin +10 -delete 2>/dev/null || true
+  find "${git_common}/objects/info/commit-graphs" -maxdepth 1 -name commit-graph-chain.lock -type f -mmin +10 -delete 2>/dev/null || true
   git -C "${dir}" fsck --full 2>&1 | grep -v 'Checking object directories' || true
-  git -C "${dir}" prune 2>/dev/null || true
-  git -C "${dir}" gc 2>/dev/null || true
+  git -C "${dir}" -c gc.writeCommitGraph=false gc 2>/dev/null || true
   git -C "${dir}" commit-graph write --reachable --changed-paths 2>/dev/null || true
   git -C "${dir}" restore-mtime -c 2>/dev/null || true
   touch "${stamp}" 2>/dev/null || true

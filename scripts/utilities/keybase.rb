@@ -50,13 +50,15 @@ module Keybase
   # repo to know "whose account is this" (mirrors how GH_USERNAME is derived
   # from the cloned repo's git remote rather than stored statically).
   #
+  # Memoized (including a nil result): 'keybase status --json' takes ~0.6s and repo_url calls
+  # this once per repo. The memo is dropped after an interactive login (ensure_logged_in).
+  #
   # @return [String, nil] the logged-in username, or nil if keybase isn't
   #   installed or nobody is logged in
   def username
-    return nil unless PathUtils.command_exists?('keybase')
+    return @_username if defined?(@_username)
 
-    status = _status
-    status && status['LoggedIn'] ? status['Username'] : nil
+    @_username = _fetch_username
   end
 
   # Whether Keybase is enabled for this machine: at least one of KEYBASE_HOME_REPO_NAME /
@@ -142,7 +144,7 @@ module Keybase
     require 'fileutils'
     support_bin = APP_PATH.join('Contents', 'SharedSupport', 'bin')
     %w[keybase git-remote-keybase].each do |tool|
-      FileUtils.ln_sf(support_bin.join(tool).to_s, Pathname.new(bin_dir).join(tool).to_s)
+      FileUtils.ln_sf(support_bin.join(tool).to_s, Pathname(bin_dir).join(tool).to_s)
     end
     true
   end
@@ -211,6 +213,8 @@ module Keybase
 
     username = EnvVars::KEYBASE_USERNAME
     Logging.info "Logging into keybase as '#{username.purple}'" if username
+    # The account changes with the login, so a username memoized before it would be stale.
+    _forget_username
     CommandUtils.run_interactive('keybase', 'login', *username) do
       Logging.record_error 'Could not log into keybase -- retry after logging in manually'
     end
@@ -274,6 +278,27 @@ module Keybase
 
   private
 
+  # Asks keybase who is logged in (see #username).
+  #
+  # @return [String, nil]
+  def _fetch_username
+    return nil unless PathUtils.command_exists?('keybase')
+
+    status = _status
+    status && status['LoggedIn'] ? status['Username'] : nil
+  end
+
+  private_class_method :_fetch_username
+
+  # Drops the memoized #username so the next call asks keybase again.
+  #
+  # @return [void]
+  def _forget_username
+    remove_instance_variable(:@_username) if defined?(@_username)
+  end
+
+  private_class_method :_forget_username
+
   # @return [Boolean] whether the keybase service answers 'keybase status' (exit 0)
   def _service_up?
     CommandUtils.run_silent('keybase', 'status')
@@ -319,7 +344,8 @@ module Keybase
   private_class_method :_logged_in?
 
   # Parses 'keybase status --json'. Not memoized -- must reflect login state
-  # freshly after ensure_logged_in performs an interactive login.
+  # freshly after ensure_logged_in performs an interactive login (and after the
+  # service has been started).
   #
   # @return [Hash, nil] parsed status, or nil if the command failed/returned invalid JSON
   def _status

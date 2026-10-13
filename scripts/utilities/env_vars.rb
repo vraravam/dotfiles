@@ -2,7 +2,6 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-require 'rbconfig'
 require 'pathname' # System Ruby on a vanilla macOS is 2.6; Pathname must be required explicitly because autoloading is unreliable at that version.
 require_relative 'core'
 require_relative 'env_lite'
@@ -69,9 +68,28 @@ module EnvVars
   #   DOTFILES_DIR = _fetch_pathname('DOTFILES_DIR') { HOME.join('.config', 'dotfiles') }
   def self._fetch_pathname(key)
     val = ENV.fetch(key, '').strip
-    Pathname.new(val.empty? ? yield : val).expand_path
+    Pathname(val.empty? ? yield : val).expand_path
   end
   private_class_method :_fetch_pathname
+
+  # Like _fetch_pathname but for variables where unset and empty mean "not given".
+  #
+  # @param key [String] Environment variable name
+  # @return [Pathname, nil] Expanded pathname, or nil when unset/empty/whitespace-only
+  def self._optional_pathname(key)
+    _normalize_optional_string(ENV.fetch(key, nil))&.then { |s| Pathname(s).expand_path }
+  end
+  private_class_method :_optional_pathname
+
+  # Reads an integer environment variable (String#to_i, so a malformed value reads as 0).
+  #
+  # @param key [String] Environment variable name
+  # @param default [String] Value used when the variable is unset
+  # @return [Integer]
+  def self._integer(key, default)
+    ENV.fetch(key, default).to_i
+  end
+  private_class_method :_integer
 
   # ---------------------------------------------------------------------------
   # Non-path variables (String objects)
@@ -180,10 +198,14 @@ module EnvVars
   # Homebrew paths.
   # Mirrors: HOMEBREW_* exports (set by brew shellenv, or fallback based on architecture)
   # ARM (Apple Silicon) uses /opt/homebrew, Intel uses /usr/local
-  # The CPU comes from RbConfig (no subprocess); 'uname -m' would fork just to learn it.
-  # Apple Silicon reports 'arm64' via uname but 'aarch64' via RbConfig, hence both spellings.
+  # The CPU comes from RUBY_PLATFORM (a core constant: no subprocess, and no 'rbconfig' load,
+  # which costs ~30ms on the macOS system Ruby when RubyGems is disabled, i.e. as much as the
+  # rest of a short script's run); 'uname -m' would
+  # fork just to learn it. Apple Silicon is 'arm64'/'arm64e' there ('aarch64' on Linux), hence
+  # both spellings. A universal Ruby run under Rosetta reports the architecture it is actually
+  # executing as, so an Intel process gets the Intel prefix.
   HOMEBREW_PREFIX = _fetch_pathname('HOMEBREW_PREFIX') do
-    RbConfig::CONFIG['host_cpu'].match?(/arm|aarch64/) ? '/opt/homebrew' : '/usr/local'
+    RUBY_PLATFORM.match?(/arm|aarch64/) ? '/opt/homebrew' : '/usr/local'
   end.freeze
 
   # Homebrew bundle files (Brewfile).
@@ -229,7 +251,7 @@ module EnvVars
   #
   # @return [Pathname, nil] Expanded reference folder path, or nil when unset/empty
   def self.ref_folder
-    _normalize_optional_string(ENV.fetch('REF_FOLDER', nil))&.then { |s| Pathname.new(s).expand_path }
+    _optional_pathname('REF_FOLDER')
   end
 
   # Base dir for repo operations (run-all.rb).
@@ -238,7 +260,7 @@ module EnvVars
   #
   # @return [Pathname, nil] Expanded base folder path, or nil when unset/empty
   def self.folder
-    _normalize_optional_string(ENV.fetch('FOLDER', nil))&.then { |s| Pathname.new(s).expand_path }
+    _optional_pathname('FOLDER')
   end
 
   # Search depth limits for repo operations (run-all.rb).
@@ -246,7 +268,7 @@ module EnvVars
   #
   # @return [Integer] Minimum recursion depth (default: 1)
   def self.mindepth
-    ENV.fetch('MINDEPTH', '1').to_i
+    _integer('MINDEPTH', '1')
   end
 
   # Maximum depth for recursive git operations (used by run-all.rb and shell
@@ -255,7 +277,7 @@ module EnvVars
   #
   # @return [Integer] Maximum recursion depth (default: 4)
   def self.maxdepth
-    ENV.fetch('MAXDEPTH', '4').to_i
+    _integer('MAXDEPTH', '4')
   end
 
   # First install mode (vanilla OS, no dotfiles yet).
@@ -263,7 +285,7 @@ module EnvVars
   #
   # @return [Boolean] true if FIRST_INSTALL is set to a non-empty value
   def self.first_install?
-    !nil_or_empty?(ENV.fetch('FIRST_INSTALL', ''))
+    EnvLite.set?('FIRST_INSTALL')
   end
 
   # Debug mode (verbose logging).
@@ -271,17 +293,7 @@ module EnvVars
   #
   # @return [Boolean] true if DEBUG is set to a non-empty value
   def self.debug?
-    !nil_or_empty?(ENV.fetch('DEBUG', ''))
-  end
-
-  # Returns true if FORCE_COLOR is set (used by color output methods).
-  # Mirrors: FORCE_COLOR env var (standard convention for forcing color output)
-  #
-  # Delegates to EnvLite, which Core uses too (Core sits beneath EnvVars in the require chain).
-  #
-  # @return [Boolean] true if FORCE_COLOR is set to a non-empty (stripped) value
-  def self.force_color?
-    EnvLite.force_color?
+    EnvLite.set?('DEBUG')
   end
 
   # Current script depth (incremented by increment_script_depth).
@@ -290,7 +302,7 @@ module EnvVars
   #
   # @return [Integer] Current script nesting depth (default: 0)
   def self.script_depth
-    ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i
+    _integer('_DOTFILES_SCRIPT_DEPTH', '0')
   end
 
   # Writes the script nesting depth back to the environment so child processes (shell
@@ -342,7 +354,7 @@ module EnvVars
   #
   # @return [Integer] Terminal column width (default: 80)
   def self.columns
-    ENV.fetch('COLUMNS', '80').to_i
+    _integer('COLUMNS', '80')
   end
 
   # Cron backup file path (used by suspend_cron/resume_cron).
@@ -368,7 +380,7 @@ module EnvVars
     return @_issues_file if defined?(@_issues_file)
 
     path = ENV.fetch('_DOTFILES_ISSUES_FILE', '').strip
-    @_issues_file = path.empty? ? nil : Pathname.new(path)
+    @_issues_file = path.empty? ? nil : Pathname(path)
   end
 
   # Returns true if logging output should be suppressed.
@@ -381,7 +393,7 @@ module EnvVars
   #
   # @return [Boolean] true if logging output should be suppressed
   def self.suppress_log?
-    !nil_or_empty?(ENV.fetch('DIRENV_IN_ENVRC', ''))
+    EnvLite.set?('DIRENV_IN_ENVRC')
   end
 
   # Returns true if CACHE_BUST_HEADERS env var is set (used for curl downloads).
@@ -389,7 +401,7 @@ module EnvVars
   #
   # @return [Boolean] true if CACHE_BUST_HEADERS is set to a non-empty (stripped) value
   def self.cache_bust_headers?
-    !nil_or_empty?(ENV.fetch('CACHE_BUST_HEADERS', '').strip)
+    EnvLite.set?('CACHE_BUST_HEADERS')
   end
 
   # Returns true if CURL_RETRY_OPTS env var is set (used for bootstrap curl downloads).
@@ -397,7 +409,16 @@ module EnvVars
   #
   # @return [Boolean] true if CURL_RETRY_OPTS is set to a non-empty (stripped) value
   def self.curl_retry_opts?
-    !nil_or_empty?(ENV.fetch('CURL_RETRY_OPTS', '').strip)
+    EnvLite.set?('CURL_RETRY_OPTS')
+  end
+
+  # Generic "is this variable set to a non-blank value" check, for variables whose names are
+  # owned by another module (e.g. GitOverrides::SKIP_ENV_VAR).
+  #
+  # @param name [String] Environment variable name
+  # @return [Boolean] true when set to a non-blank value
+  def self.set?(name)
+    EnvLite.set?(name)
   end
 
   # Returns current PATH environment variable.

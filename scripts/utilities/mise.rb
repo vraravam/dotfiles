@@ -13,7 +13,6 @@ require_relative 'path_utils'
 # directories to process and how to report the outcome.
 module Mise
   extend self
-  extend Core # For module methods (stream_command)
 
   # Config filenames that indicate a directory declares tool versions.
   CONFIG_FILES = %w[
@@ -34,7 +33,7 @@ module Mise
   # @param dir [String, Pathname] Directory to inspect
   # @return [Boolean] true if +dir+ contains any file mise reads tool versions from
   def config?(dir)
-    dir_path = Pathname.new(dir)
+    dir_path = Pathname(dir)
     CONFIG_FILES.any? { |cfg| dir_path.join(cfg).file? }
   end
 
@@ -53,6 +52,6 @@ module Mise
   # @param dir [String, Pathname] Directory whose declared versions to install
   # @return [Integer] exit status of 'mise install' (0 on success)
   def install(dir)
-    stream_command(['mise', '-C', dir.to_s, 'install'])
+    Core.stream_command(['mise', '-C', dir.to_s, 'install'])
   end
 end

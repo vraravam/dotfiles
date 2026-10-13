@@ -15,10 +15,9 @@
 # - setopts: auto_menu, complete_in_word, always_to_end
 # - unsetopt: menu_complete, flowcontrol
 # - Menu selection keybinding (Ctrl+O to accept-and-infer-next)
-# - zstyle configs: menu select, case insensitive matching, special dirs
+# - zstyle configs: menu select, special dirs
 # - Completion colors for kill command process lists
 # - Directory completion tag ordering (local dirs first)
-# - Completion caching (${XDG_CACHE_HOME}/zcompletion)
 #
 # Removed functionality:
 # - Solaris-specific workarounds (if uname = SunOS)
@@ -51,8 +50,9 @@ bindkey -M menuselect '^o' accept-and-infer-next-history
 # Enable menu selection
 zstyle ':completion:*:*:*:*:*' menu select
 
-# Case insensitive completion
-zstyle ':completion:*' matcher-list 'm:{[:lower:][:upper:]}={[:upper:][:lower:]}' 'r:|=*' 'l:|=* r:|=*'
+# Note: the case-insensitive 'matcher-list' and the completion cache ('use-cache',
+# 'cache-path') styles are configured in .zshrc, which runs after this file is loaded and
+# would override any value set here.
 
 # Complete . and .. special directories
 zstyle ':completion:*' special-dirs true
@@ -66,7 +66,3 @@ zstyle ':completion:*:*:*:*:processes' command "ps -u $USERNAME -o pid,user,comm
 
 # Directory completion priority
 zstyle ':completion:*:cd:*' tag-order local-directories directory-stack path-directories
-
-# Use caching for completion
-zstyle ':completion:*' use-cache yes
-zstyle ':completion:*' cache-path "${XDG_CACHE_HOME}/zcompletion"

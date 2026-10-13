@@ -7,7 +7,7 @@ require 'default_shell'
 RSpec.describe DefaultShell do
   around do |example|
     Dir.mktmpdir('default-shell-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       example.run
     end
   end

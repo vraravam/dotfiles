@@ -16,7 +16,7 @@ RSpec.describe Mise do
 
   describe '.install' do
     it 'returns the exit status of mise install for the given directory' do
-      expect(described_class).to receive(:stream_command).with(['mise', '-C', '/d', 'install']).and_return(0)
+      expect(Core).to receive(:stream_command).with(['mise', '-C', '/d', 'install']).and_return(0)
 
       expect(described_class.install('/d')).to eq(0)
     end

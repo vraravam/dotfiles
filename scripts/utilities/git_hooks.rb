@@ -3,7 +3,6 @@
 # frozen_string_literal: true
 
 require 'open3'
-require 'tempfile'
 
 require_relative 'core'
 require_relative 'env_vars'
@@ -70,23 +69,36 @@ module GitHooks
 
   private_class_method :_staged_files
 
+  # Compiles every file named in ARGV and prints (NUL-terminated) the ones that fail to parse.
+  # Run by one system-Ruby child for all staged Ruby files, instead of one `ruby -c` start-up
+  # (~90ms) per file; compile_file parses exactly as `ruby -c` does.
+  RUBY_SYNTAX_SCRIPT = <<~'RUBY'
+    ARGV.each do |file|
+      RubyVM::InstructionSequence.compile_file(file)
+    rescue SyntaxError, ArgumentError, EncodingError, SystemCallError
+      print file, "\0"
+    end
+  RUBY
+  private_constant :RUBY_SYNTAX_SCRIPT
+
   # Syntax-checks each staged Ruby and shell file.
   #
   # @param staged [Array<String>]
   # @return [Array(Array<String>, Array<String>)] Ruby files that parsed cleanly (for
   #   RuboCop), and one message per file that failed
   def _syntax_check(staged)
+    present = staged.select { |file| File.file?(file) } # the rest were deleted in the working tree
+    broken_ruby = _broken_ruby_files(present.select { |file| File.extname(file) == '.rb' })
+
     ruby_files = []
     failures = []
-    staged.each do |file|
-      next unless File.file?(file) # deleted in the working tree
-
+    present.each do |file|
       extension = File.extname(file)
       if extension == '.rb'
-        if system(SYSTEM_RUBY, '-c', file, out: File::NULL, err: File::NULL)
-          ruby_files << file
-        else
+        if broken_ruby.include?(file)
           failures << "Ruby syntax error in #{file}"
+        else
+          ruby_files << file
         end
       elsif SHELL_EXTENSIONS.include?(extension) && !system(ZSH, '-n', file, err: File::NULL)
         failures << "Shell syntax error in #{file}"
@@ -96,6 +108,17 @@ module GitHooks
   end
 
   private_class_method :_syntax_check
+
+  # @param files [Array<String>] Ruby files to parse
+  # @return [Array<String>] the ones with a syntax error (all of them if the checker itself fails)
+  def _broken_ruby_files(files)
+    return [] if files.empty?
+
+    stdout, status = Open3.capture2(SYSTEM_RUBY, '-e', RUBY_SYNTAX_SCRIPT, *files, err: File::NULL)
+    status.success? ? stdout.split("\0") : files
+  end
+
+  private_class_method :_broken_ruby_files
 
   # Runs RuboCop (if installed) on the given Ruby files.
   #
@@ -136,7 +159,11 @@ module GitHooks
   # @return [Boolean] false if a hook failed
   def _run_local_hooks(name, args, stdin_data: '')
     hooks = [File.join('.git', 'hooks.local', name), GitOverrides.script_for(name, Dir.pwd)&.to_s]
-    hooks.compact.select { |hook| File.file?(hook) && File.executable?(hook) }.all? do |hook|
+    hooks = hooks.compact.select { |hook| File.file?(hook) && File.executable?(hook) }
+    return true if hooks.empty?
+
+    require 'tempfile' # only needed to replay stdin to a hook
+    hooks.all? do |hook|
       Tempfile.create('git-hook-stdin') do |stdin_file|
         stdin_file.write(stdin_data)
         stdin_file.flush

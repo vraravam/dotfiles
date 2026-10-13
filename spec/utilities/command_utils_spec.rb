@@ -2,6 +2,7 @@
 
 require 'command_utils'
 require 'tempfile'
+require 'tmpdir'
 
 RSpec.describe CommandUtils do
   let(:ok_status) { instance_double(Process::Status, success?: true, exitstatus: 0) }
@@ -66,8 +67,7 @@ RSpec.describe CommandUtils do
     end
 
     it 'rejects an unknown severity' do
-      expect { described_class.check_status_or_record('', '', failed_status, 'm', severity: :fatal) }
-        .to raise_error(ArgumentError, /severity must be/)
+      expect { described_class.check_status_or_record('', '', failed_status, 'm', severity: :fatal) }.to raise_error(ArgumentError, /severity must be/)
     end
   end
 
@@ -101,6 +101,66 @@ RSpec.describe CommandUtils do
     it 'runs the block only on failure' do
       expect { |blk| described_class.run_interactive('true', &blk) }.not_to yield_control
       expect { |blk| described_class.run_interactive('false', &blk) }.to yield_control
+    end
+  end
+
+  describe '.curl_opts' do
+    around do |example|
+      Dir.mktmpdir('command-utils-curl-spec-') do |dir|
+        @home = Pathname(dir)
+        example.run
+      end
+    end
+
+    before do
+      stub_const('EnvVars::HOME', @home)
+      allow(EnvVars).to receive(:cache_bust_headers?).and_return(false)
+      allow(EnvVars).to receive(:curl_retry_opts?).and_return(false)
+    end
+
+    it 'is the short retry set unless this is a bootstrap download' do
+      expect(described_class.curl_opts).to eq(CommandUtils::CURL_LIGHT_RETRY_OPTS)
+    end
+
+    context 'for a bootstrap download' do
+      it 'adds the long retry flags while ~/.curlrc is not linked' do
+        expect(described_class.curl_opts(bootstrap: true)).to eq(CommandUtils::CURL_BOOTSTRAP_RETRY_OPTS)
+      end
+
+      it 'adds nothing when ~/.curlrc exists and nothing is requested' do
+        @home.join('.curlrc').write('')
+
+        expect(described_class.curl_opts(bootstrap: true)).to eq([])
+      end
+
+      it 'adds the long retry flags when CURL_RETRY_OPTS is set even with ~/.curlrc' do
+        @home.join('.curlrc').write('')
+        allow(EnvVars).to receive(:curl_retry_opts?).and_return(true)
+
+        expect(described_class.curl_opts(bootstrap: true)).to eq(CommandUtils::CURL_BOOTSTRAP_RETRY_OPTS)
+      end
+
+      it 'puts the cache-busting headers first when CACHE_BUST_HEADERS is set' do
+        allow(EnvVars).to receive(:cache_bust_headers?).and_return(true)
+        @home.join('.curlrc').write('')
+
+        expect(described_class.curl_opts(bootstrap: true)).to eq(CommandUtils::CURL_CACHE_BUST_OPTS)
+      end
+    end
+  end
+
+  describe '.curl_download' do
+    it 'runs curl silently with the short retry flags by default' do
+      expect(described_class).to receive(:run_silent).with('curl', '--retry', '3', '--retry-delay', '5', '-fsSL', 'https://x/y', '-o', '/tmp/out').and_return(true)
+
+      expect(described_class.curl_download('https://x/y', Pathname('/tmp/out'))).to be true
+    end
+
+    it 'streams curl and uses the bootstrap flags when asked' do
+      allow(described_class).to receive(:curl_opts).with(bootstrap: true).and_return(['--retry', '9'])
+      expect(described_class).to receive(:run_interactive).with('curl', '--retry', '9', '-fsSL', 'https://x/y', '-o', '/tmp/out').and_return(false)
+
+      expect(described_class.curl_download('https://x/y', '/tmp/out', bootstrap: true, interactive: true)).to be false
     end
   end
 end

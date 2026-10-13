@@ -42,7 +42,8 @@ file before sourcing it, keeping its `.zwc` bytecode cache in sync in every
 context that uses it -- not just interactive shells covered by `.zlogin`'s bulk
 recompile pass (cron jobs, scripts, direnv's bash subshell all benefit too).
 Overhead is negligible: a couple of stat calls (no fork), and it only actually
-recompiles when the source is newer than the existing `.zwc`. `recompile_zsh_script`
+recompiles when the source is newer than the existing `.zwc` (its fast path returns after
+a couple of raw `-f`/`-nt` tests, ~17us per call). `recompile_zsh_script`
 guards its `autoload -Uz zrecompile` call behind `is_zsh` since `.shellrc` (where
 both functions live) must remain bash-parseable for direnv's bash subshell.
 
@@ -71,7 +72,7 @@ load_file_if_exists "${cache}"
 **Definition** (from `.shellrc`):
 ```zsh
 # Returns true if target file ($1) is missing or older than source file ($2).
-# Resolves symlinks before comparison to ensure edits/upgrades to symlink targets
+# Symlinks are followed by -f and -nt themselves, so edits/upgrades to symlink targets
 # are detected (e.g., Homebrew binaries, dotfiles symlinked from the repo).
 # Uses the shell's built-in -nt (newer-than) test which compares modification times.
 # Common pattern: if is_file_older_than "${cache}" "${source}"; then regenerate_cache; fi
@@ -84,11 +85,9 @@ load_file_if_exists "${cache}"
 #   0 (true) if target is missing or source is newer (regeneration needed)
 #   1 (false) if target exists and is newer than or same age as source (cache valid)
 is_file_older_than() {
-  # Return true (needs regeneration) if either argument is missing/empty
-  [[ -z "${1:-}" || -z "${2:-}" ]] && return 0
-  local target="${1:A}"
-  local source="${2:A}"
-  [[ ! -f "${target}" || "${source}" -nt "${target}" ]]
+  # A single [[ ]]: true if either argument is missing/empty, the target is not a regular
+  # file, or the source is newer.
+  [[ -z "${1:-}" || -z "${2:-}" || ! -f "${1}" || "${2}" -nt "${1}" ]]
 }
 ```
 
@@ -96,7 +95,7 @@ is_file_older_than() {
 - First argument: the cache file (what you're checking)
 - Second argument: the source file (what it depends on)
 - Returns true when cache needs regeneration
-- Automatically resolves symlinks so Homebrew binary upgrades are detected
+- Symlinks are followed by the `-f`/`-nt` tests themselves, so Homebrew binary upgrades are detected
 - Safe with empty/unset parameters (returns true = regenerate)
 
 **Common use cases**:
@@ -293,11 +292,11 @@ matters most to recognize, because the usual `is_zsh` guard **does not help**:
 |---|---|
 | `[[ -v "arr[key]" ]]` (associative-array key-existence test) | Confirmed empirically (see § `is_zsh` guards are for parse-time zsh-only syntax only above): bash's own `[[ ]]` parser rejects this token sequence at *definition* time, before any runtime guard is ever consulted. Even isolating it into a helper function that is only ever called from an `is_zsh`-guarded call site still breaks sourcing, because bash must fully tokenize a function's body (to find its closing brace) the moment it *defines* the function, not when it's called |
 
-The fix used in `.shellrc`'s `_log_indent`: replace `[[ ! -v "arr[key]" ]]` with
+The fix used in `.shellrc`'s `_set_log_indent`: replace `[[ ! -v "arr[key]" ]]` with
 `[[ -z "${arr[key]:-}" ]]` (emptiness check instead of existence check). This
 is not a universal drop-in replacement -- it changes behavior for keys whose
 legitimate value IS an empty string (they will be needlessly recomputed every
-call instead of using the cached empty value) -- but for `_log_indent`'s cache
+call instead of using the cached empty value) -- but for `_set_log_indent`'s cache
 specifically, an empty string is only ever the depth-1 value, where
 recomputation is a single trivial `printf` call, so the correctness/performance
 tradeoff is negligible.
@@ -578,7 +577,7 @@ these so they work before the dotfiles repo is cloned.
 
 - **zsh scripts** (use `.shellrc`, zsh builtins): `#!/usr/bin/env zsh` -- zsh may live in
   Homebrew rather than `/bin`, so it must be found via `PATH`.
-- **Ruby scripts**: `#!/usr/bin/env ruby` (see `ruby-scripting.md`).
+- **Ruby scripts**: `#!/usr/bin/env ruby`; hot entry points that never need a gem use `#!/usr/bin/env -S ruby --disable-gems` (see `ruby-scripting.md` § RubyGems -- Off on Hot Entry Points).
 - **Plain POSIX `sh` scripts** that must run anywhere with no repo/shell setup (`wait-editor`,
   the `scripts/git-<name>` git subcommands): `#!/bin/sh`, NOT `#!/usr/bin/env sh`. `/bin/sh` is a
   fixed, guaranteed path on macOS and Linux, so `env` adds an extra exec and a `PATH` lookup for

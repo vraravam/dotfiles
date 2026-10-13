@@ -7,7 +7,7 @@ require 'fresh_install_post_clone'
 RSpec.describe FreshInstallPostClone do
   around do |example|
     Dir.mktmpdir('post-clone-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       # A standalone Logging.run_script (depth 0) raises _DOTFILES_SCRIPT_DEPTH and never lowers it
       # again, which is harmless in a one-shot script but would leak into later examples here.
       with_env('_DOTFILES_SCRIPT_DEPTH' => nil) { example.run }

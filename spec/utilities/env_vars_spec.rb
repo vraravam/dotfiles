@@ -43,22 +43,43 @@ RSpec.describe EnvVars do
     end
   end
 
-  describe '.force_color?' do
-    it 'is false when FORCE_COLOR is unset' do
-      with_env('FORCE_COLOR' => nil) do
-        expect(described_class.force_color?).to be false
+  describe '.set?' do
+    it 'is true only for a non-blank value' do
+      with_env('ENV_VARS_SPEC' => 'x') { expect(described_class.set?('ENV_VARS_SPEC')).to be true }
+      with_env('ENV_VARS_SPEC' => '  ') { expect(described_class.set?('ENV_VARS_SPEC')).to be false }
+      with_env('ENV_VARS_SPEC' => nil) { expect(described_class.set?('ENV_VARS_SPEC')).to be false }
+    end
+  end
+
+  describe 'flags built on whitespace-only values' do
+    it 'treat a whitespace-only value as unset' do
+      with_env('FIRST_INSTALL' => ' ', 'DEBUG' => ' ', 'DIRENV_IN_ENVRC' => ' ', 'CACHE_BUST_HEADERS' => ' ', 'CURL_RETRY_OPTS' => ' ') do
+        expect([described_class.first_install?, described_class.debug?, described_class.suppress_log?,
+                described_class.cache_bust_headers?, described_class.curl_retry_opts?]).to all(be false)
       end
     end
+  end
 
-    it 'is false when FORCE_COLOR is set but whitespace-only' do
-      with_env('FORCE_COLOR' => '   ') do
-        expect(described_class.force_color?).to be false
+  describe '.folder / .ref_folder' do
+    it 'are nil when unset or blank and an expanded Pathname otherwise' do
+      with_env('FOLDER' => nil, 'REF_FOLDER' => '  ') do
+        expect(described_class.folder).to be_nil
+        expect(described_class.ref_folder).to be_nil
+      end
+      with_env('FOLDER' => '~/x', 'REF_FOLDER' => '/tmp/../tmp/y') do
+        expect(described_class.folder).to eq(Pathname('~/x').expand_path)
+        expect(described_class.ref_folder).to eq(Pathname('/tmp/y'))
       end
     end
+  end
 
-    it 'is true when FORCE_COLOR is set to a non-empty value' do
-      with_env('FORCE_COLOR' => '1') do
-        expect(described_class.force_color?).to be true
+  describe '.mindepth / .maxdepth / .columns' do
+    it 'default to 1 / 4 / 80 and read integers from the environment' do
+      with_env('MINDEPTH' => nil, 'MAXDEPTH' => nil, 'COLUMNS' => nil) do
+        expect([described_class.mindepth, described_class.maxdepth, described_class.columns]).to eq([1, 4, 80])
+      end
+      with_env('MINDEPTH' => '2', 'MAXDEPTH' => '7', 'COLUMNS' => '120') do
+        expect([described_class.mindepth, described_class.maxdepth, described_class.columns]).to eq([2, 7, 120])
       end
     end
   end
@@ -136,7 +157,7 @@ RSpec.describe EnvVars do
 
     it 'returns an expanded Pathname when set' do
       with_env('FOLDER' => '.') do
-        expect(described_class.folder).to eq(Pathname.new('.').expand_path)
+        expect(described_class.folder).to eq(Pathname('.').expand_path)
       end
     end
   end
@@ -150,7 +171,7 @@ RSpec.describe EnvVars do
 
     it 'returns an expanded Pathname when set' do
       with_env('REF_FOLDER' => '.') do
-        expect(described_class.ref_folder).to eq(Pathname.new('.').expand_path)
+        expect(described_class.ref_folder).to eq(Pathname('.').expand_path)
       end
     end
   end
@@ -200,7 +221,7 @@ RSpec.describe EnvVars do
 
     it 'returns a Pathname wrapping the env var when set' do
       with_env('_DOTFILES_CRON_BACKUP_FILE' => '/tmp/custom_backup') do
-        expect(described_class.cron_backup_file).to eq(Pathname.new('/tmp/custom_backup'))
+        expect(described_class.cron_backup_file).to eq(Pathname('/tmp/custom_backup'))
       end
     end
   end
@@ -217,7 +238,7 @@ RSpec.describe EnvVars do
 
     it 'is a Pathname wrapping the env var when set' do
       with_env('_DOTFILES_ISSUES_FILE' => '/tmp/issues') do
-        expect(described_class.issues_file).to eq(Pathname.new('/tmp/issues'))
+        expect(described_class.issues_file).to eq(Pathname('/tmp/issues'))
       end
     end
 

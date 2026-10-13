@@ -61,7 +61,7 @@ RSpec.describe Logging do
   describe 'handing issues to a collecting shell script' do
     around do |example|
       Dir.mktmpdir('issues-spec-') do |dir|
-        @issues = Pathname.new(dir).join('issues')
+        @issues = Pathname(dir).join('issues')
         example.run
       end
     end
@@ -333,6 +333,39 @@ RSpec.describe Logging do
 
     it 'returns an empty string for an empty list' do
       expect(described_class.join_array([], :red)).to eq('')
+    end
+  end
+
+  describe '.run_script_result' do
+    it "returns the block's value even though run_script itself returns nil when nested" do
+      allow(described_class).to receive(:run_script) { |*_args, &block| block.call(nil) && nil }
+
+      expect(described_class.run_script_result('x', 'msg') { :outcome }).to eq(:outcome)
+      expect(described_class.run_script_result('x', 'msg') { false }).to be(false)
+    end
+
+    it 'passes the name and message through' do
+      expect(described_class).to receive(:run_script).with('named', 'done').and_yield
+
+      described_class.run_script_result('named', 'done') { true }
+    end
+
+    it 'names the script after its caller when no name is given' do
+      expect(described_class).to receive(:run_script).with('logging_spec', nil).and_yield
+
+      described_class.run_script_result { true }
+    end
+
+    it 'runs the block once through the real run_script when nested' do
+      EnvVars.script_depth = 1
+      calls = 0
+
+      result = described_class.run_script_result('nested') { (calls += 1) > 0 }
+
+      expect(result).to be(true)
+      expect(calls).to eq(1)
+    ensure
+      EnvVars.script_depth = 0
     end
   end
 end

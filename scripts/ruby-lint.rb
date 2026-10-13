@@ -40,7 +40,7 @@ module RubyLint
   # :reek:FeatureEnvy -- Simple iteration over tool config hashes (intentional data structure)
   def run(target: nil)
     target ||= EnvVars::DOTFILES_DIR.join('scripts')
-    target_path = Pathname.new(target).expand_path
+    target_path = Pathname(target).expand_path
     target_path_str = target_path.to_s
 
     unless target_path.exist?

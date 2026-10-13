@@ -38,7 +38,6 @@ require 'open3'
 require 'pathname'
 require 'set'
 require 'shellwords'
-require 'yaml'
 
 require_relative 'utilities/collection_processor'
 require_relative 'utilities/command_utils'
@@ -270,13 +269,14 @@ module ResurrectRepositories
   # @return [void]
   def _run_generate(discovery_dir, filter)
     Logging.with_step('generate config', 'Generating repository configuration') do
-      discovery_dir = Pathname.new(discovery_dir).expand_path.to_s
+      discovery_dir = Pathname(discovery_dir).expand_path.to_s
       Logging.info("#{'Discovering repos under discovery directory:'.yellow} '#{discovery_dir.cyan}'")
       Logging.info("#{'Using filter:'.yellow} '#{filter.cyan}'") unless nil_or_empty?(filter)
       repositories = _find_git_repos_from_disk(discovery_dir)
       discovered_count = repositories.length
       repositories = _apply_filter(repositories, filter)
       generated = repositories.map { |dir| _generate_each(dir) }
+      require 'yaml' # only the generate mode emits YAML
       puts generated.to_yaml
 
       puts ''
@@ -298,7 +298,7 @@ module ResurrectRepositories
   #   call are deliberately ignored so callers processing several files can tell which
   #   specific file had problems.
   def _run_resurrect(config_file, filter)
-    config_file = Pathname.new(config_file).expand_path
+    config_file = Pathname(config_file).expand_path
     warnings_before = Logging.step_warnings.size
     errors_before = Logging.step_errors.size
     file_failed = false
@@ -368,7 +368,7 @@ module ResurrectRepositories
   # @param filter [String, nil] Regex filter string to apply to configured repo paths.
   # @return [void] Sets @has_failures if discrepancies are found (via _verify_all).
   def _run_check(config_file, filter)
-    config_file = Pathname.new(config_file).expand_path
+    config_file = Pathname(config_file).expand_path
 
     Logging.with_step('check repos', "Verifying '#{config_file.cyan}'") do
       _log_filter_if_present(filter)
@@ -389,7 +389,7 @@ module ResurrectRepositories
   # @param filter [String, nil] Regex filter string to apply to configured repo paths.
   # @return [void] Sets @has_failures if any bundle export failed.
   def _run_bundle_export(config_file, filter)
-    config_file = Pathname.new(config_file).expand_path
+    config_file = Pathname(config_file).expand_path
 
     Logging.with_step('bundle export', "Processing '#{config_file.cyan}'") do
       _log_filter_if_present(filter)
@@ -532,7 +532,7 @@ module ResurrectRepositories
       mindepth: 1,
       maxdepth: 999,
       exclude_regex: '.*/\\..*/\\.git',
-      transform_result: ->(git_path) { Pathname.new(git_path).dirname.to_s },
+      transform_result: ->(git_path) { Pathname(git_path).dirname.to_s },
       noise_patterns: ['Permission denied', 'No such file or directory']
     )
     # CollectionProcessor sorts case-sensitively (shared with other callers); re-sort here
@@ -553,9 +553,10 @@ module ResurrectRepositories
   # @return [Array<RepositoryConfig>] Validated repository configuration objects, sorted by folder.
   # :reek:FeatureEnvy -- Operates on method parameter for file I/O (intentional)
   def _read_git_repos_from_file(filename)
-    filename = Pathname.new(filename) unless filename.is_a?(Pathname)
+    filename = Pathname(filename)
 
     # Use explicit UTF-8 encoding to avoid "invalid byte sequence in US-ASCII".
+    require 'yaml' # loaded here rather than at the top: ~40ms that library users of this file never need
     raw_repos = Array(YAML.safe_load(filename.read(encoding: 'UTF-8')))
 
     # Filter active repos and convert to RepositoryConfig objects
@@ -662,9 +663,12 @@ module ResurrectRepositories
     end
 
     git = GitProcessor.new(dir: dir)
-    return false unless _verify_origin(git, dir_colored, effective_origin_url, repo.other_remotes)
+    # One read of the configured remotes (one git fork) serves both the origin check and the sync.
+    remotes = {}
+    git.each_remote { |name, url| remotes[name] = url }
+    return false unless _verify_origin(git, dir_colored, effective_origin_url, repo.other_remotes, remotes)
 
-    _sync_other_remotes(git, dir_colored, remaining_other_remotes)
+    _sync_other_remotes(git, dir_colored, remaining_other_remotes, remotes)
     _fetch_all_remotes(git, dir_colored)
     _run_post_clone_commands(repo.post_clone, dir, dir_colored)
 
@@ -720,11 +724,13 @@ module ResurrectRepositories
   # @param expected_url [String] The URL 'origin' must point at.
   # @param other_remotes [Hash{String => String}] Configured additional remotes, consulted
   #   only to explain a mismatch (see _fallback_clone_hint).
+  # @param remotes [Hash{String => String}] Remote name => URL as currently configured in the
+  #   repository; 'origin' is added to it when this method adds it.
   # @return [Boolean] false when 'origin' points elsewhere or cannot be added (fatal for
   #   this repo -- wrong URL means wrong code); true otherwise.
-  def _verify_origin(git, dir_colored, expected_url, other_remotes)
+  def _verify_origin(git, dir_colored, expected_url, other_remotes, remotes)
     Logging.with_step('clone verification', 'Clone verification') do
-      cloned_origin_url = git.remote_url(name: ORIGIN_NAME)
+      cloned_origin_url = remotes[ORIGIN_NAME]
       if cloned_origin_url
         next true if cloned_origin_url == expected_url
 
@@ -737,8 +743,10 @@ module ResurrectRepositories
       # -- not fatal; add it from config instead of failing.
       Logging.info("No 'origin' remote found for pre-existing repo '#{dir_colored}' -- adding it from config: '#{expected_url.cyan}'")
       stdout, stderr, status = git.add_remote(ORIGIN_NAME, expected_url)
-      CommandUtils.check_status_or_record(stdout, stderr, status,
-                                          "Failed to add missing 'origin' remote '#{expected_url.cyan}' for repo '#{dir_colored}'", severity: :error)
+      added = CommandUtils.check_status_or_record(stdout, stderr, status,
+                                                  "Failed to add missing 'origin' remote '#{expected_url.cyan}' for repo '#{dir_colored}'", severity: :error)
+      remotes[ORIGIN_NAME] = expected_url if added
+      added
     end
   end
 
@@ -771,12 +779,11 @@ module ResurrectRepositories
   # @param git [GitProcessor] Processor for the repository.
   # @param dir_colored [String] Colorized directory for messages.
   # @param desired [Hash{String => String}] Remote name => URL from the configuration.
+  # @param existing [Hash{String => String}] Remote name => URL as currently configured.
   # @return [void]
   # :reek:FeatureEnvy -- Operates on the remotes of the processor passed in
-  def _sync_other_remotes(git, dir_colored, desired)
+  def _sync_other_remotes(git, dir_colored, desired, existing)
     Logging.with_step('remote configuration', 'Remote configuration') do
-      existing = {}
-      git.each_remote { |name, url| existing[name] = url }
       Logging.debug("Existing remotes: #{existing.keys.join(', ').yellow}") unless nil_or_empty?(existing)
 
       desired.each do |name, url|

@@ -30,11 +30,7 @@ module BootstrapRepos
   # @return [Boolean] false when the config could not be generated or some repo could not be
   #   fully resurrected; each problem is also recorded (and printed) at the point it occurs.
   def run
-    ok = false
-    Logging.run_script('bootstrap_repos', 'Cloning the home and browser-profiles repos') do
-      ok = _run
-    end
-    ok
+    Logging.run_script_result('bootstrap_repos', 'Cloning the home and browser-profiles repos') { _run }
   end
 
   # ---------------------------------------------------------------------------

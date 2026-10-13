@@ -7,7 +7,7 @@ require 'homebrew_install'
 RSpec.describe HomebrewInstall do
   around do |example|
     Dir.mktmpdir('homebrew-install-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       example.run
     end
   end
@@ -49,7 +49,7 @@ RSpec.describe HomebrewInstall do
     it 'prepares the prefix, downloads the installer and runs it non-interactively' do
       expect(CommandUtils).to receive(:run_interactive).with('sudo', 'mkdir', '-p', *%w[tmp repository plugins bin].map { |d| prefix.join(d).to_s }).ordered.and_return(true)
       expect(CommandUtils).to receive(:run_interactive).with('sudo', 'chown', '-fR', 'someuser:admin', prefix.to_s).ordered.and_return(true)
-      expect(CommandUtils).to receive(:run_interactive).with('curl', *described_class.curl_opts, '-fsSL', %r{\Ahttps://raw\.githubusercontent\.com/Homebrew/install/HEAD/install\.sh\?\d+\z}, '-o', String).ordered.and_return(true)
+      expect(CommandUtils).to receive(:curl_download).with(%r{\Ahttps://raw\.githubusercontent\.com/Homebrew/install/HEAD/install\.sh\?\d+\z}, String, bootstrap: true, interactive: true).ordered.and_return(true)
       expect(CommandUtils).to receive(:run_interactive).with({ 'NONINTERACTIVE' => '1' }, 'bash', String).ordered.and_return(true)
 
       expect(run_quietly).to be true
@@ -96,41 +96,10 @@ RSpec.describe HomebrewInstall do
     end
 
     it 'is false when HOMEBREW_PREFIX is empty' do
-      stub_const('EnvVars::HOMEBREW_PREFIX', Pathname.new(''))
+      stub_const('EnvVars::HOMEBREW_PREFIX', Pathname(''))
       expect(CommandUtils).not_to receive(:run_interactive)
 
       expect(run_quietly).to be false
-    end
-  end
-
-  describe '.curl_opts' do
-    before do
-      allow(EnvVars).to receive(:cache_bust_headers?).and_return(false)
-      allow(EnvVars).to receive(:curl_retry_opts?).and_return(false)
-    end
-
-    it 'adds the retry flags while ~/.curlrc is not linked' do
-      expect(described_class.curl_opts).to eq(HomebrewInstall::RETRY_OPTS)
-    end
-
-    it 'adds nothing when ~/.curlrc exists and nothing is requested' do
-      @tmp.join('.curlrc').write('')
-
-      expect(described_class.curl_opts).to eq([])
-    end
-
-    it 'adds the retry flags when CURL_RETRY_OPTS is set even with ~/.curlrc' do
-      @tmp.join('.curlrc').write('')
-      allow(EnvVars).to receive(:curl_retry_opts?).and_return(true)
-
-      expect(described_class.curl_opts).to eq(HomebrewInstall::RETRY_OPTS)
-    end
-
-    it 'puts the cache-busting headers first when CACHE_BUST_HEADERS is set' do
-      allow(EnvVars).to receive(:cache_bust_headers?).and_return(true)
-      @tmp.join('.curlrc').write('')
-
-      expect(described_class.curl_opts).to eq(HomebrewInstall::CACHE_BUST_OPTS)
     end
   end
 end

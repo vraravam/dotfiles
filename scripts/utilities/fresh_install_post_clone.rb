@@ -78,9 +78,8 @@ module FreshInstallPostClone
   # @return [Boolean] true if the installation ran to the end (recorded warnings/errors are shown in
   #   the summary and the notification), false if it was aborted.
   def run(steps_done: 0, start_time: nil)
-    ok = false
     if EnvVars.script_depth.zero?
-      Logging.run_script(SCRIPT_NAME, FINISHED_MESSAGE) { ok = _run(steps_done.to_i) }
+      ok = Logging.run_script_result(SCRIPT_NAME, FINISHED_MESSAGE) { _run(steps_done.to_i) }
     else
       # Run by the shell script, which owns the script banner and has already raised the depth:
       # print only the closing summary.

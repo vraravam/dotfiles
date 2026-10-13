@@ -395,6 +395,7 @@ my_function() {
 **Benefits of `call_utility`:**
 - No string-built Ruby source (no quoting/injection hazards)
 - Preserves `COLUMNS` env var (needed for terminal width)
+- Runs the system Ruby with `--disable-gems` (saves ~80ms per call; utilities must only use the standard library)
 - Ruby availability check (graceful no-op if Ruby not installed)
 - Consistent pattern across all shell->Ruby calls
 
@@ -557,8 +558,8 @@ end
 
 ```ruby
 # Good -- Pathname constants (expensive to construct, immutable, never change)
-HOME = Pathname.new(ENV.fetch('HOME', '~')).expand_path.freeze
-DOTFILES_DIR = Pathname.new(ENV.fetch('DOTFILES_DIR', HOME.join('.config', 'dotfiles'))).expand_path.freeze
+HOME = Pathname(ENV.fetch('HOME', '~')).expand_path.freeze
+DOTFILES_DIR = Pathname(ENV.fetch('DOTFILES_DIR', HOME.join('.config', 'dotfiles'))).expand_path.freeze
 
 # Good -- Non-Pathname methods (evaluated on each call)
 def self.force_color?
@@ -571,7 +572,7 @@ end
 
 # Good -- Methods can return Pathname when appropriate
 def self.cron_backup_file
-  Pathname.new(
+  Pathname(
     ENV.fetch('_DOTFILES_CRON_BACKUP_FILE') do
       TMPDIR.join('crontab_backup').to_s
     end
@@ -591,7 +592,7 @@ SCRIPT_DEPTH = ENV.fetch('_DOTFILES_SCRIPT_DEPTH', '0').to_i  # frozen at load t
 - **Single source of truth**: All env var defaults and access patterns in one place
 - **DRY**: Repeated `ENV.fetch('SAME_VAR', 'same_default')` across files is duplication
 - **Discoverability**: New developers see all env vars used by the system in one file
-- **Type safety**: EnvVars can provide typed accessors (`.to_i`, `Pathname.new()`, etc.)
+- **Type safety**: EnvVars can provide typed accessors (`.to_i`, `Pathname()`, etc.)
 - **Documentation**: Comments in EnvVars document what each var is for
 
 **Scan rule**: When adding/editing code, search for `ENV.fetch('` with a string

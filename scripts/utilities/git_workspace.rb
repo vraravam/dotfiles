@@ -116,7 +116,7 @@ module GitWorkspace
     seen = Set.new
 
     repo_roots.each do |repo_root|
-      dir = Pathname.new(repo_root)
+      dir = Pathname(repo_root)
       dir = dir.dirname unless include_repo_root
 
       while dir != Core::ROOT
@@ -143,7 +143,7 @@ module GitWorkspace
   # @return [Boolean] true if status retrieved successfully
   # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def status_repo(repo_dir, switches: [])
-    repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
+    repo_dir = Pathname(repo_dir)
 
     unless GitProcessor.repo?(repo_dir)
       Logging.debug "Skipping status -- '#{repo_dir.cyan}' is not a git repo"
@@ -218,7 +218,7 @@ module GitWorkspace
     # Collect parent dirs (ancestors of repo roots, up to but not including PROJECTS_BASE_DIR)
     parent_dirs = collect_ancestors(
       repo_roots,
-      stop_at: Pathname.new(projects_base),
+      stop_at: projects_base,
       include_repo_root: false,
       include_stop_boundary: false
     )
@@ -238,9 +238,7 @@ module GitWorkspace
 
     return unless force
 
-    # Use Core.read_lines_utf8 to avoid encoding issues in non-UTF-8 environments.
-    count = Core.read_lines_utf8(cache_file).length
-    Logging.success "Repo aliases cache regenerated (#{count.to_s.green} aliases)"
+    Logging.success "Repo aliases cache regenerated (#{sorted_dirs.length.to_s.green} aliases)"
   end
 
   # Stages and commits all changed files in a git repo without prompting.
@@ -253,7 +251,7 @@ module GitWorkspace
   # @return [Boolean] true if successful, false if repo is invalid or git operations fail
   # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def update_repo(repo_dir, paths: nil)
-    repo_dir = Pathname.new(repo_dir) unless repo_dir.is_a?(Pathname)
+    repo_dir = Pathname(repo_dir)
 
     unless GitProcessor.repo?(repo_dir)
       Logging.warn "Skipping repo update -- '#{repo_dir.cyan}' is not a git repo"

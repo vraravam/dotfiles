@@ -91,9 +91,7 @@ class GitProcessor
 
       # Create initial commit with --no-verify to skip pre-commit hooks
       # (pre-commit runs RuboCop which may fail on personal scripts that don't follow dotfiles standards)
-      prefix = commit_count.zero? ? 'Initial' : 'Incremental'
-      message = "#{prefix} commit: #{Core.current_timestamp}"
-      _stdout, stderr, commit_status = commit(message, no_verify: true)
+      _stdout, stderr, commit_status = commit(default_commit_message, no_verify: true)
       unless commit_status.success?
         Logging.record_error 'Failed to create commit after recreation'
         Logging.record_error "Stderr: #{stderr}" unless nil_or_empty?(stderr)
@@ -190,7 +188,7 @@ class GitProcessor
     # @param ref_format [String] The ref-format to use (defaults to 'reftable').
     # @return [Boolean] true on success, false on failure.
     def _recreate(ref_format: 'reftable')
-      git_path = @dir.join('.git')
+      git_path = _git_path
 
       # Capture current state before destroying .git -- every configured remote (see
       # doc above for why this must not be limited to just 'origin').

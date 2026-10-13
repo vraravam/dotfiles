@@ -3,6 +3,29 @@
 require_relative '../scripts/install-ruby26-gems'
 
 RSpec.describe InstallRuby26Gems do
+  describe '.run' do
+    it 'touches the stamp the .envrc compares against the script after a successful run' do
+      allow(described_class).to receive(:_run).with(false).and_return(true)
+      expect(Core).to receive(:mark_updated!).with(InstallRuby26Gems::STAMP_FILE)
+      allow(PathUtils).to receive(:ensure_directories_exist)
+
+      expect(described_class.run).to be true
+    end
+
+    it 'leaves the stamp alone when something failed, so the next directory entry retries' do
+      allow(described_class).to receive(:_run).and_return(false)
+      expect(Core).not_to receive(:mark_updated!)
+
+      expect(described_class.run).to be false
+    end
+
+    it 'uses the stamp path the repo .envrc spells out' do
+      envrc = File.read(File.expand_path('../.envrc', __dir__))
+
+      expect(envrc).to include("${XDG_CACHE_HOME:-${HOME}/.cache}/#{InstallRuby26Gems::STAMP_FILE.basename}")
+    end
+  end
+
   describe '._toolchain_hint' do
     let(:make_error) { "make: *** No rule to make target '/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/x/ruby/config.h', needed by 'cparse.o'.  Stop." }
 

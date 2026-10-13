@@ -7,7 +7,7 @@ require 'preferences_restore'
 RSpec.describe PreferencesRestore do
   around do |example|
     Dir.mktmpdir('prefs-restore-spec-') do |dir|
-      @tmp = Pathname.new(dir)
+      @tmp = Pathname(dir)
       example.run
     end
   end

@@ -2,7 +2,6 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-require 'fileutils'
 require 'open3'
 
 require_relative 'core'
@@ -41,7 +40,7 @@ module ShellrcCheck
     downloaded = EnvVars::HOME.join('.shellrc')
     repo_copy = EnvVars::DOTFILES_DIR.join(REPO_SHELLRC_RELATIVE)
     # An unreadable or missing file counts as a mismatch.
-    return true if downloaded.file? && repo_copy.file? && FileUtils.compare_file(downloaded.to_s, repo_copy.to_s)
+    return true if downloaded.file? && repo_copy.file? && downloaded.binread == repo_copy.binread
 
     _explain(downloaded, repo_copy)
     false

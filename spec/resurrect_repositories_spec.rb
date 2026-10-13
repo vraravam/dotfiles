@@ -124,13 +124,19 @@ RSpec.describe ResurrectRepositories do
     before do
       allow(PathUtils).to receive(:ensure_directories_exist)
       allow(GitProcessor).to receive(:new).and_return(git)
-      allow(git).to receive_messages(remote_url: valid['remote'], fetch_all: ['', '', ok])
-      allow(git).to receive(:each_remote)
+      allow(git).to receive_messages(fetch_all: ['', '', ok])
+      stub_remotes(valid['remote'])
       allow(git).to receive(:add_remote).and_return(['', '', ok])
     end
 
     def resurrect
       described_class.send(:_resurrect_each, repo)
+    end
+
+    # The remotes as configured in the repository: 'origin' (unless nil) plus +others+.
+    def stub_remotes(origin, others = {})
+      configured = { 'origin' => origin }.compact.merge(others)
+      allow(git).to receive(:each_remote) { |&block| configured.each { |name, url| block.call(name, url) } }
     end
 
     it 'succeeds when the primary clone works and origin matches' do
@@ -148,7 +154,7 @@ RSpec.describe ResurrectRepositories do
 
     it 're-points a configured remote whose URL differs' do
       allow(GitProcessor).to receive(:clone_repo_into).and_return(true)
-      allow(git).to receive(:each_remote).and_yield('mirror', 'https://old/x.git')
+      stub_remotes(valid['remote'], 'mirror' => 'https://old/x.git')
       expect(git).to receive(:set_remote_url).with('mirror', 'https://m/x.git').and_return(['', '', ok])
 
       expect { resurrect }.to output.to_stdout
@@ -157,7 +163,7 @@ RSpec.describe ResurrectRepositories do
     it 'falls back to an other_remotes URL and keeps the failed primary as that remote' do
       calls = []
       allow(GitProcessor).to receive(:clone_repo_into) { |url, *_| calls << url && url == 'https://m/x.git' }
-      allow(git).to receive(:remote_url).and_return('https://m/x.git')
+      stub_remotes('https://m/x.git')
       expect(git).to receive(:add_remote).with('mirror', valid['remote']).and_return(['', '', ok])
 
       expect { expect(resurrect).to be true }.to output.to_stdout
@@ -173,7 +179,7 @@ RSpec.describe ResurrectRepositories do
 
     it 'fails when origin points somewhere other than the configuration' do
       allow(GitProcessor).to receive(:clone_repo_into).and_return(true)
-      allow(git).to receive(:remote_url).and_return('https://elsewhere/x.git')
+      stub_remotes('https://elsewhere/x.git')
 
       expect { expect(resurrect).to be false }.to output.to_stdout
       expect(Logging.step_errors.last).to match(/differs from config/)
@@ -181,7 +187,7 @@ RSpec.describe ResurrectRepositories do
 
     it 'explains the mismatch when origin is a configured other_remotes URL (an earlier fallback clone)' do
       allow(GitProcessor).to receive(:clone_repo_into).and_return(true)
-      allow(git).to receive(:remote_url).and_return('https://m/x.git')
+      stub_remotes('https://m/x.git')
 
       expect { expect(resurrect).to be false }.to output.to_stdout
       expect(Logging.step_errors.last).to match(/differs from config.*matches 'other_remotes' entry 'mirror'.*earlier fallback clone/)
@@ -190,7 +196,7 @@ RSpec.describe ResurrectRepositories do
 
     it 'adds no hint when origin matches nothing in the configuration' do
       allow(GitProcessor).to receive(:clone_repo_into).and_return(true)
-      allow(git).to receive(:remote_url).and_return('https://elsewhere/x.git')
+      stub_remotes('https://elsewhere/x.git')
 
       expect { resurrect }.to output.to_stdout
       expect(Logging.step_errors.last).not_to include('fallback clone')
@@ -198,11 +204,19 @@ RSpec.describe ResurrectRepositories do
 
     it 'adds a missing origin from the configuration (e.g. after a bundle import)' do
       allow(GitProcessor).to receive(:clone_repo_into).and_return(true)
-      allow(git).to receive(:remote_url).and_return(nil)
+      stub_remotes(nil)
       expect(git).to receive(:add_remote).with('origin', valid['remote']).and_return(['', '', ok])
       allow(git).to receive(:add_remote).with('mirror', anything).and_return(['', '', ok])
 
       expect { expect(resurrect).to be true }.to output.to_stdout
+    end
+
+    it 'reads the configured remotes once for both the origin check and the sync' do
+      allow(GitProcessor).to receive(:clone_repo_into).and_return(true)
+      expect(git).to receive(:each_remote).once
+      expect(git).not_to receive(:remote_url)
+
+      expect { resurrect }.to output.to_stdout
     end
 
     it 'treats a failed fetch as a warning, not a failure' do

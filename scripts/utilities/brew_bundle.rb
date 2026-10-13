@@ -38,11 +38,9 @@ module BrewBundle
   # @return [Boolean] false when Homebrew or the Brewfile could not be used, or when
   #   'brew bundle' reported errors; each of those is already recorded as a warning.
   def run(first_install: EnvVars.first_install?)
-    ok = false
-    Logging.run_script('brew_bundle', 'Installing the Brewfile with Homebrew') do
-      ok = _install(first_install: first_install, brew_bin: EnvVars::HOMEBREW_PREFIX.join('bin', 'brew'))
+    Logging.run_script_result('brew_bundle', 'Installing the Brewfile with Homebrew') do
+      _install(first_install: first_install, brew_bin: EnvVars::HOMEBREW_PREFIX.join('bin', 'brew'))
     end
-    ok
   end
 
   # ---------------------------------------------------------------------------

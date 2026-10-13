@@ -92,9 +92,9 @@ clone_repo_into() { ... }
 is_file() { ... }
 
 # Good -- private/internal functions use snake_case with leading underscore
-_log_indent() { ... }
+_set_log_indent() { ... }
 _colorize() { ... }
-_strip_ansi() { ... }
+_strip_ansi_into() { ... }
 
 # BAD -- kebab-case is for file names, not function names
 current-timestamp() { ... }   # Wrong
@@ -190,7 +190,7 @@ This improves:
 
 **Note**: `is_directory` returns false for root (`/`) to prevent accidental operations on the filesystem root. Ruby equivalent: `PathUtils.valid_directory?` (see `scripts/utilities/path_utils.rb`).
 
-**Note**: `is_root_dir` is used to check if a directory path is root before write operations. Use bash-compatible `${path%/*}` to get parent directory (not `${path:h}` which is zsh-only). Pattern: `is_root_dir "${path%/*}"`. Ruby equivalent: `PathUtils.root_dir?`.
+**Note**: `is_root_dir` is true only for `/` itself. To refuse write/delete operations on a path that is `/` or a direct child of `/` (e.g. `/foo`), use `_is_direct_child_of_root "${path}"` -- it handles the case where `${path%/*}` is empty (`/foo`), which `is_root_dir "${path%/*}"` would miss, and is bash-compatible (unlike `${path:h}`). Ruby equivalent: `PathUtils.root_dir?`.
 
 ### Examples
 
@@ -222,9 +222,9 @@ if is_directory "${PERSONAL_BIN_DIR}"; then
 fi
 
 # Good -- root directory protection before write operations
-# Use ${var%/*} for bash compatibility (direnv sources .shellrc in bash)
-if is_root_dir "${target_path%/*}"; then
+if _is_direct_child_of_root "${target_path}"; then
   error "Refusing to operate on path in root: '${target_path}'"
+  return 1
 fi
 rm -f "${target_path}"
 ```
@@ -565,7 +565,10 @@ done
 # Summary-only warning -- only in final summary (aggregated message)
 if is_non_empty_array failed_files; then
   local msg="Failed to process ${#failed_files[@]} file(s):"
-  msg+=$'\n'"$(join_array failed_files)"
+  local failed_file
+  for failed_file in "${failed_files[@]}"; do
+    msg+=$'\n'"  - '${failed_file}'"
+  done
   _step_warnings+=("[${_SCRIPT_NAME}][${_current_section}] ${msg}")
 fi
 ```
@@ -587,7 +590,7 @@ See [`script-depth-tracking.md`](./script-depth-tracking.md) for complete detail
 - Decrement on exit: `trap '_decrement_script_depth' EXIT`
 - Dual purpose: nesting suppression (outermost only prints banners) + auto-indentation (2 spaces per depth)
 - Never manually indent log messages
-- Bulleted lists: `join_array` auto-indents one level deeper
+- Bulleted lists: build one `  - '<item>'` line per item explicitly (Ruby has `Logging.join_array`)
 - External tool output intentionally unindented
 
 ## Path Constants
@@ -792,7 +795,7 @@ public_function() { ... }    # no prefix - part of public API
 - **All** helper functions that are not the main entry point or intended for external use must be prefixed with `_`
 - Main execution code (option parsing, main logic) comes after helper definitions
 - Functions in `.shellrc` and `.aliases` that are intended to be called by users or other scripts should NOT have underscore prefix
-- Functions in `.shellrc` and `.aliases` that are only called internally (like `_log_indent`, `_colorize`, `_strip_ansi`) MUST have underscore prefix
+- Functions in `.shellrc` and `.aliases` that are only called internally (like `_set_log_indent`, `_colorize`, `_strip_ansi_into`) MUST have underscore prefix
 
 **Applies to:**
 - Helper functions in standalone scripts (anything in `${DOTFILES_DIR}/scripts/*.sh`)

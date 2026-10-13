@@ -30,11 +30,9 @@ module DefaultShell
   # @return [Boolean] false when Homebrew zsh is missing or when /etc/shells or chsh could not
   #   be updated (each of which is also recorded in this run's summary); true otherwise.
   def run
-    ok = false
-    Logging.run_script('default_shell', 'Setting the default shell to Homebrew zsh') do
-      ok = _set_default_shell(EnvVars::HOMEBREW_PREFIX.join('bin', 'zsh'))
+    Logging.run_script_result('default_shell', 'Setting the default shell to Homebrew zsh') do
+      _set_default_shell(EnvVars::HOMEBREW_PREFIX.join('bin', 'zsh'))
     end
-    ok
   end
 
   # ---------------------------------------------------------------------------

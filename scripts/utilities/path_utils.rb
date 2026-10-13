@@ -2,11 +2,11 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-require 'open3'
 require 'pathname'
 
 require_relative 'command_utils'
 require_relative 'core'
+require_relative 'env_vars'
 require_relative 'logging'
 require_relative 'macos'
 
@@ -26,7 +26,8 @@ module PathUtils
   include Core  # For instance methods (in blocks)
   extend Core   # For module methods
 
-  # Cache for command existence checks (reduces which forks from N per check -> 1 per command)
+  # Commands already found on PATH. Only hits are cached: a miss must be re-checked next time,
+  # because the command may be installed (e.g. by 'brew install') while this process runs.
   @command_cache = {}
 
   # ---------------------------------------------------------------------------
@@ -40,6 +41,10 @@ module PathUtils
   # Checks if a command exists in the system PATH.
   # Mirrors command_exists() from .shellrc.
   #
+  # Scans PATH in-process (a regular, executable file per entry) rather than forking 'which',
+  # which costs ~6ms per distinct command. A command containing '/' is checked as a path, like
+  # the shell does. Only positive results are memoized (see @command_cache).
+  #
   # @param command [String] The command name to check
   # @return [Boolean] true if the command exists in PATH, false otherwise
   #
@@ -47,9 +52,11 @@ module PathUtils
   #   PathUtils.command_exists?('ruby')  # => true
   #   PathUtils.command_exists?('nosuchcommand')  # => false
   def command_exists?(command)
-    return @command_cache[command] if @command_cache.key?(command)
+    return true if @command_cache[command]
 
-    @command_cache[command] = CommandUtils.run_silent('which', command.to_s)
+    found = _executable_on_path?(command.to_s)
+    @command_cache[command] = true if found
+    found
   end
 
   # Checks if a path is a valid directory (exists, is a directory, and is not root '/').
@@ -59,16 +66,15 @@ module PathUtils
   # @return [Boolean] true if path is a non-root directory, false otherwise
   #
   # @example
-  #   PathUtils.valid_directory?(Pathname.new('/tmp'))  # => true
-  #   PathUtils.valid_directory?(Pathname.new('/'))     # => false (root excluded)
+  #   PathUtils.valid_directory?(Pathname('/tmp'))  # => true
+  #   PathUtils.valid_directory?(Pathname('/'))     # => false (root excluded)
   #   PathUtils.valid_directory?(nil)                   # => false
   #   PathUtils.valid_directory?('')                    # => false
   def valid_directory?(path)
     return false if nil_or_empty?(path)
     return false if root_dir?(path)
 
-    path_pn = path.is_a?(Pathname) ? path : Pathname.new(path.to_s)
-    path_pn.directory?
+    Pathname(path.to_s).directory?
   end
 
   # Checks if a path is the root directory '/'.
@@ -78,9 +84,9 @@ module PathUtils
   # @return [Boolean] true if path is root '/', false otherwise
   #
   # @example
-  #   PathUtils.root_dir?(Pathname.new('/'))      # => true
+  #   PathUtils.root_dir?(Pathname('/'))      # => true
   #   PathUtils.root_dir?('/')                    # => true
-  #   PathUtils.root_dir?(Pathname.new('/tmp'))   # => false
+  #   PathUtils.root_dir?(Pathname('/tmp'))   # => false
   #   PathUtils.root_dir?(nil)                    # => false
   def root_dir?(path)
     return false if nil_or_empty?(path)
@@ -96,16 +102,14 @@ module PathUtils
   # @return [Boolean] true if parent is not root, false if parent is root or path is invalid
   #
   # @example
-  #   PathUtils.safe_for_write?(Pathname.new('/tmp/file'))     # => true (parent is /tmp)
-  #   PathUtils.safe_for_write?(Pathname.new('/etc'))          # => false (parent is /)
-  #   PathUtils.safe_for_write?(Pathname.new('/rootfile.txt')) # => false (parent is /)
+  #   PathUtils.safe_for_write?(Pathname('/tmp/file'))     # => true (parent is /tmp)
+  #   PathUtils.safe_for_write?(Pathname('/etc'))          # => false (parent is /)
+  #   PathUtils.safe_for_write?(Pathname('/rootfile.txt')) # => false (parent is /)
   #   PathUtils.safe_for_write?(nil)                           # => false
   def safe_for_write?(path)
     return false if nil_or_empty?(path)
 
-    path_pn = path.is_a?(Pathname) ? path : Pathname.new(path.to_s)
-
-    !root_dir?(path_pn.parent)
+    !root_dir?(Pathname(path.to_s).parent)
   end
 
   # Returns the size of a directory in kilobytes using du.
@@ -115,23 +119,10 @@ module PathUtils
   # @return [Integer] Size in kilobytes
   #
   # @example
-  #   PathUtils.dir_size_kb(Pathname.new('/path/to/dir'))  # => 1024
+  #   PathUtils.dir_size_kb(Pathname('/path/to/dir'))  # => 1024
   # :reek:UtilityFunction -- Stateless utility that operates only on arguments
   def dir_size_kb(dir)
     CommandUtils.query(MacOS::DU_CMD, '-sk', dir.to_s).split("\t").first.to_i
-  end
-
-  # Returns the size of a directory in human-readable format using du.
-  # Uses MacOS::DU_CMD for reliability in cron/system contexts.
-  #
-  # @param dir [Pathname, String] Directory path to measure
-  # @return [String] Human-readable size (e.g., "1.5G", "234M", "4.2K")
-  #
-  # @example
-  #   PathUtils.dir_size_human(Pathname.new('/path/to/dir'))  # => "1.5G"
-  # :reek:UtilityFunction -- Stateless utility that operates only on arguments
-  def dir_size_human(dir)
-    CommandUtils.query(MacOS::DU_CMD, '-sh', dir.to_s).split("\t").first
   end
 
   # Extract a path segment at a given index from a dir path
@@ -149,7 +140,7 @@ module PathUtils
 
   # Yields Pathname objects for each match from Dir.glob, converting strings to Pathname.
   # Dir.glob returns strings; this helper immediately converts them so callers work with
-  # Pathname throughout without repeated Pathname.new() at every call site.
+  # Pathname throughout without repeated Pathname() at every call site.
   #
   # @param pattern [Pathname, String] Glob pattern (can be Pathname with embedded pattern).
   # @param flags [Integer] Optional Dir.glob flags (e.g., File::FNM_CASEFOLD).
@@ -165,7 +156,7 @@ module PathUtils
     return unless block_given?
 
     Dir.glob(pattern, flags).each do |path_str|
-      yield Pathname.new(path_str)
+      yield Pathname(path_str)
     end
   end
 
@@ -190,7 +181,7 @@ module PathUtils
     Array(dirs).each do |dir|
       next if nil_or_empty?(dir.to_s)
 
-      Pathname.new(dir).mkpath
+      Pathname(dir).mkpath
       Logging.debug "Ensured directory exists: '#{dir.cyan}'"
     end
   end
@@ -221,5 +212,23 @@ module PathUtils
 
     ENV['PATH'] = "#{current_path}:#{dir_str}"
     Logging.debug "Appended to PATH: '#{dir_str.cyan}'"
+  end
+
+  private
+
+  # @param command [String] A bare command name, or a path (when it contains '/')
+  # @return [Boolean] true when it resolves to a regular, executable file
+  def _executable_on_path?(command)
+    return false if command.empty?
+    return _executable_file?(command) if command.include?(File::SEPARATOR)
+
+    EnvVars.path.split(File::PATH_SEPARATOR).any? do |dir|
+      !dir.empty? && _executable_file?(File.join(dir, command))
+    end
+  end
+
+  # @return [Boolean] true for a regular file (symlinks followed) with an execute bit
+  def _executable_file?(path)
+    File.file?(path) && File.executable?(path)
   end
 end

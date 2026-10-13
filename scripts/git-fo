@@ -10,13 +10,17 @@
 # is the one robust fetch mechanism in this config -- 'unshallow', antidote.rb (via
 # GitProcessor), and the 'pullsub' alias all delegate here rather than calling 'git
 # fetch' directly, so hang protection and repair logic live in one place. Before
-# fetching, sweeps any stale 'tmp_pack_*'/'tmp_obj_*' files left in '.git/objects' by
-# a previous killed/interrupted fetch (with-retry's SIGKILL bypasses git's own
-# cleanup-on-signal handling, so these otherwise accumulate indefinitely) -- gated to
-# files older than 15 minutes (matches the longest with-retry hard-cap in use here:
+# fetching, sweeps any stale 'tmp_pack_*'/'tmp_obj_*' files left in the repo's objects
+# directory by a previous killed/interrupted fetch (with-retry now sends SIGTERM first so git
+# cleans up after itself, but a fetch that had to be SIGKILLed after the grace period, or died
+# with the machine, still leaves them) -- gated
+# to files older than 15 minutes (matches the longest with-retry hard-cap in use here:
 # 90s x 10) so a genuinely-concurrent fetch elsewhere on this same repo is never
-# touched. Configures all remotes to fetch all branches (widens a shallow clone's
-# default single-branch tracking; idempotent, cheap to redo every call). If the repo
+# touched. The objects directory is found via 'git rev-parse --git-common-dir', so this
+# also works where '.git' is a file (submodules, linked worktrees). Configures every
+# remote that does not already fetch '+refs/heads/*:refs/remotes/<remote>/*' to fetch all
+# branches (widens a shallow clone's default single-branch tracking); remotes that
+# already do are left alone, so the common case costs no extra git calls. If the repo
 # has a promisor remote (partial/blobless clone), that remote is always fetched
 # FIRST, before any other remote: fetching a non-promisor remote (e.g. 'upstream' in
 # a fork) while blobs are still missing from the promisor can fail with 'did not
@@ -24,23 +28,43 @@
 # non-promisor remote may build thin-pack deltas against base objects the client
 # doesn't actually have yet. Each fetch is wrapped in 'git with-retry' (inactivity-
 # based, not a fixed wall-clock timeout, so a slow-but-progressing transfer is not
-# killed early). If a fetch still fails after retries, that most likely means locally
-# corrupted objects rather than a network stall (with-retry already absorbs
-# transient/stall failures) -- a single prune + gc is attempted, followed by one more
-# retry pass. A failure past that point is logged and skipped rather than escalated
-# further: more aggressive local repair (removing the remote, 'gc --aggressive
-# --prune=now') is expensive, drops git's default unreachable-object grace period,
-# and risks colliding with a concurrent 'git maintain' call run nearby. Remote is the
-# source of truth. Note: --all/--tags/--prune flags on the fetches themselves are
-# omitted -- fetch.all, fetch.pruneTags, and fetch.prune=true in config make each
-# 'git fetch <remote>' below equivalent to 'git fetch <remote> --tags --prune'.
+# killed early); with-retry captures the fetch's stderr into a temp file (replaying it
+# as it goes) so the last error can be repeated when a remote finally gives up. If a
+# fetch still fails after retries, that most likely means locally corrupted objects
+# rather than a network stall (with-retry already absorbs transient/stall failures) --
+# a single gc is attempted, followed by one more retry pass. There is deliberately no
+# separate 'git prune': gc already prunes unreachable objects, honouring
+# gc.pruneExpire's grace period, whereas a bare prune ignores that setting and can
+# delete objects a concurrent writer has just created. A failure past that point is
+# logged and the remote skipped rather than escalated further: more aggressive local
+# repair (removing the remote, 'gc --aggressive --prune=now') is expensive, drops git's
+# default unreachable-object grace period, and risks colliding with a concurrent 'git
+# maintain' call run nearby. Remote is the source of truth. Note: --all/--tags/--prune
+# flags on the fetches themselves are omitted -- fetch.all, fetch.pruneTags, and
+# fetch.prune=true in config make each 'git fetch <remote>' below equivalent to 'git
+# fetch <remote> --tags --prune'.
+#
+# PARTIAL CLONES: the other remotes are registered as promisors with the promisor remote's filter
+# before they are fetched (see fetch_remotes for why).
+#
+# SHALLOW CLONES: a shallow repository is first made complete with one single-branch, no-tags
+# '--unshallow' fetch and a long inactivity allowance (see unshallow_remote for the measurements
+# behind that), then every other branch and tag comes in with the ordinary fetch below.
+#
+# EXIT STATUS: non-zero if any remote could not be fetched even after retries and local
+# repair. A failing remote does not stop the others from being fetched, and the
+# gone-branch cleanup ('dlb') still runs; the failure is reported on stderr at the end and
+# the exit status is non-zero so callers (git upreb, git unshallow, run-all.rb in cron)
+# never mistake a run on stale refs for a successful sync.
 #
 # With --rebase, after fetching, also brings the current branch up to date with its
-# upstream ('@{u}') -- the safe, cron-friendly replacement for a bare 'git pull'. Only
-# rebases if the working tree is clean (no uncommitted or staged changes). If the tree
-# is dirty, skips the rebase, prints a message to stderr, and exits non-zero -- callers
-# such as run-all.rb surface this as a per-repo warning so the user knows to pull
-# manually, rather than the skip being silently dropped.
+# upstream ('@{u}') -- the safe, cron-friendly replacement for a bare 'git pull'. Does
+# NOT rebase if the fetch failed (the upstream refs may be stale): reports that on
+# stderr and exits non-zero. Only rebases if the working tree is clean (no uncommitted
+# or staged changes). If the tree is dirty, skips the rebase, prints a message to
+# stderr, and exits non-zero -- callers such as run-all.rb surface this as a per-repo
+# warning so the user knows to pull manually, rather than the skip being silently
+# dropped.
 # If the rebase target has no common ancestor with the current branch (e.g. after a
 # remote force-squash -- see recreate-repository.rb/KeybaseMigration.md), a plain
 # rebase is meaningless (there is no shared base to replay onto). By default this is
@@ -48,60 +72,195 @@
 # that expect this can opt in with:
 #   git config --local pull.allowResetOnDivergedHistory true
 # in which case a diverged history instead falls back to a hard reset onto @{u}.
+# A rebase that conflicts is aborted at once and the repository left exactly as it was (exit
+# non-zero), never half-done; a rebase that is already in progress is left strictly alone.
 # Usage: git fo [<dir>] [--rebase]
 
+# Locate the shared helpers next to this script's real path (following symlinks on PATH).
+_self="${0}"
+case "${_self}" in */*) ;; *) _self="$(command -v "${_self}")" ;; esac
+while [ -h "${_self}" ]; do
+  _target="$(readlink "${_self}")"
+  case "${_target}" in /*) _self="${_target}" ;; *) _self="${_self%/*}/${_target}" ;; esac
+done
+# shellcheck source=shared/git-common.sh
+. "${_self%/*}/shared/git-common.sh"
+
 # Git ran the former alias from the work tree's top level; an external command runs from the
-# caller's directory, so the default directory is the top level (not '.') to keep
+# caller's directory, so resolve_dir defaults to the top level (not '.') to keep
 # 'git fo' from a subdirectory working the same way.
 
+# Inactivity allowance, in seconds, for the one-time '--unshallow' fetch (see unshallow_remote).
+unshallow_timeout_secs="${GIT_FO_UNSHALLOW_TIMEOUT_SECS:-900}"
+
+# Fetches with 'git with-retry' (inactivity timeout <timeout-secs>); if that still fails after its
+# retries, repacks with 'gc' once and tries again. On a final failure prints the last error and
+# returns non-zero. Usage: fetch_or_report <timeout-secs> <remote> <git args...>
+fetch_or_report() {
+  _for_timeout="$1"
+  _for_remote="$2"
+  shift 2
+  if git with-retry "${_for_timeout}" 3 "${fetch_stderr}" "${git_common}/objects" git -C "${dir}" "$@"; then
+    return 0
+  fi
+  printf 'Fetch from %s still failing after retries, trying gc...\n' "${_for_remote}" >&2
+  git -C "${dir}" gc 2>/dev/null || true
+  if git with-retry "${_for_timeout}" 2 "${fetch_stderr}" "${git_common}/objects" git -C "${dir}" "$@"; then
+    return 0
+  fi
+  printf 'Error: could not fetch from %s after retries and local repair -- skipping it. Last error:\n' "${_for_remote}" >&2
+  cat "${fetch_stderr}" >&2
+  return 1
+}
+
+# Sets 'unshallow_branch' to the branch of <remote> to unshallow first, or '' when it cannot be
+# determined without guessing. In order: the current branch's configured upstream on this remote,
+# then the remote's HEAD (refs/remotes/<remote>/HEAD) -- both purely local -- then the current
+# branch if it exists on the remote (one ls-remote round trip).
+# Usage: pick_unshallow_branch <remote>
+pick_unshallow_branch() {
+  unshallow_branch=''
+  _pub_cur="$(git -C "${dir}" symbolic-ref --short -q HEAD)"
+  if [ -n "${_pub_cur}" ] && [ "$(git -C "${dir}" config --get "branch.${_pub_cur}.remote")" = "$1" ]; then
+    _pub_merge="$(git -C "${dir}" config --get "branch.${_pub_cur}.merge")"
+    unshallow_branch="${_pub_merge#refs/heads/}"
+  fi
+  if [ -z "${unshallow_branch}" ]; then
+    _pub_head="$(git -C "${dir}" symbolic-ref --short -q "refs/remotes/$1/HEAD")"
+    unshallow_branch="${_pub_head#"$1"/}"
+  fi
+  if [ -z "${unshallow_branch}" ] && [ -n "${_pub_cur}" ] &&
+    git -C "${dir}" ls-remote --exit-code --heads "$1" "${_pub_cur}" >/dev/null 2>&1; then
+    unshallow_branch="${_pub_cur}"
+  fi
+  case "${unshallow_branch}" in refs/*) unshallow_branch='' ;; esac
+}
+
+# Makes a shallow clone complete: one '--unshallow' fetch of a single branch, no tags, with a long
+# inactivity allowance. The ordinary fetch of every other branch and tag follows in fetch_remotes.
+#
+# Why not simply 'git fetch --unshallow <remote>' as for any other fetch: every ref a shallow
+# fetch wants adds its own history slice to a computation the server does BEFORE it sends a single
+# byte, and that time grows steeply with the number of refs. Measured on a 488k-commit, blobless
+# repository: one branch starts streaming after ~50-80s, two branches after ~50s, and the full set
+# (5 branches plus 239 tags, which 'fetch.pruneTags' adds to the wanted refs) never starts within
+# several minutes. With the usual 60s inactivity timeout every attempt was killed just before data
+# would have flowed, and every retry restarted the server's work. After the branch is complete the
+# remaining refs are an ordinary incremental fetch, which is cheap. Deepening in chunks was
+# measured and is no help: a 100-commit slice costs ~240KB per commit against ~0.26KB per commit
+# for the whole history in one request. The client also needs time with no disk growth while it
+# resolves deltas after the download, which is why the allowance is generous
+# (GIT_FO_UNSHALLOW_TIMEOUT_SECS, default 900).
+# Usage: unshallow_remote <remote>
+unshallow_remote() {
+  pick_unshallow_branch "$1"
+  if [ -n "${unshallow_branch}" ]; then
+    printf 'Unshallowing %s/%s first (on a large history it can take minutes before any data arrives)\n' "$1" "${unshallow_branch}"
+    fetch_or_report "${unshallow_timeout_secs}" "$1" -c fetch.pruneTags=false fetch --unshallow --no-tags "$1" \
+      "+refs/heads/${unshallow_branch}:refs/remotes/$1/${unshallow_branch}"
+  else
+    printf 'Unshallowing %s (no single branch to pick -- fetching every ref; this can be slow on a large history)\n' "$1"
+    fetch_or_report "${unshallow_timeout_secs}" "$1" fetch --unshallow "$1"
+  fi
+}
+
+# Sets 'failed_remotes' to the remotes that could not be fetched.
 fetch_remotes() {
-  find "${dir}/.git/objects/pack" -name 'tmp_*' -type f -mmin +15 -delete 2>/dev/null || true
-  find "${dir}/.git/objects" -maxdepth 1 -name 'tmp_*' -type f -mmin +15 -delete 2>/dev/null || true
-  git -C "${dir}" remote | while IFS= read -r remote; do
-    git -C "${dir}" remote set-branches "${remote}" '*'
-  done
+  find "${git_common}/objects" -maxdepth 2 -name 'tmp_*' -type f -mmin +15 -delete 2>/dev/null || true
+  # List remotes once and read every promisor flag and fetch refspec with a single 'git config'
+  # call, rather than forking git per remote for each check.
+  remotes="$(git -C "${dir}" remote)"
+  remote_config="$(git -C "${dir}" config --get-regexp '^remote\..*\.(promisor|fetch)$' 2>/dev/null)"
   promisor_remote=''
   rest_remotes=''
-  for remote in $(git -C "${dir}" remote); do
-    if [ -z "${promisor_remote}" ] && [ "$(git -C "${dir}" config --get "remote.${remote}.promisor" 2>/dev/null)" = 'true' ]; then
-      promisor_remote="${remote}"
-    else
-      rest_remotes="${rest_remotes} ${remote}"
-    fi
+  for remote in ${remotes}; do
+    case "${remote_config}" in
+    *"remote.${remote}.fetch +refs/heads/*:refs/remotes/${remote}/*"*) ;;
+    *) git -C "${dir}" remote set-branches "${remote}" '*' ;;
+    esac
+    case "${remote_config}" in
+    *"remote.${remote}.promisor true"*)
+      if [ -z "${promisor_remote}" ]; then
+        promisor_remote="${remote}"
+        continue
+      fi
+      ;;
+    esac
+    rest_remotes="${rest_remotes} ${remote}"
   done
   remotes_ordered="${promisor_remote}${rest_remotes}"
+  # In a partial (blobless) clone every remote must be fetched with the same filter: a remote that
+  # is not a promisor sends thin-pack deltas against blobs this clone does not have, and the fetch
+  # dies with 'did not receive expected object' / 'invalid index-pack output' (reproduced on a
+  # fork's 'upstream' while its blobs were still missing). Registering the remote as a promisor
+  # with the promisor remote's filter is what 'git fetch --filter=...' does itself; it also makes
+  # every later fetch from it, by any tool, filtered.
+  if [ -n "${promisor_remote}" ]; then
+    partial_filter="$(git -C "${dir}" config --get "remote.${promisor_remote}.partialclonefilter")"
+    if [ -n "${partial_filter}" ]; then
+      for remote in ${rest_remotes}; do
+        git -C "${dir}" config "remote.${remote}.promisor" true
+        git -C "${dir}" config "remote.${remote}.partialclonefilter" "${partial_filter}"
+      done
+    fi
+  fi
+  # Shallow state is checked once up front; only a shallow repo re-checks per remote, because
+  # the first successful unshallow makes every later remote a plain fetch.
+  shallow=0
+  if is_shallow "${dir}"; then shallow=1; fi
+  failed_remotes=''
+  fetch_stderr="${tmp_dir}/fetch-stderr"
   for remote in ${remotes_ordered}; do
     printf 'Fetching %s\n' "${remote}"
-    fetch_cmd='fetch'
-    git -C "${dir}" is-shallow && fetch_cmd='fetch --unshallow'
-    fetch_stderr="$(mktemp)"
-    if ! git with-retry 60 3 "${fetch_stderr}" "${dir}/.git/objects" git -C "${dir}" ${fetch_cmd} "${remote}"; then
-      printf 'Fetch from %s still failing after retries, trying prune + gc...\n' "${remote}" >&2
-      git -C "${dir}" prune 2>/dev/null || true
-      git -C "${dir}" gc 2>/dev/null || true
-      if ! git with-retry 60 2 "${fetch_stderr}" "${dir}/.git/objects" git -C "${dir}" ${fetch_cmd} "${remote}"; then
-        printf 'Warning: could not fetch from %s after retries and local repair -- skipping. Last error:\n' "${remote}" >&2
-        cat "${fetch_stderr}" >&2
+    if [ "${shallow}" -eq 1 ] && is_shallow "${dir}"; then
+      if ! unshallow_remote "${remote}"; then
+        failed_remotes="${failed_remotes} ${remote}"
+        continue
       fi
     fi
-    rm -f "${fetch_stderr}"
+    if [ "${shallow}" -eq 1 ] && ! is_shallow "${dir}"; then shallow=0; fi
+    if ! fetch_or_report 60 "${remote}" fetch "${remote}"; then
+      failed_remotes="${failed_remotes} ${remote}"
+    fi
   done
   git -C "${dir}" dlb
+  if [ -n "${failed_remotes}" ]; then
+    printf 'git fo: fetch failed in %s for:%s -- refs may be stale\n' "${dir}" "${failed_remotes}" >&2
+    return 1
+  fi
 }
 
 rebase_onto_upstream() {
-  if ! git -C "${dir}" is-clean; then
+  # Never touch an operation somebody else started: the abort below must only ever undo a rebase
+  # that this function began itself.
+  git_dir="$(git -C "${dir}" rev-parse --absolute-git-dir)"
+  if [ -e "${git_dir}/rebase-merge" ] || [ -e "${git_dir}/rebase-apply" ]; then
+    printf 'Skipping rebase in %s: a rebase is already in progress. Finish or abort it first.\n' "${dir}" >&2
+    return 1
+  fi
+  if [ -n "$(git -C "${dir}" status --porcelain -uno)" ]; then
     printf 'Skipping rebase in %s: working tree has uncommitted changes. Pull manually.\n' "${dir}" >&2
     return 1
   fi
-  branch=$(git -C "${dir}" br)
+  branch="$(git -C "${dir}" symbolic-ref --short -q HEAD)"
   if [ -z "${branch}" ]; then
     printf 'Could not determine current branch in %s\n' "${dir}" >&2
     return 1
   fi
   if git -C "${dir}" merge-base "${branch}" '@{u}' >/dev/null 2>&1; then
     git -C "${dir}" rebase '@{u}'
-    return $?
+    rebase_status=$?
+    if [ "${rebase_status}" -eq 0 ]; then
+      return 0
+    fi
+    # A conflicting rebase must not be left half-done: nobody is there to resolve it (cron, a
+    # script), the working tree is full of conflict markers, and in a repo like this one that
+    # contains the very scripts being run, they stop parsing (observed: the hourly cron left the
+    # dotfiles repo mid-rebase and 'git-fo' then died on '<<<<<<< HEAD'). Abort, so the repository
+    # is exactly as it was, and say how to do it by hand.
+    git -C "${dir}" rebase --abort >/dev/null 2>&1 || true
+    printf 'Rebase of %s onto @{u} conflicted in %s -- aborted, nothing was changed. Resolve it by hand: git rebase @{u}\n' "${branch}" "${dir}" >&2
+    return "${rebase_status}"
   fi
   allow_reset=$(git -C "${dir}" config --type=bool --default false pull.allowResetOnDivergedHistory)
   if [ "${allow_reset}" != 'true' ]; then
@@ -113,19 +272,29 @@ rebase_onto_upstream() {
 }
 
 main() {
-  dir="$(git rev-parse --show-toplevel 2>/dev/null || printf .)"
+  resolve_dir "$@"
+  shift "${dir_shift}"
   rebase=0
   for a in "$@"; do
     case "${a}" in
     --rebase) rebase=1 ;;
-    *) dir="${a}" ;;
+    *)
+      printf 'git fo: unknown argument: %s\nUsage: git fo [<dir>] [--rebase]\n' "${a}" >&2
+      exit 2
+      ;;
     esac
   done
+  git_common_dir "${dir}"
+  make_tmp
   fetch_remotes
   status=$?
   if [ "${rebase}" -eq 1 ]; then
-    rebase_onto_upstream
-    status=$?
+    if [ "${status}" -ne 0 ]; then
+      printf 'Not rebasing %s: fetch failed, upstream refs may be stale\n' "${dir}" >&2
+    else
+      rebase_onto_upstream
+      status=$?
+    fi
   fi
   exit "${status}"
 }

@@ -1,4 +1,4 @@
-#!/usr/bin/env ruby
+#!/usr/bin/env -S ruby --disable-gems
 # encoding: utf-8
 # frozen_string_literal: true
 

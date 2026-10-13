@@ -19,8 +19,6 @@
 #   call_utility --truthy GenerateBootstrapRepositoriesYaml.run --output_file=<file>
 # Ruby callers: GenerateBootstrapRepositoriesYaml.run(output_file: '...')
 
-require 'yaml'
-
 require_relative 'env_vars'
 require_relative 'gpg_encrypt'
 require_relative 'keybase'
@@ -36,11 +34,9 @@ module GenerateBootstrapRepositoriesYaml
   # @return [Boolean] true on success, false if neither repo has a backup mechanism
   #   configured (nothing to generate).
   def run(output_file:)
-    ok = false
-    Logging.run_script('generate_bootstrap_repositories_yaml', 'Generating the bootstrap repositories config') do
-      ok = _write(output_file)
+    Logging.run_script_result('generate_bootstrap_repositories_yaml', 'Generating the bootstrap repositories config') do
+      _write(output_file)
     end
-    ok
   end
 
   # ---------------------------------------------------------------------------
@@ -57,6 +53,7 @@ module GenerateBootstrapRepositoriesYaml
       return false
     end
 
+    require 'yaml' # ~40ms; only needed once there is something to write
     File.write(output_file.to_s, entries.to_yaml)
     Logging.success("Generated #{entries.length.to_s.purple} repo entries to '#{output_file.to_s.cyan}'")
     true

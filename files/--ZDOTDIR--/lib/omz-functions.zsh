@@ -5,11 +5,9 @@
 # Minimal functions library - replaces ohmyzsh/lib/functions.zsh
 #
 # Original: https://github.com/ohmyzsh/ohmyzsh/blob/master/lib/functions.zsh
-# Original: 284 lines → Trimmed to: 55 lines (4 functions kept)
+# Original: 284 lines → Trimmed to: 55 lines (3 functions kept)
 #
 # Kept functions:
-# - env_default() - set environment variable to default if not already set
-#   Used by: OMZ plugins that need default env var values
 # - mkcd()/takedir() - create directory and cd into it
 #   Used by: Interactive usage, convenience function
 # - open_command() - open file with default application (macOS)
@@ -27,14 +25,6 @@
 #
 # file location: ${ZDOTDIR}/lib/omz-functions.zsh
 ################################################################################
-
-# env_default: set environment variable to a default value if not already set
-# Usage: env_default 'PAGER' 'less'
-# Used by: OMZ plugins and custom configs
-env_default() {
-  [[ ${parameters[$1]} = *-export* ]] && return 0
-  export "$1=$2" && return 3
-}
 
 # mkcd/takedir: create directory and cd into it
 # Usage: mkcd new-directory

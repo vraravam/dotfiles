@@ -15,10 +15,8 @@
 #   Module:     CapturePrefs.run(operation: 'export')  # or 'import'
 #               CapturePrefs.find_and_append(search: 'ghostty')
 
-require 'fileutils'
 require 'pathname'
 require 'set'
-require 'tempfile'
 
 require_relative 'utilities/command_utils'
 require_relative 'utilities/core'
@@ -118,16 +116,13 @@ module CapturePrefs
   def _process(target_dir)
     if _exporting?
       # Clean up old files before exporting new ones (also handles removed domains)
-      # .defaults files are from a past version of this script -- delete them too
       target_dir.glob('*.plist').each(&:unlink)
-      target_dir.glob('.plist').each(&:unlink)
-      target_dir.glob('*.defaults').each(&:unlink)
     end
 
-    # Load data files (each helper validates its own file)
-    denied = _load_denied_list(DENIED_LIST_FILE)
-    excluded_by_domain = _load_excluded_keys(EXCLUDED_KEYS_FILE)
-    domains = _load_domains_list(ALLOWED_LIST_FILE, denied)
+    # Load data files (each must exist)
+    denied = Plist.load_denied_list(_require_file(DENIED_LIST_FILE, 'Denied list'))
+    excluded_by_domain = Plist.load_excluded_keys(_require_file(EXCLUDED_KEYS_FILE, 'Excluded keys'))
+    domains = Plist.load_domains_list(_require_file(ALLOWED_LIST_FILE, 'Domains list'), denied)
 
     if nil_or_empty?(domains)
       Logging.info 'No domains found -- nothing to do.'
@@ -166,16 +161,9 @@ module CapturePrefs
           next
         end
 
-        # Strip non-portable keys from a temp copy
-        temp_plist = Tempfile.new(['capture-prefs-', '.plist'])
-        temp_plist_path = temp_plist.path
-        FileUtils.cp(target_file.to_s, temp_plist_path)
-        Plist.strip_excluded_keys(app_pref, Pathname.new(temp_plist_path), excluded_by_domain)
-
-        Logging.record_warning("Failed to import '#{app_pref_colored}'") unless Plist.import_domain(app_pref, temp_plist_path)
-
-        temp_plist.close
-        temp_plist.unlink
+        # Strip non-portable keys in memory and feed the result to `defaults import` on stdin
+        xml = Plist.stripped_xml(app_pref, target_file.read(encoding: 'UTF-8'), excluded_by_domain)
+        Logging.record_warning("Failed to import '#{app_pref_colored}'") unless Plist.import_xml(app_pref, xml)
       end
     end
 
@@ -261,59 +249,19 @@ module CapturePrefs
     true
   end
 
-  # Loads the denied list file into a Set for O(1) lookups.
-  # Raises error if file not found.
-  #
-  # @param filepath [Pathname] Path to the denied list file
-  # @return [Set<String>] Set of denied domain names
-  # @raise [RuntimeError] If the denied list file doesn't exist
-  def _load_denied_list(filepath)
-    _ensure_file_exists(filepath, 'Denied list')
-    Plist.load_denied_list(filepath)
-  end
-
-  private_class_method :_load_denied_list
-
-  # Loads the excluded keys file into a hash mapping domains to patterns.
-  # Raises error if file not found.
-  #
-  # @param filepath [Pathname] Path to the excluded keys file
-  # @return [Hash<String, String>] Domain -> newline-separated pattern string
-  # @raise [RuntimeError] If the excluded keys file doesn't exist
-  def _load_excluded_keys(filepath)
-    _ensure_file_exists(filepath, 'Excluded keys')
-    Plist.load_excluded_keys(filepath)
-  end
-
-  private_class_method :_load_excluded_keys
-
-  # Validates that a required file exists, raising error if not.
+  # Validates that a required data file exists.
   #
   # @param filepath [Pathname] Path to validate
-  # @param description [String] Description for error message
-  # @return [void]
-  # @raise [RuntimeError] If file doesn't exist
+  # @param label [String] Description for the error message
+  # @return [Pathname] +filepath+
+  # @raise [RuntimeError] If the file doesn't exist
   # :reek:UtilityFunction -- Stateless validation helper (correct design)
-  def _ensure_file_exists(filepath, description)
-    Logging.error("#{description} file not found: '#{filepath.cyan}'") unless filepath.file?
+  def _require_file(filepath, label)
+    Logging.error("#{label} file not found: '#{filepath.cyan}'") unless filepath.file?
+    filepath
   end
 
-  private_class_method :_ensure_file_exists
-
-  # Loads the domains list file, filtering out denied domains.
-  # Raises error if file not found.
-  #
-  # @param filepath [Pathname] Path to the domains list file
-  # @param denied [Set<String>] Set of denied domain names to filter out
-  # @return [Set<String>] Set of allowed domain names
-  # @raise [RuntimeError] If the domains list file doesn't exist
-  # :reek:UtilityFunction -- Stateless delegation wrapper (correct design)
-  def _load_domains_list(filepath, denied)
-    Logging.error("Domains list file not found: '#{filepath.cyan}'") unless filepath.file?
-    Plist.load_domains_list(filepath, denied)
-  end
-
-  private_class_method :_load_domains_list
+  private_class_method :_require_file
 
   # Exports (or imports) the default-application handlers to/from +file+. Importing them
   # means a freshly installed browser (e.g. Zen) does not ask to become the default
@@ -359,11 +307,9 @@ module CapturePrefs
   #
   # @return [void]
   def _notify_apps_needing_restart
-    running = APPS_NEEDING_RESTART.select do |proc_name, display_name|
-      # Skip login-item apps (auto-killed and restarted) and apps not currently running
-      !MacOS::LOGIN_ITEM_APPS.include?(display_name) &&
-        CommandUtils.run_silent('pgrep', '-xq', proc_name)
-    end.values.sort
+    # Skip login-item apps (auto-killed and restarted); one pgrep for the rest
+    candidates = APPS_NEEDING_RESTART.reject { |_proc_name, display_name| MacOS::LOGIN_ITEM_APPS.include?(display_name) }
+    running = MacOS.running_processes(candidates.keys).map { |proc_name| candidates[proc_name] }.sort
 
     return if nil_or_empty?(running)
 
