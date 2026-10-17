@@ -207,6 +207,32 @@ This was fixed in 2.1.1.
 When `delete_caches` is run to remove `.zwc` files, do NOT chmod/chown them.
 Just delete and let zsh regenerate on next startup.
 
+`delete_caches` deletes `.zwc` files only under the roots `.zlogin`/`.zshrc` compile into (`$HOME` at
+depth 1, `XDG_CONFIG_HOME`, `PERSONAL_BIN_DIR`, `PROJECTS_BASE_DIR`, `ANTIDOTE_HOME`, `XDG_CACHE_HOME`,
+`HOMEBREW_PREFIX` without `-L`). The earlier `find $HOME -maxdepth 10` plus a symlink-following crawl of
+the Homebrew prefix took 9-14s and grew with every repository cloned. It uses `-exec rm -f {} +`, never
+`-delete`, next to `-prune`: `-delete` implies `-depth`, which silently disables `-prune`. Files whose
+names match `*stamp*` or `*last-update*` under `XDG_CACHE_HOME` are not caches (they record that an
+expensive job already ran, e.g. `dev-environment-setup-stamp`) and survive the wipe; new stamp files
+must keep `stamp` or `last-update` in their name. On `FIRST_INSTALL` the `XDG_CACHE_HOME` wipe is
+skipped (nothing stale exists), the `.zwc` deletion still runs.
+
+## The Completion Dump And The Prompt Hooks
+
+- **`_deferred_compinit` touches the dump after a full `compinit`.** A full `compinit -d` does not
+  rewrite the dump when the number of completion files is unchanged, so its mtime stayed older than the
+  `fpath` directory that made it look stale -- and every later shell repeated the full `compinit` plus
+  `compaudit` (~8ms of `first_command_lag`). The `touch` is on the stale path only and deferred.
+- **`mise`, `direnv` and `omz_termsupport_cwd` leave `precmd` after the first prompt**
+  (`_deferred_trim_prompt_hooks`, queued after `_deferred_mise_activation`). Each cost real time before
+  every prompt (zprof: `_mise_hook_precmd` 15-30ms, `_direnv_hook` ~10ms, `omz_termsupport_cwd` ~4ms)
+  and all three are also `chpwd` hooks, so only the redundant per-prompt call is dropped
+  (`zsh-bench`: `command_lag` ~60ms to ~27ms, startup unchanged). The starting directory is covered by
+  the first precmd (direnv), mise's deferred startup call and one explicit cwd report. **Tradeoff**:
+  editing `.envrc`/`.mise.toml` in place, or `direnv allow`, is no longer picked up at the next
+  prompt -- `cd` away and back, or `direnv reload`. `ZSH_PROMPT_HOOKS_EVERY_PROMPT=1` restores the old
+  behavior without editing the file.
+
 ## `is_shellrc_sourced` Sentinel
 
 `.shellrc` defines `is_shellrc_sourced` as a sentinel. In `.zshrc` and other

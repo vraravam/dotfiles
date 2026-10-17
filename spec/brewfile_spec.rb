@@ -2,7 +2,7 @@
 
 require 'pathname'
 
-require 'brew'
+require 'brew_bundle'
 
 # The vanilla-OS install installs only the part of the Brewfile above the '# FIRST_INSTALL:'
 # sentinel and the rest in the background. These specs keep that split from silently
@@ -31,7 +31,7 @@ RSpec.describe 'files/--HOME--/Brewfile FIRST_INSTALL sentinel' do
     expect(base.size).to be < lines.size
   end
 
-  it 'is what the install cuts: Brew.base_brewfile_content returns exactly the lines above the sentinel' do
-    expect(Brew.base_brewfile_content(brewfile)).to eq(lines[0...sentinel_indexes.first].map { |line| "#{line}\n" }.join)
+  it 'is what the install cuts: BrewBundle.base_brewfile_content returns exactly the lines above the sentinel' do
+    expect(BrewBundle.base_brewfile_content(brewfile)).to eq(lines[0...sentinel_indexes.first].map { |line| "#{line}\n" }.join)
   end
 end

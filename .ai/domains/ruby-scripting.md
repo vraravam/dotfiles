@@ -351,14 +351,16 @@ install-dotfiles.rb --dry-run
 - Must remain as subprocess
 - Cannot be ported to Ruby module
 
-**capture-prefs.rb** - Lifecycle conflicts with parent:
-- Has `at_exit` hooks that suspend/resume softwareupdate
-- Has `at_exit` hooks that kill/restart login-item apps (on import)
-- Multiple invocations (export, then import) need independent cleanup
-- If called as module, hooks would register in parent and fire at wrong time
-- Subprocess isolation ensures each operation has independent lifecycle
+**capture-prefs.rb** - Used to be a subprocess because of `at_exit` hooks; now runs in-process:
+- `CapturePrefs.run(operation:, manage_apps:)` restores everything in an `ensure` instead of `at_exit`
+- `manage_apps` defaults to false when `DOTFILES_APPS_BRACKETED` is set (the caller -- `PreferencesRestore` --
+  brackets the baseline and the import once); a standalone run brackets by itself
+- Its per-domain export/import loops use a bounded thread pool whose workers never log (see
+  `fresh-install.md` § Preferences Step)
 
-**Key insight**: If a script's `at_exit` hooks need to fire **after each operation** (not at parent script end), keep it as subprocess.
+**Key insight**: `at_exit` hooks fire at *process* end, not after each operation, so a module that needs
+per-operation cleanup must use `begin/ensure` (or `Logging.run_script`), not `at_exit`. Keep a script as a
+subprocess only when it genuinely needs its own process lifecycle.
 
 ### Refactoring Checklist
 

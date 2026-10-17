@@ -15,6 +15,7 @@ Reference documentation for the utility scripts bundled in this repo. Each secti
 - [run-all.rb](#run-allrb)
 - [setup-login-item.rb](#setup-login-itemrb)
 - [software-updates-cron.rb](#software-updates-cronrb)
+- [Environment variables](#environment-variables)
 
 ---
 
@@ -326,6 +327,60 @@ To check for errors/warnings over time:
   ```
 
 See [Technical Deep Dive § 8](TechnicalDeepDive.md#8-cron-safety-mechanisms) for how cron safety, `sudo` guards, and TTY detection work internally.
+
+## Environment variables
+
+Optional knobs, all unset by default. Set them inline for one run (`FIRST_INSTALL=true GIT_CLONE_ATTEMPTS=8 ...`) or export them in `~/.zshenv` to make them permanent. A bad numeric value is ignored (with a warning where the code can print one) and the default applies.
+
+### Install and clone
+
+| Variable | Default | Effect | Read by |
+|----------|---------|--------|---------|
+| `FIRST_INSTALL` | unset | Vanilla-OS bootstrap mode: shallow clones with a detached unshallow batch, baseline-only preferences | `fresh-install-of-osx.sh`, `.shellrc` |
+| `CURL_RETRY_OPTS` | unset | Adds curl retry flags to the bootstrap downloads (see [Adoption.md](Adoption.md)) | `.shellrc` |
+| `CACHE_BUST_HEADERS` | unset | Sends no-cache headers on the bootstrap downloads (see [Adoption.md](Adoption.md)) | `.shellrc` |
+| `GIT_CLONE_INACTIVITY_SECS` | `25` | Seconds without growth in the clone folder before one non-keybase clone attempt (https, ssh, ...) is stopped | `clone_repo_into` in `.shellrc` |
+| `GIT_CLONE_ATTEMPTS` | `5` (`3` for the very first dotfiles clone, which runs before `git with-retry` exists) | Attempts per non-keybase clone | `clone_repo_into` in `.shellrc` |
+| `KEYBASE_CLONE_INACTIVITY_SECS` | `120` (`600` on `FIRST_INSTALL`) | Same as `GIT_CLONE_INACTIVITY_SECS`, for `keybase://` remotes, which can be quiet for a long time | `clone_repo_into` in `.shellrc` |
+| `KEYBASE_READY_ATTEMPTS` | `12` | Probes (5 seconds apart) of the keybase git backend before a `keybase://` clone gives up waiting and tries anyway | `clone_repo_into` in `.shellrc` |
+| `KEYBASE_CLONE_UNWRAPPED` | unset | Set to `1` to clone `keybase://` remotes without the inactivity guard | `clone_repo_into` in `.shellrc` |
+| `FRESH_INSTALL_NO_EARLY_BREW` | unset | Do not start the Homebrew install in the background at the beginning of a vanilla install | `fresh-install-of-osx.sh`, `homebrew_install.rb` |
+| `FRESH_INSTALL_SERIAL_DEFAULTS` | unset | Run the `osx-defaults.sh` baseline in the foreground instead of in parallel with the rest of the install | `preferences_restore.rb` |
+| `FRESH_INSTALL_SKIP_BACKGROUND_UNSHALLOW` | unset | Do not start the detached unshallow batch after a `FIRST_INSTALL` resurrect; fetch inline instead | `resurrect-repositories.rb` |
+| `FILTER` / `REF_FOLDER` | unset | Regex / path scoping which repos `resurrect-repositories.rb` processes or verifies against | `resurrect-repositories.rb` |
+
+Keybase usernames are not variables you set: `KEYBASE_USERNAME` is only an optional login hint, and `KEYBASE_HOME_REPO_NAME` / `KEYBASE_PROFILES_REPO_NAME` name the repos used by `kbgc`.
+
+### Preferences and macOS defaults
+
+| Variable | Default | Effect | Read by |
+|----------|---------|--------|---------|
+| `CAPTURE_PREFS_JOBS` | `6` | Threads used to export or import the per-domain preferences | `capture-prefs.rb` |
+| `OSX_DEFAULTS_FORCE` | unset | Set to `1` to ignore the stamps that skip the slow, once-per-macOS-version actions (LaunchServices rebuild, Spotlight index erase) | `osx-defaults.sh` |
+| `OSX_DEFAULTS_NO_BATCH` | unset | Set to `1` to turn the batched `_dw` writes into plain `defaults write` calls | `osx-defaults.sh` |
+| `OSX_DEFAULTS_DRY_RUN` | unset | Set to `1` to record the commands instead of running them (for old-vs-new comparisons) | `osx-defaults.sh` |
+| `OSX_DEFAULTS_DRY_RUN_OUT` | unset | File that receives the dry-run report | `osx-defaults.sh` |
+
+### Git commands
+
+| Variable | Default | Effect | Read by |
+|----------|---------|--------|---------|
+| `GIT_FO_UNSHALLOW_TIMEOUT_SECS` | `900` | Time allowed for the one-branch unshallow that `git fo` runs on a shallow clone | `git-fo` |
+| `GIT_UNSHALLOW_BATCH_SIZE` | `10000` | Blobs fetched per request when `git unshallow` backfills a blob-less clone | `git-unshallow` |
+| `WITH_RETRY_KILL_GRACE_SECS` | `5` | Seconds between the SIGTERM and the SIGKILL that `git with-retry` sends to a stalled attempt | `git-with-retry` |
+| `FOLDER`, `FILTER`, `MINDEPTH`, `MAXDEPTH` | current directory, match all, see script | Search scope for `run-all.rb` (see [run-all.rb](#run-allrb)) | `run-all.rb` |
+
+### Shell startup
+
+| Variable | Default | Effect | Read by |
+|----------|---------|--------|---------|
+| `ZSH_PROMPT_HOOKS_EVERY_PROMPT` | unset | Keep the `direnv`, `mise` and terminal-title hooks on every prompt instead of only on `cd` (see `_deferred_trim_prompt_hooks`) | `.zshrc` |
+| `ZSH_PROFILE` | unset | `ZSH_PROFILE=true zsh -i -c exit`, then run `zprof` for a startup profile | `.zshrc` |
+| `DEBUG` | unset | Prints the name of each startup file as it loads | `.zshrc` |
+
+Back to the [readme](README.md#-documentation)
+
+---
 
 ## Git Workflow Commands
 

@@ -42,6 +42,7 @@ module InstallDotfiles
   CUSTOM_GIT_PREFIX = 'custom.git' # Prefix in source filenames (custom.gitignore, custom.gitattributes) that gets replaced with '.git'
   DOT_GIT_REPLACEMENT_TARGET = '.git' # Target string for replacement (e.g., custom.gitignore -> .gitignore)
 
+  SSH_MATCH_ALL_LINE = 'Match all' # Ends the scope of the last Host/Match block above ~/.ssh/config's Include of global_config
   IGNORED_FILENAMES = ['.DS_Store'].freeze # Filenames to ignore during processing
   IGNORED_SUFFIXES = ['.zwc'].freeze # File suffixes to ignore (e.g., compiled bytecode)
 
@@ -105,7 +106,8 @@ module InstallDotfiles
     _ensure_gitconfig_tool_symlink('plist', command_name: 'plutil', dry_run: dry_run)
     _ensure_gitconfig_tool_symlink('sqlite3', dry_run: dry_run)
 
-    Logging.warn("Since 'custom.git*' files are COPIED (not symlinked), always edit the repo source first. When re-running without FIRST_INSTALL set, the newer file wins -- so a stale home-dir copy can silently overwrite repo changes if its mtime is newer.")
+    # Nothing can be stale on a first install, so the reminder is only for re-runs.
+    Logging.warn("Since 'custom.git*' files are COPIED (not symlinked), always edit the repo source first. When re-running without FIRST_INSTALL set, the newer file wins -- so a stale home-dir copy can silently overwrite repo changes if its mtime is newer.") unless EnvVars.first_install?
 
     stats.errors.zero?
   end
@@ -263,7 +265,7 @@ module InstallDotfiles
 
     unless default_ssh_config.exist?
       if dry_run
-        Logging.info("Would create '#{default_ssh_config_colored}' with '#{include_line.cyan}'")
+        Logging.info("Would create '#{default_ssh_config_colored}' with 'Match all' and '#{include_line.cyan}'")
         return
       end
 
@@ -271,18 +273,36 @@ module InstallDotfiles
     end
 
     begin
-      # Use Core.each_line_utf8 to avoid encoding issues in non-UTF-8 environments.
-      found = false
-      Core.each_line_utf8(default_ssh_config) { |l| found = true if l.strip == include_line }
-      if found
+      # Use Core.read_lines_utf8 to avoid encoding issues in non-UTF-8 environments.
+      lines = Core.read_lines_utf8(default_ssh_config)
+      include_idx = lines.index { |l| l.strip == include_line }
+
+      if include_idx.nil?
+        Logging.info("#{dry_run ? 'Would add' : 'Adding'} 'Match all' and '#{include_line.cyan}' to '#{default_ssh_config_colored}'")
+        default_ssh_config.write("\n#{SSH_MATCH_ALL_LINE}\n#{include_line}\n", mode: 'a') unless dry_run
+      elsif _ssh_scope_ended_before?(lines, include_idx)
         Logging.success("'#{include_line.cyan}' already present in '#{default_ssh_config_colored}'")
       else
-        Logging.info("#{dry_run ? 'Would add' : 'Adding'} '#{include_line.cyan}' to '#{default_ssh_config_colored}'")
-        default_ssh_config.write("\n#{include_line}\n", mode: 'a') unless dry_run
+        Logging.info("#{dry_run ? 'Would insert' : 'Inserting'} 'Match all' above '#{include_line.cyan}' in '#{default_ssh_config_colored}'")
+        default_ssh_config.write((lines[0...include_idx] + ["#{SSH_MATCH_ALL_LINE}\n"] + lines[include_idx..-1]).join) unless dry_run
       end
     rescue StandardError => e
       Logging.warn("Failed processing SSH config '#{default_ssh_config_colored}': #{e.message}")
     end
+  end
+
+  # Whether the nearest directive above +include_idx+ is 'Match all' (blank lines and comments
+  # are skipped). ssh scopes every directive to the preceding 'Host'/'Match' block, an 'Include'
+  # included: without 'Match all' above it, global_config (Host *, connection multiplexing, ...)
+  # would apply only to the last Host block of the file -- verified with 'ssh -G'.
+  #
+  # @param lines [Array<String>] The lines of ~/.ssh/config.
+  # @param include_idx [Integer] Index of the 'Include' line.
+  # @return [Boolean]
+  # :reek:UtilityFunction -- Stateless line scan
+  def _ssh_scope_ended_before?(lines, include_idx)
+    previous = lines[0...include_idx].reverse.find { |l| !l.strip.empty? && !l.strip.start_with?('#') }
+    !previous.nil? && previous.strip.casecmp(SSH_MATCH_ALL_LINE).zero?
   end
 
   # Generic helper to ensure a tool-specific gitconfig symlink exists when the tool
@@ -381,7 +401,7 @@ module InstallDotfiles
     nil
   end
 
-  private_class_method :_ensure_ssh_include_line, :_ensure_gitconfig_tool_symlink, :_handle_custom_git_conflict
+  private_class_method :_ensure_ssh_include_line, :_ssh_scope_ended_before?, :_ensure_gitconfig_tool_symlink, :_handle_custom_git_conflict
 end
 
 # ---------------------------------------------------------------------------

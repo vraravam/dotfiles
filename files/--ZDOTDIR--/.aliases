@@ -438,50 +438,63 @@ fi
 # 3d. Cache & cleanup
 # --------------------------------------------------------------------------
 
-# Deletes all compiled zsh bytecode (*.zwc*) files under HOME and HOMEBREW_PREFIX, and
-# removes the entire XDG_CACHE_HOME directory. Cache files (brew shellenv, starship init,
-# repo aliases, etc.) are recreated on the next shell start; *.zwc bytecode files are
-# recompiled only on the next login shell (via .zlogin).
+# Deletes the compiled zsh bytecode (*.zwc*) files from every place this setup creates them, and
+# empties XDG_CACHE_HOME (except the freshness stamps, see below). Cache files (brew shellenv,
+# starship init, repo aliases, etc.) are recreated on the next shell start; *.zwc bytecode files
+# are recompiled only on the next login shell (via .zlogin).
+#
+# During FIRST_INSTALL the cache wipe is skipped (nothing stale can exist yet and the stamps/
+# caches written earlier in the run are still valid); the *.zwc deletion still runs because a
+# .zwc compiled from a pre-symlink copy of a startup file must not outlive the install.
 delete_caches() {
-  # Delete all *.zwc* compiled zsh bytecode files under HOME and HOMEBREW_PREFIX so
-  # they are recompiled fresh on the next login shell (via .zlogin).  This covers
-  # compiled config files, scripts, autoload functions, and any *.zwc siblings of
-  # the cache files below.
-  #
-  # Two separate find calls are required: HOME is searched without -L (no symlink
-  # following) to avoid cycles in user home dirs. HOMEBREW_PREFIX must use -L so
-  # that find descends into opt/<formula>/ directories, which are all symlinks to
-  # Cellar/<formula>/<version>/. Without -L, stale .zwc files in those paths are
-  # silently skipped. Both calls otherwise share the identical predicate (prune
-  # list + name/type match), factored out here so it can't drift out of sync
-  # between the two -- only the final action (-delete vs -exec rm -f, see below)
-  # legitimately differs.
-  local -a _zwc_find_predicate=(
-    -maxdepth 10
-    '(' -path '*/.git/*' -o -path '*/node_modules/*' -o -path '*/.mypy_cache/*' -o -path '*/__pycache__/*' ')'
-    -prune -o -name '*.zwc*' -type f -print
-  )
-  find "${HOME}" "${_zwc_find_predicate[@]}" -delete || warn "find command failed in ${HOME}"
-  # macOS find forbids -delete when -L is active (safety guard against deleting
-  # symlink targets). Use -exec rm -f instead, which is exempt from this restriction.
-  find -L "${HOMEBREW_PREFIX}" "${_zwc_find_predicate[@]}" -exec rm -f {} + || warn "find command failed in ${HOMEBREW_PREFIX}"
+  # Delete the *.zwc* files so they are recompiled fresh on the next login shell (via .zlogin).
+  # Only the roots .zlogin/.zshrc ever compile into are searched (a crawl of all of HOME plus a
+  # symlink-following crawl of HOMEBREW_PREFIX took 4-10s each, and far more with hundreds of
+  # repos under PROJECTS_BASE_DIR); the same measurement now takes well under a second.
+  # - HOME itself: only ~/.shellrc.zwc and ~/.zshenv.zwc live directly there (-maxdepth 1).
+  # - XDG_CONFIG_HOME (covers ZDOTDIR, ZDOTDIR/lib, the autoload dir and DOTFILES_DIR),
+  #   PERSONAL_BIN_DIR, PROJECTS_BASE_DIR, ANTIDOTE_HOME and XDG_CACHE_HOME.
+  # - HOMEBREW_PREFIX: searched WITHOUT -L. .zlogin compiles real files (opt/<formula> is a
+  #   symlink to Cellar/<formula>/<version>, and zcompile writes the .zwc next to the resolved
+  #   file), so the Cellar copy is the one that exists; -L would only revisit it through the
+  #   symlink. -maxdepth 8 reaches Cellar/<f>/<v>/share/<f>/<file>.zwc.
+  # Subtrees that cannot contain our bytecode (.git, node_modules, caches of other tools) are
+  # pruned by name, which also avoids descending into them at all. '-exec rm -f {} +' is used
+  # instead of -delete because -delete implies -depth, which silently disables -prune.
+  local -a _zwc_roots=()
+  local _zwc_root
+  for _zwc_root in "${XDG_CONFIG_HOME}" "${PERSONAL_BIN_DIR:-}" "${PROJECTS_BASE_DIR:-}" "${ANTIDOTE_HOME:-}" "${XDG_CACHE_HOME}" "${HOMEBREW_PREFIX:-}"; do
+    if is_non_zero_string "${_zwc_root}" && is_directory "${_zwc_root}"; then
+      _zwc_roots+=("${_zwc_root}")
+    fi
+  done
+  find "${HOME}" -maxdepth 1 -name '*.zwc*' -type f -delete || warn "find command failed in ${HOME}"
+  if (( ${#_zwc_roots[@]} > 0 )); then
+    # Nested roots (e.g. an ANTIDOTE_HOME under XDG_CACHE_HOME) are harmless: files already
+    # deleted by an earlier root are simply not found again.
+    find "${_zwc_roots[@]}" -maxdepth 8 \
+      '(' -name '.git' -o -name 'node_modules' -o -name '.mypy_cache' -o -name '__pycache__' ')' -prune -o \
+      -name '*.zwc*' -type f -exec rm -f {} + || warn "find command failed while deleting *.zwc files"
+  fi
 
-  # Delete the entire XDG_CACHE_HOME directory. This removes all generated cache
-  # files (brew-shellenv-cache.zsh, starship-init-cache.zsh, repo-aliases-cache.zsh, zsh
-  # completion dump, fast-syntax-highlighting theme cache, etc.) and their *.zwc
-  # bytecode companions. They are all regenerated automatically on the next shell
-  # start or login shell.  .zshrc recreates XDG_CACHE_HOME with mkdir -p before
-  # any cache write, so the missing directory is safe.
-  if is_directory "${XDG_CACHE_HOME}"; then
+  # Empty XDG_CACHE_HOME of every generated cache file (brew-shellenv-cache.zsh,
+  # starship-init-cache.zsh, repo-aliases-cache.zsh, zsh completion dump, fast-syntax-highlighting
+  # theme cache, etc.). They are all regenerated automatically on the next shell start or login
+  # shell. Files whose names match '*stamp*' or '*last-update*' (dev-environment-setup-stamp,
+  # install-ruby26-gems-stamp, bat/mise last-update markers, ...) are NOT caches: they record
+  # that an expensive, slow-to-repeat job already ran, so wiping them would force that work to be
+  # redone on every delete_caches. The directory itself stays, so .zshrc's cache writes keep
+  # working; emptied sub-directories are removed afterwards (find -delete implies -depth, so a
+  # directory emptied in the same pass is removed too).
+  if is_first_install; then
+    info "FIRST_INSTALL: skipping the wipe of '$(cyan "${XDG_CACHE_HOME}")' (nothing stale exists yet)"
+  elif is_directory "${XDG_CACHE_HOME}"; then
     if _is_direct_child_of_root "${XDG_CACHE_HOME}"; then
       error "Refusing to delete cache directory in root: '$(cyan "${XDG_CACHE_HOME}")'"
       return 1
     fi
-    rm -rfv "${XDG_CACHE_HOME}"
-
-    # Ensure XDG_CACHE_HOME exists before any cache writes below. When ${XDG_CACHE_HOME} is removed above,
-    # the subsequent cache-write redirections (>|) silently fail and leave caches empty -- breaking fpath
-    # updates and other lazy-loaded config that only runs through the cache file.
+    find "${XDG_CACHE_HOME}" -mindepth 1 ! -type d ! '(' -name '*stamp*' -o -name '*last-update*' ')' -delete || warn "find command failed in ${XDG_CACHE_HOME}"
+    find "${XDG_CACHE_HOME}" -mindepth 1 -type d -empty -delete || warn "find command failed in ${XDG_CACHE_HOME}"
     ensure_dir_exists "${XDG_CACHE_HOME}"
   fi
 
@@ -792,6 +805,22 @@ implode() {
     return 1
   fi
 
+  # The schedule first: once the dotfiles are wiped below, an hourly job would only fail, and a
+  # vanilla OS has no crontab, which is the state the fresh install's cron fallbacks start from.
+  # '|| true' because 'crontab -r' exits non-zero when there is no crontab.
+  crontab -r 2>/dev/null || true
+
+  # Login items for the apps this repo registers (the Brewfile's and MacOS::LOGIN_ITEM_APPS'
+  # entries). Done before the wipe because the list is read from the Brewfile and the script
+  # lives in DOTFILES_DIR. The system Ruby is used for the same reason call_utility uses it.
+  # Skipped (with a warning) when the script is already gone; never fatal.
+  local login_item_script="${DOTFILES_DIR}/scripts/setup-login-item.rb"
+  if is_file "${login_item_script}"; then
+    /usr/bin/ruby "${login_item_script}" --remove-managed || warn "Could not remove every login item -- remove the rest in System Settings > General > Login Items"
+  else
+    warn "Not removing login items: '$(cyan "${login_item_script}")' not found"
+  fi
+
   # Keychain entries this repo's own scripts create. Removed here, before the
   # dot-wipe below, since the SSH per-key lookups need '~/.ssh' filenames to
   # reconstruct their service name -- once that line removes '~/.ssh' there is
@@ -879,6 +908,11 @@ implode() {
   # named '*.log'), with only the variable part quoted.
   matches=("${HOME}"/*.log*(N))
   if is_non_empty_array matches; then sudo rm -rfv "${matches[@]}"; fi
+
+  # The crontab backup (and its '.new' sibling) that a previous fresh install left in TMPDIR:
+  # a stale one would be restored into the next run. Same default as EnvVars.cron_backup_file.
+  matches=("${_DOTFILES_CRON_BACKUP_FILE:-${TMPDIR:-/tmp}/crontab_backup}"*(N))
+  if is_non_empty_array matches; then rm -fv "${matches[@]}"; fi
 }
 
 # --------------------------------------------------------------------------

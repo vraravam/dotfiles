@@ -4,6 +4,7 @@
 
 require 'json'
 
+require_relative 'background_job'
 require_relative 'command_utils'
 require_relative 'core'
 require_relative 'env_vars'
@@ -27,6 +28,11 @@ module Keybase
 
   # How many one-second polls ensure_service_running waits for the service to answer.
   SERVICE_START_ATTEMPTS = 15
+
+  # Seconds a 'keybase status' query may take before it is stopped and counted as "no answer":
+  # with a wedged service it would otherwise block the whole setup. The interactive 'keybase
+  # login' itself is deliberately unbounded -- it waits for the user to type the credentials.
+  QUERY_TIMEOUT = 20
 
   # Note: Logging methods must be qualified (Logging.debug, Logging.error, etc.)
   # because 'include Logging' + 'extend self' doesn't make included methods
@@ -75,8 +81,13 @@ module Keybase
   # keeps re-runs quiet. Only when nobody is logged in (or the status cannot be read) does it
   # attempt the login, starting the Keybase service first if it is not running.
   #
+  # A successful result is remembered for the rest of the process (each status query costs
+  # ~0.6s, and both the 'Setup Keybase' step and the clone step ask), so later calls return at once.
+  #
   # @return [Boolean] false only when a login was attempted and failed (recorded as a warning).
   def bootstrap_login
+    return true if @_bootstrap_logged_in
+
     unless configured?
       Logging.debug "Neither 'KEYBASE_HOME_REPO_NAME' nor 'KEYBASE_PROFILES_REPO_NAME' env var is set -- skipping Keybase setup"
       return true
@@ -89,6 +100,7 @@ module Keybase
 
     if _logged_in?
       Logging.success 'Already logged into Keybase'
+      @_bootstrap_logged_in = true
       return true
     end
 
@@ -98,6 +110,7 @@ module Keybase
     end
 
     Logging.success 'Successfully logged into Keybase'
+    @_bootstrap_logged_in = true
     true
   end
 
@@ -301,7 +314,8 @@ module Keybase
 
   # @return [Boolean] whether the keybase service answers 'keybase status' (exit 0)
   def _service_up?
-    CommandUtils.run_silent('keybase', 'status')
+    _stdout, status = BackgroundJob.capture('keybase', 'status', timeout: QUERY_TIMEOUT)
+    status&.success? || false
   end
 
   private_class_method :_service_up?
@@ -349,7 +363,8 @@ module Keybase
   #
   # @return [Hash, nil] parsed status, or nil if the command failed/returned invalid JSON
   def _status
-    JSON.parse(CommandUtils.query('keybase', 'status', '--json'))
+    stdout, status = BackgroundJob.capture('keybase', 'status', '--json', timeout: QUERY_TIMEOUT)
+    status ? JSON.parse(stdout.strip) : nil
   rescue JSON::ParserError
     nil
   end

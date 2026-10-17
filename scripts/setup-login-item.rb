@@ -23,9 +23,18 @@
 #   macOS 14-25: background behaviour is determined by the app's own Info.plist
 #   (LSUIElement/LSBackgroundOnly); -b emits a user_action hint instead.
 #
+# The inverse (used by 'implode' to get a machine back to a first-install state): --remove-managed
+# unregisters the login item of every app this repo registers -- the '-a' names in the Brewfile's
+# 'setup_login_items_script' lines plus MacOS::LOGIN_ITEM_APPS. Apps that are not installed, and
+# apps that have no login item, are skipped without complaint.
+#
 # Usage:
 #   Standalone: setup-login-item.rb [-h] -a <app-name> [-b]
+#               setup-login-item.rb [-h] --register-managed
+#               setup-login-item.rb [-h] --remove-managed
 #   Module:     SetupLoginItem.run(app_name: 'App', background: false)
+#               SetupLoginItem.register_managed
+#               SetupLoginItem.remove_managed
 
 require_relative 'utilities/command_utils'
 require_relative 'utilities/logging'
@@ -92,6 +101,233 @@ module SetupLoginItem
     end
   end
 
+  # Matches the '-a <app>' of a 'setup_login_items_script' call on a Brewfile line that is not
+  # commented out (a '#' that does not start a '#{...}' interpolation disables the line).
+  BREWFILE_LOGIN_ITEM = /\A(?:[^#\n]|\#\{)*setup_login_items_script\}\\"\s+-a\s+'([^']+)'/.freeze
+
+  # The apps the Brewfile registers as login items: the '-a' names of its active
+  # 'setup_login_items_script' lines. The Brewfile is optional (it may be absent).
+  #
+  # @param brewfile [Pathname] The Brewfile to scan.
+  # @return [Array<String>] Unique app names (case-insensitively), in first-seen order.
+  def brewfile_app_names(brewfile: EnvVars::HOMEBREW_BUNDLE_FILE)
+    names = brewfile.file? ? Core.read_lines_utf8(brewfile).map { |line| line[BREWFILE_LOGIN_ITEM, 1] }.compact : []
+    names.uniq(&:downcase)
+  end
+
+  # Names of every app this repo may have registered as a login item: #brewfile_app_names plus
+  # MacOS::LOGIN_ITEM_APPS (the single source of truth for the apps the preference scripts
+  # restart). Only used where everything is to be cleared (--remove-managed, 'implode'); the
+  # day-to-day paths (#register_managed, #unregister_removed) follow the Brewfile alone.
+  #
+  # @param brewfile [Pathname] The Brewfile to scan.
+  # @return [Array<String>] Unique app names (case-insensitively), in first-seen order.
+  def managed_app_names(brewfile: EnvVars::HOMEBREW_BUNDLE_FILE)
+    (brewfile_app_names(brewfile: brewfile) + MacOS::LOGIN_ITEM_APPS).uniq(&:downcase)
+  end
+
+  # Where the Brewfile's login-item apps are remembered between runs, so an app dropped from the
+  # Brewfile can be recognized later (the Brewfile no longer mentions it). Under the state
+  # directory, because the cache directories are wiped.
+  RECORD_FILE = EnvVars::XDG_STATE_HOME.join('dotfiles', 'login-item-apps').freeze
+
+  # Registers the login item of every app the Brewfile lists, that is installed and has no login
+  # item yet. 'brew bundle' only runs a cask's postinstall (which calls this script) when it
+  # installs the cask, so after the login items were removed (implode, or by hand) a re-run would
+  # never restore them for casks that are already installed. Quiet when nothing is missing: an app
+  # that is already registered (including one still awaiting approval) is left alone without any
+  # output, and an app that is not installed yet is skipped (its own postinstall registers it).
+  #
+  # @param brewfile [Pathname] The Brewfile to read.
+  # @param record [Pathname] File remembering the Brewfile's apps (see RECORD_FILE).
+  # @return [Boolean] true unless an installed app could not be registered
+  def register_managed(brewfile: EnvVars::HOMEBREW_BUNDLE_FILE, record: RECORD_FILE)
+    names = brewfile_app_names(brewfile: brewfile)
+    _write_record(record, names) if brewfile.file?
+    installed = names.select { |name| Core::ROOT.join('Applications', "#{name}.app").directory? }
+    return true if installed.empty?
+
+    _unregistered(installed).map { |name| run(app_name: name) }.all?
+  end
+
+  # Unregisters the login item of each app that the previous run saw in the Brewfile and the
+  # Brewfile no longer lists -- one by one, never everything. Meant to run before the cleanup that
+  # uninstalls such apps, while the app (needed to address its login item) is still there. The very
+  # first run only learns the current apps, so nothing is removed on a machine without a record.
+  #
+  # @param brewfile [Pathname] The Brewfile to read.
+  # @param record [Pathname] File remembering the Brewfile's apps (see RECORD_FILE).
+  # @return [Boolean] true unless a login item of a dropped app could not be removed
+  def unregister_removed(brewfile: EnvVars::HOMEBREW_BUNDLE_FILE, record: RECORD_FILE)
+    return true unless brewfile.file?
+
+    current = brewfile_app_names(brewfile: brewfile)
+    kept = current.map(&:downcase)
+    dropped = _read_record(record).reject { |name| kept.include?(name.downcase) }
+    installed = dropped.select { |name| Core::ROOT.join('Applications', "#{name}.app").directory? }
+    removed = installed.empty? ? true : remove(app_names: installed)
+    # A dropped app whose login item could not be removed stays in the record for the next run.
+    _write_record(record, removed ? current : current + installed)
+    removed
+  end
+
+  # @param record [Pathname]
+  # @return [Array<String>] The remembered app names (empty when there is no record yet).
+  def _read_record(record)
+    record.file? ? Core.read_lines_utf8(record).map(&:strip).reject(&:empty?) : []
+  end
+
+  # @param record [Pathname]
+  # @param names [Array<String>]
+  # @return [void]
+  def _write_record(record, names)
+    record.dirname.mkpath
+    record.write(names.map { |name| "#{name}\n" }.join)
+  end
+
+  # Unregisters the login item of every app from #managed_app_names.
+  #
+  # @return [Boolean] true on success (including when there was nothing to remove)
+  def remove_managed
+    remove(app_names: managed_app_names)
+  end
+
+  # Unregisters the login items of +app_names+ using the same mechanism #run registered them with
+  # (SMAppService on macOS 14-25, System Events otherwise). An app that is not installed, or whose
+  # login item does not exist, is skipped: that is the state being asked for.
+  #
+  # @param app_names [Array<String>] Names of the applications (e.g., 'Clocker')
+  # @return [Boolean] true unless an existing login item could not be removed
+  def remove(app_names:)
+    installed = app_names.select { |name| Core::ROOT.join('Applications', "#{name}.app").directory? }
+    return true if installed.empty?
+
+    macos_major = CommandUtils.query('sw_vers', '-productVersion').split('.').first.to_i
+    if macos_major >= 14 && macos_major < 26
+      _unregister_smappservice(installed.map { |name| Core::ROOT.join('Applications', "#{name}.app").to_s })
+    else
+      _unregister_legacy(installed)
+    end
+  end
+
+  # The subset of +app_names+ (installed apps) that has no login item yet. When that cannot be
+  # determined, every app is returned, which only costs the output #run prints for each.
+  #
+  # @param app_names [Array<String>] Names of installed applications.
+  # @return [Array<String>]
+  def _unregistered(app_names)
+    macos_major = CommandUtils.query('sw_vers', '-productVersion').split('.').first.to_i
+    if macos_major >= 14 && macos_major < 26
+      _unregistered_smappservice(app_names)
+    else
+      items = CommandUtils.query(MacOS::OSASCRIPT_CMD, '-e', 'tell application "System Events" to get the name of every login item')
+      existing = items.split(',').map { |item| item.strip.downcase }
+      app_names.reject { |name| existing.any? { |item| item.include?(name.downcase) } }
+    end
+  end
+
+  # SMAppService status of every app in ONE swift run (compiling the script is the slow part),
+  # macOS 14-25 only. Enabled and awaiting-approval items count as registered.
+  #
+  # @param app_names [Array<String>]
+  # @return [Array<String>] The names without a login item (all of them if swift failed).
+  # :reek:UtilityFunction -- Stateless helper for SMAppService status lookup (intentional)
+  def _unregistered_smappservice(app_names)
+    swift_src = <<~'SWIFT'
+      import Foundation
+      import ServiceManagement
+
+      guard let appPaths = ProcessInfo.processInfo.environment["APP_PATHS"] else {
+        fputs("APP_PATHS env var not set\n", stderr)
+        exit(1)
+      }
+
+      for appPath in appPaths.split(separator: "\n").map(String.init) {
+        let service = SMAppService.loginItem(url: URL(fileURLWithPath: appPath))
+        switch service.status {
+        case .enabled, .requiresApproval:
+          break
+        default:
+          print("missing \(appPath)")
+        }
+      }
+    SWIFT
+
+    paths = app_names.map { |name| Core::ROOT.join('Applications', "#{name}.app").to_s }
+    env = ENV.to_h.merge('APP_PATHS' => paths.join("\n"))
+    stdout, _stderr, status = Open3.capture3(env, 'swift', '-', stdin_data: swift_src)
+    return app_names unless status.success?
+
+    missing = stdout.lines.select { |line| line.start_with?('missing ') }.map { |line| line.delete_prefix('missing ').strip }
+    app_names.select { |name| missing.include?(Core::ROOT.join('Applications', "#{name}.app").to_s) }
+  end
+
+  # Unregisters +app_paths+ via SMAppService.loginItem(url:) in ONE swift run (compiling the
+  # script is the slow part), macOS 14-25 only. The paths travel in the environment, newline
+  # separated, never spliced into the source.
+  #
+  # @param app_paths [Array<String>] Absolute paths to the .app bundles.
+  # @return [Boolean] true if every registered item was unregistered.
+  # :reek:UtilityFunction -- Stateless helper for SMAppService unregistration (intentional)
+  def _unregister_smappservice(app_paths)
+    swift_src = <<~'SWIFT'
+      import Foundation
+      import ServiceManagement
+
+      guard let appPaths = ProcessInfo.processInfo.environment["APP_PATHS"] else {
+        fputs("APP_PATHS env var not set\n", stderr)
+        exit(1)
+      }
+
+      var failed = false
+      for appPath in appPaths.split(separator: "\n").map(String.init) {
+        let service = SMAppService.loginItem(url: URL(fileURLWithPath: appPath))
+        switch service.status {
+        case .enabled, .requiresApproval:
+          do {
+            try service.unregister()
+            print("removed \(appPath)")
+          } catch {
+            fputs("SMAppService unregistration failed for \(appPath): \(error)\n", stderr)
+            failed = true
+          }
+        default:
+          // Not registered (or not found): already in the state we want.
+          break
+        }
+      }
+      exit(failed ? 1 : 0)
+    SWIFT
+
+    env = ENV.to_h.merge('APP_PATHS' => app_paths.join("\n"))
+    stdout, stderr, status = Open3.capture3(env, 'swift', '-', stdin_data: swift_src)
+    stdout.each_line do |line|
+      Logging.info "Removed login item of '#{line.delete_prefix('removed ').strip.cyan}'" if line.start_with?('removed ')
+    end
+    Logging.record_warning("Failed to remove some login items via SMAppService#{"\n#{stderr}" unless stderr.empty?}") unless status.success?
+    status.success?
+  end
+
+  # Removes the legacy System Events login items named like +app_names+ (exact match,
+  # case-insensitive). Used on macOS 13 and earlier, and on macOS 26+.
+  #
+  # @param app_names [Array<String>] Names of the applications.
+  # @return [Boolean] true if every existing item was removed.
+  # :reek:UtilityFunction -- Stateless helper for legacy AppleScript removal (intentional)
+  def _unregister_legacy(app_names)
+    items_out = CommandUtils.query(MacOS::OSASCRIPT_CMD, '-e',
+                                   'tell application "System Events" to get the name of every login item')
+    existing = items_out.split(',').map(&:strip)
+    wanted = app_names.map(&:downcase)
+    existing.select { |item| wanted.include?(item.downcase) }.map do |item|
+      removed = CommandUtils.run_silent(MacOS::OSASCRIPT_CMD, '-e',
+                                        "tell application \"System Events\" to delete login item \"#{item}\"")
+      Logging.info "Removed login item of '#{item.cyan}'" if removed
+      Logging.record_warning("Failed to remove the login item of '#{item.cyan}' via System Events") unless removed
+      removed
+    end.all?
+  end
+
   # Registers +app_path+ via SMAppService.loginItem(url:) -- macOS 14-25 only.
   # APP_PATH is passed via the environment rather than heredoc interpolation so
   # that paths containing spaces or special characters are handled safely.
@@ -140,7 +376,8 @@ module SetupLoginItem
     end
   end
 
-  private_class_method :_register_smappservice
+  private_class_method :_register_smappservice, :_unregister_smappservice, :_unregister_legacy,
+                       :_unregistered, :_unregistered_smappservice, :_read_record, :_write_record
 
   # Registers +app_path+ via the legacy System Events AppleScript.
   # +hidden+ controls whether the app launches without a Dock icon.
@@ -182,6 +419,14 @@ if __FILE__ == $PROGRAM_NAME
     opts.on('-a', '--app APP', 'Name of the application to register as a login item') do |v|
       options[:app_name] = v
     end
+    opts.on('--register-managed',
+            'Register the login items of every installed app this repo manages (idempotent; the inverse of --remove-managed)') do
+      options[:register_managed] = true
+    end
+    opts.on('--remove-managed',
+            'Remove the login items of every app this repo registers (Brewfile entries and MacOS::LOGIN_ITEM_APPS)') do
+      options[:remove_managed] = true
+    end
     opts.on('-b', '--background',
             'Hidden/background mode: suppress Dock icon at launch ' \
             '(macOS 13 legacy path only; macOS 14+ apps control this via Info.plist)') do
@@ -190,9 +435,11 @@ if __FILE__ == $PROGRAM_NAME
     opts.separator ''
     opts.separator "  eg: #{File.basename(__FILE__).cyan} -a Clocker"
     opts.separator "  eg: #{File.basename(__FILE__).cyan} -a Thaw -b"
+    opts.separator "  eg: #{File.basename(__FILE__).cyan} --register-managed"
+    opts.separator "  eg: #{File.basename(__FILE__).cyan} --remove-managed"
   end
 
-  parser.abort_with_usage('Missing required option: -a <app-name>') if nil_or_empty?(options[:app_name])
+  parser.abort_with_usage('Missing required option: -a <app-name>') if nil_or_empty?(options[:app_name]) && !options[:remove_managed] && !options[:register_managed]
 
   # Note: This script uses Logging.run_script instead of the manual
   # increment_script_depth + print_script_start + print_script_summary pattern.
@@ -201,7 +448,13 @@ if __FILE__ == $PROGRAM_NAME
   # integrated into a larger workflow, run_script automatically suppresses banners
   # when script_depth >= 1 (see logging.rb lines 464-471).
   Logging.run_script do
-    success = SetupLoginItem.run(app_name: options[:app_name], background: options[:background] || false)
+    success = if options[:register_managed]
+                SetupLoginItem.register_managed
+              elsif options[:remove_managed]
+                SetupLoginItem.remove_managed
+              else
+                SetupLoginItem.run(app_name: options[:app_name], background: options[:background] || false)
+              end
     exit(success ? 0 : 1)
   end
 end

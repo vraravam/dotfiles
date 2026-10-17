@@ -61,8 +61,12 @@ ask() {
 
     if [[ "${auto}" == 'Y' ]]; then
       echo
+      # Silent mode never prompts: a question without a default answer counts as "no"
+      # (looping here would hang a baseline running in the background).
+      if is_zero_string "${default}"; then return 1; fi
     else
-      read -r yn
+      # EOF on stdin must not spin this loop forever.
+      read -r yn || return 1
     fi
 
     if is_zero_string "${yn}"; then
@@ -80,6 +84,8 @@ ask() {
 # Bluetooth trackpad (com.apple.driver.AppleBluetoothMultitouch.trackpad) and
 # built-in trackpad (com.apple.AppleMultitouchTrackpad) share the same gesture
 # keys -- both domains must be written to keep wired and wireless behaviour in sync.
+# The writes go through _dw (batched): every call site must be followed by _dw_flush
+# once its run of calls ends.
 #
 # Arguments:
 #   $1 - key name (e.g., 'Clicking', 'TrackpadPinch')
@@ -89,8 +95,8 @@ _set_trackpad_gesture() {
   local key="${1:?_set_trackpad_gesture: key required}"
   local value="${2:?_set_trackpad_gesture: value required}"
   local type="${3:--int}"
-  defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad "${key}" "${type}" "${value}"
-  defaults write com.apple.AppleMultitouchTrackpad "${key}" "${type}" "${value}"
+  _dw com.apple.driver.AppleBluetoothMultitouch.trackpad "${key}" "${type}" "${value}"
+  _dw com.apple.AppleMultitouchTrackpad "${key}" "${type}" "${value}"
 }
 
 # Atomically sets a PlistBuddy key value using Set-or-Add pattern.
@@ -117,6 +123,336 @@ _plist_set_or_add() {
     fi
     /usr/libexec/PlistBuddy -c "Add ${key} ${type} ${value}" "${plist}"
   fi
+}
+
+# ---------------------------------------------------------------------------
+# Batched scalar 'defaults write'
+# ---------------------------------------------------------------------------
+# Each 'defaults write' costs ~17ms (a process plus a cfprefsd round trip); the
+# script issues several hundred. '_dw' has the same argument shape as
+# 'defaults write' but, for plain bool/int/float/string values in an ordinary
+# per-user domain, only records the write. '_dw_flush' then applies every
+# recorded domain with ONE 'defaults import <domain> -' (verified to merge into
+# the existing domain, keeping untouched keys, and to store the same CFTypes
+# as the individual writes). Anything not provably identical -- other value
+# kinds, odd strings, floats that 'defaults' would round to single precision,
+# NSGlobalDomain, path domains -- flushes the pending batch first (preserving
+# order) and then runs a plain 'defaults write'. If an import fails (e.g. a
+# sandboxed domain) the domain's writes are replayed one by one, so failures
+# surface exactly as they did before.
+#
+# '-g', '-currentHost', sudo and /Library/Preferences writes, and -array/-dict/
+# -dict-add/-array-add values are never batched: callers keep using plain
+# 'defaults' for those. Every run of '_dw' lines MUST be followed by '_dw_flush'
+# before any other command that could touch the same domain; main() also flushes
+# before reload_macos_prefs and in its EXIT trap as a safety net.
+#
+# OSX_DEFAULTS_NO_BATCH=1 turns '_dw' into a plain 'defaults write' (used by the
+# dry-run old-vs-new comparison, and as an escape hatch).
+typeset -ga _dw_doms=() _dw_keys=() _dw_flags=() _dw_vals=() _dw_elems=()
+
+# Sets REPLY to the XML-escaped form of $1.
+_dw_xml_escape() {
+  local _s="${1}"
+  _s="${_s//&/&amp;}"
+  _s="${_s//</&lt;}"
+  _s="${_s//>/&gt;}"
+  REPLY="${_s}"
+}
+
+# Sets REPLY to the plist element 'defaults write <flag> <value>' would store, or
+# returns 1 when that cannot be guaranteed. Only the forms below are accepted:
+#   -bool true|false|yes|no       -int <=15 digits, no leading zeros
+#   -float integers (<=7 digits) and values with an exact single-precision
+#          fraction (.5 .25 .75 .125 .375 .625 .875): 'defaults' stores floats as
+#          32-bit, so e.g. 0.1 would become 0.10000000149011612
+#   -string without control characters
+#   (no flag) a plain integer-looking word, which 'defaults' stores as a string
+_dw_encode() {
+  local type="${1}" val="${2}"
+  case "${type}" in
+    -bool)
+      case "${val}" in
+        true | yes) REPLY='<true/>' ;;
+        false | no) REPLY='<false/>' ;;
+        *) return 1 ;;
+      esac
+      ;;
+    -int)
+      [[ "${val}" =~ '^(0|-?[1-9][0-9]{0,14})$' ]] || return 1
+      REPLY="<integer>${val}</integer>"
+      ;;
+    -float)
+      [[ "${val}" != '-0' && "${val}" =~ '^-?(0|[1-9][0-9]{0,6})(\.(5|25|75|125|375|625|875))?$' ]] || return 1
+      REPLY="<real>${val}</real>"
+      ;;
+    -string)
+      if [[ "${val}" == *[[:cntrl:]]* ]]; then return 1; fi
+      _dw_xml_escape "${val}"
+      REPLY="<string>${REPLY}</string>"
+      ;;
+    '')
+      [[ "${val}" =~ '^(0|[1-9][0-9]{0,14})$' ]] || return 1
+      REPLY="<string>${val}</string>"
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# Drop-in for: defaults write <domain> <key> [-bool|-int|-float|-string] <value>
+_dw() {
+  local dom="${1:?_dw: domain required}" key="${2:?_dw: key required}"
+  shift 2
+  local type=''
+  if [[ "${1:-}" == -(bool|int|integer|float|string) ]]; then
+    type="${1}"
+    shift
+  fi
+  if (($# == 1)) && [[ -z "${OSX_DEFAULTS_NO_BATCH:-}" ]] &&
+    [[ "${dom}" =~ '^[A-Za-z][A-Za-z0-9._-]*$' && "${dom}" != NSGlobalDomain ]] &&
+    [[ "${key}" =~ '^[A-Za-z0-9_][A-Za-z0-9 ._:@+=,/-]*$' ]] &&
+    _dw_encode "${type/-integer/-int}" "${1}"; then
+    _dw_doms+=("${dom}")
+    _dw_keys+=("${key}")
+    _dw_flags+=("${type}")
+    _dw_vals+=("${1}")
+    _dw_elems+=("${REPLY}")
+    return 0
+  fi
+  _dw_flush
+  if [[ -n "${type}" ]]; then
+    defaults write "${dom}" "${key}" "${type}" "$@"
+  else
+    defaults write "${dom}" "${key}" "$@"
+  fi
+}
+
+# Applies and clears everything recorded by _dw (no-op when nothing is pending).
+# Within a domain the last write to a key wins, exactly as with sequential writes.
+_dw_flush() {
+  if ((${#_dw_doms} == 0)); then return 0; fi
+  local -A latest=() latest_num=()
+  local -a doms=("${_dw_doms[@]}") keys=("${_dw_keys[@]}") flags=("${_dw_flags[@]}") vals=("${_dw_vals[@]}") elems=("${_dw_elems[@]}")
+  _dw_doms=() _dw_keys=() _dw_flags=() _dw_vals=() _dw_elems=()
+  local i dom xml slot num
+  # Pick the winning entry per domain+key. A later write wins, EXCEPT that
+  # 'defaults write' leaves a key untouched when the new value is numerically equal
+  # to the stored one (true == 1 == 1.0, false == 0), so the first of such equal
+  # numeric writes keeps its type.
+  for i in {1..${#doms}}; do
+    slot="${doms[i]}"$'\x01'"${keys[i]}"
+    num=''
+    case "${flags[i]}" in
+      -bool) if [[ "${vals[i]}" == (true|yes) ]]; then num=1; else num=0; fi ;;
+      -int | -integer | -float) num="${vals[i]}" ;;
+    esac
+    if [[ -n "${num}" && -n "${latest[${slot}]:-}" && "${latest_num[${slot}]:-}" == "${num}" ]]; then continue; fi
+    latest[${slot}]="${i}"
+    latest_num[${slot}]="${num}"
+  done
+  for dom in "${(@u)doms}"; do
+    xml='<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict>'
+    for i in {1..${#doms}}; do
+      if [[ "${doms[i]}" != "${dom}" ]]; then continue; fi
+      slot="${dom}"$'\x01'"${keys[i]}"
+      if [[ "${latest[${slot}]}" != "${i}" ]]; then continue; fi
+      _dw_xml_escape "${keys[i]}"
+      xml+="<key>${REPLY}</key>${elems[i]}"
+    done
+    xml+='</dict></plist>'
+    if ! defaults import "${dom}" - <<<"${xml}" &>/dev/null; then
+      for i in {1..${#doms}}; do
+        if [[ "${doms[i]}" != "${dom}" ]]; then continue; fi
+        if [[ -n "${flags[i]}" ]]; then
+          defaults write "${dom}" "${keys[i]}" "${flags[i]}" "${vals[i]}"
+        else
+          defaults write "${dom}" "${keys[i]}" "${vals[i]}"
+        fi
+      done
+    fi
+  done
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Once-per-macOS-version stamps and idempotent machine naming
+# ---------------------------------------------------------------------------
+
+# Heavy, machine-wide actions (rebuilding the LaunchServices database, erasing
+# and disabling Spotlight indexes) only need to happen on first install or after
+# a macOS upgrade. A stamp file records the macOS version they last ran for;
+# OSX_DEFAULTS_FORCE=1 ignores the stamps. Rerunning the script must not
+# re-trigger them, because both are slow and the index erase is disruptive.
+typeset -g _OSX_VERSION=''
+
+# Succeeds when stamp $1 exists and matches the running macOS version.
+_osx_stamp_is_current() {
+  if [[ -n "${OSX_DEFAULTS_FORCE:-}" || -z "${_OSX_VERSION}" ]]; then return 1; fi
+  local stamp_file="${XDG_CACHE_HOME}/osx-defaults-${1}-stamp"
+  [[ -f "${stamp_file}" && "$(<"${stamp_file}")" == "${_OSX_VERSION}" ]]
+}
+
+_osx_stamp_record() {
+  if [[ -z "${_OSX_VERSION}" ]]; then return 0; fi
+  mkdir -p "${XDG_CACHE_HOME}" && print -r -- "${_OSX_VERSION}" >|"${XDG_CACHE_HOME}/osx-defaults-${1}-stamp"
+}
+
+# Sets ComputerName/HostName/LocalHostName/NetBIOSName. The names embed a
+# timestamp so each machine gets a unique name, so the timestamp is only
+# generated when naming for the first time: a name that already has the intended
+# shape is left alone (and its timestamp reused for any sibling name that is
+# missing), so reruns never rename the machine.
+_set_computer_names() {
+  local user_cc="${(C)USER}"
+  local ts_pattern='[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+  local computer_prefix="IND-CHN-${user_cc}'s MBP-"
+  local host_prefix="${user_cc}-"
+  local cur_computer cur_host cur_local cur_netbios ts=''
+  cur_computer="$(scutil --get ComputerName 2>/dev/null)" || cur_computer=''
+  cur_host="$(scutil --get HostName 2>/dev/null)" || cur_host=''
+  cur_local="$(scutil --get LocalHostName 2>/dev/null)" || cur_local=''
+  cur_netbios="$(defaults read /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName 2>/dev/null)" || cur_netbios=''
+
+  local computer_ok=0 host_ok=0 local_ok=0 netbios_ok=0
+  if [[ "${cur_computer}" == "${computer_prefix}"${~ts_pattern} ]]; then
+    computer_ok=1
+    ts="${cur_computer: -16}"
+  fi
+  if [[ "${cur_host}" == "${host_prefix}"${~ts_pattern} ]]; then
+    host_ok=1
+    ts="${ts:-${cur_host: -16}}"
+  fi
+  if [[ "${cur_local}" == "${host_prefix}"${~ts_pattern} ]]; then
+    local_ok=1
+    ts="${ts:-${cur_local: -16}}"
+  fi
+  if [[ "${cur_netbios}" == "${host_prefix}"${~ts_pattern} ]]; then
+    netbios_ok=1
+    ts="${ts:-${cur_netbios: -16}}"
+  fi
+
+  if ((computer_ok && host_ok && local_ok && netbios_ok)); then
+    info "Computer name already set ('${cur_computer}'); leaving it unchanged"
+    return 0
+  fi
+  if is_zero_string "${ts}"; then current_timestamp_for_filename ts; fi
+
+  if ((! computer_ok)); then sudo scutil --set ComputerName "${computer_prefix}${ts}"; fi
+  if ((! host_ok)); then sudo scutil --set HostName "${host_prefix}${ts}"; fi
+  if ((! local_ok)); then sudo scutil --set LocalHostName "${host_prefix}${ts}"; fi
+  if ((! netbios_ok)); then sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "${host_prefix}${ts}"; fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Dry run (OSX_DEFAULTS_DRY_RUN=1) -- old-vs-new comparison without touching prefs
+# ---------------------------------------------------------------------------
+# Runs the whole script with every side effect redirected: the user/real HOME is
+# replaced by a scratch HOME, every 'defaults' call is applied (by the real
+# 'defaults' binary) to per-domain plist FILES under a scratch directory instead
+# of the live preference domains, and sudo/osascript/killall/PlistBuddy/
+# lsregister/scutil are recorded instead of run. At the end a report is written
+# with the ordered list of recorded commands plus the complete XML contents
+# (types included) of every scratch domain. Run it once with
+# OSX_DEFAULTS_NO_BATCH=1 (old code path) and once without (batched), pointing
+# OSX_DEFAULTS_DRY_RUN_OUT at different files, then diff the two reports:
+#   OSX_DEFAULTS_DRY_RUN=1 OSX_DEFAULTS_NO_BATCH=1 OSX_DEFAULTS_DRY_RUN_OUT=/tmp/old.txt osx-defaults.sh -s
+#   OSX_DEFAULTS_DRY_RUN=1 OSX_DEFAULTS_DRY_RUN_OUT=/tmp/new.txt osx-defaults.sh -s
+#   diff /tmp/old.txt /tmp/new.txt
+typeset -g _DRY_DIR='' _DRY_REAL_HOME=''
+
+_dry_log() {
+  print -r -- "$*" >>"${_DRY_DIR}/commands.log"
+}
+
+# Maps defaults' arguments onto a scratch plist file and runs the real binary.
+# _DRY_PREFIX (set by the sudo shim) keeps sudo/system domains separate.
+_dry_defaults() {
+  local -a args=("$@")
+  local prefix="${_DRY_PREFIX:-}"
+  if [[ "${args[1]}" == -currentHost ]]; then
+    prefix+='currentHost.'
+    args=("${args[@]:1}")
+  fi
+  local sub="${args[1]}" dom="${args[2]:-}"
+  case "${dom}" in
+    -g | -globalDomain | 'Apple Global Domain') dom='NSGlobalDomain' ;;
+  esac
+  local mapped="${_DRY_DIR}/domains/${prefix}${dom//\//_}"
+  HOME="${_DRY_REAL_HOME}" command defaults "${sub}" "${mapped}" "${(@)args[3,-1]}"
+}
+
+_dry_run_setup() {
+  _DRY_REAL_HOME="${HOME}"
+  # A fresh directory per run: cfprefsd caches plist paths, so reusing (and
+  # deleting) one directory between runs can stall the next run's writes.
+  _DRY_DIR="$(mktemp -d "${TMPDIR:-/tmp}/osx-defaults-dry-run.XXXXXX")"
+  _DRY_DIR="${_DRY_DIR:A}"
+  mkdir -p "${_DRY_DIR}/domains" "${_DRY_DIR}/home"
+  export HOME="${_DRY_DIR}/home"
+  export XDG_CACHE_HOME="${HOME}/.cache"
+  export OSX_DEFAULTS_FORCE=1
+  # The caller-side bracketing helpers are recorded, not run, so the report shows
+  # whether (and in what order) a given DOTFILES_APPS_BRACKETED setting invokes them.
+  local _helper
+  for _helper in kill_login_item_apps restart_login_item_apps suspend_softwareupdate_schedule resume_softwareupdate_schedule reload_macos_prefs; do
+    eval "${_helper}() { _dry_log '${_helper}'; return 0; }"
+  done
+  has_sudo_credentials() { return 0; }
+  keep_sudo_alive() { return 0; }
+  defaults() { _dry_defaults "$@"; }
+  sudo() {
+    if [[ "${1:-}" == defaults ]]; then
+      shift
+      _DRY_PREFIX='sudo.' _dry_defaults "$@"
+    else
+      _dry_log "sudo $*"
+    fi
+    return 0
+  }
+  current_timestamp_for_filename() { eval "${1}=2000-01-01-00-00"; }
+  osascript() {
+    _dry_log "osascript $*"
+    return 0
+  }
+  killall() {
+    _dry_log "killall $*"
+    return 0
+  }
+  scutil() {
+    _dry_log "scutil $*"
+    return 1
+  }
+  chflags() {
+    _dry_log "chflags $*"
+    return 0
+  }
+  /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister() {
+    _dry_log "lsregister $*"
+    return 0
+  }
+  # PlistBuddy edits files directly; log each call together with a checksum of
+  # the scratch domain it targets so interleaving with batched writes is compared.
+  /usr/libexec/PlistBuddy() {
+    local target="${@[-1]}"
+    target="${${target:t}%.plist}"
+    _dry_log "PlistBuddy $* [domain-state $(HOME="${_DRY_REAL_HOME}" command defaults export "${_DRY_DIR}/domains/${target}" - 2>/dev/null | sed "s|${_DRY_DIR}|<DRY_DIR>|g" | shasum | cut -c1-12)]"
+    return 0
+  }
+}
+
+_dry_run_report() {
+  local out="${OSX_DEFAULTS_DRY_RUN_OUT:-${_DRY_DIR}/report.txt}" file
+  # The scratch directory name differs per run; normalise it so reports can be diffed.
+  {
+    print -r -- '##### recorded commands'
+    if [[ -f "${_DRY_DIR}/commands.log" ]]; then cat "${_DRY_DIR}/commands.log"; fi
+    for file in "${_DRY_DIR}"/domains/*.plist(N); do
+      print -r -- "##### domain ${${file:t}%.plist}"
+      HOME="${_DRY_REAL_HOME}" command defaults export "${file%.plist}" - | plutil -convert xml1 -o - -
+    done
+  } | sed "s|${_DRY_DIR}|<DRY_DIR>|g" >|"${out}"
+  info "Dry-run report written to $(cyan "${out}")"
 }
 
 main() {
@@ -156,8 +492,36 @@ main() {
   local script_start_time="${EPOCHSECONDS}"
   print_script_start
 
-  # Ask for the administrator password upfront and keep it alive until this script has finished
-  keep_sudo_alive
+  if is_non_zero_string "${OSX_DEFAULTS_DRY_RUN:-}"; then
+    _dry_run_setup
+    warn "Dry run: nothing is written to real preferences or the system (scratch dir: $(cyan "${_DRY_DIR}"))"
+  fi
+  _OSX_VERSION="$(sw_vers -productVersion 2>/dev/null)" || _OSX_VERSION=''
+
+  # Ask for the administrator password upfront and keep it alive until this script has finished.
+  # In -s (silent) mode the script must never prompt -- it may be running in the background
+  # next to other bootstrap steps with no terminal to answer. Without already-cached sudo
+  # credentials every sudo step is skipped (and reported at the end) instead of prompting;
+  # with them, 'sudo -n' keeps a lapsed credential from turning into a prompt mid-run.
+  local _sudo_skipped=0
+  local _sudo_ok=1
+  if [[ "${auto}" == 'Y' ]]; then
+    if ! has_sudo_credentials; then
+      _sudo_ok=0
+      warn 'No cached sudo credentials in silent mode: sudo-only settings will be skipped'
+    fi
+    if is_zero_string "${OSX_DEFAULTS_DRY_RUN:-}"; then
+      sudo() {
+        if ((_sudo_ok)); then
+          command sudo -n "$@"
+        else
+          ((++_sudo_skipped))
+          return 0
+        fi
+      }
+    fi
+  fi
+  if ((_sudo_ok)); then keep_sudo_alive; fi
 
   # Close any open System Preferences panes, to prevent them from overriding
   # settings we're about to change
@@ -171,15 +535,27 @@ main() {
   # be safely force-quit (Terminal, iTerm, Zoom, ProtonVPN) are left to the
   # user_action prompts at the end.
   # The canonical app list lives in MacOS::LOGIN_ITEM_APPS (scripts/utilities/macos.rb).
-  info "Temporarily stopping login-item apps (will auto-restart on script exit) to prevent them from overwriting settings"
-  kill_login_item_apps
-  trap 'restart_login_item_apps; resume_softwareupdate_schedule; _decrement_script_depth' EXIT
+  #
+  # When DOTFILES_APPS_BRACKETED is non-empty the caller (the Ruby post-clone step) already
+  # brackets this script plus the preferences import with ONE stop/restart of those apps, one
+  # suspend/resume of the software-update schedule and one reload of the system services, so
+  # none of that is repeated here.
+  local bracketed=0
+  if is_non_zero_string "${DOTFILES_APPS_BRACKETED:-}"; then bracketed=1; fi
+  if ((bracketed)); then
+    info "Login-item apps and software-update schedule are managed by the caller (DOTFILES_APPS_BRACKETED)"
+    trap '_dw_flush; _decrement_script_depth' EXIT
+  else
+    info "Temporarily stopping login-item apps (will auto-restart on script exit) to prevent them from overwriting settings"
+    kill_login_item_apps
+    trap '_dw_flush; restart_login_item_apps; resume_softwareupdate_schedule; _decrement_script_depth' EXIT
 
-  # Suspend the automatic software update schedule while writing defaults so
-  # background update activity cannot conflict with the defaults system cache.
-  # resume_softwareupdate_schedule is called from the EXIT trap above, covering
-  # both normal and error exits. Both functions guard with sudo -n (no prompt).
-  suspend_softwareupdate_schedule
+    # Suspend the automatic software update schedule while writing defaults so
+    # background update activity cannot conflict with the defaults system cache.
+    # resume_softwareupdate_schedule is called from the EXIT trap above, covering
+    # both normal and error exits. Both functions guard with sudo -n (no prompt).
+    suspend_softwareupdate_schedule
+  fi
 
   # ---------------------------------------------------------------------------
   # Login Window
@@ -195,33 +571,34 @@ main() {
 
   # System Settings > Control Center > Menu Bar Only items
   # Bluetooth = on
-  defaults write com.apple.controlcenter 'NSStatusItem Visible Bluetooth' 1
+  _dw com.apple.controlcenter 'NSStatusItem Visible Bluetooth' 1
   # WiFi = on
-  defaults write com.apple.controlcenter 'NSStatusItem Visible WiFi' -bool true
+  _dw com.apple.controlcenter 'NSStatusItem Visible WiFi' -bool true
   # Battery = off
-  defaults write com.apple.controlcenter 'NSStatusItem Visible Battery' 0
+  _dw com.apple.controlcenter 'NSStatusItem Visible Battery' 0
   # Clock = off (use a dedicated clock app such as Clocker instead)
-  defaults write com.apple.controlcenter 'NSStatusItem VisibleCC Clock' -bool false
+  _dw com.apple.controlcenter 'NSStatusItem VisibleCC Clock' -bool false
   # Spotlight = off (use Sol instead)
   # defaults write com.apple.controlcenter 'NSStatusItem Visible Spotlight' -bool false
   # AirDrop = off
-  defaults write com.apple.controlcenter 'NSStatusItem Visible AirDrop' -bool false
+  _dw com.apple.controlcenter 'NSStatusItem Visible AirDrop' -bool false
   # Text Input = off
-  defaults write com.apple.controlcenter 'NSStatusItem Visible TextInput' -bool false
+  _dw com.apple.controlcenter 'NSStatusItem Visible TextInput' -bool false
   # Keyboard Brightness = off
-  defaults write com.apple.controlcenter 'NSStatusItem Visible KeyboardBrightness' -bool false
+  _dw com.apple.controlcenter 'NSStatusItem Visible KeyboardBrightness' -bool false
   # Weather = off
-  defaults write com.apple.controlcenter 'NSStatusItem Visible Weather' -bool false
+  _dw com.apple.controlcenter 'NSStatusItem Visible Weather' -bool false
   # Focus = show when active (8=when active, 16=always, 24=never)
-  defaults write com.apple.controlcenter 'FocusModes' -int 8
+  _dw com.apple.controlcenter 'FocusModes' -int 8
   # Screen Mirroring = show when active
-  defaults write com.apple.controlcenter 'AirPlayDisplay' -int 8
+  _dw com.apple.controlcenter 'AirPlayDisplay' -int 8
   # Display = show when active
-  defaults write com.apple.controlcenter 'Display' -int 8
+  _dw com.apple.controlcenter 'Display' -int 8
   # Sound = show when active
-  defaults write com.apple.controlcenter 'Sound' -int 8
+  _dw com.apple.controlcenter 'Sound' -int 8
   # Now Playing = show when active
-  defaults write com.apple.controlcenter 'NowPlaying' -int 8
+  _dw com.apple.controlcenter 'NowPlaying' -int 8
+  _dw_flush
 
   # Keep keyboard brightness at maximum via -currentHost write; cannot be
   # expressed as a plain defaults write (host-specific pref domain).
@@ -246,14 +623,14 @@ main() {
   # ---------------------------------------------------------------------------
 
   if ask 'Set computer name (as done via System Preferences -> Sharing)' 'Y'; then
-    local username_in_camel_case="${(C)USER}"
-    local human_date
-    current_timestamp_for_filename human_date
-
-    sudo scutil --set ComputerName "IND-CHN-${username_in_camel_case}'s MBP-${human_date}"
-    sudo scutil --set HostName "${username_in_camel_case}-${human_date}"
-    sudo scutil --set LocalHostName "${username_in_camel_case}-${human_date}"
-    sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "${username_in_camel_case}-${human_date}"
+    # Names embed a timestamp, so only set the ones that do not already have the
+    # intended shape (reruns must not rename the machine). Needs sudo for the writes.
+    if ((_sudo_ok)); then
+      _set_computer_names
+    else
+      info 'Skipping computer name (needs sudo)'
+      ((++_sudo_skipped))
+    fi
   fi
 
   if ask 'Set standby delay to 6 hours (default: 1 hour)' 'Y'; then
@@ -279,28 +656,36 @@ main() {
     '/System/Library/CoreServices/Menu Extras/User.menu' \
     '/System/Library/CoreServices/Menu Extras/Volume.menu'
 
-  defaults write com.apple.systemuiserver 'NSStatusItem Visible Siri' -bool false
-  defaults write com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.airport' -bool true
-  defaults write com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.appleuser' -bool true
-  defaults write com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.battery' -bool true
-  defaults write com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.bluetooth' -bool true
-  defaults write com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.volume' -bool true
+  _dw com.apple.systemuiserver 'NSStatusItem Visible Siri' -bool false
+  _dw com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.airport' -bool true
+  _dw com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.appleuser' -bool true
+  _dw com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.battery' -bool true
+  _dw com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.bluetooth' -bool true
+  _dw com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.volume' -bool true
 
-  defaults write com.apple.menuextra.clock DateFormat -string 'EEE d MMM hh:mm:ss a'
-  defaults write com.apple.menuextra.clock FlashDateSeparators -bool true
-  defaults write com.apple.menuextra.clock IsAnalog -bool true # Since I am using `The Clocker` app, turning this to analog
-  defaults write com.apple.menuextra.clock Show24Hour -bool false
-  defaults write com.apple.menuextra.clock ShowAMPM -bool true
-  defaults write com.apple.menuextra.clock ShowDate -bool false
-  defaults write com.apple.menuextra.clock ShowDayOfMonth -bool true
-  defaults write com.apple.menuextra.clock ShowDayOfWeek -bool false
-  defaults write com.apple.menuextra.clock ShowSeconds -bool true
+  _dw com.apple.menuextra.clock DateFormat -string 'EEE d MMM hh:mm:ss a'
+  _dw com.apple.menuextra.clock FlashDateSeparators -bool true
+  _dw com.apple.menuextra.clock IsAnalog -bool true # Since I am using `The Clocker` app, turning this to analog
+  _dw com.apple.menuextra.clock Show24Hour -bool false
+  _dw com.apple.menuextra.clock ShowAMPM -bool true
+  _dw com.apple.menuextra.clock ShowDate -bool false
+  _dw com.apple.menuextra.clock ShowDayOfMonth -bool true
+  _dw com.apple.menuextra.clock ShowDayOfWeek -bool false
+  _dw com.apple.menuextra.clock ShowSeconds -bool true
+  _dw_flush
 
   if ask "Remove duplicates in the 'Open With' menu (also see 'lscleanup' alias)" 'Y'; then
-    # Newer macOS versions reject '-kill' outright (lsregister itself prints
-    # "The -kill option has been removed..." and exits non-zero) while still
-    # performing the '-r' rebuild -- tolerate the non-zero exit either way.
-    /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user || true
+    # The rebuild is slow and only needed once per macOS version (stamp-guarded;
+    # OSX_DEFAULTS_FORCE=1 overrides).
+    if _osx_stamp_is_current lsregister; then
+      info 'LaunchServices database already rebuilt for this macOS version; skipping'
+    else
+      # Newer macOS versions reject '-kill' outright (lsregister itself prints
+      # "The -kill option has been removed..." and exits non-zero) while still
+      # performing the '-r' rebuild -- tolerate the non-zero exit either way.
+      /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user || true
+      _osx_stamp_record lsregister
+    fi
   fi
 
   # Display ASCII control characters using caret notation in standard text views
@@ -434,11 +819,12 @@ main() {
     _set_trackpad_gesture UserPreferences 1
 
     # Built-in trackpad-only settings (not applicable to Bluetooth trackpad)
-    defaults write com.apple.AppleMultitouchTrackpad Clicking -bool true
-    defaults write com.apple.AppleMultitouchTrackpad FirstClickThreshold -int 1
-    defaults write com.apple.AppleMultitouchTrackpad ForceSuppressed -int 0
-    defaults write com.apple.AppleMultitouchTrackpad SecondClickThreshold -int 1
-    defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerTapGesture -int 2
+    _dw com.apple.AppleMultitouchTrackpad Clicking -bool true
+    _dw com.apple.AppleMultitouchTrackpad FirstClickThreshold -int 1
+    _dw com.apple.AppleMultitouchTrackpad ForceSuppressed -int 0
+    _dw com.apple.AppleMultitouchTrackpad SecondClickThreshold -int 1
+    _dw com.apple.AppleMultitouchTrackpad TrackpadThreeFingerTapGesture -int 2
+    _dw_flush
 
     # System Settings > Trackpad > Tap to click: this host-level key is what the
     # Settings UI reads to show the toggle state. All three writes are required:
@@ -451,14 +837,15 @@ main() {
   # Apple Multitouch Mouse
   # ---------------------------------------------------------------------------
   if ask 'Apple Multitouch mouse features' 'Y'; then
-    defaults write com.apple.AppleMultitouchMouse MouseButtonMode -string 'OneButton'
-    defaults write com.apple.AppleMultitouchMouse MouseHorizontalScroll -int 1
-    defaults write com.apple.AppleMultitouchMouse MouseMomentumScroll -int 1
-    defaults write com.apple.AppleMultitouchMouse MouseOneFingerDoubleTapGesture -int 0
-    defaults write com.apple.AppleMultitouchMouse MouseTwoFingerDoubleTapGesture -int 3
-    defaults write com.apple.AppleMultitouchMouse MouseTwoFingerHorizSwipeGesture -int 2
-    defaults write com.apple.AppleMultitouchMouse MouseVerticalScroll -int 1
-    defaults write com.apple.AppleMultitouchMouse UserPreferences -int 1
+    _dw com.apple.AppleMultitouchMouse MouseButtonMode -string 'OneButton'
+    _dw com.apple.AppleMultitouchMouse MouseHorizontalScroll -int 1
+    _dw com.apple.AppleMultitouchMouse MouseMomentumScroll -int 1
+    _dw com.apple.AppleMultitouchMouse MouseOneFingerDoubleTapGesture -int 0
+    _dw com.apple.AppleMultitouchMouse MouseTwoFingerDoubleTapGesture -int 3
+    _dw com.apple.AppleMultitouchMouse MouseTwoFingerHorizSwipeGesture -int 2
+    _dw com.apple.AppleMultitouchMouse MouseVerticalScroll -int 1
+    _dw com.apple.AppleMultitouchMouse UserPreferences -int 1
+    _dw_flush
   fi
 
   if ask 'Enable full keyboard access for all controls (e.g. Tab in modal dialogs)' 'Y'; then
@@ -534,25 +921,26 @@ main() {
     defaults write com.apple.finder ShowPreviewPane -bool false
   fi
 
-  defaults write com.apple.finder ShowExternalHardDrivesOnDesktop -bool true
-  defaults write com.apple.finder ShowMountedServersOnDesktop -bool false
-  defaults write com.apple.finder ShowRecentTags -bool false
-  defaults write com.apple.finder ShowRemovableMediaOnDesktop -bool true
-  defaults write com.apple.finder ShowSidebar -bool true
-  defaults write com.apple.finder SidebarDevicesSectionDisclosedState -bool true
-  defaults write com.apple.finder SidebarPlacesSectionDisclosedState -bool true
-  defaults write com.apple.finder SidebarShowingSignedIntoiCloud -bool true
-  defaults write com.apple.finder SidebarShowingiCloudDesktop -bool true
-  defaults write com.apple.finder SidebarTagsSctionDisclosedState -bool true
-  defaults write com.apple.finder SidebarWidth 172
-  defaults write com.apple.finder SidebariCloudDriveSectionDisclosedState -bool true
-  defaults write com.apple.finder FXRemoveOldTrashItems -bool true
-  defaults write com.apple.finder _FXEnableColumnAutoSizing -bool true
+  _dw com.apple.finder ShowExternalHardDrivesOnDesktop -bool true
+  _dw com.apple.finder ShowMountedServersOnDesktop -bool false
+  _dw com.apple.finder ShowRecentTags -bool false
+  _dw com.apple.finder ShowRemovableMediaOnDesktop -bool true
+  _dw com.apple.finder ShowSidebar -bool true
+  _dw com.apple.finder SidebarDevicesSectionDisclosedState -bool true
+  _dw com.apple.finder SidebarPlacesSectionDisclosedState -bool true
+  _dw com.apple.finder SidebarShowingSignedIntoiCloud -bool true
+  _dw com.apple.finder SidebarShowingiCloudDesktop -bool true
+  _dw com.apple.finder SidebarTagsSctionDisclosedState -bool true
+  _dw com.apple.finder SidebarWidth 172
+  _dw com.apple.finder SidebariCloudDriveSectionDisclosedState -bool true
+  _dw com.apple.finder FXRemoveOldTrashItems -bool true
+  _dw com.apple.finder _FXEnableColumnAutoSizing -bool true
   # Default view style: clmv=column, icnv=icon, Nlsv=list, glyv=gallery.
-  defaults write com.apple.finder FXPreferredViewStyle -string 'clmv'
-  defaults write com.apple.finder WarnOnEmptyTrash -bool false
-  defaults write com.apple.finder OpenWindowForNewRemovableDisk -bool true
-  defaults write com.apple.finder RestoreWindowState -bool true
+  _dw com.apple.finder FXPreferredViewStyle -string 'clmv'
+  _dw com.apple.finder WarnOnEmptyTrash -bool false
+  _dw com.apple.finder OpenWindowForNewRemovableDisk -bool true
+  _dw com.apple.finder RestoreWindowState -bool true
+  _dw_flush
 
   if ask 'Enable iCloud Drive Optimize Mac Storage (keep full copies in iCloud, evict local copies when space is needed)' 'Y'; then
     # com.apple.bird is the iCloud Drive daemon. The optimize-storage key is the only
@@ -918,17 +1306,18 @@ main() {
     # 11: Launchpad
     # 12: Notification Center
     # Top left screen corner -> Desktop
-    defaults write com.apple.dock wvous-tl-corner -int 4
-    defaults write com.apple.dock wvous-tl-modifier -int 0
+    _dw com.apple.dock wvous-tl-corner -int 4
+    _dw com.apple.dock wvous-tl-modifier -int 0
     # Bottom left screen corner -> No-op
-    defaults write com.apple.dock wvous-bl-corner -int 0
-    defaults write com.apple.dock wvous-bl-modifier -int 0
+    _dw com.apple.dock wvous-bl-corner -int 0
+    _dw com.apple.dock wvous-bl-modifier -int 0
     # Top right screen corner -> Mission Control
-    defaults write com.apple.dock wvous-tr-corner -int 2
-    defaults write com.apple.dock wvous-tr-modifier -int 0
+    _dw com.apple.dock wvous-tr-corner -int 2
+    _dw com.apple.dock wvous-tr-modifier -int 0
     # Bottom right screen corner -> Start screen saver
-    defaults write com.apple.dock wvous-br-corner -int 5
-    defaults write com.apple.dock wvous-br-modifier -int 0
+    _dw com.apple.dock wvous-br-corner -int 5
+    _dw com.apple.dock wvous-br-modifier -int 0
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
@@ -996,10 +1385,11 @@ main() {
   fi
 
   if ask 'Disable auto-playing video' 'Y'; then
-    defaults write com.apple.Safari WebKitMediaPlaybackAllowsInline -bool false
-    defaults write com.apple.SafariTechnologyPreview WebKitMediaPlaybackAllowsInline -bool false
-    defaults write com.apple.Safari com.apple.Safari.ContentPageGroupIdentifier.WebKit2AllowsInlineMediaPlayback -bool false
-    defaults write com.apple.SafariTechnologyPreview com.apple.Safari.ContentPageGroupIdentifier.WebKit2AllowsInlineMediaPlayback -bool false
+    _dw com.apple.Safari WebKitMediaPlaybackAllowsInline -bool false
+    _dw com.apple.SafariTechnologyPreview WebKitMediaPlaybackAllowsInline -bool false
+    _dw com.apple.Safari com.apple.Safari.ContentPageGroupIdentifier.WebKit2AllowsInlineMediaPlayback -bool false
+    _dw com.apple.SafariTechnologyPreview com.apple.Safari.ContentPageGroupIdentifier.WebKit2AllowsInlineMediaPlayback -bool false
+    _dw_flush
   fi
 
   if ask "Enable 'Do Not Track'" 'Y'; then
@@ -1007,9 +1397,10 @@ main() {
   fi
 
   if ask 'Enable the Develop menu and the Web Inspector in Safari' 'N'; then
-    defaults write com.apple.Safari IncludeDevelopMenu -bool true
-    defaults write com.apple.Safari WebKitDeveloperExtrasEnabledPreferenceKey -bool true
-    defaults write com.apple.Safari com.apple.Safari.ContentPageGroupIdentifier.WebKit2DeveloperExtrasEnabled -bool true
+    _dw com.apple.Safari IncludeDevelopMenu -bool true
+    _dw com.apple.Safari WebKitDeveloperExtrasEnabledPreferenceKey -bool true
+    _dw com.apple.Safari com.apple.Safari.ContentPageGroupIdentifier.WebKit2DeveloperExtrasEnabled -bool true
+    _dw_flush
   fi
 
   if ask "Enable Safari's debug menu" 'Y'; then
@@ -1163,11 +1554,12 @@ main() {
   if ask 'Terminal.app settings' 'Y'; then
     # Top-level Terminal.app defaults -- initial defaults seeded here so the user
     # can change them via the UI afterward without osx-defaults.sh resetting them.
-    defaults write com.apple.Terminal NewWindowWorkingDirectoryBehavior -int 2
-    defaults write com.apple.Terminal SecureKeyboardEntry -bool false
-    defaults write com.apple.Terminal Shell -string ''
-    defaults write com.apple.Terminal 'Default Window Settings' -string 'Clear Dark'
-    defaults write com.apple.Terminal 'Startup Window Settings' -string 'Clear Dark'
+    _dw com.apple.Terminal NewWindowWorkingDirectoryBehavior -int 2
+    _dw com.apple.Terminal SecureKeyboardEntry -bool false
+    _dw com.apple.Terminal Shell -string ''
+    _dw com.apple.Terminal 'Default Window Settings' -string 'Clear Dark'
+    _dw com.apple.Terminal 'Startup Window Settings' -string 'Clear Dark'
+    _dw_flush
     #
     # Note: To print the values, use this:
     # /usr/libexec/PlistBuddy -c "Print :'Window Settings':'Clear Dark'" "${HOME}/Library/Preferences/com.apple.Terminal.plist"
@@ -1211,124 +1603,126 @@ main() {
 
   # TODO: Need to set the keyboard overrides for 'back/forward 1 word' AND 'Jobs to Ignore'
   if ask 'iTerm2 settings' 'Y'; then
-    defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true
+    _dw com.googlecode.iterm2 AllowClipboardAccess -bool true
     # Enables alternate scrolling (scroll wheel scrolls in alt-screen apps like less/man).
-    defaults write com.googlecode.iterm2 AlternateMouseScroll -bool true
-    defaults write com.googlecode.iterm2 AppleAntiAliasingThreshold -bool true
+    _dw com.googlecode.iterm2 AlternateMouseScroll -bool true
+    _dw com.googlecode.iterm2 AppleAntiAliasingThreshold -bool true
     # Disables press-and-hold for accent characters; enables key repeat instead.
-    defaults write com.googlecode.iterm2 ApplePressAndHoldEnabled -bool false
-    defaults write com.googlecode.iterm2 AppleScrollAnimationEnabled -bool false
-    defaults write com.googlecode.iterm2 AppleSmoothFixedFontsSizeThreshold -bool true
-    defaults write com.googlecode.iterm2 AppleWindowTabbingMode -string 'manual'
-    defaults write com.googlecode.iterm2 AutoCommandHistory -bool false
-    defaults write com.googlecode.iterm2 CheckTestRelease -bool true
+    _dw com.googlecode.iterm2 ApplePressAndHoldEnabled -bool false
+    _dw com.googlecode.iterm2 AppleScrollAnimationEnabled -bool false
+    _dw com.googlecode.iterm2 AppleSmoothFixedFontsSizeThreshold -bool true
+    _dw com.googlecode.iterm2 AppleWindowTabbingMode -string 'manual'
+    _dw com.googlecode.iterm2 AutoCommandHistory -bool false
+    _dw com.googlecode.iterm2 CheckTestRelease -bool true
     # Copies trailing newline when selecting to end of line.
-    defaults write com.googlecode.iterm2 CopyLastNewline -bool true
-    defaults write com.googlecode.iterm2 DefaultTabBarHeight -float 28
-    defaults write com.googlecode.iterm2 DimBackgroundWindows -bool true
-    defaults write com.googlecode.iterm2 DisableTmuxWindowResizing -bool false
-    defaults write com.googlecode.iterm2 DisableWindowSizeSnap -bool false
-    defaults write com.googlecode.iterm2 DoubleClickPerformsSmartSelection -bool true
+    _dw com.googlecode.iterm2 CopyLastNewline -bool true
+    _dw com.googlecode.iterm2 DefaultTabBarHeight -float 28
+    _dw com.googlecode.iterm2 DimBackgroundWindows -bool true
+    _dw com.googlecode.iterm2 DisableTmuxWindowResizing -bool false
+    _dw com.googlecode.iterm2 DisableWindowSizeSnap -bool false
+    _dw com.googlecode.iterm2 DoubleClickPerformsSmartSelection -bool true
     # Enables the Python API server for shell integration and scripts.
-    defaults write com.googlecode.iterm2 EnableAPIServer -bool true
+    _dw com.googlecode.iterm2 EnableAPIServer -bool true
     # Shows tab bar briefly when entering full-screen.
-    defaults write com.googlecode.iterm2 FlashTabBarInFullscreen -bool true
-    defaults write com.googlecode.iterm2 HapticFeedbackForEsc -bool false
-    defaults write com.googlecode.iterm2 HideTab -bool false
-    defaults write com.googlecode.iterm2 IRMemory -int 4
+    _dw com.googlecode.iterm2 FlashTabBarInFullscreen -bool true
+    _dw com.googlecode.iterm2 HapticFeedbackForEsc -bool false
+    _dw com.googlecode.iterm2 HideTab -bool false
+    _dw com.googlecode.iterm2 IRMemory -int 4
     # Prefs are stored locally (not in a custom folder or cloud-synced path).
-    defaults write com.googlecode.iterm2 LoadPrefsFromCustomFolder -bool false
-    defaults write com.googlecode.iterm2 NSAutoFillHeuristicControllerEnabled -bool false
-    defaults write com.googlecode.iterm2 NSFontPanelAttributes -string "1, 0"
-    defaults write com.googlecode.iterm2 NSNavLastRootDirectory -string "${HOME}/Desktop"
-    defaults write com.googlecode.iterm2 NSOverlayScrollersFallBackForAccessoryViews -bool false
-    defaults write com.googlecode.iterm2 NSQuotedKeystrokeBinding -string ""
-    defaults write com.googlecode.iterm2 NSRepeatCountBinding -string ""
-    defaults write com.googlecode.iterm2 NSScrollAnimationEnabled -bool false
-    defaults write com.googlecode.iterm2 NSScrollViewShouldScrollUnderTitlebar -bool false
+    _dw com.googlecode.iterm2 LoadPrefsFromCustomFolder -bool false
+    _dw com.googlecode.iterm2 NSAutoFillHeuristicControllerEnabled -bool false
+    _dw com.googlecode.iterm2 NSFontPanelAttributes -string "1, 0"
+    _dw com.googlecode.iterm2 NSNavLastRootDirectory -string "${HOME}/Desktop"
+    _dw com.googlecode.iterm2 NSOverlayScrollersFallBackForAccessoryViews -bool false
+    _dw com.googlecode.iterm2 NSQuotedKeystrokeBinding -string ""
+    _dw com.googlecode.iterm2 NSRepeatCountBinding -string ""
+    _dw com.googlecode.iterm2 NSScrollAnimationEnabled -bool false
+    _dw com.googlecode.iterm2 NSScrollViewShouldScrollUnderTitlebar -bool false
     # NoSync keys: suppress one-time dialogs, warnings, and migration markers so
     # a fresh install does not show prompts that have already been acknowledged.
-    defaults write com.googlecode.iterm2 NoSyncBrowserUpsell -bool true
-    defaults write com.googlecode.iterm2 NoSyncBrowserUpsell_selection -int 1
-    defaults write com.googlecode.iterm2 NoSyncClaudeCodeDiffModeBackfilled -bool true
-    defaults write com.googlecode.iterm2 NoSyncClaudeCodeReviewSystemPromptCommandBackfilled -bool true
-    defaults write com.googlecode.iterm2 NoSyncClearAllBroadcast -bool true
-    defaults write com.googlecode.iterm2 NoSyncClearAllBroadcast_selection -int 0
-    defaults write com.googlecode.iterm2 NoSyncCommandHistoryHasEverBeenUsed -bool true
-    defaults write com.googlecode.iterm2 NoSyncConfirmRunOpenFile -bool true
-    defaults write com.googlecode.iterm2 NoSyncConfirmRunOpenFile_selection -int 0
-    defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforeMultilinePaste -bool true
-    defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforeMultilinePaste_selection -bool false
-    defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforePastingOneLineEndingInNewlineAtShellPrompt -bool true
-    defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforePastingOneLineEndingInNewlineAtShellPrompt_selection -bool true
-    defaults write com.googlecode.iterm2 NoSyncEnableAPIServer -bool true
-    defaults write com.googlecode.iterm2 NoSyncEnableAPIServer_selection -int 0
-    defaults write com.googlecode.iterm2 NoSyncHaveRequestedFullDiskAccess -bool true
-    defaults write com.googlecode.iterm2 NoSyncHaveUsedCopyMode -bool true
-    defaults write com.googlecode.iterm2 NoSyncHaveWarnedAboutPasteConfirmationChange -bool true
-    defaults write com.googlecode.iterm2 NoSyncIgnoreSystemWindowRestoration -bool true
-    defaults write com.googlecode.iterm2 NoSyncKeyCode0MitigationDisabled_Global -bool true
-    defaults write com.googlecode.iterm2 NoSyncMigratedDynamicProfileTagToFlag -bool true
-    defaults write com.googlecode.iterm2 NoSyncNeverRemindPrefsChangesLostForFile -bool true
-    defaults write com.googlecode.iterm2 NoSyncNeverRemindPrefsChangesLostForFile_selection -int 1
-    defaults write com.googlecode.iterm2 NoSyncOnboardingWindowHasBeenShown -bool true
-    defaults write com.googlecode.iterm2 NoSyncOnboardingWindowHasBeenShown34 -bool true
-    defaults write com.googlecode.iterm2 NoSyncOpenLinksInApp -bool true
-    defaults write com.googlecode.iterm2 NoSyncOpenLinksInApp_selection -int 0
-    defaults write com.googlecode.iterm2 NoSyncPermissionToShowTip -bool true
-    defaults write com.googlecode.iterm2 NoSyncRemoveDeprecatedKeyMappings -int 2
-    defaults write com.googlecode.iterm2 NoSyncRestoreIconAndWindowNameOnHostChange -bool true
-    defaults write com.googlecode.iterm2 NoSyncSuppressBadPWDInArrangementWarning -bool true
-    defaults write com.googlecode.iterm2 NoSyncSuppressBroadcastInputWarning -bool true
-    defaults write com.googlecode.iterm2 NoSyncSuppressBroadcastInputWarning_selection -bool false
-    defaults write com.googlecode.iterm2 NoSyncSuppressMissingProfileInArrangementWarning -bool true
-    defaults write com.googlecode.iterm2 NoSyncTipsDisabled -bool true
-    defaults write com.googlecode.iterm2 NoSyncUserHasSelectedCommand -bool true
-    defaults write com.googlecode.iterm2 NoSyncWindowRestoresWorkspaceAtLaunch -bool false
-    defaults write com.googlecode.iterm2 NoSyncWorkgroupShortcutsBackfilled -bool true
-    defaults write com.googlecode.iterm2 OnlyWhenMoreTabs -bool false
-    defaults write com.googlecode.iterm2 OpenArrangementAtStartup -bool false
-    defaults write com.googlecode.iterm2 OpenBookmark -bool false
-    defaults write com.googlecode.iterm2 OpenNoWindowsAtStartup -bool false
+    _dw com.googlecode.iterm2 NoSyncBrowserUpsell -bool true
+    _dw com.googlecode.iterm2 NoSyncBrowserUpsell_selection -int 1
+    _dw com.googlecode.iterm2 NoSyncClaudeCodeDiffModeBackfilled -bool true
+    _dw com.googlecode.iterm2 NoSyncClaudeCodeReviewSystemPromptCommandBackfilled -bool true
+    _dw com.googlecode.iterm2 NoSyncClearAllBroadcast -bool true
+    _dw com.googlecode.iterm2 NoSyncClearAllBroadcast_selection -int 0
+    _dw com.googlecode.iterm2 NoSyncCommandHistoryHasEverBeenUsed -bool true
+    _dw com.googlecode.iterm2 NoSyncConfirmRunOpenFile -bool true
+    _dw com.googlecode.iterm2 NoSyncConfirmRunOpenFile_selection -int 0
+    _dw com.googlecode.iterm2 NoSyncDoNotWarnBeforeMultilinePaste -bool true
+    _dw com.googlecode.iterm2 NoSyncDoNotWarnBeforeMultilinePaste_selection -bool false
+    _dw com.googlecode.iterm2 NoSyncDoNotWarnBeforePastingOneLineEndingInNewlineAtShellPrompt -bool true
+    _dw com.googlecode.iterm2 NoSyncDoNotWarnBeforePastingOneLineEndingInNewlineAtShellPrompt_selection -bool true
+    _dw com.googlecode.iterm2 NoSyncEnableAPIServer -bool true
+    _dw com.googlecode.iterm2 NoSyncEnableAPIServer_selection -int 0
+    _dw com.googlecode.iterm2 NoSyncHaveRequestedFullDiskAccess -bool true
+    _dw com.googlecode.iterm2 NoSyncHaveUsedCopyMode -bool true
+    _dw com.googlecode.iterm2 NoSyncHaveWarnedAboutPasteConfirmationChange -bool true
+    _dw com.googlecode.iterm2 NoSyncIgnoreSystemWindowRestoration -bool true
+    _dw com.googlecode.iterm2 NoSyncKeyCode0MitigationDisabled_Global -bool true
+    _dw com.googlecode.iterm2 NoSyncMigratedDynamicProfileTagToFlag -bool true
+    _dw com.googlecode.iterm2 NoSyncNeverRemindPrefsChangesLostForFile -bool true
+    _dw com.googlecode.iterm2 NoSyncNeverRemindPrefsChangesLostForFile_selection -int 1
+    _dw com.googlecode.iterm2 NoSyncOnboardingWindowHasBeenShown -bool true
+    _dw com.googlecode.iterm2 NoSyncOnboardingWindowHasBeenShown34 -bool true
+    _dw com.googlecode.iterm2 NoSyncOpenLinksInApp -bool true
+    _dw com.googlecode.iterm2 NoSyncOpenLinksInApp_selection -int 0
+    _dw com.googlecode.iterm2 NoSyncPermissionToShowTip -bool true
+    _dw com.googlecode.iterm2 NoSyncRemoveDeprecatedKeyMappings -int 2
+    _dw com.googlecode.iterm2 NoSyncRestoreIconAndWindowNameOnHostChange -bool true
+    _dw com.googlecode.iterm2 NoSyncSuppressBadPWDInArrangementWarning -bool true
+    _dw com.googlecode.iterm2 NoSyncSuppressBroadcastInputWarning -bool true
+    _dw com.googlecode.iterm2 NoSyncSuppressBroadcastInputWarning_selection -bool false
+    _dw com.googlecode.iterm2 NoSyncSuppressMissingProfileInArrangementWarning -bool true
+    _dw com.googlecode.iterm2 NoSyncTipsDisabled -bool true
+    _dw com.googlecode.iterm2 NoSyncUserHasSelectedCommand -bool true
+    _dw com.googlecode.iterm2 NoSyncWindowRestoresWorkspaceAtLaunch -bool false
+    _dw com.googlecode.iterm2 NoSyncWorkgroupShortcutsBackfilled -bool true
+    _dw com.googlecode.iterm2 OnlyWhenMoreTabs -bool false
+    _dw com.googlecode.iterm2 OpenArrangementAtStartup -bool false
+    _dw com.googlecode.iterm2 OpenBookmark -bool false
+    _dw com.googlecode.iterm2 OpenNoWindowsAtStartup -bool false
     # 0 = open tmux windows in tabs of the current window.
-    defaults write com.googlecode.iterm2 OpenTmuxWindowsIn -int 0
-    defaults write com.googlecode.iterm2 PrefsCustomFolder -string ""
-    defaults write com.googlecode.iterm2 PreserveWindowSizeWhenTabBarVisibilityChanges -bool false
-    defaults write com.googlecode.iterm2 PreventEscapeSequenceFromClearingHistory -bool false
-    defaults write com.googlecode.iterm2 'Print In Black And White' -bool true
-    defaults write com.googlecode.iterm2 PromptOnQuit -bool false
-    defaults write com.googlecode.iterm2 SUAutomaticallyUpdate -bool true
-    defaults write com.googlecode.iterm2 SUEnableAutomaticChecks -bool true
-    defaults write com.googlecode.iterm2 SUFeedAlternateAppNameKey -string iTerm
-    defaults write com.googlecode.iterm2 SUFeedURL -string 'https://iterm2.com/appcasts/final.xml?shard=69'
-    defaults write com.googlecode.iterm2 SUHasLaunchedBefore -bool true
-    defaults write com.googlecode.iterm2 SUSendProfileInfo -bool false
-    defaults write com.googlecode.iterm2 SUUpdateRelaunchingMarker -bool false
-    defaults write com.googlecode.iterm2 SavePasteHistory -bool false
+    _dw com.googlecode.iterm2 OpenTmuxWindowsIn -int 0
+    _dw com.googlecode.iterm2 PrefsCustomFolder -string ""
+    _dw com.googlecode.iterm2 PreserveWindowSizeWhenTabBarVisibilityChanges -bool false
+    _dw com.googlecode.iterm2 PreventEscapeSequenceFromClearingHistory -bool false
+    _dw com.googlecode.iterm2 'Print In Black And White' -bool true
+    _dw com.googlecode.iterm2 PromptOnQuit -bool false
+    _dw com.googlecode.iterm2 SUAutomaticallyUpdate -bool true
+    _dw com.googlecode.iterm2 SUEnableAutomaticChecks -bool true
+    _dw com.googlecode.iterm2 SUFeedAlternateAppNameKey -string iTerm
+    _dw com.googlecode.iterm2 SUFeedURL -string 'https://iterm2.com/appcasts/final.xml?shard=69'
+    _dw com.googlecode.iterm2 SUHasLaunchedBefore -bool true
+    _dw com.googlecode.iterm2 SUSendProfileInfo -bool false
+    _dw com.googlecode.iterm2 SUUpdateRelaunchingMarker -bool false
+    _dw com.googlecode.iterm2 SavePasteHistory -bool false
     # Each pane gets its own status bar rather than one shared bar per window.
-    defaults write com.googlecode.iterm2 SeparateStatusBarsPerPane -bool false
-    defaults write com.googlecode.iterm2 ShowBookmarkName -bool false
-    defaults write com.googlecode.iterm2 ShowFullScreenTabBar -bool true
-    defaults write com.googlecode.iterm2 ShowPaneTitles -bool true
-    defaults write com.googlecode.iterm2 SoundForEsc -bool false
-    defaults write com.googlecode.iterm2 SplitPaneDimmingAmount -string '0.4070612980769232'
-    defaults write com.googlecode.iterm2 StartDebugLoggingAutomatically -bool false
+    _dw com.googlecode.iterm2 SeparateStatusBarsPerPane -bool false
+    _dw com.googlecode.iterm2 ShowBookmarkName -bool false
+    _dw com.googlecode.iterm2 ShowFullScreenTabBar -bool true
+    _dw com.googlecode.iterm2 ShowPaneTitles -bool true
+    _dw com.googlecode.iterm2 SoundForEsc -bool false
+    _dw com.googlecode.iterm2 SplitPaneDimmingAmount -string '0.4070612980769232'
+    _dw com.googlecode.iterm2 StartDebugLoggingAutomatically -bool false
     # 1 = status bar at bottom of terminal (not top).
-    defaults write com.googlecode.iterm2 StatusBarPosition -integer 1
-    defaults write com.googlecode.iterm2 StretchTabsToFillBar -bool true
-    defaults write com.googlecode.iterm2 SuppressRestartAnnouncement -bool true
+    _dw com.googlecode.iterm2 StatusBarPosition -integer 1
+    _dw com.googlecode.iterm2 StretchTabsToFillBar -bool true
+    _dw com.googlecode.iterm2 SuppressRestartAnnouncement -bool true
     # 1 = use Option key to switch panes.
-    defaults write com.googlecode.iterm2 SwitchPaneModifier -int 1
+    _dw com.googlecode.iterm2 SwitchPaneModifier -int 1
     # 4 = minimal tab style (auto-adapts to light/dark mode).
-    defaults write com.googlecode.iterm2 TabStyleWithAutomaticOption -integer 4
-    defaults write com.googlecode.iterm2 TraditionalVisualBell -bool true
-    defaults write com.googlecode.iterm2 UseBorder -bool true
-    defaults write com.googlecode.iterm2 VisualIndicatorForEsc -bool false
+    _dw com.googlecode.iterm2 TabStyleWithAutomaticOption -integer 4
+    _dw com.googlecode.iterm2 TraditionalVisualBell -bool true
+    _dw com.googlecode.iterm2 UseBorder -bool true
+    _dw com.googlecode.iterm2 VisualIndicatorForEsc -bool false
+    _dw_flush
     defaults write com.googlecode.iterm2 WordCharacters -string "/-+\\~-integer."
     # 2 = regex find mode (not case-insensitive plain text = 0, or smart case = 1).
-    defaults write com.googlecode.iterm2 findMode_iTerm -int 2
-    defaults write com.googlecode.iterm2 kCPKSelectionViewPreferredModeKey -bool false
-    defaults write com.googlecode.iterm2 kCPKSelectionViewShowHSBTextFieldsKey -bool false
+    _dw com.googlecode.iterm2 findMode_iTerm -int 2
+    _dw com.googlecode.iterm2 kCPKSelectionViewPreferredModeKey -bool false
+    _dw com.googlecode.iterm2 kCPKSelectionViewShowHSBTextFieldsKey -bool false
+    _dw_flush
 
     # All PlistBuddy calls in this block write to the same plist; capture path once.
     local _iterm_plist="${HOME}/Library/Preferences/com.googlecode.iterm2.plist"
@@ -1492,14 +1886,15 @@ main() {
   # Google Chrome & Google Chrome Canary
   # ---------------------------------------------------------------------------
   if ask 'Chrome settings' 'Y'; then
-    defaults write com.google.Chrome AppleEnableMouseSwipeNavigateWithScrolls -bool false
-    defaults write com.google.Chrome AppleEnableSwipeNavigateWithScrolls -bool false
-    defaults write com.google.Chrome KeychainReauthorizeInAppSpring2017 -int 2
-    defaults write com.google.Chrome KeychainReauthorizeInAppSpring2017Success -bool true
-    defaults write com.google.Chrome.beta AppleEnableMouseSwipeNavigateWithScrolls -bool false
-    defaults write com.google.Chrome.beta AppleEnableSwipeNavigateWithScrolls -bool false
-    defaults write com.google.Chrome.canary AppleEnableMouseSwipeNavigateWithScrolls -bool false
-    defaults write com.google.Chrome.canary AppleEnableSwipeNavigateWithScrolls -bool false
+    _dw com.google.Chrome AppleEnableMouseSwipeNavigateWithScrolls -bool false
+    _dw com.google.Chrome AppleEnableSwipeNavigateWithScrolls -bool false
+    _dw com.google.Chrome KeychainReauthorizeInAppSpring2017 -int 2
+    _dw com.google.Chrome KeychainReauthorizeInAppSpring2017Success -bool true
+    _dw com.google.Chrome.beta AppleEnableMouseSwipeNavigateWithScrolls -bool false
+    _dw com.google.Chrome.beta AppleEnableSwipeNavigateWithScrolls -bool false
+    _dw com.google.Chrome.canary AppleEnableMouseSwipeNavigateWithScrolls -bool false
+    _dw com.google.Chrome.canary AppleEnableSwipeNavigateWithScrolls -bool false
+    _dw_flush
 
     # Allow installing user scripts via GitHub or Userscripts.org
     # defaults write com.google.Chrome ExtensionInstallSources -array 'https://*.github.com/*' 'http://userscripts.org/*'
@@ -1517,30 +1912,32 @@ main() {
   # Monolingual
   # ---------------------------------------------------------------------------
   if ask 'Monolingual settings' 'Y'; then
-    defaults write net.sourceforge.Monolingual SUAutomaticallyUpdate -bool true
-    defaults write net.sourceforge.Monolingual SUEnableAutomaticChecks -bool true
-    defaults write net.sourceforge.Monolingual SUSendProfileInfo -bool false
-    defaults write net.sourceforge.Monolingual Strip -bool true
+    _dw net.sourceforge.Monolingual SUAutomaticallyUpdate -bool true
+    _dw net.sourceforge.Monolingual SUEnableAutomaticChecks -bool true
+    _dw net.sourceforge.Monolingual SUSendProfileInfo -bool false
+    _dw net.sourceforge.Monolingual Strip -bool true
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
   # ProtonVpn
   # ---------------------------------------------------------------------------
   if ask 'ProtonVpn settings' 'Y'; then
-    defaults write ch.protonvpn.mac ConnectOnDemand -bool true
-    defaults write ch.protonvpn.mac EarlyAccess -bool true
+    _dw ch.protonvpn.mac ConnectOnDemand -bool true
+    _dw ch.protonvpn.mac EarlyAccess -bool true
     # Firewall and alternativeRouting are user-configurable network preferences,
     # not session/account state -- safe to codify.
-    defaults write ch.protonvpn.mac Firewall -bool false
-    defaults write ch.protonvpn.mac NSInitialToolTipDelay -int 500
-    defaults write ch.protonvpn.mac RememberLoginAfterUpdate -bool true
-    defaults write ch.protonvpn.mac SUAutomaticallyUpdate -bool true
-    defaults write ch.protonvpn.mac SUEnableAutomaticChecks -bool false
-    defaults write ch.protonvpn.mac SecureCoreToggle -bool false
-    defaults write ch.protonvpn.mac StartMinimized -bool true
-    defaults write ch.protonvpn.mac StartOnBoot -bool true
-    defaults write ch.protonvpn.mac SystemNotifications -bool true
-    defaults write ch.protonvpn.mac alternativeRouting -bool true
+    _dw ch.protonvpn.mac Firewall -bool false
+    _dw ch.protonvpn.mac NSInitialToolTipDelay -int 500
+    _dw ch.protonvpn.mac RememberLoginAfterUpdate -bool true
+    _dw ch.protonvpn.mac SUAutomaticallyUpdate -bool true
+    _dw ch.protonvpn.mac SUEnableAutomaticChecks -bool false
+    _dw ch.protonvpn.mac SecureCoreToggle -bool false
+    _dw ch.protonvpn.mac StartMinimized -bool true
+    _dw ch.protonvpn.mac StartOnBoot -bool true
+    _dw ch.protonvpn.mac SystemNotifications -bool true
+    _dw ch.protonvpn.mac alternativeRouting -bool true
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
@@ -1555,21 +1952,22 @@ main() {
   # Zoomus
   # ---------------------------------------------------------------------------
   if ask 'Zoomus settings' 'Y'; then
-    defaults write us.zoom.xos BounceApplicationSetting -int 2
-    defaults write us.zoom.xos NSInitialToolTipDelay -int 100
-    defaults write us.zoom.xos NSQuitAlwaysKeepsWindows -bool false
-    defaults write us.zoom.xos kZPSettingShowCodeSnippet -bool true
-    defaults write us.zoom.xos kZPSettingShowLinkPreview -bool true
+    _dw us.zoom.xos BounceApplicationSetting -int 2
+    _dw us.zoom.xos NSInitialToolTipDelay -int 100
+    _dw us.zoom.xos NSQuitAlwaysKeepsWindows -bool false
+    _dw us.zoom.xos kZPSettingShowCodeSnippet -bool true
+    _dw us.zoom.xos kZPSettingShowLinkPreview -bool true
 
-    defaults write ZoomChat ZMEnableShowUserName -bool true
-    defaults write ZoomChat ZoomAutoCopyInvitationURL -bool true
-    defaults write ZoomChat ZoomEnableShow49WallViewKey -bool true
-    defaults write ZoomChat ZoomEnterFullscreenWhenViewShare -bool false
-    defaults write ZoomChat ZoomEnterMaxWndWhenViewShare -bool true
-    defaults write ZoomChat ZoomFitDock -bool true
-    defaults write ZoomChat ZoomFitXPos -int 727
-    defaults write ZoomChat ZoomFitYPos -int 1023
-    defaults write ZoomChat ZoomRememberPhoneKey -bool true
+    _dw ZoomChat ZMEnableShowUserName -bool true
+    _dw ZoomChat ZoomAutoCopyInvitationURL -bool true
+    _dw ZoomChat ZoomEnableShow49WallViewKey -bool true
+    _dw ZoomChat ZoomEnterFullscreenWhenViewShare -bool false
+    _dw ZoomChat ZoomEnterMaxWndWhenViewShare -bool true
+    _dw ZoomChat ZoomFitDock -bool true
+    _dw ZoomChat ZoomFitXPos -int 727
+    _dw ZoomChat ZoomFitYPos -int 1023
+    _dw ZoomChat ZoomRememberPhoneKey -bool true
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
@@ -1578,28 +1976,30 @@ main() {
   if ask 'Clocker settings' 'Y'; then
     # Skip: SelectedCalendars (iCloud Calendar UUIDs -- denial criterion #2) and
     # defaultPreferences (binary NSData blobs -- not portably expressible).
-    defaults write com.abhishek.Clocker 'com.abhishek.menubarCompactMode' -int 0
-    defaults write com.abhishek.Clocker 'com.abhishek.shouldDefaultToCompactMode' -bool true
-    defaults write com.abhishek.Clocker defaultTheme -int 2
-    defaults write com.abhishek.Clocker displayAppAsForegroundApp -bool false
-    defaults write com.abhishek.Clocker is24HourFormatSelected -int 6
-    defaults write com.abhishek.Clocker relativeDate -bool true
-    defaults write com.abhishek.Clocker showDate -bool false
-    defaults write com.abhishek.Clocker showSeconds -bool false
-    defaults write com.abhishek.Clocker showSunriseSetTime -bool false
-    defaults write com.abhishek.Clocker sliderDayRange -int 4
-    defaults write com.abhishek.Clocker startAtLogin -bool true
-    defaults write com.abhishek.Clocker userFontSize -int 7
+    _dw com.abhishek.Clocker 'com.abhishek.menubarCompactMode' -int 0
+    _dw com.abhishek.Clocker 'com.abhishek.shouldDefaultToCompactMode' -bool true
+    _dw com.abhishek.Clocker defaultTheme -int 2
+    _dw com.abhishek.Clocker displayAppAsForegroundApp -bool false
+    _dw com.abhishek.Clocker is24HourFormatSelected -int 6
+    _dw com.abhishek.Clocker relativeDate -bool true
+    _dw com.abhishek.Clocker showDate -bool false
+    _dw com.abhishek.Clocker showSeconds -bool false
+    _dw com.abhishek.Clocker showSunriseSetTime -bool false
+    _dw com.abhishek.Clocker sliderDayRange -int 4
+    _dw com.abhishek.Clocker startAtLogin -bool true
+    _dw com.abhishek.Clocker userFontSize -int 7
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
   # DBeaver
   # ---------------------------------------------------------------------------
   if ask 'DBeaver settings' 'Y'; then
-    defaults write org.jkiss.dbeaver.core.product NSAutomaticDashSubstitutionEnabled -bool false
-    defaults write org.jkiss.dbeaver.core.product NSAutomaticQuoteSubstitutionEnabled -bool false
-    defaults write org.jkiss.dbeaver.core.product NSInitialToolTipDelay -int 300
-    defaults write org.jkiss.dbeaver.core.product NSScrollAnimationEnabled -bool false
+    _dw org.jkiss.dbeaver.core.product NSAutomaticDashSubstitutionEnabled -bool false
+    _dw org.jkiss.dbeaver.core.product NSAutomaticQuoteSubstitutionEnabled -bool false
+    _dw org.jkiss.dbeaver.core.product NSInitialToolTipDelay -int 300
+    _dw org.jkiss.dbeaver.core.product NSScrollAnimationEnabled -bool false
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
@@ -1608,9 +2008,10 @@ main() {
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # DockDoor has no defaults key for login-item status.
   if ask 'DockDoor settings' 'Y'; then
-    defaults write com.ethanbills.DockDoor SUAutomaticallyUpdate -bool true
-    defaults write com.ethanbills.DockDoor SUEnableAutomaticChecks -bool true
-    defaults write com.ethanbills.DockDoor SUSendProfileInfo -bool false
+    _dw com.ethanbills.DockDoor SUAutomaticallyUpdate -bool true
+    _dw com.ethanbills.DockDoor SUEnableAutomaticChecks -bool true
+    _dw com.ethanbills.DockDoor SUSendProfileInfo -bool false
+    _dw_flush
     defaults write com.ethanbills.DockDoor cmdTabEnabledTrafficLightButtons -array maximize quit close minimize
     defaults write com.ethanbills.DockDoor enableCmdTabEnhancements -bool true
     defaults write com.ethanbills.DockDoor enabledTrafficLightButtons -array quit close maximize minimize
@@ -1621,9 +2022,10 @@ main() {
   # Drawio
   # ---------------------------------------------------------------------------
   if ask 'Drawio settings' 'Y'; then
-    defaults write com.jgraph.drawio.desktop AppleTextDirection -bool true
-    defaults write com.jgraph.drawio.desktop NSForceRightToLeftWritingDirection -bool false
-    defaults write com.jgraph.drawio.desktop NSTreatUnknownArgumentsAsOpen -bool false
+    _dw com.jgraph.drawio.desktop AppleTextDirection -bool true
+    _dw com.jgraph.drawio.desktop NSForceRightToLeftWritingDirection -bool false
+    _dw com.jgraph.drawio.desktop NSTreatUnknownArgumentsAsOpen -bool false
+    _dw_flush
   fi
 
   # _firefox_user_js_content is defined here (outside the Firefox ask block) so that
@@ -1658,11 +2060,12 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     # macOS-level NS* keys for all Firefox-family bundles.
     local _ff_bundle
     for _ff_bundle in org.mozilla.firefox org.mozilla.nightly org.mozilla.floorp org.mozilla.thunderbird.betterbird; do
-      defaults write "${_ff_bundle}" NSFullScreenMenuItemEverywhere -bool false
-      defaults write "${_ff_bundle}" NSNavLastRootDirectory -string "${HOME}/Downloads"
-      defaults write "${_ff_bundle}" NSNavLastUserSetHideExtensionButtonState -bool false
-      defaults write "${_ff_bundle}" NSTreatUnknownArgumentsAsOpen -bool false
-      defaults write "${_ff_bundle}" PMPrintingExpandedStateForPrint2 -bool false
+      _dw "${_ff_bundle}" NSFullScreenMenuItemEverywhere -bool false
+      _dw "${_ff_bundle}" NSNavLastRootDirectory -string "${HOME}/Downloads"
+      _dw "${_ff_bundle}" NSNavLastUserSetHideExtensionButtonState -bool false
+      _dw "${_ff_bundle}" NSTreatUnknownArgumentsAsOpen -bool false
+      _dw "${_ff_bundle}" PMPrintingExpandedStateForPrint2 -bool false
+      _dw_flush
     done
 
     local _ff_profiles_root="${HOME}/Library/Application Support/Firefox/Profiles"
@@ -1683,10 +2086,11 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
   # Keybase has no defaults key for login-item status.
   if ask 'Keybase settings' 'Y'; then
-    defaults write keybase.Electron AppleTextDirection -bool true
-    defaults write keybase.Electron NSForceRightToLeftWritingDirection -bool false
-    defaults write keybase.Electron NSFullScreenMenuItemEverywhere -bool false
-    defaults write keybase.Electron NSTreatUnknownArgumentsAsOpen -bool false
+    _dw keybase.Electron AppleTextDirection -bool true
+    _dw keybase.Electron NSForceRightToLeftWritingDirection -bool false
+    _dw keybase.Electron NSFullScreenMenuItemEverywhere -bool false
+    _dw keybase.Electron NSTreatUnknownArgumentsAsOpen -bool false
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
@@ -1708,44 +2112,46 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   if ask 'KeyCastr settings' 'Y'; then
     # Skip: default.textColor -- binary NSKeyedArchiver blob with embedded ICC profile;
     # not portably expressible as a defaults write argument.
-    defaults write io.github.keycastr SUEnableAutomaticChecks -bool true
-    defaults write io.github.keycastr SUSendProfileInfo -bool false
-    defaults write io.github.keycastr alwaysShowPrefs -bool false
-    defaults write io.github.keycastr 'default.allKeys' -bool true
-    defaults write io.github.keycastr 'default.allModifiedKeys' -bool false
-    defaults write io.github.keycastr 'default.commandKeysOnly' -bool false
-    defaults write io.github.keycastr 'default.fadeDelay' -float 2.576526409646739
-    defaults write io.github.keycastr 'default.fadeDuration' -bool true
-    defaults write io.github.keycastr 'default.fontSize' -float 47.2836277173913
-    defaults write io.github.keycastr 'default.keystrokeDelay' -bool true
-    defaults write io.github.keycastr 'default_displayModifiedCharacters' -bool true
-    defaults write io.github.keycastr displayIcon -bool true
-    defaults write io.github.keycastr 'mouse.displayOption' -bool true
-    defaults write io.github.keycastr selectedVisualizer -string 'Default'
+    _dw io.github.keycastr SUEnableAutomaticChecks -bool true
+    _dw io.github.keycastr SUSendProfileInfo -bool false
+    _dw io.github.keycastr alwaysShowPrefs -bool false
+    _dw io.github.keycastr 'default.allKeys' -bool true
+    _dw io.github.keycastr 'default.allModifiedKeys' -bool false
+    _dw io.github.keycastr 'default.commandKeysOnly' -bool false
+    _dw io.github.keycastr 'default.fadeDelay' -float 2.576526409646739
+    _dw io.github.keycastr 'default.fadeDuration' -bool true
+    _dw io.github.keycastr 'default.fontSize' -float 47.2836277173913
+    _dw io.github.keycastr 'default.keystrokeDelay' -bool true
+    _dw io.github.keycastr 'default_displayModifiedCharacters' -bool true
+    _dw io.github.keycastr displayIcon -bool true
+    _dw io.github.keycastr 'mouse.displayOption' -bool true
+    _dw io.github.keycastr selectedVisualizer -string 'Default'
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
   # KeyClu
   # ---------------------------------------------------------------------------
   if ask 'KeyClu settings' 'Y'; then
-    defaults write com.0804Team.KeyClu SUAutomaticallyUpdate -bool true
-    defaults write com.0804Team.KeyClu SUEnableAutomaticChecks -bool true
-    defaults write com.0804Team.KeyClu SUSendProfileInfo -bool false
-    defaults write com.0804Team.KeyClu activationKeyId -int 0
-    defaults write com.0804Team.KeyClu activationKeyType -int 1
-    defaults write com.0804Team.KeyClu activationPersistentKeyType -int 0
-    defaults write com.0804Team.KeyClu appearance -string 'system'
-    defaults write com.0804Team.KeyClu applyLimitToTitles -bool false
-    defaults write com.0804Team.KeyClu hideMenuIcon -bool false
-    defaults write com.0804Team.KeyClu launchAtLogin -bool true
-    defaults write com.0804Team.KeyClu limitTitles -int 75
-    defaults write com.0804Team.KeyClu makeItBloom -bool true
-    defaults write com.0804Team.KeyClu makeItRainbow -bool false
-    defaults write com.0804Team.KeyClu shortcutColors -string '1BBFF9FF,28CD41FF,FFCC00FF,FF9500FF,FF3930FF,AF52DDFF,FF2D53FF'
-    defaults write com.0804Team.KeyClu showAppIcon -bool false
-    defaults write com.0804Team.KeyClu showHighlight -bool true
-    defaults write com.0804Team.KeyClu showUserHiddenElements -bool true
-    defaults write com.0804Team.KeyClu silentLaunchQuit -bool true
+    _dw com.0804Team.KeyClu SUAutomaticallyUpdate -bool true
+    _dw com.0804Team.KeyClu SUEnableAutomaticChecks -bool true
+    _dw com.0804Team.KeyClu SUSendProfileInfo -bool false
+    _dw com.0804Team.KeyClu activationKeyId -int 0
+    _dw com.0804Team.KeyClu activationKeyType -int 1
+    _dw com.0804Team.KeyClu activationPersistentKeyType -int 0
+    _dw com.0804Team.KeyClu appearance -string 'system'
+    _dw com.0804Team.KeyClu applyLimitToTitles -bool false
+    _dw com.0804Team.KeyClu hideMenuIcon -bool false
+    _dw com.0804Team.KeyClu launchAtLogin -bool true
+    _dw com.0804Team.KeyClu limitTitles -int 75
+    _dw com.0804Team.KeyClu makeItBloom -bool true
+    _dw com.0804Team.KeyClu makeItRainbow -bool false
+    _dw com.0804Team.KeyClu shortcutColors -string '1BBFF9FF,28CD41FF,FFCC00FF,FF9500FF,FF3930FF,AF52DDFF,FF2D53FF'
+    _dw com.0804Team.KeyClu showAppIcon -bool false
+    _dw com.0804Team.KeyClu showHighlight -bool true
+    _dw com.0804Team.KeyClu showUserHiddenElements -bool true
+    _dw com.0804Team.KeyClu silentLaunchQuit -bool true
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
@@ -1754,26 +2160,28 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   if ask 'OnlyOffice settings' 'Y'; then
     # Skip: asc_save_path (machine-specific path) and asc_user_name_app (personal name).
     defaults write asc.onlyoffice.ONLYOFFICE AppleLanguages -array 'en-US'
-    defaults write asc.onlyoffice.ONLYOFFICE AppleLocale -string 'en-US'
-    defaults write asc.onlyoffice.ONLYOFFICE NSDisabledCharacterPaletteMenuItem -bool false
-    defaults write asc.onlyoffice.ONLYOFFICE NSDisabledDictationMenuItem -bool true
-    defaults write asc.onlyoffice.ONLYOFFICE NSForceLeftToRightWritingDirection -bool true
-    defaults write asc.onlyoffice.ONLYOFFICE SUAutomaticallyUpdate -bool true
-    defaults write asc.onlyoffice.ONLYOFFICE SUEnableAutomaticChecks -bool true
-    defaults write asc.onlyoffice.ONLYOFFICE SUSendProfileInfo -bool false
-    defaults write asc.onlyoffice.ONLYOFFICE 'asc_user_docOpenMode' -string 'edit'
-    defaults write asc.onlyoffice.ONLYOFFICE 'asc_user_ui_lang' -string 'en-US'
-    defaults write asc.onlyoffice.ONLYOFFICE 'asc_user_ui_theme' -string 'theme-light'
+    _dw asc.onlyoffice.ONLYOFFICE AppleLocale -string 'en-US'
+    _dw asc.onlyoffice.ONLYOFFICE NSDisabledCharacterPaletteMenuItem -bool false
+    _dw asc.onlyoffice.ONLYOFFICE NSDisabledDictationMenuItem -bool true
+    _dw asc.onlyoffice.ONLYOFFICE NSForceLeftToRightWritingDirection -bool true
+    _dw asc.onlyoffice.ONLYOFFICE SUAutomaticallyUpdate -bool true
+    _dw asc.onlyoffice.ONLYOFFICE SUEnableAutomaticChecks -bool true
+    _dw asc.onlyoffice.ONLYOFFICE SUSendProfileInfo -bool false
+    _dw asc.onlyoffice.ONLYOFFICE 'asc_user_docOpenMode' -string 'edit'
+    _dw asc.onlyoffice.ONLYOFFICE 'asc_user_ui_lang' -string 'en-US'
+    _dw asc.onlyoffice.ONLYOFFICE 'asc_user_ui_theme' -string 'theme-light'
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
   # Rancher Desktop
   # ---------------------------------------------------------------------------
   if ask 'Rancher Desktop settings' 'Y'; then
-    defaults write io.rancherdesktop.app AppleTextDirection -bool true
-    defaults write io.rancherdesktop.app NSForceRightToLeftWritingDirection -bool false
-    defaults write io.rancherdesktop.app NSFullScreenMenuItemEverywhere -bool false
-    defaults write io.rancherdesktop.app NSTreatUnknownArgumentsAsOpen -bool false
+    _dw io.rancherdesktop.app AppleTextDirection -bool true
+    _dw io.rancherdesktop.app NSForceRightToLeftWritingDirection -bool false
+    _dw io.rancherdesktop.app NSFullScreenMenuItemEverywhere -bool false
+    _dw io.rancherdesktop.app NSTreatUnknownArgumentsAsOpen -bool false
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
@@ -1784,15 +2192,16 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   if ask 'Shortcat settings' 'Y'; then
     # Skip: telemetryIdentifier -- device UUID (denial criterion #1).
     # KeyboardShortcuts_* keys are plain JSON strings encoding key codes and modifiers.
-    defaults write com.sproutcube.Shortcat 'KeyboardShortcuts_click' -string '{"carbonModifiers":0,"carbonKeyCode":36}'
-    defaults write com.sproutcube.Shortcat 'KeyboardShortcuts_debugElement' -string '{"carbonModifiers":256,"carbonKeyCode":119}'
-    defaults write com.sproutcube.Shortcat 'KeyboardShortcuts_reloadUI' -string '{"carbonModifiers":768,"carbonKeyCode":15}'
-    defaults write com.sproutcube.Shortcat 'KeyboardShortcuts_toggleLockUI' -string '{"carbonKeyCode":115,"carbonModifiers":256}'
-    defaults write com.sproutcube.Shortcat 'KeyboardShortcuts_toggleShortcat' -string '{"carbonModifiers":2304,"carbonKeyCode":49}'
-    defaults write com.sproutcube.Shortcat downKeycode -int 38
-    defaults write com.sproutcube.Shortcat leftKeycode -int 4
-    defaults write com.sproutcube.Shortcat rightKeycode -int 37
-    defaults write com.sproutcube.Shortcat upKeycode -int 40
+    _dw com.sproutcube.Shortcat 'KeyboardShortcuts_click' -string '{"carbonModifiers":0,"carbonKeyCode":36}'
+    _dw com.sproutcube.Shortcat 'KeyboardShortcuts_debugElement' -string '{"carbonModifiers":256,"carbonKeyCode":119}'
+    _dw com.sproutcube.Shortcat 'KeyboardShortcuts_reloadUI' -string '{"carbonModifiers":768,"carbonKeyCode":15}'
+    _dw com.sproutcube.Shortcat 'KeyboardShortcuts_toggleLockUI' -string '{"carbonKeyCode":115,"carbonModifiers":256}'
+    _dw com.sproutcube.Shortcat 'KeyboardShortcuts_toggleShortcat' -string '{"carbonModifiers":2304,"carbonKeyCode":49}'
+    _dw com.sproutcube.Shortcat downKeycode -int 38
+    _dw com.sproutcube.Shortcat leftKeycode -int 4
+    _dw com.sproutcube.Shortcat rightKeycode -int 37
+    _dw com.sproutcube.Shortcat upKeycode -int 40
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
@@ -1805,10 +2214,11 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     # SUHasLaunchedBefore (one-time setup sentinel -- denial criterion #5),
     # SULastCheckTime (ephemeral timestamp -- denial criterion #3),
     # SUUpdateGroupIdentifier (internal Sparkle grouping ID, not user-configurable).
-    defaults write com.ospfranco.sol RCTI18nUtil_makeRTLFlipLeftAndRightStyles -bool true
-    defaults write com.ospfranco.sol SUAutomaticallyUpdate -bool true
-    defaults write com.ospfranco.sol SUEnableAutomaticChecks -bool true
-    defaults write com.ospfranco.sol SUSendProfileInfo -bool false
+    _dw com.ospfranco.sol RCTI18nUtil_makeRTLFlipLeftAndRightStyles -bool true
+    _dw com.ospfranco.sol SUAutomaticallyUpdate -bool true
+    _dw com.ospfranco.sol SUEnableAutomaticChecks -bool true
+    _dw com.ospfranco.sol SUSendProfileInfo -bool false
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
@@ -1819,94 +2229,95 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     # (ephemeral sync state -- denial criterion #3), remote_tokens_migrated_to_keychain,
     # Clock_list (per-entry UUIDs -- denial criterion #1), version, NSStatusItem
     # Preferred/Restore Position (display geometry -- denial criterion #4).
-    defaults write eu.exelban.Stats 'BAT_mini_alignment' -string 'right'
-    defaults write eu.exelban.Stats 'BAT_mini_color' -string 'system'
-    defaults write eu.exelban.Stats 'BAT_mini_label' -bool true
-    defaults write eu.exelban.Stats 'Battery_barChart_position' -int 3
-    defaults write eu.exelban.Stats 'Battery_bar_chart_label' -bool true
-    defaults write eu.exelban.Stats 'Battery_battery_additional' -string 'percentage'
-    defaults write eu.exelban.Stats 'Battery_battery_color' -bool true
-    defaults write eu.exelban.Stats 'Battery_battery_position' -int 1
-    defaults write eu.exelban.Stats 'Battery_color' -bool true
-    defaults write eu.exelban.Stats 'Battery_label_position' -int 2
-    defaults write eu.exelban.Stats 'Battery_mini_position' -int 0
-    defaults write eu.exelban.Stats 'Battery_notifications_high' -string ''
-    defaults write eu.exelban.Stats 'Battery_notifications_low' -string 'low'
-    defaults write eu.exelban.Stats 'Battery_state' -bool true
-    defaults write eu.exelban.Stats 'Battery_widget' -string 'mini'
-    defaults write eu.exelban.Stats 'Bluetooth_label_position' -int 1
-    defaults write eu.exelban.Stats 'Bluetooth_sensors_position' -int 1
-    defaults write eu.exelban.Stats 'Bluetooth_stack_position' -int 0
-    defaults write eu.exelban.Stats 'Bluetooth_state' -bool false
-    defaults write eu.exelban.Stats 'Bluetooth_widget' -string 'sensors'
-    defaults write eu.exelban.Stats 'CPU_barChart_position' -int 3
-    defaults write eu.exelban.Stats 'CPU_label_position' -int 1
-    defaults write eu.exelban.Stats 'CPU_lineChart_position' -int 0
-    defaults write eu.exelban.Stats 'CPU_line_chart_box' -bool false
-    defaults write eu.exelban.Stats 'CPU_line_chart_color' -string 'system'
-    defaults write eu.exelban.Stats 'CPU_line_chart_frame' -bool false
-    defaults write eu.exelban.Stats 'CPU_line_chart_label' -bool true
-    defaults write eu.exelban.Stats 'CPU_line_chart_value' -bool true
-    defaults write eu.exelban.Stats 'CPU_line_chart_valueColor' -bool true
-    defaults write eu.exelban.Stats 'CPU_mini_color' -string 'Monochrome accent'
-    defaults write eu.exelban.Stats 'CPU_mini_position' -int 2
-    defaults write eu.exelban.Stats 'CPU_notifications_totalLoad' -string 'Disabled'
-    defaults write eu.exelban.Stats 'CPU_pieChart_position' -int 4
-    defaults write eu.exelban.Stats 'CPU_state' -bool false
-    defaults write eu.exelban.Stats 'CPU_tachometer_position' -int 5
-    defaults write eu.exelban.Stats 'CPU_widget' -string 'line_chart'
-    defaults write eu.exelban.Stats 'Clock_label_position' -int 1
-    defaults write eu.exelban.Stats 'Clock_stack_position' -int 0
-    defaults write eu.exelban.Stats 'Clock_state' -bool false
-    defaults write eu.exelban.Stats 'Clock_widget' -string 'sensors'
-    defaults write eu.exelban.Stats CombinedModules -bool false
-    defaults write eu.exelban.Stats 'Disk_removable' -bool false
-    defaults write eu.exelban.Stats 'Disk_state' -bool true
-    defaults write eu.exelban.Stats 'Disk_widget' -string 'mini'
-    defaults write eu.exelban.Stats 'Fans_state' -bool false
-    defaults write eu.exelban.Stats 'GPU_notifications_usage_state' -bool true
-    defaults write eu.exelban.Stats 'GPU_notifications_usage_value' -int 80
-    defaults write eu.exelban.Stats 'GPU_state' -bool false
-    defaults write eu.exelban.Stats LaunchAtLoginNext -bool true
-    defaults write eu.exelban.Stats 'NSStatusItem Visible Battery' -bool true
-    defaults write eu.exelban.Stats 'NSStatusItem Visible CPU_Bar chart' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible CPU_Line chart' -bool true
-    defaults write eu.exelban.Stats 'NSStatusItem Visible CPU_Mini' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible CPU_Pie chart' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible Disk_Bar chart' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible Disk_Memory' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible Disk_Speed' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible Fans' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible Fans_Text' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible GPU' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible GPU_Bar chart' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible GPU_Line chart' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible GPU_Mini' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible Network_Network chart' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible Network_Speed' -bool true
-    defaults write eu.exelban.Stats 'NSStatusItem Visible RAM_Bar chart' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible RAM_Line chart' -bool true
-    defaults write eu.exelban.Stats 'NSStatusItem Visible RAM_Memory' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible RAM_Mini' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible RAM_Pie chart' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible Sensors' -bool false
-    defaults write eu.exelban.Stats 'NSStatusItem Visible Sensors_Text' -bool false
-    defaults write eu.exelban.Stats 'Network_speed_base' -string 'byte'
-    defaults write eu.exelban.Stats 'Network_speed_icon' -string 'arrows'
-    defaults write eu.exelban.Stats 'Network_speed_valueColor' -bool true
-    defaults write eu.exelban.Stats 'RAM_line_chart_box' -bool false
-    defaults write eu.exelban.Stats 'RAM_line_chart_color' -string 'utilization'
-    defaults write eu.exelban.Stats 'RAM_line_chart_frame' -bool false
-    defaults write eu.exelban.Stats 'RAM_line_chart_label' -bool true
-    defaults write eu.exelban.Stats 'RAM_line_chart_value' -bool true
-    defaults write eu.exelban.Stats 'RAM_line_chart_valueColor' -bool true
-    defaults write eu.exelban.Stats 'RAM_notifications_totalUsage' -string 'Disabled'
-    defaults write eu.exelban.Stats 'RAM_widget' -string 'line_chart'
-    defaults write eu.exelban.Stats 'SSD_mini_color' -string 'utilization'
-    defaults write eu.exelban.Stats 'Sensors_speed' -bool true
-    defaults write eu.exelban.Stats dockIcon -bool false
-    defaults write eu.exelban.Stats telemetry -bool false
-    defaults write eu.exelban.Stats 'update-interval' -string 'Once per day'
+    _dw eu.exelban.Stats 'BAT_mini_alignment' -string 'right'
+    _dw eu.exelban.Stats 'BAT_mini_color' -string 'system'
+    _dw eu.exelban.Stats 'BAT_mini_label' -bool true
+    _dw eu.exelban.Stats 'Battery_barChart_position' -int 3
+    _dw eu.exelban.Stats 'Battery_bar_chart_label' -bool true
+    _dw eu.exelban.Stats 'Battery_battery_additional' -string 'percentage'
+    _dw eu.exelban.Stats 'Battery_battery_color' -bool true
+    _dw eu.exelban.Stats 'Battery_battery_position' -int 1
+    _dw eu.exelban.Stats 'Battery_color' -bool true
+    _dw eu.exelban.Stats 'Battery_label_position' -int 2
+    _dw eu.exelban.Stats 'Battery_mini_position' -int 0
+    _dw eu.exelban.Stats 'Battery_notifications_high' -string ''
+    _dw eu.exelban.Stats 'Battery_notifications_low' -string 'low'
+    _dw eu.exelban.Stats 'Battery_state' -bool true
+    _dw eu.exelban.Stats 'Battery_widget' -string 'mini'
+    _dw eu.exelban.Stats 'Bluetooth_label_position' -int 1
+    _dw eu.exelban.Stats 'Bluetooth_sensors_position' -int 1
+    _dw eu.exelban.Stats 'Bluetooth_stack_position' -int 0
+    _dw eu.exelban.Stats 'Bluetooth_state' -bool false
+    _dw eu.exelban.Stats 'Bluetooth_widget' -string 'sensors'
+    _dw eu.exelban.Stats 'CPU_barChart_position' -int 3
+    _dw eu.exelban.Stats 'CPU_label_position' -int 1
+    _dw eu.exelban.Stats 'CPU_lineChart_position' -int 0
+    _dw eu.exelban.Stats 'CPU_line_chart_box' -bool false
+    _dw eu.exelban.Stats 'CPU_line_chart_color' -string 'system'
+    _dw eu.exelban.Stats 'CPU_line_chart_frame' -bool false
+    _dw eu.exelban.Stats 'CPU_line_chart_label' -bool true
+    _dw eu.exelban.Stats 'CPU_line_chart_value' -bool true
+    _dw eu.exelban.Stats 'CPU_line_chart_valueColor' -bool true
+    _dw eu.exelban.Stats 'CPU_mini_color' -string 'Monochrome accent'
+    _dw eu.exelban.Stats 'CPU_mini_position' -int 2
+    _dw eu.exelban.Stats 'CPU_notifications_totalLoad' -string 'Disabled'
+    _dw eu.exelban.Stats 'CPU_pieChart_position' -int 4
+    _dw eu.exelban.Stats 'CPU_state' -bool false
+    _dw eu.exelban.Stats 'CPU_tachometer_position' -int 5
+    _dw eu.exelban.Stats 'CPU_widget' -string 'line_chart'
+    _dw eu.exelban.Stats 'Clock_label_position' -int 1
+    _dw eu.exelban.Stats 'Clock_stack_position' -int 0
+    _dw eu.exelban.Stats 'Clock_state' -bool false
+    _dw eu.exelban.Stats 'Clock_widget' -string 'sensors'
+    _dw eu.exelban.Stats CombinedModules -bool false
+    _dw eu.exelban.Stats 'Disk_removable' -bool false
+    _dw eu.exelban.Stats 'Disk_state' -bool true
+    _dw eu.exelban.Stats 'Disk_widget' -string 'mini'
+    _dw eu.exelban.Stats 'Fans_state' -bool false
+    _dw eu.exelban.Stats 'GPU_notifications_usage_state' -bool true
+    _dw eu.exelban.Stats 'GPU_notifications_usage_value' -int 80
+    _dw eu.exelban.Stats 'GPU_state' -bool false
+    _dw eu.exelban.Stats LaunchAtLoginNext -bool true
+    _dw eu.exelban.Stats 'NSStatusItem Visible Battery' -bool true
+    _dw eu.exelban.Stats 'NSStatusItem Visible CPU_Bar chart' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible CPU_Line chart' -bool true
+    _dw eu.exelban.Stats 'NSStatusItem Visible CPU_Mini' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible CPU_Pie chart' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible Disk_Bar chart' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible Disk_Memory' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible Disk_Speed' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible Fans' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible Fans_Text' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible GPU' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible GPU_Bar chart' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible GPU_Line chart' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible GPU_Mini' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible Network_Network chart' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible Network_Speed' -bool true
+    _dw eu.exelban.Stats 'NSStatusItem Visible RAM_Bar chart' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible RAM_Line chart' -bool true
+    _dw eu.exelban.Stats 'NSStatusItem Visible RAM_Memory' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible RAM_Mini' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible RAM_Pie chart' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible Sensors' -bool false
+    _dw eu.exelban.Stats 'NSStatusItem Visible Sensors_Text' -bool false
+    _dw eu.exelban.Stats 'Network_speed_base' -string 'byte'
+    _dw eu.exelban.Stats 'Network_speed_icon' -string 'arrows'
+    _dw eu.exelban.Stats 'Network_speed_valueColor' -bool true
+    _dw eu.exelban.Stats 'RAM_line_chart_box' -bool false
+    _dw eu.exelban.Stats 'RAM_line_chart_color' -string 'utilization'
+    _dw eu.exelban.Stats 'RAM_line_chart_frame' -bool false
+    _dw eu.exelban.Stats 'RAM_line_chart_label' -bool true
+    _dw eu.exelban.Stats 'RAM_line_chart_value' -bool true
+    _dw eu.exelban.Stats 'RAM_line_chart_valueColor' -bool true
+    _dw eu.exelban.Stats 'RAM_notifications_totalUsage' -string 'Disabled'
+    _dw eu.exelban.Stats 'RAM_widget' -string 'line_chart'
+    _dw eu.exelban.Stats 'SSD_mini_color' -string 'utilization'
+    _dw eu.exelban.Stats 'Sensors_speed' -bool true
+    _dw eu.exelban.Stats dockIcon -bool false
+    _dw eu.exelban.Stats telemetry -bool false
+    _dw eu.exelban.Stats 'update-interval' -string 'Once per day'
+    _dw_flush
   fi
 
   # Thaw (Ice fork)
@@ -1919,33 +2330,34 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     # -- denial criterion #4), hasMigrated* flags (one-time migration sentinels).
     # IceIcon is stored as raw bytes but the JSON content is fully portable; writing
     # as -string causes macOS to store it as NSString, which Thaw reads correctly.
-    defaults write com.stonerl.Thaw AutoRehide -bool true
-    defaults write com.stonerl.Thaw CustomIceIconIsTemplate -bool false
-    defaults write com.stonerl.Thaw EnableAlwaysHiddenSection -bool true
-    defaults write com.stonerl.Thaw EnableDiagnosticLogging -bool false
-    defaults write com.stonerl.Thaw EnableSecondaryContextMenu -bool true
-    defaults write com.stonerl.Thaw HideApplicationMenus -bool true
-    defaults write com.stonerl.Thaw IceBarLocation -int 0
-    defaults write com.stonerl.Thaw IceBarLocationOnHotkey -int 0
-    defaults write com.stonerl.Thaw IceIcon -string '{"hidden":{"catalog":{"_0":"IceCubeStroke"}},"visible":{"catalog":{"_0":"IceCubeFill"}},"name":"Ice Cube"}'
-    defaults write com.stonerl.Thaw IconRefreshInterval -string '0.5'
-    defaults write com.stonerl.Thaw ItemSpacingOffset -int 0
-    defaults write com.stonerl.Thaw RehideInterval -int 15
-    defaults write com.stonerl.Thaw RehideStrategy -int 0
-    defaults write com.stonerl.Thaw SUAutomaticallyUpdate -bool true
-    defaults write com.stonerl.Thaw SUEnableAutomaticChecks -bool true
-    defaults write com.stonerl.Thaw SectionDividerStyle -int 1
-    defaults write com.stonerl.Thaw ShowAllSectionsOnUserDrag -bool true
-    defaults write com.stonerl.Thaw ShowIceIcon -bool true
-    defaults write com.stonerl.Thaw ShowMenuBarTooltips -bool false
-    defaults write com.stonerl.Thaw ShowOnClick -bool true
-    defaults write com.stonerl.Thaw ShowOnDoubleClick -bool true
-    defaults write com.stonerl.Thaw ShowOnHover -bool true
-    defaults write com.stonerl.Thaw ShowOnHoverDelay -string '0.2'
-    defaults write com.stonerl.Thaw ShowOnScroll -bool true
-    defaults write com.stonerl.Thaw TooltipDelay -string '0.5'
-    defaults write com.stonerl.Thaw UseIceBar -bool true
-    defaults write com.stonerl.Thaw UseIceBarOnlyOnNotchedDisplay -bool false
+    _dw com.stonerl.Thaw AutoRehide -bool true
+    _dw com.stonerl.Thaw CustomIceIconIsTemplate -bool false
+    _dw com.stonerl.Thaw EnableAlwaysHiddenSection -bool true
+    _dw com.stonerl.Thaw EnableDiagnosticLogging -bool false
+    _dw com.stonerl.Thaw EnableSecondaryContextMenu -bool true
+    _dw com.stonerl.Thaw HideApplicationMenus -bool true
+    _dw com.stonerl.Thaw IceBarLocation -int 0
+    _dw com.stonerl.Thaw IceBarLocationOnHotkey -int 0
+    _dw com.stonerl.Thaw IceIcon -string '{"hidden":{"catalog":{"_0":"IceCubeStroke"}},"visible":{"catalog":{"_0":"IceCubeFill"}},"name":"Ice Cube"}'
+    _dw com.stonerl.Thaw IconRefreshInterval -string '0.5'
+    _dw com.stonerl.Thaw ItemSpacingOffset -int 0
+    _dw com.stonerl.Thaw RehideInterval -int 15
+    _dw com.stonerl.Thaw RehideStrategy -int 0
+    _dw com.stonerl.Thaw SUAutomaticallyUpdate -bool true
+    _dw com.stonerl.Thaw SUEnableAutomaticChecks -bool true
+    _dw com.stonerl.Thaw SectionDividerStyle -int 1
+    _dw com.stonerl.Thaw ShowAllSectionsOnUserDrag -bool true
+    _dw com.stonerl.Thaw ShowIceIcon -bool true
+    _dw com.stonerl.Thaw ShowMenuBarTooltips -bool false
+    _dw com.stonerl.Thaw ShowOnClick -bool true
+    _dw com.stonerl.Thaw ShowOnDoubleClick -bool true
+    _dw com.stonerl.Thaw ShowOnHover -bool true
+    _dw com.stonerl.Thaw ShowOnHoverDelay -string '0.2'
+    _dw com.stonerl.Thaw ShowOnScroll -bool true
+    _dw com.stonerl.Thaw TooltipDelay -string '0.5'
+    _dw com.stonerl.Thaw UseIceBar -bool true
+    _dw com.stonerl.Thaw UseIceBarOnlyOnNotchedDisplay -bool false
+    _dw_flush
   fi
 
   # ---------------------------------------------------------------------------
@@ -2069,7 +2481,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Time Machine
   # ---------------------------------------------------------------------------
   # Prevent Time Machine from prompting to use new hard drives as backup volume
-  defaults write com.apple.TimeMachine DoNotOfferNewDisksForBackup -bool true
+  _dw com.apple.TimeMachine DoNotOfferNewDisksForBackup -bool true
 
   # Disable local Time Machine backups
   # TODO: This causes an error to be printed to stdout - need to investigate if this is deprecated
@@ -2085,8 +2497,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Screen
   # ---------------------------------------------------------------------------
   # Require password immediately after sleep or screen saver begins
-  defaults write com.apple.screensaver askForPassword -bool true
-  defaults write com.apple.screensaver askForPasswordDelay -int 0
+  _dw com.apple.screensaver askForPassword -bool true
+  _dw com.apple.screensaver askForPasswordDelay -int 0
+  _dw_flush
 
   # Enable subpixel font rendering on non-Apple LCDs (0=off, 1=light, 2=Medium/flat panel, 3=strong/blurred)
   # This is mostly needed for non-Apple displays.
@@ -2099,16 +2512,17 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Screen capture
   # ---------------------------------------------------------------------------
   # Save screenshots to the desktop
-  defaults write com.apple.screencapture location -string "${HOME}/Desktop"
+  _dw com.apple.screencapture location -string "${HOME}/Desktop"
 
   # Save screenshots in PNG format (other options: BMP, GIF, JPG, PDF, TIFF)
-  defaults write com.apple.screencapture type -string 'png'
+  _dw com.apple.screencapture type -string 'png'
 
   # Disable shadow in screenshots
-  defaults write com.apple.screencapture disable-shadow -bool true
+  _dw com.apple.screencapture disable-shadow -bool true
 
   # Screenshot thumbnail expires in 15 secs
-  defaults write com.apple.screencaptureui thumbnailExpiration -float 15
+  _dw com.apple.screencaptureui thumbnailExpiration -float 15
+  _dw_flush
 
   # iCal
   # Log HTTP Activity:
@@ -2152,7 +2566,12 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # ---------------------------------------------------------------------------
   # reload_macos_prefs handles core system services (cfprefsd/Dock/Finder/
   # SystemUIServer) and calls activateSettings to flush symbolic hotkeys.
-  reload_macos_prefs
+  _dw_flush
+  if ((bracketed)); then
+    info 'System services are reloaded by the caller (DOTFILES_APPS_BRACKETED)'
+  else
+    reload_macos_prefs
+  fi
 
   # Kill application-specific processes that are affected by the defaults writes above.
   local app_array=(
@@ -2175,9 +2594,17 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
     killall "${app}" &>/dev/null || true
   done
 
-  # Turn off spotlight indexing for all volumes (to pre-empt any issues with the system settings pane)
-  if sudo mdutil -Eda &>/dev/null; then
+  # Turn off spotlight indexing for all volumes (to pre-empt any issues with the system settings pane).
+  # Erasing the indexes is disruptive, so it is stamp-guarded to first install / macOS upgrade
+  # (OSX_DEFAULTS_FORCE=1 overrides); a user who re-enables indexing later is not overridden.
+  if ((! _sudo_ok)); then
+    info 'Skipping Spotlight index reset (needs sudo)'
+    ((++_sudo_skipped))
+  elif _osx_stamp_is_current spotlight; then
+    info 'Spotlight indexing already reset for this macOS version; skipping'
+  elif sudo mdutil -Eda &>/dev/null; then
     sudo mdutil -ai off &>/dev/null || true
+    _osx_stamp_record spotlight
   fi
 
   user_action "Grant Full Disk Access to 'Terminal' and 'iTerm': System Settings -> Privacy & Security -> Full Disk Access -> add 'Terminal.app' and 'iTerm.app' (cannot be automated -- TCC is SIP-protected)."
@@ -2188,7 +2615,19 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   'Zoom' (force-quitting during a call would disconnect it),
   'Thunderbird',
   'KeePassXC'"
+  if ((_sudo_skipped > 0)); then
+    _record_warning "Skipped ${_sudo_skipped} sudo step(s) (no cached sudo credentials in silent mode); rerun osx-defaults.sh interactively to apply them"
+  fi
+  if is_non_zero_string "${OSX_DEFAULTS_DRY_RUN:-}"; then _dry_run_report; fi
   print_script_summary "${script_start_time}" 'Done. Note that some of these changes require a logout/restart to take effect.'
+  # Meaningful exit status for callers (e.g. the background baseline in the bootstrap): 1 when
+  # any error was recorded. The ERR trap is cleared first so that this deliberate non-zero
+  # return is not itself recorded as one more "unexpected failure".
+  if _has_step_errors; then
+    trap - ERR
+    return 1
+  fi
+  return 0
 }
 
 main "$@"

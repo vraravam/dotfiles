@@ -193,12 +193,18 @@ module Cron
   # Restores crontab schedule using fallback logic:
   # 1. Capture existing system crontab to temp file (crontab -l)
   # 2. If empty -> fallback to ${PERSONAL_CONFIGS_DIR}/crontab.txt (tracked in repo)
-  # 3. If both empty -> user_action to create schedule, don't modify system crontab
-  # 4. If non-empty schedule found -> load it into system crontab
+  # 3. If that is missing or empty -> fallback to the backup suspend_cron wrote
+  #    (_DOTFILES_CRON_BACKUP_FILE): during a fresh install the live crontab was removed by the
+  #    suspend long before this runs, so step 1 is always empty there and the backup is the only
+  #    copy of the user's original schedule
+  # 4. If all are empty -> user_action to create schedule, don't modify system crontab
+  # 5. If non-empty schedule found -> load it into system crontab
   #
   # This ensures:
   # - Existing cron jobs are preserved (don't overwrite user's custom schedules)
-  # - Tracked crontab.txt is used as fallback on vanilla OS
+  # - Tracked crontab.txt is used as fallback on vanilla OS, and wins over the backup because it
+  #   is the source of truth (see CRONTAB_FILE)
+  # - The original schedule is never silently dropped when crontab.txt does not exist
   # - No default schedule imposed if user has neither
   #
   # Called by the recron shell wrapper in .aliases.
@@ -225,16 +231,20 @@ module Cron
         if temp_crontab.size.positive?
           Logging.debug "Found existing crontab with #{temp_crontab.size.to_s.purple} bytes"
           schedule_source = Pathname(temp_crontab.path)
-        elsif file?(CRONTAB_FILE)
+        elsif _non_empty_file?(CRONTAB_FILE)
           # Step 2b: Fallback to tracked crontab.txt if it exists and is non-empty
           Logging.debug "No existing crontab; falling back to '#{crontab_file_colored}'"
           schedule_source = CRONTAB_FILE
+        elsif _non_empty_file?(EnvVars.cron_backup_file)
+          # Step 3: Fallback to the backup of the schedule that was running before the suspend
+          Logging.info "No existing crontab and no '#{crontab_file_colored}'; restoring the schedule from the backup '#{EnvVars.cron_backup_file.cyan}'"
+          schedule_source = EnvVars.cron_backup_file
         else
-          # Step 3: Both empty - user action needed
+          # Step 4: Nothing anywhere - user action needed
           Logging.user_action "No crontab found and '#{crontab_file_colored}' does not exist. Create '#{crontab_file_colored}' with your desired schedule and run '#{'recron'.yellow}' to install it. Track the file in your home repo for backup."
         end
 
-        # Step 4: Load non-empty schedule into system crontab
+        # Step 5: Load non-empty schedule into system crontab
         if schedule_source
           loaded = restore_cron(schedule_source)
           Logging.success 'Crontab set up successfully' if loaded
@@ -247,8 +257,37 @@ module Cron
     end
   end
 
+  # Disposes of the cron backup once a crontab has been installed successfully (never call it
+  # otherwise: until then the backup is the only copy of the original schedule). Deletes the
+  # backup, unless it holds a schedule different from the one now installed (the tracked
+  # crontab.txt won over it): then it is renamed to '<name>.replaced' instead, so the original is
+  # still recoverable but resume_cron (which only looks at the exact backup name) can never put
+  # it back over the new schedule.
+  #
+  # @param backup [Pathname, nil] The backup file; defaults to the suspend_cron backup.
+  # @return [void]
+  def retire_backup(backup = nil)
+    backup ||= EnvVars.cron_backup_file
+    return unless backup.exist?
+
+    unless PathUtils.safe_for_write?(backup)
+      Logging.warn "Refusing to delete cron backup file in root directory: '#{backup.cyan}'"
+      return
+    end
+
+    installed = CommandUtils.query('crontab', '-l')
+    original = backup.read(encoding: 'UTF-8')
+    if nil_or_empty?(original) || original.strip == installed.strip
+      backup.delete
+    else
+      kept = Pathname("#{backup}.replaced")
+      backup.rename(kept)
+      Logging.info "The previous cron schedule differed from the one installed -- kept as '#{kept.cyan}'"
+    end
+  end
+
   # Wraps a block in the cron bracket: suspend cron, yield, call recron to
-  # restore it, then clear the backup (only if recron succeeded) so any at_exit hook is a no-op.
+  # restore it, then retire the backup (only if recron succeeded) so any at_exit hook is a no-op.
   # Restores cron via an ensure clause so it
   # always runs, regardless of how the block exits: a normal return, an exception, OR a
   # non-local 'return' from inside the block (e.g. 'return false unless x' in a caller
@@ -306,13 +345,13 @@ module Cron
       Logging.warn "Could not reinstall the crontab -- keeping the backup of the original schedule: '#{backup.cyan}'"
       return
     end
-    return unless backup.exist?
+    retire_backup(backup)
+  end
 
-    if PathUtils.safe_for_write?(backup)
-      backup.delete
-    else
-      Logging.warn "Refusing to delete cron backup file in root directory: '#{backup.cyan}'"
-    end
+  # @param path [Pathname]
+  # @return [Boolean] whether +path+ is a regular file with content
+  def _non_empty_file?(path)
+    file?(path) && path.size.positive?
   end
 
   # Validates crontab syntax using crontab's built-in validation.

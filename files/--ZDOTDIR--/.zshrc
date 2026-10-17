@@ -308,7 +308,9 @@ if is_file "${ANTIDOTE_PLUGIN_ZSH}" && is_file "${ANTIDOTE_PLUGIN_TXT}"; then
       warn "antidote: '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is newer than the bundle -- run '$(cyan 'update_antidote_and_regenerate_plugin_bundle')' manually to regenerate it."
     fi
   fi
-else
+elif ! is_first_install; then
+  # Both files come from the home repo, which a first install has not cloned yet when the zsh
+  # configs are first loaded, so their absence is expected there and not worth a warning.
   warn "antidote: either '$(yellow "${ANTIDOTE_PLUGIN_ZSH}")' or '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' are not present - skipping regeneration"
 fi
 
@@ -421,6 +423,36 @@ _deferred_mise_activation() {
 }
 
 _defer_or_run _deferred_mise_activation
+
+# Prompt hooks that only need to run when the directory changes (and once at startup), not before
+# every prompt. Each costs real time per prompt, measured with zprof: _mise_hook_precmd ~15-30ms,
+# _direnv_hook ~10ms, omz_termsupport_cwd ~4ms. All three already run for the starting directory
+# (direnv in the first precmd, mise through its deferred startup call above, the iTerm/terminal cwd
+# report explicitly below) and are also registered as chpwd hooks, so removing them from precmd
+# only drops the redundant per-prompt call.
+#
+# Tradeoff to know about: editing .envrc / .mise.toml in place, or running 'direnv allow', is no
+# longer picked up at the next prompt -- 'cd' away and back, or run 'direnv reload' / 'mise
+# hook-env'. Set ZSH_PROMPT_HOOKS_EVERY_PROMPT=1 (e.g. in ~/.zshenv) to keep the old behavior
+# without editing this file.
+#
+# Queued after _deferred_mise_activation (zsh-defer runs its queue in order), because mise's
+# precmd hook only exists once that has sourced its cache, and after the bundle's deferred
+# termsupport source, which registers omz_termsupport_cwd.
+_deferred_trim_prompt_hooks() {
+  if [[ -z "${ZSH_PROMPT_HOOKS_EVERY_PROMPT:-}" ]]; then
+    precmd_functions=(${precmd_functions:#(_direnv_hook|_mise_hook_precmd|omz_termsupport_cwd)})
+    # Report the starting directory once (precmd used to), then on every cd.
+    if (($+functions[omz_termsupport_cwd])); then
+      omz_termsupport_cwd
+      if (( ! ${chpwd_functions[(I)omz_termsupport_cwd]} )); then
+        chpwd_functions+=(omz_termsupport_cwd)
+      fi
+    fi
+  fi
+  unfunction _deferred_trim_prompt_hooks
+}
+_defer_or_run _deferred_trim_prompt_hooks
 
 # Initialize starship prompt (must be after plugins so it wins the PROMPT setup).
 #
@@ -565,6 +597,12 @@ _deferred_compinit() {
   fi
   if ((stale)); then
     compinit -d "${ZSH_COMPDUMP}"
+    # A full compinit does NOT rewrite the dump when the number of completion files is unchanged,
+    # so its mtime stays older than the touched fpath directory that made it look stale -- and
+    # every later shell would repeat the full compinit plus compaudit (~8ms of first-command lag).
+    # Refresh the mtime so the next start takes the fast 'compinit -C' path. Stale path only, and
+    # deferred, so the fork is not on the first-prompt path.
+    command touch "${ZSH_COMPDUMP}"
   else
     compinit -C -d "${ZSH_COMPDUMP}"
   fi

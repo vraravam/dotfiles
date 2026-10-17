@@ -23,15 +23,31 @@ RSpec.describe Keybase do
     end
   end
 
-  # username is memoized on the module itself, so start every example from a clean slate.
-  before { described_class.send(:_forget_username) }
-  after { described_class.send(:_forget_username) }
+  let(:ok_status) { instance_double(Process::Status, success?: true) }
+
+  # Stubs the 'keybase status --json' query: +json+ is its stdout, nil means it timed out.
+  def stub_status(json)
+    allow(BackgroundJob).to receive(:capture).with('keybase', 'status', '--json', timeout: described_class::QUERY_TIMEOUT)
+                                             .and_return([json.to_s, json.nil? ? nil : ok_status])
+  end
+
+  # username and a successful bootstrap login are memoized on the module itself, so start every
+  # example from a clean slate.
+  before do
+    described_class.send(:_forget_username)
+    described_class.instance_variable_set(:@_bootstrap_logged_in, nil)
+  end
+
+  after do
+    described_class.send(:_forget_username)
+    described_class.instance_variable_set(:@_bootstrap_logged_in, nil)
+  end
 
   describe '.username' do
     it 'asks keybase only once, and remembers a nil result too' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
-      expect(CommandUtils).to receive(:query).with('keybase', 'status', '--json').once
-                                             .and_return('{"Username":"","LoggedIn":false}')
+      expect(BackgroundJob).to receive(:capture).with('keybase', 'status', '--json', timeout: described_class::QUERY_TIMEOUT).once
+                                                .and_return(['{"Username":"","LoggedIn":false}', ok_status])
 
       2.times { expect(described_class.username).to be_nil }
     end
@@ -41,7 +57,7 @@ RSpec.describe Keybase do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
       logged_out = '{"Username":"","LoggedIn":false}'
       responses = [logged_out, logged_out, '{"Username":"me","LoggedIn":true}']
-      allow(CommandUtils).to receive(:query).with('keybase', 'status', '--json') { responses.shift || responses.last }
+      allow(BackgroundJob).to receive(:capture).with('keybase', 'status', '--json', timeout: described_class::QUERY_TIMEOUT) { [responses.shift || responses.last, ok_status] }
       allow(CommandUtils).to receive(:run_interactive).with('keybase', 'login').and_return(true)
       allow(described_class).to receive(:_status).and_call_original
 
@@ -58,29 +74,44 @@ RSpec.describe Keybase do
 
     it 'is nil when keybase is installed but nobody is logged in' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
-      allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"","LoggedIn":false}')
+      stub_status('{"Username":"","LoggedIn":false}')
 
       expect(described_class.username).to be_nil
     end
 
     it 'returns the logged-in username when keybase is installed and logged in' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
-      allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"someuser","LoggedIn":true}')
+      stub_status('{"Username":"someuser","LoggedIn":true}')
 
       expect(described_class.username).to eq('someuser')
     end
 
     it 'is nil when keybase status returns invalid JSON' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
-      allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('not valid json')
+      stub_status('not valid json')
 
       expect(described_class.username).to be_nil
+    end
+  end
+
+  describe 'the status query' do
+    it 'treats a query that timed out as nobody logged in' do
+      allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
+      stub_status(nil)
+
+      expect(described_class.username).to be_nil
+    end
+
+    it 'counts the service as down when the query timed out' do
+      allow(BackgroundJob).to receive(:capture).with('keybase', 'status', timeout: described_class::QUERY_TIMEOUT).and_return(['', nil])
+
+      expect(described_class.send(:_service_up?)).to be false
+    end
+
+    it 'counts the service as up when the query succeeds' do
+      allow(BackgroundJob).to receive(:capture).with('keybase', 'status', timeout: described_class::QUERY_TIMEOUT).and_return(['', ok_status])
+
+      expect(described_class.send(:_service_up?)).to be true
     end
   end
 
@@ -110,16 +141,14 @@ RSpec.describe Keybase do
 
     it 'returns true without checking status when dry_run is true' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
-      expect(CommandUtils).not_to receive(:query)
+      expect(BackgroundJob).not_to receive(:capture)
 
       expect(described_class.ensure_logged_in(dry_run: true)).to be true
     end
 
     it 'returns true without attempting login when already logged in' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
-      allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"someuser","LoggedIn":true}')
+      stub_status('{"Username":"someuser","LoggedIn":true}')
       expect(CommandUtils).not_to receive(:run_interactive)
 
       expect(described_class.ensure_logged_in).to be true
@@ -127,9 +156,7 @@ RSpec.describe Keybase do
 
     it 'attempts an interactive login when not logged in, and returns its result' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
-      allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"","LoggedIn":false}')
+      stub_status('{"Username":"","LoggedIn":false}')
       allow(CommandUtils).to receive(:run_interactive).with('keybase', 'login').and_return(true)
 
       expect(described_class.ensure_logged_in).to be true
@@ -138,9 +165,7 @@ RSpec.describe Keybase do
     it 'passes KEYBASE_USERNAME to keybase login when it is set' do
       stub_const('EnvVars::KEYBASE_USERNAME', 'someuser')
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
-      allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"","LoggedIn":false}')
+      stub_status('{"Username":"","LoggedIn":false}')
       expect(CommandUtils).to receive(:run_interactive).with('keybase', 'login', 'someuser').and_return(true)
 
       expect(described_class.ensure_logged_in).to be true
@@ -149,9 +174,7 @@ RSpec.describe Keybase do
     it 'does not log in again when already logged in, even if KEYBASE_USERNAME is set' do
       stub_const('EnvVars::KEYBASE_USERNAME', 'someuser')
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
-      allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"other","LoggedIn":true}')
+      stub_status('{"Username":"other","LoggedIn":true}')
       expect(CommandUtils).not_to receive(:run_interactive)
 
       expect(described_class.ensure_logged_in).to be true
@@ -159,9 +182,7 @@ RSpec.describe Keybase do
 
     it 'records an error when the interactive login fails' do
       allow(PathUtils).to receive(:command_exists?).with('keybase').and_return(true)
-      allow(CommandUtils).to receive(:query)
-                               .with('keybase', 'status', '--json')
-                               .and_return('{"Username":"","LoggedIn":false}')
+      stub_status('{"Username":"","LoggedIn":false}')
       allow(CommandUtils).to receive(:run_interactive).with('keybase', 'login') do |&block|
         block.call
         false
@@ -358,6 +379,19 @@ RSpec.describe Keybase do
       allow(described_class).to receive(:_status).and_return([])
       expect(described_class).to receive(:ensure_logged_in).with(start_service: true).and_return(true)
 
+      expect(quietly { described_class.bootstrap_login }).to be true
+    end
+
+    it 'remembers a successful login for the rest of the process, asking keybase only once' do
+      expect(described_class).to receive(:_status).once.and_return('LoggedIn' => true, 'Username' => 'someuser')
+
+      2.times { expect(quietly { described_class.bootstrap_login }).to be true }
+    end
+
+    it 'does not remember a failed login' do
+      allow(described_class).to receive(:ensure_logged_in).with(start_service: true).and_return(false, true)
+
+      expect(quietly { described_class.bootstrap_login }).to be false
       expect(quietly { described_class.bootstrap_login }).to be true
     end
 

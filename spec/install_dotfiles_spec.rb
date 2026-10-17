@@ -30,6 +30,27 @@ RSpec.describe InstallDotfiles do
     $stdout = original
   end
 
+  describe '.run reminder about the copied custom.git* files' do
+    before do
+      stub_const('EnvVars::DOTFILES_DIR', tmp.join('dotfiles'))
+      tmp.join('dotfiles', 'files').mkpath
+      %i[_ensure_ssh_include_line _ensure_gitconfig_tool_symlink].each { |name| allow(described_class).to receive(name) }
+      allow(Logging).to receive(:warn)
+    end
+
+    it 'is given on a re-run' do
+      with_env('FIRST_INSTALL' => nil) { quietly { described_class.run } }
+
+      expect(Logging).to have_received(:warn).with(/custom\.git\*' files are COPIED/)
+    end
+
+    it 'is not given on a first install, where nothing can be stale' do
+      with_env('FIRST_INSTALL' => '1') { quietly { described_class.run } }
+
+      expect(Logging).not_to have_received(:warn)
+    end
+  end
+
   describe '._ensure_ssh_include_line' do
     let(:ssh_dir) { tmp.join('.ssh') }
     let(:config) { ssh_dir.join('config') }
@@ -46,7 +67,62 @@ RSpec.describe InstallDotfiles do
 
       quietly { described_class.send(:_ensure_ssh_include_line) }
 
-      expect(config.read).to eq("Host x\n\nInclude ~/.ssh/global_config\n")
+      expect(config.read).to eq("Host x\n\nMatch all\nInclude ~/.ssh/global_config\n")
+    end
+
+    it 'inserts Match all directly above an Include that has none, leaving everything else untouched' do
+      config.write("Host x\n  HostName a\n\n# global settings\nInclude ~/.ssh/global_config\nHost y\n")
+
+      output = quietly { described_class.send(:_ensure_ssh_include_line) }
+
+      expect(config.read).to eq("Host x\n  HostName a\n\n# global settings\nMatch all\nInclude ~/.ssh/global_config\nHost y\n")
+      expect(output).to match(/Inserting/)
+    end
+
+    it 'leaves an Include that already follows Match all alone, even with a comment or blank lines between' do
+      content = "Host x\n\nMatch all\n# why\n\nInclude ~/.ssh/global_config\n"
+      config.write(content)
+
+      output = quietly { described_class.send(:_ensure_ssh_include_line) }
+
+      expect(config.read).to eq(content)
+      expect(output).to match(/already present/)
+    end
+
+    it 'matches Match all case-insensitively and ignores surrounding whitespace' do
+      content = "Host x\n  match ALL  \nInclude ~/.ssh/global_config\n"
+      config.write(content)
+
+      quietly { described_class.send(:_ensure_ssh_include_line) }
+
+      expect(config.read).to eq(content)
+    end
+
+    it 'also inserts Match all after a Match block, which scopes the Include just like a Host block does' do
+      config.write("Match host foo\nInclude ~/.ssh/global_config\n")
+
+      quietly { described_class.send(:_ensure_ssh_include_line) }
+
+      expect(config.read).to eq("Match host foo\nMatch all\nInclude ~/.ssh/global_config\n")
+    end
+
+    it 'is idempotent: a second run changes nothing' do
+      config.write("Host x\n")
+      quietly { described_class.send(:_ensure_ssh_include_line) }
+      first = config.read
+
+      quietly { described_class.send(:_ensure_ssh_include_line) }
+
+      expect(config.read).to eq(first)
+    end
+
+    it 'does not rewrite an Include without Match all in dry-run mode' do
+      config.write("Host x\nInclude ~/.ssh/global_config\n")
+
+      output = quietly { described_class.send(:_ensure_ssh_include_line, dry_run: true) }
+
+      expect(config.read).to eq("Host x\nInclude ~/.ssh/global_config\n")
+      expect(output).to match(/Would insert/)
     end
 
     it 'creates a missing config with the Include line' do
@@ -72,7 +148,7 @@ RSpec.describe InstallDotfiles do
     end
 
     it 'reports an already present line the same way in dry-run mode' do
-      config.write("Include ~/.ssh/global_config\n")
+      config.write("Match all\nInclude ~/.ssh/global_config\n")
 
       output = quietly { described_class.send(:_ensure_ssh_include_line, dry_run: true) }
 

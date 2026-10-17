@@ -377,6 +377,61 @@ export GH_USERNAME='YOUR_USERNAME' DOTFILES_BRANCH='test-branch' ...
 if not explicitly exported -- so once you `git checkout test-branch` locally in
 `${DOTFILES_DIR}`, subsequent re-runs pick it up without needing to export anything.
 
+### 5.7 Testing a First Install Without a Second Machine
+
+The faithful test of a vanilla-macOS install is a clean machine or a VM. When you only want to check the
+shell and Ruby parts of the bootstrap (the `.shellrc` download, the first dotfiles clone, `install-dotfiles`,
+the home and profile repository clones, the shallow clones and the unshallow batch, the preferences baseline
+and import, the closing summary), `implode` gets a configured machine close enough.
+
+**`implode` deletes your personal data.** Everything under `~/.<name>` (including `~/.ssh`, `~/.gnupg` and
+`~/.config`), `~/personal`, `${PROJECTS_BASE_DIR}` and the files in `~` that match `*.log*` are removed with `sudo rm -rf`. Only run it
+once everything you care about is pushed or backed up, and your preferences are exported (see
+[4.1](#41-export-preferences)) so the import step has something current to restore.
+
+#### What `implode` does
+
+- Clears the crontab (a fresh install then starts from its crontab fallbacks) and deletes the stale
+  `${TMPDIR}/crontab_backup*`.
+- Unregisters the login items of the apps this repo manages: `setup-login-item.rb --remove-managed`.
+- Deletes the keychain entries and ssh-agent identities this repo's scripts create.
+- Removes the symlinks under `~/Library` that point into the dotfiles, personal-configs and profiles folders.
+- Wipes the dot-folders in `~`, the dotfiles repo, `~/personal`, `${PROJECTS_BASE_DIR}`, the antidote folders and the
+  `*.log*` files in `~`.
+
+#### Steps
+
+1. Quit everything that is not needed and check that your pushes and backups are complete.
+2. In a terminal, run:
+
+   ```zsh
+   implode;
+   ```
+
+3. Quit Terminal completely (Cmd-Q, not just the window) and open it again: the old session still holds
+   exported variables and functions that the fresh install must not inherit.
+4. Run the bootstrap command from [Adoption.md § 3.2](Adoption.md#32-run-bootstrap-command) (it writes its log to
+   `~/Downloads/fresh-install-of-osx.log`).
+
+#### What this does not cover
+
+These are deliberately left in place, so the code paths that depend on them behave as on a configured machine,
+not as on a vanilla OS:
+
+- **Homebrew and everything it installed:** the early background Homebrew install, the base-section install and
+  the detached full install are skipped or become no-ops.
+- **Command Line Tools:** the `softwareupdate` install path is skipped.
+- **The Keybase login and app:** the "already logged in" path is taken, and the Keybase backend is warm, so the
+  cold-backend wait and the longer clone allowance are rarely exercised.
+- **The login shell** and **`/etc/pam.d/sudo_local`**.
+- **macOS defaults already applied** by `osx-defaults.sh` (the preference import overrides them again), and the
+  **permissions you already approved** for apps (TCC).
+- **The files in `~/Downloads`**, including the logs of earlier runs.
+
+To get closer, additionally uninstall Homebrew, remove the Command Line Tools
+(`sudo rm -rf /Library/Developer/CommandLineTools`), run `keybase logout`, and expect to approve the apps again.
+A clean machine or VM remains the only complete check.
+
 ---
 
 ## 📚 Additional Resources

@@ -104,6 +104,10 @@ Document the tradeoff in a comment when priorities conflict.
 3. **Never hardcode paths** -- shell `${DOTFILES_DIR}`, `${PERSONAL_BIN_DIR}`, `${XDG_CONFIG_HOME}`;
    Ruby `EnvVars::XDG_CONFIG_HOME.join(...)`. Defined in `files/--HOME--/.shellrc` and
    `scripts/utilities/env_vars.rb`. See `path-constants.md`.
+   **Exception that OVERRIDES this and the defensive `${VAR:-default}` / "variable might be unset"
+   guards: SSH config files** (`files/--HOME--/.ssh/*` incl. `global_config`, `templates/ssh-config.template`,
+   `~/.ssh/config`). ssh cannot expand `${VAR:-x}` (it errors), so they use literal `~/.ssh/...` paths
+   and no shell-style expansion at all. `ssh-config.md` wins every conflict with the generic rules.
 4. **No subshell forks on the startup hot path** -- use `${PWD:t}` not `$(basename ...)`, the cached
    `is_arm`, the `zsh/stat` module. See `zsh-startup.md` § No Subshell Forks.
 5. **Per-repo git overrides** -- `push`/`pull`/`cc`/`upreb` dispatch to

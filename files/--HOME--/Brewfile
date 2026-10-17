@@ -267,7 +267,7 @@ brew 'watchman'
 # cask 'knockknock'   # app to find persistently installed softwares/services/malwares
 # cask 'licecap'
 # cask 'lulu'
-cask 'windows-app'    # replacement for microsoft-remote-desktop
+# cask 'windows-app'    # replacement for microsoft-remote-desktop
 cask 'microsoft-teams'
 # cask 'monolingual'
 # cask 'netspot'

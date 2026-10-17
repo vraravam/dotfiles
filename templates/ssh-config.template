@@ -1,10 +1,10 @@
 # Template for SSH client configuration.
 # file location: ~/.ssh/config
 
-# Note: `install-dotfiles.rb` automatically inserts the final Include line below — you
-# do not need to add it manually. If this file is created after
-# `fresh-install-of-osx.sh` has already run, re-run `install-dotfiles.rb` so it
-# can insert the Include line.
+# Note: `install-dotfiles.rb` automatically inserts the final 'Match all' + Include lines below
+# (and adds a missing 'Match all' above an existing Include) -- you do not need to add them
+# manually. If this file is created after `fresh-install-of-osx.sh` has already run, re-run
+# `install-dotfiles.rb` so it can insert them.
 
 # Note:
 # To generate new SSH keys (replace all placeholders with your values):
@@ -20,6 +20,16 @@
 # commands without the zsh environment loaded, this file MUST use hardcoded paths like
 # ~/.ssh/id_rsa-personal instead of variable references.
 
+# Notes on how this file and `global_config` (included at the bottom) interact:
+#   - `global_config` sets the defaults for every host (host key checking, no agent forwarding, no
+#     compression, keepalives) and connection multiplexing for hosts named github.com, gitlab.com,
+#     codeberg.org, github-*, gitlab-* and codeberg-*. Name per-account aliases that way to get
+#     multiplexing; keep the alias short (under ~30 characters) because the control socket path
+#     embeds it and unix sockets are limited to 104 characters.
+#   - ssh uses the FIRST value it finds for a setting, so a per-host override (for example
+#     `ForwardAgent yes` on a bastion you hop through) must sit in a Host block ABOVE the
+#     'Match all' + Include lines at the bottom, never in global_config.
+
 # Default GitHub identity (used when cloning via git@github.com directly - unless you use github-personal, etc while cloning and pushing)
 # Note: This cannot be removed since the 'pushInsteadOf' setting is needed for the dotfiles repo in a fresh-install scenario
 Host github.com
@@ -30,9 +40,23 @@ Host github-personal
   HostName github.com
   IdentityFile ~/.ssh/id_rsa-personal
 
+# Personal GitLab account (optional -- delete if you do not use GitLab)
+Host gitlab-personal
+  HostName gitlab.com
+  IdentityFile ~/.ssh/id_rsa-personal
+
+# Personal Codeberg account (optional -- delete if you do not use Codeberg)
+Host codeberg-personal
+  HostName codeberg.org
+  IdentityFile ~/.ssh/id_rsa-personal-codeberg
+
 # <company-name> GitHub account (explicit alias — used with url rewriting in gitconfig-inc.template)
 Host github-<company-name>
   HostName github.com
   IdentityFile ~/.ssh/id_ed25519-<company-name>
 
+# 'Match all' ends the scope of the last 'Host' block above. Without it, ssh treats the Include as
+# conditional on that last Host block and global_config (Host *, multiplexing, ...) would apply to
+# that single alias only (verified with 'ssh -G').
+Match all
 Include ~/.ssh/global_config

@@ -227,6 +227,8 @@ a requirement.
 
 ### 2.3 Optional Customizations
 
+Behavior such as clone timeouts and retry counts, and the opt-outs for the faster install paths, is tuned with environment variables: see the [Environment variables reference](Extras.md#environment-variables).
+
 #### A. Path Structure
 
 In **[files/--HOME--/.shellrc](files/--HOME--/.shellrc)** — adjust to match your preferred folder layout:

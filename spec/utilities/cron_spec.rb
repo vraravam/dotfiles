@@ -74,9 +74,12 @@ RSpec.describe Cron do
   end
 
   describe '.recron' do
+    let(:backup) { tmp.join('crontab_backup') }
+
     before do
       Logging.state.reset!
       stub_const('Cron::CRONTAB_FILE', tmp.join('crontab.txt'))
+      allow(EnvVars).to receive(:cron_backup_file).and_return(backup)
     end
 
     after { Logging.state.reset! }
@@ -111,6 +114,50 @@ RSpec.describe Cron do
       expect { expect(described_class.recron).to be true }.to output.to_stdout
     end
 
+    it 'falls back to the backup of the suspended schedule when there is no active crontab and no crontab.txt' do
+      stub_existing_crontab('')
+      backup.write("0 * * * * echo original\n")
+      expect(described_class).to receive(:restore_cron).with(backup).and_return(true)
+
+      expect { expect(described_class.recron).to be true }.to output(/restoring the schedule from the backup/).to_stdout
+    end
+
+    it 'falls back to the backup when crontab.txt exists but is empty' do
+      stub_existing_crontab('')
+      tmp.join('crontab.txt').write('')
+      backup.write("0 * * * * echo original\n")
+      expect(described_class).to receive(:restore_cron).with(backup).and_return(true)
+
+      expect { described_class.recron }.to output.to_stdout
+    end
+
+    it 'prefers crontab.txt over the backup (it is the tracked source of truth)' do
+      stub_existing_crontab('')
+      tmp.join('crontab.txt').write("0 * * * * echo tracked\n")
+      backup.write("0 * * * * echo original\n")
+      expect(described_class).to receive(:restore_cron).with(tmp.join('crontab.txt')).and_return(true)
+
+      expect { described_class.recron }.to output.to_stdout
+    end
+
+    it 'prefers the live crontab over both' do
+      stub_existing_crontab("0 * * * * echo live\n")
+      tmp.join('crontab.txt').write("0 * * * * echo tracked\n")
+      backup.write("0 * * * * echo original\n")
+      expect(described_class).to receive(:restore_cron).with(satisfy { |file| file.read.include?('live') }).and_return(true)
+
+      expect { described_class.recron }.to output.to_stdout
+    end
+
+    it 'is false, leaving the backup untouched, when the backup schedule cannot be loaded' do
+      stub_existing_crontab('')
+      backup.write("0 * * * * echo original\n")
+      allow(described_class).to receive(:restore_cron).and_return(false)
+
+      expect(described_class.recron).to be false
+      expect(backup.read).to eq("0 * * * * echo original\n")
+    end
+
     it 'is true, without loading anything, when there is no schedule anywhere' do
       stub_existing_crontab('')
       expect(described_class).not_to receive(:restore_cron)
@@ -133,6 +180,7 @@ RSpec.describe Cron do
 
     it 'removes the backup once the crontab was reinstalled' do
       allow(described_class).to receive(:recron).and_return(true)
+      allow(CommandUtils).to receive(:query).with('crontab', '-l').and_return('0 * * * * echo original')
 
       described_class.with_cron_suspended { :work }
 
@@ -152,6 +200,52 @@ RSpec.describe Cron do
       expect(described_class).not_to receive(:recron)
 
       expect { described_class.with_cron_suspended { raise 'boom' } }.to raise_error('boom')
+    end
+  end
+
+  describe '.retire_backup' do
+    let(:backup) { tmp.join('crontab_backup') }
+
+    before do
+      Logging.state.reset!
+      allow(EnvVars).to receive(:cron_backup_file).and_return(backup)
+    end
+
+    after { Logging.state.reset! }
+
+    it 'deletes a backup that matches the installed crontab' do
+      backup.write("0 * * * * echo same\n")
+      allow(CommandUtils).to receive(:query).with('crontab', '-l').and_return('0 * * * * echo same')
+
+      described_class.retire_backup
+
+      expect(backup).not_to exist
+      expect(Pathname("#{backup}.replaced")).not_to exist
+    end
+
+    it 'deletes an empty backup' do
+      backup.write('')
+      allow(CommandUtils).to receive(:query).with('crontab', '-l').and_return('0 * * * * echo new')
+
+      described_class.retire_backup
+
+      expect(backup).not_to exist
+    end
+
+    it 'keeps a backup that differs from the installed crontab under another name, so resume_cron cannot restore it' do
+      backup.write("0 * * * * echo original\n")
+      allow(CommandUtils).to receive(:query).with('crontab', '-l').and_return('0 * * * * echo tracked')
+
+      expect { described_class.retire_backup(backup) }.to output(/kept as/).to_stdout
+
+      expect(backup).not_to exist
+      expect(Pathname("#{backup}.replaced").read).to eq("0 * * * * echo original\n")
+    end
+
+    it 'does nothing when there is no backup' do
+      expect(CommandUtils).not_to receive(:query)
+
+      expect { described_class.retire_backup }.not_to raise_error
     end
   end
 end

@@ -18,7 +18,7 @@ scripts invoked during initial setup or backup/restore operations.
 - `scripts/install-dotfiles.rb` - Symlink/copy manager for `files/` directory
 - `scripts/osx-defaults.sh` - macOS system preferences
 - `scripts/setup-login-item.rb` - Login item configuration
-- `scripts/capture-prefs.rb` - Preferences export/import with timestamp validation
+- `scripts/capture-prefs.rb` - Preferences export/import (run in-process by `PreferencesRestore`)
 - `scripts/resurrect-repositories.rb` - Repository restoration from tracked state
 
 **Related files**:
@@ -191,6 +191,24 @@ Homebrew):
 The logic for installing brew for first-time vs updating must not be duplicated.
 Extract into a single conditional.
 
+On a vanilla OS the shell starts the Homebrew installer **early and in the background**
+(`_start_early_brew_install`, right after the Xcode Command Line Tools step and after the sudo
+keep-alive is running): it needs only the CLT, sudo and the network, not the dotfiles repo. The
+whole download (with the usual retry/cache-bust flags) and `NONINTERACTIVE=1 /bin/bash install.sh`
+run in one disowned subshell with stdin from `/dev/null` and output to
+`${TMPDIR:-/tmp}/dotfiles_brew_install.log`; its pid goes to `.../dotfiles_brew_install.pid`, and the
+script exports `_DOTFILES_BREW_INSTALL_PID` and `_DOTFILES_BREW_INSTALL_LOG`. The subshell clears the
+script's ERR/EXIT traps first, so it can never run the script's cleanup on its behalf. A re-run adopts
+a still-running installer instead of starting a second one. If the script itself fails or is
+interrupted, the installer is **deliberately left running** (killing it half-way leaves a broken
+Homebrew); the EXIT trap prints a note with the pid and log. Opt out with `FRESH_INSTALL_NO_EARLY_BREW=1`.
+
+`HomebrewInstall` (Ruby) is the other half: when brew is absent it waits for that pid (polling, a
+log-tail line every 30s, bounded to 15 minutes, SIGTERM on timeout) **before** looking for
+`bin/brew` (the file can exist while the installer is still running), verifies brew exists, and falls
+back to downloading and running the installer itself when the early one is gone, failed or timed out.
+Its own installer run is capped at 30 minutes overall and 10 minutes without output.
+
 ## Antidote in Fresh Install
 
 `Antidote.update_and_regenerate_bundle` is invoked two ways, neither of which is
@@ -228,6 +246,62 @@ Re-enable after the sourcing. Add comment explaining why:
 Key rule: set at top of `main` when `FIRST_INSTALL` is true; unset immediately
 after `install-dotfiles.rb` runs (which symlinks `${XDG_CONFIG_HOME}/git/config` into place).
 
+It also turns on connection multiplexing (`ControlMaster=auto`, `ControlPersist=120`,
+`ControlPath=/tmp/.dotfiles-ssh-cm-<uid>/%C`) because every git operation otherwise pays a ~2s ssh
+handshake and each fresh repo does 3-5 of them. The control directory is created mode 700 and its
+owner is checked (multiplexing is left off if that fails). `/tmp` rather than `$TMPDIR` because the
+macOS `$TMPDIR` can push the socket path past the 104-byte limit, and not `~/.ssh` because that is
+tracked by the home repo. The bootstrap's `Compression=no` overrides `Compression yes` from
+`global_config`. After the first install the same effect comes from the `ControlMaster` block in
+`files/--HOME--/.ssh/global_config` (see `ssh-config.md` for the `Match all` requirement).
+
+## First Dotfiles Clone: Stall Protection
+
+`git-with-retry` is not on `PATH` before the dotfiles repo exists, so the plain-clone fallback of
+`clone_repo_into` (used for the very first clone) retries itself: 3 attempts with
+`-c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30` (a stalled transfer aborts instead of hanging),
+the temp folder wiped between attempts and a 5s pause. The success path is unchanged.
+
+Every non-keybase clone (this inline fallback and the `git-with-retry` path) honors the optional
+`GIT_CLONE_INACTIVITY_SECS` (default 25) and `GIT_CLONE_ATTEMPTS` (default 5; 3 inline), applied by
+`_git_clone_guard`. They are transport-agnostic on purpose: https and ssh keep their native stall
+settings (`http.lowSpeedLimit`, `ServerAlive*`). A bad value is warned about and ignored.
+
+The human-facing catalog of every environment variable is `Extras.md` § Environment variables; when
+adding or changing one, update that table, not a second list here.
+
+## `keybase://` Clones
+
+`clone_repo_into` guards a `keybase://` clone like any other transport: `git with-retry` with
+**inactivity tracking on the clone folder**, not a fixed wall clock. Measured with keybase 6.6.3 on a
+real repository, `.git/objects` grows steadily while `git-remote-keybase` transfers (137MB at 4s,
+1.04GB at 20s), so a slow but steady clone is not killed on every attempt the way the old fixed 60s
+limit did. The allowance is `KEYBASE_CLONE_INACTIVITY_SECS` (default 120s; 600s with 2 attempts on a
+`FIRST_INSTALL`, where KBFS is still syncing team/device keys and a first clone can sit without visible
+progress for minutes). A first install used to run completely unguarded (a hang blocked it forever); it
+is still unguarded only while `git-with-retry` is not on `PATH` yet, or with `KEYBASE_CLONE_UNWRAPPED=1`
+(the old single attempt). `_keybase_clone_guard` picks these values.
+
+Before cloning there are two best-effort checks, neither fatal: the containing KBFS folder listing
+(`keybase fs ls /keybase/private/<user>`, ~1s -- a KBFS path that `keybase fs` resolves itself, not a file
+on disk, so it works although KBFS is mounted elsewhere) and `_wait_for_keybase_git_backend`, a
+`git ls-remote` through the helper (~2.5s), retried every 5s up to `KEYBASE_READY_ATTEMPTS` (default 12)
+times. The second is the one that matters: the failure seen on a fresh device is
+`git-remote-keybase error: (1) Server: block does not exist` while the daemon is logged in and the folder
+already lists. `keybase://` URLs never involve ssh, so none of the ssh config (multiplexing, host keys,
+compression) applies to them.
+
+## Command Line Tools
+
+`_install_xcode_command_line_tools` does not run `softwareupdate --list` (5s) when `xcode-select -p`
+already succeeds. When the tools are missing it creates the `.in-progress` marker file first (the CLT
+only show up in `--list` while it exists), runs `--list` through `_run_with_timeout` (vanilla macOS has
+no `timeout`/`gtimeout`: background + poll + kill, bounded to 120s), parses the "Command Line Tools"
+label (`_parse_clt_label`) and installs only that: `sudo softwareupdate -i "<label>"`. If no label is
+found, the list times out or the install fails it falls back to the old `softwareupdate -ia --force`
+(every recommended update) with a warning. Both step headers are always printed so the
+`[Step N of 14]` numbering matches the Ruby total.
+
 ## Crontab During Fresh Install
 
 Fresh install uses `suspend_cron` / `resume_cron` to avoid cron conflicts.
@@ -236,15 +310,34 @@ the dotfiles repo is cloned.
 
 The error trap must call `resume_cron` if `_DOTFILES_CRON_BACKUP_FILE` exists.
 
+The script backs up the live crontab (`crontab -l`) and then clears it (`crontab -r`). The backup is
+**never overwritten with an empty one**: a run that crashed after `crontab -r` would otherwise lose
+the only copy on the next start (a message says when an older backup is kept; a non-empty live
+crontab still replaces it). The EXIT trap restores a leftover non-empty backup when cron is empty,
+then removes the file, so even a bare `exit 1` does not lose the schedule.
+
+The hourly schedule is installed by the Ruby `Setup cron jobs` step, which runs **after the tracked
+repositories are resurrected** (not before): an hourly `software-updates-cron` firing during the long
+clone phase, or while the background Brewfile install is still running, would fight them for the
+network and for Homebrew. If the full Brewfile install is still running when cron is installed, the
+run logs a note that the first hourly run may overlap it.
+
 ### `recron` Fallback Logic
 
 `recron` (called during fresh-install to set up cron jobs) uses a fallback strategy
 to preserve existing schedules while supporting vanilla OS installs:
 
-1. **Capture existing crontab**: Run `crontab -l` to a temp file
+1. **Capture existing crontab**: Run `crontab -l` (by now the shell has already run `crontab -r`,
+   so on a fresh-install run this is empty)
 2. **Fallback to tracked file**: If no existing crontab, use `${PERSONAL_CONFIGS_DIR}/crontab.txt`
-3. **User action if both empty**: Print user_action instructing user to create `crontab.txt`
-4. **Load non-empty schedule**: Install whichever source (existing or tracked) is non-empty
+   (ignored when empty)
+3. **Fallback to the shell's backup**: If that is missing or empty too, use the content of
+   `_DOTFILES_CRON_BACKUP_FILE`, i.e. the user's original schedule
+4. **User action if all are empty**: Print user_action instructing user to create `crontab.txt`
+5. **Load non-empty schedule**: Install whichever source is non-empty, then `Cron.retire_backup`:
+   the backup is removed only after the install succeeded, and only if it matches what was
+   installed; a differing original is renamed `<name>.replaced`, so `resume_cron` can never put the
+   old schedule back over the new one
 
 **Rationale:**
 - Preserves user's custom cron jobs (don't overwrite with defaults)
@@ -280,7 +373,7 @@ call time to compute the duration; a pre-formatted string breaks that arithmetic
 ## Brewfile Truncation on `FIRST_INSTALL`
 
 The Brewfile install lives in Ruby (`BrewBundle` in `scripts/utilities/brew_bundle.rb`, built on the
-pure command wrappers in `Brew`). `FreshInstallPostClone` calls it once the dotfiles repository is
+pure command wrappers in `Brew`; the base section, the retry and the background install live in `BrewBundle`, while `bupc` and cron use the argument-less `Brew.sync_bundle`). `FreshInstallPostClone` calls it once the dotfiles repository is
 cloned and install-dotfiles has linked `~/Brewfile`:
 
 ```ruby
@@ -294,14 +387,25 @@ heavy packages; the whole Brewfile is then installed in a detached background jo
 On a pre-configured machine (no `FIRST_INSTALL`) the whole Brewfile is used, and the install is skipped
 when `brew bundle check` already passes. A failure makes `BrewBundle.run` return false after recording its own warning, and the script carries on.
 
+On a first install `BrewBundle` installs the base content without the preceding `Brew.bundle_check`, which skips the full-file `brew bundle check -v`: it
+always fails on a vanilla OS and costs ~2s while evaluating the Brewfile DSL once more. A failed
+`brew bundle install` (typically a flaky cask download) is retried once after 5 seconds. `brew bundle`
+itself is deliberately not given a timeout: its `-q` output gives no progress to judge a stall by, and
+killing a long cask install does more harm than waiting.
+
+The detached full-Brewfile job is tracked (`BrewBundle.full_install_state`, `report_full_install`):
+a non-zero exit is recorded as a warning naming the log, and while it is still running the closing
+user action and the notification say so -- the run never reports everything as installed while casks
+are still installing.
+
 The Brewfile must have exactly one sentinel **comment** line that starts with `# FIRST_INSTALL:` to mark
-the end of the base section. `Brew.base_brewfile_content` returns everything above it (nil when the
+the end of the base section. `BrewBundle.base_brewfile_content` returns everything above it (nil when the
 sentinel is missing, in which case `BrewBundle` warns and installs the whole file as the base section).
 
 The sentinel is a comment, so the match must not exclude comment lines. (An earlier `sed` pattern,
 `/^[^#].*FIRST_INSTALL/q`, did exactly that: it never matched, so the whole Brewfile was installed as the
 "base section" and the split was a silent no-op.) `spec/brewfile_spec.rb` fails if the sentinel is
-missing, duplicated, or no longer splits the file, and checks `Brew.base_brewfile_content` against the
+missing, duplicated, or no longer splits the file, and checks `BrewBundle.base_brewfile_content` against the
 real Brewfile. Do not remove or rename the sentinel line -- it is load-bearing for the vanilla OS
 install path.
 
@@ -341,6 +445,84 @@ let the module record its own failures with `Logging.record_warning`/`record_err
 only for a failure that must stop the run. A module that genuinely needs to know about a vanilla install
 (`BrewBundle`, `PreferencesRestore`) defaults `first_install:` to `EnvVars.first_install?`.
 
+## Background Work During A First Install
+
+Four things run detached so the long, independent steps overlap. The foreground run joins or reports
+on each of them, and nothing here is fire-and-forget:
+
+| Background job | Started by | Needs | Joined / reported by | Log | Opt-out |
+|---|---|---|---|---|---|
+| Homebrew installer | `_start_early_brew_install` (shell, after the CLT step) | CLT, sudo, network | `HomebrewInstall` waits for `_DOTFILES_BREW_INSTALL_PID`, then verifies brew | `${TMPDIR:-/tmp}/dotfiles_brew_install.log` | `FRESH_INSTALL_NO_EARLY_BREW=1` |
+| `osx-defaults.sh -s` baseline | `PreferencesRestore.start_baseline_in_background` (right after install-dotfiles) | the repo and sudo; not brew, not the home repo | `PreferencesRestore.run` joins it (30 min bound) before the import; failure recorded as an error | `~/Downloads/osx-defaults-baseline.log` | `FRESH_INSTALL_SERIAL_DEFAULTS=1` |
+| Full Brewfile install | `BrewBundle` after the base section | the base install | `BrewBundle.report_full_install` at wrap-up | `~/Downloads/brew-bundle-full-install.log` | -- |
+| Background `unshallow` batch | `ResurrectRepositories` after the last catalogue | the repos | not joined (see below) | `~/Downloads/unshallow-batch.log` | `FRESH_INSTALL_SKIP_BACKGROUND_UNSHALLOW=1` |
+
+`BackgroundJob` (`scripts/utilities/background_job.rb`) is the shared helper for starting such a child
+(stdout/stderr appended to a log, stdin closed so it can never compete for the terminal) and for
+polling, waiting with a bound and reading the log tail. It requires nothing beyond `pathname`, because
+`call-utility.rb` runs under `--disable-gems`.
+
+The baseline runs concurrently with Homebrew and the clones, so `osx-defaults.sh -s` must never prompt
+on the TTY (every `ask` is answered from its `-s` defaults; without cached sudo credentials the
+sudo-only steps are skipped, counted and reported as one warning) and returns a meaningful exit status.
+It is only started in the background when `sudo -n true` works, so it never competes for a password
+prompt; otherwise it runs inline as before.
+
+`PreferencesRestore.finish_pending` joins the baseline and closes the bracket when a run stops before
+the preferences step, and `FreshInstallPostClone._wrap_up_background_work` reports on the Brewfile job
+from the run's `ensure`, so the summary and the notification are truthful on every exit path.
+
+Deliberately **not** backgrounded: `resurrect-repositories.rb` processes repositories strictly one at a
+time, in this process, in path order. A parallel worker pool was built and removed -- replayed or
+interleaved per-repository output was too hard to follow when something failed. (`capture-prefs.rb`
+does use threads for its independent per-domain exports and imports, but the workers never log: results
+are replayed in order from the main thread.)
+
+## `FIRST_INSTALL`: Clones Stay Shallow
+
+On a first install `clone_repo_into` does **not** unshallow, run `git maintain` or `git siu` for the
+repositories it clones -- only the reftable migration runs. The one exception is `${DOTFILES_DIR}`,
+which keeps the full chain (the reftable-race comment in `_post_clone_maintenance` explains why). A
+repository cloned in this run is also not fetched a second time (the clone is fresh) unless it has
+other remotes that would otherwise never be fetched. Once every catalogue is resurrected, ONE detached
+low-priority batch (`nice -n 19`, own session, the equivalent of the user's `all unshallow`, i.e.
+`run-all.rb git unshallow` with `FOLDER=${HOME} MAXDEPTH=7`) completes them all; run-all itself stays
+sequential inside it. The closing message says repos were cloned shallow and that this job is fetching
+their history -- not that the install already did.
+
+## `osx-defaults.sh` On Re-Runs
+
+The script used to repeat destructive or noisy work on every run. Now:
+
+- **Machine names** (`_set_computer_names`): ComputerName, HostName, LocalHostName and the NetBIOS name
+  embed a timestamp, so a re-run used to rename the machine every time. They are set only when the
+  current `scutil --get` values do not already match the expected pattern; an existing timestamp is
+  reused and a fresh one is generated only when naming for the first time.
+- **Once per macOS version**: the LaunchServices rebuild (`lsregister -kill -r ...`) and the Spotlight
+  re-index (`mdutil -Eda`, `-ai off`) are guarded by stamps `${XDG_CACHE_HOME}/osx-defaults-lsregister-stamp`
+  and `osx-defaults-spotlight-stamp` holding the macOS version. `OSX_DEFAULTS_FORCE=1` ignores them. The
+  Spotlight stamp is written only if `mdutil -Eda` succeeded. (Stamp file names must contain `stamp`:
+  `delete_caches` keeps such files.)
+- **Batched scalar writes**: runs of scalar `defaults write` calls (bool, int, string, floats that are
+  exact in single precision) go through `_dw` and are flushed per domain with ONE
+  `defaults import <domain> -` (a merge: existing keys survive, types match `defaults write`).
+  `_dw <domain> <key> <type-flag> <value>` takes the same arguments as `defaults write`, so every line
+  is still copy-pasteable (prefix `defaults write` instead). NSGlobalDomain, `-currentHost`, sudo and
+  `/Library` domains, arrays, dicts and `-dict-add`/`-array-add` are never batched -- they flush the
+  pending batch and run as plain `defaults write`, preserving order; a failed import replays that
+  domain's writes one by one. **Never** use `defaults write <dom> '{ ... }'` (replaces the whole domain)
+  or edit the plist directly (bypasses `cfprefsd`). `OSX_DEFAULTS_NO_BATCH=1` turns `_dw` back into
+  plain writes.
+- **Proving a change is safe**: `OSX_DEFAULTS_DRY_RUN=1` maps every `defaults` call onto scratch plists
+  and records the other commands without touching any real preference. Run it for the old and the new
+  script and diff the per-domain dumps -- empty for every batched domain is the acceptance test.
+- **Bracket contract**: when `DOTFILES_APPS_BRACKETED` is non-empty (the Ruby step brackets the baseline
+  and the preferences import once) the script makes no kill/restart/suspend/resume/`reload_macos_prefs`
+  call; unset, it behaves exactly as before. `spec/osx_defaults_spec.rb` exercises all of this with
+  shims and a file-write sandbox -- specs must never touch real preferences.
+- Still run on every run (guard before changing): the `killall` of Safari/Mail/Chrome/..., rewriting
+  the iTerm Keyboard Map keys and the Firefox/Zen `user.js`.
+
 ## Hand-Off of Recorded Issues Between the Shell and Ruby
 
 `fresh-install-of-osx.sh` records its own warnings/errors in the `_step_warnings` / `_step_errors` arrays
@@ -365,43 +547,34 @@ run in-process: `PreferencesRestore` calls `CapturePrefs.run` directly (it resto
 - Consequence for module design: a module called from the install flow records its own failures
   (`Logging.record_*`) and the caller does not add a second, generic warning for the same problem.
 
-## `capture-prefs.rb` Timestamp Check
+## Preferences Step: Baseline, Then Export Or Import (Never Both)
 
-`capture-prefs.rb` validates that the backup preferences are not stale relative to
-`osx-defaults.sh` changes. The check compares git commit timestamps:
-- Last commit touching `scripts/osx-defaults.sh` in dotfiles repo
-- Last commit touching the preferences backup directory in home repo
+`PreferencesRestore.run` does one bracket around two operations: suspend the software-update schedule
+and stop the login-item apps once, run `osx-defaults.sh -s` (the baseline) and the `capture-prefs.rb`
+work, then one `reload_macos_prefs`, restart the apps and resume the schedule once (in an `ensure`).
+`DOTFILES_APPS_BRACKETED=1` in the children's environment tells `osx-defaults.sh` and
+`CapturePrefs.run(manage_apps: false)` not to bracket on their own; a standalone `capture-prefs.rb`
+run still does. Specs must never run `reload_macos_prefs` or touch the real home repo.
 
-If the backup predates `osx-defaults.sh` changes, the script would normally abort with
-a fatal error to prevent importing incomplete settings.
+`capture-prefs.rb` no longer has a "backup predates `osx-defaults.sh`" timestamp check: the baseline
+always runs first, and the backup is an overlay on top of it.
 
-**Exception for `FIRST_INSTALL`:** On vanilla OS, fresh-install runs `osx-defaults.sh -s`
-to baseline current system prefs BEFORE calling `capture-prefs.rb -i`. The backup import
-is an incremental overlay on top of this baseline. Therefore, an outdated backup is
-acceptable (and better than no backup) on `FIRST_INSTALL`.
+- **First install**: import the backup from the home repo (nothing to refresh).
+- **Pre-configured machine**: either refresh the backup from the machine (export all domains and commit
+  with `git sci`, which amends rather than piling up commits) **or** import it -- never both. Importing
+  right after a successful export would only write back what was just exported. To avoid exporting over
+  a newer backup pulled in from another machine, each successful export records
+  `${XDG_CACHE_HOME}/capture-prefs-export-stamp` (written only after the commit succeeded). If the last
+  home-repo commit touching `defaults/` is newer than that stamp, the backup is imported and left
+  alone. A machine with no stamp yet exports as before, so the first run after upgrading can still
+  overwrite a pulled backup once.
+- **Parallelism**: the per-domain export and import run on up to `CAPTURE_PREFS_JOBS` threads (default
+  6; `1` = serial). Workers never log; results are collected and replayed in the allowed-list order
+  from the main thread, and an exception in a worker is re-raised there. Measured on 377 real
+  domains: serial 5.3s, 6 jobs 1.5s, output identical.
+- `Plist.export_domain` writes `defaults export <domain> -` straight to the file (no `plutil` pass), and
+  excluded keys are stripped from the in-memory XML before `defaults import <domain> -`.
 
-The timestamp check is skipped when `ENV['FIRST_INSTALL']` is set:
-
-```ruby
-if osx_defaults_ts && backup_ts && backup_ts < osx_defaults_ts && !EnvVars.first_install?
-  _abort_with_error("Backup predates the last change to 'osx-defaults.sh' -- ...")
-end
-```
-
-**On pre-configured machines** (no `FIRST_INSTALL`), the check remains active -- importing
-stale prefs without the baseline step would overwrite newer settings with older ones.
-`fresh-install-of-osx.sh` automatically refreshes the backup on pre-configured machines:
-
-1. Runs `capture-prefs.rb -e` to export current preferences (stages files in git)
-2. Commits using `git sci "Preferences backup: <timestamp>"` (amends if ahead of remote, creates new if not)
-3. This updates the backup's git commit timestamp to current time
-4. Import then succeeds because backup timestamp is now newer than `osx-defaults.sh`
-
-The use of `git sci` ensures repeated fresh-install runs amend the same commit rather than
-creating a pile of preference backup commits.
-
-**Debugging note:** When `capture-prefs.rb` aborts via `_abort_with_error`, it calls
-`exit(1)`. This triggers the parent shell's ERR trap, but the reported line number may
-be misleading (trap captures the line where the trap string was defined, not where the
-failure occurred). Look for the warning message in the output to identify the actual
-failure point.
+**Debugging note:** a fatal error in `capture-prefs.rb` is reported through `Logging` and surfaces as a
+recorded error in the closing summary; look for that message rather than the line number of the shell
+ERR trap, which reports where the trap string was defined, not where the failure occurred.

@@ -15,7 +15,7 @@ Never hardcode user-specific or machine-specific paths. Always use environment v
 **This file applies to**: All path references, directory construction, and environment variable usage across the repository, including:
 - Path construction in shell scripts (using `${DOTFILES_DIR}`, `${PERSONAL_BIN_DIR}`, etc.)
 - Path construction in Ruby scripts (using `EnvVars::DOTFILES_DIR`, `EnvVars::HOME`, etc.)
-- Configuration files that reference file paths (`.gitconfig`, SSH config, etc.)
+- Configuration files that reference file paths (`.gitconfig`, etc.) -- **except SSH config files**, which are out of scope: ssh cannot expand variables, so they must use literal `~/.ssh/...` paths (see [`ssh-config.md`](./ssh-config.md), which overrides this file)
 - Scripts that build or manipulate file system paths
 - Any code that references user directories, project directories, or tool directories
 
@@ -248,7 +248,7 @@ dir = Pathname(__dir__)
 
 ## Scan Rule
 
-When editing any script or config file, flag every occurrence of a literal expanded path and replace it with the corresponding env var:
+When editing any script or config file, flag every occurrence of a literal expanded path and replace it with the corresponding env var. **Never apply this scan to SSH config files** (`files/--HOME--/.ssh/*`, `templates/ssh-config.template`, `~/.ssh/config`): a literal `~/.ssh/...` there is required, not a finding (`ssh-config.md` overrides this rule).
 
 | Find | Replace (Shell) | Replace (Ruby) |
 |------|-----------------|----------------|
