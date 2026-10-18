@@ -86,7 +86,7 @@ end
 
 # formulae pulled in for base configs (if these are absent, you will get errors and things won't work)
 brew 'antidote',
-  postinstall: "[ -f '${ZDOTDIR}/.aliases' ] && zsh -c 'source ${ZDOTDIR}/.aliases && update_antidote_and_regenerate_plugin_bundle' || true"
+  postinstall: "[ -f \"${ZDOTDIR}/.aliases\" ] && zsh -c 'source ${ZDOTDIR}/.aliases && update_antidote_and_regenerate_plugin_bundle' || true"
 brew 'delta'
 brew 'direnv'
 brew 'eza'
@@ -267,7 +267,7 @@ brew 'watchman'
 # cask 'knockknock'   # app to find persistently installed softwares/services/malwares
 # cask 'licecap'
 # cask 'lulu'
-cask 'windows-app'    # replacement for microsoft-remote-desktop
+# cask 'windows-app'    # replacement for microsoft-remote-desktop
 cask 'microsoft-teams'
 # cask 'monolingual'
 # cask 'netspot'

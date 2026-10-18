@@ -57,6 +57,12 @@ Also: [`context.md`](./context.md) (navigation, debugging, testing, related repo
   lose the executable bit (see [Executable Permission](#executable-permission-rule--mandatory-for-scripts)).
 - Ruby scripts must stay compatible with **Ruby 2.6** (system Ruby on vanilla macOS).
 - After every edit, run the [edit checklist](./domains/edit-checklist.md).
+- **Rule precedence**: a limit imposed by the *file format or tool itself* beats a generic style rule.
+  The standing case is **SSH config** (`files/--HOME--/.ssh/*`, `templates/ssh-config.template`,
+  `~/.ssh/config`): ssh does not understand `${VAR:-default}`, so [`ssh-config.md`](./domains/ssh-config.md)
+  overrides both "never hardcode paths" ([`path-constants.md`](./domains/path-constants.md)) and the
+  defensive "variable not initialized / use `${VAR:-}`" guidance in the shell rules. Use literal
+  `~/.ssh/...` paths there; never "fix" them into variables.
 
 ### Whitespace Rules — Mandatory for All Edits
 

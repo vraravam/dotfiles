@@ -61,7 +61,9 @@ find_in_folder_and_recompile() {
   local f # Loop variable
 
   if ! is_directory "${dir_to_scan}"; then
-    warn "Directory '$(yellow "${dir_to_scan}")' not found for zsh script recompilation." >&2
+    # On a first install the repos, personal scripts and antidote plugins are cloned after the
+    # zsh configs are first loaded, so a missing directory is expected and not worth a warning.
+    if ! is_first_install; then warn "Directory '$(yellow "${dir_to_scan}")' not found for zsh script recompilation." >&2; fi
     return
   fi
 

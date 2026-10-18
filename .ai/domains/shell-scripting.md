@@ -602,6 +602,7 @@ See [`path-constants.md`](./path-constants.md) for complete rules on environment
 - Always quote: `"${DOTFILES_DIR}/scripts"`
 - Never hardcode derived paths: use `${XDG_CONFIG_HOME}` not `"${HOME}/.config"`
 - Available constants: `${DOTFILES_DIR}`, `${PERSONAL_BIN_DIR}`, `${XDG_CONFIG_HOME}`, etc.
+- **Not for SSH config files**: they are not shell, ssh cannot expand `${VAR}`/`${VAR:-x}`, so they use literal `~/.ssh/...` -- [`ssh-config.md`](./ssh-config.md) overrides every shell rule here, including the quoting/brace/default-value ones
 
 ### `${var}` Brace Notation
 
@@ -1112,6 +1113,13 @@ returns `1`, then evaluates to `0` on the next call). Use `(( var -= 1 )) || tru
 **Scan rule:** whenever adding or reviewing an arithmetic counter in a script
 that uses `set -e`, replace bare `(( var++ ))` / `(( var-- ))` with
 `(( var += 1 )) || true` / `(( var -= 1 )) || true`.
+
+## `find -delete` Disables `-prune`
+
+`-delete` implies `-depth`, which silently turns `-prune` into a no-op, so a "prune this subtree, then
+delete matches" command quietly descends into (and deletes inside) the pruned tree. Use
+`-exec rm -f {} +` whenever `-prune` is part of the expression (see `delete_caches` in `.aliases`). A
+plain `-delete` is fine without `-prune`; it also removes a directory emptied in the same pass.
 
 ## Common Mistakes (Code Review Findings)
 

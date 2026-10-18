@@ -81,6 +81,13 @@ if [[ -o interactive && -o zle && -t 1 ]] && (( $+commands[starship] )); then
   # when it changes or the directory is a new repo. A '.git' file (worktree/submodule) has
   # no readable pack dir at that path, so it is simply recomputed each prompt.
   # Outside a repo the variable is unset, which hides the segment.
+  #
+  # The in-memory cache starts empty in every new shell, and the one git fork it saves is
+  # 13-26ms of startup in a repo, so the answer is also kept in a small file per repository
+  # (${XDG_CACHE_HOME}/git-size/<path with / as ->): the key line, then the size. A new shell
+  # reads it with the 'read' builtin (no fork) and only re-runs git when the key differs. The file
+  # is best effort: unreadable, partial (two shells writing at once) or missing means a miss,
+  # and an empty size (git failed) is never written.
   zmodload -F zsh/stat b:zstat
   typeset -g _prompt_git_size_key='' _prompt_git_size_val=''
   _prompt_git_size() {
@@ -98,12 +105,25 @@ if [[ -o interactive && -o zle && -t 1 ]] && (( $+commands[starship] )); then
     if zstat -A mtime +mtime "${dir}/.git/objects/pack" 2>/dev/null; then key="${dir}:${mtime[1]}"; fi
 
     if [[ -z "${key}" || "${key}" != "${_prompt_git_size_key}" ]]; then
-      local out
-      out="$(command git -C "${dir}" count-objects -vH 2>/dev/null)"
+      local cache_file="${XDG_CACHE_HOME}/git-size/${dir//\//-}" cached_key='' cached_val=''
+      if [[ -n "${key}" && -r "${cache_file}" ]]; then
+        { IFS= read -r cached_key; IFS= read -r cached_val; } <"${cache_file}" 2>/dev/null
+      fi
+
+      if [[ -n "${key}" && "${cached_key}" == "${key}" && -n "${cached_val}" ]]; then
+        _prompt_git_size_val="${cached_val}"
+      else
+        local out
+        out="$(command git -C "${dir}" count-objects -vH 2>/dev/null)"
+        # 'size-pack: 2.63 MiB' -> '2.63 MiB'
+        # Unquoted on purpose: inside double quotes (f) no longer splits into lines.
+        _prompt_git_size_val=${${(M)${(f)out}:#size-pack:*}#size-pack: }
+        if [[ -n "${key}" && -n "${_prompt_git_size_val}" ]]; then
+          [[ -d "${cache_file:h}" ]] || command mkdir -p "${cache_file:h}" 2>/dev/null
+          { print -r -- "${key}"$'\n'"${_prompt_git_size_val}" >| "${cache_file}"; } 2>/dev/null
+        fi
+      fi
       _prompt_git_size_key="${key}"
-      # 'size-pack: 2.63 MiB' -> '2.63 MiB'
-      # Unquoted on purpose: inside double quotes (f) no longer splits into lines.
-      _prompt_git_size_val=${${(M)${(f)out}:#size-pack:*}#size-pack: }
     fi
     typeset -gx _STARSHIP_GIT_SIZE="${_prompt_git_size_val}"
   }
@@ -117,7 +137,19 @@ if [[ -o interactive && -o zle && -t 1 ]] && (( $+commands[starship] )); then
   # run just to locate the system gitconfig (~12ms per prompt), and the only system config
   # here is 'credential.helper=osxkeychain', which a prompt never needs but real git does.
   # A prefix assignment on a function call is restored when it returns, so nothing leaks.
-  (( $+functions[ftl-prompt] )) && GIT_CONFIG_NOSYSTEM=1 ftl-prompt starship
+  if (( $+functions[ftl-prompt] )); then
+    GIT_CONFIG_NOSYSTEM=1 ftl-prompt starship
+
+    # Transient prompt: a finished command line collapses to the short '[profiles] transient'
+    # prompt of starship.toml, so scrollback reads as a list of commands. Loaded here and not
+    # through the antidote bundle for the same reason as ftl-prompt above (the bundle only adds the
+    # plugin directory to fpath, it sources nothing), and it must come after ftl-prompt so that
+    # starship's precmd is registered first and the status it records is current when the short
+    # prompt is rendered. Costs one starship run per prompt (see ftl-transient.zsh); turn it off
+    # with 'ftl-transient off' or by removing these lines.
+    # load_file_if_exists "${ANTIDOTE_HOME}/github.com/mattmc3/starship-ftl/ftl-transient.zsh"
+    # (( $+functions[ftl-transient] )) && ftl-transient on
+  fi
 fi
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -258,8 +290,7 @@ _defer_or_run() {
 # used immediately after shell start, so completion definitions can load after
 # prompt renders without impacting user experience. Saves ~1.5-3ms from first prompt.
 _deferred_git_extras_completion() {
-  local git_extras_completion="${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
-  load_file_if_exists "${git_extras_completion}"
+  load_file_if_exists "${HOMEBREW_PREFIX}/opt/git-extras/share/git-extras/git-extras-completion.zsh"
   unfunction _deferred_git_extras_completion
 }
 
@@ -308,7 +339,9 @@ if is_file "${ANTIDOTE_PLUGIN_ZSH}" && is_file "${ANTIDOTE_PLUGIN_TXT}"; then
       warn "antidote: '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' is newer than the bundle -- run '$(cyan 'update_antidote_and_regenerate_plugin_bundle')' manually to regenerate it."
     fi
   fi
-else
+elif ! is_first_install; then
+  # Both files come from the home repo, which a first install has not cloned yet when the zsh
+  # configs are first loaded, so their absence is expected there and not worth a warning.
   warn "antidote: either '$(yellow "${ANTIDOTE_PLUGIN_ZSH}")' or '$(yellow "${ANTIDOTE_PLUGIN_TXT}")' are not present - skipping regeneration"
 fi
 
@@ -421,6 +454,36 @@ _deferred_mise_activation() {
 }
 
 _defer_or_run _deferred_mise_activation
+
+# Prompt hooks that only need to run when the directory changes (and once at startup), not before
+# every prompt. Each costs real time per prompt, measured with zprof: _mise_hook_precmd ~15-30ms,
+# _direnv_hook ~10ms, omz_termsupport_cwd ~4ms. All three already run for the starting directory
+# (direnv in the first precmd, mise through its deferred startup call above, the iTerm/terminal cwd
+# report explicitly below) and are also registered as chpwd hooks, so removing them from precmd
+# only drops the redundant per-prompt call.
+#
+# Tradeoff to know about: editing .envrc / .mise.toml in place, or running 'direnv allow', is no
+# longer picked up at the next prompt -- 'cd' away and back, or run 'direnv reload' / 'mise
+# hook-env'. Set ZSH_PROMPT_HOOKS_EVERY_PROMPT=1 (e.g. in ~/.zshenv) to keep the old behavior
+# without editing this file.
+#
+# Queued after _deferred_mise_activation (zsh-defer runs its queue in order), because mise's
+# precmd hook only exists once that has sourced its cache, and after the bundle's deferred
+# termsupport source, which registers omz_termsupport_cwd.
+_deferred_trim_prompt_hooks() {
+  if [[ -z "${ZSH_PROMPT_HOOKS_EVERY_PROMPT:-}" ]]; then
+    precmd_functions=(${precmd_functions:#(_direnv_hook|_mise_hook_precmd|omz_termsupport_cwd)})
+    # Report the starting directory once (precmd used to), then on every cd.
+    if (($+functions[omz_termsupport_cwd])); then
+      omz_termsupport_cwd
+      if (( ! ${chpwd_functions[(I)omz_termsupport_cwd]} )); then
+        chpwd_functions+=(omz_termsupport_cwd)
+      fi
+    fi
+  fi
+  unfunction _deferred_trim_prompt_hooks
+}
+_defer_or_run _deferred_trim_prompt_hooks
 
 # Initialize starship prompt (must be after plugins so it wins the PROMPT setup).
 #
@@ -565,6 +628,12 @@ _deferred_compinit() {
   fi
   if ((stale)); then
     compinit -d "${ZSH_COMPDUMP}"
+    # A full compinit does NOT rewrite the dump when the number of completion files is unchanged,
+    # so its mtime stays older than the touched fpath directory that made it look stale -- and
+    # every later shell would repeat the full compinit plus compaudit (~8ms of first-command lag).
+    # Refresh the mtime so the next start takes the fast 'compinit -C' path. Stale path only, and
+    # deferred, so the fork is not on the first-prompt path.
+    command touch "${ZSH_COMPDUMP}"
   else
     compinit -C -d "${ZSH_COMPDUMP}"
   fi

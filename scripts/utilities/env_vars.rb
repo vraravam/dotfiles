@@ -412,6 +412,32 @@ module EnvVars
     EnvLite.set?('CURL_RETRY_OPTS')
   end
 
+  # PID of the Homebrew installer that fresh-install-of-osx.sh started in the background right
+  # after the Xcode command-line tools step (0 when none was started).
+  # Mirrors: _DOTFILES_BREW_INSTALL_PID (exported by fresh-install-of-osx.sh)
+  #
+  # @return [Integer] The pid, or 0 when unset/malformed
+  def self.brew_install_pid
+    _integer('_DOTFILES_BREW_INSTALL_PID', '0')
+  end
+
+  # Log file of that background Homebrew installer.
+  # Mirrors: _DOTFILES_BREW_INSTALL_LOG (exported by fresh-install-of-osx.sh)
+  #
+  # @return [Pathname, nil] The log, or nil when unset
+  def self.brew_install_log
+    _optional_pathname('_DOTFILES_BREW_INSTALL_LOG')
+  end
+
+  # Worker threads capture-prefs uses for the per-domain `defaults` calls (1 = serial).
+  # Mirrors: CAPTURE_PREFS_JOBS env var
+  #
+  # @return [Integer] At least 1 (default 6; a malformed value falls back to the default)
+  def self.capture_prefs_jobs
+    jobs = _integer('CAPTURE_PREFS_JOBS', '6')
+    jobs.positive? ? jobs : 6
+  end
+
   # Generic "is this variable set to a non-blank value" check, for variables whose names are
   # owned by another module (e.g. GitOverrides::SKIP_ENV_VAR).
   #

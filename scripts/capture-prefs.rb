@@ -14,6 +14,12 @@
 #               capture-prefs.rb -f <search>  # Discover and append matching domains to the allowed list
 #   Module:     CapturePrefs.run(operation: 'export')  # or 'import'
 #               CapturePrefs.find_and_append(search: 'ghostty')
+#
+# The per-domain `defaults` calls run on a small thread pool (CAPTURE_PREFS_JOBS, default 6,
+# 1 = serial); results are collected per domain and logged in the allowed list's order from the
+# calling thread. DOTFILES_APPS_BRACKETED=1 means a caller already suspended the software-update
+# schedule, stopped the login-item apps and will reload the preference services (see
+# PreferencesRestore): this script then does none of that itself.
 
 require 'pathname'
 require 'set'
@@ -59,18 +65,41 @@ module CapturePrefs
   # 'capture-prefs.rb -f') never treats it as a domain to 'defaults import'.
   LAUNCH_SERVICES_FILE_NAME = 'default-app-handlers.plist'
 
+  # Records when this machine last exported its preferences (the file's mtime). PreferencesRestore
+  # compares it with the age of the backup in the home repo, to tell a backup pulled from another
+  # machine from one this machine wrote. The name contains 'stamp' so delete_caches keeps it.
+  EXPORT_STAMP_NAME = 'capture-prefs-export-stamp'
+
+  # Public API method: the folder inside the personal configs that holds the backed-up plists.
+  #
+  # @return [Pathname]
+  def defaults_dir
+    EnvVars::PERSONAL_CONFIGS_DIR.join('defaults')
+  end
+
+  # When this machine last exported its preferences successfully.
+  #
+  # @return [Time, nil] nil when it never did (or the record is gone)
+  def last_export_time
+    stamp = EnvVars::XDG_CACHE_HOME.join(EXPORT_STAMP_NAME)
+    stamp.file? ? stamp.mtime : nil
+  end
+
   # Public API method.
   #
   # @param operation [String] Either 'export' or 'import'
+  # @param manage_apps [Boolean] Whether this run suspends the software-update schedule, stops and
+  #   restarts the login-item apps and reloads the preference services itself. False when a caller
+  #   already brackets the work (the default follows DOTFILES_APPS_BRACKETED).
   # @return [Boolean] true on success, false on error
   # :reek:UtilityFunction -- Uses instance variable @operation for memoized helpers
-  def run(operation:)
+  def run(operation:, manage_apps: !EnvVars.set?('DOTFILES_APPS_BRACKETED'))
     Logging.error "Invalid operation: '#{operation.to_s.yellow}'. Must be 'export' or 'import'." unless %w[export import].include?(operation)
 
     @operation = operation
+    @manage_apps = manage_apps
 
     # Extract constants used multiple times
-    personal_configs_dir = EnvVars::PERSONAL_CONFIGS_DIR
     dotfiles_dir = EnvVars::DOTFILES_DIR
 
     # Validate required env vars. PERSONAL_CONFIGS_DIR does not need to already
@@ -78,8 +107,10 @@ module CapturePrefs
     # install running this for the first time legitimately won't have it yet).
     Logging.error "DOTFILES_DIR not found: '#{dotfiles_dir.cyan}'" unless dotfiles_dir.directory?
 
-    target_dir = personal_configs_dir.join('defaults')
+    target_dir = defaults_dir
     PathUtils.ensure_directories_exist(target_dir)
+
+    return _process(target_dir) unless manage_apps
 
     # Suspend the automatic software update schedule so background update
     # activity cannot interfere with plist reads/writes during export or import.
@@ -130,47 +161,13 @@ module CapturePrefs
     end
 
     Logging.info "Running operation: '#{@operation.yellow}'"
-    saved_count = 0
-
-    domains.each do |app_pref|
-      app_pref_colored = app_pref.light_cyan
-      Logging.debug "Processing '#{app_pref_colored}'"
-
-      target_file = target_dir.join("#{app_pref}.plist")
-
-      if _exporting?
-        unless Plist.export_domain(app_pref, target_file)
-          Logging.record_warning("Failed to export '#{app_pref_colored}'")
-          next
-        end
-
-        # Strip non-portable keys before staging to git
-        Plist.strip_excluded_keys(app_pref, target_file, excluded_by_domain)
-
-        # Delete if stripping left an empty dict
-        if Plist.keys?(target_file)
-          saved_count += 1
-        else
-          target_file.unlink
-          Logging.debug "Deleted empty plist for '#{app_pref_colored}' -- no keys remain after stripping"
-        end
-      else
-        # Import
-        unless file?(target_file)
-          Logging.debug "Skipping import of '#{app_pref_colored}' -- no exported plist found"
-          next
-        end
-
-        # Strip non-portable keys in memory and feed the result to `defaults import` on stdin
-        xml = Plist.stripped_xml(app_pref, target_file.read(encoding: 'UTF-8'), excluded_by_domain)
-        Logging.record_warning("Failed to import '#{app_pref_colored}'") unless Plist.import_xml(app_pref, xml)
-      end
-    end
+    saved_count = _process_domains(domains.to_a, target_dir, excluded_by_domain)
 
     _sync_default_app_handlers(target_dir.join(LAUNCH_SERVICES_FILE_NAME))
 
     # Post-processing
     if _exporting?
+      commit_failed = false
       begin
         GitProcessor.new(dir: EnvVars::HOME) do |git|
           # Git accepts absolute paths directly - no normalization needed
@@ -183,18 +180,23 @@ module CapturePrefs
             if git.smart_commit("Preferences backup: #{Core.current_timestamp}")
               Logging.success 'Committed preferences backup to HOME repo'
             else
-              Logging.record_warning 'Failed to commit backup -- import timestamp check may fail'
+              commit_failed = true
+              Logging.record_warning 'Failed to commit backup -- the backup in the home repo is not up to date'
             end
           end
         end
+        _record_export_time unless commit_failed
         Logging.success "Export complete. Staged changes in '#{target_dir.cyan}'."
       rescue RuntimeError => e
         Logging.record_warning "Skipping git add -- #{e.message}"
       end
     else
-      # Reload system services so imported preferences take effect immediately
-      MacOS.reload_macos_prefs
-      Logging.success 'System services reloaded -- most imported settings are now active.'
+      # Reload system services so imported preferences take effect immediately (a bracketing
+      # caller does that once, after everything it wrote)
+      if @manage_apps
+        MacOS.reload_macos_prefs
+        Logging.success 'System services reloaded -- most imported settings are now active.'
+      end
       _notify_apps_needing_restart
     end
 
@@ -202,6 +204,130 @@ module CapturePrefs
     Logging.success "Operation finished. Processed #{domains.length.to_s.purple} domains (denied-list entries filtered at load time)#{saved_msg}."
     true
   end
+
+  # Exports or imports every domain in +domains+ on a pool of CAPTURE_PREFS_JOBS threads and logs
+  # the outcomes, in the order of +domains+, from this thread (Logging keeps process-global state,
+  # so the workers never log).
+  #
+  # @param domains [Array<String>]
+  # @param target_dir [Pathname] The 'defaults' backup folder
+  # @param excluded_by_domain [Hash<String,Array<String>>]
+  # @return [Integer] How many files an export kept (0 for an import)
+  def _process_domains(domains, target_dir, excluded_by_domain)
+    exporting = _exporting?
+    results = parallel_map(domains, EnvVars.capture_prefs_jobs) do |app_pref|
+      target_file = target_dir.join("#{app_pref}.plist")
+      exporting ? _export_domain(app_pref, target_file, excluded_by_domain) : _import_domain(app_pref, target_file, excluded_by_domain)
+    end
+
+    saved_count = 0
+    domains.zip(results) do |app_pref, outcome|
+      app_pref_colored = app_pref.light_cyan
+      Logging.debug "Processing '#{app_pref_colored}'"
+      raise outcome.error if outcome.error
+
+      case outcome.value
+      when :saved then saved_count += 1
+      when :export_failed then Logging.record_warning("Failed to export '#{app_pref_colored}'")
+      when :emptied then Logging.debug "Deleted empty plist for '#{app_pref_colored}' -- no keys remain after stripping"
+      when :import_failed then Logging.record_warning("Failed to import '#{app_pref_colored}'")
+      when :not_backed_up then Logging.debug "Skipping import of '#{app_pref_colored}' -- no exported plist found"
+      end
+    end
+    saved_count
+  end
+
+  # Worker body of an export: exports +app_pref+ to +target_file+, strips the non-portable keys
+  # and removes the file again when nothing is left. Touches only that file; never logs.
+  #
+  # @return [Symbol] :saved, :emptied or :export_failed
+  def _export_domain(app_pref, target_file, excluded_by_domain)
+    return :export_failed unless Plist.export_domain(app_pref, target_file)
+
+    # Strip non-portable keys before staging to git
+    Plist.strip_excluded_keys(app_pref, target_file, excluded_by_domain)
+    return :saved if Plist.keys?(target_file)
+
+    # Delete if stripping left an empty dict
+    target_file.unlink
+    :emptied
+  end
+
+  # Worker body of an import. Never logs.
+  #
+  # @return [Symbol] :imported, :import_failed or :not_backed_up
+  def _import_domain(app_pref, target_file, excluded_by_domain)
+    return :not_backed_up unless file?(target_file)
+
+    # Strip non-portable keys in memory and feed the result to `defaults import` on stdin
+    xml = Plist.stripped_xml(app_pref, target_file.read(encoding: 'UTF-8'), excluded_by_domain)
+    Plist.import_xml(app_pref, xml) ? :imported : :import_failed
+  end
+
+  # Writes the record of this machine's last successful export (see EXPORT_STAMP_NAME).
+  #
+  # @return [void]
+  def _record_export_time
+    stamp = EnvVars::XDG_CACHE_HOME.join(EXPORT_STAMP_NAME)
+    stamp.dirname.mkpath
+    stamp.write("#{Core.current_timestamp}\n")
+  rescue SystemCallError => e
+    Logging.debug "Could not record the export time (#{e.message})"
+  end
+
+  private_class_method :_process_domains, :_export_domain, :_import_domain, :_record_export_time
+
+  # Outcome of one parallel_map item: the block's value, or the exception it raised.
+  Outcome = Struct.new(:value, :error)
+
+  # Maps +items+ through the block on up to +jobs+ threads. The result array is in the order of
+  # +items+ whatever order the workers finish in, and an exception raised by the block is captured
+  # in its Outcome (the caller decides when to re-raise) rather than killing a worker. With one job,
+  # or one item, nothing is threaded.
+  #
+  # @param items [Array]
+  # @param jobs [Integer] Maximum number of worker threads
+  # @yield [item] Must not touch process-global state such as Logging
+  # @return [Array<Outcome>] One per item, in order
+  def parallel_map(items, jobs, &block)
+    results = Array.new(items.size)
+    workers = [jobs.to_i, items.size].min
+    if workers <= 1
+      items.each_with_index { |item, idx| results[idx] = _outcome(item, &block) }
+      return results
+    end
+
+    queue = Queue.new
+    items.each_index { |idx| queue << idx }
+    Array.new(workers) do
+      Thread.new do
+        loop do
+          idx = _next_index(queue)
+          break unless idx
+
+          results[idx] = _outcome(items[idx], &block)
+        end
+      end
+    end.each(&:join)
+    results
+  end
+
+  # @param queue [Queue]
+  # @return [Integer, nil] The next index to work on, nil when the queue is drained
+  def _next_index(queue)
+    queue.pop(true)
+  rescue ThreadError
+    nil
+  end
+
+  # @return [Outcome]
+  def _outcome(item)
+    Outcome.new(yield(item), nil)
+  rescue StandardError => e
+    Outcome.new(nil, e)
+  end
+
+  private_class_method :_next_index, :_outcome
 
   # Finds every preference domain whose NAME contains +search+ (case-insensitive) and
   # appends the ones not yet listed to the allowed list, then re-sorts the file

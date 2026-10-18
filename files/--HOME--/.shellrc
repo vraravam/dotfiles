@@ -116,6 +116,7 @@ fi
 
 # Keybase repo names (comment out to disable Keybase entirely).
 export KEYBASE_HOME_REPO_NAME='home'
+# TODO: Change remote repo name to 'browser-profiles'
 export KEYBASE_PROFILES_REPO_NAME='profiles'
 # Optional: only a hint for the first-time 'keybase login <username>' (skips the account
 # prompt); has no effect once someone is logged in. Uncomment and set to use it.
@@ -145,7 +146,7 @@ export PERSONAL_BIN_DIR="${HOME}/personal/dev/bin"
 export PERSONAL_CONFIGS_DIR="${HOME}/personal/dev/configs"
 
 # All browser profiles are captured in this folder (might contain sensitive info like browsing history and so is considered private)
-# Use ${USER} (zsh/PAM builtin) instead of $(whoami) to avoid forking a subprocess on every shell start.
+# TODO: Change env variable name to BROWSER_PROFILES_DIR
 export PERSONAL_PROFILES_DIR="${HOME}/personal/${USER}/browser-profiles"
 # --------------------------------------------------------------------------------
 
@@ -610,7 +611,7 @@ error() {
   # a raw string -- ANSI codes would appear as literal escape characters there.
   local _msg="${1//${HOME}/~}"
   _set_log_indent
-  echo "${_LOG_INDENT}❌ ${RED}**ERROR**${NC} ${_msg} 🤓"
+  echo "${_LOG_INDENT}❌ $(red '**ERROR**') ${_msg} 🤓"
   _dotfiles_notify "${_msg} 🤓" "❌ Error" || true
   return 1
 }
@@ -855,7 +856,7 @@ print_script_start() {
   _should_suppress_log && return 0
   local start_time_human
   current_timestamp start_time_human
-  echo "${CYAN}${_SCRIPT_NAME:-}${NC} ${PURPLE}==>${NC} ${YELLOW}Script started at:${NC} ${LIGHT_BLUE}${start_time_human}${NC}"
+  echo "$(cyan "${_SCRIPT_NAME:-}") $(purple '==>') $(yellow 'Script started at:') $(light_blue "${start_time_human}")"
 }
 
 # Prints a "Script finished at / Total duration" banner.
@@ -878,7 +879,7 @@ print_script_duration() {
   local duration_human
   format_duration "${duration}" duration_human
 
-  echo "${CYAN}${_SCRIPT_NAME:-}${NC} ${PURPLE}==>${NC} ${YELLOW}Script finished at:${NC} ${LIGHT_BLUE}${end_time_human}${NC} (${YELLOW}Total duration:${NC} ${LIGHT_BLUE}${duration_human}${NC} ${YELLOW}seconds${NC})."
+  echo "$(cyan "${_SCRIPT_NAME:-}") $(purple '==>') $(yellow 'Script finished at:') $(light_blue "${end_time_human}") ($(yellow 'Total duration:') $(light_blue "${duration_human}") $(yellow 'seconds'))."
 }
 
 # --------------------------------------------------------------------------
@@ -1056,7 +1057,7 @@ step_end() {
   format_duration "${delta_total}" total_human
 
   _set_log_indent
-  echo "${PURPLE}${_LOG_INDENT}⏱${NC} ${YELLOW}step:${NC} ${LIGHT_BLUE}${step_human}${NC} ${YELLOW}| elapsed:${NC} ${LIGHT_BLUE}${total_human}${NC}"
+  echo "$(purple "${_LOG_INDENT}⏱") $(yellow 'step:') $(light_blue "${step_human}") $(yellow '| elapsed:') $(light_blue "${total_human}")"
 }
 
 # Shared by _record_warning/_record_error: appends "[<script>][<section>] <message>" to the
@@ -1186,7 +1187,7 @@ _print_step_issues() {
   eval "_psi_items=(\"\${${_psi_array}[@]}\")"
   # Temporarily decrement depth so both header and entries print one level less indented
   _decrement_script_depth
-  section_header "${CYAN}${_psi_title}${NC} ${_psi_color}${#_psi_items[@]} ${_psi_label}${NC}"
+  section_header "$(cyan "${_psi_title}") ${_psi_color}${#_psi_items[@]} ${_psi_label}${NC}"
   local _psi_item
   for _psi_item in "${_psi_items[@]}"; do
     warn "${_psi_item}"
@@ -1224,7 +1225,7 @@ print_script_summary() {
   # Print separator line
   local padding
   _repeat_char_into padding '*' "${final_length}"
-  echo "${DARK_GRAY}${padding}${NC}"
+  echo "$(dark_gray "${padding}")"
 
   if is_non_zero_string "${_pss_msg}"; then
     if _has_step_warnings || _has_step_errors; then
@@ -1462,14 +1463,13 @@ setup_rubylib() {
 #   suspend_cron() { call_utility Cron.suspend_cron; }
 #   install_mise_versions() { call_utility DevEnvironment.install_mise_versions; }
 call_utility() {
-  # 'command -v' rather than command_exists: this file is also sourced by bash (direnv).
-  if ! command -v ruby &>/dev/null; then
+  if ! command_exists ruby; then
     debug "Ruby not available -- skipping Ruby call"
     return 0
   fi
 
   if ! _call_utility_script_available; then
-    debug "'${CYAN}${CALL_UTILITY_SCRIPT}${NC}' not available yet -- skipping Ruby call"
+    debug "'$(cyan "${CALL_UTILITY_SCRIPT}")' not available yet -- skipping Ruby call"
     return 1
   fi
 
@@ -1490,7 +1490,7 @@ call_utility() {
 # that is taken when this returns false. Callers that must also work before the clone use this to choose between
 # call_utility and an inline shell implementation.
 _call_utility_script_available() {
-  command -v ruby &>/dev/null && is_executable "${CALL_UTILITY_SCRIPT}"
+  command_exists ruby && is_executable "${CALL_UTILITY_SCRIPT}"
 }
 
 # Returns true if $1 is a non-empty path whose direct child .git directory exists.
@@ -1531,7 +1531,7 @@ recompile_zsh_script() {
     warn "Refusing to recompile file in root directory: '$(cyan "${file}")'"
     return 1
   fi
-  debug "recompiling '${CYAN}${file}${NC}'"
+  debug "recompiling '$(cyan "${file}")'"
   # zrecompile is only autoloaded by .zshrc (interactive shells). Any caller
   # that reaches this point without .zshrc having run yet (cron jobs,
   # scripts, load_file_if_exists's safeguard from a non-interactive context)
@@ -1802,6 +1802,108 @@ _clone_via_gpg_encrypt() {
   fi
 }
 
+# Applies the optional GIT_CLONE_INACTIVITY_SECS and GIT_CLONE_ATTEMPTS overrides for every
+# non-keybase clone (https, ssh, file, git://) into the caller's variables clone_timeout_secs (seconds
+# without growth in the clone folder before 'git with-retry' stops an attempt), clone_max_attempts (its
+# attempts) and clone_inline_attempts (the attempts of the inline fallback used before git-with-retry
+# exists, i.e. the very first dotfiles clone). Defaults are what the caller already set: 25s, 5 and 3.
+# Only a positive integer without leading zeros is accepted; anything else is ignored with a warning, so
+# a typo never turns the guard off. These two are deliberately transport-agnostic: https and ssh
+# already have native stall settings (http.lowSpeedLimit/http.lowSpeedTime, and ConnectTimeout/
+# ServerAlive* in the ssh config) that this does not replace. Keybase has its own pair
+# (KEYBASE_CLONE_INACTIVITY_SECS, _keybase_clone_guard).
+# Usage: _git_clone_guard
+_git_clone_guard() {
+  local value
+  value="${GIT_CLONE_INACTIVITY_SECS:-}"
+  if [[ -n "${value}" ]]; then
+    if _is_positive_integer "${value}"; then
+      clone_timeout_secs="${value}"
+    else
+      warn "Ignoring GIT_CLONE_INACTIVITY_SECS='${value}' -- it must be a positive integer without leading zeros"
+    fi
+  fi
+  value="${GIT_CLONE_ATTEMPTS:-}"
+  if [[ -n "${value}" ]]; then
+    if _is_positive_integer "${value}"; then
+      clone_max_attempts="${value}"
+      clone_inline_attempts="${value}"
+    else
+      warn "Ignoring GIT_CLONE_ATTEMPTS='${value}' -- it must be a positive integer without leading zeros"
+    fi
+  fi
+}
+
+# Succeeds when $1 is a positive integer without leading zeros (digits only, so it is safe in
+# arithmetic: a leading zero would be octal in bash).
+# Usage: _is_positive_integer <value>
+_is_positive_integer() {
+  case "${1:-}" in
+    '' | 0* | *[!0-9]*) return 1 ;;
+  esac
+  return 0
+}
+
+# Waits until the keybase GIT backend answers for <clone-url>: 'git ls-remote' through
+# git-remote-keybase, not just 'keybase fs ls'. The failure seen on a freshly provisioned device is
+# "git-remote-keybase error: (1) Server: block does not exist" while the daemon is logged in and the
+# generic KBFS folder already lists, so only the helper itself tells whether a clone would work.
+# One probe costs ~2.5s. Tries up to KEYBASE_READY_ATTEMPTS (default 12) times, 5s apart (about a
+# minute); each probe is hang-protected with 'git with-retry' when it is on PATH. Never fatal: the
+# caller attempts the clone anyway, so a probe that cannot succeed only costs the wait.
+# Usage: _wait_for_keybase_git_backend <clone-url>
+_wait_for_keybase_git_backend() {
+  local url="${1:?}"
+  local attempts="${KEYBASE_READY_ATTEMPTS:-12}"
+  local probe_stderr
+  probe_stderr="$(mktemp)"
+  local i
+  for ((i = 1; i <= attempts; i++)); do
+    if command_exists git-with-retry; then
+      if git with-retry 30 1 "${probe_stderr}" '-' git ls-remote "${url}" HEAD &>/dev/null; then
+        rm -f "${probe_stderr}"
+        return 0
+      fi
+    elif git ls-remote "${url}" HEAD &>/dev/null; then
+      rm -f "${probe_stderr}"
+      return 0
+    fi
+    if ((i < attempts)); then
+      debug "keybase git backend not ready yet (probe ${i} of ${attempts}) -- retrying in 5s"
+      sleep 5
+    fi
+  done
+  rm -f "${probe_stderr}"
+  return 1
+}
+
+# Chooses how a keybase:// clone is guarded, into the caller's variables clone_timeout_secs,
+# clone_max_attempts, clone_progress_path and clone_unwrapped (zsh dynamic scoping, like the rest of
+# clone_repo_into's helpers). Measured with keybase 6.6.3 on a real repository: .git/objects grows
+# steadily while git-remote-keybase transfers (137MB at 4s, 1.04GB at 20s), so the same inactivity
+# tracking as for any other transport works and a slow but steady clone is no longer killed by a
+# fixed 60s wall clock on every attempt. The allowance is generous (KEYBASE_CLONE_INACTIVITY_SECS,
+# default 120s) because the helper can be silent while it negotiates keys or fetches blocks, and
+# 600s on a FIRST_INSTALL, where KBFS is still syncing team/device keys and a first clone can sit
+# without visible progress for minutes. A first install used to run completely unguarded (a hang
+# blocked the install forever); it now gets that long allowance and 2 attempts instead. The old
+# unguarded single attempt remains available with KEYBASE_CLONE_UNWRAPPED=1, and is still what runs
+# when git-with-retry is not on PATH yet.
+# Usage: _keybase_clone_guard <clone-folder>
+_keybase_clone_guard() {
+  clone_progress_path="${1:?}"
+  clone_timeout_secs="${KEYBASE_CLONE_INACTIVITY_SECS:-}"
+  if is_first_install; then
+    clone_timeout_secs="${clone_timeout_secs:-600}"
+    clone_max_attempts=2
+  else
+    clone_timeout_secs="${clone_timeout_secs:-120}"
+  fi
+  if [[ -n "${KEYBASE_CLONE_UNWRAPPED:-}" ]] || { is_first_install && ! command -v git-with-retry &>/dev/null; }; then
+    clone_unwrapped=true
+  fi
+}
+
 # Clones <clone-url> (any transport 'git clone' understands, plus keybase://) into
 # <tmp-folder> with '-n' (no checkout: only .git is needed there; files are restored in the
 # real target afterwards). stderr is captured to <stderr-file> and shown only on failure.
@@ -1826,7 +1928,7 @@ _clone_via_network() {
   if is_non_zero_string "${target_branch}"; then
     clone_args+=('--branch' "${target_branch}")
   fi
-  debug "Using clone args: '${CYAN}${clone_args[*]:-(none -- plain full clone)}${NC}'"
+  debug "Using clone args: '$(cyan "${clone_args[*]:-(none -- plain full clone)}")'"
 
   # SSH: Uses core.sshCommand from ${XDG_CONFIG_HOME}/git/config (pre-configured) or inherits GIT_SSH_COMMAND
   # from parent environment (FIRST_INSTALL - exported by fresh-install-of-osx.sh, propagates
@@ -1842,40 +1944,27 @@ _clone_via_network() {
   local clone_max_attempts=5
   local clone_progress_path="${tmp_folder}"
   local clone_unwrapped=false
+  local clone_inline_attempts=3
+  if [[ "${clone_url}" != keybase://* ]]; then
+    _git_clone_guard
+  fi
   if [[ "${clone_url}" == keybase://* ]]; then
-    # git-remote-keybase does not incrementally write pack data into the destination
-    # directory the way a normal smart-HTTP/SSH clone does, so 'du -sk'-based
-    # inactivity tracking never observes growth -- with-retry's timeout would fire on
-    # every single attempt regardless of whether the clone is actually progressing.
-    # Fall back to a longer fixed wall-clock timeout instead (progress_path '-').
-    clone_timeout_secs=60
-    clone_progress_path='-'
-
-    if is_first_install; then
-      # On a freshly-provisioned device, a keybase:// clone can genuinely take far
-      # longer than any reasonable timeout to complete (KBFS sync, key negotiation,
-      # large object transfer over Keybase's own encrypted transport) -- with-retry's
-      # inactivity-kill mechanism cannot tell "still working, just slow" apart from
-      # "genuinely stuck" for this transport (observed: stalls with zero visible
-      # progress past 60s, then gets killed, even though the clone may have still been
-      # progressing internally). Skip the retry/timeout wrapper entirely here and run a
-      # single, completely unwrapped attempt -- no artificial kill, no retry count --
-      # letting it succeed or fail on its own. Re-run this script later if it fails.
-      clone_unwrapped=true
-      info 'First install: running an unwrapped keybase:// clone (no retry/timeout wrapper) -- re-run this script later if this fails'
+    _keybase_clone_guard "${tmp_folder}"
+    if [[ "${clone_unwrapped}" == true ]]; then
+      info 'Running an unwrapped keybase:// clone (no retry/timeout wrapper) -- re-run this script later if this fails'
+    elif is_first_install; then
+      info "First install: keybase:// clone allowed ${clone_timeout_secs}s without growth per attempt (${clone_max_attempts} attempts)"
     fi
 
     # KBFS can still be syncing team/device keys shortly after keybase login,
     # especially on a freshly-provisioned device -- attempting a git clone before it's
     # ready can fail with "git-remote-keybase error: (1) Server: block does not exist"
-    # even though the daemon itself is already up and logged in. Poll for basic KBFS
-    # readiness (the containing folder becoming listable) before attempting the clone
-    # at all -- this only confirms the generic FUSE mount is up, not that the
-    # git-specific backend for this repo is actually ready, so it does not reliably
-    # prevent the failure above, but it is a cheap, harmless best-effort pre-check.
-    # Derived entirely from the URL argument (no hardcoded username/repo name) so this
-    # applies identically to home, profiles, or any other keybase:// repo:
-    # "keybase://private/user/repo" -> "/keybase/private/user".
+    # even though the daemon itself is already up and logged in. Two best-effort checks first,
+    # neither fatal: the containing KBFS folder becoming listable (cheap: confirms the service
+    # answers; derived entirely from the URL, no hardcoded username/repo name --
+    # "keybase://private/user/repo" -> "/keybase/private/user", a KBFS path that 'keybase fs'
+    # resolves itself, not a file on disk), then a 'git ls-remote' through the helper, which is
+    # the check that actually exercises the git backend.
     local kbfs_check_path="${clone_url#keybase://}"
     kbfs_check_path="/keybase/${kbfs_check_path%/*}"
     info "Waiting for KBFS to be ready at '$(cyan "${kbfs_check_path}")'"
@@ -1889,10 +1978,11 @@ _clone_via_network() {
       keybase fs ls "${kbfs_check_path}" &>/dev/null || warn "KBFS does not appear ready -- attempting clone anyway"
     fi
     rm -f "${kbfs_stderr_file}"
+    _wait_for_keybase_git_backend "${clone_url}" || warn "The keybase git backend did not answer a 'git ls-remote' -- attempting clone anyway"
   fi
   local clone_status
   if [[ "${clone_unwrapped}" == true ]]; then
-    # No with-retry wrapper at all here -- see the FIRST_INSTALL comment above. Still
+    # No with-retry wrapper at all here -- see _keybase_clone_guard. Still
     # wipes/recreates tmp_folder first for consistency with the with-retry-wrapped path
     # (a stray leftover '.git' here would otherwise fail with "destination path '.'
     # already exists and is not an empty directory").
@@ -1923,12 +2013,29 @@ _clone_via_network() {
     # fresh-install-of-osx.sh). Falling back silently here would be wrong: 'git with-retry
     # ...' with no such command on PATH fails at the command-resolution step itself ("git:
     # 'with-retry' is not a git command"), so the wrapped clone would never run at all --
-    # not merely lose retry protection. Fall back to a plain clone (no retry/hang
-    # protection) only for this one bootstrap window; every subsequent call automatically
-    # regains with-retry once the scripts directory is on PATH.
-    debug "'git-with-retry' not yet on PATH (expected before the dotfiles repo is cloned) -- using plain clone without retry protection"
-    git -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${clone_url}" . 2>"${stderr_file}"
-    clone_status=$?
+    # not merely lose retry protection. Fall back to a plain clone only for this one
+    # bootstrap window; every subsequent call automatically regains with-retry once the
+    # scripts directory is on PATH.
+    #
+    # Retry/stall protection is therefore done inline: up to 3 attempts (GIT_CLONE_ATTEMPTS), each with git's own
+    # low-speed abort for HTTP transports (below ~1000 bytes/s for 30s => fail instead of
+    # hanging forever); SSH stalls are bounded by ConnectTimeout/ServerAlive* in
+    # GIT_SSH_COMMAND (exported by fresh-install-of-osx.sh on a first install). The temp folder
+    # is wiped between attempts so a partial '.git' cannot mask the original failure.
+    debug "'git-with-retry' not yet on PATH (expected before the dotfiles repo is cloned) -- using an inline ${clone_inline_attempts}-attempt clone with low-speed stall protection"
+    local clone_attempt=1
+    while true; do
+      rm -rf "${tmp_folder:?}"
+      mkdir -p "${tmp_folder}"
+      clone_status=0
+      git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=30 -C "${tmp_folder}" clone -n -c init.defaultRefFormat=reftable "${clone_args[@]}" "${clone_url}" . 2>"${stderr_file}" || clone_status=$?
+      if [[ ${clone_status} -eq 0 || ${clone_attempt} -ge ${clone_inline_attempts} ]]; then
+        break
+      fi
+      warn "Clone attempt ${clone_attempt} of ${clone_inline_attempts} failed (exit ${clone_status}) -- retrying in 5s"
+      clone_attempt=$((clone_attempt + 1))
+      sleep 5
+    done
   fi
 
   if [[ ${clone_status} -ne 0 ]]; then
@@ -2056,18 +2163,32 @@ _enforce_target_branch() {
 # Checking one of each ('git-maintain' on PATH, the 'siu' alias) is a reliable proxy for all
 # of them -- skip this whole block until both exist; every subsequent call (this repo once
 # install-dotfiles.rb has run, or any other repo) runs it normally.
+# During FIRST_INSTALL only ${DOTFILES_DIR} gets the full chain (migrate/unshallow/maintain/siu);
+# every other repo gets just the reftable migration and stays shallow until the background batch.
 # Usage: _post_clone_maintenance <target-folder>
 _post_clone_maintenance() {
   local target_folder="${1:?}"
   if command -v git-maintain &>/dev/null && git config --get alias.siu &>/dev/null; then
-    # Migrate to reftable format BEFORE background unshallow to avoid race conditions.
-    # Migrating refs while unshallow is fetching history could cause lock contention or
-    # corrupted refs. Migration must complete before any background ref writes begin.
+    # Migrate to reftable format BEFORE any unshallow (including the detached background batch
+    # the resurrect step starts after a FIRST_INSTALL) to avoid race conditions. Migrating refs
+    # while unshallow is fetching history could cause lock contention or corrupted refs.
+    # Migration must complete before any background ref writes begin.
     # Idempotent -- safe to run multiple times (no-op if already reftable). On vanilla
     # macOS with system git < 2.45, this is a silent no-op. fresh-install-of-osx.sh
     # calls this again after Homebrew's git is on PATH to migrate repos that were
     # initially cloned with system git.
     migrate_git_repo_to_reftable "${target_folder}"
+
+    # FIRST_INSTALL: leave every repo except ${DOTFILES_DIR} shallow (--depth=1, blob:none). The
+    # dotfiles repo is completed here, synchronously, because its own history/maintenance must be
+    # settled before the later reftable re-migration described below. All other repos are completed
+    # afterwards by one detached background 'unshallow' batch the resurrect step starts (log:
+    # ~/Downloads/unshallow-batch.log), so the bootstrap does not wait on a full-history fetch (plus
+    # maintain and submodule update) for every repo. Reftable migration above still runs for all.
+    if is_first_install && [[ "${target_folder}" != "${DOTFILES_DIR:-}" ]]; then
+      debug "FIRST_INSTALL: leaving '$(yellow "${target_folder}")' shallow (background unshallow batch completes it later) -- skipping unshallow/maintain/siu"
+      return 0
+    fi
 
     # Unshallow and run repository maintenance for both new clones and existing repos.
     # Converts shallow repos to full clones. If the repo is already a full clone, 'git
@@ -2080,9 +2201,10 @@ _post_clone_maintenance() {
     # unconditionally removes index.lock and commit-graph-chain.lock, which could steal a
     # lock 'unshallow' legitimately holds mid-write.
     #
-    # On FIRST_INSTALL and non-FIRST_INSTALL callers alike, this runs SYNCHRONOUSLY.
-    # Backgrounding this during FIRST_INSTALL bootstrap was considered for wall-clock
-    # savings (bootstrap also installs Homebrew/brew bundle in parallel), but rejected:
+    # This runs SYNCHRONOUSLY for every repo it is reached for (all repos on a regular run;
+    # only ${DOTFILES_DIR} during FIRST_INSTALL -- see the early return above).
+    # Backgrounding it for ${DOTFILES_DIR} during FIRST_INSTALL bootstrap was considered for
+    # wall-clock savings (bootstrap also installs Homebrew/brew bundle in parallel), but rejected:
     # fresh-install-of-osx.sh re-runs 'migrate_git_repo_to_reftable "${DOTFILES_DIR}"'
     # later in its sequence (once Homebrew's newer git is on PATH), which does a
     # destructive 'rm -rf .git/refs/*' on the SAME repo this function may have just
@@ -2094,7 +2216,7 @@ _post_clone_maintenance() {
     # If all attempts fail, the next clone_repo_into call will retry.
     git -C "${target_folder}" unshallow
     git -C "${target_folder}" maintain
-    debug "Completed unshallow + maintain for '${YELLOW}${target_folder}${NC}'"
+    debug "Completed unshallow + maintain for '$(yellow "${target_folder}")'"
 
     # Always update submodules after clone or pull -- new commits may introduce submodule changes.
     # Uses the 'siu' git alias (not a bare 'submodule update') for 'with-retry' hang protection --
@@ -2110,8 +2232,13 @@ _post_clone_maintenance() {
 # clone into a non-empty directory (e.g. HOME). If the target is already a git
 # repo, runs fetch to pull updates. New clones always use --depth=1 --filter=blob:none
 # --single-branch for fast initial clone. All repos (new and existing) are converted
-# to full clones asynchronously via background 'git unshallow' job after the main
-# operation completes. Always updates submodules afterwards.
+# to full clones by _post_clone_maintenance after the main operation completes (see below
+# for the FIRST_INSTALL exception). Always updates submodules afterwards.
+#
+# Shallow/full state: on a regular run every repo (new and existing) is unshallowed
+# synchronously by _post_clone_maintenance. During FIRST_INSTALL only ${DOTFILES_DIR} is;
+# all other repos stay shallow and are completed later by a detached background
+# 'unshallow' batch (log: ~/Downloads/unshallow-batch.log) -- see _post_clone_maintenance.
 #
 # No encryption/decryption logic lives here for the network-clone/bundle-import path --
 # that path only knows how to clone a plaintext git repo (or import a plaintext bundle)
@@ -2252,7 +2379,7 @@ clone_repo_into() {
   else
     # Reached whenever "${target_folder}" is already a git repo (regardless of which
     # clone-url scheme was passed in).
-    debug "Repo already exists at '${YELLOW}${target_folder}${NC}' -- will unshallow and fetch in background"
+    debug "Repo already exists at '$(yellow "${target_folder}")' -- skipping clone (post-clone maintenance follows)"
   fi
 
   # Ensure branch tracking is configured regardless of path. A plain network clone
@@ -2273,7 +2400,7 @@ clone_repo_into() {
   local end_time
   _epoch_seconds end_time
   local duration=$((end_time - start_time))
-  debug "Process took ${PURPLE}${duration}${NC} seconds"
+  debug "Process took $(purple "${duration}") seconds"
 }
 
 # Shared "secure a folder" skeleton for set_ssh_folder_permissions and
@@ -2315,7 +2442,8 @@ _secure_folder_permissions() {
       warn "Failed to set file permissions in '$(cyan "${target_dir}")'"
     fi
   else
-    warn "'$(cyan "${target_dir}")' exists but is empty. No file permissions to set."
+    # Not a problem (a vanilla OS starts with empty ~/.ssh and ~/.gnupg), so not a warning.
+    info "'$(cyan "${target_dir}")' exists but is empty. No file permissions to set."
   fi
 }
 
@@ -2441,7 +2569,7 @@ load_zsh_configs() {
   if (($+functions[is_aliases_sourced])); then unfunction is_aliases_sourced; fi
   # _SCRIPT_NAME is set as a script-scoped global in each script; unset in
   # interactive shells. The fallback makes the caller visible in both contexts.
-  debug "load_zsh_configs called from '${YELLOW}${_SCRIPT_NAME:-<interactive>}${NC}'"
+  debug "load_zsh_configs called from '$(yellow "${_SCRIPT_NAME:-<interactive>}")'"
   local file
   # .zshenv lives in ${HOME} (zsh always reads it from there and it is what sets ZDOTDIR);
   # .zshrc and .zlogin live in ${ZDOTDIR}. ${ZDOTDIR} is safe to use here: this function is
@@ -2450,7 +2578,7 @@ load_zsh_configs() {
   # not been sourced.
   local file_list=("${HOME}/.zshenv" "${ZDOTDIR}/.zshrc" "${ZDOTDIR}/.zlogin")
   for file in "${file_list[@]}"; do
-    debug "load_zsh_configs: loading '${CYAN}${file}${NC}'"
+    debug "load_zsh_configs: loading '$(cyan "${file}")'"
     load_file_if_exists "${file}"
   done
 }
@@ -2467,7 +2595,7 @@ load_zsh_configs() {
 print_usage() {
   local script_name="${1:?print_usage: script_name argument required}"
   shift
-  echo "${RED}Usage${NC}: ${CYAN}${script_name}${NC} ${YELLOW}${1:+[options]}${NC}"
+  echo "$(red 'Usage'): $(cyan "${script_name}") $(yellow "${1:+[options]}")"
   while [[ $# -gt 0 ]]; do
     echo "  ${1:-}"
     shift

@@ -12,6 +12,7 @@
 #   - pathname.to_s.cyan can be simplified to pathname.cyan
 #
 # All color methods apply HOME -> ~ substitution automatically, so paths are display-ready.
+require_relative 'core'
 require_relative 'env_lite'
 
 module Colorizable
@@ -38,7 +39,7 @@ module Colorizable
   def colorize(code)
     # Delegate to replace_home_path_with_tilde for the string conversion + substitution
     str = replace_home_path_with_tilde
-    return str unless $stdout.tty?
+    return str unless Core.running_in_tty?
 
     "\x1b[#{code}m#{str}\x1b[0m"
   end

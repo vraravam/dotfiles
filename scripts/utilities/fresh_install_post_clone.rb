@@ -60,6 +60,8 @@ module FreshInstallPostClone
 
   FINISHED_MESSAGE = '** Finished auto installation process **'
 
+  CRON_OVERLAP_NOTE = 'The full Brewfile install is still running in the background, so the first hourly software-updates run may overlap it'
+
   # Number of steps below that call '_step' -- keep in sync when adding or removing one. The shell
   # numbers its own steps before the hand-off, and passes how many (steps_done), so the total
   # shown in '[Step N of TOTAL]' is steps_done + POST_CLONE_STEPS. The Keybase, encrypted-backup and
@@ -69,8 +71,9 @@ module FreshInstallPostClone
   # Public API method.
   #
   # Cron was suspended (backed up and removed) by the shell when the whole run started. The 'Setup
-  # cron jobs' step reinstalls the schedule and deletes the backup on success; otherwise the original
-  # schedule is restored from that backup before returning.
+  # cron jobs' step -- deliberately late, after the clones, so the hourly software-updates job cannot
+  # fire during the long clone phase -- reinstalls the schedule and retires the backup on success;
+  # otherwise the original schedule is restored from that backup before returning.
   #
   # @param steps_done [Integer, String] Steps the shell already numbered ('--key=value' arguments
   #   of call-utility.rb arrive as strings)
@@ -82,7 +85,9 @@ module FreshInstallPostClone
       ok = Logging.run_script_result(SCRIPT_NAME, FINISHED_MESSAGE) { _run(steps_done.to_i) }
     else
       # Run by the shell script, which owns the script banner and has already raised the depth:
-      # print only the closing summary.
+      # print only the closing summary. The step lines' "Total" column counts from the shell's
+      # start epoch (print_script_start, which sets it when Ruby is outermost, does not run here).
+      Logging.state.script_start_time = _epoch(start_time)
       ok = _run(steps_done.to_i)
       Logging.script_name = SCRIPT_NAME
       Logging.print_script_summary(_epoch(start_time), FINISHED_MESSAGE)
@@ -100,6 +105,7 @@ module FreshInstallPostClone
   def _run(steps_done)
     @steps = StepCounter.new(steps_done + POST_CLONE_STEPS, start_at: steps_done)
     @failure_message = nil
+    @bundle_state = :none
     Logging.script_name = SCRIPT_NAME
     Logging.adopt_issues_file
     _install
@@ -115,6 +121,9 @@ module FreshInstallPostClone
     Kernel.warn "ERROR: #{msg}"
     false
   ensure
+    # A run that stopped before the preferences step must not leave the background baseline
+    # half-way through its writes or the apps stopped.
+    _wrap_up_background_work
     # Issues that Ruby child processes started by a step (e.g. the post_clone commands of the
     # tracked repos) recorded join this process's own before the summary prints.
     Logging.merge_issues_file
@@ -138,6 +147,10 @@ module FreshInstallPostClone
     # overriding it with the GIT_SSH_COMMAND the shell exported for the bootstrap.
     ENV.delete('GIT_SSH_COMMAND')
 
+    # The macOS defaults baseline needs the repo and sudo, nothing that comes later, so on a first
+    # install it runs in the background from here; the 'Restore preferences' step joins it.
+    PreferencesRestore.start_baseline_in_background if EnvVars.first_install?
+
     # Now that the symlinks exist, load the zsh configs (caches, the antidote bundle).
     _load_zsh_configs
 
@@ -155,8 +168,11 @@ module FreshInstallPostClone
 
     _step('Restore preferences', 'Restore preferences') { PreferencesRestore.run }
     _recreate_zsh_completions
-    _setup_cron_jobs
     _resurrect_tracked_repos
+
+    # Only now: an hourly software-updates job firing during the clone phase would fight it (and
+    # the background Brewfile install) for the network and for Homebrew.
+    _setup_cron_jobs
     _refresh_zsh_caches
 
     # Done last to avoid a password prompt in the middle of the unattended steps.
@@ -308,13 +324,14 @@ module FreshInstallPostClone
     end
   end
 
-  # Reinstalls the schedule first; the backup is deleted only once that worked, so the 'ensure' in
+  # Reinstalls the schedule first; the backup is retired only once that worked (see
+  # Cron.retire_backup, which keeps a differing original as '<name>.replaced'), so the 'ensure' in
   # '_run' can still restore the original schedule if it failed.
   def _setup_cron_jobs
     _step('Setup cron jobs', 'Setup cron jobs') do
       if Cron.recron
-        backup = EnvVars.cron_backup_file
-        backup.delete if backup.file?
+        Cron.retire_backup(EnvVars.cron_backup_file)
+        Logging.info CRON_OVERLAP_NOTE if BrewBundle.full_install_state == :running
       else
         Logging.record_error 'recron failed -- original cron schedule preserved in backup'
       end
@@ -346,6 +363,19 @@ module FreshInstallPostClone
     end
   end
 
+  # Wraps up what steps started in the background and nothing else waits for, so the summary and the
+  # notification can be truthful: the macOS defaults baseline is joined when the run stopped before
+  # the preferences step, and the full Brewfile install is reported on (failed: a warning; still
+  # running: noted, so the run never claims everything is installed while casks are installing).
+  # Never raises (it runs from the 'ensure' of '_run').
+  def _wrap_up_background_work
+    PreferencesRestore.finish_pending
+    Logging.current_section = 'Background Brewfile install'
+    @bundle_state = BrewBundle.report_full_install
+  rescue StandardError => e
+    Kernel.warn "WARNING: could not wrap up the background work: #{e.message}"
+  end
+
   # Process-level wrap-up, run after the summary has printed: the manual-step reminders (on
   # success) and exactly one notification, last, so the user sees the collected issues in the
   # terminal before the popup.
@@ -359,18 +389,20 @@ module FreshInstallPostClone
     end
 
     Logging.user_action 'Review System Settings manually: some settings (FileVault, accessibility permissions, notification preferences) require GUI interaction and cannot be automated due to TCC restrictions.'
-    Logging.user_action "Repositories were cloned shallow (--depth=1) to save time. In a NEW terminal (this one predates the updated PATH and aliases), run '#{'all unshallow'.yellow}' to fetch complete history, then '#{'git rebase @{u}'.yellow}' or '#{'git merge @{u}'.yellow}' in each repo to update working trees." if EnvVars.first_install?
+    Logging.user_action "Repositories were cloned shallow (--depth=1) to save time and a background job is fetching their complete history. Once it has finished (check with '#{'git rev-parse --is-shallow-repository'.yellow}' in a repo), run '#{'git rebase @{u}'.yellow}' or '#{'git merge @{u}'.yellow}' in each repo to update working trees; in a NEW terminal (this one predates the updated PATH and aliases), '#{'all unshallow'.yellow}' finishes any repo that is still shallow." if EnvVars.first_install?
+    Logging.user_action "The full Brewfile install is still running in the background -- keep the machine online and awake until it finishes (log: '#{BrewBundle::FULL_INSTALL_LOG.cyan}')." if @bundle_state == :running
 
-    parts = Logging.issue_summary_parts
+    issues = Logging.issue_summary_parts
+    parts = @bundle_state == :running ? issues + ['the full Brewfile install is still running in the background'] : issues
     if parts.empty?
       MacOS.notify('Fresh install completed successfully.', '✅ Fresh Install Done')
     else
-      MacOS.notify("Install done -- #{parts.join(' | ')}", '⚠️ Fresh Install')
+      MacOS.notify("Install done -- #{parts.join(' | ')}", issues.empty? ? 'Fresh Install' : '⚠️ Fresh Install')
     end
   end
 
   private_class_method :_run, :_install, :_step, :_zsh, :_epoch, :_prepare_dotfiles_repo, :_install_dotfiles,
                        :_recompile_zsh_startup_files, :_restore_shellrc_after_install_dotfiles, :_load_zsh_configs,
                        :_install_homebrew, :_migrate_reftable, :_resurrect_bootstrap_repos, :_recreate_zsh_completions,
-                       :_setup_cron_jobs, :_resurrect_tracked_repos, :_refresh_zsh_caches, :_report_outcome
+                       :_setup_cron_jobs, :_resurrect_tracked_repos, :_refresh_zsh_caches, :_wrap_up_background_work, :_report_outcome
 end

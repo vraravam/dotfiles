@@ -46,7 +46,12 @@ RSpec.describe FreshInstallPostClone do
     allow(GpgEncrypt).to receive(:bootstrap_setup).and_return(true)
     allow(BootstrapRepos).to receive(:run).and_return(true)
     allow(PreferencesRestore).to receive(:run).and_return(true)
+    allow(PreferencesRestore).to receive(:start_baseline_in_background).and_return(true)
+    allow(PreferencesRestore).to receive(:finish_pending)
+    allow(BrewBundle).to receive(:report_full_install).and_return(:none)
+    allow(BrewBundle).to receive(:full_install_state).and_return(:none)
     allow(Cron).to receive(:recron).and_return(true)
+    allow(Cron).to receive(:retire_backup) { |backup| backup.delete if backup.file? }
     allow(Cron).to receive(:resume_cron)
     allow(ResurrectRepositories).to receive(:run).and_return(true)
     allow(DefaultShell).to receive(:run).and_return(true)
@@ -86,7 +91,18 @@ RSpec.describe FreshInstallPostClone do
       allow(DefaultShell).to receive(:run) { events << :default_shell }
 
       expect(run_quietly(steps_done: 6)).to be true
-      expect(events).to eq(%i[shellrc_check install_dotfiles homebrew brew_bundle keybase gpg bootstrap_repos preferences cron tracked_repos default_shell])
+      expect(events).to eq(%i[shellrc_check install_dotfiles homebrew brew_bundle keybase gpg bootstrap_repos preferences tracked_repos cron default_shell])
+    end
+
+    it 'installs the cron schedule only after the clones, and before the cache refresh and the default shell' do
+      allow(ResurrectRepositories).to receive(:run).with(resurrect_all: true) { events << :tracked_repos }
+      allow(Cron).to receive(:recron) { events << :cron }
+      allow(CommandUtils).to receive(:run_interactive).with({}, 'zsh', '-c', /delete_caches/) { events << :caches }
+      allow(DefaultShell).to receive(:run) { events << :default_shell }
+
+      run_quietly
+
+      expect(events).to eq(%i[tracked_repos cron caches default_shell])
     end
 
     it 'puts the repo scripts on PATH and sets up the upstream remote first' do
@@ -136,10 +152,45 @@ RSpec.describe FreshInstallPostClone do
     end
   end
 
+  describe 'the macOS defaults baseline' do
+    it 'is not started in the background on a pre-configured machine' do
+      expect(PreferencesRestore).not_to receive(:start_baseline_in_background)
+
+      run_quietly
+    end
+
+    it 'is started in the background on a first install, right after install-dotfiles and before Homebrew' do
+      allow(EnvVars).to receive(:first_install?).and_return(true)
+      allow(InstallDotfiles).to receive(:run) { events << :install_dotfiles }
+      allow(PreferencesRestore).to receive(:start_baseline_in_background) { events << :baseline_started }
+      allow(HomebrewInstall).to receive(:run) { events << :homebrew }
+      allow(PreferencesRestore).to receive(:run) { events << :preferences }
+
+      run_quietly
+
+      expect(events).to eq(%i[install_dotfiles baseline_started homebrew preferences])
+    end
+
+    it 'is joined and its bracket closed when the run is aborted before the preferences step' do
+      allow(HomebrewInstall).to receive(:run).and_return(false)
+      expect(PreferencesRestore).to receive(:finish_pending)
+
+      expect(run_quietly).to be false
+    end
+
+    it 'does not let a failure of that clean-up hide the outcome' do
+      allow(PreferencesRestore).to receive(:finish_pending).and_raise('stuck')
+
+      result = nil
+      expect { result = run_quietly }.to output(/could not wrap up the background work: stuck/).to_stderr
+      expect(result).to be true
+    end
+  end
+
   describe 'zsh steps' do
     it 'recompiles the core startup files in one zsh that has sourced .shellrc' do
       expect(CommandUtils).to receive(:run_interactive)
-        .with({}, 'zsh', '-c', /\Asource \S*\.shellrc; recompile_zsh_script \S*\.zshenv; recompile_zsh_script \S*\.zshrc; recompile_zsh_script \S*\.zlogin; recompile_zsh_script \S*\.shellrc; recompile_zsh_script \S*\.aliases\z/).and_return(true)
+          .with({}, 'zsh', '-c', /\Asource \S*\.shellrc; recompile_zsh_script \S*\.zshenv; recompile_zsh_script \S*\.zshrc; recompile_zsh_script \S*\.zlogin; recompile_zsh_script \S*\.shellrc; recompile_zsh_script \S*\.aliases\z/).and_return(true)
 
       run_quietly
     end
@@ -292,7 +343,8 @@ RSpec.describe FreshInstallPostClone do
   describe 'cron' do
     before { cron_backup.write("0 * * * * job\n") }
 
-    it 'deletes the backup once the schedule is reinstalled, and does not resume it' do
+    it 'retires the backup once the schedule is reinstalled, and does not resume it' do
+      expect(Cron).to receive(:retire_backup).with(cron_backup).and_call_original
       expect(Cron).not_to receive(:resume_cron)
 
       expect(run_quietly).to be true
@@ -301,6 +353,7 @@ RSpec.describe FreshInstallPostClone do
 
     it 'keeps the backup and records an error when recron fails, then restores the original schedule' do
       allow(Cron).to receive(:recron).and_return(false)
+      expect(Cron).not_to receive(:retire_backup)
       expect(Cron).to receive(:resume_cron)
 
       expect(run_quietly).to be true
@@ -335,6 +388,16 @@ RSpec.describe FreshInstallPostClone do
       expect(MacOS).to have_received(:notify).with('Fresh install completed successfully.', '✅ Fresh Install Done')
     end
 
+    it 'counts the Total column of the step lines from the start epoch the shell passed' do
+      with_env('_DOTFILES_SCRIPT_DEPTH' => '1') do
+        allow(Logging).to receive(:print_script_summary)
+
+        run_quietly(start_time: '1700000000')
+      end
+
+      expect(Logging.state.script_start_time).to eq(1_700_000_000)
+    end
+
     it 'runs its own banner and summary when started at depth 0' do
       expect(Logging).to receive(:run_script).with(FreshInstallPostClone::SCRIPT_NAME, FreshInstallPostClone::FINISHED_MESSAGE).and_yield
 
@@ -363,12 +426,79 @@ RSpec.describe FreshInstallPostClone do
       run_quietly
     end
 
+    it 'says the history is being fetched in the background, not that the user must unshallow everything' do
+      allow(EnvVars).to receive(:first_install?).and_return(true)
+      allow(Logging).to receive(:user_action)
+
+      run_quietly
+
+      expect(Logging).to have_received(:user_action).with(/cloned shallow.*background job is fetching their complete history/)
+    end
+
     it 'adds the shallow-clone reminder on a first install' do
       allow(EnvVars).to receive(:first_install?).and_return(true)
       expect(Logging).to receive(:user_action).with(/Review System Settings/)
       expect(Logging).to receive(:user_action).with(/cloned shallow/)
 
       run_quietly
+    end
+  end
+
+  describe 'the background full Brewfile install' do
+    it 'is reported on before the summary, and a successful run with nothing running says so plainly' do
+      expect(BrewBundle).to receive(:report_full_install).and_return(:succeeded)
+
+      run_quietly
+
+      expect(MacOS).to have_received(:notify).with('Fresh install completed successfully.', '✅ Fresh Install Done')
+    end
+
+    it 'never claims everything is installed while it is still running' do
+      allow(BrewBundle).to receive(:report_full_install).and_return(:running)
+      allow(Logging).to receive(:user_action)
+
+      run_quietly
+
+      expect(MacOS).not_to have_received(:notify).with(/completed successfully/, anything)
+      expect(MacOS).to have_received(:notify).with('Install done -- the full Brewfile install is still running in the background', 'Fresh Install')
+      expect(Logging).to have_received(:user_action).with(/full Brewfile install is still running/)
+    end
+
+    it 'lists it together with the recorded issues' do
+      allow(BrewBundle).to receive(:report_full_install).and_return(:running)
+      allow(Keybase).to receive(:bootstrap_login) do
+        Logging.record_warning('keybase trouble')
+        false
+      end
+
+      run_quietly
+
+      expect(MacOS).to have_received(:notify).with(/1 warning\(s\): .*keybase trouble \| the full Brewfile install is still running/, '⚠️ Fresh Install')
+    end
+
+    it 'shows a failure of it as a warning in the notification' do
+      allow(BrewBundle).to receive(:report_full_install) do
+        Logging.record_warning('background bundle failed')
+        :failed
+      end
+
+      run_quietly
+
+      expect(MacOS).to have_received(:notify).with(/1 warning\(s\): .*background bundle failed/, '⚠️ Fresh Install')
+    end
+
+    it 'is reported even when the run is aborted' do
+      allow(HomebrewInstall).to receive(:run).and_return(false)
+      expect(BrewBundle).to receive(:report_full_install)
+
+      run_quietly
+    end
+
+    it 'notes that the first hourly run may overlap it when cron is installed while it runs' do
+      allow(BrewBundle).to receive(:full_install_state).and_return(:running)
+
+      expect(run_quietly).to be true
+      expect(printed).to match(/first hourly software-updates run may overlap it/)
     end
   end
 

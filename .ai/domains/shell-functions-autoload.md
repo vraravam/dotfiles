@@ -329,6 +329,10 @@ here would be harmless in practice, but `-` is more precise about the semantics.
 
 ### Scan rule
 
+Shell files only. SSH config files (`files/--HOME--/.ssh/*`, `templates/ssh-config.template`) are not
+shell: ssh rejects `${VAR:-}`, so never add or "correct" default-value expansions there
+(`ssh-config.md` overrides this rule).
+
 When reviewing any shell file, flag every `${VAR-}` or `${VAR-""}` where `VAR`
 is a user-controlled boolean feature flag and change it to `${VAR:-}` /
 `${VAR:-""}`. Only leave `-` when the variable is shell-provided (e.g.

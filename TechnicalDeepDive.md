@@ -605,17 +605,19 @@ The constraints above apply to the window *before* the dotfiles repository exist
 | Scripts on `PATH`, upstream remote of the dotfiles repo | `PathUtils.append_to_path`, `AddUpstreamGitConfig.run` |
 | Symlink the dotfiles | `InstallDotfiles.run` |
 | Recompile the zsh startup files, restore `.shellrc`, load the zsh configs | `zsh -c "source ~/.shellrc; ..."` |
-| Install Homebrew, export its environment into the process | `HomebrewInstall.run`, `MacOS.load_brew_shellenv` |
+| Install Homebrew (waiting for the installer the shell started early in the background), export its environment into the process | `HomebrewInstall.run`, `MacOS.load_brew_shellenv` |
 | Install the Brewfile (base section, then a background full install) | `BrewBundle.run` |
 | Reftable migration of the dotfiles repo | the `git migrate-reftable` alias through `GitProcessor` |
 | Keybase login, encrypted-backup readiness | `Keybase.bootstrap_login`, `GpgEncrypt.bootstrap_setup` |
 | Clone the home/profiles repos | `BootstrapRepos.run` (with `GenerateBootstrapRepositoriesYaml`) |
-| Baseline and restore preferences | `PreferencesRestore.run` |
-| Completions cache, cron, tracked repos, zsh caches | `compinit` via zsh, `Cron.recron`, `ResurrectRepositories.run(resurrect_all: true)`, `delete_caches` via zsh |
+| Baseline (started in the background right after install-dotfiles on a first install) and restore preferences, under one app/schedule bracket | `PreferencesRestore.start_baseline_in_background`, `PreferencesRestore.run` |
+| Completions cache, tracked repos, cron (after the clones, so the hourly job cannot fire mid-clone), zsh caches | `compinit` via zsh, `ResurrectRepositories.run(resurrect_all: true)`, `Cron.recron`, `delete_caches` via zsh |
 | Default login shell | `DefaultShell.run` |
 | Summary, manual-step reminders, notification | `Logging.print_script_summary`, `MacOS.notify` |
 
 Why one process rather than a `call_utility` per step: with nothing left in the shell after the hand-off, the shell-only chores (exporting Homebrew's environment, re-sourcing `.shellrc`, the `unset`s) are just changes to the Ruby process's `ENV`, and the shell/Ruby/shell jumps that caused most of the boundary bugs (argument quoting, flag plumbing, duplicated warnings, a second summary protocol) disappear. Speed was not a factor (measured on one machine with system Ruby 2.6: about 0.1 s to start a `call_utility` call, 0.01 s to source `.shellrc` in a `zsh -c`, against an install that takes minutes).
+
+Four long, independent steps run in the background so they overlap, and each is joined or reported on by the foreground run (details and opt-outs in `.ai/domains/fresh-install.md` § Background Work): the Homebrew installer (started by the shell right after the Command Line Tools, so it overlaps the clone and install-dotfiles), the `osx-defaults.sh -s` baseline (overlaps Homebrew and the clones), the full Brewfile install, and a detached `unshallow` batch for the repositories a first install deliberately leaves shallow. `BackgroundJob` is the small shared helper for starting and joining them. The resurrect loop itself is deliberately sequential: a parallel worker pool was built and removed because replayed or interleaved per-repository output was too hard to follow when something failed.
 
 What remains shell, and why: everything before and including the clone (Ruby and the repository do not exist yet), the hand-off itself, and the ERR/EXIT trap plumbing that restores cron when something dies.
 
@@ -632,6 +634,8 @@ Converting `osx-defaults.sh` to Ruby would eliminate a key usability feature:
 3. **Transparency over elegance**: macOS `defaults` commands have complex syntax (`-dict`, `-dict-add`, `-array-add`, nested keys, type flags). The current script shows exactly what gets written, making it obvious what each line does. A Ruby abstraction would hide that detail behind method parameters, making it harder to understand what's actually being applied.
 
 4. **Reference value**: The script doubles as a reference catalog of useful `defaults` commands. Users frequently grep it for "Dock" or "Finder" to find examples they can adapt. A Ruby implementation would obscure the actual commands behind abstractions.
+
+A batching helper does not break this: scalar writes go through `_dw <domain> <key> <type-flag> <value>`, which takes exactly the arguments of `defaults write` (so a line is still copy-pastable with the command name swapped), and flushes each domain with one merging `defaults import`. Only provably identical cases are batched, and `OSX_DEFAULTS_DRY_RUN=1` diffs the old and new script's resulting preferences without touching any real domain.
 
 **Decision**: `osx-defaults.sh` stays as shell. The ability to copy-paste individual commands is more valuable than the marginal maintainability gain from porting to Ruby.
 

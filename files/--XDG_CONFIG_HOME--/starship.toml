@@ -71,6 +71,16 @@ $git_state\
 ${env_var.ITERM2_MARK_B}\
 $character"""
 
+# ── Transient prompt (starship-ftl) ───────────────────────────────────────────
+# What a finished command line collapses to (see 'ftl-transient on' in .zshrc, which looks
+# for a profile of this name). The character module keeps the success/error colors, so the
+# status of each command stays visible in scrollback. Rendered once per prompt in precmd.
+# The iTerm2 prompt marks of the full prompt are not part of this profile.
+# TODO: Commented out since this makes the right prompt disappear. We lose the ability to
+# see duration of previous completed command, its exit status, and the time it completed.
+# [profiles]
+# transient = "$character"
+
 # ── Right prompt ──────────────────────────────────────────────────────────────
 # Segment order: status -> cmd_duration -> jobs -> context -> time
 # cmd_duration has its own embedded \uE0B2 separator (only appears when visible)
@@ -202,6 +212,14 @@ up_to_date = "[\uE0B0](fg:green)"
 # hidden there. This replaces a custom module that forked 'sh', 'git' and 'awk' on every
 # prompt (~30-55ms on the critical path). The 'git size' alias remains available for
 # interactive/manual use and for scripts (path_utils.rb).
+#
+# TODO: once https://github.com/starship/starship/pull/7751 is merged and released, remove this
+# custom segment and use the built-in one instead: that PR adds an opt-in 'show_repo_size' option
+# and a 'repo_size' variable to the 'git_metrics' module. Then also remove the _prompt_git_size
+# hook and its precmd registration in files/--ZDOTDIR--/.zshrc (and this env_var module). Check
+# first that the new number is acceptable: the PR measures the on-disk size of the git directory
+# (not 'size-pack' as the hook does here), so the value will differ, and the module must fit the
+# segment order and colors described at the top of this file.
 #
 # Visual integration:
 # - Placed after git_branch on green background

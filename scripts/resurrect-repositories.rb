@@ -25,6 +25,11 @@
 #     omit it to clone the remote's default branch.
 #   - 'post_clone' commands are run through a shell, so normal shell '$VAR'/'${VAR}'
 #     expansion applies there at execution time -- a different mechanism from the above.
+#   - FIRST_INSTALL (non-empty): clones are left shallow (only the dotfiles repo is completed
+#     inline by the shell side), a repository cloned in this run is not fetched a second time, and
+#     once every catalogue is resurrected ONE detached low-priority background batch completes them
+#     all (the equivalent of 'all unshallow', log: ~/Downloads/unshallow-batch.log). Set
+#     FRESH_INSTALL_SKIP_BACKGROUND_UNSHALLOW=1 to not start it (and fetch inline as usual).
 #   - '-g' (generate) does the reverse: absolute paths discovered on disk are rewritten
 #     back to their '${VAR}' placeholder form (checking PROJECTS_BASE_DIR, XDG_CONFIG_HOME,
 #     XDG_DATA_HOME, HOME in that order) so the generated YAML stays portable.
@@ -76,6 +81,10 @@ module ResurrectRepositories
   # Preference order for reverse env-var substitution in _find_and_reverse_replace_env_var
   # (most specific/deepest path first -- see that method's docs for why order matters).
   ENV_VAR_REVERSE_LOOKUP_ORDER = %w[PROJECTS_BASE_DIR XDG_CONFIG_HOME XDG_DATA_HOME HOME].freeze
+  # Opt-out for the background unshallow batch started on a first install.
+  SKIP_BACKGROUND_UNSHALLOW_ENV = 'FRESH_INSTALL_SKIP_BACKGROUND_UNSHALLOW'
+  # Where that batch appends its output (relative to HOME).
+  UNSHALLOW_BATCH_LOG_PARTS = %w[Downloads unshallow-batch.log].freeze
 
   # Repository configuration object with validation
   class RepositoryConfig
@@ -246,6 +255,7 @@ module ResurrectRepositories
 
     filter ||= EnvVars.filter
     @has_failures = false
+    @batch_started = false
 
     if generate
       _run_generate(generate, filter)
@@ -353,6 +363,10 @@ module ResurrectRepositories
         end
       end
 
+      # Every repository exists now (shallow ones, on a first install): complete them in the
+      # background while the dev-environment setup below and the rest of the caller carry on.
+      _start_unshallow_batch(filter)
+
       # Post-clone operations for installing system dependencies. Both are idempotent and
       # safe to run even when no catalogue was found (e.g. only the bootstrap repos exist).
       DevEnvironment.setup_dev_environment
@@ -361,6 +375,68 @@ module ResurrectRepositories
   end
 
   private_class_method :_run_resurrect_all
+
+  # The command that completes (unshallows) every repository under HOME in the background after a
+  # first install: what the interactive 'all unshallow' alias does ('git unshallow' in each repo
+  # via run-all.rb, FOLDER=HOME, MAXDEPTH=7), at the lowest CPU priority, in its own session (so a
+  # closed terminal or the end of the install script cannot take it down), logging to
+  # ~/Downloads/unshallow-batch.log. run-all.rb itself stays strictly sequential.
+  #
+  # The environment is that of a fresh interactive run, not of the install: it is a top-level
+  # script (depth 0), does not write into the install's issues file, and does not see FIRST_INSTALL.
+  # FILTER is passed through so a filtered resurrection only completes what it was asked for.
+  #
+  # @param filter [String, nil] The resurrection's FILTER (nil removes FILTER from the batch's environment).
+  # @return [Hash] +:env+ (nil values delete the variable), +:argv+ and +:log+ (Pathname).
+  def unshallow_batch_command(filter: nil)
+    require 'rbconfig' # not preloaded under --disable-gems
+    ruby = RbConfig.ruby
+    run_all = EnvVars::DOTFILES_DIR.join('scripts', 'run-all.rb')
+    {
+      env: {
+        'FOLDER' => EnvVars::HOME.to_s,
+        'MAXDEPTH' => '7',
+        'FILTER' => nil_or_empty?(filter) ? nil : filter,
+        'FIRST_INSTALL' => nil,
+        '_DOTFILES_SCRIPT_DEPTH' => '0',
+        '_DOTFILES_ISSUES_FILE' => nil
+      },
+      # setsid first (macOS has no setsid(1)): the ruby shim becomes a session leader, then execs
+      # 'nice', which execs the real work.
+      argv: [ruby, '--disable-gems', '-e', 'Process.setsid; exec(*ARGV)',
+             'nice', '-n', '19', ruby, '--disable-gems', run_all.to_s, 'git', 'unshallow'],
+      log: EnvVars::HOME.join(*UNSHALLOW_BATCH_LOG_PARTS)
+    }
+  end
+
+  # @return [Boolean] whether a first-install run completes the shallow clones in the background
+  #   (and so does not need to fetch a repository it has just cloned).
+  def background_unshallow?
+    EnvVars.first_install? && !%w[1 true yes].include?(ENV.fetch(SKIP_BACKGROUND_UNSHALLOW_ENV, '').strip.downcase)
+  end
+
+  # Starts the detached background unshallow batch (see #unshallow_batch_command) when this is a
+  # first install and it was not opted out of, at most once per #run. Failing to start it is a
+  # warning, not a failure: everything is cloned, only the history is incomplete.
+  #
+  # @param filter [String, nil] The resurrection's FILTER.
+  # @return [void]
+  def _start_unshallow_batch(filter)
+    return if @batch_started || !background_unshallow?
+
+    command = unshallow_batch_command(filter: filter)
+    log = command[:log]
+    log.dirname.mkpath
+    redirects = { in: File::NULL, out: [log.to_s, 'a'], err: %i[child out], chdir: EnvVars::HOME.to_s }
+    pid = Process.spawn(command[:env], *command[:argv], **redirects)
+    Process.detach(pid) # reaped when it ends; nothing waits for it
+    @batch_started = true
+    Logging.info("Started the background unshallow batch (pid #{pid.to_s.purple}, lowest priority, survives this script) -- progress: '#{log.to_s.cyan}'")
+  rescue SystemCallError => e
+    Logging.record_warning("Could not start the background unshallow batch (#{e.message}) -- the repositories stay shallow; run '#{'all unshallow'.cyan}' when convenient")
+  end
+
+  private_class_method :_start_unshallow_batch
 
   # Run check mode: verify repos on disk match config file
   #
@@ -635,7 +711,11 @@ module ResurrectRepositories
   # Resurrects a single repository based on its configuration.
   # This involves cloning if it doesn't exist, verifying the clone, ensuring remotes are
   # correctly configured, fetching all data, and running post-clone commands.
-  # On FIRST_INSTALL, GitProcessor.clone_repo_into uses --depth=1 (shallow clone).
+  # Clones are always --depth=1 --filter=blob:none (GitProcessor.clone_repo_into). On a regular run
+  # the shell side then unshallows every repository synchronously. On FIRST_INSTALL only the
+  # dotfiles repo is completed there; the others stay shallow, a repository cloned in this very run
+  # is not fetched again here (nothing new can be on the remote yet), and both are completed by the
+  # one detached background batch #_start_unshallow_batch launches after all catalogues are done.
   #
   # If cloning from 'remote' fails and 'dir' still isn't a git repo, each 'other_remotes'
   # entry is tried in turn (in YAML order) as an alternate clone source -- e.g. a mirror
@@ -653,8 +733,13 @@ module ResurrectRepositories
     dir = repo.folder # Assumed to be an absolute, resolved path
     dir_colored = dir.cyan
 
+    # Issues recorded before the first step below (a failed clone) are attributed to this section
+    # rather than to whichever step the previous repository happened to end in -- which would also
+    # make the summary differ between a serial and a parallel run.
+    Logging.current_section = 'clone repository'
     PathUtils.ensure_directories_exist(dir)
 
+    already_a_repo = GitProcessor.repo?(dir)
     effective_origin_url, remaining_other_remotes = _clone_with_fallback(repo, dir)
     unless effective_origin_url
       # Clone/import failure is fatal for this repo -- cannot proceed without a repository
@@ -669,13 +754,30 @@ module ResurrectRepositories
     return false unless _verify_origin(git, dir_colored, effective_origin_url, repo.other_remotes, remotes)
 
     _sync_other_remotes(git, dir_colored, remaining_other_remotes, remotes)
-    _fetch_all_remotes(git, dir_colored)
+    if _skip_fetch_of_fresh_clone?(already_a_repo, remaining_other_remotes)
+      Logging.info("Just cloned '#{dir_colored}' -- skipping the fetch (the background unshallow batch completes it)")
+    else
+      _fetch_all_remotes(git, dir_colored)
+    end
     _run_post_clone_commands(repo.post_clone, dir, dir_colored)
 
     true # Success -- repo cloned and configured (non-fatal warnings may have been logged)
   end
 
   private_class_method :_resurrect_each
+
+  # A repository cloned a moment ago (first install) has nothing to fetch from 'origin', and the
+  # background unshallow batch fetches everything later, so the second fetch is wasted time. Not
+  # skipped when other remotes were configured: nothing else would ever fetch those.
+  #
+  # @param already_a_repo [Boolean] Whether the folder was a repository before this run touched it.
+  # @param other_remotes [Hash] Remotes configured besides 'origin'.
+  # @return [Boolean]
+  def _skip_fetch_of_fresh_clone?(already_a_repo, other_remotes)
+    !already_a_repo && other_remotes.empty? && background_unshallow?
+  end
+
+  private_class_method :_skip_fetch_of_fresh_clone?
 
   # Clones (or imports from a bundle) the repository into +dir+, falling back to each
   # 'other_remotes' entry in YAML order when the primary 'remote' cannot be cloned.
@@ -947,9 +1049,10 @@ if __FILE__ == $PROGRAM_NAME
     opts.separator 'Environment variables:'.purple
     opts.separator "  #{'FILTER'.yellow}      can be used to apply the operation to a subset of codebases (will match on folder or repo name)"
     opts.separator "  #{'REF_FOLDER'.yellow}  can be used to apply a filter when verifying against a specific yaml file"
+    opts.separator "  #{'FIRST_INSTALL'.yellow}  leave clones shallow and complete them in a detached background batch afterwards (opt out: #{ResurrectRepositories::SKIP_BACKGROUND_UNSHALLOW_ENV.yellow}=1)"
   end
 
-  parser.abort_with_usage('Exactly one of -g, -r, -a, -c, or -b must be specified.') if nil_or_empty?(options) || options.size > 1
+  parser.abort_with_usage('Exactly one of -g, -r, -a, -c, or -b must be specified.') if options.empty? || options.size > 1
 
   # Standard dual-mode CLI wrapper pattern (Flay similarity with recreate-repository.rb is intentional).
   # See ruby-scripting.md section "Dual-Mode Ruby Scripts".

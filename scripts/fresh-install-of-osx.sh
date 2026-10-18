@@ -115,18 +115,43 @@ _cleanup_and_exit() {
   exit 1
 }
 
-# Set DNS to 1.1.1.1 if on Jio ISP (GitHub may otherwise not resolve)
-_setup_jio_dns() {
+# Set DNS to 1.1.1.2/9.9.9.9 if on Jio ISP (GitHub may otherwise not resolve).
+# Split in two so the slow ipinfo lookup (up to ~10s on a bad network) can overlap with the .shellrc
+# download instead of preceding it:
+#   _start_jio_dns_lookup  -- starts the lookup in the background (writes <file>, sets _jio_lookup_pid)
+#   _finish_jio_dns_setup  -- waits for it, applies the DNS change if needed, and sets
+#                             _jio_dns_changed=1 so the caller can retry a download that failed
+#                             before the change took effect.
+# The _jio_* variables are plain globals shared by these two functions and their caller.
+# --connect-timeout/--max-time: on a flaky or captive network this best-effort lookup must not
+# stall the whole bootstrap; a timeout leaves the result empty, which is handled like any other failure.
+_start_jio_dns_lookup() {
+  _jio_lookup_file="$(mktemp "${TMPDIR:-/tmp}/jio_lookup.XXXXXX")"
+  _jio_dns_changed=''
+  # '|| true': a failed lookup (the usual case on non-Jio networks with no route, etc.) must be
+  # silent and must not trip the ERR trap inside the background subshell.
+  ( trap - ERR EXIT; curl -fsS --connect-timeout 5 --max-time 10 https://ipinfo.io/org 2>/dev/null >"${_jio_lookup_file}" || true ) &!
+  _jio_lookup_pid=$!
+}
+
+_finish_jio_dns_setup() {
+  if [[ -z "${_jio_lookup_pid:-}" ]]; then
+    return 0
+  fi
+  # The background subshell is disowned (&!), so it cannot be 'wait'ed for: poll for its exit.
+  zmodload zsh/zselect
+  while kill -0 "${_jio_lookup_pid}" 2>/dev/null; do
+    zselect -t 10 || true
+  done
   local _org
-  # Capture curl output into a variable first; then test with a glob match.
-  # Previously: curl ... | /usr/bin/grep -qi 'jio' -- two processes + pipe.
-  # Now: single curl fork, pure-zsh lowercase expansion (:l) + glob match.
-  # --connect-timeout/--max-time: on a flaky or captive network this best-effort lookup must not
-  # stall the whole bootstrap; a timeout leaves _org empty, which is handled like any other failure.
-  _org=$(curl -fsS --connect-timeout 5 --max-time 10 https://ipinfo.io/org 2>/dev/null)
+  _org="$(<"${_jio_lookup_file}")"
+  rm -f "${_jio_lookup_file}"
+  _jio_lookup_pid=''
+  # Pure-zsh lowercase expansion (:l) + glob match, no extra process.
   if [[ "${_org:l}" == *jio* ]]; then
     echo '==> Setting DNS for WiFi from Jio ISP'
     networksetup -setdnsservers Wi-Fi 1.1.1.2 9.9.9.9 || echo 'Warning: Failed to set DNS for Wi-Fi'
+    _jio_dns_changed=1
   fi
 }
 
@@ -203,11 +228,38 @@ _download_and_source_shellrc() {
     reason="local repo file is newer"
   fi
 
+  # The download runs concurrently with the (independent) Jio DNS lookup started in main().
+  # If the network turns out to be Jio, GitHub may not have resolved for the download that
+  # started before the DNS change; it is then retried once, after the change.
+  local shellrc_download_url shellrc_tmp_file=''
   if [[ -n "${reason}" ]]; then
     echo "==> Downloading .shellrc from GitHub (${reason})"
     # Cache-busting: append timestamp to URL and add no-cache headers to ensure we bypass
     # GitHub's CDN cache and intermediate proxies to get the latest version.
-    curl "${_cache_bust_headers[@]}" "${_curl_retry_opts[@]}" -fsSL "https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/files/--HOME--/.shellrc?$(/bin/date +%s)" -o "${HOME}/.shellrc"
+    shellrc_download_url="https://raw.githubusercontent.com/${GH_USERNAME}/dotfiles/refs/heads/${DOTFILES_BRANCH}/files/--HOME--/.shellrc?$(/bin/date +%s)"
+    # Downloaded to a temp file in the same directory and moved into place only on success, so a
+    # failed or interrupted download never leaves a truncated ~/.shellrc behind.
+    shellrc_tmp_file="${HOME}/.shellrc.download.$$"
+    ( trap - ERR EXIT; curl "${_cache_bust_headers[@]}" "${_curl_retry_opts[@]}" -fsSL "${shellrc_download_url}" -o "${shellrc_tmp_file}" ) &
+    local shellrc_download_pid=$!
+  fi
+
+  _finish_jio_dns_setup
+
+  if [[ -n "${reason}" ]]; then
+    local shellrc_download_status=0
+    wait "${shellrc_download_pid}" || shellrc_download_status=$?
+    if (( shellrc_download_status != 0 )) && [[ -n "${_jio_dns_changed:-}" ]]; then
+      echo "==> Retrying the .shellrc download now that the DNS has been changed"
+      shellrc_download_status=0
+      curl "${_cache_bust_headers[@]}" "${_curl_retry_opts[@]}" -fsSL "${shellrc_download_url}" -o "${shellrc_tmp_file}" || shellrc_download_status=$?
+    fi
+    if (( shellrc_download_status != 0 )); then
+      rm -f "${shellrc_tmp_file}"
+      echo "ERROR: failed to download .shellrc (curl exit ${shellrc_download_status})" >&2
+      return "${shellrc_download_status}"
+    fi
+    mv -f "${shellrc_tmp_file}" "${HOME}/.shellrc"
   fi
 
   # Universal validation (both first-install and pre-configured)
@@ -280,20 +332,100 @@ _ensure_filevault_is_on() {
   step_end
 }
 
-# Install Xcode Command Line Tools via non-interactive, non-gui softwareupdate
+# Runs a command with stdout+stderr captured into <outfile> and kills it if it is still running
+# after <seconds>. There is no GNU 'timeout' on a vanilla macOS, so this is a portable
+# background + poll + kill. Returns the command's own status, or 124 on a timeout (same as
+# GNU timeout). zselect (zsh/zselect, a built-in module) is the no-fork 200ms sleep; it returns
+# non-zero when its timeout expires, which is the normal case here, hence the '|| true'.
+# Usage: _run_with_timeout <seconds> <outfile> <command> [args...]
+_run_with_timeout() {
+  local rwt_secs="${1}" rwt_outfile="${2}"
+  shift 2
+  zmodload zsh/zselect
+  "$@" >"${rwt_outfile}" 2>&1 &
+  local rwt_pid=$!
+  local rwt_ticks=0
+  local rwt_max_ticks=$((rwt_secs * 5))
+  local rwt_status=0
+  while kill -0 "${rwt_pid}" 2>/dev/null; do
+    if (( rwt_ticks >= rwt_max_ticks )); then
+      kill "${rwt_pid}" 2>/dev/null || true
+      zselect -t 100 || true
+      kill -9 "${rwt_pid}" 2>/dev/null || true
+      wait "${rwt_pid}" 2>/dev/null || true
+      return 124
+    fi
+    zselect -t 20 || true
+    rwt_ticks=$((rwt_ticks + 1))
+  done
+  wait "${rwt_pid}" || rwt_status=$?
+  return "${rwt_status}"
+}
+
+# Extracts the Command Line Tools label from 'softwareupdate --list' output in <list-file> and
+# prints it (the last match, which is the newest). Handles both formats macOS has used:
+#   '* Label: Command Line Tools for Xcode-16.4'   (macOS 10.15+)
+#   '* Command Line Tools for Xcode-11.5'          (older)
+# Prints nothing when there is no such line.
+_parse_clt_label() {
+  local pcl_line pcl_label=''
+  while IFS= read -r pcl_line; do
+    if [[ "${pcl_line}" =~ '^\*[[:space:]]+(Label:[[:space:]]+)?(Command Line Tools.*)$' ]]; then
+      pcl_label="${match[2]}"
+      # Strip trailing whitespace (portable form; '%%[[:space:]]#' would need EXTENDED_GLOB).
+      pcl_label="${pcl_label%"${pcl_label##*[![:space:]]}"}"
+    fi
+  done <"${1}"
+  if [[ -n "${pcl_label}" ]]; then print -r -- "${pcl_label}"; fi
+}
+
+# Install Xcode Command Line Tools via non-interactive, non-gui softwareupdate. The (slow, ~5s+)
+# 'softwareupdate --list' is only run when the tools are missing, and only the Command Line Tools
+# label it reports is installed (not every recommended update, which '-ia' would do). Two numbered
+# steps are kept regardless of the path taken so the 'Step N of TOTAL' count stays in sync with
+# the total declared in main() and in FreshInstallPostClone.
 _install_xcode_command_line_tools() {
   _current_section='Install Xcode Command Line Tools'; _current_section_manual=1
+  local clt_marker='/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress'
+  local clt_label=''
+  local clt_missing=false
+  if ! xcode-select -p &>/dev/null; then clt_missing=true; fi
+
   step_start
   _step_header "$(yellow 'Listing available software updates')"
-  softwareupdate --list 2>&1 | grep '^\*' || true
+  if [[ "${clt_missing}" == true ]]; then
+    # The marker file must exist BEFORE listing: softwareupdate only offers the Command Line
+    # Tools in its list while it is present.
+    touch "${clt_marker}"
+    local su_list_file
+    su_list_file="$(mktemp)"
+    local su_status=0
+    # Bounded to 120s: on a flaky network or a stuck Software Update service this call can hang.
+    _run_with_timeout 120 "${su_list_file}" softwareupdate --list || su_status=$?
+    if (( su_status == 124 )); then
+      _record_warning "'softwareupdate --list' timed out after 120s -- falling back to installing all recommended updates"
+    elif (( su_status != 0 )); then
+      _record_warning "'softwareupdate --list' failed (exit ${su_status}) -- falling back to installing all recommended updates"
+    fi
+    /usr/bin/grep '^\*' "${su_list_file}" || true
+    clt_label="$(_parse_clt_label "${su_list_file}")"
+    rm -f "${su_list_file}"
+  else
+    info 'Skipping listing of software updates -- xcode command-line tools already present.'
+  fi
   step_end
 
   step_start
   _step_header "$(yellow 'Installing xcode command-line tools')"
-  if ! xcode-select -p &>/dev/null; then
-    touch /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
-    sudo softwareupdate -ia --agree-to-license --force || _record_warning 'softwareupdate encountered errors'
-    rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+  if [[ "${clt_missing}" == true ]]; then
+    if [[ -n "${clt_label}" ]]; then
+      info "Installing only '$(cyan "${clt_label}")'"
+      sudo softwareupdate -i "${clt_label}" --agree-to-license || _record_warning "softwareupdate encountered errors installing '${clt_label}'"
+    else
+      warn 'No Command Line Tools label found in the softwareupdate list -- installing all recommended updates instead'
+      sudo softwareupdate -ia --agree-to-license --force || _record_warning 'softwareupdate encountered errors'
+    fi
+    rm -f "${clt_marker}"
     if ! xcode-select -p 2>/dev/null; then
       error "Couldn't install xcode command-line tools; Aborting"
       exit 1
@@ -304,8 +436,104 @@ _install_xcode_command_line_tools() {
     info 'Skipping installation of xcode command-line tools -- already present.'
   fi
   # Note: Duplicate the cleanup if the installation was cancelled and continued via the gui
-  rm -f /tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress
+  rm -f "${clt_marker}"
   step_end
+}
+
+# Starts the official Homebrew installer in the background so it overlaps with the rest of the
+# bootstrap (the dotfiles clone, install-dotfiles, ...); the HomebrewInstall step in Ruby waits
+# for it (see the contract below), verifies that brew exists and installs it itself if the
+# background run failed.
+#
+# Only on a vanilla OS (FIRST_INSTALL set, no brew yet); opt out with FRESH_INSTALL_NO_EARLY_BREW.
+# Must run after: (a) the Command Line Tools exist (the installer requires them) and (b)
+# keep_sudo_alive is running -- the installer runs with NONINTERACTIVE=1 and stdin from
+# /dev/null, so it can never prompt: it only works while sudo credentials are cached, which the
+# keep-alive loop refreshes every 60s.
+#
+# Contract (exported; read by the Ruby HomebrewInstall step):
+#   _DOTFILES_BREW_INSTALL_PID -- pid of the background job (poll with 'kill -0'; it is not a child
+#                                 of the Ruby process, so its exit status is not available --
+#                                 check for the brew binary instead)
+#   _DOTFILES_BREW_INSTALL_LOG -- file with the downloader's and installer's combined output
+#
+# If this script is re-run while a previous installer is still alive (pid file below), that one
+# is adopted rather than starting a second concurrent installer.
+#
+# Failure/exit behaviour: the installer is deliberately NOT killed when this script fails or is
+# interrupted -- aborting an installer half way leaves a partial Homebrew that is harder to
+# recover from than letting it finish. Instead the EXIT trap (see _brew_install_exit_notice)
+# tells the user it is still running, with its pid and log.
+_start_early_brew_install() {
+  if [[ -n "${FRESH_INSTALL_NO_EARLY_BREW:-}" ]]; then
+    info 'Not starting Homebrew early -- FRESH_INSTALL_NO_EARLY_BREW is set.'
+    return 0
+  fi
+  if [[ -z "${FIRST_INSTALL:-}" ]]; then
+    return 0
+  fi
+  if command_exists brew || is_file /opt/homebrew/bin/brew || is_file /usr/local/bin/brew; then
+    return 0
+  fi
+
+  local pid_file="${TMPDIR:-/tmp}/dotfiles_brew_install.pid"
+  local log_file="${TMPDIR:-/tmp}/dotfiles_brew_install.log"
+  local old_pid=''
+  if is_file "${pid_file}"; then old_pid="$(<"${pid_file}")"; fi
+  if [[ -n "${old_pid}" ]] && kill -0 "${old_pid}" 2>/dev/null; then
+    info "A Homebrew installer from an earlier run is still running (pid ${old_pid}) -- reusing it; log: '$(cyan "${log_file}")'"
+    export _DOTFILES_BREW_INSTALL_PID="${old_pid}"
+    export _DOTFILES_BREW_INSTALL_LOG="${log_file}"
+    return 0
+  fi
+
+  local installer_file
+  installer_file="$(mktemp "${TMPDIR:-/tmp}/brew-install.XXXXXX")"
+  : >"${log_file}"
+  # The whole download+install runs inside the backgrounded subshell, so the (cache-busted,
+  # retrying) download does not block this script either. The temp installer is removed by
+  # the subshell itself when it finishes.
+  # The traps are cleared first: this subshell must never run this script's ERR/EXIT cleanup (which
+  # would restore cron and print a failure summary on behalf of the main script).
+  (
+    trap - ERR EXIT
+    installer_status=0
+    curl "${_cache_bust_headers[@]}" "${_curl_retry_opts[@]}" -fsSL "https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh?$(/bin/date +%s)" -o "${installer_file}" && \
+      NONINTERACTIVE=1 /bin/bash "${installer_file}" || installer_status=$?
+    rm -f "${installer_file}"
+    exit "${installer_status}"
+  ) </dev/null >>"${log_file}" 2>&1 &!
+  export _DOTFILES_BREW_INSTALL_PID=$!
+  export _DOTFILES_BREW_INSTALL_LOG="${log_file}"
+  print -r -- "${_DOTFILES_BREW_INSTALL_PID}" >"${pid_file}"
+  info "Started the Homebrew installer in the background (pid ${_DOTFILES_BREW_INSTALL_PID}); log: '$(cyan "${log_file}")'"
+}
+
+# EXIT-trap helper, see _start_early_brew_install: a still-running background Homebrew installer
+# is left alone, but never silently.
+_brew_install_exit_notice() {
+  local pid="${_DOTFILES_BREW_INSTALL_PID:-}"
+  if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
+    echo "NOTE: the background Homebrew installer (pid ${pid}) is still running and was left running on purpose; its log: ${_DOTFILES_BREW_INSTALL_LOG:-<unknown>}. Re-running this script reuses it." >&2
+  fi
+}
+
+# EXIT-trap helper: normally the crontab backup is already restored and deleted by the time the
+# script exits (by _cleanup_and_exit, the Ruby side, or resume_cron). When the script leaves
+# through a plain 'exit 1' that skipped those, the backup is still there and cron is still empty:
+# restore it so the schedule is not lost, then remove the file. A non-empty live crontab is never
+# overwritten.
+_restore_leftover_cron_backup() {
+  local backup="${_DOTFILES_CRON_BACKUP_FILE:-}"
+  if [[ -n "${backup}" && -s "${backup}" ]] && [[ -z "$(crontab -l 2>/dev/null)" ]]; then
+    if crontab "${backup}"; then
+      echo 'SUCCESS: Restored crontab from leftover backup at exit.'
+    else
+      echo "ERROR: Failed to restore crontab at exit; backup kept at ${backup}" >&2
+      return 0
+    fi
+  fi
+  if [[ -n "${backup}" ]]; then rm -f "${backup}"; fi
 }
 
 # Create core XDG directories needed before install-dotfiles.rb runs.
@@ -317,6 +545,8 @@ _ensure_directories_exist() {
   step_start
   _step_header "$(yellow 'Creating XDG base directories')"
   local -a dirs=(
+    "${ANTIDOTE_HOME}"
+    "${ANTIDOTE_PLUGIN_ZSH:h}"
     "${XDG_CACHE_HOME}"
     "${XDG_CONFIG_HOME}"
   )
@@ -391,7 +621,20 @@ main() {
   # Once .shellrc is sourced, the EXIT and ERR traps use resume_cron/recron
   # from .shellrc for restore.
   export _DOTFILES_CRON_BACKUP_FILE="${TMPDIR:-/tmp}/crontab_backup"
-  crontab -l >"${_DOTFILES_CRON_BACKUP_FILE}"  2>/dev/null || : >"${_DOTFILES_CRON_BACKUP_FILE}"
+  # Never replace a non-empty backup with an empty one: if an earlier run crashed after
+  # 'crontab -r', that backup is the only copy of the schedule, and the live crontab is empty now.
+  # A non-empty live crontab is always the newest truth, so it does replace an older backup.
+  local _cron_new_backup="${_DOTFILES_CRON_BACKUP_FILE}.new"
+  if crontab -l >"${_cron_new_backup}" 2>/dev/null && [[ -s "${_cron_new_backup}" ]]; then
+    mv -f "${_cron_new_backup}" "${_DOTFILES_CRON_BACKUP_FILE}"
+  else
+    rm -f "${_cron_new_backup}"
+    if [[ -s "${_DOTFILES_CRON_BACKUP_FILE}" ]]; then
+      echo "==> No active crontab, but an older backup exists -- keeping it: '${_DOTFILES_CRON_BACKUP_FILE}' (likely left by an interrupted earlier run; it will be restored at the end)"
+    else
+      : >"${_DOTFILES_CRON_BACKUP_FILE}"
+    fi
+  fi
   crontab -r &>/dev/null || true
 
   # Ruby modules and scripts append the issues they record to this file (see
@@ -410,7 +653,22 @@ main() {
   # so is_first_install is not yet defined.
   # if/fi avoids the && pattern where [[ -n ... ]] returning false (not a first install,
   # the common case on a pre-configured machine) propagates a non-zero exit under the ERR trap.
-  if [[ -n "${FIRST_INSTALL:-}" ]]; then export GIT_SSH_COMMAND="ssh -o ConnectTimeout=20 -o Compression=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3"; fi
+  # Connection multiplexing (ControlMaster/ControlPersist): the many sequential git operations of a
+  # bootstrap (clones, fetches, submodule updates) reuse one authenticated connection instead of
+  # paying the TCP+SSH handshake each time. The socket lives in a private (0700, owner-checked) dir
+  # under /tmp: ${TMPDIR} on macOS is long enough that '<dir>/<%C hash, 40 chars>' could exceed the
+  # 104-byte unix-socket path limit, and ~/.ssh is tracked by the 'home' repo. Multiplexing is
+  # simply left off if the directory cannot be made safe. The master exits by itself 120s after its
+  # last client. Compression=no on the command line overrides 'Compression yes' of the global ssh
+  # config, which is intentional for this bootstrap (the transfers are already compressed packs).
+  if [[ -n "${FIRST_INSTALL:-}" ]]; then
+    local _ssh_cm_dir="/tmp/.dotfiles-ssh-cm-${UID}"
+    local _ssh_mux_opts=''
+    if mkdir -p "${_ssh_cm_dir}" 2>/dev/null && chmod 700 "${_ssh_cm_dir}" 2>/dev/null && [[ -d "${_ssh_cm_dir}" && -O "${_ssh_cm_dir}" ]]; then
+      _ssh_mux_opts=" -o ControlMaster=auto -o ControlPath=${_ssh_cm_dir}/%C -o ControlPersist=120"
+    fi
+    export GIT_SSH_COMMAND="ssh -o ConnectTimeout=20 -o Compression=no -o ServerAliveInterval=10 -o ServerAliveCountMax=3${_ssh_mux_opts}"
+  fi
 
   # ~/.curlrc is not yet symlinked (install-dotfiles.rb runs later), so its defaults are
   # absent. Define resilient curl flags explicitly for all bootstrap curl calls in this
@@ -450,7 +708,7 @@ main() {
   # Set ERR trap AFTER initializing arrays to prevent "parameter not set" errors in _cleanup_and_exit
   # if an error occurs during initialization. The trap accesses these arrays via dynamic scoping.
   trap '_cleanup_and_exit "${LINENO}"' ERR
-  trap 'rm -f "${_DOTFILES_CRON_BACKUP_FILE}"; _decrement_script_depth' EXIT
+  trap '_brew_install_exit_notice; _restore_leftover_cron_backup; _decrement_script_depth' EXIT
 
   # Helper function to show progress through steps
   _step_header() {
@@ -460,7 +718,11 @@ main() {
 
   local -a _script_start_times=()
   local -a _step_start_times=()
-  export _DOTFILES_SCRIPT_DEPTH=$((${_DOTFILES_SCRIPT_DEPTH:-0} + 1))
+  # This script is always the outermost one, so the depth is set to 1 outright instead of being
+  # incremented: a value inherited from the terminal it was started in (a stale export from an earlier
+  # session) would make it 2, and the closing summary (printed only at depth 1) and the indentation
+  # of every line would silently go wrong.
+  export _DOTFILES_SCRIPT_DEPTH=1
   # Note: Cannot load from shellrc since that file won't be present in a new machine (vanilla OS)
   # ${EPOCHSECONDS} is provided by the zsh/datetime built-in module -- always available, no fork.
   # Capture start epoch into both a local variable and _script_start_times.
@@ -495,7 +757,7 @@ main() {
   # section_header "$(yellow 'Disabling macos gatekeeper')"
   # sudo spectl --master-disable
 
-  _setup_jio_dns
+  _start_jio_dns_lookup
   _resolve_gh_username
   _resolve_dotfiles_branch
   _download_and_source_shellrc
@@ -517,6 +779,7 @@ main() {
   _approve_fingerprint_sudo
   _ensure_filevault_is_on
   _install_xcode_command_line_tools
+  _start_early_brew_install
   set_ssh_folder_permissions
   set_gnupg_folder_permissions
   _ensure_directories_exist

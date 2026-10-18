@@ -11,19 +11,15 @@ require_relative 'path_utils'
 
 # Homebrew steps shared by the interactive 'bupc' command (scripts/brew-update-cleanup.rb),
 # the hourly cron job (scripts/software-updates-cron.rb) and the machine setup (BrewBundle),
-# so they can never drift apart on how a step is invoked.
+# so they can never drift apart on how a step is invoked. What only the machine setup needs (the
+# base section of the Brewfile, the retries, the background install) lives in BrewBundle.
 #
-# Every method is a pure wrapper (base_brewfile_content, which only reads the Brewfile, is the one
-# exception to "a plain 'brew' subprocess"): it returns its result and never logs or records
-# warnings itself, because the callers deliberately treat the same failure differently (cron
+# Every method is a pure wrapper around a plain 'brew' subprocess: it returns its result and never
+# logs or records warnings itself, because the callers deliberately treat the same failure differently (cron
 # records a warning per updated component; 'bupc' keeps going and only summarizes at the end).
 # No method assumes a TTY or a login shell, so they behave identically under cron.
 module Brew
   extend self
-
-  # The comment line in the Brewfile that ends the base section: on a vanilla macOS only what
-  # is above it is installed first, the rest follows in a background job (see BrewBundle).
-  FIRST_INSTALL_SENTINEL = '# FIRST_INSTALL:'
 
   # Refreshes Homebrew's own formula/cask definitions.
   #
@@ -36,59 +32,38 @@ module Brew
     CommandUtils.run_interactive('brew', 'update')
   end
 
-  # Brings installed packages in line with the Brewfile. 'brew bundle check' exits 0
-  # when everything is already installed, in which case the full install is skipped to
-  # avoid re-checking every formula on every run. The check's output stays visible so a
-  # missing package is easy to diagnose.
+  # Whether everything in the Brewfile is already installed ('brew bundle check' exits 0). The
+  # check's output stays visible so a missing package is easy to diagnose.
   #
   # @param brew_bin [String] The brew executable. Defaults to 'brew' from PATH; the bootstrap
   #   passes the absolute path because Homebrew may not be on PATH yet.
-  # @param brewfile_content [String, nil] When given, installs from this Brewfile text (fed on
-  #   stdin, output streamed live) instead of the Brewfile on disk -- used to install only the
-  #   base section on a first install.
-  # @return [Boolean] true if everything is (now) installed.
-  def sync_bundle(brew_bin: 'brew', brewfile_content: nil)
-    return true if CommandUtils.run_interactive(brew_bin, 'bundle', 'check', '-v')
+  # @return [Boolean]
+  def bundle_check(brew_bin: 'brew')
+    CommandUtils.run_interactive(brew_bin, 'bundle', 'check', '-v')
+  end
 
-    if brewfile_content
-      Core.stream_command([brew_bin, 'bundle', 'install', '-q', '--file=-'], stdin_data: brewfile_content).zero?
+  # One attempt at 'brew bundle install', from +content+ (Brewfile text fed on stdin, output
+  # streamed live) when given, otherwise from the Brewfile on disk. There is deliberately no time
+  # limit: a legitimate cask or formula build can run for tens of minutes and the quiet ('-q')
+  # output gives no progress to judge a stall by, so killing it would do more harm than waiting.
+  #
+  # @param brew_bin [String] The brew executable.
+  # @param content [String, nil] Brewfile text to install instead of the file on disk.
+  # @return [Boolean] true if the install succeeded.
+  def bundle_install(brew_bin: 'brew', content: nil)
+    if content
+      Core.stream_command([brew_bin, 'bundle', 'install', '-q', '--file=-'], stdin_data: content).zero?
     else
       CommandUtils.run_interactive(brew_bin, 'bundle', 'install', '-q')
     end
   end
 
-  # The part of the Brewfile above the FIRST_INSTALL_SENTINEL comment line: the bare essentials
-  # that a vanilla macOS needs before the rest of the setup can proceed. The sentinel is a
-  # *comment*, so the match must not skip comment lines.
+  # Brings installed packages in line with the Brewfile: when 'brew bundle check' already passes
+  # the install is skipped, to avoid re-checking every formula on every run.
   #
-  # @param brewfile [Pathname, String] Path to the Brewfile.
-  # @return [String, nil] The base section, or nil when the Brewfile has no sentinel line.
-  def base_brewfile_content(brewfile)
-    base = []
-    Core.each_line_utf8(brewfile) do |line|
-      return base.join if line.start_with?(FIRST_INSTALL_SENTINEL)
-
-      base << line
-    end
-    nil
-  end
-
-  # Installs the whole Brewfile in a detached background process, so the optional and heavy
-  # packages do not block the rest of the setup. FIRST_INSTALL is emptied in the child so that
-  # 'brew bundle' treats the run as a full install; output is appended to +log+.
-  #
-  # @param brew_bin [String] The brew executable.
-  # @param log [Pathname, String] File the job's stdout and stderr are appended to.
-  # @return [Boolean] true if the job was started (its own success is only visible in +log+).
-  def bundle_in_background(log:, brew_bin: 'brew')
-    log_path = Pathname(log)
-    log_path.dirname.mkpath
-    pid = Process.spawn(ENV.to_h.merge('FIRST_INSTALL' => ''), brew_bin.to_s, 'bundle',
-                        out: [log_path.to_s, 'a'], err: [log_path.to_s, 'a'])
-    Process.detach(pid)
-    true
-  rescue SystemCallError
-    false
+  # @return [Boolean] true if everything is (now) installed.
+  def sync_bundle
+    bundle_check || bundle_install
   end
 
   # Removes everything not declared in the Brewfile, prunes the download cache and
