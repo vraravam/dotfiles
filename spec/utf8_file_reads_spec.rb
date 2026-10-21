@@ -1,3 +1,4 @@
+# encoding: utf-8
 # frozen_string_literal: true
 
 # Ruby reads files in the environment's default external encoding, which is US-ASCII under

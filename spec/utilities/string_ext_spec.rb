@@ -1,8 +1,16 @@
+# encoding: utf-8
 # frozen_string_literal: true
 
 require 'string_ext'
 
 RSpec.describe String do
+  before do
+    ENV.delete('NO_COLOR')
+  end
+  after do
+    ENV['NO_COLOR'] = '1'
+  end
+
   describe '#comment_or_empty?' do
     it 'is true for an empty string' do
       expect(''.comment_or_empty?).to be true

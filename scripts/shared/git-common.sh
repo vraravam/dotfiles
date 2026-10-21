@@ -127,12 +127,13 @@ dispatch_override() {
   _gc_cmd="${1}"
   _gc_dir="${2}"
   shift 2
-  if [ -z "${PERSONAL_BIN_DIR:-}" ] || [ -n "${_GIT_OVERRIDE_SKIP:-}" ]; then return 1; fi
+  if [ -n "${_GIT_OVERRIDE_SKIP:-}" ]; then return 1; fi
   _gc_abs="$(cd "${_gc_dir}" && pwd)" || return 1
   _gc_name="${_gc_abs##*/}"
   for _gc_ext in rb sh; do
-    _gc_script="${PERSONAL_BIN_DIR}/${_gc_cmd}-${_gc_name}.${_gc_ext}"
+    _gc_script="${_gc_cmd}-${_gc_name}.${_gc_ext}"
     [ -x "${_gc_script}" ] || continue
+    section_header "Using: '$(cyan $(which "${_gc_script}"))'"
     if [ "${_gc_ext}" = rb ]; then
       (cd "${_gc_dir}" && _GIT_OVERRIDE_SKIP=1 "${_gc_script}" "$@")
     else

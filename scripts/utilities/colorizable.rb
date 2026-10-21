@@ -39,7 +39,7 @@ module Colorizable
   def colorize(code)
     # Delegate to replace_home_path_with_tilde for the string conversion + substitution
     str = replace_home_path_with_tilde
-    return str unless Core.running_in_tty?
+    return str if !Core.running_in_tty? || !Core.nil_or_empty?(ENV.fetch('NO_COLOR', nil))
 
     "\x1b[#{code}m#{str}\x1b[0m"
   end

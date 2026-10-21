@@ -4,6 +4,8 @@
 
 require 'pathname'
 
+require_relative 'command_utils'
+require_relative 'core'
 require_relative 'env_vars'
 
 # Locates folder-specific override scripts for git commands and hooks.
@@ -15,6 +17,8 @@ require_relative 'env_vars'
 # naming convention; the shell side (dispatch_or_fallback in .aliases, and
 # scripts/git-cc and scripts/git-upreb) mirrors it.
 module GitOverrides
+  include Core
+  extend Core
   extend self
 
   # Searched in order, so a Ruby override wins when both exist.
@@ -35,8 +39,11 @@ module GitOverrides
   def script_for(command, dir)
     name = File.basename(File.expand_path(dir.to_s))
     EXTENSIONS.each do |extension|
-      candidate = EnvVars::PERSONAL_BIN_DIR.join("#{command}-#{name}.#{extension}")
-      return candidate if candidate.file? && candidate.executable?
+      candidate = CommandUtils.query('which', "#{command}-#{name}.#{extension}")
+      unless nil_or_empty?(candidate)
+        candidate_pn = Pathname(candidate)
+        return candidate_pn if candidate_pn.file? && candidate_pn.executable?
+      end
     end
     nil
   end

@@ -4,6 +4,19 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.24
+
+#### More extensible script overrides
+
+* *[files/--ZDOTDIR--/.aliases]* `build_me`, `debug_me` and `launch_me` now search for executable scripts/aliases/functions in `PATH` instead of only looking for shell scripts in `PERSONAL_BIN_DIR`.
+* *[scripts/shared/git-common.sh, scripts/utilities/git_overrides.rb]* Git commands/wrappers (like `cc`) were not using the folder-specific overrides - a bug introduced at some point in the recent past. This has now been rectified. An example script for `PERSONAL_PROFILES_DIR` has been included into this repo called `cc-browser-profiles.rb` - running `cc` within the `PERSONAL_PROFILES_DIR` will pick this executable script instead of the "normal" `cc` functionaity in any other folders.
+
+#### Adopting these changes
+
+* Restart the Terminal/iTerm application to reload the zsh configuration (or, to avoid a restart, reload the function definitions in the current shell: `unfunction is_aliases_sourced; DEBUG=true load_file_if_exists $ZDOTDIR/.aliases;`).
+
+---
+
 ### 4.0.23
 
 :white_check_mark: Tested on a vanilla macOS machine
@@ -2152,7 +2165,7 @@ recron
 
 # Verify the crontab was updated
 crontab -l | grep "Downloads"
-# Should show: tmplog=/Users/vijay/Downloads/software-updates-cron-last-run.log
+# Should show: tmplog=~/Downloads/software-updates-cron-last-run.log
 ```
 
 **Step 6: Clean up old files (optional, after verifying everything works)**

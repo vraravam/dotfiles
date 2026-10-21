@@ -1,3 +1,4 @@
+# encoding: utf-8
 # frozen_string_literal: true
 
 # SimpleCov must start before any application code is required, so it must be
@@ -34,6 +35,17 @@ module EnvHelpers
   ensure
     previous.each { |key, value| ENV[key] = value }
   end
+
+  def adjust_path(bin_dir)
+    # Add the bin_dir to PATH so 'which' can find our test overrides
+    env_path = ENV.fetch('PATH', '')
+    env_new = if env_path.start_with?(bin_dir.to_s)
+                env_path
+              else
+                "#{bin_dir}:#{env_path}"
+              end
+    stub_const('ENV', Hash(ENV).merge('PATH' => env_new))
+  end
 end
 
 RSpec.configure do |config|
@@ -54,4 +66,7 @@ RSpec.configure do |config|
   # (relevant here since several specs mutate ENV and must restore it).
   config.order = :random
   Kernel.srand config.seed
+
+  # Disable ANSI color output for tests so they don't have to deal with escape codes
+  ENV['NO_COLOR'] = '1'
 end

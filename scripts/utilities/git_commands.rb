@@ -186,6 +186,7 @@ module GitCommands
   def exec_override(override, folder, args)
     Logging.info "Delegating to override '#{override.cyan}' for '#{folder.cyan}'"
     argv = GitOverrides.argv_for(override, args)
+    # TODO: Handle if the override is a shell script or a function
     Dir.chdir(folder) { exec(*argv) }
   end
 

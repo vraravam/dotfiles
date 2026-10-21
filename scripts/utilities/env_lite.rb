@@ -16,7 +16,7 @@ module EnvLite
   # @param name [String] Environment variable name
   # @return [Boolean] true when the variable is set to a non-blank value
   def set?(name)
-    !ENV.fetch(name, '').strip.empty?
+    !(ENV.fetch(name, '') || '').strip.empty?
   end
 
   # @return [String] The HOME directory path ('' when unset)

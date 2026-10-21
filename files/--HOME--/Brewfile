@@ -126,9 +126,10 @@ cask 'dbeaver-community'
 cask 'drawio'
 cask 'firefox@nightly' # , greedy: true
 cask 'google-chrome@beta'
-cask 'keepassxc@beta'
-cask 'keycastr', postinstall: "\"#{setup_login_items_script}\" -a 'Keycastr'"
+cask 'keepassxc'
+cask 'keycastr'  # , postinstall: "\"#{setup_login_items_script}\" -a 'Keycastr'"
 cask 'keyclu', postinstall: "\"#{setup_login_items_script}\" -a 'KeyClu'" if is_arm
+cask 'okta-verify', postinstall: "\"#{setup_login_items_script}\" -a 'Okta Verify 2'"
 cask 'onlyoffice'
 cask 'protonvpn' # , postinstall: "\"#{setup_login_items_script}\" -a 'ProtonVPN'"
 cask 'qlmarkdown'
@@ -152,9 +153,9 @@ cask 'zoom'
 # tap 'jundot/omlx', 'git@github.com/jundot/omlx'
 # reference: https://www.agileguy.ca/opencode-fully-local/
 # to start ollama: ollama launch opencode --model gpt-oss-20b-MXFP4-Q8 -- ${DOTFILES_DIR}
-# brew 'ollama', link: true, restart_service: :changed
+brew 'ollama', link: true, restart_service: :changed
 # brew 'jundot/omlx/omlx', trusted: true, restart_service: :changed if is_arm
-brew 'anomalyco/tap/opencode', trusted: true
+brew 'anomalyco/tap/opencode-v2', trusted: true
 
 # brew 'mas'
 # mas 'PDFgear', id: 6469021132
@@ -180,6 +181,7 @@ is_vscode_installed = !`PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}" which co
 if is_vscode_installed
   vscode 'britesnow.vscode-toggle-quotes'
   vscode 'codezombiech.gitignore'
+  vscode 'continue.continue'
   vscode 'davidanson.vscode-markdownlint'
   vscode 'dbaeumer.vscode-eslint'
   vscode 'digitalbrainstem.javascript-ejs-support'

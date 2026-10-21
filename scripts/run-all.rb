@@ -128,8 +128,7 @@ module RunAll
     # builtins defined in the user's shell config. The command string is passed to
     # the shell via -c, which is safe here because command comes from ARGV (user
     # is running this script interactively and controls the command).
-    shell = EnvVars::SHELL
-    default_exec = [shell, '-c', command.join(' ')]
+    default_exec = [EnvVars::SHELL, '-c', command.join(' ')]
 
     # Already inside a dispatched override's subprocess tree -- do not re-dispatch.
     return default_exec if GitOverrides.skip?

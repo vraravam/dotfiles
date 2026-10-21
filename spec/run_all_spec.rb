@@ -1,3 +1,4 @@
+# encoding: utf-8
 # frozen_string_literal: true
 
 require 'tmpdir'
@@ -34,7 +35,9 @@ RSpec.describe RunAll do
   end
 
   before do
+    Logging.state.reset!
     stub_const('EnvVars::PERSONAL_BIN_DIR', bin_dir)
+    adjust_path(bin_dir)
     stub_const('EnvVars::SHELL', '/bin/sh')
     GitProcessor.repo_cache = {}
   end
@@ -49,7 +52,7 @@ RSpec.describe RunAll do
       repo_b = make_repo('b')
       before_dir = Dir.pwd
 
-      with_env('_GIT_OVERRIDE_SKIP' => nil) do
+      with_env(GitOverrides::SKIP_ENV_VAR => '') do
         ok = quietly { described_class.run(command: %w[touch marker], folder: tmp.join('work').to_s, mindepth: 1, maxdepth: 2) }
 
         expect(ok).to be true
@@ -64,7 +67,7 @@ RSpec.describe RunAll do
       make_repo('a')
       expect(Logging).to receive(:record_warning).with(/Command failed in/)
 
-      with_env('_GIT_OVERRIDE_SKIP' => nil) do
+      with_env(GitOverrides::SKIP_ENV_VAR => '') do
         ok = quietly { described_class.run(command: %w[false], folder: tmp.join('work').to_s, mindepth: 1, maxdepth: 2) }
 
         expect(ok).to be false
@@ -93,19 +96,26 @@ RSpec.describe RunAll do
     end
 
     it 'runs the user shell when there is no override' do
-      with_env('_GIT_OVERRIDE_SKIP' => nil) do
-        argv = described_class.send(:_resolve_exec_command, command: %w[git status -s], dir: tmp.join('repo').to_s)
+      folder = 'repo1'
+      with_env(GitOverrides::SKIP_ENV_VAR => '') do
+        argv = described_class.send(:_resolve_exec_command, command: %w[git status -s], dir: tmp.join(folder).to_s)
 
         expect(argv).to eq(['/bin/sh', '-c', 'git status -s'])
       end
     end
 
     it 'runs the override (env hash first, only the extra args after it) when one exists' do
-      script = make_override('cc-repo.sh')
+      folder = 'repo2'
+      script = make_override("cc-#{folder}.sh")
+
+      # Mock _override_script_for to return script, simulating skip mode where overrides are looked up & exist
+      allow(described_class).to receive(:_override_script_for).and_return(script)
+      allow(CommandUtils).to receive(:query).with('which', anything).and_return(nil)
+
       allow(Logging).to receive(:info)
 
-      with_env('_GIT_OVERRIDE_SKIP' => nil) do
-        env, *rest = described_class.send(:_resolve_exec_command, command: %w[git cc --expire=now], dir: tmp.join('repo').to_s)
+      with_env(GitOverrides::SKIP_ENV_VAR => nil) do
+        env, *rest = described_class.send(:_resolve_exec_command, command: %w[git cc --expire=now], dir: tmp.join(folder).to_s)
 
         expect(env).to include(GitOverrides::SKIP_ENV_VAR => '1')
         expect(rest).to eq([script.to_s, '--expire=now'])
@@ -113,10 +123,11 @@ RSpec.describe RunAll do
     end
 
     it 'does not look for an override when already inside one' do
-      make_override('cc-repo.sh')
+      folder = 'repo3'
+      make_override("cc-#{folder}.sh")
 
-      with_env('_GIT_OVERRIDE_SKIP' => '1') do
-        argv = described_class.send(:_resolve_exec_command, command: %w[git cc], dir: tmp.join('repo').to_s)
+      with_env(GitOverrides::SKIP_ENV_VAR => '1') do
+        argv = described_class.send(:_resolve_exec_command, command: %w[git cc], dir: tmp.join(folder).to_s)
 
         expect(argv).to eq(['/bin/sh', '-c', 'git cc'])
       end

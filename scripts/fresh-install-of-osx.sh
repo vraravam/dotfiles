@@ -679,7 +679,12 @@ main() {
   # Otherwise only sets defaults when ~/.curlrc is not present.
   # Note: --retry-all-errors is intentionally omitted -- it causes the terminal app to close.
   # Raw -f used here -- .shellrc has not been sourced yet, so is_file is unavailable.
-  local -a _curl_retry_opts
+
+  # Curl retry/timeout flags for bootstrap downloads before ~/.curlrc is symlinked.
+  # Uses CURL_RETRY_OPTS env var as a flag - if set (to any value), enables retry options.
+  # Otherwise only sets defaults when ~/.curlrc is not present.
+  # Note: --retry-all-errors is intentionally omitted -- it causes the terminal app to close.
+  local -a _curl_retry_opts=()
   if [[ -n "${CURL_RETRY_OPTS:-}" || ! -f "${HOME}/.curlrc" ]]; then
     _curl_retry_opts=(--retry 5 --retry-delay 10 --retry-max-time 120 --max-time 150 --connect-timeout 30 --retry-connrefused)
   fi

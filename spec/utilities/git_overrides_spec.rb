@@ -1,3 +1,4 @@
+# encoding: utf-8
 # frozen_string_literal: true
 
 require 'tmpdir'
@@ -6,7 +7,10 @@ require 'git_overrides'
 RSpec.describe GitOverrides do
   let(:bin_dir) { Pathname(Dir.mktmpdir) }
 
-  before { stub_const('EnvVars::PERSONAL_BIN_DIR', bin_dir) }
+  before do
+    stub_const('EnvVars::PERSONAL_BIN_DIR', bin_dir)
+    adjust_path(bin_dir)
+  end
   after { FileUtils.remove_entry(bin_dir) }
 
   def make_script(name, executable: true)
@@ -17,23 +21,37 @@ RSpec.describe GitOverrides do
   end
 
   describe '.script_for' do
-    it 'finds an executable .sh override named after the repo directory' do
-      script = make_script('cc-my-repo.sh')
+    it 'finds an executable .sh override named after the repo directory when override is not skipped' do
+      with_env(GitOverrides::SKIP_ENV_VAR => nil) do
+        script = make_script('cc-my-repo.sh')
 
-      expect(described_class.script_for('cc', '/some/where/my-repo')).to eq(script)
+        allow(CommandUtils).to receive(:query).with('which', 'cc-my-repo.rb').and_return(nil)
+        allow(CommandUtils).to receive(:query).with('which', script.basename.to_s).and_return(script.expand_path)
+
+        expect(described_class.script_for('cc', '/some/where/my-repo')).to eq(script)
+      end
     end
 
-    it 'prefers a .rb override over a .sh override' do
-      make_script('cc-my-repo.sh')
-      ruby_script = make_script('cc-my-repo.rb')
+    it 'prefers a .rb override over a .sh override when override is not skipped' do
+      with_env(GitOverrides::SKIP_ENV_VAR => 'true') do
+        make_script('cc-my-repo.sh')
+        ruby_script = make_script('cc-my-repo.rb')
 
-      expect(described_class.script_for('cc', '/x/my-repo')).to eq(ruby_script)
+        allow(CommandUtils).to receive(:query).with('which', ruby_script.basename.to_s).and_return(ruby_script.expand_path)
+
+        expect(described_class.script_for('cc', '/x/my-repo')).to eq(ruby_script)
+      end
     end
 
-    it 'ignores a script that is not executable' do
-      make_script('cc-my-repo.rb', executable: false)
+    it 'ignores a script that is not executable when override is not skipped' do
+      with_env(GitOverrides::SKIP_ENV_VAR => nil) do
+        ruby_script = make_script('cc-my-repo.rb', executable: false)
 
-      expect(described_class.script_for('cc', '/x/my-repo')).to be_nil
+        allow(CommandUtils).to receive(:query).with('which', ruby_script.basename.to_s).and_return(ruby_script.expand_path)
+        allow(CommandUtils).to receive(:query).with('which', 'cc-my-repo.sh').and_return(nil)
+
+        expect(described_class.script_for('cc', '/x/my-repo')).to be_nil
+      end
     end
 
     it 'is nil when no override exists for that command' do
@@ -45,7 +63,13 @@ RSpec.describe GitOverrides do
     it 'matches on the directory basename, not the full path' do
       script = make_script('pull-repo.rb')
 
+      allow(CommandUtils).to receive(:query).with('which', script.basename.to_s).and_return(script.expand_path)
+
       expect(described_class.script_for('pull', '/a/b/repo')).to eq(script)
+
+      allow(CommandUtils).to receive(:query).with('which', 'pull-other.rb').and_return(nil)
+      allow(CommandUtils).to receive(:query).with('which', 'pull-other.sh').and_return(nil)
+
       expect(described_class.script_for('pull', '/a/b/other')).to be_nil
     end
   end
@@ -101,6 +125,7 @@ RSpec.describe GitOverrides do
     end
 
     it 'is false when the variable is unset or empty' do
+      allow(CommandUtils).to receive(:query).with('which', anything).and_return(nil).times
       with_env(described_class::SKIP_ENV_VAR => nil) { expect(described_class.skip?).to be false }
       with_env(described_class::SKIP_ENV_VAR => '') { expect(described_class.skip?).to be false }
       with_env(described_class::SKIP_ENV_VAR => '  ') { expect(described_class.skip?).to be false }

@@ -256,6 +256,7 @@ module SoftwareUpdatesCron
     end
 
     # TODO: Similar to ollama, need to update the models used by omlx via cli
+    # ollama launch opencode --model qwen3.5:9b
     _step('ollama models update', 'Pull ollama models'.yellow) do
       if PathUtils.command_exists?('ollama')
         # Pull models at most once per 24 hours (configurable interval).
@@ -265,19 +266,22 @@ module SoftwareUpdatesCron
         last_update_file = EnvVars::XDG_CACHE_HOME.join('ollama-last-update')
 
         _run_if_due(last_update_file, model_update_interval, 'Ollama models') do
+          # Note: This list is up-to-date as of 2026-06-06
+          # 'qwen3.5:9b'    # has tools
+          # 'rafw007/qwen35-claude-coder:4b'    # has tools
           # reference: https://insiderllm.com/guides/ollama-mac-setup-optimization/
           # reference: https://popularaitools.ai/blog/run-gemma-4-locally-opencode-2026
-          # Note: This list is up-to-date as of 2026-06-06
           # 'qwen3.6:27b',         # reference: gChat from work (AIFSD chat room): strong coding model
           # 'gemma4:e2b-mlx',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - doesn't edit, only single file for suggestions
           # 'qwen2.5-coder:14b'   # Qwen 2.5 Coder 14B: strong coding model
           # 'rafw007/gemma4-e4b-claude-coder',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - not sure if this runs via opencode, trying now
-          # 'deepseek-coder-v2',
-          # 'gpt-oss:20b',
+          # 'deepseek-coder-v2',    # doens't have tools, no use
           # 'qwen3.5:9b-q8_0',   # Qwen 3.5 9B (Q8): strong reasoning model
+          # 'gpt-oss:20b',
           # 'mdq100/qwen3.5-coder:35b',
           # 'gemma3:12b'         # Gemma 3 12B: free coding model
           # 'codestral:22b',     # TODO: Need to research
+
           # Fetch the list of currently downloaded models dynamically via 'ollama list'.
           # This replaces the hardcoded list to automatically keep all local models up to date.
           # Output format: "NAME             ID              SIZE      MODIFIED"

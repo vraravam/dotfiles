@@ -927,21 +927,37 @@ implode() {
 # 3m. Project-specific helpers
 # --------------------------------------------------------------------------
 
-# Convenience wrappers that invoke the per-project script in PERSONAL_BIN_DIR
+# Convenience wrappers that invoke the per-project script in PATH
 # corresponding to the current directory name, e.g. 'launch-ferdium.sh'.
 launch_me() {
-  require_env_var PERSONAL_BIN_DIR || return 1
-  "${PERSONAL_BIN_DIR}/launch-${PWD##*/}.sh" "$@"
+  local name="launch-${PWD##*/}.sh"
+  if command_exists "${name}"; then
+    section_header "Launching using: '$(cyan $(which "${name}"))'"
+    "${name}" "$@"
+  else
+    warn "Command not found: '$(cyan "${name}")'"
+    return 1
+  fi
 }
 debug_me() {
-  require_env_var PERSONAL_BIN_DIR || return 1
-  # Runs the per-project debug script in PERSONAL_BIN_DIR for the current directory.
-  "${PERSONAL_BIN_DIR}/debug-${PWD##*/}.sh" "$@"
+  local name="debug-${PWD##*/}.sh"
+  if command_exists "${name}"; then
+    section_header "Debugging using: '$(cyan $(which "${name}"))'"
+    "${name}" "$@"
+  else
+    warn "Command not found: '$(cyan "${name}")'"
+    return 1
+  fi
 }
 build_me() {
-  require_env_var PERSONAL_BIN_DIR || return 1
-  # Runs the per-project build script in PERSONAL_BIN_DIR for the current directory.
-  "${PERSONAL_BIN_DIR}/build-${PWD##*/}.sh" "$@"
+  local name="build-${PWD##*/}.sh"
+  if command_exists "${name}"; then
+    section_header "Building using: '$(cyan $(which "${name}"))'"
+    "${name}" "$@"
+  else
+    warn "Command not found: '$(cyan "${name}")'"
+    return 1
+  fi
 }
 
 # rails

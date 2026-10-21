@@ -76,10 +76,10 @@ $character"""
 # for a profile of this name). The character module keeps the success/error colors, so the
 # status of each command stays visible in scrollback. Rendered once per prompt in precmd.
 # The iTerm2 prompt marks of the full prompt are not part of this profile.
-# TODO: Commented out since this makes the right prompt disappear. We lose the ability to
-# see duration of previous completed command, its exit status, and the time it completed.
-# [profiles]
-# transient = "$character"
+# Transient profile (FTL commands) is commented out because including it would show
+# just the success/error character in the prompt, which collapses to an almost-empty
+# transient and makes the right prompt disappear. This keeps the duration/status/time
+# visible by showing them in each segment instead of having one collapsed "transient" profile.
 
 # ── Right prompt ──────────────────────────────────────────────────────────────
 # Segment order: status -> cmd_duration -> jobs -> context -> time

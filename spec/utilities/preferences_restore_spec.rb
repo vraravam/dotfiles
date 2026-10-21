@@ -1,3 +1,4 @@
+# encoding: utf-8
 # frozen_string_literal: true
 
 require 'stringio'
@@ -299,7 +300,8 @@ RSpec.describe PreferencesRestore do
       start_quietly
 
       expect(run_quietly(first_install: true)).to be false
-      expect(Logging.issue_summary_parts.join).to match(/osx-defaults.sh exited non-zero \(see '.*baseline.log'\)/)
+      # The actual error message has a simple path (no escaped backslash), ANSI escapes are removed
+      expect(Logging.issue_summary_parts.join).to match(%r{osx-defaults\.sh exited non-zero \(see '/var/.*baseline\.log'\)})
     end
 
     it 'still imports after a failed baseline' do
