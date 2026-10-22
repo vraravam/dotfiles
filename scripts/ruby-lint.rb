@@ -31,6 +31,7 @@ require_relative 'utilities/command_utils'
 # Runs static analysis on Ruby files
 module RubyLint
   extend self
+  extend Core # For nil_or_empty? as an unqualified module method call
 
   # Run all static analysis tools on target
   #

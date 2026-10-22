@@ -35,6 +35,7 @@ require_relative 'utilities/dev_environment'
 require_relative 'utilities/git_workspace'
 require_relative 'utilities/logging'
 require_relative 'utilities/macos'
+require_relative 'utilities/ollama'
 require_relative 'utilities/path_utils'
 require_relative 'utilities/profiles_repo'
 require_relative 'utilities/step_counter'
@@ -43,6 +44,7 @@ require_relative 'utilities/step_counter'
 # Returns true/false instead of calling exit().
 module SoftwareUpdatesCron
   extend self
+  extend Core # For nil_or_empty? as an unqualified module method call
 
   # Public API method for post-update summary and notification.
   #
@@ -230,7 +232,8 @@ module SoftwareUpdatesCron
     _step('bat cache update', "#{'Updating'.yellow} #{'bat'.purple} cache") do
       if PathUtils.command_exists?('bat')
         # The antidote syntax file rarely changes and the cache rebuild is slow: do both at most once a day.
-        _run_if_due(EnvVars::XDG_CACHE_HOME.join('bat-cache-last-update'), 24 * 3600, 'bat cache') do
+        model_update_interval = 24 * 3600 # seconds
+        _run_if_due(EnvVars::XDG_CACHE_HOME.join('bat-cache-last-update'), model_update_interval, 'bat cache') do
           bat_config_dir = CommandUtils.query('bat', '--config-dir')
           bat_syntax_dir_pn = Pathname(bat_config_dir).join('syntaxes')
           PathUtils.ensure_directories_exist(bat_syntax_dir_pn)
@@ -255,60 +258,22 @@ module SoftwareUpdatesCron
       end
     end
 
+    # Ollama model management (automatic updates for all locally-pulled models)
     # TODO: Similar to ollama, need to update the models used by omlx via cli
     # ollama launch opencode --model qwen3.5:9b
     _step('ollama models update', 'Pull ollama models'.yellow) do
-      if PathUtils.command_exists?('ollama')
-        # Pull models at most once per 24 hours (configurable interval).
-        # ollama pull downloads models even if already up to date (no --check flag),
-        # so timestamp-based caching prevents unnecessary large transfers.
-        model_update_interval = 24 * 3600 # seconds
-        last_update_file = EnvVars::XDG_CACHE_HOME.join('ollama-last-update')
+      # Pull models at most once per 24 hours (configurable interval).
+      # ollama pull downloads models even if already up to date (no --check flag),
+      # so timestamp-based caching prevents unnecessary large transfers.
+      model_update_interval = 24 * 3600 # seconds
+      last_update_file = EnvVars::XDG_CACHE_HOME.join('ollama-last-update')
+      _run_if_due(last_update_file, model_update_interval, 'Ollama models') do
+        Ollama.list.each do |model|
+          next if nil_or_empty?(model)
 
-        _run_if_due(last_update_file, model_update_interval, 'Ollama models') do
-          # Note: This list is up-to-date as of 2026-06-06
-          # 'qwen3.5:9b'    # has tools
-          # 'rafw007/qwen35-claude-coder:4b'    # has tools
-          # reference: https://insiderllm.com/guides/ollama-mac-setup-optimization/
-          # reference: https://popularaitools.ai/blog/run-gemma-4-locally-opencode-2026
-          # 'qwen3.6:27b',         # reference: gChat from work (AIFSD chat room): strong coding model
-          # 'gemma4:e2b-mlx',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - doesn't edit, only single file for suggestions
-          # 'qwen2.5-coder:14b'   # Qwen 2.5 Coder 14B: strong coding model
-          # 'rafw007/gemma4-e4b-claude-coder',      # reference: https://www.youtube.com/watch?v=BaAy1DodIcQ (Ollama + Claude code for local AI) - not sure if this runs via opencode, trying now
-          # 'deepseek-coder-v2',    # doens't have tools, no use
-          # 'qwen3.5:9b-q8_0',   # Qwen 3.5 9B (Q8): strong reasoning model
-          # 'gpt-oss:20b',
-          # 'mdq100/qwen3.5-coder:35b',
-          # 'gemma3:12b'         # Gemma 3 12B: free coding model
-          # 'codestral:22b',     # TODO: Need to research
-
-          # Fetch the list of currently downloaded models dynamically via 'ollama list'.
-          # This replaces the hardcoded list to automatically keep all local models up to date.
-          # Output format: "NAME             ID              SIZE      MODIFIED"
-          # We extract the NAME column (first field) and skip the header row.
-          # CommandUtils.query returns stripped stdout; failure is not expected for 'ollama list'
-          # when ollama binary exists (already checked via command_exists?).
-          stdout = CommandUtils.query('ollama', 'list')
-          # Parse model names from output (skip header, extract first column)
-          # filter_map polyfill in enumerable_ext.rb provides optimized single-pass implementation for Ruby 2.6
-          ollama_models = Array(stdout.lines[1..-1]).filter_map { |line| line.split.first }
-
-          if nil_or_empty?(ollama_models)
-            Logging.info 'No ollama models found locally -- skipping updates'
-          else
-            Logging.info "Found #{ollama_models.size.to_s.purple} ollama model(s) to update: #{ollama_models.join(', ').yellow}"
-            ollama_models.each do |model|
-              # Redirect stdout/stderr to suppress progress bars and ANSI escape sequences in cron context
-              if CommandUtils.run_silent('ollama', 'pull', model)
-                Logging.success "Successfully pulled model: '#{model.cyan}'"
-              else
-                Logging.record_warning "Failed to pull model: '#{model.cyan}'"
-              end
-            end
-          end
+          Logging.debug "Updating ollama model: #{model.yellow}"
+          Ollama.pull(model: model) || next
         end
-      else
-        Logging.debug 'ollama not found -- skipping model pulls'
       end
     end
 

@@ -208,6 +208,23 @@ updated to match (see that repo's own `README.md` for the exact steps).
 
 ## Testing Patterns
 
+**Ruby specs (RSpec)** -- every Ruby script and utility module should have a spec:
+```zsh
+rspec                                     # whole suite (also writes coverage/index.html)
+rspec spec/utilities/logging_spec.rb      # one file
+rspec spec/utilities/logging_spec.rb:45   # one example or group, by line number
+rspec -e 'rotates an oversized log'       # by description substring
+```
+- Run plain `rspec`; `bundle exec rspec` needs every gem in `Gemfile.lock` installed. Config is in `.rspec` (loads `spec/spec_helper.rb`, random order).
+- **Layout mirrors `scripts/`**: `scripts/utilities/foo_bar.rb` -> `spec/utilities/foo_bar_spec.rb`; `scripts/foo-bar.rb` -> `spec/foo_bar_spec.rb` (kebab-case becomes snake_case). Specs that exercise several shell scripts or `.shellrc`/`.zshrc` functions as real processes live in `spec/` too, named for the subject (e.g. `git_scripts_spec.rb`, `shellrc_keybase_clone_spec.rb`).
+- **Requiring code**: `spec_helper.rb` puts `scripts/utilities` on the load path, so utilities are `require 'foo_bar'`. Top-level scripts are `require_relative '../scripts/foo-bar'` (their CLI block is guarded by `if __FILE__ == $PROGRAM_NAME`, so requiring them only defines the module). `core` must load before `colorizable`/`pathname_ext`.
+- **Environment**: wrap ENV changes in `with_env('NAME' => value) { ... }` (restores afterwards; `nil` deletes the key). `NO_COLOR` is set for the whole suite, so assertions see plain text; stub `Core.running_in_tty?` and unset `NO_COLOR` to test colors.
+- **Logging state is global**: call `Logging.state.reset!` in `before`/`after`. Stub `Logging.info`/`success`/`debug` to keep output quiet, but let `record_warning`/`record_error` run (or `and_call_original`) when asserting on `Logging.step_warnings`/`step_errors`.
+- **Never touch the real machine**: stub `GitProcessor.new`, `CommandUtils`, `Open3`, `Cron.with_cron_suspended` (it runs `crontab`), `MacOS.notify`, `Keybase`; use `Dir.mktmpdir` (and `stub_const('EnvVars::X', tmp_path)`) for files. `verify_partial_doubles` is on, so a stubbed method name must really exist.
+- **Dual-mode scripts**: test the module's `run(...)` boolean contract (success, each failure path, `dry_run`), not the CLI block. Scripts with no module (e.g. `cc-browser-profiles.rb`) are `load`ed with their collaborators stubbed.
+- **Private methods** (`_name`) are reached with `send` only when they hold logic worth pinning that the public entry point cannot reach cheaply.
+- Add or extend a spec in the same change as the code it covers, and when fixing a bug add a spec that fails without the fix.
+
 **Shell scripts**:
 ```zsh
 # Syntax check

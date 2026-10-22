@@ -9,8 +9,8 @@ require 'tmpdir'
 # processes against throwaway repositories under a temp directory. Each is a plain POSIX sh script
 # that git runs as 'git <name>' when scripts/ is on PATH.
 RSpec.describe 'external git subcommands' do
-  scripts_dir = File.expand_path('../../scripts', __dir__)
-  git_config = File.expand_path('../../files/--XDG_CONFIG_HOME--/git/config', __dir__)
+  scripts_dir = File.expand_path('../scripts', __dir__)
+  git_config = File.expand_path('../files/--XDG_CONFIG_HOME--/git/config', __dir__)
 
   let(:env) do
     {
@@ -544,7 +544,7 @@ RSpec.describe 'external git subcommands' do
     end
 
     it 'treats a failing completeness check as "missing" and never converts' do
-      common = File.expand_path('../../scripts/shared/git-common.sh', __dir__)
+      common = File.expand_path('../scripts/shared/git-common.sh', __dir__)
       _out, _err, status, = run_cmd('sh', '-c', '. "$1"; has_missing_objects "$2"', 'sh', common, File.join(tmp, 'not-a-repo'))
 
       expect(status.exitstatus).to eq(0)

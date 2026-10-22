@@ -40,5 +40,7 @@
         "**/.forgejo/workflows/*.yaml"
     ],
     "redhat.telemetry.enabled": false,
-    "explorer.confirmDelete": false
+    "explorer.confirmDelete": false,
+    "explorer.confirmDragAndDrop": false,
+    "files.trimFinalNewlines": true,
 }

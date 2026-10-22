@@ -58,7 +58,8 @@ module InstallRuby26Gems
       dependencies: %w[parser:2.7.1.5 parallel:1.20.0 rainbow:3.0.0 regexp_parser:2.1.1 rexml:3.2.5
                        rubocop-ast:1.4.0 ruby-progressbar:1.11.0 unicode-display_width:1.8.0]
     },
-    'rufo' => { version: '0.13.0', dependencies: [] }
+    'rufo' => { version: '0.13.0', dependencies: [] },
+    'simplecov' => { version: '0.22.0', dependencies: %w[docile:1.4.1 simplecov-html:0.13.2 simplecov_json_formatter:0.1.4] }
   }.freeze
 
   # Public API method.
@@ -82,7 +83,7 @@ module InstallRuby26Gems
     return true unless _system_ruby_supported?(debug)
 
     PathUtils.ensure_directories_exist(GEM_DIR)
-    unless CommandUtils.run_silent(SYSTEM_RUBY, '-e', "require 'rubygems'")
+    unless CommandUtils.run_interactive(SYSTEM_RUBY, '-e', "require 'rubygems'")
       Logging.warn "RubyGems not available for system Ruby #{_system_ruby_version.purple}"
       return false
     end

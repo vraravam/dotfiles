@@ -27,10 +27,10 @@ class GitProcessor
 
       Logging.info "#{'Squash commits (will lose history!):'.yellow} #{force.to_s.orange}"
       Logging.info "#{'Dry run:'.yellow} #{@dry_run.to_s.orange}"
-      Logging.info "#{'Repo url:'.yellow} '#{git_url.cyan}'"
-      Logging.info "#{'User name:'.yellow} '#{user_name.cyan}'"
-      Logging.info "#{'User email:'.yellow} '#{user_email.cyan}'"
-      Logging.info "#{'Branch:'.yellow} '#{branch.cyan}'"
+      Logging.info "#{'Repo url:'.yellow} '#{git_url.to_s.cyan}'"
+      Logging.info "#{'User name:'.yellow} '#{user_name.to_s.cyan}'"
+      Logging.info "#{'User email:'.yellow} '#{user_email.to_s.cyan}'"
+      Logging.info "#{'Branch:'.yellow} '#{branch.to_s.cyan}'"
 
       Logging.error "One or more required git metadata values are missing for '#{@dir.cyan}' -- see above" if [git_url, user_name, user_email, branch].any? { |v| nil_or_empty?(v) }
     end

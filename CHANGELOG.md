@@ -4,6 +4,23 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.25
+
+#### Ollama utility module extraction
+
+* *[scripts/utilities/ollama.rb]* Extracted local AI model operations from `software-updates-cron.rb`. Now provides `.list` (returns array of locally-pulled model names) and `.pull(model:, timeout:)` methods.
+* *[utilities/ollama_spec.rb]* Added minimal specs for contract verification.
+
+#### Added missing specs
+
+* Increased code coverage for ruby scripts
+
+#### Adopting these changes
+
+* If you were manually invoking `ollama pull` commands in scripts, they'll now be handled automatically by `software-updates-cron.rb`.
+
+---
+
 ### 4.0.24
 
 #### More extensible script overrides

@@ -7,6 +7,7 @@ require 'open3'
 require_relative 'core'
 require_relative 'env_vars'
 require_relative 'git_overrides'
+require_relative 'path_utils'
 require_relative 'pathname_ext'
 require_relative 'string_ext'
 
@@ -144,7 +145,7 @@ module GitHooks
 
   # @return [Boolean] whether a 'rubocop' executable is on PATH
   def _rubocop_installed?
-    EnvVars.path.split(File::PATH_SEPARATOR).any? { |dir| File.executable?(File.join(dir, 'rubocop')) }
+    PathUtils.command_exists?('rubocop')
   end
 
   private_class_method :_rubocop_installed?
