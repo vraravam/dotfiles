@@ -65,7 +65,7 @@ describe Ollama do
       def exit_with_error.to_s
         raise SystemExit, 1
       end
-      allow(Core).to receive(:stream_command).and_raise(SystemExit, 'non-zero')
+      allow(CommandUtils).to receive(:stream_command).and_raise(SystemExit, 'non-zero')
       expect(Logging).to receive(:record_error).with("Failed to pull model 'test' -- non-zero")
 
       expect(Ollama.pull(model: 'test')).to be_nil
@@ -73,7 +73,7 @@ describe Ollama do
 
     it 'handles StandardError and returns nil' do
       allow(PathUtils).to receive(:command_exists?).with('ollama').and_return(true)
-      allow(Core).to receive(:stream_command).and_raise(StandardError, 'network error')
+      allow(CommandUtils).to receive(:stream_command).and_raise(StandardError, 'network error')
       expect(Logging).to receive(:record_error).with("Failed to pull model 'test' -- StandardError: network error")
 
       expect(Ollama.pull(model: 'test')).to be_nil

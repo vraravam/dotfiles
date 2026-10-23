@@ -71,8 +71,11 @@ RSpec.describe RubyLint do
 
   it 'defaults the target to the scripts folder of the dotfiles repo' do
     installed
-    scripts_dir = EnvVars::DOTFILES_DIR.join('scripts').replace_home_path_with_tilde
-    expect(Logging).to receive(:info).with(/#{Regexp.escape(scripts_dir)}/)
+    # A stand-in repo: the real DOTFILES_DIR only exists at ~/.config/dotfiles, not where CI checks out.
+    @target.join('scripts').mkpath
+    stub_const('EnvVars::DOTFILES_DIR', @target)
+    scripts_dir = @target.join('scripts').replace_home_path_with_tilde
+    expect(Logging).to receive(:info).with(/Running static analysis on .*#{Regexp.escape(scripts_dir)}/)
 
     described_class.run
   end
@@ -80,7 +83,7 @@ RSpec.describe RubyLint do
   it 'expands a relative target' do
     installed
     Dir.chdir(@target.to_s) do
-      expect(Logging).to receive(:info).with(/#{Regexp.escape(File.basename(@target))}/)
+      expect(Logging).to receive(:info).with(/Running static analysis on .*#{Regexp.escape(File.basename(@target))}/)
 
       expect(described_class.run(target: '.')).to be true
     end

@@ -4,6 +4,30 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.26
+
+#### Correct gem installation process for pre-commit in this repo
+
+* *[.envrc]* Simplify gem installation process by using `bundle` command directly instead of a ruby wrapper for gems in `$DOTFILES_DIR`. Deleted `scripts/install-ruby26-gems.rb` due to this consolidation.
+* *[scripts/cleanup-browser-profiles.rb]* Moved code into new `sqlite.rb` module and invoke the new implementation.
+
+#### Simplify `dry-run` handling
+
+* *[scripts/utilities/command_utils.rb]* New dry-run mode: inside `CommandUtils.with_dry_run(enabled) { ... }` the state-changing methods (`run_silent`, `run_interactive`, `capture_output`, `stream_command`) log `Would run: <command>` and report success without executing, so callers no longer need an "if dry_run then log else run" branch. Read-only calls (`query`, `check_status`) always run, so logic that depends on real state still sees it. `CommandUtils.dry_run?` exposes the mode; the previous mode is restored on exit (also on an exception or non-local return).
+* *[scripts/utilities/keybase.rb, scripts/recreate-repository.rb]* `ensure_logged_in`, `delete_repo`, `create_repo` and `recreate_repo` lost their `dry_run:` parameter and branches: each step runs its own checks and the underlying command logs itself. `ensure_logged_in` now really reads the login status in a dry run. `RecreateRepository.run` wraps its work in `CommandUtils.with_dry_run(dry_run)` (`GitProcessor` keeps its own dry-run, which has a `read_only:` escape hatch for queries).
+* *[scripts/utilities/cron.rb]* `with_cron_suspended` lost its `dry_run:` parameter and early-return branch. In dry-run mode every step still runs: `crontab -r` and the crontab install log through `CommandUtils`, and the backup write, delete, rename and pruning log "Would ..." instead of touching the real backup file. `crontab -l` in `recron` is now a read (`Open3`), so it runs for real. `suspend_cron`, `resume_cron` and `recron` no longer print their "Cron jobs suspended/resumed" and "Crontab set up" success messages in a dry run.
+
+#### Misc & General cleanup
+
+* Added an easy way to disable ZSH auto-correction - add each command as a separate line into `${HOME}/.zsh_nocorrect` and restart your terminal.
+* *[scripts/utilities/command_utils.rb, scripts/utilities/core.rb, scripts/utilities/brew.rb, scripts/utilities/mise.rb, scripts/utilities/ollama.rb]* `stream_command(cmd, stdin_data:)` moved from `Core` to `CommandUtils` (it runs a process, which `Core`'s dependency-free contract excludes; the `English` require moved with it). Same semantics: live output, optional stdin, integer exit status. The callers and their specs are updated.
+
+#### Adopting these changes
+
+* Quit and restart your Terminal app for the ZSH autocorrect changes to take effect
+
+---
+
 ### 4.0.25
 
 #### Ollama utility module extraction

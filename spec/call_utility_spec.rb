@@ -30,9 +30,9 @@ RSpec.describe CallUtility do
     end
 
     it 'passes keyword arguments through, coercing booleans' do
-      expect(Keybase).to receive(:ensure_logged_in).with(start_service: true, dry_run: false)
+      expect(Keybase).to receive(:ensure_logged_in).with(start_service: true)
 
-      expect(described_class.run(target: 'Keybase.ensure_logged_in', args: ['--start_service=true', '--dry_run=false'])).to be true
+      expect(described_class.run(target: 'Keybase.ensure_logged_in', args: ['--start_service=true'])).to be true
     end
 
     it 'lets the shell install the Brewfile and see a failure through --truthy' do

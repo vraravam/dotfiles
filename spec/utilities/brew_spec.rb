@@ -87,7 +87,7 @@ RSpec.describe Brew do
     end
 
     it 'installs from the given content on stdin and reports its exit status' do
-      expect(Core).to receive(:stream_command)
+      expect(CommandUtils).to receive(:stream_command)
                         .with([brew, 'bundle', 'install', '-q', '--file=-'], stdin_data: "brew 'git'\n").and_return(0, 1)
 
       expect(described_class.bundle_install(brew_bin: brew, content: "brew 'git'\n")).to be true

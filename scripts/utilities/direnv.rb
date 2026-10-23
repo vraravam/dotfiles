@@ -5,6 +5,7 @@
 require 'pathname'
 
 require_relative 'command_utils'
+require_relative 'logging'
 require_relative 'path_utils'
 
 # Thin command wrappers around 'direnv', in the same spirit as Brew: no iteration, no
@@ -13,9 +14,11 @@ require_relative 'path_utils'
 module Direnv
   extend self
 
+  COMMAND = 'direnv'
+
   # @return [Boolean] true if 'direnv' is on PATH
   def available?
-    PathUtils.command_exists?('direnv')
+    PathUtils.command_exists?(COMMAND)
   end
 
   # @param dir [String, Pathname] Directory to inspect
@@ -34,6 +37,11 @@ module Direnv
   # @param dir [String, Pathname] Directory containing the .envrc
   # @return [Boolean] true if both steps succeeded
   def activate(dir)
-    CommandUtils.run_silent('direnv', 'allow', dir.to_s) && CommandUtils.run_silent('direnv', 'exec', dir.to_s, 'true')
+    unless available?
+      Logging.skip_tool(COMMAND)
+      return false
+    end
+
+    CommandUtils.run_silent(COMMAND, 'allow', dir.to_s) && CommandUtils.run_silent(COMMAND, 'exec', dir.to_s, 'true')
   end
 end

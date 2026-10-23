@@ -112,17 +112,46 @@ module PathUtils
     !root_dir?(Pathname(path.to_s).parent)
   end
 
-  # Returns the size of a directory in kilobytes using du.
+  # Returns the size of a file/directory in kilobytes using du.
   # Uses MacOS::DU_CMD for reliability in cron/system contexts.
+  # Returns 0 if the file/directory does not exist.
   #
-  # @param dir [Pathname, String] Directory path to measure
+  # @param dir [Pathname, String] File/Directory path to measure
   # @return [Integer] Size in kilobytes
   #
   # @example
-  #   PathUtils.dir_size_kb(Pathname('/path/to/dir'))  # => 1024
+  #   PathUtils.size_kb(Pathname('/path/to/dir'))  # => 1024
   # :reek:UtilityFunction -- Stateless utility that operates only on arguments
-  def dir_size_kb(dir)
-    CommandUtils.query(MacOS::DU_CMD, '-sk', dir.to_s).split("\t").first.to_i
+  def size_kb(dir)
+    File.exist?(dir) ? CommandUtils.query(MacOS::DU_CMD, '-skA', dir.to_s).split("\t").first.to_i : 0
+  end
+
+  # Converts a size in KB to a short human-readable IEC string, the format `numfmt --to=iec`
+  # produces (which is not stock macOS, so it is computed here): 1024-based units, whole numbers
+  # below 1K, one decimal below 10 and a whole number from 10 up, always rounded away from zero
+  # (e.g. 1.5K, 234M, 10G, 0).
+  #
+  # @param kb [Integer] Size in kilobytes (may be negative, e.g. space saved)
+  # @return [String] e.g. "1.5G", "234M"
+  def format_size(kb) # rubocop:disable Naming/MethodParameterName
+    value = kb * 1024
+    return value.to_s if value.abs < 1024
+
+    units = %w[K M G T P E Z Y]
+    scaled = value.abs.to_f
+    unit_idx = -1
+    while scaled >= 1024 && unit_idx < units.size - 1
+      scaled /= 1024
+      unit_idx += 1
+    end
+    # Rounding up can reach 1024 of this unit (1023.5K): that is 1.0 of the next one.
+    shown = scaled < 10 ? (scaled * 10).ceil / 10.0 : scaled.ceil.to_f
+    if shown >= 1024 && unit_idx < units.size - 1
+      shown = 1.0
+      unit_idx += 1
+    end
+    text = shown < 10 ? format('%<n>.1f', n: shown) : shown.to_i.to_s
+    "#{'-' if value.negative?}#{text}#{units[unit_idx]}"
   end
 
   # Extract a path segment at a given index from a dir path

@@ -21,7 +21,7 @@ RSpec.describe RecreateRepository do
     allow(Logging).to receive(:section_header)
     allow(GitProcessor).to receive(:repo?).with(dir).and_return(true)
     allow(GitProcessor).to receive(:new).and_yield(git)
-    allow(Cron).to receive(:with_cron_suspended) { |**, &block| block.call }
+    allow(Cron).to receive(:with_cron_suspended) { |&block| block.call }
     allow(git).to receive(:each_remote) { |&block| remotes.each { |name, url| block.call(name, url) } }
     allow(git).to receive(:push).and_return(['', '', ok])
     allow(git).to receive(:remote_repo_name) { |name:| remotes.fetch(name).split('/').last }
@@ -56,7 +56,7 @@ RSpec.describe RecreateRepository do
       end
 
       it 'runs the repository work with cron suspended' do
-        expect(Cron).to receive(:with_cron_suspended).with(dry_run: false) do |**, &block|
+        expect(Cron).to receive(:with_cron_suspended) do |&block|
           block.call
         end
 
@@ -95,9 +95,10 @@ RSpec.describe RecreateRepository do
         expect(described_class.run(dir: dir)).to be true
       end
 
-      it 'passes dry_run through to GitProcessor and to the cron suspension' do
+      it 'passes dry_run to GitProcessor and turns on CommandUtils dry-run mode for the cron suspension' do
         expect(GitProcessor).to receive(:new).with(dir: Pathname(dir), dry_run: true).and_yield(git)
-        expect(Cron).to receive(:with_cron_suspended).with(dry_run: true) do |**, &block|
+        expect(Cron).to receive(:with_cron_suspended) do |&block|
+          expect(CommandUtils.dry_run?).to be true
           block.call
         end
 
@@ -112,7 +113,7 @@ RSpec.describe RecreateRepository do
         end
 
         it 'checks the keybase login before the destructive local squash' do
-          expect(Keybase).to receive(:ensure_logged_in).with(dry_run: false).ordered.and_return(true)
+          expect(Keybase).to receive(:ensure_logged_in).ordered.and_return(true)
           expect(git).to receive(:verify_and_recreate_local_repo).ordered.and_return(true)
 
           described_class.run(dir: dir, force: true)
@@ -127,7 +128,7 @@ RSpec.describe RecreateRepository do
         end
 
         it 'recreates the keybase repo before pushing to it, and force-pushes every other remote directly' do
-          expect(Keybase).to receive(:recreate_repo).with('repo', dry_run: false).once.ordered.and_return(true)
+          expect(Keybase).to receive(:recreate_repo).with('repo').once.ordered.and_return(true)
           expect(git).to receive(:push).with(remote: 'origin', branch: 'main', force: true).ordered.and_return(['', '', ok])
           expect(git).to receive(:push).with(remote: 'origin2', branch: 'main', force: true).ordered.and_return(['', '', ok])
 

@@ -6,6 +6,7 @@ require 'pathname'
 
 require_relative 'command_utils'
 require_relative 'core'
+require_relative 'logging'
 require_relative 'path_utils'
 
 # Thin command wrappers around 'mise' (the polyglot tool-version manager), in the same
@@ -13,6 +14,8 @@ require_relative 'path_utils'
 # directories to process and how to report the outcome.
 module Mise
   extend self
+
+  COMMAND = 'mise'
 
   # Config filenames that indicate a directory declares tool versions.
   CONFIG_FILES = %w[
@@ -27,7 +30,7 @@ module Mise
 
   # @return [Boolean] true if 'mise' is on PATH
   def available?
-    PathUtils.command_exists?('mise')
+    PathUtils.command_exists?(COMMAND)
   end
 
   # @param dir [String, Pathname] Directory to inspect
@@ -43,7 +46,12 @@ module Mise
   # @yield [status, output_message] Called only on failure (see CommandUtils.capture_output)
   # @return [Boolean] true if trusting succeeded
   def trust(dir, &block)
-    CommandUtils.capture_output('mise', '-C', dir.to_s, 'trust', '-y', '-a', &block)
+    unless available?
+      Logging.skip_tool(COMMAND)
+      return false
+    end
+
+    CommandUtils.capture_output(COMMAND, '-C', dir.to_s, 'trust', '-y', '-a', &block)
   end
 
   # Installs the tool versions declared in +dir+. Output is streamed because downloads and
@@ -52,6 +60,11 @@ module Mise
   # @param dir [String, Pathname] Directory whose declared versions to install
   # @return [Integer] exit status of 'mise install' (0 on success)
   def install(dir)
-    Core.stream_command(['mise', '-C', dir.to_s, 'install'])
+    unless available?
+      Logging.skip_tool(COMMAND)
+      return false
+    end
+
+    CommandUtils.stream_command([COMMAND, '-C', dir.to_s, 'install'])
   end
 end

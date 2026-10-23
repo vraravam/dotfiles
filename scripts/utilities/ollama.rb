@@ -10,29 +10,37 @@ require_relative 'logging'
 module Ollama
   extend self
 
+  COMMAND = 'ollama'
+
   # @return [Boolean] true if 'mise' is on PATH
   def available?
-    PathUtils.command_exists?('ollama')
+    PathUtils.command_exists?(COMMAND)
   end
 
   # Lists every unique ollama model from the local machine.
   # @return [Array<String>] Non-blank list of models on the local machine
   def list
-    return [] unless available?
+    unless available?
+      Logging.skip_tool(COMMAND)
+      return []
+    end
 
-    stdout = CommandUtils.query('ollama', 'list')
+    stdout = CommandUtils.query(COMMAND, 'list')
     stdout.lines[1..-1].filter_map { |line| line.split.first }.uniq
   end
 
   # Pulls (upgrades) all local ollama models.
   # @return void
   def pull(model:)
-    return nil unless available?
+    unless available?
+      Logging.skip_tool(COMMAND)
+      return nil
+    end
 
     raise ArgumentError, 'Model name expected' if model.empty?
 
     Logging.info "Pulling '#{model.to_s.yellow}'"
-    Core.stream_command(['ollama', 'pull', model])
+    CommandUtils.stream_command([COMMAND, 'pull', model])
     Logging.info "Successfully updated: '#{model.to_s.yellow}'"
   rescue SystemExit => e
     Logging.record_error "Failed to pull model '#{model.to_s.yellow}' -- #{e.message.red}"

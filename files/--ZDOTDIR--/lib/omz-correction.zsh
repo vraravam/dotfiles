@@ -26,3 +26,13 @@
 
 # Command correction - autocorrect typos
 setopt correct_all
+
+if is_file "${HOME}/.zsh_nocorrect"; then
+  while read -r COMMAND; do
+    # skip blank and comment lines
+    [[ "${COMMAND}" =~ ^#.*$ ]] && continue
+    is_zero_string "${COMMAND}" && continue
+
+    alias ${COMMAND}="nocorrect ${COMMAND}"
+  done < "${HOME}/.zsh_nocorrect"
+fi

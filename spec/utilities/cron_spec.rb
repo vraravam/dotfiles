@@ -85,12 +85,9 @@ RSpec.describe Cron do
 
     after { Logging.state.reset! }
 
-    # Simulates 'crontab -l' by writing +existing+ into the capture file recron asks for.
+    # Simulates 'crontab -l' returning +existing+ (it is a read, so it goes through Open3).
     def stub_existing_crontab(existing)
-      allow(CommandUtils).to receive(:run_silent) do |*args, **opts|
-        File.write(opts[:out], existing) if args == %w[crontab -l]
-        true
-      end
+      allow(Open3).to receive(:capture3).with('crontab', '-l').and_return([existing, '', instance_double(Process::Status, success?: true)])
     end
 
     it 'is true after loading the existing crontab' do
@@ -194,6 +191,34 @@ RSpec.describe Cron do
       expect { described_class.with_cron_suspended { :work } }.to output(/keeping the backup/).to_stdout
 
       expect(backup).to exist
+    end
+
+    it 'logs every step instead of performing it in CommandUtils dry-run mode' do
+      allow(described_class).to receive(:suspend_cron).and_call_original
+      allow(EnvVars).to receive(:cron_backup_file).and_return(backup)
+      allow(Open3).to receive(:capture3).with('crontab', '-l').and_return(["0 * * * * new\n", '', instance_double(Process::Status, success?: true)])
+      allow(CommandUtils).to receive(:query).with('crontab', '-l').and_return("0 * * * * new\n")
+      stub_const('Cron::CRONTAB_FILE', tmp.join('crontab.txt'))
+      allow(described_class).to receive(:_cleanup_old_backups)
+      allow(Logging).to receive(:info)
+      expect(Logging).to receive(:info).with(/Would back up the crontab/).ordered
+      expect(Logging).to receive(:info).with(/Would run: .*crontab -r/).ordered
+      expect(Logging).to receive(:info).with(/Would run: crontab \S+/).ordered
+      expect(Logging).to receive(:info).with(/Would delete the cron backup|Would rename the cron backup/).ordered
+      expect(Logging).not_to receive(:success)
+
+      CommandUtils.with_dry_run(true) { described_class.with_cron_suspended { :work } }
+
+      expect(backup.read).to eq("0 * * * * echo original\n")
+    end
+
+    it 'resume_cron only logs what it would restore in dry-run mode, even with no backup on disk' do
+      backup.delete
+      expect(Logging).to receive(:info).with(/Would restore the crontab from the backup/)
+      expect(Logging).not_to receive(:success)
+      expect(described_class).not_to receive(:restore_cron)
+
+      CommandUtils.with_dry_run(true) { described_class.resume_cron }
     end
 
     it 'restores from the backup instead when the block raises' do

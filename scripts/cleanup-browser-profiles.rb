@@ -21,6 +21,7 @@ require_relative 'utilities/env_vars'
 require_relative 'utilities/logging'
 require_relative 'utilities/macos'
 require_relative 'utilities/path_utils'
+require_relative 'utilities/sqlite'
 require_relative 'utilities/string_ext'
 
 # Cleans up browser profile folders by vacuuming SQLite databases and deleting caches.
@@ -32,6 +33,7 @@ module CleanupBrowserProfiles
   include Core  # For instance methods (in blocks)
   extend Core   # For module methods
 
+  # TODO: Combine all arrays into a single array with each element having named keys
   # Exact process names (what `pgrep -x` matches -- the executable's file name, which is not
   # always the display name) per browser key. Zen ships as 'Twilight.app' but runs as 'zen'.
   BROWSER_PROCESS_NAMES = {
@@ -40,6 +42,14 @@ module CleanupBrowserProfiles
     'firefox' => %w[firefox],
     'thunderbird' => %w[thunderbird],
     'zen' => %w[zen]
+  }.freeze
+
+  BROWSER_PROFILES = {
+    'brave' => EnvVars::PERSONAL_PROFILES_DIR.join('BraveProfile'),
+    'chrome' => EnvVars::PERSONAL_PROFILES_DIR.join('ChromeProfile'),
+    'firefox' => EnvVars::PERSONAL_PROFILES_DIR.join('FirefoxProfile'),
+    'thunderbird' => EnvVars::PERSONAL_PROFILES_DIR.join('ThunderbirdProfile'),
+    'zen' => EnvVars::PERSONAL_PROFILES_DIR.join('ZenProfile')
   }.freeze
 
   # SQLite databases larger than this are vacuumed.
@@ -62,22 +72,12 @@ module CleanupBrowserProfiles
   def run(dry_run: false)
     Logging.info 'Running in DRY-RUN mode -- no changes will be made' if dry_run
 
-    profiles_dir = EnvVars::PERSONAL_PROFILES_DIR
-
-    browser_profiles = {
-      'brave' => profiles_dir.join('BraveProfile'),
-      'chrome' => profiles_dir.join('ChromeProfile'),
-      'firefox' => profiles_dir.join('FirefoxProfile'),
-      'thunderbird' => profiles_dir.join('ThunderbirdProfile'),
-      'zen' => profiles_dir.join('ZenProfile')
-    }
-
     # Read once -- these patterns are the same for every browser profile, so reading them
     # inside the per-profile loop would re-read the same two files from disk on every iteration.
     file_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-files.txt'))
     dir_patterns = _read_pattern_file(EnvVars::DOTFILES_DIR.join('scripts', 'data', 'cleanup-browser-dirs.txt'))
 
-    browser_profiles.each do |browser_name, profile_dir|
+    BROWSER_PROFILES.each do |browser_name, profile_dir|
       _vacuum_browser_profile_dir(browser_name, profile_dir, file_patterns: file_patterns, dir_patterns: dir_patterns, dry_run: dry_run)
     end
 
@@ -111,36 +111,6 @@ module CleanupBrowserProfiles
   end
 
   private_class_method :_browser_running?
-
-  # Converts a size in KB to a short human-readable IEC string, the format `numfmt --to=iec`
-  # produces (which is not stock macOS, so it is computed here): 1024-based units, whole numbers
-  # below 1K, one decimal below 10 and a whole number from 10 up, always rounded away from zero
-  # (e.g. 1.5K, 234M, 10G, 0).
-  #
-  # @param kb [Integer] Size in kilobytes (may be negative, e.g. space saved)
-  # @return [String] e.g. "1.5G", "234M"
-  def _format_size(kb) # rubocop:disable Naming/MethodParameterName
-    value = kb * 1024
-    return value.to_s if value.abs < 1024
-
-    units = %w[K M G T P E Z Y]
-    scaled = value.abs.to_f
-    unit_idx = -1
-    while scaled >= 1024 && unit_idx < units.size - 1
-      scaled /= 1024
-      unit_idx += 1
-    end
-    # Rounding up can reach 1024 of this unit (1023.5K): that is 1.0 of the next one.
-    shown = scaled < 10 ? (scaled * 10).ceil / 10.0 : scaled.ceil.to_f
-    if shown >= 1024 && unit_idx < units.size - 1
-      shown = 1.0
-      unit_idx += 1
-    end
-    text = shown < 10 ? format('%<n>.1f', n: shown) : shown.to_i.to_s
-    "#{'-' if value.negative?}#{text}#{units[unit_idx]}"
-  end
-
-  private_class_method :_format_size
 
   # Returns true if the profile should be skipped (browser running or dir missing).
   #
@@ -230,7 +200,10 @@ module CleanupBrowserProfiles
   # @return [void]
   # :reek:FeatureEnvy -- Operates on method parameters and local variables (intentional helper extraction)
   def _vacuum_sqlite_databases(sqlite_files, dry_run)
-    return unless PathUtils.command_exists?('sqlite3')
+    unless SQLite.available?
+      Logging.skip_tool(SQLite::COMMAND)
+      return
+    end
 
     db_count = 0
     vacuumed = 0
@@ -238,7 +211,7 @@ module CleanupBrowserProfiles
 
     sqlite_files.each do |db_file_str|
       db_count += 1
-      db_size = File.exist?(db_file_str) ? File.size(db_file_str) : 0
+      db_size = PathUtils.size_kb(db_file_str)
       next if db_size <= MIN_VACUUM_DB_BYTES
 
       db_file_colored = db_file_str.cyan
@@ -247,7 +220,7 @@ module CleanupBrowserProfiles
         Logging.info "Would vacuum: '#{db_file_colored}' (#{(db_size / 1_048_576).to_s.purple}MB)"
       else
         Logging.info "Vacuuming: '#{db_file_colored}'"
-        if CommandUtils.run_silent('sqlite3', db_file_str, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;')
+        if SQLite.execute(db_file_str, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;')
           vacuumed += 1
         else
           failed_dbs << Pathname(db_file_str)
@@ -311,8 +284,8 @@ module CleanupBrowserProfiles
     Logging.with_step('vacuum', "#{'Vacuuming'.yellow} '#{browser_name.yellow}' in '#{profile_dir_colored}'...") do
       # Measure size before cleanup (only for actual runs)
       unless dry_run
-        size_before_kb = PathUtils.dir_size_kb(profile_dir)
-        Logging.info "--> Size before: '#{profile_dir_colored}' --> #{_format_size(size_before_kb).purple}"
+        size_before_kb = PathUtils.size_kb(profile_dir)
+        Logging.info "--> Size before: '#{profile_dir_colored}' --> #{PathUtils.format_size(size_before_kb).purple}"
       end
 
       # One walk finds both the SQLite databases and the files/directories matching cleanup patterns
@@ -326,9 +299,9 @@ module CleanupBrowserProfiles
 
       # Report space savings (only for actual runs)
       unless dry_run
-        size_after_kb = PathUtils.dir_size_kb(profile_dir)
-        Logging.info "--> Size after: '#{profile_dir_colored}' --> #{_format_size(size_after_kb).purple}"
-        Logging.info "-> Space saved: #{_format_size(size_before_kb - size_after_kb).purple}"
+        size_after_kb = PathUtils.size_kb(profile_dir)
+        Logging.info "--> Size after: '#{profile_dir_colored}' --> #{PathUtils.format_size(size_after_kb).purple}"
+        Logging.info "-> Space saved: #{PathUtils.format_size(size_before_kb - size_after_kb).purple}"
       end
 
       Logging.success "Successfully processed profile dir for '#{browser_name.yellow}'"

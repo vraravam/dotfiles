@@ -52,6 +52,7 @@ module Logging
     # Checks if a log message at the given level should be printed.
     # Compares requested level against LOG_LEVEL environment variable.
     # Returns true if message level >= configured minimum level.
+    # Returns false if running inside a direnv subshell (see EnvVars.suppress_log?).
     #
     # Log levels (severity order): debug < info < success < warn < error < user_action
     #
@@ -64,6 +65,10 @@ module Logging
     # @param level [Symbol] The log level to check (:debug, :info, :success, :warn, :error, :user_action)
     # @return [Boolean] true if message should be logged, false otherwise
     def _should_log?(level)
+      # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
+      # Use error for messages that must always be visible regardless of context.
+      return false if EnvVars.suppress_log?
+
       # Cache the configured minimum level (avoid repeated ENV lookups)
       state.min_log_level ||= LOG_LEVELS.fetch(EnvVars.log_level, LOG_LEVELS[:info])
 

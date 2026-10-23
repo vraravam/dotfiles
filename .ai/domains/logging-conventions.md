@@ -287,7 +287,10 @@ External tools (`git`, `mise`, `sqlite3`, `keybase`, `gpg`, etc.) may print at c
    - Use when: Already have captured output (GitProcessor, custom capture logic)
    - **Pass `nil` for stdout parameter when**: stdout contains sensitive data (crontab), is large/verbose (directory lists), or represents success not failure (partial-success scenarios)
 
-4. **Use raw `Open3.capture3`** only when you need BOTH stdout and stderr for processing:
+4. **Use `CommandUtils.run_interactive` / `CommandUtils.stream_command`** for live output: `run_interactive`
+   returns a boolean; `stream_command(cmd, stdin_data:)` returns the integer exit status and can feed stdin.
+
+5. **Use raw `Open3.capture3`** only when you need BOTH stdout and stderr for processing:
    ```ruby
    stdout, stderr, status = Open3.capture3('antidote', 'bundle')
    # Need to process plugin list (stdout) AND check for errors (stderr)
@@ -298,6 +301,13 @@ External tools (`git`, `mise`, `sqlite3`, `keybase`, `gpg`, etc.) may print at c
    ```
    - Use when: Both outputs are needed for logic (not just error logging)
    - Examples: antidote bundle (need plugin list + errors), find with noise filtering (need results + filtered errors)
+
+**Dry run**: wrap the work in `CommandUtils.with_dry_run(dry_run) { ... }` instead of threading a `dry_run:`
+parameter and an `if dry_run ... else ...` branch through every command-running method. Inside it
+`run_silent`, `run_interactive`, `capture_output` and `stream_command` log `Would run: <command>` and report
+success without executing; `query` and `check_status` are read-only and still run. A command that must really
+run during a dry run (a status read feeding a log message) goes through `query` or `Open3`. Code that mutates
+files rather than running commands still needs its own `dry_run` check.
    - If you only need output for error logging, use `capture_output` or `check_status` instead
 
 ## Message Prefixes -- Script Name and Section for RCA

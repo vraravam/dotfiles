@@ -16,7 +16,15 @@ RSpec.describe Direnv do
   end
 
   describe '.activate' do
+    it 'does not process anything if keybase is not installed' do
+      allow(PathUtils).to receive(:command_exists?).with('direnv').and_return(false)
+      expect(CommandUtils).not_to receive(:run_silent)
+
+      expect(described_class.activate('/d')).to be false
+    end
+
     it 'evaluates the .envrc with direnv exec after a successful allow' do
+      allow(PathUtils).to receive(:command_exists?).with('direnv').and_return(true)
       expect(CommandUtils).to receive(:run_silent).with('direnv', 'allow', '/d').and_return(true).ordered
       expect(CommandUtils).to receive(:run_silent).with('direnv', 'exec', '/d', 'true').and_return(true).ordered
 
@@ -24,6 +32,7 @@ RSpec.describe Direnv do
     end
 
     it 'does not evaluate the .envrc when the allow failed' do
+      allow(PathUtils).to receive(:command_exists?).with('direnv').and_return(true)
       allow(CommandUtils).to receive(:run_silent).with('direnv', 'allow', '/d').and_return(false)
       expect(CommandUtils).not_to receive(:run_silent).with('direnv', 'exec', any_args)
 

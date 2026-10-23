@@ -31,6 +31,7 @@
 #   Standalone: recreate-repository.rb [-f] -d <repo-dir>
 #   Module:     RecreateRepository.run(dir: path, force: false, dry_run: false)
 
+require_relative 'utilities/command_utils'
 require_relative 'utilities/core'
 require_relative 'utilities/cron'
 require_relative 'utilities/env_vars'
@@ -67,40 +68,44 @@ module RecreateRepository
     end
 
     Logging.section_header "#{'Processing dir:'.yellow} '#{dir_colored}'"
-    GitProcessor.new(dir: dir_pn, dry_run: dry_run) do |git|
-      # Verify and log required git metadata
-      git.verify_pre_recreation(force: force)
+    # with_dry_run makes every Keybase/Cron command below log instead of run; GitProcessor has
+    # its own dry-run (it also needs read-only git queries to run for real).
+    CommandUtils.with_dry_run(dry_run) do
+      GitProcessor.new(dir: dir_pn, dry_run: dry_run) do |git|
+        # Verify and log required git metadata
+        git.verify_pre_recreation(force: force)
 
-      # Suspend cron to prevent mid-operation conflicts with destructive git operations.
-      Cron.with_cron_suspended(dry_run: dry_run) do
-        if force
-          # Before destroying local git history, ensure every keybase:// remote is
-          # reachable -- otherwise we'd end up with a deleted local .git/rewritten
-          # history and no way to push it anywhere.
-          return false unless _ensure_keybase_remotes_reachable(git, dry_run: dry_run)
+        # Suspend cron to prevent mid-operation conflicts with destructive git operations.
+        Cron.with_cron_suspended do
+          if force
+            # Before destroying local git history, ensure every keybase:// remote is
+            # reachable -- otherwise we'd end up with a deleted local .git/rewritten
+            # history and no way to push it anywhere.
+            return false unless _ensure_keybase_remotes_reachable(git)
 
-          # Squashes ALL local history into a single commit (captures remote file list
-          # first, recreates local .git, stages, commits, then verifies the new single
-          # commit's file list matches the remote's before proceeding -- see
-          # GitProcessor#verify_and_recreate_local_repo). No remote delete/recreate here;
-          # the squashed commit is force-pushed to the existing remote below, same as
-          # any other force-push.
-          return false unless git.verify_and_recreate_local_repo
-        else
-          # Stage and commit all files in local repo
-          git.stage_all
-          git.smart_commit
+            # Squashes ALL local history into a single commit (captures remote file list
+            # first, recreates local .git, stages, commits, then verifies the new single
+            # commit's file list matches the remote's before proceeding -- see
+            # GitProcessor#verify_and_recreate_local_repo). No remote delete/recreate here;
+            # the squashed commit is force-pushed to the existing remote below, same as
+            # any other force-push.
+            return false unless git.verify_and_recreate_local_repo
+          else
+            # Stage and commit all files in local repo
+            git.stage_all
+            git.smart_commit
+          end
+
+          git.compress
+          # Force-pushes the (squashed, if force) history to every configured remote --
+          # see _push_to_all_remotes's doc for why keybase:// remotes get a
+          # delete-then-recreate treatment while every other remote is just force-pushed
+          # directly.
+          return false unless _push_to_all_remotes(git, branch: git.current_branch, force: force)
+
+          # Build commit graph for optimized git operations (log, status, merge-base)
+          git.build_commit_graph
         end
-
-        git.compress
-        # Force-pushes the (squashed, if force) history to every configured remote --
-        # see _push_to_all_remotes's doc for why keybase:// remotes get a
-        # delete-then-recreate treatment while every other remote is just force-pushed
-        # directly.
-        return false unless _push_to_all_remotes(git, branch: git.current_branch, force: force, dry_run: dry_run)
-
-        # Build commit graph for optimized git operations (log, status, merge-base)
-        git.build_commit_graph
       end
     end
 
@@ -114,12 +119,11 @@ module RecreateRepository
   # than one (see file header comment).
   #
   # @param git [GitProcessor] Repo to check remotes on
-  # @param dry_run [Boolean] Show what would be done without making changes
   # @return [Boolean] false if any keybase:// remote's login check fails
-  def _ensure_keybase_remotes_reachable(git, dry_run:)
+  def _ensure_keybase_remotes_reachable(git)
     git.each_remote do |_remote_name, url|
       next unless Keybase.keybase_url?(url)
-      return false unless Keybase.ensure_logged_in(dry_run: dry_run)
+      return false unless Keybase.ensure_logged_in
     end
     true
   end
@@ -136,15 +140,14 @@ module RecreateRepository
   # @param git [GitProcessor] Repo whose configured remotes will be pushed to
   # @param branch [String] Branch name to push
   # @param force [Boolean] Force-push (and recreate keybase:// remotes first)
-  # @param dry_run [Boolean] Show what would be done without making changes
   # @return [Boolean] true if every remote's push succeeded
-  def _push_to_all_remotes(git, branch:, force:, dry_run:)
+  def _push_to_all_remotes(git, branch:, force:)
     all_succeeded = true
 
     git.each_remote do |remote_name, url|
       if force && Keybase.keybase_url?(url)
         repo_name = git.remote_repo_name(name: remote_name)
-        if nil_or_empty?(repo_name) || !Keybase.recreate_repo(repo_name, dry_run: dry_run)
+        if nil_or_empty?(repo_name) || !Keybase.recreate_repo(repo_name)
           Logging.record_error "Failed to recreate keybase repo for remote '#{remote_name.cyan}' -- skipping push to it"
           all_succeeded = false
           next

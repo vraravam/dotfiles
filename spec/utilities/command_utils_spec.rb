@@ -105,6 +105,64 @@ RSpec.describe CommandUtils do
     end
   end
 
+  describe '.stream_command' do
+    it 'returns the child exit status (not always 0)' do
+      expect(described_class.stream_command(['sh', '-c', 'exit 3'])).to eq(3)
+    end
+
+    it 'returns 0 for a successful command and streams its output' do
+      expect { expect(described_class.stream_command(%w[echo hi])).to eq(0) }.to output("hi\n").to_stdout
+    end
+
+    it 'passes stdin_data to the child' do
+      expect { described_class.stream_command(%w[cat], stdin_data: 'abc') }.to output('abc').to_stdout
+    end
+  end
+
+  describe 'dry-run mode' do
+    around { |example| described_class.with_dry_run(true) { example.run } }
+
+    it 'logs each mutating command instead of running it, and reports success' do
+      expect(Logging).to receive(:info).with(/Would run: .*touch/).exactly(4).times
+
+      expect(described_class.run_silent('touch', '/nonexistent/x')).to be true
+      expect(described_class.run_interactive('touch', '/nonexistent/x') { raise 'must not yield' }).to be true
+      expect(described_class.capture_output('touch', '/nonexistent/x') { raise 'must not yield' }).to be true
+      expect(described_class.stream_command(%w[touch /nonexistent/x])).to eq(0)
+    end
+
+    it 'leaves a leading env Hash out of the logged command' do
+      expect(Logging).to receive(:info).with(/Would run: .*echo/) { |msg| expect(msg).not_to include('{') }
+
+      described_class.run_interactive({ 'A' => 'b' }, 'echo', 'hi')
+    end
+
+    it 'still runs read-only queries' do
+      expect(described_class.query('echo', 'real')).to eq('real')
+    end
+  end
+
+  describe '.with_dry_run' do
+    it 'is off by default and restores the previous mode afterwards, even on an exception' do
+      expect(described_class.dry_run?).to be false
+
+      expect { described_class.with_dry_run(true) { raise 'boom' } }.to raise_error('boom')
+
+      expect(described_class.dry_run?).to be false
+    end
+
+    it 'nests, restoring the outer mode' do
+      described_class.with_dry_run(true) do
+        described_class.with_dry_run(false) { expect(described_class.dry_run?).to be false }
+        expect(described_class.dry_run?).to be true
+      end
+    end
+
+    it 'returns the block value' do
+      expect(described_class.with_dry_run(true) { :value }).to eq(:value)
+    end
+  end
+
   describe '.curl_opts' do
     around do |example|
       Dir.mktmpdir('command-utils-curl-spec-') do |dir|

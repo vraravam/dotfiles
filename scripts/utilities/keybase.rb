@@ -19,6 +19,8 @@ module Keybase
   include Core  # For instance methods (in blocks)
   extend Core   # For module methods
 
+  COMMAND = 'keybase'
+
   # URL scheme prefix for Keybase git repos. Used by both keybase_url? (validator) and
   # repo_url (builder) below so the literal only appears once.
   PROTOCOL = 'keybase://'
@@ -33,6 +35,11 @@ module Keybase
   # with a wedged service it would otherwise block the whole setup. The interactive 'keybase
   # login' itself is deliberately unbounded -- it waits for the user to type the credentials.
   QUERY_TIMEOUT = 20
+
+  # @return [Boolean] true if 'mise' is on PATH
+  def available?
+    PathUtils.command_exists?(COMMAND)
+  end
 
   # Note: Logging methods must be qualified (Logging.debug, Logging.error, etc.)
   # because 'include Logging' + 'extend self' doesn't make included methods
@@ -93,8 +100,8 @@ module Keybase
       return true
     end
 
-    unless PathUtils.command_exists?('keybase')
-      Logging.info "Skipping Keybase setup since '#{'keybase'.yellow}' is not installed"
+    unless available?
+      Logging.skip_tool(COMMAND)
       return true
     end
 
@@ -156,7 +163,7 @@ module Keybase
 
     require 'fileutils'
     support_bin = APP_PATH.join('Contents', 'SharedSupport', 'bin')
-    %w[keybase git-remote-keybase].each do |tool|
+    [COMMAND, 'git-remote-keybase'].each do |tool|
       FileUtils.ln_sf(support_bin.join(tool).to_s, Pathname(bin_dir).join(tool).to_s)
     end
     true
@@ -176,7 +183,10 @@ module Keybase
   #
   # @return [void]
   def ensure_service_running
-    return unless PathUtils.command_exists?('keybase')
+    unless available?
+      Logging.skip_tool(COMMAND)
+      return
+    end
 
     _fix_google_support_ownership
     return if _service_up?
@@ -198,20 +208,14 @@ module Keybase
   # Returns false on failure so callers can decide whether to abort or continue.
   # Called by bootstrap_login and recreate-repository.rb.
   #
-  # @param dry_run [Boolean] When true, logs the operation instead of executing.
   # @param start_service [Boolean] When true, makes sure the keybase service is running first
   #   (see ensure_service_running) -- needed on a vanilla OS where Keybase.app was never launched.
-  # @return [Boolean] true if logged in (or would log in), false otherwise.
+  # @return [Boolean] true if logged in (or, in CommandUtils dry-run mode, would log in), false otherwise.
   # :reek:UtilityFunction -- Stateless utility that operates only on arguments
-  def ensure_logged_in(dry_run: false, start_service: false)
-    unless PathUtils.command_exists?('keybase')
+  def ensure_logged_in(start_service: false)
+    unless available?
       Logging.record_error "'keybase' command not found in PATH -- install via Homebrew first"
       return false
-    end
-
-    if dry_run
-      Logging.info 'Would ensure keybase login'
-      return true
     end
 
     ensure_service_running if start_service
@@ -228,7 +232,7 @@ module Keybase
     Logging.info "Logging into keybase as '#{username.purple}'" if username
     # The account changes with the login, so a username memoized before it would be stale.
     _forget_username
-    CommandUtils.run_interactive('keybase', 'login', *username) do
+    CommandUtils.run_interactive(COMMAND, 'login', *username) do
       Logging.record_error 'Could not log into keybase -- retry after logging in manually'
     end
   end
@@ -237,30 +241,29 @@ module Keybase
   # Logs a warning if deletion fails (expected if repo doesn't exist).
   #
   # @param repo_name [String]
-  # @param dry_run [Boolean] When true, logs the operation instead of executing.
   # @return [void]
   # :reek:UtilityFunction -- Stateless utility that operates only on arguments
-  def delete_repo(repo_name, dry_run: false)
-    if dry_run
-      Logging.info "Would delete keybase repo: #{repo_name.yellow}"
-    else
-      Logging.record_warning("Failed to delete keybase repo #{repo_name.yellow} (it might not exist)") unless CommandUtils.run_silent('keybase', 'git', 'delete', '-f', repo_name)
+  def delete_repo(repo_name)
+    unless available?
+      Logging.skip_tool(COMMAND)
+      return
     end
+
+    Logging.record_warning("Failed to delete keybase repo #{repo_name.yellow} (it might not exist)") unless CommandUtils.run_silent(COMMAND, 'git', 'delete', '-f', repo_name)
   end
 
   # Creates a new private Keybase repo. Returns false if creation fails.
   #
   # @param repo_name [String]
-  # @param dry_run [Boolean] When true, logs the operation instead of executing.
-  # @return [Boolean] true on success or dry_run, false on failure
+  # @return [Boolean] true on success (or in CommandUtils dry-run mode), false on failure
   # :reek:UtilityFunction -- Stateless utility that operates only on arguments
-  def create_repo(repo_name, dry_run: false)
-    if dry_run
-      Logging.info "Would create keybase repo: #{repo_name.yellow}"
-      return true
+  def create_repo(repo_name)
+    unless available?
+      Logging.skip_tool(COMMAND)
+      return false
     end
 
-    if CommandUtils.run_interactive('keybase', 'git', 'create', repo_name)
+    if CommandUtils.run_interactive(COMMAND, 'git', 'create', repo_name)
       true
     else
       Logging.record_error "Failed to create keybase repo #{repo_name.yellow}"
@@ -272,17 +275,11 @@ module Keybase
   # Used when force-squashing commits destroys local history.
   #
   # @param repo_name [String]
-  # @param dry_run [Boolean] When true, logs the operation instead of executing.
-  # @return [Boolean] true on success or dry_run, false on failure
-  def recreate_repo(repo_name, dry_run: false)
-    if dry_run
-      Logging.info "Would recreate keybase repo: #{repo_name.yellow}"
-      return true
-    end
-
+  # @return [Boolean] true on success (or in CommandUtils dry-run mode), false on failure
+  def recreate_repo(repo_name)
     Logging.debug "#{'Recreating'.yellow} keybase repo '#{repo_name.cyan}'"
-    delete_repo(repo_name, dry_run: dry_run)
-    unless create_repo(repo_name, dry_run: dry_run)
+    delete_repo(repo_name)
+    unless create_repo(repo_name)
       Logging.record_error 'Failed to recreate keybase repo -- manual intervention required'
       return false
     end
@@ -295,7 +292,7 @@ module Keybase
   #
   # @return [String, nil]
   def _fetch_username
-    return nil unless PathUtils.command_exists?('keybase')
+    return nil unless available?
 
     status = _status
     status && status['LoggedIn'] ? status['Username'] : nil
@@ -314,7 +311,7 @@ module Keybase
 
   # @return [Boolean] whether the keybase service answers 'keybase status' (exit 0)
   def _service_up?
-    _stdout, status = BackgroundJob.capture('keybase', 'status', timeout: QUERY_TIMEOUT)
+    _stdout, status = BackgroundJob.capture(COMMAND, 'status', timeout: QUERY_TIMEOUT)
     status&.success? || false
   end
 
@@ -363,7 +360,7 @@ module Keybase
   #
   # @return [Hash, nil] parsed status, or nil if the command failed/returned invalid JSON
   def _status
-    stdout, status = BackgroundJob.capture('keybase', 'status', '--json', timeout: QUERY_TIMEOUT)
+    stdout, status = BackgroundJob.capture(COMMAND, 'status', '--json', timeout: QUERY_TIMEOUT)
     status ? JSON.parse(stdout.strip) : nil
   rescue JSON::ParserError
     nil

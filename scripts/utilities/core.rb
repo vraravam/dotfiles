@@ -2,8 +2,6 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-require 'English' # $CHILD_STATUS (stream_command) -- without it the alias is nil and the exit status is lost
-
 require_relative 'env_lite'
 require_relative 'pathname_ext' # Extends Pathname with color methods - loaded here for universal availability
 
@@ -202,46 +200,6 @@ module Core
   # :reek:FeatureEnvy -- Delegates to path object's file? method (intentional delegation)
   def file?(path)
     !nil_or_empty?(path) && path.respond_to?(:file?) && path.file?
-  end
-
-  # Executes a command with real-time output streaming and optional stdin data.
-  # Streams stdout to the terminal as the command runs (no buffering).
-  # Returns the exit status of the command.
-  #
-  # Use this for long-running commands where users need progress feedback
-  # (brew bundle, git operations, etc.). For commands where you need to parse
-  # output, use Open3.capture2/capture3 instead.
-  #
-  # @param cmd [Array<String>] Command and arguments to execute
-  # @param stdin_data [String, nil] Optional data to write to command's stdin
-  # @return [Integer] Exit status code (0 = success, non-zero = failure)
-  #
-  # @example Basic command (no stdin)
-  #   exitstatus = Core.stream_command(['brew', 'bundle'])
-  #   if exitstatus.zero?
-  #     puts "Success!"
-  #   else
-  #     puts "Failed with exit code #{exitstatus}"
-  #   end
-  #
-  # @example Command with stdin data
-  #   brewfile_content = "tap 'homebrew/core'\nbrew 'git'"
-  #   exitstatus = Core.stream_command(['brew', 'bundle', '--file=-'], stdin_data: brewfile_content)
-  def stream_command(cmd, stdin_data: nil)
-    io = IO.popen(cmd, 'r+')
-
-    # Write stdin data if provided
-    if stdin_data
-      io.write(stdin_data)
-      io.close_write
-    end
-
-    # Stream output to stdout in real-time
-    IO.copy_stream(io, $stdout)
-    io.close
-
-    # IO#close on a popen handle sets $CHILD_STATUS for the child just reaped.
-    $CHILD_STATUS&.exitstatus || 0
   end
 
   # Reads all lines from a file with explicit UTF-8 encoding.

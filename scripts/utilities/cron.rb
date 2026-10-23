@@ -77,28 +77,22 @@ module Cron
   def suspend_cron
     Logging.debug 'Suspending cron jobs...'
     backup_file = EnvVars.cron_backup_file
-    src_file = CRONTAB_FILE
 
     # Attempt to capture the active crontab into the backup file.
     # crontab -l fails (exit 1) when no crontab exists - use check_status to detect success
     crontab_output, stderr_str, status = Open3.capture3('crontab', '-l')
     success = CommandUtils.check_status(nil, stderr_str, status)
 
-    if success && !nil_or_empty?(crontab_output)
-      backup_file.write(crontab_output)
-      Logging.debug "Backed up existing crontab to '#{backup_file.cyan}'"
-    elsif src_file.file?
-      # No active crontab (e.g. FIRST_INSTALL) but a known-good crontab.txt exists.
-      IO.copy_stream(src_file.to_s, backup_file.to_s)
-      Logging.debug "Seeded cron backup from '#{src_file.cyan}'"
+    if CommandUtils.dry_run?
+      Logging.info "Would back up the crontab to '#{backup_file.cyan}'"
     else
-      backup_file.write('')
-      Logging.debug 'No existing crontab or crontab.txt; created empty backup'
+      _save_backup(backup_file, success ? crontab_output : nil)
     end
 
     CommandUtils.run_silent('crontab', '-r')
     _cleanup_old_backups
-    Logging.success 'Cron jobs suspended'
+    # In dry-run mode the commands above only logged; claiming success would be false.
+    Logging.success 'Cron jobs suspended' unless CommandUtils.dry_run?
     true
   end
 
@@ -109,6 +103,12 @@ module Cron
   def resume_cron
     Logging.debug 'Resuming cron jobs...'
     backup_file = EnvVars.cron_backup_file
+    if CommandUtils.dry_run?
+      # suspend_cron wrote no backup in dry-run mode, so there is nothing on disk to inspect.
+      Logging.info "Would restore the crontab from the backup '#{backup_file.cyan}' and delete the backup"
+      return
+    end
+
     if backup_file.file? && !nil_or_empty?(backup_file)
       Logging.success 'Cron jobs resumed from backup' if restore_cron(backup_file)
       # Error already logged by restore_cron if it failed
@@ -222,7 +222,9 @@ module Cron
       temp_crontab = Tempfile.new(['crontab', '.txt'])
       begin
         # crontab -l exits 1 if no crontab exists; redirect stderr to suppress "no crontab" message
-        CommandUtils.run_silent('crontab', '-l', out: temp_crontab.path)
+        # A read, so it goes through Open3 (not CommandUtils.run_silent) and really runs in dry-run mode.
+        existing_crontab, = Open3.capture3('crontab', '-l')
+        temp_crontab.write(existing_crontab)
         temp_crontab.close
 
         # Step 2: Check if temp file has content (existing crontab)
@@ -247,7 +249,7 @@ module Cron
         # Step 5: Load non-empty schedule into system crontab
         if schedule_source
           loaded = restore_cron(schedule_source)
-          Logging.success 'Crontab set up successfully' if loaded
+          Logging.success 'Crontab set up successfully' if loaded && !CommandUtils.dry_run?
           # Error already logged by restore_cron if it failed
         end
       ensure
@@ -278,11 +280,19 @@ module Cron
     installed = CommandUtils.query('crontab', '-l')
     original = backup.read(encoding: 'UTF-8')
     if nil_or_empty?(original) || original.strip == installed.strip
-      backup.delete
+      if CommandUtils.dry_run?
+        Logging.info "Would delete the cron backup '#{backup.cyan}'"
+      else
+        backup.delete
+      end
     else
       kept = Pathname("#{backup}.replaced")
-      backup.rename(kept)
-      Logging.info "The previous cron schedule differed from the one installed -- kept as '#{kept.cyan}'"
+      if CommandUtils.dry_run?
+        Logging.info "Would rename the cron backup '#{backup.cyan}' to '#{kept.cyan}' (it differs from the installed schedule)"
+      else
+        backup.rename(kept)
+        Logging.info "The previous cron schedule differed from the one installed -- kept as '#{kept.cyan}'"
+      end
     end
   end
 
@@ -296,18 +306,14 @@ module Cron
   # return; only 'ensure' is guaranteed to run in that case, since a 'return' is Ruby
   # control flow, not a raised exception, and never touches the 'rescue' clause at all.
   #
-  # @param dry_run [Boolean] When true, logs what would happen without suspending cron.
+  # In CommandUtils dry-run mode (see CommandUtils.with_dry_run) every step still runs but only
+  # logs: each crontab command through CommandUtils, and each backup file write/delete through
+  # its own dry-run check, so nothing is suspended, written or restored for real.
+  #
   # @example
   #   Cron.with_cron_suspended { run_main_logic }
-  #   Cron.with_cron_suspended(dry_run: true) { run_main_logic }
-  def with_cron_suspended(dry_run: false)
-    if dry_run
-      Logging.info 'Would suspend cron jobs'
-      yield
-      Logging.info 'Would resume cron jobs'
-      return
-    end
-
+  #   CommandUtils.with_dry_run(true) { Cron.with_cron_suspended { run_main_logic } }
+  def with_cron_suspended
     suspend_cron
     completed_normally = false
     begin
@@ -389,6 +395,26 @@ module Cron
     true
   end
 
+  # Writes the cron backup: the active crontab when there is one, else a seed from the tracked
+  # crontab.txt, else an empty file (so resume_cron has something to read).
+  #
+  # @param backup_file [Pathname] Where to write the backup
+  # @param crontab_output [String, nil] The active crontab, nil when 'crontab -l' failed
+  # @return [void]
+  def _save_backup(backup_file, crontab_output)
+    if !nil_or_empty?(crontab_output)
+      backup_file.write(crontab_output)
+      Logging.debug "Backed up existing crontab to '#{backup_file.cyan}'"
+    elsif CRONTAB_FILE.file?
+      # No active crontab (e.g. FIRST_INSTALL) but a known-good crontab.txt exists.
+      IO.copy_stream(CRONTAB_FILE.to_s, backup_file.to_s)
+      Logging.debug "Seeded cron backup from '#{CRONTAB_FILE.cyan}'"
+    else
+      backup_file.write('')
+      Logging.debug 'No existing crontab or crontab.txt; created empty backup'
+    end
+  end
+
   # Removes old cron backup files, keeping only the 5 most recent.
   # Backup files follow pattern: ${TMPDIR}/crontab_backup*
   # Sorts by mtime (newest first) and deletes oldest.
@@ -404,6 +430,11 @@ module Cron
 
     backups[5..-1].each do |old_backup|
       next unless PathUtils.safe_for_write?(old_backup)
+
+      if CommandUtils.dry_run?
+        Logging.info "Would delete old cron backup: '#{old_backup.cyan}'"
+        next
+      end
 
       old_backup.delete
       Logging.debug "Deleted old cron backup: '#{old_backup.cyan}'"

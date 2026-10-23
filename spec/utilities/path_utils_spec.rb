@@ -197,4 +197,29 @@ RSpec.describe PathUtils do
       end
     end
   end
+
+  describe '.size_kb' do
+    it 'does not invoke the system command for a non-existent file' do
+      expect(CommandUtils).not_to receive(:query)
+
+      described_class.size_kb('adflksjflsj')
+    end
+  end
+
+  describe '.format_size' do
+    {
+      0 => '0', 1 => '1.0K', 500 => '500K', 1023 => '1023K', 1024 => '1.0M', 1536 => '1.5M',
+      10_239 => '10M', 234 * 1024 => '234M', 1_572_864 => '1.5G', 1_048_575 => '1.0G', -2048 => '-2.0M'
+    }.each do |kb, expected|
+      it "formats #{kb}K as #{expected}" do
+        expect(described_class.format_size(kb)).to eq(expected)
+      end
+    end
+
+    it 'does not fork anything' do
+      expect(CommandUtils).not_to receive(:query)
+
+      described_class.format_size(123_456)
+    end
+  end
 end

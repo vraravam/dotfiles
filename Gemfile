@@ -36,4 +36,9 @@ gem 'simplecov', '0.22.0', require: false
 # .github/workflows/dependabot-audit.yml and .github/workflows/bundler-audit.yml)
 # to gate Dependabot's version-bump pull requests and to continuously check
 # master, and locally via 'bundle exec bundler-audit check --update'.
-gem 'bundler-audit', '0.9.3'
+gem 'bundler-audit', '0.9.3', require: false
+
+gem 'flay', '2.11.0', require: false
+gem 'flog', '4.6.2', require: false
+gem 'reek', '6.1.4', require: false
+gem 'rufo', '0.13.0', require: false

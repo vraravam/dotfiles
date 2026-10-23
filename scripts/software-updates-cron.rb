@@ -92,18 +92,18 @@ module SoftwareUpdatesCron
     @steps.step(title, message, &block)
   end
 
-  # Runs the block guarded by a check for +check_cmd+. Records a warning on
+  # Runs the block guarded by a check for +tool_name+. Records a warning on
   # failure rather than aborting so all steps run regardless of earlier failures.
   #
   # @param title [String] Human-readable name of the thing being updated (used in step title/messages)
-  # @param check_cmd [String] Command name to check for existence in PATH before running the block
+  # @param tool_name [String] Command name to check for existence in PATH before running the block
   # @yield Block that performs the actual update; should return truthy on success
   # @return [void]
   # :reek:UtilityFunction -- Stateless wrapper for command existence check (intentional)
-  def _perform_update(title, check_cmd, &block)
+  def _perform_update(title, tool_name, &block)
     _step("update #{title}", "#{'Updating'.yellow} #{title.purple}") do
-      unless PathUtils.command_exists?(check_cmd)
-        Logging.debug "Command not found: '#{check_cmd.cyan}'"
+      unless PathUtils.command_exists?(tool_name)
+        Logging.skip_tool(tool_name)
         return
       end
 

@@ -3,7 +3,14 @@
 # frozen_string_literal: true
 
 # Utility methods for executing external commands with consistent error handling.
+#
+# DRY RUN: inside CommandUtils.with_dry_run(true) { ... } every method that can change state
+# (run_silent, run_interactive, capture_output, stream_command) logs "Would run: <command>" and
+# reports success without executing, so callers need no "if dry_run then log else run" branch.
+# Read-only queries (query, check_status) are never suppressed -- dry-run suppresses writes, not
+# reads. Use query (or Open3 directly) for a command that must really run during a dry run.
 
+require 'English' # $CHILD_STATUS (stream_command) -- without it the alias is nil and the exit status is lost
 require 'open3'
 require_relative 'core'
 require_relative 'enumerable_ext'
@@ -27,6 +34,31 @@ module CommandUtils
 
   # Headers that bypass GitHub's CDN and intermediate proxies.
   CURL_CACHE_BUST_OPTS = ['-H', 'Cache-Control: no-cache, no-store, must-revalidate', '-H', 'Pragma: no-cache', '-H', 'Expires: 0'].freeze
+
+  @dry_run = false
+
+  # Whether state-changing commands are currently being logged instead of executed.
+  #
+  # @return [Boolean]
+  def dry_run?
+    @dry_run
+  end
+
+  # Runs the block with dry-run mode set to +enabled+, restoring the previous mode afterwards
+  # (also on an exception or a non-local return), so the mode can never leak out of the block.
+  #
+  # @param enabled [Boolean] true to log mutating commands instead of running them
+  # @return [Object] the block's value
+  #
+  # @example
+  #   CommandUtils.with_dry_run(options[:dry_run]) { Keybase.create_repo('home') }
+  def with_dry_run(enabled)
+    previous = @dry_run
+    @dry_run = enabled ? true : false
+    yield
+  ensure
+    @dry_run = previous
+  end
 
   # ---------------------------------------------------------------------------
   # Class methods
@@ -145,6 +177,8 @@ module CommandUtils
   # @example Redirect stdout to file, suppress stderr
   #   CommandUtils.run_silent('crontab', '-l', out: '/tmp/crontab.txt')
   def run_silent(*command, out: File::NULL, err: File::NULL)
+    return _skip_for_dry_run(command) if @dry_run
+
     system(*command, out: out, err: err)
   end
 
@@ -163,6 +197,8 @@ module CommandUtils
   #     Logging.warn("mise trust failed in '#{dir.cyan}' (status: #{status.exitstatus})#{output_msg}")
   #   end
   def capture_output(*command, &block)
+    return _skip_for_dry_run(command) if @dry_run
+
     stdout, stderr, status = Open3.capture3(*command)
     check_status(stdout, stderr, status, &block)
   rescue Errno::ENOENT => e
@@ -191,9 +227,56 @@ module CommandUtils
   #     Logging.record_warning("Command failed in '#{dir.cyan}' (status: #{$?.exitstatus})")
   #   end
   def run_interactive(*command)
+    return _skip_for_dry_run(command) if @dry_run
+
     success = system(*command)
     yield if block_given? && !success
     success
+  end
+
+  # Executes a command with real-time output streaming and optional stdin data.
+  # Streams stdout to the terminal as the command runs (no buffering).
+  # Returns the exit status of the command.
+  #
+  # Use this for long-running commands where users need progress feedback
+  # (brew bundle, mise install, etc.) or that need data on stdin, which run_interactive cannot
+  # feed. For commands where you need to parse output, use capture_output or query instead.
+  #
+  # @param cmd [Array<String>] Command and arguments to execute
+  # @param stdin_data [String, nil] Optional data to write to command's stdin
+  # @return [Integer] Exit status code (0 = success, non-zero = failure; 0 in dry-run mode)
+  #
+  # @example Basic command (no stdin)
+  #   exitstatus = CommandUtils.stream_command(['brew', 'bundle'])
+  #   if exitstatus.zero?
+  #     puts "Success!"
+  #   else
+  #     puts "Failed with exit code #{exitstatus}"
+  #   end
+  #
+  # @example Command with stdin data
+  #   brewfile_content = "tap 'homebrew/core'\nbrew 'git'"
+  #   exitstatus = CommandUtils.stream_command(['brew', 'bundle', '--file=-'], stdin_data: brewfile_content)
+  def stream_command(cmd, stdin_data: nil)
+    if @dry_run
+      _skip_for_dry_run(cmd)
+      return 0
+    end
+
+    io = IO.popen(cmd, 'r+')
+
+    # Write stdin data if provided
+    if stdin_data
+      io.write(stdin_data)
+      io.close_write
+    end
+
+    # Stream output to stdout in real-time
+    IO.copy_stream(io, $stdout)
+    io.close
+
+    # IO#close on a popen handle sets $CHILD_STATUS for the child just reaped.
+    $CHILD_STATUS&.exitstatus || 0
   end
 
   # Curl arguments (besides -fsSL and the URL) for a download.
@@ -233,6 +316,16 @@ module CommandUtils
   # ---------------------------------------------------------------------------
 
   private
+
+  # Dry-run stand-in for a mutating command: logs it instead of running it.
+  #
+  # @param command [Array] The arguments the caller passed (a leading env Hash and a trailing
+  #   options Hash are left out of the message)
+  # @return [Boolean] always true, so the caller carries on as if the command succeeded
+  def _skip_for_dry_run(command)
+    Logging.info "Would run: #{command.reject { |arg| arg.is_a?(Hash) }.join(' ').cyan}"
+    true
+  end
 
   # Filters out specified patterns from stderr output.
   #

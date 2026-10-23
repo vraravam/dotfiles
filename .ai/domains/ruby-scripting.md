@@ -410,7 +410,7 @@ When editing any Ruby script, check:
 ```ruby
 # Good -- single parameter, meaning clear from method name
 def success(message)
-def dir_size_kb(dir)
+def size_kb(dir)
 def file?(path)
 ```
 

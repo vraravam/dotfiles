@@ -124,13 +124,18 @@ module Logging
   def debug(message)
     return unless _should_log?(:debug)
     # Hidden by default; only visible when DEBUG env var is set or LOG_LEVEL=debug.
-    # Also suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
-    # Use error for messages that must always be visible regardless of context.
     return unless EnvVars.debug?
-    return if EnvVars.suppress_log?
 
     msg = message.to_s.replace_home_path_with_tilde
     msg.each_line { |line| emit("⚙️ #{'**DEBUG**'.light_purple} #{line.chomp}", level: 0) }
+  end
+
+  # Prints a message informing the user that +tool_name+ is not installed.
+  #
+  # @param tool_name [String] Tool name
+  # @return [void]
+  def skip_tool(tool_name)
+    debug "Skipping operation since '#{tool_name.yellow}' is not installed"
   end
 
   # Prints a message prompting the user to perform a manual step (e.g. restart
@@ -502,9 +507,6 @@ module Logging
   # @return [void]
   def _emit_log(level, message, prefix)
     return unless _should_log?(level)
-    # Suppressed when running inside a direnv subshell (see EnvVars.suppress_log?).
-    # Use error for messages that must always be visible regardless of context.
-    return if EnvVars.suppress_log?
 
     msg = message.to_s.replace_home_path_with_tilde
     msg.each_line { |line| emit("#{prefix} #{line.chomp}", level: 0) }
