@@ -2,23 +2,21 @@
 # encoding: utf-8
 # frozen_string_literal: true
 
-require 'pathname'
-
 require_relative 'command_utils'
-require_relative 'core'
 require_relative 'enumerable_ext'
 require_relative 'logging'
 require_relative 'path_utils'
 
-# Homebrew steps shared by the interactive 'bupc' command (scripts/brew-update-cleanup.rb),
-# the hourly cron job (scripts/software-updates-cron.rb) and the machine setup (BrewBundle),
-# so they can never drift apart on how a step is invoked. What only the machine setup needs (the
-# base section of the Brewfile, the retries, the background install) lives in BrewBundle.
+# Homebrew housekeeping steps shared by the interactive 'bupc' command
+# (scripts/brew-update-cleanup.rb) and the hourly cron job
+# (scripts/software-updates-cron.rb), so the two can never drift apart on how a
+# step is invoked. (CLI packages and casks themselves are managed by nix -- see Nix.)
 #
-# Every method is a pure wrapper around a plain 'brew' subprocess: it returns its result and never
-# logs or records warnings itself, because the callers deliberately treat the same failure differently (cron
-# records a warning per updated component; 'bupc' keeps going and only summarizes at the end).
-# No method assumes a TTY or a login shell, so they behave identically under cron.
+# Every method is a pure command wrapper: it returns true/false and never logs or
+# records warnings itself, because the two callers deliberately treat the same
+# failure differently (cron records a warning per updated component; 'bupc' keeps
+# going and only summarizes at the end). No method assumes a TTY or a login shell --
+# each one is a plain 'brew' subprocess, so they behave identically under cron.
 module Brew
   extend self
 

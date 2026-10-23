@@ -12,8 +12,9 @@ require_relative 'logging'
 require_relative 'path_utils'
 require_relative 'pathname_ext'
 
-# Shared antidote plugin-manager helpers used by the antidote formula's
-# postinstall hook (in Brewfile) and software-updates-cron.rb.
+# Shared antidote plugin-manager helpers used by the antidote package's
+# home.activation postinstall hook (in nix/modules/packages.nix) and
+# software-updates-cron.rb.
 #
 # Antidote must be driven through zsh because antidote itself is a zsh
 # function -- there is no Ruby API for it. The update step and bundle

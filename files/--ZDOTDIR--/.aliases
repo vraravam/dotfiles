@@ -598,8 +598,24 @@ elif is_linux; then
 fi
 
 # --------------------------------------------------------------------------
-# 3g. Homebrew utilities
+# 3g. Nix and Homebrew utilities
 # --------------------------------------------------------------------------
+
+if command_exists darwin-rebuild; then
+  # Applies nix-darwin + home-manager configuration from the flake -- this is the
+  # single command that keeps nix packages, macOS defaults (see
+  # nix/darwin-configuration.nix), and Homebrew GUI casks (via nix-darwin's
+  # homebrew module) all in sync.
+  # '--impure' is required: the flake reads '.shellrc' directly via
+  # 'builtins.readFile' to derive keybaseEnabled/encryptedBackupEnabled -- see
+  # nix/flake.nix for why.
+  alias nixup='darwin-rebuild switch --flake "${DOTFILES_DIR}/nix#default" --impure'
+
+  # Updates all flake inputs (nixpkgs, nix-darwin, home-manager,
+  # git-remote-gpg-encrypt) then applies. Run occasionally (not on every
+  # 'bupc') -- updating inputs is a deliberate action, not implied by routine cleanup.
+  alias nixsync='nix flake update --flake "${DOTFILES_DIR}/nix" --impure && nixup'
+fi
 
 if is_macos && command_exists brew; then
   # List all casks that are outdated like a "dry-run" (and which have version marked as 'latest')
@@ -608,15 +624,19 @@ if is_macos && command_exists brew; then
   # Upgrades all casks that are outdated (and which have version marked as 'latest')
   alias bcug='brew upgrade --greedy -y'
 
-  # Upgrades and cleans up all regular outdated casks and libs (non-greedy).
-  # Antidote updates and tap trusting are handled via Brewfile postinstall hooks.
+  # Upgrades and cleans up everything: nix packages + macOS defaults + Homebrew
+  # GUI casks (all via 'nixup'), then brew's own cache/orphan cleanup (nix-darwin's
+  # homebrew module does not cover cached downloads or orphaned dependencies --
+  # see nix/darwin-configuration.nix's homebrew.onActivation.cleanup comment).
+  # Keeps the 'bupc' name for muscle memory even though the underlying mechanism
+  # is no longer Homebrew Bundle.
   if command_exists 'brew-update-cleanup.rb'; then alias bupc='brew-update-cleanup.rb'; fi
 
   # Thin wrapper that delegates to Ruby Antidote.update_and_regenerate_bundle.
   # Updates all installed antidote plugins, unshallows their git repos, and
   # regenerates the static bundle file.
-  # Called by the antidote formula's postinstall hook in Brewfile (whenever
-  # antidote is installed/upgraded) and by software-updates-cron.sh (periodic updates).
+  # Called by nix/modules/packages.nix's home.activation hook (whenever antidote is
+  # installed/upgraded via 'nixup') and by software-updates-cron.rb (periodic updates).
   update_antidote_and_regenerate_plugin_bundle() {
     call_utility Antidote.update_and_regenerate_bundle
   }
@@ -637,7 +657,12 @@ if is_macos && command_exists brew; then
     rm -rf "${HOMEBREW_PREFIX}/Library/Taps/${GH_USERNAME}/homebrew-cask"
   }
 
-  # Builds a Homebrew formula from source, tests it, and audits it for contribution readiness.
+  # Builds a Homebrew formula from source, tests it, and audits it for contribution
+  # readiness. Retained for occasional upstream-nixpkgs-adjacent Homebrew formula
+  # contributions (e.g. the vraravam/homebrew-tap formula this setup no longer
+  # depends on for CLI tools, but that others may still use) -- not part of this
+  # setup's own package management, which is nix-only for CLI (see
+  # nix/modules/packages.nix).
   # Usage: check_formula <formula-name>
   check_formula() {
     local name="${1:-}"
@@ -818,8 +843,8 @@ implode() {
   # '|| true' because 'crontab -r' exits non-zero when there is no crontab.
   crontab -r 2>/dev/null || true
 
-  # Login items for the apps this repo registers (the Brewfile's and MacOS::LOGIN_ITEM_APPS'
-  # entries). Done before the wipe because the list is read from the Brewfile and the script
+  # Login items for the apps this repo registers (nix/darwin-configuration.nix's and
+  # MacOS::LOGIN_ITEM_APPS' entries). Done before the wipe because the list is read from the repo and the script
   # lives in DOTFILES_DIR. The system Ruby is used for the same reason call_utility uses it.
   # Skipped (with a warning) when the script is already gone; never fatal.
   local login_item_script="${DOTFILES_DIR}/scripts/setup-login-item.rb"
@@ -896,7 +921,14 @@ implode() {
     "${ANTIDOTE_HOME}"
     "${ANTIDOTE_PLUGIN_ZSH}"
     "${DOTFILES_DIR}"
-    "${HOMEBREW_BUNDLE_FILE}"
+    # Home-manager's per-user profile symlink (~/.nix-profile). Already covered by
+    # the dot-wipe above (this listing is redundant, same as DOTFILES_DIR/
+    # ANTIDOTE_PLUGIN_ZSH above) but named explicitly for clarity -- the system-wide
+    # /nix store and /nix/var/nix/profiles/per-user/<user> generation history are
+    # deliberately left alone, same precedent as never touching Homebrew's own
+    # /opt/homebrew prefix: both are system-level package-manager state outside
+    # $HOME, and the whole disk is about to be wiped by the re-image anyway.
+    "${NIX_PROFILE_HOME}"
     "${HOME}/personal"
     "${PROJECTS_BASE_DIR}"
   )

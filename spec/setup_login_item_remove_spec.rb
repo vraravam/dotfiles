@@ -12,7 +12,7 @@ RSpec.describe SetupLoginItem do
     end
   end
 
-  let(:brewfile) { @tmp.join('Brewfile') }
+  let(:config) { @tmp.join('darwin-configuration.nix') }
   let(:record) { @tmp.join('state', 'login-item-apps') }
 
   before do
@@ -22,35 +22,34 @@ RSpec.describe SetupLoginItem do
   end
 
   describe '.managed_app_names' do
-    it 'takes the -a names of active setup_login_items_script lines and the built-in list, once each' do
+    it 'takes the apps of active setupLoginItem and literal setup-login-item.rb entries, with the built-in list, once each' do
       stub_const('MacOS::LOGIN_ITEM_APPS', %w[Clocker KeyCastr].freeze)
-      brewfile.write(<<~'BREWFILE')
-        cask 'clocker', postinstall: "\"#{setup_login_items_script}\" -a 'Clocker'"
-        cask 'keycastr', postinstall: "\"#{setup_login_items_script}\" -a 'Keycastr'"
-        cask 'wobbly', trusted: true, postinstall: "\"#{setup_login_items_script}\" -a 'Wobbly'"
-        cask 'protonvpn' # , postinstall: "\"#{setup_login_items_script}\" -a 'ProtonVPN'"
-        # cask 'boring', postinstall: "\"#{setup_login_items_script}\" -a 'boringNotch'"
-        cask 'plain'
-      BREWFILE
+      config.write(<<~'NIX')
+        setupLoginItem = app: "\\\"\${DOTFILES_DIR}/scripts/setup-login-item.rb\\\" -a '${app}'";
+        { name = "clocker";  postinstall = setupLoginItem "Clocker"; }
+        { name = "keycastr"; postinstall = setupLoginItem "Keycastr"; }
+        { name = "wobbly"; trusted = true; postinstall = setupLoginItem "Wobbly"; }
+        # { name = "boring"; postinstall = setupLoginItem "boringNotch"; }
+        cask "thaw", postinstall: "\"#{ENV['DOTFILES_DIR']}/scripts/setup-login-item.rb\" -a 'Thaw'" if ::OS::Mac::version >= 14
+        # cask "x", postinstall: "\"#{ENV['DOTFILES_DIR']}/scripts/setup-login-item.rb\" -a 'Commented'"
+        { name = "plain"; }
+      NIX
 
-      expect(described_class.managed_app_names(brewfile: brewfile)).to eq(%w[Clocker Keycastr Wobbly])
+      expect(described_class.managed_app_names(config: config)).to eq(%w[Clocker Keycastr Wobbly Thaw])
     end
 
-    it 'handles a continued line like the Keybase one' do
-      stub_const('MacOS::LOGIN_ITEM_APPS', [].freeze)
-      brewfile.write(<<~'BREWFILE')
-        cask 'keybase',
-             postinstall: "\"#{setup_login_items_script}\" -a 'Keybase' && " \
-                          'other'
-      BREWFILE
-
-      expect(described_class.managed_app_names(brewfile: brewfile)).to eq(%w[Keybase])
-    end
-
-    it 'falls back to the built-in list when there is no Brewfile' do
+    it 'falls back to the built-in list when there is no configuration file' do
       stub_const('MacOS::LOGIN_ITEM_APPS', %w[Clocker].freeze)
 
-      expect(described_class.managed_app_names(brewfile: @tmp.join('missing'))).to eq(%w[Clocker])
+      expect(described_class.managed_app_names(config: @tmp.join('missing'))).to eq(%w[Clocker])
+    end
+
+    it 'reads the apps of the real configuration' do
+      real = EnvVars::DOTFILES_DIR.join('nix', 'darwin-configuration.nix')
+      names = described_class.managed_app_names(config: real)
+
+      expect(names).to include('Keybase', 'Clocker', 'Thaw')
+      expect(names).not_to include('boringNotch')
     end
   end
 
@@ -58,7 +57,7 @@ RSpec.describe SetupLoginItem do
     before do
       stub_const('Core::ROOT', @tmp)
       %w[Clocker Thaw].each { |name| @tmp.join('Applications', "#{name}.app").mkpath }
-      allow(described_class).to receive(:brewfile_app_names).and_return(%w[Clocker Thaw Absent])
+      allow(described_class).to receive(:configured_app_names).and_return(%w[Clocker Thaw Absent])
       allow(CommandUtils).to receive(:query).with('sw_vers', '-productVersion').and_return(macos_version)
     end
 
@@ -75,14 +74,14 @@ RSpec.describe SetupLoginItem do
         expect(described_class).not_to receive(:run).with(app_name: 'Clocker')
         expect(described_class).not_to receive(:run).with(app_name: 'Absent')
 
-        expect(described_class.register_managed(brewfile: brewfile, record: record)).to be true
+        expect(described_class.register_managed(config: config, record: record)).to be true
       end
 
       it 'does nothing, and prints nothing, when every installed app already has one' do
         login_items('Clocker, Thaw')
         expect(described_class).not_to receive(:run)
 
-        expect(described_class.register_managed(brewfile: brewfile, record: record)).to be true
+        expect(described_class.register_managed(config: config, record: record)).to be true
         expect(Logging).not_to have_received(:info)
       end
 
@@ -90,14 +89,14 @@ RSpec.describe SetupLoginItem do
         login_items('')
         allow(described_class).to receive(:run).and_return(true, false)
 
-        expect(described_class.register_managed(brewfile: brewfile, record: record)).to be false
+        expect(described_class.register_managed(config: config, record: record)).to be false
       end
 
       it 'does not even ask System Events when no managed app is installed' do
-        allow(described_class).to receive(:brewfile_app_names).and_return(%w[Absent])
+        allow(described_class).to receive(:configured_app_names).and_return(%w[Absent])
         expect(CommandUtils).not_to receive(:query).with(MacOS::OSASCRIPT_CMD, '-e', anything)
 
-        expect(described_class.register_managed(brewfile: brewfile, record: record)).to be true
+        expect(described_class.register_managed(config: config, record: record)).to be true
       end
     end
 
@@ -111,7 +110,7 @@ RSpec.describe SetupLoginItem do
         expect(described_class).to receive(:run).with(app_name: 'Thaw').and_return(true)
         expect(described_class).not_to receive(:run).with(app_name: 'Clocker')
 
-        expect(described_class.register_managed(brewfile: brewfile, record: record)).to be true
+        expect(described_class.register_managed(config: config, record: record)).to be true
       end
 
       it 'registers every installed app when the status lookup fails (only the output is repeated)' do
@@ -119,14 +118,14 @@ RSpec.describe SetupLoginItem do
         expect(described_class).to receive(:run).with(app_name: 'Clocker').and_return(true)
         expect(described_class).to receive(:run).with(app_name: 'Thaw').and_return(true)
 
-        expect(described_class.register_managed(brewfile: brewfile, record: record)).to be true
+        expect(described_class.register_managed(config: config, record: record)).to be true
       end
 
       it 'does nothing when swift reports nothing missing' do
         allow(Open3).to receive(:capture3).and_return(['', '', status])
         expect(described_class).not_to receive(:run)
 
-        expect(described_class.register_managed(brewfile: brewfile, record: record)).to be true
+        expect(described_class.register_managed(config: config, record: record)).to be true
       end
     end
   end
@@ -135,34 +134,34 @@ RSpec.describe SetupLoginItem do
     before do
       stub_const('Core::ROOT', @tmp)
       %w[Clocker Thaw Gone].each { |name| @tmp.join('Applications', "#{name}.app").mkpath }
-      brewfile.write(<<~'BREWFILE')
-        cask 'clocker', postinstall: "\"#{setup_login_items_script}\" -a 'Clocker'"
-        cask 'thaw', postinstall: "\"#{setup_login_items_script}\" -a 'Thaw'"
-      BREWFILE
+      config.write(<<~'NIX')
+        { name = "clocker"; postinstall = setupLoginItem "Clocker"; }
+        { name = "thaw"; postinstall = setupLoginItem "Thaw"; }
+      NIX
     end
 
     it 'only learns the current apps, and removes nothing, when there is no record yet' do
       expect(described_class).not_to receive(:remove)
 
-      expect(described_class.unregister_removed(brewfile: brewfile, record: record)).to be true
+      expect(described_class.unregister_removed(config: config, record: record)).to be true
       expect(record.read.lines.map(&:strip)).to eq(%w[Clocker Thaw])
     end
 
-    it 'removes the login item of exactly the app that left the Brewfile, and records the current apps' do
+    it 'removes the login item of exactly the app that left the configuration, and records the current apps' do
       record.dirname.mkpath
       record.write("Clocker\nGone\nThaw\n")
       expect(described_class).to receive(:remove).with(app_names: %w[Gone]).and_return(true)
 
-      expect(described_class.unregister_removed(brewfile: brewfile, record: record)).to be true
+      expect(described_class.unregister_removed(config: config, record: record)).to be true
       expect(record.read.lines.map(&:strip)).to eq(%w[Clocker Thaw])
     end
 
-    it 'does nothing when nothing left the Brewfile' do
+    it 'does nothing when nothing left the configuration' do
       record.dirname.mkpath
       record.write("Clocker\nThaw\n")
       expect(described_class).not_to receive(:remove)
 
-      expect(described_class.unregister_removed(brewfile: brewfile, record: record)).to be true
+      expect(described_class.unregister_removed(config: config, record: record)).to be true
     end
 
     it 'does not touch an app that is no longer installed, and forgets it' do
@@ -170,7 +169,7 @@ RSpec.describe SetupLoginItem do
       record.write("Clocker\nUninstalled\nThaw\n")
       expect(described_class).not_to receive(:remove)
 
-      expect(described_class.unregister_removed(brewfile: brewfile, record: record)).to be true
+      expect(described_class.unregister_removed(config: config, record: record)).to be true
       expect(record.read.lines.map(&:strip)).to eq(%w[Clocker Thaw])
     end
 
@@ -179,26 +178,26 @@ RSpec.describe SetupLoginItem do
       record.write("Clocker\nGone\nThaw\n")
       allow(described_class).to receive(:remove).and_return(false)
 
-      expect(described_class.unregister_removed(brewfile: brewfile, record: record)).to be false
+      expect(described_class.unregister_removed(config: config, record: record)).to be false
       expect(record.read.lines.map(&:strip)).to eq(%w[Clocker Thaw Gone])
     end
 
-    it 'leaves everything alone when there is no Brewfile (it must not look like every app was dropped)' do
+    it 'leaves everything alone when there is no configuration (it must not look like every app was dropped)' do
       record.dirname.mkpath
       record.write("Clocker\n")
       expect(described_class).not_to receive(:remove)
 
-      expect(described_class.unregister_removed(brewfile: @tmp.join('missing'), record: record)).to be true
+      expect(described_class.unregister_removed(config: @tmp.join('missing'), record: record)).to be true
       expect(record.read).to eq("Clocker\n")
     end
   end
 
-  describe '.brewfile_app_names' do
-    it 'follows the Brewfile alone, not the built-in list' do
+  describe '.configured_app_names' do
+    it 'follows the nix configuration alone, not the built-in list' do
       stub_const('MacOS::LOGIN_ITEM_APPS', %w[ProtonVPN].freeze)
-      brewfile.write("cask 'clocker', postinstall: \"\\\"\#{setup_login_items_script}\\\" -a 'Clocker'\"\n")
+      config.write(%(  { name = "clocker"; postinstall = setupLoginItem "Clocker"; }\n))
 
-      expect(described_class.brewfile_app_names(brewfile: brewfile)).to eq(%w[Clocker])
+      expect(described_class.configured_app_names(config: config)).to eq(%w[Clocker])
     end
   end
 

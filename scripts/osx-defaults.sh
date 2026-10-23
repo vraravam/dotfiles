@@ -569,36 +569,13 @@ main() {
   # Menu Bar
   # ---------------------------------------------------------------------------
 
-  # System Settings > Control Center > Menu Bar Only items
-  # Bluetooth = on
-  _dw com.apple.controlcenter 'NSStatusItem Visible Bluetooth' 1
-  # WiFi = on
-  _dw com.apple.controlcenter 'NSStatusItem Visible WiFi' -bool true
-  # Battery = off
-  _dw com.apple.controlcenter 'NSStatusItem Visible Battery' 0
-  # Clock = off (use a dedicated clock app such as Clocker instead)
-  _dw com.apple.controlcenter 'NSStatusItem VisibleCC Clock' -bool false
+  # System Settings > Control Center > Menu Bar Only items (Bluetooth/WiFi/Battery/
+  # Clock/AirDrop/TextInput/KeyboardBrightness-icon/Weather visibility, Focus/
+  # AirPlayDisplay/Display/Sound/NowPlaying show-when-active behavior) are policy
+  # settings (never want them reverted) -- see nix/darwin-configuration.nix's
+  # system.defaults.CustomUserPreferences."com.apple.controlcenter".
   # Spotlight = off (use Sol instead)
   # defaults write com.apple.controlcenter 'NSStatusItem Visible Spotlight' -bool false
-  # AirDrop = off
-  _dw com.apple.controlcenter 'NSStatusItem Visible AirDrop' -bool false
-  # Text Input = off
-  _dw com.apple.controlcenter 'NSStatusItem Visible TextInput' -bool false
-  # Keyboard Brightness = off
-  _dw com.apple.controlcenter 'NSStatusItem Visible KeyboardBrightness' -bool false
-  # Weather = off
-  _dw com.apple.controlcenter 'NSStatusItem Visible Weather' -bool false
-  # Focus = show when active (8=when active, 16=always, 24=never)
-  _dw com.apple.controlcenter 'FocusModes' -int 8
-  # Screen Mirroring = show when active
-  _dw com.apple.controlcenter 'AirPlayDisplay' -int 8
-  # Display = show when active
-  _dw com.apple.controlcenter 'Display' -int 8
-  # Sound = show when active
-  _dw com.apple.controlcenter 'Sound' -int 8
-  # Now Playing = show when active
-  _dw com.apple.controlcenter 'NowPlaying' -int 8
-  _dw_flush
 
   # Keep keyboard brightness at maximum via -currentHost write; cannot be
   # expressed as a plain defaults write (host-specific pref domain).
@@ -648,31 +625,13 @@ main() {
       '/System/Library/CoreServices/Menu Extras/Volume.menu' \
       '/System/Library/CoreServices/Menu Extras/User.menu'
   done
-  defaults write com.apple.systemuiserver menuExtras -array \
-    '/System/Library/CoreServices/Menu Extras/Bluetooth.menu' \
-    '/System/Library/CoreServices/Menu Extras/AirPort.menu' \
-    '/System/Library/CoreServices/Menu Extras/Battery.menu' \
-    '/System/Library/CoreServices/Menu Extras/Clock.menu' \
-    '/System/Library/CoreServices/Menu Extras/User.menu' \
-    '/System/Library/CoreServices/Menu Extras/Volume.menu'
+  # menuExtras array + Siri/airport/appleuser/battery/bluetooth/volume menu-extra
+  # visibility are policy settings -- see nix/darwin-configuration.nix's
+  # system.defaults.CustomUserPreferences."com.apple.systemuiserver".
 
-  _dw com.apple.systemuiserver 'NSStatusItem Visible Siri' -bool false
-  _dw com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.airport' -bool true
-  _dw com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.appleuser' -bool true
-  _dw com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.battery' -bool true
-  _dw com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.bluetooth' -bool true
-  _dw com.apple.systemuiserver 'NSStatusItem Visible com.apple.menuextra.volume' -bool true
-
-  _dw com.apple.menuextra.clock DateFormat -string 'EEE d MMM hh:mm:ss a'
-  _dw com.apple.menuextra.clock FlashDateSeparators -bool true
-  _dw com.apple.menuextra.clock IsAnalog -bool true # Since I am using `The Clocker` app, turning this to analog
-  _dw com.apple.menuextra.clock Show24Hour -bool false
-  _dw com.apple.menuextra.clock ShowAMPM -bool true
-  _dw com.apple.menuextra.clock ShowDate -bool false
-  _dw com.apple.menuextra.clock ShowDayOfMonth -bool true
-  _dw com.apple.menuextra.clock ShowDayOfWeek -bool false
-  _dw com.apple.menuextra.clock ShowSeconds -bool true
-  _dw_flush
+  # Menu bar clock formatting/behavior is a policy setting -- see
+  # nix/darwin-configuration.nix's system.defaults.menuExtraClock and its
+  # CustomUserPreferences."com.apple.menuextra.clock".DateFormat entry.
 
   if ask "Remove duplicates in the 'Open With' menu (also see 'lscleanup' alias)" 'Y'; then
     # The rebuild is slow and only needed once per macOS version (stamp-guarded;
@@ -921,26 +880,10 @@ main() {
     defaults write com.apple.finder ShowPreviewPane -bool false
   fi
 
-  _dw com.apple.finder ShowExternalHardDrivesOnDesktop -bool true
-  _dw com.apple.finder ShowMountedServersOnDesktop -bool false
-  _dw com.apple.finder ShowRecentTags -bool false
-  _dw com.apple.finder ShowRemovableMediaOnDesktop -bool true
-  _dw com.apple.finder ShowSidebar -bool true
-  _dw com.apple.finder SidebarDevicesSectionDisclosedState -bool true
-  _dw com.apple.finder SidebarPlacesSectionDisclosedState -bool true
-  _dw com.apple.finder SidebarShowingSignedIntoiCloud -bool true
-  _dw com.apple.finder SidebarShowingiCloudDesktop -bool true
-  _dw com.apple.finder SidebarTagsSctionDisclosedState -bool true
-  _dw com.apple.finder SidebarWidth 172
-  _dw com.apple.finder SidebariCloudDriveSectionDisclosedState -bool true
-  _dw com.apple.finder FXRemoveOldTrashItems -bool true
-  _dw com.apple.finder _FXEnableColumnAutoSizing -bool true
-  # Default view style: clmv=column, icnv=icon, Nlsv=list, glyv=gallery.
-  _dw com.apple.finder FXPreferredViewStyle -string 'clmv'
-  _dw com.apple.finder WarnOnEmptyTrash -bool false
-  _dw com.apple.finder OpenWindowForNewRemovableDisk -bool true
-  _dw com.apple.finder RestoreWindowState -bool true
-  _dw_flush
+  # Finder desktop-icon-visibility, sidebar-section-disclosure, view-style, and
+  # trash-window-behavior settings are policy settings -- see
+  # nix/darwin-configuration.nix's system.defaults.finder and its
+  # CustomUserPreferences."com.apple.finder" entries.
 
   if ask 'Enable iCloud Drive Optimize Mac Storage (keep full copies in iCloud, evict local copies when space is needed)' 'Y'; then
     # com.apple.bird is the iCloud Drive daemon. The optimize-storage key is the only
@@ -1054,8 +997,9 @@ main() {
   #   defaults write -g NSAutomaticWindowAnimationsEnabled -bool false && killall Finder
   #fi
 
-  # Avoiding the creation of .DS_Store files on network volumes
-  defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
+  # Avoiding the creation of .DS_Store files on network volumes is a policy setting
+  # -- see nix/darwin-configuration.nix's
+  # system.defaults.CustomUserPreferences."com.apple.desktopservices".
 
   # ---------------------------------------------------------------------------
   # Energy saving
@@ -1442,8 +1386,9 @@ main() {
   #   defaults write com.apple.Safari com.apple.Safari.ContentPageGroupIdentifier.WebKit2AllowsInlineMediaPlayback -bool false
   #   defaults write com.apple.SafariTechnologyPreview com.apple.Safari.ContentPageGroupIdentifier.WebKit2AllowsInlineMediaPlayback -bool false
 
-  # Update extensions automatically
-  defaults write com.apple.Safari InstallExtensionUpdatesAutomatically -bool true
+  # Update extensions automatically is a policy setting -- see
+  # nix/darwin-configuration.nix's
+  # system.defaults.CustomUserPreferences."com.apple.Safari".
 
   # ---------------------------------------------------------------------------
   # Mail
@@ -2005,7 +1950,7 @@ main() {
   # ---------------------------------------------------------------------------
   # DockDoor
   # ---------------------------------------------------------------------------
-  # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
+  # Login item: registered via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService).
   # DockDoor has no defaults key for login-item status.
   if ask 'DockDoor settings' 'Y'; then
     _dw com.ethanbills.DockDoor SUAutomaticallyUpdate -bool true
@@ -2083,7 +2028,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # ---------------------------------------------------------------------------
   # Keybase
   # ---------------------------------------------------------------------------
-  # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
+  # Login item: registered via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService).
   # Keybase has no defaults key for login-item status.
   if ask 'Keybase settings' 'Y'; then
     _dw keybase.Electron AppleTextDirection -bool true
@@ -2096,7 +2041,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # ---------------------------------------------------------------------------
   # MechVibes
   # ---------------------------------------------------------------------------
-  # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
+  # Login item: registered via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService).
   # MechVibes has no defaults key for login-item status.
   if ask 'MechVibes settings' 'Y'; then
     # Skip: NSStatusItem Preferred Position Item-0 -- menu bar pixel coordinate (criterion 4).
@@ -2107,7 +2052,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # ---------------------------------------------------------------------------
   # KeyCastr
   # ---------------------------------------------------------------------------
-  # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
+  # Login item: registered via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService).
   # KeyCastr has no defaults key for login-item status.
   if ask 'KeyCastr settings' 'Y'; then
     # Skip: default.textColor -- binary NSKeyedArchiver blob with embedded ICC profile;
@@ -2187,7 +2132,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # ---------------------------------------------------------------------------
   # Shortcat
   # ---------------------------------------------------------------------------
-  # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
+  # Login item: registered via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService).
   # Shortcat has no defaults key for login-item status.
   if ask 'Shortcat settings' 'Y'; then
     # Skip: telemetryIdentifier -- device UUID (denial criterion #1).
@@ -2207,7 +2152,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # ---------------------------------------------------------------------------
   # Sol
   # ---------------------------------------------------------------------------
-  # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
+  # Login item: registered via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService).
   # Sol has no defaults key for login-item status.
   if ask 'Sol settings' 'Y'; then
     # Skip: NSWindow Frame * (display geometry -- denial criterion #4),
@@ -2321,7 +2266,7 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   fi
 
   # Thaw (Ice fork)
-  # Login item: registered via Brewfile's setup_login_items_script (SMAppService).
+  # Login item: registered via nix/darwin-configuration.nix's homebrew.casks postinstall (SMAppService).
   # Thaw has no defaults key for login-item status.
   if ask 'Thaw settings' 'Y'; then
     # Skip: Hotkeys (all values are null -- app treats missing key identically, and
@@ -2468,20 +2413,20 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Disable smart dashes as they're annoying when typing code
   # defaults write -g NSAutomaticDashSubstitutionEnabled -bool false
 
-  # Enable the WebKit Developer Tools in the Mac App Store
-  defaults write com.apple.appstore WebKitDeveloperExtras -bool true
+  # Enable the WebKit Developer Tools + Debug Menu in the Mac App Store are policy
+  # settings -- see nix/darwin-configuration.nix's
+  # system.defaults.CustomUserPreferences."com.apple.appstore".
 
-  # Enable Debug Menu in the Mac App Store
-  defaults write com.apple.appstore ShowDebugMenu -bool true
-
-  # Add a context menu item for showing the Web Inspector in web views
-  defaults write -g WebKitDeveloperExtras -bool true
+  # Add a context menu item for showing the Web Inspector in web views is a policy
+  # setting -- see nix/darwin-configuration.nix's
+  # system.defaults.CustomUserPreferences."NSGlobalDomain".WebKitDeveloperExtras.
 
   # ---------------------------------------------------------------------------
   # Time Machine
   # ---------------------------------------------------------------------------
-  # Prevent Time Machine from prompting to use new hard drives as backup volume
-  _dw com.apple.TimeMachine DoNotOfferNewDisksForBackup -bool true
+  # Prevent Time Machine from prompting to use new hard drives as backup volume is
+  # a policy setting -- see nix/darwin-configuration.nix's
+  # system.defaults.CustomUserPreferences."com.apple.TimeMachine".
 
   # Disable local Time Machine backups
   # TODO: This causes an error to be printed to stdout - need to investigate if this is deprecated
@@ -2497,13 +2442,12 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # Screen
   # ---------------------------------------------------------------------------
   # Require password immediately after sleep or screen saver begins
-  _dw com.apple.screensaver askForPassword -bool true
-  _dw com.apple.screensaver askForPasswordDelay -int 0
-  _dw_flush
+  # Password-after-sleep/screensaver behavior is a policy setting -- see
+  # nix/darwin-configuration.nix's system.defaults.screensaver.
 
   # Enable subpixel font rendering on non-Apple LCDs (0=off, 1=light, 2=Medium/flat panel, 3=strong/blurred)
-  # This is mostly needed for non-Apple displays.
-  defaults write -g AppleFontSmoothing -int 2
+  # This is mostly needed for non-Apple displays. Policy setting -- see
+  # nix/darwin-configuration.nix's system.defaults.NSGlobalDomain.AppleFontSmoothing.
 
   # Enable HiDPI display modes (requires restart)
   sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool true
@@ -2511,18 +2455,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # ---------------------------------------------------------------------------
   # Screen capture
   # ---------------------------------------------------------------------------
-  # Save screenshots to the desktop
-  _dw com.apple.screencapture location -string "${HOME}/Desktop"
-
-  # Save screenshots in PNG format (other options: BMP, GIF, JPG, PDF, TIFF)
-  _dw com.apple.screencapture type -string 'png'
-
-  # Disable shadow in screenshots
-  _dw com.apple.screencapture disable-shadow -bool true
-
-  # Screenshot thumbnail expires in 15 secs
-  _dw com.apple.screencaptureui thumbnailExpiration -float 15
-  _dw_flush
+  # Screenshot save-location/format/shadow and thumbnail-expiration are policy
+  # settings -- see nix/darwin-configuration.nix's system.defaults.screencapture
+  # and its CustomUserPreferences."com.apple.screencaptureui" entry.
 
   # iCal
   # Log HTTP Activity:
@@ -2558,8 +2493,9 @@ user_pref("browser.urlbar.suggest.quicksuggest.sponsored", false);
   # ---------------------------------------------------------------------------
   # Spaces
   # ---------------------------------------------------------------------------
-  # When switching applications, switch to respective space
-  defaults write -g AppleSpacesSwitchOnActivate -bool true
+  # When switching applications, switch to respective space is a policy setting --
+  # see nix/darwin-configuration.nix's
+  # system.defaults.NSGlobalDomain.AppleSpacesSwitchOnActivate.
 
   # ---------------------------------------------------------------------------
   # Kill affected applications

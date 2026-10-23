@@ -25,9 +25,6 @@ module Keybase
   # repo_url (builder) below so the literal only appears once.
   PROTOCOL = 'keybase://'
 
-  # Where the Keybase cask installs the app; its command-line tools live in SharedSupport/bin.
-  APP_PATH = Core::ROOT.join('Applications', 'Keybase.app').freeze
-
   # How many one-second polls ensure_service_running waits for the service to answer.
   SERVICE_START_ATTEMPTS = 15
 

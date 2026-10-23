@@ -24,9 +24,10 @@
 #   (LSUIElement/LSBackgroundOnly); -b emits a user_action hint instead.
 #
 # The inverse (used by 'implode' to get a machine back to a first-install state): --remove-managed
-# unregisters the login item of every app this repo registers -- the '-a' names in the Brewfile's
-# 'setup_login_items_script' lines plus MacOS::LOGIN_ITEM_APPS. Apps that are not installed, and
-# apps that have no login item, are skipped without complaint.
+# unregisters the login item of every app this repo registers -- the
+# 'setupLoginItem' entries (and literal setup-login-item.rb calls) in nix/darwin-configuration.nix
+# plus MacOS::LOGIN_ITEM_APPS. Apps that are not installed, and apps that have no login item, are
+# skipped without complaint.
 #
 # Usage:
 #   Standalone: setup-login-item.rb [-h] -a <app-name> [-b]
@@ -101,67 +102,73 @@ module SetupLoginItem
     end
   end
 
-  # Matches the '-a <app>' of a 'setup_login_items_script' call on a Brewfile line that is not
-  # commented out (a '#' that does not start a '#{...}' interpolation disables the line).
-  BREWFILE_LOGIN_ITEM = /\A(?:[^#\n]|\#\{)*setup_login_items_script\}\\"\s+-a\s+'([^']+)'/.freeze
+  # Where the apps are declared: nix/darwin-configuration.nix, either through its
+  # 'setupLoginItem "<app>"' helper or as a literal 'setup-login-item.rb" -a '<app>'' postinstall.
+  # A line that is commented out is skipped (a '#' that does not start a '#{...}' interpolation
+  # disables the rest of the line).
+  NIX_LOGIN_ITEM = /\A(?:[^#\n]|\#\{)*(?:setupLoginItem\s+"([^"]+)"|setup-login-item\.rb\\?"\s+-a\s+'([^']+)')/.freeze
 
-  # The apps the Brewfile registers as login items: the '-a' names of its active
-  # 'setup_login_items_script' lines. The Brewfile is optional (it may be absent).
+  # The apps nix/darwin-configuration.nix registers as login items: its active
+  # 'setupLoginItem "<app>"' entries and literal 'setup-login-item.rb -a <app>' postinstalls. The file is
+  # optional (it may be absent).
   #
-  # @param brewfile [Pathname] The Brewfile to scan.
+  # @param config [Pathname] The nix-darwin configuration to scan.
   # @return [Array<String>] Unique app names (case-insensitively), in first-seen order.
-  def brewfile_app_names(brewfile: EnvVars::HOMEBREW_BUNDLE_FILE)
-    names = brewfile.file? ? Core.read_lines_utf8(brewfile).map { |line| line[BREWFILE_LOGIN_ITEM, 1] }.compact : []
+  def configured_app_names(config: CONFIG_FILE)
+    names = config.file? ? Core.read_lines_utf8(config).map { |line| line.match(NIX_LOGIN_ITEM)&.captures&.compact&.first }.compact : []
     names.uniq(&:downcase)
   end
 
-  # Names of every app this repo may have registered as a login item: #brewfile_app_names plus
+  # Names of every app this repo may have registered as a login item: #configured_app_names plus
   # MacOS::LOGIN_ITEM_APPS (the single source of truth for the apps the preference scripts
   # restart). Only used where everything is to be cleared (--remove-managed, 'implode'); the
-  # day-to-day paths (#register_managed, #unregister_removed) follow the Brewfile alone.
+  # day-to-day paths (#register_managed, #unregister_removed) follow the nix configuration alone.
   #
-  # @param brewfile [Pathname] The Brewfile to scan.
+  # @param config [Pathname] The nix-darwin configuration to scan.
   # @return [Array<String>] Unique app names (case-insensitively), in first-seen order.
-  def managed_app_names(brewfile: EnvVars::HOMEBREW_BUNDLE_FILE)
-    (brewfile_app_names(brewfile: brewfile) + MacOS::LOGIN_ITEM_APPS).uniq(&:downcase)
+  def managed_app_names(config: CONFIG_FILE)
+    (configured_app_names(config: config) + MacOS::LOGIN_ITEM_APPS).uniq(&:downcase)
   end
 
-  # Where the Brewfile's login-item apps are remembered between runs, so an app dropped from the
-  # Brewfile can be recognized later (the Brewfile no longer mentions it). Under the state
+  # Where the configuration's login-item apps are remembered between runs, so an app dropped from the
+  # configuration can be recognized later (the configuration no longer mentions it). Under the state
   # directory, because the cache directories are wiped.
+  # The nix-darwin configuration the login-item apps are declared in.
+  CONFIG_FILE = EnvVars::DOTFILES_DIR.join('nix', 'darwin-configuration.nix').freeze
+
   RECORD_FILE = EnvVars::XDG_STATE_HOME.join('dotfiles', 'login-item-apps').freeze
 
-  # Registers the login item of every app the Brewfile lists, that is installed and has no login
+  # Registers the login item of every app the nix configuration lists, that is installed and has no login
   # item yet. 'brew bundle' only runs a cask's postinstall (which calls this script) when it
   # installs the cask, so after the login items were removed (implode, or by hand) a re-run would
   # never restore them for casks that are already installed. Quiet when nothing is missing: an app
   # that is already registered (including one still awaiting approval) is left alone without any
   # output, and an app that is not installed yet is skipped (its own postinstall registers it).
   #
-  # @param brewfile [Pathname] The Brewfile to read.
-  # @param record [Pathname] File remembering the Brewfile's apps (see RECORD_FILE).
+  # @param config [Pathname] The nix-darwin configuration to read.
+  # @param record [Pathname] File remembering the configuration's apps (see RECORD_FILE).
   # @return [Boolean] true unless an installed app could not be registered
-  def register_managed(brewfile: EnvVars::HOMEBREW_BUNDLE_FILE, record: RECORD_FILE)
-    names = brewfile_app_names(brewfile: brewfile)
-    _write_record(record, names) if brewfile.file?
+  def register_managed(config: CONFIG_FILE, record: RECORD_FILE)
+    names = configured_app_names(config: config)
+    _write_record(record, names) if config.file?
     installed = names.select { |name| Core::ROOT.join('Applications', "#{name}.app").directory? }
     return true if installed.empty?
 
     _unregistered(installed).map { |name| run(app_name: name) }.all?
   end
 
-  # Unregisters the login item of each app that the previous run saw in the Brewfile and the
-  # Brewfile no longer lists -- one by one, never everything. Meant to run before the cleanup that
+  # Unregisters the login item of each app that the previous run saw in the configuration and the
+  # configuration no longer lists -- one by one, never everything. Meant to run before the cleanup that
   # uninstalls such apps, while the app (needed to address its login item) is still there. The very
   # first run only learns the current apps, so nothing is removed on a machine without a record.
   #
-  # @param brewfile [Pathname] The Brewfile to read.
-  # @param record [Pathname] File remembering the Brewfile's apps (see RECORD_FILE).
+  # @param config [Pathname] The nix-darwin configuration to read.
+  # @param record [Pathname] File remembering the configuration's apps (see RECORD_FILE).
   # @return [Boolean] true unless a login item of a dropped app could not be removed
-  def unregister_removed(brewfile: EnvVars::HOMEBREW_BUNDLE_FILE, record: RECORD_FILE)
-    return true unless brewfile.file?
+  def unregister_removed(config: CONFIG_FILE, record: RECORD_FILE)
+    return true unless config.file?
 
-    current = brewfile_app_names(brewfile: brewfile)
+    current = configured_app_names(config: config)
     kept = current.map(&:downcase)
     dropped = _read_record(record).reject { |name| kept.include?(name.downcase) }
     installed = dropped.select { |name| Core::ROOT.join('Applications', "#{name}.app").directory? }
@@ -424,7 +431,7 @@ if __FILE__ == $PROGRAM_NAME
       options[:register_managed] = true
     end
     opts.on('--remove-managed',
-            'Remove the login items of every app this repo registers (Brewfile entries and MacOS::LOGIN_ITEM_APPS)') do
+            'Remove the login items of every app this repo registers (nix-darwin configuration entries and MacOS::LOGIN_ITEM_APPS)') do
       options[:remove_managed] = true
     end
     opts.on('-b', '--background',

@@ -254,9 +254,12 @@ autoload -Uz zrecompile
     # fpath assignment is sufficient -- zsh keeps fpath and FPATH in sync automatically.
     # Exporting FPATH leaks it into child processes and launchd user-session environment;
     # typeset +x at the bottom of this file strips the export flag after all sources.
+    # Nix profile's site-functions dir comes first: most CLI completions now ship from
+    # nix packages (see nix/modules/packages.nix), not Homebrew (GUI casks only, see
+    # nix/darwin-configuration.nix) -- e.g. git-extras' '_git_extras' autoload function.
     _generate_brew_shellenv_cache() {
       "${brew_bin}" shellenv 2>/dev/null
-      echo "fpath=('${HOMEBREW_PREFIX}/share/zsh/site-functions' \"\${fpath[@]}\");"
+      echo "fpath=('${NIX_PROFILE_HOME}/share/zsh/site-functions' '${HOMEBREW_PREFIX}/share/zsh/site-functions' \"\${fpath[@]}\");"
     }
     cache_and_source_command_output "${brew_shellenv_cache}" _generate_brew_shellenv_cache "${brew_bin}"
     unfunction _generate_brew_shellenv_cache
@@ -267,7 +270,7 @@ autoload -Uz zrecompile
     export PATH="${HOMEBREW_PREFIX}/bin:${HOMEBREW_PREFIX}/sbin:${PATH}"
     export MANPATH="${HOMEBREW_PREFIX}/share/man${MANPATH+:${MANPATH}}:"
     export INFOPATH="${HOMEBREW_PREFIX}/share/info:${INFOPATH:-}"
-    fpath=("${HOMEBREW_PREFIX}/share/zsh/site-functions" "${fpath[@]}")
+    fpath=("${NIX_PROFILE_HOME}/share/zsh/site-functions" "${HOMEBREW_PREFIX}/share/zsh/site-functions" "${fpath[@]}")
   fi
 }
 
