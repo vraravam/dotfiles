@@ -191,7 +191,7 @@ RSpec.describe GitProcessor::Recreate do
     end
 
     let(:dir) { @repo }
-    let(:remotes) { { 'origin' => 'git@github.com:me/repo.git', 'origin2' => 'gpg-encrypt::x' } }
+    let(:remotes) { { 'origin' => 'git@github.com:me/repo.git', 'backup' => 'gpg-encrypt::x' } }
 
     before do
       allow(git).to receive(:current_branch).and_return('main')
@@ -201,6 +201,7 @@ RSpec.describe GitProcessor::Recreate do
       allow(git).to receive(:init).and_return(['', '', ok])
       allow(git).to receive(:add_remote)
       allow(git).to receive(:config_set)
+      allow(git).to receive_messages(push_urls: [], set_push_urls: ['', '', ok])
     end
 
     it 'removes .git, re-inits with the same branch and restores every remote plus the identity' do
@@ -209,11 +210,21 @@ RSpec.describe GitProcessor::Recreate do
         ['', '', ok]
       end
       expect(git).to receive(:add_remote).with('origin', remotes['origin'])
-      expect(git).to receive(:add_remote).with('origin2', remotes['origin2'])
+      expect(git).to receive(:add_remote).with('backup', remotes['backup'])
       expect(git).to receive(:config_set).with('user.name', 'Me')
       expect(git).to receive(:config_set).with('user.email', 'me@example.com')
 
       expect(git.send(:_recreate)).to be true
+    end
+
+    it "restores origin's push URLs, and leaves them alone when there are none" do
+      allow(git).to receive(:push_urls).and_return(%w[u1 u2])
+      expect(git).to receive(:set_push_urls).with('origin', %w[u1 u2])
+      git.send(:_recreate)
+
+      allow(git).to receive(:push_urls).and_return([])
+      expect(git).not_to receive(:set_push_urls)
+      git.send(:_recreate)
     end
 
     it 'passes a custom ref format to init' do

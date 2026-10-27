@@ -157,10 +157,19 @@ git -C "${HOME}" remote add origin "keybase://private/$(keybase whoami)/home";
 
 **If using the encrypted backup** (the git repo must already exist — see § 2.3.C step 2 above):
 ```zsh
-# As 'origin' if you're not also using Keybase, 'origin2' if you are (run both
+# As 'origin' if you're not also using Keybase, 'backup' if you are (run both
 # 'remote add' lines below in that case):
 git -C "${HOME}" remote add origin gpg-encrypt::https://github.com/${GH_USERNAME}/home.git;
-# git -C "${HOME}" remote add origin2 gpg-encrypt::https://github.com/${GH_USERNAME}/home.git   # only if Keybase is also configured above
+# git -C "${HOME}" remote add backup gpg-encrypt::https://github.com/${GH_USERNAME}/home.git   # only if Keybase is also configured above
+```
+
+**If you configured both**, make a plain `git push` update both (pull/fetch already read every remote). Setting any push URL stops git pushing to the fetch URL, so `origin`'s own URL is listed too:
+```zsh
+git -C "${HOME}" remote  set-url --add --push origin keybase://private/$(keybase whoami)/${KEYBASE_HOME_REPO_NAME}.git;
+git -C "${HOME}" remote  set-url --add --push origin gpg-encrypt::${ENCRYPTED_HOME_REPO_URL};
+
+git -C "${PERSONAL_PROFILES_DIR}" remote set-url --add --push origin keybase://private/$(keybase whoami)/${KEYBASE_PROFILES_REPO_NAME}.git;
+git -C "${PERSONAL_PROFILES_DIR}" remote set-url --add --push origin gpg-encrypt::${ENCRYPTED_PROFILES_REPO_URL};
 ```
 
 Then, regardless of which mechanism(s) you configured above:
@@ -169,7 +178,8 @@ Then, regardless of which mechanism(s) you configured above:
 git -C "${HOME}" add Brewfile personal/dev/configs/;
 git -C "${HOME}" commit -m "Backup: $(date +'%Y-%m-%d %H:%M:%S')";
 git -C "${HOME}" push origin master;
-# git -C "${HOME}" push origin2 master   # only if you configured a second remote above
+# With two remotes and the push URLs above, that one push updates both; otherwise also run:
+# git -C "${HOME}" push backup master
 ```
 
 **Using neither mechanism?** Skip the `git remote add`/`git push` lines above entirely
@@ -267,11 +277,11 @@ Review **[files/--HOME--/Brewfile](files/--HOME--/Brewfile)** and remove unwante
 
 #### C. Backup Mechanisms: Keybase, Encrypted Backup (Optional)
 
-`~` and `${PERSONAL_PROFILES_DIR}` can each be backed up via two fully independent,
+`~` and `${PERSONAL_PROFILES_DIR}` can each be backed up via two independent,
 optional mechanisms -- **Keybase** and/or the gpg+git-bundle **encrypted backup** (see
 [TechnicalDeepDive.md § 14](TechnicalDeepDive.md#14-adding-an-encrypted-backup-gpg--git-bundle-alongside-keybase)
 and [KeybaseMigration.md](KeybaseMigration.md)). Both can be enabled at once (each
-repo then gets two remotes, `origin` and `origin2`, pushed/pulled independently), just
+repo then gets two remotes, `origin` and `backup`, and a plain `git push` updates both), just
 one, or neither. Each is controlled purely by whether its env vars are set in
 **files/--HOME--/.shellrc** -- comment out (or leave unset) a pair to disable that
 mechanism entirely:

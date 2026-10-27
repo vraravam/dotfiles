@@ -190,7 +190,7 @@ When one of these commands runs, it checks for an override script at `${PERSONAL
 If the override exists and is executable, it runs **instead of** the default implementation, with the repo as its working directory, only the `--switches` as arguments, `_GIT_OVERRIDE_SKIP=1` in its environment and `RUBYLIB` including `scripts/utilities/`.
 
 Two entry points implement the same lookup, kept in step by convention:
-- **Ruby**: `GitOverrides.script_for(command, dir)` (`scripts/utilities/git_overrides.rb`), used by `scripts/git-command.rb` (the `push`/`pull`/`cc`/`upreb` shell aliases), `run-all.rb` and the git hooks
+- **Ruby**: `GitOverrides.script_for(command, dir)` (`scripts/utilities/git_overrides.rb`), used by `scripts/git-command.rb` (the `push`/`pull`/`upreb` shell aliases), `run-all.rb` and the git hooks
 - **Shell**: `scripts/git-cc` and `scripts/git-upreb` (the `git cc`/`git upreb` commands) and `dispatch_or_fallback` (`.aliases`, for the `st`/`count` autoload functions)
 
 ### Architecture
@@ -254,7 +254,7 @@ A `.rb` override is launched with the running interpreter and `--disable-gems` (
 | `upreb` | `upreb-<basename>.rb`/`.sh` | `GitCommands.upreb` |
 | `push` | `push-<basename>.rb`/`.sh` | `GitCommands.push` |
 | `pull` | `pull-<basename>.rb`/`.sh` | `GitCommands.pull` |
-| `cc` | `cc-<basename>.rb`/`.sh` | `GitCommands.cc` (wraps the `git cc` alias) |
+| `cc` | `cc-<basename>.rb`/`.sh` | `GitCommands.cc` (wraps `git cc`); dispatched by `scripts/git-cc` itself -- the `cc` alias is plain `git cc`, with no Ruby wrapper |
 
 ### Usage Examples
 
@@ -291,7 +291,7 @@ The remaining shell autoload functions in `${XDG_CONFIG_HOME}/zsh/` (`st`, `coun
 1. The function is called directly by name (e.g., `st` not `git st`)
 2. From a context where the autoload function is loaded (interactive shell)
 
-`push`, `pull`, `cc` and `upreb` are no longer autoload functions: they are aliases for `scripts/git-command.rb`, which does its own lookup via `GitOverrides`.
+`push`, `pull` and `upreb` are no longer autoload functions: they are aliases for `scripts/git-command.rb`, which does its own lookup via `GitOverrides`. `cc` is an alias of plain `git cc`, whose external subcommand does its own lookup in shell.
 
 ### `run-all.rb`'s Own Override Dispatch (covers git builtins too)
 

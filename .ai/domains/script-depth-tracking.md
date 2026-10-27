@@ -269,10 +269,10 @@ Code that calls a git alias with override detection (`git cc`, `git upreb`) MUST
 
 **Problem:** When a per-repo override exists, the following sequence occurs without the skip:
 
-1. User types `cc` -> `git-command.rb` finds `cc-browser-profiles.rb` -> runs the override
+1. User types `cc` (alias of `git cc`) -> `scripts/git-cc` finds `cc-browser-profiles.rb` -> runs the override
 2. Override calls `GitCommands.cc`
-3. `GitCommands.cc` calls `git -C "${folder}" cc` (the git alias)
-4. Git alias detects the override exists -> runs `cc-browser-profiles.rb` AGAIN
+3. `GitCommands.cc` calls `git -C "${folder}" cc` (the external subcommand)
+4. `git cc` detects the override exists -> runs `cc-browser-profiles.rb` AGAIN
 5. Second invocation increments depth again, prints duplicate output
 
 **Solution:** `GitCommands` sets `_GIT_OVERRIDE_SKIP=1` in the environment of every git call it makes (`_git`/`_with_retry`), and `exec_override`/`run-all.rb` set it for the override process itself:

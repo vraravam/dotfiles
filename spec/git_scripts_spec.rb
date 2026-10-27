@@ -255,6 +255,38 @@ RSpec.describe 'external git subcommands' do
     end
   end
 
+  describe 'git cc per-repo override' do
+    let(:repo) { File.join(tmp, 'myrepo') }
+    let(:bin) { File.join(tmp, 'bin') }
+    let(:override) { File.join(bin, 'cc-myrepo.sh') }
+
+    before do
+      FileUtils.mkdir_p(bin)
+      git!('init', '-q', '-b', 'master', repo)
+      File.write(override, "#!/bin/sh\necho \"OVERRIDE-RAN $*\"\n")
+      FileUtils.chmod(0o755, override)
+    end
+
+    it 'runs the override found on PATH, from the repo, instead of the default implementation' do
+      path = "#{bin}#{File::PATH_SEPARATOR}#{env['PATH']}"
+      out, _err, status, = run_cmd({ 'PATH' => path }, 'git', 'cc', '--expire=now', chdir: repo)
+
+      expect(status.exitstatus).to eq(0)
+      expect(out).to include("==> Using override: #{override}")
+      expect(out).to include('OVERRIDE-RAN --expire=now')
+      expect(out).not_to include('Size of repository')
+    end
+
+    it 'runs the default implementation when override detection is switched off' do
+      path = "#{bin}#{File::PATH_SEPARATOR}#{env['PATH']}"
+      out, _err, status, = run_cmd({ 'PATH' => path, '_GIT_OVERRIDE_SKIP' => '1' }, 'git', 'cc', chdir: repo)
+
+      expect(status.exitstatus).to eq(0)
+      expect(out).not_to include('OVERRIDE-RAN')
+      expect(out).to include('Size of repository')
+    end
+  end
+
   describe 'git fo on a shallow clone' do
     let(:origin) { File.join(tmp, 'origin.git') }
     let(:seed) { File.join(tmp, 'seed') }

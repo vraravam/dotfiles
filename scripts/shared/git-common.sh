@@ -131,9 +131,10 @@ dispatch_override() {
   _gc_abs="$(cd "${_gc_dir}" && pwd)" || return 1
   _gc_name="${_gc_abs##*/}"
   for _gc_ext in rb sh; do
-    _gc_script="${_gc_cmd}-${_gc_name}.${_gc_ext}"
+    # Resolved through PATH (where PERSONAL_BIN_DIR lives), not relative to the current directory.
+    _gc_script="$(command -v "${_gc_cmd}-${_gc_name}.${_gc_ext}" 2>/dev/null)" || continue
     [ -x "${_gc_script}" ] || continue
-    section_header "Using: '$(cyan $(which "${_gc_script}"))'"
+    printf '==> Using override: %s\n' "${_gc_script}"
     if [ "${_gc_ext}" = rb ]; then
       (cd "${_gc_dir}" && _GIT_OVERRIDE_SKIP=1 "${_gc_script}" "$@")
     else

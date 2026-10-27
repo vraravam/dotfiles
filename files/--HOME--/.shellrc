@@ -128,8 +128,8 @@ export KEYBASE_PROFILES_REPO_NAME='profiles'
 # mechanism. Takes a full URL (any git host), unlike KEYBASE_*_REPO_NAME above -- that
 # tool has no concept of a "default owner" to derive from a repo name, by design (see
 # its docs/DESIGN.md § Remote naming is entirely outside this tool's purview).
-# export ENCRYPTED_HOME_REPO_URL='https://github.com/vraravam/home.git'
-# export ENCRYPTED_PROFILES_REPO_URL='https://github.com/vraravam/browser-profiles.git'
+export ENCRYPTED_HOME_REPO_URL='https://github.com/vraravam/home.git'
+export ENCRYPTED_PROFILES_REPO_URL='https://github.com/vraravam/browser-profiles.git'
 # --------------------------------------------------------------------------------
 
 # ---------- Env vars for basic/common setup (can be optionally changed) ---------

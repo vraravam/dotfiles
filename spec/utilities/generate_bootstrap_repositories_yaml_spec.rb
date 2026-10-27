@@ -50,9 +50,10 @@ RSpec.describe GenerateBootstrapRepositoriesYaml do
 
     expect(generate).to be true
     entry = YAML.load_file(out.to_s).first
-    expect(entry).to include('folder' => @tmp.join('home').to_s, 'remote' => 'keybase://private/me/home', 'other_remotes' => { 'origin2' => 'gpg::git@host:home.git' })
+    expect(entry).to include('folder' => @tmp.join('home').to_s, 'remote' => 'keybase://private/me/home', 'other_remotes' => { 'backup' => 'gpg::git@host:home.git' })
     expect(entry['post_checkout']).to eq(%w[set_ssh_folder_permissions set_gnupg_folder_permissions])
     expect(entry['post_clone']).to include('git fo --rebase')
+    expect(entry['push_to_all_remotes']).to be true
   end
 
   it 'uses the encrypted remote alone when Keybase is not configured' do
@@ -64,6 +65,7 @@ RSpec.describe GenerateBootstrapRepositoriesYaml do
     expect(entries.first).to include('folder' => @tmp.join('profiles').to_s, 'remote' => 'gpg::git@host:profiles.git')
     expect(entries.first).not_to have_key('other_remotes')
     expect(entries.first['post_clone']).to eq(['git config --local pull.allowResetOnDivergedHistory true'])
+    expect(entries.first).not_to have_key('push_to_all_remotes')
   end
 
   it 'omits a repo that has no mechanism while keeping the one that has' do

@@ -6,7 +6,7 @@
 
 ## Overview
 
-This is a second, independent encrypted-backup mechanism alongside Keybase, rather than a replacement for it. If a repo (`~` or `${PERSONAL_PROFILES_DIR}`) still has a `keybase://` `origin` remote, it is left completely untouched -- the encrypted backup is configured as a fully separate remote (named `origin2` when `origin` already exists, or `origin` itself when it doesn't), never fanned into `origin`'s own push URLs. Running both means two independent, addressable restore points, so you can choose which one to use when setting up a new machine, instead of committing to just one. Since the two remotes are kept fully separate (not fanned out from a single `push`), each is pushed to explicitly: `git push` (or `push`) reaches `origin` only; refreshing the encrypted backup is a separate `git push origin2`.
+This is a second, independent encrypted-backup mechanism alongside Keybase, rather than a replacement for it. If a repo (`~` or `${PERSONAL_PROFILES_DIR}`) still has a `keybase://` `origin` remote, it is left completely untouched -- the encrypted backup is configured as a separate remote (named `backup` when `origin` already exists, or `origin` itself when it doesn't). Running both means two independent, addressable restore points, so you can choose which one to use when setting up a new machine, instead of committing to just one. The generated bootstrap config also sets `push_to_all_remotes: true` for such a repo, which gives `origin` one push URL per remote, so a plain `git push` (or `push`) updates both. `git pull`/`git fetch` already read every remote (`fetch.all = true`). `backup` stays an addressable remote of its own, so `git push backup`/`git pull backup` still work to target just that one.
 
 **The whole mechanism is a real git remote.** Plain `git push`/`git pull`/`git fetch` work against it directly -- no wrapper script, no manual bundle/encrypt/decrypt steps. Git invokes the external tool's `git-remote-gpg-encrypt` executable automatically for any URL of the form `gpg-encrypt::<full-url>` (see `man gitremote-helpers`). Unlike this repo's earlier, now-removed embedded implementation, the remote's address is a **full git URL** (any host), not a bare repo name with an implicitly-derived GitHub owner -- the external tool has no concept of a "default owner" to derive by design.
 
@@ -30,7 +30,7 @@ export ENCRYPTED_PROFILES_REPO_URL='https://github.com/vraravam/browser-profiles
 
 Both pairs are active by default. When both are enabled for the same repo, `fresh-install-of-osx.sh`
 tries Keybase first (original mechanism, historical precedence) to perform the actual
-clone, then adds the encrypted backup as an additional remote (`origin2`) -- or falls
+clone, then adds the encrypted backup as an additional remote (`backup`) -- or falls
 back to cloning from the encrypted backup if Keybase isn't enabled/available. See
 "Vanilla-OS Fresh Install" below for the full sequence.
 
@@ -156,8 +156,8 @@ Already handled by step 1 -- Homebrew installs them into a directory already on 
 
 ## Adding Encrypted Backup to a Repo (One-Time, Per Repo)
 
-This is just plain git commands -- no custom script. The encrypted backup is always
-its own separate remote, never fanned into `origin`'s push URLs (see Overview above):
+This is just plain git commands -- no custom script. The encrypted backup is its own
+remote (see Overview above); an extra step below makes a plain `git push` update both:
 
 ```bash
 # If the repo has no 'origin' yet, the encrypted backup can just be 'origin' itself:
@@ -166,13 +166,18 @@ git push origin --all;
 
 # If the repo already has an 'origin' (e.g. keybase://) you want to keep using too,
 # add the encrypted backup as a second, separately-named remote instead:
-git remote add origin2 gpg-encrypt::https://github.com/${GH_USERNAME}/home.git;
-git push origin2 --all;
+git remote add backup gpg-encrypt::https://github.com/${GH_USERNAME}/home.git;
+git push backup --all;
+
+# Optional: make a plain 'git push' update both from now on. Setting any push URL stops git
+# pushing to the fetch URL, so list origin's own URL too. Fetch/pull are not affected.
+git remote set-url --add --push origin "$(git remote get-url origin)";
+git remote set-url --add --push origin "$(git remote get-url backup)";
 ```
 
 Either way, this never touches any *other* remote -- it only adds a new standalone remote
 and then bundles/encrypts/pushes to the wrapper repo. `fresh-install-of-osx.sh` does this
-automatically after cloning (see `_configure_backup_remote`), naming it `origin2`
+automatically after cloning (see `_configure_backup_remote`), naming it `backup`
 if `origin` already exists or `origin` itself if it doesn't.
 
 **Verify the restore path works before trusting this** (test on a scratch directory, not your real `${HOME}`):
@@ -187,11 +192,12 @@ git gpg-encrypt-restore https://github.com/${GH_USERNAME}/home.git /tmp/restore-
 
 **Nothing special -- just use `git push`/`git pull`/`git fetch` (or the `push`/`pull` shell functions, see `git-config.md` for why that distinction matters).** There is no wrapper script involved: the external tool's `git-remote-gpg-encrypt` handles the encrypt/bundle/chunk/push and fetch/decrypt/unbundle transparently, the same way any other remote helper (`git-remote-https`, `git-remote-keybase`, etc.) would.
 
-If both `origin` (e.g. `keybase://`) and `origin2` (`gpg-encrypt::...`) are configured
-(see Overview above), a plain `git push`/`git pull`/`git fetch` (or the `push`/`pull` shell
-functions) only reaches `origin` -- refreshing the encrypted backup is a separate, explicit
-`git push origin2`/`git pull origin2`, since the two are kept fully independent rather than
-fanned out from a single push. `recreate-repository.rb`'s force-squash-and-push loops over
+If both `origin` (e.g. `keybase://`) and `backup` (`gpg-encrypt::...`) are configured
+(see Overview above) and `origin` has a push URL for each (set automatically for `~` and
+`${PERSONAL_PROFILES_DIR}` by the bootstrap config's `push_to_all_remotes: true`), a plain
+`git push` (or the `push` shell function) updates both, and `git pull`/`git fetch` read both.
+Without those push URLs, a plain `git push` only reaches `origin` and refreshing the encrypted
+backup is a separate, explicit `git push backup`. `recreate-repository.rb`'s force-squash-and-push loops over
 every configured remote and force-pushes each one individually -- for a `keybase://` remote
 specifically, `Keybase.ensure_logged_in` is checked *before* any destructive local operation
 (so a login failure is caught before history is squashed away with nowhere to push it), then
@@ -218,7 +224,7 @@ git config --local pull.allowResetOnDivergedHistory true;
 2. "Setup Keybase" -- if the Keybase env vars are set and the cask is installed, attempts a non-interactive `keybase login` on the true first-time bootstrap (silently syncs on later re-runs if already logged in).
 3. "Setup encrypted backup" -- if the encrypted-backup env vars are set, `git gpg-encrypt-setup` runs, prompting for the passphrase if missing (see above); otherwise silently confirms it's already set and continues.
 4. `_clone_home_repo` / `_clone_profiles_repo` try Keybase first (if enabled), falling back to the encrypted backup (if enabled) -- whichever succeeds clones the repo (Keybase: a direct `keybase://` clone; encrypted backup: `git gpg-encrypt-restore` fetches the plain public wrapper repo, reassembles the chunks, decrypts with the Keychain passphrase, and checks out the resulting bundle) -- full history restored either way.
-5. Whichever mechanism(s) are enabled then get configured as remotes on the newly-cloned repo -- `origin` for whichever performed the clone, `origin2` for the other if also enabled -- so subsequent `git push`/`git push origin2` (etc.) work against them immediately, with no further setup.
+5. Whichever mechanism(s) are enabled then get configured as remotes on the newly-cloned repo -- `origin` for whichever performed the clone, `backup` for the other if also enabled -- so subsequent `git push`/`git pull` work against them immediately, with no further setup (`push_to_all_remotes: true` makes a plain `git push` update both).
 6. SSH keys from the restored home repo become available for every subsequent git operation.
 
 **Disaster recovery scenario:** laptop stolen/dead -> new laptop -> add the Keychain passphrase and/or log into Keybase (interactively if running fresh-install directly, or manually beforehand if using the piped one-liner) -> run `fresh-install-of-osx.sh` -> full recovery.

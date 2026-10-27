@@ -11,13 +11,15 @@ require_relative 'git_overrides'
 require_relative 'git_processor'
 require_relative 'logging'
 
-# Folder-aware 'push', 'pull', 'cc' and 'upreb' commands (typed as aliases of
-# scripts/git-command.rb). Each takes an optional folder (default: the current directory)
+# Folder-aware 'push', 'pull' and 'upreb' commands (typed as aliases of
+# scripts/git-command.rb). 'cc' is not one of them: the 'cc' alias is plain 'git cc' (the
+# external subcommand dispatches its own override), and GitCommands.cc exists only so a Ruby
+# 'cc' override can call the default implementation back. Each takes an optional folder (default: the current directory)
 # plus '--switches' that are forwarded to the underlying git command, and wraps it with a
 # section header, a "is this a git repo" guard and -- where the network can hang --
 # 'git with-retry' protection.
 #
-# A repo can replace any of the four with its own override script (see GitOverrides). A
+# A repo can replace any of these with its own override script (see GitOverrides). A
 # Ruby override calls the default implementation back through the module methods here,
 # typically wrapped in a block such as Cron.with_cron_suspended:
 #
@@ -29,7 +31,7 @@ require_relative 'logging'
 module GitCommands
   extend self
 
-  COMMANDS = %w[push pull cc upreb].freeze
+  COMMANDS = %w[push pull upreb].freeze
 
   # Retry parameters for 'git with-retry' (timeout secs, max attempts): the fetch/pull
   # parameters match 'git fo' (scripts/git-fo); push uses a wall-clock timeout (see _push).
@@ -99,8 +101,8 @@ module GitCommands
     _pull(*parse_args(args), header)
   end
 
-  # Compresses the repo and reclaims disk space via the 'git cc' alias (prune, repack,
-  # gc). Switches such as --expire=<when> are forwarded to 'git reflog expire'.
+  # Compresses the repo and reclaims disk space via the 'git cc' subcommand (prune, repack,
+  # gc). Not reachable through GitCommands.run -- for Ruby 'cc' overrides. Switches such as --expire=<when> are forwarded to 'git reflog expire'.
   #
   # @param args [Array<String>] Optional folder plus '--switches'
   # @param header [Boolean] Print a section header first

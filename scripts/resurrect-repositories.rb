@@ -23,6 +23,10 @@
 #     with ' && ' and 'eval'd as a single string, unlike 'post_clone' below.
 #   - 'branch' (string) is the branch to clone (clone_repo_into's optional 3rd argument);
 #     omit it to clone the remote's default branch.
+#   - 'push_to_all_remotes' (boolean, default false) makes a bare 'git push' go to 'origin'
+#     AND every 'other_remotes' entry, by giving 'origin' one push URL per remote. Opt-in per
+#     repo: leave it off for forks whose other remotes (e.g. 'upstream') are not writable.
+#     'git pull'/'git fetch' already read every remote ('fetch.all'), so no key is needed there.
 #   - 'post_clone' commands are run through a shell, so normal shell '$VAR'/'${VAR}'
 #     expansion applies there at execution time -- a different mechanism from the above.
 #   - FIRST_INSTALL (non-empty): clones are left shallow (only the dotfiles repo is completed
@@ -75,6 +79,7 @@ module ResurrectRepositories
   POST_CLONE_KEY_NAME = 'post_clone' # Key name for post-clone commands
   BUNDLE_KEY_NAME = 'bundle' # Key name for an optional local git bundle file
   BRANCH_KEY_NAME = 'branch' # Key name for an optional branch to clone
+  PUSH_TO_ALL_REMOTES_KEY_NAME = 'push_to_all_remotes' # Key name for the opt-in push fan-out
   # Glob (relative to PERSONAL_CONFIGS_DIR) matching every repository catalogue that
   # resurrect_all mode processes.
   CATALOGUE_GLOB = 'repositories-*.yml'
@@ -93,7 +98,7 @@ module ResurrectRepositories
     include Core
     extend Core
 
-    attr_reader :folder, :remote, :other_remotes, :post_checkout, :post_clone, :bundle, :branch
+    attr_reader :folder, :remote, :other_remotes, :post_checkout, :post_clone, :bundle, :branch, :push_to_all_remotes
 
     # Creates a new repository configuration from a hash.
     #
@@ -152,6 +157,10 @@ module ResurrectRepositories
       branch = hash[BRANCH_KEY_NAME]
       return _invalid_field(remote, BRANCH_KEY_NAME, 'a non-empty string') if branch && (!branch.is_a?(String) || nil_or_empty?(branch.strip))
 
+      # push_to_all_remotes: opt-in fan-out of 'git push' (see #initialize).
+      push_to_all_remotes = hash[PUSH_TO_ALL_REMOTES_KEY_NAME]
+      return _invalid_field(remote, PUSH_TO_ALL_REMOTES_KEY_NAME, 'true or false') unless [nil, true, false].include?(push_to_all_remotes)
+
       new(
         folder: expanded_folder,
         remote: remote.strip,
@@ -159,7 +168,8 @@ module ResurrectRepositories
         post_checkout: post_checkout || [],
         post_clone: post_clone || [],
         bundle: expanded_bundle,
-        branch: branch&.strip
+        branch: branch&.strip,
+        push_to_all_remotes: push_to_all_remotes || false
       )
     end
 
@@ -191,7 +201,10 @@ module ResurrectRepositories
     # @param post_clone [Array<String>] Shell commands to run once after cloning.
     # @param bundle [String, nil] Optional path to a local git bundle file to import from/export to.
     # @param branch [String, nil] Optional branch to clone instead of the remote's default.
-    def initialize(folder:, remote:, other_remotes:, post_checkout:, post_clone:, bundle: nil, branch: nil)
+    # @param push_to_all_remotes [Boolean] When true, 'origin' gets a push URL for itself and for
+    #   each 'other_remotes' entry, so a bare 'git push' updates all of them (pull/fetch already
+    #   cover every remote). Leave false where the other remotes are read-only (e.g. 'upstream').
+    def initialize(folder:, remote:, other_remotes:, post_checkout:, post_clone:, bundle: nil, branch: nil, push_to_all_remotes: false)
       @folder = folder
       @remote = remote
       @other_remotes = other_remotes
@@ -199,6 +212,7 @@ module ResurrectRepositories
       @post_clone = post_clone
       @bundle = bundle
       @branch = branch
+      @push_to_all_remotes = push_to_all_remotes
     end
 
     # Returns true if this repository should be processed based on filter
@@ -234,7 +248,8 @@ module ResurrectRepositories
         POST_CHECKOUT_KEY_NAME => nil_or_empty?(@post_checkout) ? nil : @post_checkout,
         POST_CLONE_KEY_NAME => nil_or_empty?(@post_clone) ? nil : @post_clone,
         BUNDLE_KEY_NAME => @bundle,
-        BRANCH_KEY_NAME => @branch
+        BRANCH_KEY_NAME => @branch,
+        PUSH_TO_ALL_REMOTES_KEY_NAME => @push_to_all_remotes || nil
       }.compact
     end
   end
@@ -754,6 +769,7 @@ module ResurrectRepositories
     return false unless _verify_origin(git, dir_colored, effective_origin_url, repo.other_remotes, remotes)
 
     _sync_other_remotes(git, dir_colored, remaining_other_remotes, remotes)
+    _sync_push_urls(git, dir_colored, [effective_origin_url, *remaining_other_remotes.values]) if repo.push_to_all_remotes
     if _skip_fetch_of_fresh_clone?(already_a_repo, remaining_other_remotes)
       Logging.info("Just cloned '#{dir_colored}' -- skipping the fetch (the background unshallow batch completes it)")
     else
@@ -904,6 +920,28 @@ module ResurrectRepositories
   end
 
   private_class_method :_sync_other_remotes
+
+  # Points 'origin' at every URL in +urls+ for pushing, so a bare 'git push' updates all of
+  # them (git sends a push to each 'remote.origin.pushurl'; fetch/pull keep using the fetch
+  # URL only). Idempotent: nothing is written when the push URLs already match. Failure is
+  # non-fatal -- the repo still works, a push just reaches 'origin' alone.
+  #
+  # @param git [GitProcessor] Processor for the repository.
+  # @param dir_colored [String] Colorized directory for messages.
+  # @param urls [Array<String>] 'origin''s own URL first, then each additional remote's.
+  # @return [void]
+  def _sync_push_urls(git, dir_colored, urls)
+    urls = urls.uniq
+    return if urls.length < 2 || git.push_urls(name: ORIGIN_NAME) == urls
+
+    Logging.with_step('push urls', 'Push URL configuration') do
+      Logging.info("Making 'git push' update #{urls.length.to_s.purple} remotes for '#{dir_colored}'")
+      stdout, stderr, status = git.set_push_urls(ORIGIN_NAME, urls)
+      CommandUtils.check_status_or_record(stdout, stderr, status, "Failed to set the push URLs of 'origin' for repo '#{dir_colored}'")
+    end
+  end
+
+  private_class_method :_sync_push_urls
 
   # Fetches all remotes and tags. A failure is non-fatal: the repository exists and is
   # usable, it just could not pull the latest changes.

@@ -12,7 +12,7 @@
 # local history directly means a smaller bundle to encrypt and push next time).
 #
 # MULTIPLE REMOTES: a repo may now have more than one remote (e.g. 'origin' ==
-# keybase://, 'origin2' == a 'gpg-encrypt::' remote for the external
+# keybase://, 'backup' == a 'gpg-encrypt::' remote for the external
 # 'git-remote-gpg-encrypt' tool -- see KeybaseMigration.md). Force mode force-pushes
 # the squashed history to ALL of them (see _push_to_all_remotes), not just 'origin'.
 #

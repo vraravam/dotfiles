@@ -22,7 +22,7 @@ description: Use when editing ~/.config/git/config (.gitconfig), git aliases, sc
 - `files/--XDG_CONFIG_HOME--/git/hooks/*` - Global git hooks (pre-push, pre-commit, etc.)
 - `scripts/add-upstream-git-config.rb` - Repository upstream configuration
 - Per-repository override scripts in `${PERSONAL_BIN_DIR}` (e.g., `upreb-<basename>.rb`, `push-<basename>.rb`; `.sh` also accepted)
-- `scripts/git-command.rb` + `scripts/utilities/git_commands.rb`/`git_overrides.rb`/`git_hooks.rb` - Ruby implementations of `push`/`pull`/`cc`/`upreb` and the global hooks
+- `scripts/git-command.rb` + `scripts/utilities/git_commands.rb`/`git_overrides.rb`/`git_hooks.rb` - Ruby implementations of `push`/`pull`/`upreb` (and `GitCommands.cc` for `cc` overrides) and the global hooks
 - Autoload functions in `${XDG_CONFIG_HOME}/zsh/` (`st`, `count`) that wrap git operations
 
 **Related files**:

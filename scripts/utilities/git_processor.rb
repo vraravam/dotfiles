@@ -494,6 +494,40 @@ class GitProcessor
     _invalidating(*CONFIG_MEMOS) { _execute_in_repo('remote', 'set-url', name, url) }
   end
 
+  # Returns the explicit push URLs of a remote ('remote.<name>.pushurl'), in configured order.
+  # When any are set, a bare 'git push' sends to every one of them instead of the remote's
+  # fetch URL -- that is how a single remote fans a push out to several mirrors.
+  #
+  # @param name [String] Remote name (defaults to 'origin').
+  # @return [Array<String>] Empty when none are set.
+  def push_urls(name: 'origin')
+    out, _stderr, status = _execute('config', '--get-all', "remote.#{name}.pushurl", read_only: true)
+    status.success? ? out.each_line.map(&:strip).reject(&:empty?) : []
+  end
+
+  # Replaces the explicit push URLs of a remote, so that 'git push' (no arguments) pushes to
+  # all of them. Because setting any push URL stops git from pushing to the fetch URL, the
+  # caller must include that URL in +urls+ if it should still be pushed to. Fetch and pull are
+  # unaffected: they keep using the remote's fetch URL only.
+  #
+  # @param name [String] Remote name (e.g., 'origin').
+  # @param urls [Array<String>] Push URLs; empty removes them all.
+  # @return [Array<(String, String, Process::Status)>] stdout, stderr, and status object of
+  #   the last step run (the first failing one when a step fails).
+  def set_push_urls(name, urls)
+    key = "remote.#{name}.pushurl"
+    _invalidating(*CONFIG_MEMOS) do
+      # Exits non-zero when nothing was set yet; that is the state being asked for, not a failure.
+      _execute_in_repo('config', '--local', '--unset-all', key)
+      result = _mock_status_response(true)
+      urls.each do |url|
+        result = _execute_in_repo('config', '--local', '--add', key, url)
+        break unless result.last.success?
+      end
+      result
+    end
+  end
+
   # Fetches from all remotes and all tags via the 'fo' git command (scripts/git-fo) -- not a bare
   # 'git fetch --all', so this gets 'with-retry' hang protection (inactivity-based,
   # not a fixed timeout) and promisor-first remote ordering (avoids 'did not receive

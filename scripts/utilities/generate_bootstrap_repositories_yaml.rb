@@ -88,7 +88,7 @@ module GenerateBootstrapRepositoriesYaml
       ],
       post_clone: [
         "if [ -f '#{hosts_backup}' ]; then sudo cp '#{hosts_backup}' /etc/hosts; fi",
-        'git fo --rebase',
+        'git fo --rebase'
       ]
     )
   end
@@ -107,7 +107,7 @@ module GenerateBootstrapRepositoriesYaml
       keybase_repo_name: EnvVars::KEYBASE_PROFILES_REPO_NAME,
       encrypted_repo_url: EnvVars::ENCRYPTED_PROFILES_REPO_URL,
       post_clone: [
-        'git config --local pull.allowResetOnDivergedHistory true',
+        'git config --local pull.allowResetOnDivergedHistory true'
       ]
     )
   end
@@ -130,7 +130,7 @@ module GenerateBootstrapRepositoriesYaml
 
     if keybase_repo_name
       remote = Keybase.repo_url(keybase_repo_name)
-      other_remotes = encrypted_repo_url ? { 'origin2' => GpgEncrypt.url(encrypted_repo_url) } : {}
+      other_remotes = encrypted_repo_url ? { 'backup' => GpgEncrypt.url(encrypted_repo_url) } : {}
     else
       remote = GpgEncrypt.url(encrypted_repo_url)
       other_remotes = {}
@@ -142,7 +142,9 @@ module GenerateBootstrapRepositoriesYaml
       'remote' => remote,
       'other_remotes' => other_remotes.empty? ? nil : other_remotes,
       'post_checkout' => post_checkout.empty? ? nil : post_checkout,
-      'post_clone' => post_clone.empty? ? nil : post_clone
+      'post_clone' => post_clone.empty? ? nil : post_clone,
+      # Both backups hold the same history, so a plain 'git push' should update both.
+      'push_to_all_remotes' => other_remotes.empty? ? nil : true
     }.compact
   end
 

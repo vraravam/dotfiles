@@ -128,7 +128,7 @@ The script has two modes:
 
 **Non-force mode** (default): Compresses and pushes existing commits without destroying history.
 
-**Force mode** (`-f`): Squashes all history into a single commit and force-pushes it to **every** configured remote (a repo may have more than one -- e.g. `origin` for Keybase and `origin2` for the encrypted backup, see [KeybaseMigration.md](KeybaseMigration.md)).
+**Force mode** (`-f`): Squashes all history into a single commit and force-pushes it to **every** configured remote (a repo may have more than one -- e.g. `origin` for Keybase and `backup` for the encrypted backup, see [KeybaseMigration.md](KeybaseMigration.md)).
 
 ### Force mode workflow
 
@@ -182,6 +182,7 @@ The config file for this script is a yaml file that is passed into this script a
     upstream2: <upstream remote url2>
   bundle: "${HOME}/Downloads/example-repo.bundle"
   branch: dev
+  push_to_all_remotes: false
   active: true
   post_checkout:
     - set_ssh_folder_permissions
@@ -196,6 +197,7 @@ The config file for this script is a yaml file that is passed into this script a
 * `other_remotes` (optional) specifies a hash of the other remotes keyed by the name with the value of the remote url. If cloning from `remote` fails and `folder` isn't yet a git repo, each `other_remotes` entry is also tried, in order, as a fallback clone source -- whichever succeeds becomes `origin` (matching `git clone`'s own behavior); `remote` (if it failed) is then recorded under the fallback's former name so it can still be retried manually later.
 * `bundle` (optional) specifies the path to a local git bundle file for this repo -- see [Bundle support](#bundle-support) below. Also supports `${<env-key>}` expansion, same as `folder`.
 * `branch` (optional; default: the remote's default branch) specifies the branch to clone -- passed as `clone_repo_into`'s optional third argument. Only used for a fresh clone, never for a pre-existing repo.
+* `push_to_all_remotes` (optional; default: false) makes a bare `git push` update `origin` **and** every `other_remotes` entry, by giving `origin` one push URL per remote (`git remote set-url --add --push`). Only `git push` is affected; `git pull`/`git fetch` already read every remote (`fetch.all = true` in the global git config), with or without this key. Leave it off for forks you contribute to, where `upstream` is not writable -- a push then goes to `origin` only, while pulls still see `upstream`. Idempotent: re-running only rewrites the push URLs if they differ. The home and browser-profiles repos get this automatically when both Keybase and the encrypted backup are configured.
 * `active` (optional; default: false) specifies whether to process this folder/repo or not on your local machine
 * `post_checkout` (optional; default: empty array) specifies shell commands, joined with ` && ` and run once immediately after a fresh clone/import checks out files -- strictly before origin/branch cleanup, the reftable-migrate/unshallow/maintain/submodule-update chain, and any `other_remotes` fallback-clone attempt or fetch. Runs in-process inside `clone_repo_into` itself, so any `.shellrc` function (e.g. `set_ssh_folder_permissions`) is already in scope -- no need to `source ~/.shellrc` first, unlike `post_clone` below. Only fires on an actual fresh clone, never for a pre-existing repo. Intended for repos with files needing permissions fixed before anything else tries to use them (e.g. `$HOME`'s `.ssh`/`.gnupg` keys) -- `git checkout` does not preserve the strict permission modes those need, and the reftable/unshallow/maintain/submodule-update chain (or a second remote's fetch) could need SSH auth using a key the checkout just wrote with the wrong (too-open) permissions.
 * `post_clone` (optional; default: empty array) specifies other `bash` commands (in sequence) to be run once the resurrection is done - for eg, symlink a '.envrc' file if one exists
@@ -388,7 +390,7 @@ A set of git-workflow commands are available from `.aliases`:
 
 | Command | What it does | Implementation | Supports override? |
 |---------|-------------|----------------|:-----------------:|
-| `cc` | Compacts the git repo (`git cc` — garbage collection, pruning, etc.) | alias for `scripts/git-command.rb` | ✓ |
+| `cc` | Compacts the git repo (`git cc` — garbage collection, pruning, etc.) | alias for `git cc` (`scripts/git-cc`) | ✓ |
 | `pull` | Pulls (with hang protection); falls back to `git fo --rebase` for repos that opt in to reset-on-diverged-history | alias for `scripts/git-command.rb` | ✓ |
 | `push` | Pushes the current branch (with hang protection) | alias for `scripts/git-command.rb` | ✓ |
 | `upreb` | Fetches upstream, rebases every local branch onto it and pushes | alias for `scripts/git-command.rb` | ✓ |
@@ -399,7 +401,7 @@ A set of git-workflow commands are available from `.aliases`:
 
 `count` and `st` stay as zsh functions because they are one-line wrappers used constantly, where Ruby's ~100ms start-up would be noticeable. `status_all_repos` and `update_all_repos` do not support per-project overrides — they operate on a fixed set of repos and a cwd-based override would not be meaningful.
 
-The four `git-command.rb` commands take an optional folder and `--switches` that are forwarded to the underlying git command: `cc /path/to/repo --expire=now`.
+The `push`, `pull`, `cc` and `upreb` commands take an optional folder and `--switches` that are forwarded to the underlying git command: `cc /path/to/repo --expire=now`.
 
 ### Per-project overrides
 

@@ -258,6 +258,33 @@ RSpec.describe GitProcessor do
       end
     end
 
+    describe '#push_urls / #set_push_urls' do
+      before { git.add_remote('origin', 'https://example.com/a.git') }
+
+      it 'is empty until push URLs are set, then lists them in order' do
+        expect(git.push_urls).to eq([])
+
+        _out, _err, status = git.set_push_urls('origin', %w[https://example.com/a.git https://example.com/b.git])
+        expect(status.success?).to be true
+        expect(git.push_urls).to eq(%w[https://example.com/a.git https://example.com/b.git])
+      end
+
+      it 'replaces earlier push URLs instead of appending, and clears them with an empty list' do
+        git.set_push_urls('origin', %w[u1 u2])
+        git.set_push_urls('origin', %w[u3])
+        expect(git.push_urls).to eq(%w[u3])
+
+        git.set_push_urls('origin', [])
+        expect(git.push_urls).to eq([])
+      end
+
+      it 'leaves the fetch URL alone' do
+        git.set_push_urls('origin', %w[u1 u2])
+
+        expect(git.remote_url).to eq('https://example.com/a.git')
+      end
+    end
+
     describe '#same_content_as?' do
       it 'is true for an identical tree and false after a change' do
         File.write(tmp.join('a.txt'), 'a')

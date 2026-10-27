@@ -4,20 +4,20 @@
 
 # file location: ${DOTFILES_DIR}/scripts/git-command.rb
 #
-# Runs one of the folder-aware git commands (push, pull, cc, upreb) -- see
+# Runs one of the folder-aware git commands (push, pull, upreb) -- see
 # utilities/git_commands.rb for what each does. If the target repo has an override script
 # (${PERSONAL_BIN_DIR}/<command>-<repo-dir>.rb or .sh) it runs that instead.
 #
-# Typed as plain 'push', 'pull', 'cc' and 'upreb' via aliases in ${ZDOTDIR}/.aliases.
+# Typed as plain 'push', 'pull' and 'upreb' via aliases in ${ZDOTDIR}/.aliases.
 #
 # Usage:
-#   Standalone: git-command.rb <push|pull|cc|upreb> [<folder>] [--switch ...]
+#   Standalone: git-command.rb <push|pull|upreb> [<folder>] [--switch ...]
 #   Module:     GitCommands.run(command: 'push', args: ['/path/to/repo', '--force-with-lease'])
 #
 # Examples:
 #   git-command.rb push                          # current directory
 #   git-command.rb pull ~/dev/oss/some-repo
-#   git-command.rb cc --expire=now
+#   git-command.rb upreb ~/dev/oss/some-repo
 
 require_relative 'utilities/git_commands'
 

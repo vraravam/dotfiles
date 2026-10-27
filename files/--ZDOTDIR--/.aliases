@@ -416,7 +416,8 @@ fi
 # 3c2. Folder-aware git commands and workspace reports
 #
 # Aliases (not functions) so each costs one hash insert at load time and zero until used.
-# git-command.rb handles the optional folder argument, '--switches', the git-repo guard,
+# 'cc' is just 'git cc': the external subcommand (scripts/git-cc) does its own per-repo override
+# dispatch and needs no Ruby start-up. git-command.rb handles the optional folder argument, '--switches', the git-repo guard,
 # hang protection and per-repo override scripts (see GitCommands in
 # scripts/utilities/git_commands.rb). 'st' and 'count' stay zsh autoload functions: they
 # are one-line wrappers around 'git status'/'git count' used constantly, so the ~100ms
@@ -425,9 +426,9 @@ fi
 if command_exists 'git-command.rb'; then
   alias push='git-command.rb push'
   alias pull='git-command.rb pull'
-  alias cc='git-command.rb cc'
   alias upreb='git-command.rb upreb'
 fi
+alias cc='git cc'
 if command_exists 'call-utility.rb'; then
   # Status / update across HOME, DOTFILES_DIR, PERSONAL_PROFILES_DIR and the Chrome profile dirs.
   alias status_all_repos='call-utility.rb GitWorkspace.status_all_repos'

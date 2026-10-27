@@ -905,7 +905,7 @@ This command must succeed with no syntax errors. Run it before formatting.
 ## RubyGems -- Off on Hot Entry Points
 
 Loading RubyGems costs ~70ms per Ruby start (measured on the macOS system Ruby 2.6). Short-lived entry points that run on every `push`/`pull`/
-`cc`/`upreb`/`rug` (`scripts/git-command.rb`, `scripts/run-all.rb`) therefore use
+`upreb`/`rug` (`scripts/git-command.rb`, `scripts/run-all.rb`) therefore use
 `#!/usr/bin/env -S ruby --disable-gems` (`env -S` splits the arguments; works with macOS `env`), and
 `call_utility` / `GitOverrides.command_for` start Ruby with `--disable-gems` too. Every other script
 keeps `#!/usr/bin/env ruby`.

@@ -35,14 +35,18 @@ RSpec.describe GitCommands do
       expect { described_class.run(command: 'rebase') }.to raise_error(ArgumentError, /Unknown command 'rebase'/)
     end
 
-    it 'hands over to the override script (with only the switches) when one exists' do
-      override = Pathname('/bin/cc-repo.rb')
-      allow(GitOverrides).to receive(:skip?).and_return(false)
-      allow(GitOverrides).to receive(:script_for).with('cc', folder).and_return(override)
-      expect(described_class).to receive(:exec_override).with(override, folder, ['--expire=now'])
-      allow(described_class).to receive(:_cc)
+    it "does not dispatch 'cc' (the 'cc' alias is plain 'git cc'; GitCommands.cc is only for overrides)" do
+      expect { described_class.run(command: 'cc') }.to raise_error(ArgumentError, /Unknown command 'cc'/)
+    end
 
-      described_class.run(command: 'cc', args: [folder, '--expire=now'])
+    it 'hands over to the override script (with only the switches) when one exists' do
+      override = Pathname('/bin/pull-repo.rb')
+      allow(GitOverrides).to receive(:skip?).and_return(false)
+      allow(GitOverrides).to receive(:script_for).with('pull', folder).and_return(override)
+      expect(described_class).to receive(:exec_override).with(override, folder, ['--rebase'])
+      allow(described_class).to receive(:_pull)
+
+      described_class.run(command: 'pull', args: [folder, '--rebase'])
     end
 
     it 'runs the default implementation, with a header, when there is no override' do
@@ -56,10 +60,10 @@ RSpec.describe GitCommands do
     it 'parses the arguments exactly once' do
       allow(GitOverrides).to receive(:skip?).and_return(false)
       allow(GitOverrides).to receive(:script_for).and_return(nil)
-      allow(described_class).to receive(:_cc)
+      allow(described_class).to receive(:_pull)
       expect(described_class).to receive(:parse_args).once.and_call_original
 
-      described_class.run(command: 'cc', args: [folder, '--expire=now'])
+      described_class.run(command: 'pull', args: [folder, '--rebase'])
     end
 
     it 'keeps the public args: wrappers working for override scripts' do

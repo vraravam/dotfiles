@@ -106,7 +106,7 @@ RSpec.describe RecreateRepository do
       end
 
       context 'with keybase remotes' do
-        let(:remotes) { { 'origin' => 'keybase://private/me/repo', 'origin2' => 'gpg-encrypt::git@host:me/repo' } }
+        let(:remotes) { { 'origin' => 'keybase://private/me/repo', 'backup' => 'gpg-encrypt::git@host:me/repo' } }
 
         before do
           allow(Keybase).to receive_messages(ensure_logged_in: true, recreate_repo: true)
@@ -130,7 +130,7 @@ RSpec.describe RecreateRepository do
         it 'recreates the keybase repo before pushing to it, and force-pushes every other remote directly' do
           expect(Keybase).to receive(:recreate_repo).with('repo').once.ordered.and_return(true)
           expect(git).to receive(:push).with(remote: 'origin', branch: 'main', force: true).ordered.and_return(['', '', ok])
-          expect(git).to receive(:push).with(remote: 'origin2', branch: 'main', force: true).ordered.and_return(['', '', ok])
+          expect(git).to receive(:push).with(remote: 'backup', branch: 'main', force: true).ordered.and_return(['', '', ok])
 
           expect(described_class.run(dir: dir, force: true)).to be true
         end
@@ -139,7 +139,7 @@ RSpec.describe RecreateRepository do
           allow(Keybase).to receive(:recreate_repo).and_return(false)
           expect(Logging).to receive(:record_error).with(/Failed to recreate keybase repo/)
           expect(git).not_to receive(:push).with(hash_including(remote: 'origin'))
-          expect(git).to receive(:push).with(hash_including(remote: 'origin2')).and_return(['', '', ok])
+          expect(git).to receive(:push).with(hash_including(remote: 'backup')).and_return(['', '', ok])
 
           expect(described_class.run(dir: dir, force: true)).to be false
         end

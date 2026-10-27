@@ -44,6 +44,20 @@ RSpec.describe ResurrectRepositories do
         expect(repo.branch).to be_nil
       end
 
+      it 'defaults push_to_all_remotes to false, accepts a boolean and round-trips it through #to_h' do
+        expect(described_class.from_hash(valid).push_to_all_remotes).to be false
+        expect(described_class.from_hash(valid).to_h.keys).not_to include('push_to_all_remotes')
+
+        repo = described_class.from_hash(valid.merge('push_to_all_remotes' => true))
+        expect(repo.push_to_all_remotes).to be true
+        expect(repo.to_h).to include('push_to_all_remotes' => true)
+      end
+
+      it 'rejects a non-boolean push_to_all_remotes' do
+        expect { expect(described_class.from_hash(valid.merge('push_to_all_remotes' => 'yes'))).to be_nil }.to output.to_stdout
+        expect(Logging.step_warnings.last).to match(/invalid 'push_to_all_remotes' \(must be true or false\)/)
+      end
+
       it 'keeps branch and round-trips it through #to_h' do
         repo = described_class.from_hash(valid.merge('branch' => ' dev '))
 
@@ -151,6 +165,35 @@ RSpec.describe ResurrectRepositories do
       expect(git).to receive(:add_remote).with('mirror', 'https://m/x.git').and_return(['', '', ok])
 
       expect { resurrect }.to output.to_stdout
+    end
+
+    context 'with push_to_all_remotes' do
+      let(:repo) do
+        ResurrectRepositories::RepositoryConfig.from_hash(valid.merge('other_remotes' => { 'mirror' => 'https://m/x.git' }, 'push_to_all_remotes' => true))
+      end
+
+      before { allow(GitProcessor).to receive(:clone_repo_into).and_return(true) }
+
+      it 'gives origin a push URL for itself and every other remote' do
+        allow(git).to receive(:push_urls).with(name: 'origin').and_return([])
+        expect(git).to receive(:set_push_urls).with('origin', [valid['remote'], 'https://m/x.git']).and_return(['', '', ok])
+
+        expect { expect(resurrect).to be true }.to output.to_stdout
+      end
+
+      it 'does nothing when the push URLs already match' do
+        allow(git).to receive(:push_urls).with(name: 'origin').and_return([valid['remote'], 'https://m/x.git'])
+        expect(git).not_to receive(:set_push_urls)
+
+        expect { resurrect }.to output.to_stdout
+      end
+
+      it 'is not applied when the entry does not opt in' do
+        plain = ResurrectRepositories::RepositoryConfig.from_hash(valid.merge('other_remotes' => { 'mirror' => 'https://m/x.git' }))
+        expect(git).not_to receive(:set_push_urls)
+
+        expect { described_class.send(:_resurrect_each, plain) }.to output.to_stdout
+      end
     end
 
     it 're-points a configured remote whose URL differs' do

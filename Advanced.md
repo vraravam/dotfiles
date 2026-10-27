@@ -204,7 +204,7 @@ chmod +x ${PERSONAL_BIN_DIR}/upreb-zen-browser-desktop.rb;
 ```
 
 **How it works:**
-1. `push`, `pull`, `cc` and `upreb` are aliases for `scripts/git-command.rb`, which looks for `${PERSONAL_BIN_DIR}/<command>-<repo-basename>.rb` (then `.sh`)
+1. `push`, `pull` and `upreb` are aliases for `scripts/git-command.rb` (and `cc` an alias of `git cc`, whose script does the same lookup in shell), which look for `${PERSONAL_BIN_DIR}/<command>-<repo-basename>.rb` (then `.sh`)
 2. If one exists and is executable, it runs *instead of* the default, with the repo as its working directory and only the `--switches` as arguments
 3. The override calls `GitCommands.<command>` for the default behaviour and adds its own logic around it
 4. `_GIT_OVERRIDE_SKIP=1` is set for the override, so anything it calls (the `git cc`/`git upreb` aliases, `GitCommands`) skips override detection instead of recursing

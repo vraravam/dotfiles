@@ -4,6 +4,32 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.27
+
+#### Rename secondary encrypted backup remote, enable it by default, add opt-in per-repo push-to-all-remotes, and drop the Ruby wrapper from `cc`
+
+* *[Adoption.md, Extras.md, KeybaseMigration.md]* Updated documentation throughout to rename the secondary encrypted backup remote from `'origin2'` to `'backup'`. This provides a cleaner name that better reflects its role as the encrypted backup mechanism.
+* *[TechnicalDeepDive.md, files/--HOME--/.shellrc]* The gpg-encrypted backup mechanism is now enabled by default via uncommented `ENCRYPTED_HOME_REPO_URL` and `ENCRYPTED_PROFILES_REPO_URL` environment variables. This gives adopters a dual-backup strategy (Keybase + encrypted) out of the box for enhanced disaster recovery.
+* *[scripts/resurrect-repositories.rb, Extras.md, spec/resurrect_repositories_spec.rb]* New optional `push_to_all_remotes` key (boolean, default false) in the repositories YAML. When true, `origin` gets one push URL per remote (itself plus every `other_remotes` entry), so a bare `git push` updates all of them with no wrapper or extra arguments. Only push is affected: `git pull`/`git fetch` already read every remote via `fetch.all = true`. Leave it off for forks whose other remotes (e.g. `upstream`) are read-only, so a push still goes to `origin` only. Re-runs only rewrite the push URLs when they differ.
+* *[scripts/utilities/generate_bootstrap_repositories_yaml.rb, spec/utilities/generate_bootstrap_repositories_yaml_spec.rb]* The generated entries for home and browser-profiles carry `push_to_all_remotes: true` whenever both Keybase and the encrypted backup are configured, so a bare `git push` updates both.
+* *[scripts/utilities/git_processor.rb, spec/utilities/git_processor_spec.rb]* New `GitProcessor#push_urls` and `#set_push_urls`.
+* *[scripts/recreate-repository.rb, scripts/utilities/git_recreate.rb, spec/utilities/git_recreate_spec.rb]* `_recreate` (used by force-squash) now restores `origin`'s push URLs; it previously rebuilt `.git` with only the remote URLs, which would have silently dropped the fan-out.
+* *[Adoption.md, TechnicalDeepDive.md]* Documented the push URL setup for manual installs and the generated bootstrap entries.
+* *[files/--ZDOTDIR--/.aliases, scripts/git-command.rb, scripts/utilities/git_commands.rb, spec/utilities/git_commands_spec.rb, .ai/domains/, Advanced.md, Extras.md, TechnicalDeepDive.md]* `cc` is now `alias cc='git cc'`. It used to go alias -> `git-command.rb` (Ruby start-up, about 100ms) -> `git cc` alias -> `scripts/git-cc`, although `git-cc` already does its own per-repo override dispatch. `GitCommands::COMMANDS` is now `push pull upreb`; `GitCommands.cc` stays for Ruby `cc-<basename>.rb` overrides (e.g. `cc-browser-profiles.rb`) to call back. The `.aliases` load time is unchanged and nothing new runs at startup.
+* *[scripts/shared/git-common.sh, spec/git_scripts_spec.rb]* Fixed `dispatch_override` (used by `git cc` and `git upreb`): it looked for the override script relative to the repo directory, so it never found one in `PERSONAL_BIN_DIR`, and it called `section_header`/`cyan`, which only exist in `.shellrc` and fail under plain `sh`. It now resolves the script through `PATH` and prints a plain `==> Using override:` line to stdout, like the other `==>` lines in these scripts. New specs run `git cc` against a throwaway repo with and without an override.
+* *[KeybaseMigration.md, Adoption.md, TechnicalDeepDive.md]* Removed the statements that the two remotes are "never fanned out" / "pushed explicitly and separately"; they now describe `push_to_all_remotes` and the optional `set-url --add --push` step.
+* *[spec/]* Updated specs to reflect the new remote naming convention.
+
+**Adopting these changes:**
+- Machines that have already configured the encrypted backup with `'origin2'` will need to manually rename the remote or re-run `fresh-install-of-osx.sh` to use the new `'backup'` name.
+- By enabling encrypted backups by default, new installs and deliberate re-runs of `fresh-install-of-osx.sh` will now set up both backup strategies unless explicitly disabled via the commented-out env vars.
+- On a machine where home or browser-profiles already has both remotes, run once per repo (substituting the URLs of `git remote -v`): `git remote set-url --add --push origin <origin-url>; git remote set-url --add --push origin <backup-url>`. Afterwards a plain `git push` updates both.
+- Add `push_to_all_remotes: true` to any other repositories YAML entry that should push everywhere; leave it out for forks.
+- Reload the aliases in open shells (or restart Terminal/iTerm): `unalias cc; alias cc='git cc'`.
+- Optional cleanup in `${PERSONAL_BIN_DIR}`: `upreb-homebrew-cask.rb` only calls the default `upreb`, so it can be deleted, as can the orphaned `*.sh.zwc` files that have no matching script.
+
+---
+
 ### 4.0.26
 
 #### Correct gem installation process for pre-commit in this repo

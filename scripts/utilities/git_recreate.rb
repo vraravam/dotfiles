@@ -171,10 +171,10 @@ class GitProcessor
     # Recreates the local git repository by removing .git and reinitializing.
     # Preserves working tree files, only destroys git history.
     # Automatically restores ALL configured remotes (not just 'origin' -- a repo may have
-    # more than one, e.g. 'origin' == keybase://, 'origin2' == the gpg+git-bundle
+    # more than one, e.g. 'origin' == keybase://, 'backup' == the gpg+git-bundle
     # encrypted backup, see KeybaseMigration.md; restoring only 'origin' would silently
     # and permanently discard every other remote on every force-squash), plus user.name
-    # and user.email, from current repo state.
+    # and user.email, from current repo state. 'origin''s extra push URLs are restored too.
     #
     # WARNING: This method does NOT verify against remote. For force-squash operations
     # where you're destroying history, use verify_and_recreate_local_repo instead
@@ -195,6 +195,9 @@ class GitProcessor
       branch_name = current_branch
       remotes = {}
       each_remote { |name, url| remotes[name] = url }
+      # 'origin' may fan a bare 'git push' out to several URLs (see set_push_urls); they live
+      # in .git/config too, so they would be lost with it.
+      origin_push_urls = push_urls
       user_name = config_value('user.name')
       user_email = config_value('user.email')
 
@@ -213,6 +216,7 @@ class GitProcessor
 
       # Restore every captured remote and config from captured state
       remotes.each { |name, url| add_remote(name, url) unless nil_or_empty?(url) }
+      set_push_urls('origin', origin_push_urls) unless origin_push_urls.empty?
       config_set('user.name', user_name) unless nil_or_empty?(user_name)
       config_set('user.email', user_email) unless nil_or_empty?(user_email)
 
