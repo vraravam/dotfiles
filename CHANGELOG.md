@@ -4,6 +4,26 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.28
+
+#### Optimize AI instruction docs (token budget), split performance topics, add layout spec, and disable encrypted backup env vars by default
+
+* *[.ai/]* Trimmed and deduplicated instruction files (logging depth detail now single-sourced in `script-depth-tracking.md`); corrected `path-constants.md` `applyTo` metadata; renamed duplicate "Quick Reference" heading in `edit-checklist.md`; updated example constants in `ruby-infrastructure.md`.
+* *[.ai/]* Split Ruby string-method performance guidance out of `ruby-performance-idioms.md` into `ruby-performance-string-ops.md` (with topic file index/agent routing updates).
+* *[.ai/]* Condensed the shell common-mistakes appendix; added frontmatter `name`/`description` to `whitespace-rules.md` and `edit-checklist.md`.
+* *[spec/ai_docs_spec.rb]* New spec that validates domain frontmatter, on-demand skill symlinks, and relative markdown links.
+* *[AGENTS.md]* Routing table updated to reference the new performance topic file.
+* *[files/--HOME--/Brewfile]* Added trial casks (`gridcraft`, `pdfcraft`, `wordcraft`).
+* *[files/--HOME--/.shellrc]* Commented out `ENCRYPTED_HOME_REPO_URL` and `ENCRYPTED_PROFILES_REPO_URL`, disabling encrypted git backup remotes by default.
+
+#### Adopting these changes
+
+* No required action for the `.ai/`/spec changes; re-run `rspec spec/ai_docs_spec.rb` if you edited docs.
+* `brew bundle` will install the new trial casks if desired.
+* To re-enable encrypted backup remotes, uncomment both `ENCRYPTED_*_REPO_URL` lines in `~/.shellrc` (and configure `git-remote-gpg-encrypt`), then source `~/.shellrc` (or restart the terminal).
+
+---
+
 ### 4.0.27
 
 #### Rename secondary encrypted backup remote, enable it by default, add opt-in per-repo push-to-all-remotes, and drop the Ruby wrapper from `cc`

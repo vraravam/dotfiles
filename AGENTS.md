@@ -22,7 +22,7 @@ files that match the task.
 
 | If the task touches... | Read (under `.ai/domains/`) |
 |------------------------|-----------------------------|
-| Any Ruby script | `ruby-scripting.md`, then as needed `ruby-infrastructure.md` (Logging/CliParser/EnvVars/requires), `ruby-shell-git-io.md` (system/GitProcessor/UTF-8), `ruby-performance-idioms.md` |
+| Any Ruby script | `ruby-scripting.md`, then as needed `ruby-infrastructure.md` (Logging/CliParser/EnvVars/requires), `ruby-shell-git-io.md` (system/GitProcessor/UTF-8), `ruby-performance-idioms.md` (and `ruby-performance-string-ops.md` for string-method perf) |
 | Any shell script, `.shellrc`, `.aliases`, `.envrc` | `shell-scripting.md`, then as needed `shell-functions-autoload.md`, `shell-portability-cron.md` |
 | Zsh startup files (`.zshenv`, `.zshrc`, `.zlogin`, autoload functions) | `zsh-startup.md` (startup-impact check is mandatory) |
 | Logging/color output, depth tracking, path constants | `logging-conventions.md`, `script-depth-tracking.md`, `path-constants.md` |

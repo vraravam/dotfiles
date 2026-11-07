@@ -149,6 +149,11 @@ cask 'vscodium@insiders',
 cask 'zen@twilight'
 cask 'zoom'
 
+# Trial
+cask 'gridcraft'
+cask 'pdfcraft'
+cask 'wordcraft'
+
 # local AI coding tools
 # tap 'jundot/omlx', 'git@github.com/jundot/omlx'
 # reference: https://www.agileguy.ca/opencode-fully-local/

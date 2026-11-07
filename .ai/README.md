@@ -33,6 +33,7 @@ All AI coding assistants (GitHub Copilot, Cursor, Windsurf, Claude Code, OpenCod
     ├── path-constants.md                   # Path/env var rules
     ├── ruby-infrastructure.md              # Ruby: Logging/CliParser/EnvVars/requires/structure
     ├── ruby-performance-idioms.md          # Ruby: memoization, hoisting, idioms
+    ├── ruby-performance-string-ops.md     # Ruby: string-method perf (tr/gsub/delete/sub)
     ├── ruby-scripting.md                   # Ruby (core): dual-mode, params, exit points
     ├── ruby-shell-git-io.md                # Ruby: system(), GitProcessor, UTF-8, nil_or_empty?
     ├── script-depth-tracking.md            # Depth tracking

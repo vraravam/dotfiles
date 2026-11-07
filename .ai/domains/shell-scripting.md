@@ -1121,113 +1121,18 @@ delete matches" command quietly descends into (and deletes inside) the pruned tr
 `-exec rm -f {} +` whenever `-prune` is part of the expression (see `delete_caches` in `.aliases`). A
 plain `-delete` is fine without `-prune`; it also removes a directory emptied in the same pass.
 
-## Common Mistakes (Code Review Findings)
+## Common Mistakes (Quick Pointers)
 
-Based on code review patterns and debugging sessions, here are the most common mistakes to avoid:
+Scan aid only (details earlier):
 
-1. **Using `&&` with `set -e` where false is expected** → Use explicit `if` statements
-   ```zsh
-   # BAD - triggers set -e when file doesn't exist (expected case)
-   is_file "${optional}" && process
-   # Good
-   if is_file "${optional}"; then process; fi
-   ```
+- `&&` with `set -e` where false is expected → use explicit `if`/`||`.
+- Post-increment under `set -e` → `(( count += 1 )) || true`.
+- Leaked for-loop vars / masked exit codes → `local item`, split assignment lines.
+- `:-` vs `-` misuse; bare `setopt NULL_GLOB` → user flags use `:-`, scope `NULL_GLOB`.
+- Unquoted vars; `exit` in `main()`; `LINENO` in ERR traps → quote, `return`, string trap form.
+- Aliases in non-interactive scripts → use underlying command.
+- Unguarded positional params / `shift` → see `shell-functions-autoload.md` § Positional Parameters.
 
-2. **Post-increment in arithmetic under `set -e`** → Returns 1 when value is 0
-   ```zsh
-   # BAD - (( 0 )) on first iteration triggers set -e
-   (( count++ ))
-   # Good
-   (( count += 1 )) || true
-   ```
+## Ping-Pong Prevention
 
-3. **For-loop variables leaking** → Not auto-local in zsh
-   ```zsh
-   # BAD - 'item' leaks into caller's scope
-   for item in "${arr[@]}"; do
-     info "${item}"
-   done
-   # Good - declare local first
-   local item
-   for item in "${arr[@]}"; do
-     info "${item}"
-   done
-   ```
-
-4. **Using `:-` vs `-` incorrectly** → Different semantics for unset vs empty
-   ```zsh
-   # BAD - inconsistent with user flag convention
-   [[ -n "${DEBUG-}" ]]
-   # Good - use :- for user flags (unset OR empty → fallback)
-   [[ -n "${DEBUG:-}" ]]
-   ```
-
-5. **Local + assignment masks exit codes** → Split into two lines
-   ```zsh
-   # BAD - local returns 0 even if cmd fails
-   local result="$(cmd)"
-   # Good - preserve cmd's exit code
-   local result
-   result="$(cmd)"
-   ```
-
-6. **Bare `setopt NULL_GLOB`** → Leaks to caller
-   ```zsh
-   # BAD - persists for rest of process
-   setopt NULL_GLOB
-   rm -f *.txt
-   unsetopt NULL_GLOB
-   # Good - scoped to anonymous function
-   () {
-     setopt localoptions NULL_GLOB
-     rm -f *.txt
-   }
-   ```
-
-7. **Not quoting variables** → Breaks with spaces
-   ```zsh
-   # BAD
-   cp $src_file $dest_dir/
-   # Good
-   cp "${src_file}" "${dest_dir}/"
-   ```
-
-8. **Using `exit` in `main()`** → Kills calling shell if sourced
-   ```zsh
-   # BAD
-   main() {
-     exit 1  # kills shell if script is sourced
-   }
-   # Good
-   main() {
-     return 1  # exits function only
-   }
-   ```
-
-9. **ERR trap with function handler loses `${LINENO}`** → Use string form
-   ```zsh
-   # BAD - ${LINENO} is handler's line, not failing line
-   trap _cleanup_and_exit ERR
-   # Good - capture ${LINENO} in string before function call
-   trap '_cleanup_and_exit "${LINENO}"' ERR
-   ```
-
-10. **Using aliases in non-interactive scripts** → Not available in cron/background jobs
-    ```zsh
-    # BAD - 'bcg' alias requires .aliases to be loaded
-    bcg | grep ...
-    # Good - use underlying command
-    brew outdated --greedy | grep ...
-    ```
-
-11. **Unguarded positional parameters / `shift` without a `$#` check** → No default and no fail-fast message (see [`shell-functions-autoload.md`](./shell-functions-autoload.md) § Positional Parameters)
-    ```zsh
-    # BAD - bare $1, no default and no fail-fast message
-    local dir="${1}"
-    # BAD - shift silently no-ops if $# < 1 instead of failing
-    shift
-    # Good - required param fails fast; shift only after count is verified
-    local dir="${1:?my_func: dir argument required}"
-    if (($# < 1)); then warn "my_func: fn argument required"; return 1; fi
-    shift
-    ```
+State the primary cause and any secondary influence before any "find and fix" change, then sweep every matching occurrence rather than only the single reported instance.

@@ -137,40 +137,12 @@ Both shell and Ruby track script nesting depth for:
 
 **Never manually prepend spaces to log messages** -- the depth counter handles indentation automatically.
 
-### Indentation Formula
+### Depth-Dependent Indentation and Styling
 
-All logging functions use this formula:
-- **Base indentation**: `(depth - 1) * 2` spaces
-- **Subordinate indentation**: `(depth - 1 + level) * 2` spaces
-
-Where:
-- `depth` = `_DOTFILES_SCRIPT_DEPTH` (minimum 1)
-- `level` = optional parameter to logging functions (default 0)
-
-**Examples:**
-```
-depth=1 (outermost): base = 0 spaces, subordinate (level 1) = 2 spaces
-depth=2 (nested):    base = 2 spaces, subordinate (level 1) = 4 spaces
-depth=3 (deeper):    base = 4 spaces, subordinate (level 1) = 6 spaces
-```
-
-### Section Header Auto-Leveling
-
-`section_header(text)` automatically derives its visual style from current depth:
-- **Level calculation**: `level = max(depth - 1, 0)`
-- **Style selection**: Uses `SECTION_STYLES[level]` (char/glyph/color)
-- **Indentation**: Uses base indentation only (not subordinate)
-
-**Visual hierarchy:**
-```
-Level 0 (depth 1): === ⏳ (light_blue)   # Top-level script sections
-Level 1 (depth 2): --- 🔷 (cyan)         # Sub-operations
-Level 2 (depth 3): ··· ▸ (yellow)        # Individual items
-Level 3 (depth 4): ··· ▫ (purple)        # Operations within items
-Level 4 (depth 5): ··· ▪ (dark_gray)     # Deeper nesting
-```
-
-**Result**: Nested operations have progressively distinct visual styles without caller needing to specify level.
+Indentation formulas (base/subordinate), `section_header` auto-leveling by depth, the
+visual hierarchy by level, and the "never manually indent" rule all live in
+[`script-depth-tracking.md`](./script-depth-tracking.md) § How It Works and
+§ Purpose 2 -- that file is the single source of truth for them. Do not restate them here.
 
 ### Section Header Formatting
 

@@ -26,7 +26,8 @@ All domain-specific rules are in [`domains/`](./domains/):
 | Ruby (core) | [`ruby-scripting.md`](./domains/ruby-scripting.md) | Any `.rb` file: dual-mode, parameters, exit points, Ruby 2.6 compatibility |
 | Ruby infrastructure | [`ruby-infrastructure.md`](./domains/ruby-infrastructure.md) | `Logging`, `CliParser`, `EnvVars`, colors, `require` ordering, module/class structure |
 | Ruby shell/git/IO | [`ruby-shell-git-io.md`](./domains/ruby-shell-git-io.md) | `system()`/escaping, `GitProcessor`, UTF-8 file reading, `nil_or_empty?` |
-| Ruby performance | [`ruby-performance-idioms.md`](./domains/ruby-performance-idioms.md) | Memoization, frozen constants, hoisting, collection/string performance, idioms |
+| Ruby performance | [`ruby-performance-idioms.md`](./domains/ruby-performance-idioms.md) | Memoization, frozen constants, hoisting, collection performance, idioms |
+| Ruby performance (strings) | [`ruby-performance-string-ops.md`](./domains/ruby-performance-string-ops.md) | String-method performance (`tr`/`gsub`/`delete`/`sub`), flowchart, when (not) to optimize |
 | Shell (core) | [`shell-scripting.md`](./domains/shell-scripting.md) | Any `.sh`/`.zsh`/`.bash`, `.shellrc`, `.aliases`: utilities, template, logging, `&&` safety |
 | Shell functions | [`shell-functions-autoload.md`](./domains/shell-functions-autoload.md) | Autoload functions, `local`/`unset`, positional parameters, expansion operators |
 | Shell portability | [`shell-portability-cron.md`](./domains/shell-portability-cron.md) | bash/direnv compatibility, `.envrc`, cron, globs, caches, shebangs |

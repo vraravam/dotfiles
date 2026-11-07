@@ -18,7 +18,8 @@ This file holds the rules every Ruby edit needs. Read the sibling file when the 
 |------|-----------------------------|
 | [`ruby-infrastructure.md`](./ruby-infrastructure.md) | `Logging`, `CliParser`, `EnvVars`, color helpers, `require` ordering, utility-module/class structure, script output format |
 | [`ruby-shell-git-io.md`](./ruby-shell-git-io.md) | `system()`/shell escaping, `GitProcessor`, reading files (UTF-8), `nil_or_empty?` |
-| [`ruby-performance-idioms.md`](./ruby-performance-idioms.md) | Memoization, frozen constants, loop hoisting, string/collection performance, trailing conditionals, idiomatic patterns |
+| [`ruby-performance-idioms.md`](./ruby-performance-idioms.md) | Memoization, frozen constants, loop hoisting, collection performance, trailing conditionals, idiomatic patterns |
+| [`ruby-performance-string-ops.md`](./ruby-performance-string-ops.md) | String-method performance (`tr`/`gsub`/`delete`/`sub`/`delete_prefix`), method-selection flowchart, when (not) to optimize |
 
 ## Scope
 

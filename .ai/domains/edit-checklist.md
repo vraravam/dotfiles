@@ -1,5 +1,7 @@
 ---
 applyTo: "**/*.sh*,**/.shellrc,**/.aliases,**/.envrc,**/.zsh*,**/files/--XDG_CONFIG_HOME--/zsh/*,**/scripts/**/*.{sh,rb},**/*.{yml,yaml,json,xml,toml,ini,conf,rc}"
+name: dotfiles-edit-checklist
+description: Use after creating or editing any script or configuration file in this dotfiles repo to run syntax checks, formatting, whitespace verification, executable permissions, and startup-impact checks.
 ---
 
 # Edit Checklist
@@ -218,7 +220,7 @@ an autoload function, or any code that runs while those files load, follow
 review, an old-vs-new measurement under identical conditions, and a report of the numbers.
 This applies equally when *suggesting* such a change, not only when making it.
 
-## Quick Reference
+## Post-Edit Verification Matrix
 
 | Language | Syntax Check | Format Command | Whitespace | Executable | Delete .zwc |
 |----------|-------------|----------------|------------|------------|-------------|

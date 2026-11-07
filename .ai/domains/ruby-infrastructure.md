@@ -243,23 +243,23 @@ Scan for unused requires when:
 require 'path_utils'
 require 'env_vars'
 
-home = EnvVars::HOME_DIR  # path_utils not needed
+home = EnvVars::HOME  # path_utils not needed
 
 # Good -- only require what is actually used
 require 'env_vars'
 
-home = EnvVars::HOME_DIR
+home = EnvVars::HOME
 
 # BAD -- inside utilities/, logging no longer used after removing all log calls
 require_relative 'logging'
 require_relative 'env_vars'
 
-EnvVars::HOME_DIR  # logging not needed
+EnvVars::HOME  # logging not needed
 
 # Good -- only require_relative what is actually used
 require_relative 'env_vars'
 
-EnvVars::HOME_DIR
+EnvVars::HOME
 ```
 
 This rule applies equally to both `require` and `require_relative` statements.

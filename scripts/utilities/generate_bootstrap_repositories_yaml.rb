@@ -88,7 +88,7 @@ module GenerateBootstrapRepositoriesYaml
       ],
       post_clone: [
         "if [ -f '#{hosts_backup}' ]; then sudo cp '#{hosts_backup}' /etc/hosts; fi",
-        'git fo --rebase'
+        'git fo --rebase',
       ]
     )
   end
@@ -107,7 +107,7 @@ module GenerateBootstrapRepositoriesYaml
       keybase_repo_name: EnvVars::KEYBASE_PROFILES_REPO_NAME,
       encrypted_repo_url: EnvVars::ENCRYPTED_PROFILES_REPO_URL,
       post_clone: [
-        'git config --local pull.allowResetOnDivergedHistory true'
+        'git config --local pull.allowResetOnDivergedHistory true',
       ]
     )
   end

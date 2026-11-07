@@ -14,7 +14,7 @@ RSpec.describe 'external git subcommands' do
 
   let(:env) do
     {
-      'PATH' => "#{scripts_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH')}",
+      'PATH' => "#{@tmp}/fastbin#{File::PATH_SEPARATOR}#{scripts_dir}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH')}",
       'GIT_CONFIG_NOSYSTEM' => '1',
       'GIT_CONFIG_GLOBAL' => git_config,
       'GIT_CONFIG_COUNT' => '5',
@@ -24,13 +24,24 @@ RSpec.describe 'external git subcommands' do
       'GIT_CONFIG_KEY_3' => 'core.fsmonitor', 'GIT_CONFIG_VALUE_3' => 'false',
       'GIT_CONFIG_KEY_4' => 'protocol.file.allow', 'GIT_CONFIG_VALUE_4' => 'always',
       '_GIT_OVERRIDE_SKIP' => nil,
-      'PERSONAL_BIN_DIR' => nil
+      'PERSONAL_BIN_DIR' => nil,
+      'WITH_RETRY_KILL_GRACE_SECS' => '1'
     }
   end
 
   around do |example|
     Dir.mktmpdir('git-scripts-spec-') do |dir|
       @tmp = File.realpath(dir)
+      # Fake 'sleep' that returns immediately. git-with-retry drives every wait
+      # through external 'sleep' calls (both its own 0.2s ticks and the kill-tree
+      # grace period), so making it a no-op removes all wall-clock waiting while
+      # the counted inactivity clocks still advance and the logic under test is
+      # unchanged. Stalling commands use absolute '/bin/sleep' below so they
+      # really block and can still be signalled by git-with-retry.
+      fastbin = File.join(@tmp, 'fastbin')
+      FileUtils.mkdir_p(fastbin)
+      File.write(File.join(fastbin, 'sleep'), "#!/bin/sh\nexit 0\n")
+      File.chmod(0o755, File.join(fastbin, 'sleep'))
       example.run
     end
   end
@@ -84,7 +95,7 @@ RSpec.describe 'external git subcommands' do
     end
 
     it 'kills a command that makes no progress after the inactivity timeout' do
-      _out, err, status, seconds = run_cmd('git', 'with-retry', '2', '1', File::NULL, '-', 'sleep', '60')
+      _out, err, status, seconds = run_cmd('git', 'with-retry', '2', '1', File::NULL, '-', '/bin/sleep', '60')
       expect(status.exitstatus).to eq(1)
       expect(err).to include('No progress for 2s on attempt 1/1')
       expect(seconds).to be < 10
@@ -95,7 +106,7 @@ RSpec.describe 'external git subcommands' do
     # leftover lock fails every later attempt at once.
     it 'lets a stalled command clean up after itself (SIGTERM) instead of killing it outright' do
       lock = File.join(tmp, 'held.lock')
-      script = %(trap 'rm -f "$1"; exit 143' TERM; : > "$1"; sleep 60 & wait)
+      script = %(trap 'rm -f "$1"; exit 143' TERM; : > "$1"; /bin/sleep 60 & wait)
 
       _out, err, status, seconds = run_cmd('git', 'with-retry', '2', '1', File::NULL, '-', 'sh', '-c', script, 'sh', lock)
 
@@ -107,7 +118,7 @@ RSpec.describe 'external git subcommands' do
 
     it 'does not leave a lock behind between attempts, so every retry really runs' do
       lock = File.join(tmp, 'held.lock')
-      script = %(if [ -e "$1" ]; then exit 128; fi; trap 'rm -f "$1"; exit 143' TERM; : > "$1"; sleep 60 & wait)
+      script = %(if [ -e "$1" ]; then exit 128; fi; trap 'rm -f "$1"; exit 143' TERM; : > "$1"; /bin/sleep 60 & wait)
 
       _out, err, _status, = run_cmd('git', 'with-retry', '1', '3', File::NULL, '-', 'sh', '-c', script, 'sh', lock)
 
@@ -116,7 +127,7 @@ RSpec.describe 'external git subcommands' do
     end
 
     it 'still kills a command that ignores SIGTERM, after the grace period' do
-      script = %(trap '' TERM; sleep 60)
+      script = %(trap '' TERM; /bin/sleep 60)
 
       _out, err, status, seconds = run_cmd({ 'WITH_RETRY_KILL_GRACE_SECS' => '1' }, 'git', 'with-retry', '1', '1', File::NULL, '-', 'sh', '-c', script)
 
@@ -127,7 +138,7 @@ RSpec.describe 'external git subcommands' do
 
     it 'stops the helper processes of a stalled command too, not just the command itself' do
       marker = File.join(tmp, 'helper.pid')
-      script = %(sleep 60 & echo $! > "$1"; wait)
+      script = %(/bin/sleep 60 & echo $! > "$1"; wait)
 
       run_cmd('git', 'with-retry', '1', '1', File::NULL, '-', 'sh', '-c', script, 'sh', marker)
 
