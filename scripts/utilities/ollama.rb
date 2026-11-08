@@ -4,6 +4,7 @@
 
 require_relative 'core'
 require_relative 'command_utils'
+require_relative 'enumerable_ext'
 require_relative 'env_vars'
 require_relative 'logging'
 
@@ -26,7 +27,7 @@ module Ollama
     end
 
     stdout = CommandUtils.query(COMMAND, 'list')
-    stdout.lines[1..-1].filter_map { |line| line.split.first }.uniq
+    stdout.each_line.drop(1).filter_map { |line| line.split.first }.uniq
   end
 
   # Pulls (upgrades) all local ollama models.
@@ -47,5 +48,6 @@ module Ollama
   rescue StandardError => e
     Logging.record_error "Failed to pull model '#{model.to_s.yellow}' -- #{e.class.to_s.red}: #{e.message.red}"
   end
+
   nil
 end

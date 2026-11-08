@@ -1032,6 +1032,33 @@ newest = commits.max_by { |c| c.timestamp }
 
 Search for `.select`/`.reject`/`.sort`/`.sort_by` immediately followed by `.any?`, `.all?`, `.none?`, `.count`, `.size`, `.length`, `.empty?`, `.first`, or `.last` in the same expression or on the very next line where the intermediate value has no other name/use. Rewrite using the direct combinator from the table above.
 
+### Streaming and lazy processing (yield / Enumerator / `.lazy`)
+
+**Streaming pays off when a large collection is consumed only partially, or when each element can be transformed and dropped before the next one is read.** Otherwise materialised arrays are usually clearer and faster (Ruby allocates short arrays very cheaply). Do not convert an array-returning method to an `Enumerator` merely because it *can* be streamed -- only when callers benefit (early exit, bounded memory, `yield`-driven producers).
+
+| Streaming form | Use when | Notes |
+|---|---|---|
+| `Core.each_line_utf8(...).any? { \|l\| ... }` | membership / existence checks on a file | lines are read only until the first match. |
+| block with early `break` / flag | same, but logic needs a count or collected subset | pass the work down as the block; do not accumulate everything first. |
+| `filter_map` on an `Enumerator` (`Core.each_line_utf8(...).filter_map { ... }`) | file transform that only needs the kept results | avoids holding the raw lines while filtering; the result is still materialised. |
+| bounded ring buffer (`result << x; result.shift if result.size > N`) | keeping the last `N` matching items (`tail`, logs) | avoids reading / allocating every line; O(N) per retained item is fine for small `N`. |
+| `Enumerator.new { \|yielder\| ... yielder.yield(v) ... }` | producing items from a callback (Find walk, pgrep scan) | keeps a large intermediate index out of memory; `.any?`/`.first(N)` can short-circuit. |
+| `.lazy` | partial consumption over an already-enumerable source | `.lazy` is only worth it before `.take`/`.first` or short-circuit checks; it is defeated by `.sort`, `.uniq`, or any fully-consuming terminal. |
+
+**Do not stream lazily when the result needs ordering, de-duplication, indexing, slicing, a count alongside the elements, or is read more than once -- these force full consumption, and the lazy build adds overhead.** In those cases prefer single-pass materialised forms (`filter_map`, `Set` for repeated membership, incremental digest/hash updates).
+
+When changing a helper's shape, keep a thin array-returning wrapper around a streaming core so existing callers and specs keep working:
+
+```ruby
+def items
+  out = []
+  items_each { |item| out << item }
+  out
+end
+```
+
+Related: Enumerable Chains above (intermediate-method elimination), Loop-Invariant Hoisting, and Set vs Array.
+
 ## Early-Exit Before Expensive Computation
 
 **When a method does expensive work that is conditionally discarded by a check further down the call chain, move the cheap check to the top of the method so the expensive work is skipped entirely when it isn't needed.**

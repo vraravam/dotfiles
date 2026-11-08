@@ -5,6 +5,7 @@
 require 'open3'
 
 require_relative 'core'
+require_relative 'enumerable_ext'
 require_relative 'env_vars'
 require_relative 'git_overrides'
 require_relative 'path_utils'
@@ -160,7 +161,7 @@ module GitHooks
   # @return [Boolean] false if a hook failed
   def _run_local_hooks(name, args, stdin_data: '')
     hooks = [File.join('.git', 'hooks.local', name), GitOverrides.script_for(name, Dir.pwd)&.to_s]
-    hooks = hooks.compact.select { |hook| File.file?(hook) && File.executable?(hook) }
+    hooks = hooks.filter_map { |hook| hook if hook && File.file?(hook) && File.executable?(hook) }
     return true if hooks.empty?
 
     require 'tempfile' # only needed to replay stdin to a hook

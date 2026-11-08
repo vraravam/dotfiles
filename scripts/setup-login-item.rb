@@ -37,6 +37,7 @@
 #               SetupLoginItem.remove_managed
 
 require_relative 'utilities/command_utils'
+require_relative 'utilities/enumerable_ext'
 require_relative 'utilities/logging'
 require_relative 'utilities/macos'
 require_relative 'utilities/path_utils'
@@ -111,7 +112,7 @@ module SetupLoginItem
   # @param brewfile [Pathname] The Brewfile to scan.
   # @return [Array<String>] Unique app names (case-insensitively), in first-seen order.
   def brewfile_app_names(brewfile: EnvVars::HOMEBREW_BUNDLE_FILE)
-    names = brewfile.file? ? Core.read_lines_utf8(brewfile).map { |line| line[BREWFILE_LOGIN_ITEM, 1] }.compact : []
+    names = brewfile.file? ? Core.each_line_utf8(brewfile).filter_map { |line| line[BREWFILE_LOGIN_ITEM, 1] } : []
     names.uniq(&:downcase)
   end
 
@@ -174,7 +175,14 @@ module SetupLoginItem
   # @param record [Pathname]
   # @return [Array<String>] The remembered app names (empty when there is no record yet).
   def _read_record(record)
-    record.file? ? Core.read_lines_utf8(record).map(&:strip).reject(&:empty?) : []
+    if record.file?
+      Core.each_line_utf8(record).filter_map do |line|
+        s = line.strip
+        s unless s.empty?
+      end
+    else
+      []
+    end
   end
 
   # @param record [Pathname]
@@ -258,7 +266,7 @@ module SetupLoginItem
     stdout, _stderr, status = Open3.capture3(env, 'swift', '-', stdin_data: swift_src)
     return app_names unless status.success?
 
-    missing = stdout.lines.select { |line| line.start_with?('missing ') }.map { |line| line.delete_prefix('missing ').strip }
+    missing = stdout.lines.filter_map { |line| line.delete_prefix('missing ').strip if line.start_with?('missing ') }
     app_names.select { |name| missing.include?(Core::ROOT.join('Applications', "#{name}.app").to_s) }
   end
 

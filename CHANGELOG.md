@@ -4,6 +4,26 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.29
+
+#### Ruby streaming and allocation cleanups across scripts
+
+* *[all ruby scripts]* Changed collection pipelines from intermediate-array idioms (`map` + `compact`, `select` + `map`, `reject` + `first`, `each_with_object([])`) to single-pass `filter_map`, eliminating short-lived allocations during array filtering. Opened the utility modules that needed it with `require_relative 'utilities/enumerable_ext'` (polyfill for Ruby 2.6).
+* *[scripts/utilities/core.rb]* `read_lines_utf8` now delegates to `each_line_utf8` (one encoded file-reading implementation); `each_line_utf8` can return a streaming `Enumerator` when called without a block.
+* *[scripts/utilities/dev_environment.rb]* `_config_digest` now streams its entries straight into `Digest::MD5` (incremental update) instead of building and joining a large intermediate array.
+* *[scripts/utilities/default_shell.rb]* `/etc/shells` membership check is now streamed with `Core.each_line_utf8(...).any?` instead of reading all lines into an array.
+* *[scripts/utilities/macos.rb]* `running_processes` now backs membership testing with a `Set` (`O(1)` lookups instead of repeated `Array#include?`).
+* *[scripts/utilities/background_job.rb]* `tail` now uses a bounded ring buffer instead of materialising every line before taking the last few.
+* *[scripts/cleanup-browser-profiles.rb]* `_scan_profile` was split into a shared `_scan_profile_walk` that yields `(:sqlite, path)` / `(:delete, path)` events; SQLite files are vacuumed as they are discovered and only deletion paths are retained. `_read_pattern_file` also became a single-pass `filter_map`.
+* *[scripts/utilities/git_processor.rb, scripts/utilities/git_commands.rb, scripts/utilities/git_hooks.rb, scripts/utilities/cron.rb, scripts/capture-prefs.rb, scripts/setup-login-item.rb, scripts/utilities/ollama.rb, scripts/utilities/profiles_repo.rb]* Converted `push_urls`, `parse_args`, hook filtering, old-backup cleanup, domain matching, login-item app-name / missing-name extraction, Ollama / profiles-repo scanning to `filter_map`/`find` for single-pass filtering.
+* *[scripts/utilities/git_processor.rb]* `push_urls` no longer internally stores the collection before filtering.
+
+#### Adopting these changes
+
+* No user action required - this is a non-behavioural refactor and optimization pass across Ruby utilities. Existing cleanup and script entry points behave as before.
+
+---
+
 ### 4.0.28
 
 #### Optimize AI instruction docs (token budget), split performance topics, add layout spec, and disable encrypted backup env vars by default

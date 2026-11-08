@@ -213,7 +213,7 @@ module Core
   #   lines = Core.read_lines_utf8('data/config.txt')
   #   lines.each { |line| puts line.chomp }
   def read_lines_utf8(filepath)
-    File.open(filepath, 'r:UTF-8', &:readlines)
+    each_line_utf8(filepath).to_a
   end
 
   # Iterates over each line in a file with explicit UTF-8 encoding.
@@ -228,6 +228,14 @@ module Core
   #     puts line.chomp
   #   end
   def each_line_utf8(filepath, &block)
+    unless block
+      return Enumerator.new do |yielder|
+               File.open(filepath, 'r:UTF-8') do |file|
+                 file.each_line { |line| yielder.yield(line) }
+               end
+             end
+    end
+
     File.open(filepath, 'r:UTF-8') do |file|
       file.each_line(&block)
     end

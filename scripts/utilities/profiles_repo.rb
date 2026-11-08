@@ -3,7 +3,7 @@
 # frozen_string_literal: true
 
 require_relative 'core'
-
+require_relative 'enumerable_ext'
 require_relative 'env_vars'
 require_relative 'git_processor'
 require_relative 'logging'
@@ -138,9 +138,9 @@ module ProfilesRepo
     tracked = git.ls_files('*/zen-sessions-backup/zen-sessions-*.jsonlz4')
 
     # Backups are named zen-sessions-YYYY-MM-DD-HH.jsonlz4; ISO dates compare as strings.
-    old_backups = tracked.select do |tracked_file|
-      date = BACKUP_DATE.match(File.basename(tracked_file))
-      date && date[1] < cutoff
+    old_backups = tracked.filter_map do |tracked_file|
+      m = BACKUP_DATE.match(File.basename(tracked_file))
+      m && m[1] < cutoff ? tracked_file : nil
     end
 
     if nil_or_empty?(old_backups)

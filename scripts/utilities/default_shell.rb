@@ -69,7 +69,7 @@ module DefaultShell
   # @return [Boolean] true when it is (now) listed
   def _register_in_etc_shells(shell)
     # Explicit UTF-8 avoids "invalid byte sequence in US-ASCII" under cron-like environments.
-    if Core.read_lines_utf8(ETC_SHELLS).map(&:chomp).include?(shell)
+    if Core.each_line_utf8(ETC_SHELLS).any? { |line| line.chomp == shell }
       Logging.info "'#{shell.cyan}' already in '#{ETC_SHELLS.to_s.cyan}' -- skipping."
       return true
     end

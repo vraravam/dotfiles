@@ -212,7 +212,17 @@ module BackgroundJob
 
     start = [path.size - 8192, 0].max
     text = path.binread(path.size - start, start)
-    text.force_encoding('UTF-8').scrub.lines.map(&:chomp).reject { |line| line.strip.empty? }.last(lines)
+    return [] if lines <= 0
+
+    result = []
+    text.force_encoding('UTF-8').scrub.each_line do |raw|
+      line = raw.chomp
+      next if line.strip.empty?
+
+      result << line
+      result.shift if result.size > lines
+    end
+    result
   rescue SystemCallError
     []
   end

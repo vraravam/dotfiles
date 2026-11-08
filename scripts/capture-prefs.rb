@@ -26,6 +26,7 @@ require 'set'
 
 require_relative 'utilities/command_utils'
 require_relative 'utilities/core'
+require_relative 'utilities/enumerable_ext'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/git_processor'
 require_relative 'utilities/launch_services'
@@ -348,8 +349,11 @@ module CapturePrefs
     allowed = Plist.load_domains_list(ALLOWED_LIST_FILE, Set.new)
 
     # 'defaults domains' prints one comma-separated line.
-    all_domains = CommandUtils.query(MacOS::DEFAULTS_CMD, 'domains').split(', ').map(&:strip)
-    matches = all_domains.select { |domain| domain.downcase.include?(search.downcase) }
+    search_downcased = search.downcase
+    matches = CommandUtils.query(MacOS::DEFAULTS_CMD, 'domains').split(', ').filter_map do |domain|
+      s = domain.strip
+      s if s.downcase.include?(search_downcased)
+    end
 
     if matches.empty?
       Logging.warn "No preference domain name contains '#{search.yellow}' (the app may not have written any preferences yet)"

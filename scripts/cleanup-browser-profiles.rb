@@ -14,9 +14,11 @@
 
 require 'find'
 require 'pathname'
+require 'set'
 
 require_relative 'utilities/command_utils'
 require_relative 'utilities/core'
+require_relative 'utilities/enumerable_ext'
 require_relative 'utilities/env_vars'
 require_relative 'utilities/logging'
 require_relative 'utilities/macos'
@@ -92,9 +94,10 @@ module CleanupBrowserProfiles
   def _read_pattern_file(file)
     return [] unless file.file?
 
-    # Use Core.read_lines_utf8 to avoid encoding issues in non-UTF-8 environments.
-    Core.read_lines_utf8(file).each_with_object([]) do |line, arr|
-      arr << line.chomp.strip unless line.comment_or_empty?
+    # Use Core.each_line_utf8 to avoid encoding issues in non-UTF-8 environments.
+    Core.each_line_utf8(file).filter_map do |line|
+      s = line.chomp.strip
+      s unless line.comment_or_empty?
     end
   end
 
@@ -149,29 +152,60 @@ module CleanupBrowserProfiles
   # @return [Array(Array<String>, Array<String>)] SQLite database paths, and the paths to delete
   #   (file-pattern matches first, then directory-pattern matches, without duplicates)
   # :reek:FeatureEnvy -- Operates on method parameters and local variables (intentional helper extraction)
-  def _scan_profile(profile_dir, file_patterns, dir_patterns)
+  def _scan_profile(profile_dir, file_patterns, dir_patterns, &block)
+    # Delegate to the shared streaming walk. With no block, collect the yielded
+    # results into the two arrays the spec/older callers expect (sqlite paths
+    # and the unique list of paths to delete). With a block, yield each
+    # (category, path) pair in traversal order as :sqlite/:delete so a caller
+    # can vacuum/process incrementally without materialising both collections.
+    if block
+      _scan_profile_walk(profile_dir, file_patterns, dir_patterns, &block)
+    else
+      sqlite_files = []
+      items_to_delete = []
+      _scan_profile_walk(profile_dir, file_patterns, dir_patterns) do |category, path|
+        if category == :sqlite
+          sqlite_files << path
+        else
+          items_to_delete << path
+        end
+      end
+      [sqlite_files, items_to_delete]
+    end
+  end
+
+  # Shared single Find walk. Yields (category, path) pairs: :sqlite for any
+  # '*.sqlite' file and :delete for each path that matches the cleanup patterns
+  # (de-duplicated across file/dir patterns, preserving traversal order).
+  # :reek:FeatureEnvy -- Operates on method parameters and local variables (intentional helper extraction)
+  def _scan_profile_walk(profile_dir, file_patterns, dir_patterns)
     file_literals, file_globs = _split_patterns(file_patterns)
     dir_literals, dir_globs = _split_patterns(dir_patterns)
     root = profile_dir.to_s
-    sqlite_files = []
-    file_matches = []
-    dir_matches = []
+    item_seen = Set.new
 
     Find.find(root) do |path|
       next if path == root
 
       name = File.basename(path)
       is_dir = File.directory?(path)
-      sqlite_files << path if File.fnmatch('*.sqlite', name)
-      file_matches << path if _name_matches?(name, file_literals, file_globs)
-      dir_matches << path if is_dir && _name_matches?(name, dir_literals, dir_globs)
+
+      # SQLite files are yielded independently; they may also match a delete
+      # pattern, and in that case the path still appears in both collections,
+      # matching the original behaviour.
+      yield(:sqlite, path) if File.fnmatch('*.sqlite', name)
+
+      item_matches = _name_matches?(name, file_literals, file_globs) || (is_dir && _name_matches?(name, dir_literals, dir_globs))
+      if item_matches && !item_seen.include?(path)
+        item_seen << path
+        yield(:delete, path)
+      end
+
       Find.prune if is_dir && name.start_with?('.')
     end
-
-    [sqlite_files, (file_matches + dir_matches).uniq]
   end
 
-  private_class_method :_scan_profile
+  private_class_method :_scan_profile, :_scan_profile_walk
 
   # Splits patterns into literal names (compared case-insensitively through a Hash lookup) and
   # real globs (File.fnmatch), so most of the ~30 patterns cost one lookup per entry.
@@ -192,47 +226,6 @@ module CleanupBrowserProfiles
   end
 
   private_class_method :_name_matches?
-
-  # Vacuums all SQLite databases in +sqlite_files+ larger than 10MB.
-  #
-  # @param sqlite_files [Array<String>] Database paths found by _scan_profile.
-  # @param dry_run [Boolean] When true, reports what would be vacuumed without doing it.
-  # @return [void]
-  # :reek:FeatureEnvy -- Operates on method parameters and local variables (intentional helper extraction)
-  def _vacuum_sqlite_databases(sqlite_files, dry_run)
-    unless SQLite.available?
-      Logging.skip_tool(SQLite::COMMAND)
-      return
-    end
-
-    db_count = 0
-    vacuumed = 0
-    failed_dbs = []
-
-    sqlite_files.each do |db_file_str|
-      db_count += 1
-      db_size = PathUtils.size_kb(db_file_str)
-      next if db_size <= MIN_VACUUM_DB_BYTES
-
-      db_file_colored = db_file_str.cyan
-
-      if dry_run
-        Logging.info "Would vacuum: '#{db_file_colored}' (#{(db_size / 1_048_576).to_s.purple}MB)"
-      else
-        Logging.info "Vacuuming: '#{db_file_colored}'"
-        if SQLite.execute(db_file_str, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;')
-          vacuumed += 1
-        else
-          failed_dbs << Pathname(db_file_str)
-        end
-      end
-    end
-
-    Logging.info "-> Processed #{vacuumed.to_s.purple} of #{db_count.to_s.purple} SQLite databases"
-    Logging.record_warning("sqlite3 vacuum failed for #{failed_dbs.size.to_s.red} database(s):\n#{Logging.join_array(failed_dbs, :red)}") if failed_dbs.any?
-  end
-
-  private_class_method :_vacuum_sqlite_databases
 
   # Deletes the files and directories selected by the cleanup patterns.
   #
@@ -288,11 +281,46 @@ module CleanupBrowserProfiles
         Logging.info "--> Size before: '#{profile_dir_colored}' --> #{PathUtils.format_size(size_before_kb).purple}"
       end
 
-      # One walk finds both the SQLite databases and the files/directories matching cleanup patterns
-      sqlite_files, items_to_delete = _scan_profile(profile_dir, file_patterns, dir_patterns)
+      # One walk finds both the SQLite databases and the files/directories matching cleanup patterns.
+      # SQLite databases are vacuumed while the walk runs; only deletion paths are retained
+      # (matching the previous behaviour up to traversal order).
+      db_count = 0
+      vacuumed = 0
+      failed_dbs = []
+      items_to_delete = []
 
-      # Vacuum SQLite databases
-      _vacuum_sqlite_databases(sqlite_files, dry_run)
+      vacuum_available = SQLite.available?
+      Logging.skip_tool(SQLite::COMMAND) unless vacuum_available
+
+      _scan_profile(profile_dir, file_patterns, dir_patterns) do |category, path|
+        if category == :sqlite
+          next unless vacuum_available
+
+          db_count += 1
+          db_size = PathUtils.size_kb(path)
+          next if db_size <= MIN_VACUUM_DB_BYTES
+
+          db_file_colored = path.cyan
+
+          if dry_run
+            Logging.info "Would vacuum: '#{db_file_colored}' (#{(db_size / 1_048_576).to_s.purple}MB)"
+          else
+            Logging.info "Vacuuming: '#{db_file_colored}'"
+            if SQLite.execute(path, 'PRAGMA journal_mode=WAL; VACUUM; REINDEX;')
+              vacuumed += 1
+            else
+              failed_dbs << Pathname(path)
+            end
+          end
+        else
+          items_to_delete << path
+        end
+      end
+
+      if vacuum_available
+        Logging.info "-> Processed #{vacuumed.to_s.purple} of #{db_count.to_s.purple} SQLite databases"
+        Logging.record_warning("sqlite3 vacuum failed for #{failed_dbs.size.to_s.red} database(s):\n#{Logging.join_array(failed_dbs, :red)}") if failed_dbs.any?
+      end
 
       # Delete files/directories matching cleanup patterns
       _delete_items(items_to_delete, dry_run)

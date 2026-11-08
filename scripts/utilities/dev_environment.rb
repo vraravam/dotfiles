@@ -190,15 +190,22 @@ module DevEnvironment
     require 'digest/md5'
 
     watched = Mise::CONFIG_FILES + ['.envrc']
-    entries = dirs.sort_by(&:to_s).flat_map do |dir|
-      # One directory listing instead of a stat per candidate name
+    digest = Digest::MD5.new
+    first = true
+    dirs.sort_by(&:to_s).each do |dir|
       present = _watched_children(dir, watched)
-      present.sort.map { |name| "#{File.join(dir.to_s, name)}\0#{File.mtime(File.join(dir.to_s, name)).to_f}" }
+      entries = present.sort.map { |name| "#{File.join(dir.to_s, name)}\0#{File.mtime(File.join(dir.to_s, name)).to_f}" }
+      entries.each do |entry|
+        digest.update("\n") unless first
+        first = false
+        digest.update(entry)
+      end
     rescue SystemCallError
-      # a file vanished between listing and stat
-      ["#{dir}\0gone"]
+      digest.update("\n") unless first
+      first = false
+      digest.update("#{dir}\0gone")
     end
-    Digest::MD5.hexdigest(entries.join("\n"))
+    digest.hexdigest
   end
 
   # Names from +watched+ present in +dir+; empty when the directory cannot be listed.

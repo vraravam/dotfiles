@@ -6,6 +6,7 @@ require 'open3'
 require 'pathname'
 
 require_relative 'core'
+require_relative 'enumerable_ext'
 require_relative 'env_vars'
 require_relative 'logging'
 require_relative 'path_utils'
@@ -421,10 +422,10 @@ module Cron
   def _cleanup_old_backups
     backup_dir = EnvVars::TMPDIR
     pattern = backup_dir.join('crontab_backup*')
-    backups = Dir.glob(pattern.to_s).map { |f| Pathname(f) }
-                 .select(&:file?)
-                 .sort_by(&:mtime)
-                 .reverse
+    backups = Dir.glob(pattern.to_s).filter_map do |f|
+      p = Pathname(f)
+      p if p.file?
+    end.sort_by(&:mtime).reverse
 
     return if backups.size <= 5
 

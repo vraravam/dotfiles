@@ -69,7 +69,7 @@ module GitCommands
   # :reek:UtilityFunction -- Stateless argument parser
   def parse_args(args)
     switches, positional = args.partition { |arg| arg.start_with?('--') }
-    [positional.reject(&:empty?).first || Dir.pwd, switches]
+    [positional.find { |arg| !arg.empty? } || Dir.pwd, switches]
   end
 
   # Pushes the repo, with hang protection. A push does not grow the local .git/objects as

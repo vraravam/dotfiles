@@ -502,7 +502,12 @@ class GitProcessor
   # @return [Array<String>] Empty when none are set.
   def push_urls(name: 'origin')
     out, _stderr, status = _execute('config', '--get-all', "remote.#{name}.pushurl", read_only: true)
-    status.success? ? out.each_line.map(&:strip).reject(&:empty?) : []
+    return [] unless status.success?
+
+    out.each_line.filter_map do |line|
+      s = line.strip
+      s unless s.empty?
+    end
   end
 
   # Replaces the explicit push URLs of a remote, so that 'git push' (no arguments) pushes to

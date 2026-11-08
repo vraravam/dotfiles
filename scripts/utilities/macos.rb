@@ -4,6 +4,7 @@
 
 require 'open3'
 require 'pathname'
+require 'set'
 require 'shellwords'
 
 require_relative 'command_utils'
@@ -113,7 +114,7 @@ module MacOS
     # pgrep patterns are regular expressions: escape the metacharacters in app names.
     pattern = names.map { |name| name.gsub(/[.^$*+?()\[\]{}|\\]/) { |char| "\\#{char}" } }.join('|')
     # Each line is '<pid> <process name>'.
-    listed = CommandUtils.query('pgrep', '-lx', pattern).each_line.map { |line| line.strip.split(' ', 2)[1].to_s.strip }
+    listed = Set.new(CommandUtils.query('pgrep', '-lx', pattern).each_line.map { |line| line.strip.split(' ', 2)[1].to_s.strip })
     names.select { |name| listed.include?(name) }
   end
 
