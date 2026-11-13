@@ -80,9 +80,9 @@ brew 'vim'
 brew 'wget'
 brew 'zsh'
 
-if encrypted_backup_enabled
+# if encrypted_backup_enabled
   brew 'vraravam/tap/git-remote-gpg-encrypt', trusted: true  # encrypted backup (gpg + git bundle, coexists with Keybase)
-end
+# end
 
 # formulae pulled in for base configs (if these are absent, you will get errors and things won't work)
 brew 'antidote',
@@ -130,7 +130,7 @@ cask 'keepassxc'
 cask 'keycastr'  # , postinstall: "\"#{setup_login_items_script}\" -a 'Keycastr'"
 cask 'keyclu', postinstall: "\"#{setup_login_items_script}\" -a 'KeyClu'" if is_arm
 cask 'okta-verify', postinstall: "\"#{setup_login_items_script}\" -a 'Okta Verify 2'"
-# cask 'onlyoffice'
+cask 'onlyoffice'
 cask 'protonvpn' # , postinstall: "\"#{setup_login_items_script}\" -a 'ProtonVPN'"
 cask 'qlmarkdown'
 cask 'rancher' # if ::OS::Mac::version < 26

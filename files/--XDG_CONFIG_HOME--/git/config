@@ -726,6 +726,8 @@
   rerereUnresolved = 1.week.ago    # expire unresolved conflicts after 1 week
   worktreePruneExpire = 1.weeks.ago
   writeCommitGraph = true          # generate commit graph on GC (enables faster log/branch operations)
+[gpg "ssh"]
+  allowedSignersFile = ~/.ssh/allowed_signers
 [grep]
   column = true
   extendedRegexp = true

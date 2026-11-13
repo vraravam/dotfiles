@@ -36,6 +36,8 @@
 #               SetupLoginItem.register_managed
 #               SetupLoginItem.remove_managed
 
+require 'set'
+
 require_relative 'utilities/command_utils'
 require_relative 'utilities/enumerable_ext'
 require_relative 'utilities/logging'
@@ -326,7 +328,7 @@ module SetupLoginItem
     items_out = CommandUtils.query(MacOS::OSASCRIPT_CMD, '-e',
                                    'tell application "System Events" to get the name of every login item')
     existing = items_out.split(',').map(&:strip)
-    wanted = app_names.map(&:downcase)
+    wanted = app_names.map(&:downcase).to_set
     existing.select { |item| wanted.include?(item.downcase) }.map do |item|
       removed = CommandUtils.run_silent(MacOS::OSASCRIPT_CMD, '-e',
                                         "tell application \"System Events\" to delete login item \"#{item}\"")

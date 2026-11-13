@@ -4,6 +4,22 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.30
+
+#### Add a `pre_commit_me` and `test_me` per-project helpers, always install `git-remote-gpg-encrypt`, and point git at an SSH allowed-signers file
+
+* *[files/--ZDOTDIR--/.aliases]* New `pre_commit_me` and `test_me`, alongside `launch_me`, `debug_me` and `build_me`: they run the executable `pre-commit-<current-directory-name>.sh` and `test-<current-directory-name>.sh` found in `PATH` (typically in `${PERSONAL_BIN_DIR}`), and warn and return 1 when the respective target script is not found.
+* *[files/--HOME--/Brewfile]* The `vraravam/tap/git-remote-gpg-encrypt` formula is now installed unconditionally: the `if encrypted_backup_enabled` guard around it is commented out (the `encrypted_backup_enabled` variable is still computed above it).
+* *[files/--XDG_CONFIG_HOME--/git/config]* New `[gpg "ssh"]` section setting `allowedSignersFile = ~/.ssh/allowed_signers`, the file git reads to verify SSH-signed commits and tags.
+
+#### Adopting these changes
+
+* Restart the Terminal/iTerm application to pick up `pre_commit_me` and `test_me` (or, to avoid a restart, run: `unfunction is_aliases_sourced; DEBUG=true load_file_if_exists ${ZDOTDIR}/.aliases`). Add a `pre-commit-<directory-name>.sh` and/or `test-<directory-name>.sh` script to `${PERSONAL_BIN_DIR}` for each project that should use it.
+* Run `brew bundle` to install `git-remote-gpg-encrypt` if you had not enabled the encrypted backup remotes.
+* Create `~/.ssh/allowed_signers` (one `<email> <public key>` line per trusted signer); until it exists, `git log --show-signature` and `git verify-commit` cannot verify SSH signatures.
+
+---
+
 ### 4.0.29
 
 #### Ruby streaming and allocation cleanups across scripts

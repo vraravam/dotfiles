@@ -62,7 +62,7 @@ zstyle ':completion:*' list-colors ''
 zstyle ':completion:*:*:kill:*:processes' list-colors '=(#b) #([0-9]#) ([0-9a-z-]#)*=01;34=0=01'
 
 # Process list for kill completion
-zstyle ':completion:*:*:*:*:processes' command "ps -u $USERNAME -o pid,user,comm -w -w"
+zstyle ':completion:*:*:*:*:processes' command "ps -u ${USERNAME} -o pid,user,comm -w -w"
 
 # Directory completion priority
 zstyle ':completion:*:cd:*' tag-order local-directories directory-stack path-directories

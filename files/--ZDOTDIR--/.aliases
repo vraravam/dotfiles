@@ -930,6 +930,7 @@ implode() {
 
 # Convenience wrappers that invoke the per-project script in PATH
 # corresponding to the current directory name, e.g. 'launch-ferdium.sh'.
+# Use muscle-memory to run the project-specific tooling with common commands
 launch_me() {
   local name="launch-${PWD##*/}.sh"
   if command_exists "${name}"; then
@@ -954,6 +955,26 @@ build_me() {
   local name="build-${PWD##*/}.sh"
   if command_exists "${name}"; then
     section_header "Building using: '$(cyan $(which "${name}"))'"
+    "${name}" "$@"
+  else
+    warn "Command not found: '$(cyan "${name}")'"
+    return 1
+  fi
+}
+test_me() {
+  local name="test-${PWD##*/}.sh"
+  if command_exists "${name}"; then
+    section_header "Testing using: '$(cyan $(which "${name}"))'"
+    "${name}" "$@"
+  else
+    warn "Command not found: '$(cyan "${name}")'"
+    return 1
+  fi
+}
+pre_commit_me() {
+  local name="pre-commit-${PWD##*/}.sh"
+  if command_exists "${name}"; then
+    section_header "Pre-commiting using: '$(cyan $(which "${name}"))'"
     "${name}" "$@"
   else
     warn "Command not found: '$(cyan "${name}")'"
