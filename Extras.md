@@ -4,18 +4,37 @@ Reference documentation for the utility scripts bundled in this repo. Each secti
 
 ## 📋 Table of Contents
 
-- [add-upstream-git-config.rb](#add-upstream-git-configrb)
-- [capture-prefs.rb](#capture-prefsrb)
-- [cleanup-browser-profiles.rb](#cleanup-browser-profilesrb)
-- [fresh-install-of-osx.sh](#fresh-install-of-osxsh)
-- [install-dotfiles.rb](#install-dotfilesrb)
-- [osx-defaults.sh](#osx-defaultssh)
-- [recreate-repository.rb](#recreate-repositoryrb)
-- [resurrect-repositories.rb](#resurrect-repositoriesrb)
-- [run-all.rb](#run-allrb)
-- [setup-login-item.rb](#setup-login-itemrb)
-- [software-updates-cron.rb](#software-updates-cronrb)
-- [Environment variables](#environment-variables)
+- [Extras](#extras)
+  - [📋 Table of Contents](#-table-of-contents)
+  - [add-upstream-git-config.rb](#add-upstream-git-configrb)
+  - [capture-prefs.rb](#capture-prefsrb)
+  - [cleanup-browser-profiles.rb](#cleanup-browser-profilesrb)
+  - [fresh-install-of-osx.sh](#fresh-install-of-osxsh)
+  - [install-dotfiles.rb](#install-dotfilesrb)
+  - [osx-defaults.sh](#osx-defaultssh)
+    - [Two-phase preference architecture](#two-phase-preference-architecture)
+    - [What belongs where](#what-belongs-where)
+  - [recreate-repository.rb](#recreate-repositoryrb)
+    - [Force mode workflow](#force-mode-workflow)
+    - [Usage](#usage)
+    - [Safety features](#safety-features)
+  - [resurrect-repositories.rb](#resurrect-repositoriesrb)
+    - [Environment variable support](#environment-variable-support)
+    - [Bundle support](#bundle-support)
+  - [run-all.rb](#run-allrb)
+  - [setup-login-item.rb](#setup-login-itemrb)
+  - [software-updates-cron.rb](#software-updates-cronrb)
+  - [template-repository-cloner.rb](#template-repository-clonerrb)
+  - [Environment variables](#environment-variables)
+    - [Install and clone](#install-and-clone)
+    - [Preferences and macOS defaults](#preferences-and-macos-defaults)
+    - [Git commands](#git-commands)
+    - [Shell startup](#shell-startup)
+  - [Git Workflow Commands](#git-workflow-commands)
+    - [Per-project overrides](#per-project-overrides)
+    - [Overrides through `run-all.rb` / `all`](#overrides-through-run-allrb--all)
+    - [Git hook customizations](#git-hook-customizations)
+  - [delete\_caches](#delete_caches)
 
 ---
 
@@ -329,6 +348,60 @@ To check for errors/warnings over time:
   ```
 
 See [Technical Deep Dive § 8](TechnicalDeepDive.md#8-cron-safety-mechanisms) for how cron safety, `sudo` guards, and TTY detection work internally.
+
+## template-repository-cloner.rb
+
+Creates a new project from a template repository: it shallow-clones the template and retargets it to your project and Java package name, so you do not have to hand-edit package declarations, folder trees and class names. Nothing about the template is built in: everything that describes the template and the target lives in one YAML file that you pass as the only argument.
+
+This script is **standalone**: it uses only the Ruby standard library and nothing from `scripts/utilities/`, so it can be copied to and run on a machine that has no dotfiles checkout. Its output is therefore plain `[INFO]`/`[SUCCESS]`/`[ERROR]` lines without color or nesting indentation.
+
+  ```zsh
+  template-repository-cloner.rb <config.yml>;
+  ```
+
+Example `config.yml`, retargeting <https://github.com/luismalamoc/springboot-template> (its code lives under `com.example.springboottemplate`):
+
+  ```yaml
+  source_repository_url: https://github.com/luismalamoc/springboot-template.git
+  target_project_name: lease-service
+  target_package_name: com.myapp
+  source_package_name: com.example.springboottemplate
+  source_application_class_name: SpringBootTemplateApplication
+  target_application_class_name: LeaseApplication
+  replacements:
+    springboot-template: ${target_project_name}
+  ```
+
+Here the `replacements` entry rewrites the `springboot-template` artifact id and name in `pom.xml`, which the package rewrite does not cover.
+
+| Key | Required | Meaning |
+|-----|----------|---------|
+| `source_repository_url` | yes | Anything `git clone` accepts |
+| `target_project_name` | yes | Kebab-case with at least one hyphen (e.g. `my-project`); also the name of the folder created under the current directory |
+| `target_package_name` | yes | Target Java package: lowercase, dot-separated, at least two segments |
+| `source_package_name` | yes | The template's Java package, in the same format |
+| `source_application_class_name` | no | The template's main class. Omit it if the template has none; no class file is renamed and class names are left alone |
+| `target_application_class_name` | no | The target main class. Default: derived from `target_package_name` (segments title-cased and joined, so `com.acme.myapp` becomes `ComAcmeMyapp`; "Application" is not appended) |
+| `skip_git_init` | no | `true` skips the git-initialization step. Default `false` |
+| `replacements` | no | Map of literal old text to new text, applied to file **contents** (see below) |
+
+Unknown keys, missing required keys and wrong types are rejected before anything is cloned, so a typo cannot silently do nothing.
+
+What it does:
+
+1. Clones the template (`--depth 1 --single-branch`) into `./<target_project_name>`.
+2. Unless `skip_git_init`, runs `git init` plus an initial commit if the clone has no `.git`. A normal clone already has one, so in practice this only acts on a clone that produced none.
+3. Moves every folder path matching `source_package_name` (e.g. `com/example/springboottemplate` under both `src/main/java` and `src/test/java`) to the target package path, removes the parent folders left empty, and renames `<source_application_class_name>.java`.
+4. Rewrites the text files (skipping `.git/`, `node_modules/` and non-UTF-8 files): the source package, the source folder path and the source class name first, then each `replacements` entry in the order written.
+
+`replacements` notes:
+
+- Matching is literal (dots and other punctuation are not wildcards) and on word boundaries: the old text must not be directly preceded or followed by a letter, digit or underscore. `-` and `.` count as boundaries, so `springboot-template` also rewrites `springboot-template-api`, but `springboot-templates` is left alone.
+- `${target_project_name}`, `${target_package_name}` and `${target_application_class_name}` expand in the new text (not in the old text). Any other `${...}` is an error.
+- Only file contents are rewritten. File and folder names are not, apart from the package folders and the application class file in step 3.
+- A package that is a prefix of the template's wider root (say the template also uses `com.example.fixtures`, or `<groupId>com.example</groupId>` in `pom.xml`) is not touched by `source_package_name`. Add it as a `replacements` entry if you want it retargeted; note that folders named after it are not renamed.
+
+It does not generate new code, and does not update the template's tooling or dependencies. Set `DEBUG=true` for backtraces and verbose file operations. Exit status is `0` on success and `1` on any failure.
 
 ## Environment variables
 

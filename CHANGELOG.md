@@ -4,6 +4,22 @@ For those who follow this repo, here's the changelog for ease of adoption:
 
 ---
 
+### 4.0.31
+
+#### Make `template-repository-cloner.rb` a standalone script, fix its bugs, document it and add specs
+
+* *[scripts/template-repository-cloner.rb]* Now depends only on the Ruby stdlib (`fileutils`, `find`) and nothing under `scripts/utilities/`, so it can be copied to a machine without the dotfiles checkout. Output goes through a small nested `Log` module (plain `[INFO]`/`[SUCCESS]`/`[ERROR]`/`[DEBUG]` lines) instead of a global `Logging` module. Follows the dual-mode pattern: `TemplateRepositoryCloner.run(template_url:, project_name:, package_name:, skip_git_init:, base_dir:)` returns a boolean, `parse_args` turns `ARGV` into those keywords, and the CLI block exits `0`/`1`.
+* *[scripts/template-repository-cloner.rb]* `String` extensions (`blank?`, `titleize`, `dot_to_hyphen`, `dot_to_folder`, `to_class_name`, `safe_gsub`) and `File.update_if_content_changed` are kept; `dot_to_folder`, `to_class_name` and the `safe_gsub` pattern are memoized per input. Template-derived values (`SOURCE_FOLDER_NAME`, `SOURCE_APPLICATION_FILE_NAME`, `GIT_DIR_NAME`, `GIT_CLONE_ARGS`, etc.) are constants, and `DEBUG` is read once.
+* *[scripts/template-repository-cloner.rb]* Bug fixes: git is invoked in array form (no shell, so a URL or folder name cannot inject shell syntax); the `.git`/`node_modules` exclusion now matches whole path segments (it used to skip `.gitlab-ci.yml` and `.github/`); the kebab/dot patterns use `\A`/`\z` and an escaped dot; a template without the application class file no longer crashes; non-UTF-8 files are skipped; empty-directory pruning stops at the repo root; replacement text is taken literally. The commented-out per-file-type block was removed, and the header and method docs were corrected (argument order, project name is used only for the folder name).
+* *[spec/template_repository_cloner_spec.rb]* New spec covering the standalone guarantee, the `String`/`File` extensions, argument parsing and validation, and end-to-end runs against a local git template (folder moves, class rename, content rewrite, exclusions, git-init branches, failure paths).
+* *[Extras.md]* New `template-repository-cloner.rb` section (and table-of-contents entry).
+
+#### Adopting these changes
+
+* No user action required - the script is not wired into any other script. Run it directly: `template-repository-cloner.rb <template-repository-url> <target-project-name> <target-package-name> [--skip-git-init];`
+
+---
+
 ### 4.0.30
 
 #### Add a `pre_commit_me` and `test_me` per-project helpers, always install `git-remote-gpg-encrypt`, and point git at an SSH allowed-signers file
